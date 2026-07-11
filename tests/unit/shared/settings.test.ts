@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_VERSION,
+  parseSettings,
+  settingsSchema,
+  type AppSettings,
+} from '../../../src/shared/settings'
+
+const customSettings = {
+  version: 1,
+  theme: 'light',
+  reducedMotion: 'on',
+  microphoneId: 'microphone-1',
+  hotkey: 'Alt+D',
+  maxRecordingSeconds: 300,
+  soundCues: false,
+  modelPreset: 'accurate',
+  language: 'fr',
+  inferencePreference: 'wasm',
+  formatWhitespace: false,
+  autoCopy: true,
+  autoPaste: false,
+  pasteDelayMs: 50,
+  successDisplayMs: 5_000,
+  launchAtStartup: true,
+  startMinimized: true,
+  historyEnabled: false,
+  historyRetention: 'unlimited',
+  onboardingComplete: true,
+} satisfies AppSettings
+
+describe('settings', () => {
+  it('defines the complete versioned defaults', () => {
+    expect(SETTINGS_VERSION).toBe(1)
+    expect(DEFAULT_SETTINGS).toEqual({
+      version: 1,
+      theme: 'system',
+      reducedMotion: 'system',
+      microphoneId: null,
+      hotkey: 'CommandOrControl+Shift+Space',
+      maxRecordingSeconds: 60,
+      soundCues: true,
+      modelPreset: 'balanced',
+      language: 'auto',
+      inferencePreference: 'auto',
+      formatWhitespace: true,
+      autoCopy: true,
+      autoPaste: true,
+      pasteDelayMs: 150,
+      successDisplayMs: 1_400,
+      launchAtStartup: false,
+      startMinimized: false,
+      historyEnabled: true,
+      historyRetention: 100,
+      onboardingComplete: false,
+    })
+  })
+
+  it('recovers invalid fields without discarding valid fields', () => {
+    const parsed = parseSettings({ theme: 'dark', pasteDelayMs: -4, autoPaste: false })
+
+    expect(parsed.theme).toBe('dark')
+    expect(parsed.pasteDelayMs).toBe(DEFAULT_SETTINGS.pasteDelayMs)
+    expect(parsed.autoPaste).toBe(false)
+  })
+
+  it('accepts every valid field and discards unknown fields', () => {
+    const parsed = parseSettings({ ...customSettings, cloudProvider: 'not-supported' })
+
+    expect(parsed).toEqual(customSettings)
+    expect(parsed).not.toHaveProperty('cloudProvider')
+    expect(settingsSchema.parse({ ...customSettings, extra: true })).toEqual(customSettings)
+  })
+
+  it.each([null, undefined, 42, 'settings', true, [], () => undefined])(
+    'returns defaults for non-record input %#',
+    (input) => {
+      expect(parseSettings(input)).toEqual(DEFAULT_SETTINGS)
+    },
+  )
+
+  it.each([30, 60, 120, 300] as const)(
+    'accepts the supported %i-second recording limit',
+    (maxRecordingSeconds) => {
+      expect(parseSettings({ maxRecordingSeconds }).maxRecordingSeconds).toBe(maxRecordingSeconds)
+    },
+  )
+
+  it.each([29, 31, 301])('recovers the unsupported %i-second recording limit', (value) => {
+    expect(parseSettings({ maxRecordingSeconds: value }).maxRecordingSeconds).toBe(
+      DEFAULT_SETTINGS.maxRecordingSeconds,
+    )
+  })
+
+  it('accepts inclusive timing boundaries', () => {
+    expect(parseSettings({ pasteDelayMs: 50 }).pasteDelayMs).toBe(50)
+    expect(parseSettings({ pasteDelayMs: 1_000 }).pasteDelayMs).toBe(1_000)
+    expect(parseSettings({ successDisplayMs: 500 }).successDisplayMs).toBe(500)
+    expect(parseSettings({ successDisplayMs: 5_000 }).successDisplayMs).toBe(5_000)
+  })
+
+  it.each([
+    ['pasteDelayMs', 49],
+    ['pasteDelayMs', 1_001],
+    ['pasteDelayMs', 150.5],
+    ['successDisplayMs', 499],
+    ['successDisplayMs', 5_001],
+    ['successDisplayMs', 1_400.5],
+  ] as const)('recovers an invalid %s value of %s', (field, value) => {
+    expect(parseSettings({ [field]: value })[field]).toBe(DEFAULT_SETTINGS[field])
+  })
+
+  it.each([25, 100, 500, 'unlimited'] as const)(
+    'accepts the supported history retention value %s',
+    (historyRetention) => {
+      expect(parseSettings({ historyRetention }).historyRetention).toBe(historyRetention)
+    },
+  )
+
+  it('requires a non-empty language and a literal true autoCopy value', () => {
+    expect(parseSettings({ language: '' }).language).toBe(DEFAULT_SETTINGS.language)
+    expect(parseSettings({ language: 'es' }).language).toBe('es')
+    expect(parseSettings({ autoCopy: false }).autoCopy).toBe(true)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, autoCopy: false }).success).toBe(false)
+  })
+
+  it('returns a fresh value isolated from defaults and other parses', () => {
+    const first = parseSettings({ theme: 'dark' })
+    const second = parseSettings({ theme: 'dark' })
+
+    expect(first).not.toBe(second)
+    first.theme = 'light'
+    expect(second.theme).toBe('dark')
+    expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
