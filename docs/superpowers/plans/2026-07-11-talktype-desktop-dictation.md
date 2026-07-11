@@ -6,7 +6,7 @@
 
 **Architecture:** Electron owns native windows, tray, shortcuts, local persistence, clipboard, and best-effort Windows paste automation. React renderers own the management UI and floating widget, while Web Audio captures 16 kHz PCM and a dedicated Transformers.js worker performs local Whisper inference from bundled, hash-verified model files. All renderer/native communication crosses a narrow typed preload bridge with schema validation.
 
-**Tech Stack:** Electron 43.1.0, electron-vite 5.0.0, React 19.2.7, TypeScript 7.0.2, Vite 8.1.4, Transformers.js 4.2.0, Zod 4.4.3, Lucide React 1.24.0, Vitest 4.1.10, Playwright 1.61.1, electron-builder 26.15.3.
+**Tech Stack:** Electron 43.1.0, electron-vite 5.0.0, React 19.2.7, TypeScript 6.0.3, Vite 7.3.6, Transformers.js 4.2.0, Zod 4.4.3, Lucide React 1.24.0, Vitest 4.1.10, Playwright 1.61.1, electron-builder 26.15.3.
 
 **Approved specification:** `docs/superpowers/specs/2026-07-11-talktype-desktop-dictation-design.md`
 
@@ -141,19 +141,19 @@
 - Create: `src/renderer/src/widget.tsx`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: Install the pinned runtime and development toolchain**
+- [x] **Step 1: Install the pinned runtime and development toolchain**
 
 Run:
 
 ```powershell
 npm init -y
 npm install react@19.2.7 react-dom@19.2.7 @huggingface/transformers@4.2.0 zod@4.4.3 lucide-react@1.24.0
-npm install --save-dev electron@43.1.0 electron-vite@5.0.0 electron-builder@26.15.3 vite@8.1.4 typescript@7.0.2 vitest@4.1.10 @vitest/coverage-v8 @playwright/test@1.61.1 jsdom@29.1.1 @types/node @types/react @types/react-dom @testing-library/react @testing-library/jest-dom @testing-library/user-event eslint @eslint/js typescript-eslint
+npm install --save-dev electron@43.1.0 electron-vite@5.0.0 electron-builder@26.15.3 vite@7.3.6 typescript@6.0.3 vitest@4.1.10 @vitest/coverage-v8 @playwright/test@1.61.1 jsdom@29.1.1 @types/node @types/react @types/react-dom @testing-library/react @testing-library/jest-dom @testing-library/user-event eslint @eslint/js typescript-eslint
 ```
 
 Expected: dependencies install successfully and `package-lock.json` is created.
 
-- [ ] **Step 2: Write failing scaffold security tests**
+- [x] **Step 2: Write failing scaffold security tests**
 
 ```ts
 // tests/unit/shared/constants.test.ts
@@ -183,13 +183,13 @@ describe('secureWebPreferences', () => {
 })
 ```
 
-- [ ] **Step 3: Run the tests and observe RED**
+- [x] **Step 3: Run the tests and observe RED**
 
 Run: `npx vitest run tests/unit/shared/constants.test.ts tests/unit/main/security.test.ts`
 
 Expected: FAIL because `src/shared/constants.ts` and `src/main/security.ts` do not exist.
 
-- [ ] **Step 4: Add the minimal secure scaffold**
+- [x] **Step 4: Add the minimal secure scaffold**
 
 ```ts
 // src/shared/constants.ts
@@ -212,7 +212,7 @@ export function secureWebPreferences(preload: string): WebPreferences {
 
 Configure `package.json` with `main: "./out/main/index.js"` and scripts `dev`, `build`, `typecheck`, `lint`, `test`, `test:coverage`, `test:e2e`, `model:prepare`, `model:verify`, `package:dir`, and `package:win`. Configure electron-vite with main, preload, and two renderer HTML inputs. The initial main entry creates a single 1080×720 window using `secureWebPreferences`; both renderer entries mount a valid React root with the TalkType name so `npm run build` is green from this commit. Both HTML entries include a restrictive Content Security Policy allowing only the packaged origin, local model/runtime schemes, the application worker, microphone media, and inline style attributes required for dynamic level bars; scripts and network connections remain local-only.
 
-- [ ] **Step 5: Verify GREEN and the baseline build**
+- [x] **Step 5: Verify GREEN and the baseline build**
 
 Run:
 
@@ -225,7 +225,7 @@ npm run build
 
 Expected: 2 tests pass; typecheck, lint, main/preload/renderer builds all exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add package.json package-lock.json electron.vite.config.ts electron-builder.yml tsconfig*.json vitest.config.ts playwright.config.ts eslint.config.mjs tests/setup.ts tests/unit/shared/constants.test.ts tests/unit/main/security.test.ts src/shared/constants.ts src/main/security.ts src/main/index.ts src/preload/index.ts src/renderer .gitignore
@@ -423,7 +423,7 @@ describe('HotkeyManager', () => {
 })
 ```
 
-Window tests must prove the main options are 1080×720 with secure preferences; widget options are 420×92, transparent, frameless, always-on-top, skip-taskbar, non-focusable, and `backgroundThrottling: false`; active-display positioning stays inside the work area. Hotkey tests must also prove bare Escape is registered only while listening and removed for every stop, cancel, error, and quit. IPC tests must prove unknown navigation and permissions are denied, settings payloads are parsed, and the preload exposes named methods without a generic `send` function.
+Window tests must assert complete BrowserWindow constructor option objects with exact equality, not `toMatchObject` or another permissive subset matcher, and must exercise the real `WindowManager`-to-`BrowserWindow` wiring. The complete main options are 1080×720 with secure preferences; widget options are 420×92, transparent, frameless, always-on-top, skip-taskbar, non-focusable, and `backgroundThrottling: false`; active-display positioning stays inside the work area. Startup/load tests must force renderer-load and readiness/bootstrap rejections, then prove each rejection is caught, produces safe operational diagnostics without sensitive content, and takes a controlled local fallback or quit path instead of becoming an unhandled rejection. Hotkey tests must also prove bare Escape is registered only while listening and removed for every stop, cancel, error, and quit. IPC tests must prove unknown navigation and permissions are denied, settings payloads are parsed, and the preload exposes named methods without a generic `send` function.
 
 - [ ] **Step 2: Run and observe RED**
 
@@ -435,7 +435,7 @@ Expected: FAIL because native service modules and typed channels do not exist.
 
 `src/shared/channels.ts` exports literal channel names. `src/shared/contracts.ts` exports `TalkTypeBridge` with named methods for settings, history, dictation commands/events, widget state, model status, clipboard output, startup, and app controls.
 
-`WindowManager` keeps both BrowserWindow instances alive, intercepts main-window close to hide unless quitting, calls `showInactive()` for the widget, and positions the widget 32 logical pixels above the active display work area. `HotkeyManager.replace` registers the candidate before unregistering the previous shortcut and restores the old registration on failure. `TrayController` exposes Start/Stop Dictation, Show TalkType, Auto-paste, and Quit. `StartupService` delegates to Electron login item settings. Bootstrap enforces single-instance behavior, registers deny-by-default permission/navigation handlers, wires repositories/services, and unregisters all native resources on quit.
+`WindowManager` keeps both BrowserWindow instances alive, intercepts main-window close to hide unless quitting, calls `showInactive()` for the widget, and positions the widget 32 logical pixels above the active display work area. Renderer loading and readiness/bootstrap are awaited or caught; failures emit safe operational diagnostics and explicitly fall back to the bundled local renderer when viable or quit in a controlled way. `HotkeyManager.replace` registers the candidate before unregistering the previous shortcut and restores the old registration on failure. `TrayController` exposes Start/Stop Dictation, Show TalkType, Auto-paste, and Quit. `StartupService` delegates to Electron login item settings. Bootstrap enforces single-instance behavior, registers deny-by-default permission/navigation handlers, wires repositories/services, and unregisters all native resources on quit.
 
 Preload uses `contextBridge.exposeInMainWorld('talktype', bridge)` with per-method `ipcRenderer.invoke` and unsubscribe-returning event listeners. No channel name is accepted from renderer input.
 
