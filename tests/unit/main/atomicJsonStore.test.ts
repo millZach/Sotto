@@ -12,12 +12,17 @@ const roots: string[] = []
 const exampleSchema = z.object({ value: z.string() })
 type Example = z.infer<typeof exampleSchema>
 
-function createStore(filePath: string, now: () => number = Date.now): AtomicJsonStore<Example> {
+function createStore(
+  filePath: string,
+  now: () => number = Date.now,
+  createId: () => string = () => 'test-id',
+): AtomicJsonStore<Example> {
   return new AtomicJsonStore(
     filePath,
     (input) => exampleSchema.parse(input),
     () => ({ value: 'default' }),
     now,
+    createId,
   )
 }
 
@@ -121,7 +126,7 @@ describe('AtomicJsonStore', () => {
 
     await expect(store.read()).resolves.toEqual({ value: 'default' })
 
-    expect(await readFile(`${filePath}.corrupt-1725000000001`)).toEqual(corruptBytes)
+    expect(await readFile(`${filePath}.corrupt-1725000000001-test-id`)).toEqual(corruptBytes)
     expect(await store.exists()).toBe(false)
   })
 
@@ -134,7 +139,7 @@ describe('AtomicJsonStore', () => {
 
     await expect(store.read()).resolves.toEqual({ value: 'default' })
 
-    expect(await readFile(`${filePath}.corrupt-1725000000002`)).toEqual(corruptBytes)
+    expect(await readFile(`${filePath}.corrupt-1725000000002-test-id`)).toEqual(corruptBytes)
     expect(await store.exists()).toBe(false)
   })
 
@@ -177,6 +182,120 @@ describe('AtomicJsonStore', () => {
     expect(await readdir(root)).toEqual(['store.json'])
   })
 
+  it('serializes concurrent recovering reads into one collision-safe backup', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.from('{"value":"unterminated', 'utf8')
+    await writeFile(filePath, corruptBytes)
+    const store = createStore(
+      filePath,
+      () => 1_725_000_000_010,
+      () => 'concurrent-read',
+    )
+
+    const reads = Array.from({ length: 24 }, () => store.read())
+
+    await expect(Promise.all(reads)).resolves.toEqual(
+      Array.from({ length: 24 }, () => ({ value: 'default' })),
+    )
+    expect(await readdir(root)).toEqual([
+      'store.json.corrupt-1725000000010-concurrent-read',
+    ])
+    expect(
+      await readFile(`${filePath}.corrupt-1725000000010-concurrent-read`),
+    ).toEqual(corruptBytes)
+  })
+
+  it('completes corrupt recovery before a subsequently invoked write', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.concat([
+      Buffer.from('{"value":"', 'utf8'),
+      Buffer.alloc(32 * 1024 * 1024, 0x78),
+    ])
+    await writeFile(filePath, corruptBytes)
+    const store = createStore(
+      filePath,
+      () => 1_725_000_000_011,
+      () => 'read-before-write',
+    )
+
+    const recovery = store.read()
+    const write = store.write({ value: 'queued-after-recovery' })
+
+    await expect(recovery).resolves.toEqual({ value: 'default' })
+    await expect(write).resolves.toBeUndefined()
+    await expect(store.read()).resolves.toEqual({ value: 'queued-after-recovery' })
+    const recoveredBytes = await readFile(
+      `${filePath}.corrupt-1725000000011-read-before-write`,
+    )
+    expect(recoveredBytes.equals(corruptBytes)).toBe(true)
+  })
+
+  it('makes a recovering read observe a previously invoked queued write', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    await writeFile(filePath, '{"value":', 'utf8')
+    const store = createStore(
+      filePath,
+      () => 1_725_000_000_012,
+      () => 'write-before-read',
+    )
+
+    const write = store.write({ value: 'queued-before-read' })
+    const read = store.read()
+
+    await expect(write).resolves.toBeUndefined()
+    await expect(read).resolves.toEqual({ value: 'queued-before-read' })
+    expect(await readdir(root)).toEqual(['store.json'])
+  })
+
+  it('preserves an occupied backup candidate and retries with a new id', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.from('{"value":', 'utf8')
+    const preservedBytes = Buffer.from('preserved backup bytes', 'utf8')
+    const firstCandidate = `${filePath}.corrupt-1725000000013-first-id`
+    const secondCandidate = `${filePath}.corrupt-1725000000013-second-id`
+    await writeFile(filePath, corruptBytes)
+    await writeFile(firstCandidate, preservedBytes)
+    const ids = ['first-id', 'second-id']
+    const store = createStore(
+      filePath,
+      () => 1_725_000_000_013,
+      () => ids.shift() ?? 'unexpected-id',
+    )
+
+    await expect(store.read()).resolves.toEqual({ value: 'default' })
+
+    expect(await readFile(firstCandidate)).toEqual(preservedBytes)
+    expect(await readFile(secondCandidate)).toEqual(corruptBytes)
+    expect(await readdir(root)).toEqual([
+      'store.json.corrupt-1725000000013-first-id',
+      'store.json.corrupt-1725000000013-second-id',
+    ])
+  })
+
+  it('never replaces a pre-existing timestamp-only corrupt backup', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.from('{"value":', 'utf8')
+    const preservedBytes = Buffer.from('older preserved bytes', 'utf8')
+    const occupiedPath = `${filePath}.corrupt-1725000000014`
+    await writeFile(filePath, corruptBytes)
+    await writeFile(occupiedPath, preservedBytes)
+    const store = createStore(
+      filePath,
+      () => 1_725_000_000_014,
+      () => 'new-backup-id',
+    )
+
+    await expect(store.read()).resolves.toEqual({ value: 'default' })
+
+    expect(await readFile(occupiedPath)).toEqual(preservedBytes)
+    expect(await readFile(`${occupiedPath}-new-backup-id`)).toEqual(corruptBytes)
+  })
+
   it('cleans its temporary sibling when replacement fails', async () => {
     const root = await createRoot()
     const filePath = join(root, 'store.json')
@@ -187,6 +306,20 @@ describe('AtomicJsonStore', () => {
 
     expect(await readdir(root)).toEqual(['store.json'])
     expect((await stat(filePath)).isDirectory()).toBe(true)
+  })
+
+  it('continues the operation queue after a rejected write and leaves no temporary files', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    await mkdir(filePath)
+    const store = createStore(filePath)
+
+    await expect(store.write({ value: 'blocked' })).rejects.toBeDefined()
+    await rm(filePath, { recursive: true })
+    await expect(store.write({ value: 'recovered' })).resolves.toBeUndefined()
+
+    await expect(store.read()).resolves.toEqual({ value: 'recovered' })
+    expect(await readdir(root)).toEqual(['store.json'])
   })
 
   it('reports whether the destination exists', async () => {

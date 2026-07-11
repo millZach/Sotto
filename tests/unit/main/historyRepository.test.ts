@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { ZodError } from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,6 +28,11 @@ async function createRepository(
   roots.push(root)
   const filePath = join(root, 'history.json')
   return { filePath, repository: new HistoryRepository(filePath, { now }) }
+}
+
+async function recoverySiblingNames(filePath: string): Promise<string[]> {
+  const prefix = `${basename(filePath)}.corrupt-`
+  return (await readdir(dirname(filePath))).filter((name) => name.startsWith(prefix)).sort()
 }
 
 afterEach(async () => {
@@ -198,6 +203,35 @@ describe('HistoryRepository', () => {
     expect(await readFile(filePath, 'utf8')).toBe('[]\n')
   })
 
+  it('clears only exact history recovery siblings while leaving active history absent', async () => {
+    const { filePath, repository } = await createRepository(() => 1_725_000_000_015)
+    const firstCorruptBytes = Buffer.from('[{"text":"private transcript one"}', 'utf8')
+    const secondCorruptBytes = Buffer.from('[{"text":"private transcript two"}', 'utf8')
+    await writeFile(filePath, firstCorruptBytes)
+    await expect(repository.list()).resolves.toEqual([])
+    await writeFile(filePath, secondCorruptBytes)
+    await expect(repository.list()).resolves.toEqual([])
+    const recoveryFiles = await recoverySiblingNames(filePath)
+    expect(recoveryFiles.length).toBeGreaterThan(0)
+
+    const unrelatedFiles = [
+      'history.json.corrupt',
+      'history.json.corrupted-1725000000015',
+      'history.json.tmp-user-note',
+      'other-history.json.corrupt-1725000000015-id',
+    ]
+    await Promise.all(
+      unrelatedFiles.map((name) => writeFile(join(dirname(filePath), name), 'unrelated', 'utf8')),
+    )
+    expect(await repository.exists()).toBe(false)
+
+    await repository.clear()
+
+    expect(await recoverySiblingNames(filePath)).toEqual([])
+    expect(await repository.exists()).toBe(false)
+    expect((await readdir(dirname(filePath))).sort()).toEqual(unrelatedFiles.sort())
+  })
+
   it('returns entry and array copies that callers cannot use to mutate stored history', async () => {
     const { repository } = await createRepository()
     const added = await repository.add(createEntry('1', 1, 'original'), {
@@ -252,7 +286,9 @@ describe('HistoryRepository', () => {
 
     await expect(repository.list()).resolves.toEqual([])
 
-    expect(await readFile(`${filePath}.corrupt-1725000000004`)).toEqual(corruptBytes)
+    const backups = await recoverySiblingNames(filePath)
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(false)
   })
 
@@ -263,7 +299,9 @@ describe('HistoryRepository', () => {
 
     await expect(repository.list()).resolves.toEqual([])
 
-    expect(await readFile(`${filePath}.corrupt-1725000000005`)).toEqual(corruptBytes)
+    const backups = await recoverySiblingNames(filePath)
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(false)
   })
 

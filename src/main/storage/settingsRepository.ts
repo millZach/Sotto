@@ -8,6 +8,7 @@ export interface SettingsRepositoryOptions {
 
 export class SettingsRepository {
   private readonly store: AtomicJsonStore<AppSettings>
+  private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.store =
@@ -21,27 +22,51 @@ export class SettingsRepository {
   }
 
   async get(): Promise<AppSettings> {
-    return parseSettings(await this.store.read())
+    await this.mutationTail
+    return this.readSettings()
   }
 
   async save(input: unknown): Promise<AppSettings> {
     const settings = parseSettings(input)
-    await this.store.write(settings)
-    return parseSettings(settings)
+    return this.enqueueMutation(async () => {
+      await this.store.write(settings)
+      return parseSettings(settings)
+    })
   }
 
   async update(patch: Partial<AppSettings>): Promise<AppSettings> {
-    const current = await this.get()
-    return this.save({ ...current, ...patch })
+    const patchSnapshot = { ...patch }
+    return this.enqueueMutation(async () => {
+      const current = await this.readSettings()
+      const settings = parseSettings({ ...current, ...patchSnapshot })
+      await this.store.write(settings)
+      return parseSettings(settings)
+    })
   }
 
   async reset(): Promise<AppSettings> {
     const settings = parseSettings(DEFAULT_SETTINGS)
-    await this.store.write(settings)
-    return parseSettings(settings)
+    return this.enqueueMutation(async () => {
+      await this.store.write(settings)
+      return parseSettings(settings)
+    })
   }
 
-  exists(): Promise<boolean> {
+  async exists(): Promise<boolean> {
+    await this.mutationTail
     return this.store.exists()
+  }
+
+  private async readSettings(): Promise<AppSettings> {
+    return parseSettings(await this.store.read())
+  }
+
+  private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {
+    const operation = this.mutationTail.then(mutation)
+    this.mutationTail = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    return operation
   }
 }

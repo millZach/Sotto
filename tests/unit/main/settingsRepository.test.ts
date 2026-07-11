@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -113,6 +113,29 @@ describe('SettingsRepository', () => {
     expect(await repository.get()).toEqual(updated)
   })
 
+  it('serializes concurrent disjoint updates without losing either patch', async () => {
+    const { filePath, repository } = await createRepository()
+
+    await Promise.all([
+      repository.update({ theme: 'dark' }),
+      repository.update({ soundCues: false }),
+    ])
+
+    const persisted = await new SettingsRepository(filePath).get()
+    expect(persisted.theme).toBe('dark')
+    expect(persisted.soundCues).toBe(false)
+  })
+
+  it('makes get observe a previously invoked update', async () => {
+    const { repository } = await createRepository()
+
+    const update = repository.update({ theme: 'dark' })
+    const get = repository.get()
+    const [, observed] = await Promise.all([update, get])
+
+    expect(observed.theme).toBe('dark')
+  })
+
   it('normalizes invalid runtime values supplied through update', async () => {
     const { repository } = await createRepository()
     await repository.save({ theme: 'dark', language: 'fr' })
@@ -147,7 +170,11 @@ describe('SettingsRepository', () => {
 
     expect(settings).toEqual(DEFAULT_SETTINGS)
     expect(settings).not.toBe(DEFAULT_SETTINGS)
-    expect(await readFile(`${filePath}.corrupt-1725000000003`)).toEqual(corruptBytes)
+    const backups = (await readdir(dirname(filePath))).filter((name) =>
+      name.startsWith('settings.json.corrupt-1725000000003-'),
+    )
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(false)
   })
 })

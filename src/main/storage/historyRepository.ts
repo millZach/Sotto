@@ -1,3 +1,6 @@
+import { readdir, unlink } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+
 import { z } from 'zod'
 
 import {
@@ -8,6 +11,10 @@ import {
 import { AtomicJsonStore } from './atomicJsonStore'
 
 const historySchema = z.array(historyEntrySchema)
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code
+}
 
 export interface HistoryRepositoryOptions {
   now?: () => number
@@ -58,7 +65,10 @@ export class HistoryRepository {
   private readonly store: AtomicJsonStore<HistoryEntry[]>
   private mutationTail: Promise<void> = Promise.resolve()
 
-  constructor(filePath: string, options: HistoryRepositoryOptions = {}) {
+  constructor(
+    private readonly filePath: string,
+    options: HistoryRepositoryOptions = {},
+  ) {
     this.store =
       options.store ??
       new AtomicJsonStore(
@@ -120,12 +130,12 @@ export class HistoryRepository {
 
   clear(): Promise<void> {
     return this.enqueueMutation(async () => {
-      if (!(await this.store.exists())) {
-        return
+      if (await this.store.exists()) {
+        await this.store.read()
+        await this.store.write([])
       }
 
-      await this.store.read()
-      await this.store.write([])
+      await this.removeRecoverySiblings()
     })
   }
 
@@ -140,6 +150,36 @@ export class HistoryRepository {
 
   private async peekSorted(): Promise<HistoryEntry[]> {
     return sortEntries(await this.store.peek())
+  }
+
+  private async removeRecoverySiblings(): Promise<void> {
+    const directory = dirname(this.filePath)
+    const recoveryPrefix = `${basename(this.filePath)}.corrupt-`
+    let siblingNames: string[]
+
+    try {
+      siblingNames = await readdir(directory)
+    } catch (error) {
+      if (hasErrorCode(error, 'ENOENT')) {
+        return
+      }
+
+      throw error
+    }
+
+    await Promise.all(
+      siblingNames
+        .filter((name) => name.startsWith(recoveryPrefix))
+        .map(async (name) => {
+          try {
+            await unlink(join(directory, name))
+          } catch (error) {
+            if (!hasErrorCode(error, 'ENOENT')) {
+              throw error
+            }
+          }
+        }),
+    )
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

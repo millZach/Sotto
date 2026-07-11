@@ -368,25 +368,29 @@ describe('HistoryRepository', () => {
 })
 ```
 
-Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>`, non-mutating `peek()` behavior for valid, missing, syntax-corrupt, and semantically invalid JSON, field-level settings recovery, disabled-history no-write behavior (including leaving a corrupt file byte-for-byte unchanged with no backup or temporary sibling), case-insensitive search, entry deletion, and clear.
+Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>-<uuid>`, non-mutating `peek()` behavior for valid, missing, syntax-corrupt, and semantically invalid JSON, field-level settings recovery, disabled-history no-write behavior (including leaving a corrupt file byte-for-byte unchanged with no backup or temporary sibling), case-insensitive search, entry deletion, and clear. Use a deterministic clock and ID seam while exercising the real temporary filesystem to cover concurrent recovering reads, recovery/write invocation order in both directions, occupied backup-name retry, and operation-queue recovery after a rejected write. Add repository tests proving concurrent disjoint settings patches are both persisted, a `get()` invoked after a mutation observes it, and clearing history deletes exact `history.json.corrupt-*` recovery siblings without deleting unrelated files.
 
 - [ ] **Step 2: Run and observe RED**
 
-Run: `npx vitest run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts`
+Run: `npm.cmd test -- --run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts`
 
 Expected: FAIL because the storage modules do not exist.
 
 - [ ] **Step 3: Implement the repositories**
 
-`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, and a default factory. `read()` parses UTF-8 JSON; on syntax or semantic validation failure it renames the original with a timestamped `.corrupt-` suffix and returns fresh defaults. `peek()` uses the same parsing rules but returns fresh defaults for missing or invalid input without renaming, creating, or writing any filesystem entry. `write()` writes a sibling temporary file with mode `0o600`, then renames it over the destination. `SettingsRepository` delegates to `parseSettings`. `HistoryRepository.add(entry, { enabled, retention })` validates every entry, uses `peek()` when disabled so even corrupt history remains byte-for-byte untouched, sorts enabled entries descending by `createdAt`, and applies finite retention after add.
+`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, a default factory, and optional clock and ID factories. A single rejection-resilient per-store operation queue serializes recovering `read()`, non-mutating `peek()`, `write()`, and `exists()` calls in invocation order while still returning each operation's rejection to its caller. `read()` parses UTF-8 JSON; on syntax or semantic validation failure it renames the original to an unoccupied `*.corrupt-<timestamp>-<uuid>` sibling and returns fresh defaults. Backup-name collisions request a new ID and retry with an explicit bound, never replacing already-preserved bytes. `peek()` uses the same parsing rules but returns fresh defaults for missing or invalid input without renaming, creating, or writing any filesystem entry. `write()` writes a sibling temporary file with mode `0o600`, syncs and closes it, then renames it over the destination.
+
+`SettingsRepository` delegates to `parseSettings` and uses its own rejection-resilient mutation queue for complete save, update read→merge→parse→write, and reset transactions. Public `get()` and `exists()` wait for mutations invoked before them, while queued mutations call the store directly to avoid self-deadlock. `HistoryRepository.add(entry, { enabled, retention })` validates every entry, uses `peek()` when disabled so even corrupt history remains byte-for-byte untouched, sorts enabled entries descending by `createdAt`, and applies finite retention after add. `HistoryRepository.clear()` keeps its prior active-file behavior and also removes only siblings beginning with the exact `<history-basename>.corrupt-` prefix so recovery files cannot retain transcript text.
+
+The rename step is an atomic complete-file replacement, so readers do not observe a partially written JSON document. This design does not claim directory-entry durability across power loss because the parent directory is not synced.
 
 - [ ] **Step 4: Verify GREEN and regressions**
 
 Run:
 
 ```powershell
-npx vitest run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts
-npm test
+npm.cmd test -- --run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts
+npm.cmd test
 ```
 
 Expected: storage tests and the full suite pass with no warnings.
@@ -395,7 +399,7 @@ Expected: storage tests and the full suite pass with no warnings.
 
 ```powershell
 git add src/main/storage tests/unit/main
-git commit -m "feat: persist settings and private transcript history"
+git commit -m "fix: serialize storage transactions and recovery"
 ```
 
 ### Task 4: Build secure native windows, tray, shortcut, startup, IPC, and preload services
