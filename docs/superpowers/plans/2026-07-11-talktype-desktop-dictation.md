@@ -368,7 +368,7 @@ describe('HistoryRepository', () => {
 })
 ```
 
-Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>`, field-level settings recovery, disabled-history no-write behavior, case-insensitive search, entry deletion, and clear.
+Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>`, non-mutating `peek()` behavior for valid, missing, syntax-corrupt, and semantically invalid JSON, field-level settings recovery, disabled-history no-write behavior (including leaving a corrupt file byte-for-byte unchanged with no backup or temporary sibling), case-insensitive search, entry deletion, and clear.
 
 - [ ] **Step 2: Run and observe RED**
 
@@ -378,7 +378,7 @@ Expected: FAIL because the storage modules do not exist.
 
 - [ ] **Step 3: Implement the repositories**
 
-`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, and a default factory. `read()` parses UTF-8 JSON; on syntax failure it renames the original with a timestamped `.corrupt-` suffix and returns defaults. `write()` writes a sibling temporary file with mode `0o600`, then renames it over the destination. `SettingsRepository` delegates to `parseSettings`. `HistoryRepository.add(entry, { enabled, retention })` validates every entry, returns without writing when disabled, sorts descending by `createdAt`, and applies finite retention after add.
+`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, and a default factory. `read()` parses UTF-8 JSON; on syntax or semantic validation failure it renames the original with a timestamped `.corrupt-` suffix and returns fresh defaults. `peek()` uses the same parsing rules but returns fresh defaults for missing or invalid input without renaming, creating, or writing any filesystem entry. `write()` writes a sibling temporary file with mode `0o600`, then renames it over the destination. `SettingsRepository` delegates to `parseSettings`. `HistoryRepository.add(entry, { enabled, retention })` validates every entry, uses `peek()` when disabled so even corrupt history remains byte-for-byte untouched, sorts enabled entries descending by `createdAt`, and applies finite retention after add.
 
 - [ ] **Step 4: Verify GREEN and regressions**
 

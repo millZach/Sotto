@@ -77,12 +77,12 @@ export class HistoryRepository {
   add(entry: HistoryEntry, options: AddHistoryOptions): Promise<HistoryEntry[]> {
     return this.enqueueMutation(async () => {
       const parsedEntry = parseHistoryEntry(entry)
-      const current = await this.readSorted()
 
       if (!options.enabled) {
-        return cloneEntries(current)
+        return cloneEntries(await this.peekSorted())
       }
 
+      const current = await this.readSorted()
       const withoutReplacement = current.filter((candidate) => candidate.id !== parsedEntry.id)
       const sorted = sortEntries([...withoutReplacement, parsedEntry])
       const retained = applyRetention(sorted, options.retention)
@@ -136,6 +136,10 @@ export class HistoryRepository {
 
   private async readSorted(): Promise<HistoryEntry[]> {
     return sortEntries(await this.store.read())
+  }
+
+  private async peekSorted(): Promise<HistoryEntry[]> {
+    return sortEntries(await this.store.peek())
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

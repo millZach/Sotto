@@ -58,6 +58,60 @@ describe('AtomicJsonStore', () => {
     await expect(createStore(filePath).read()).resolves.toEqual({ value: 'persisted' })
   })
 
+  it('peeks valid UTF-8 JSON without changing the file', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const originalBytes = Buffer.from('{\r\n  "value": "persisted"\r\n}\r\n', 'utf8')
+    await writeFile(filePath, originalBytes)
+
+    await expect(createStore(filePath).peek()).resolves.toEqual({ value: 'persisted' })
+
+    expect(await readFile(filePath)).toEqual(originalBytes)
+    expect(await readdir(root)).toEqual(['store.json'])
+  })
+
+  it('returns fresh defaults when peeking a missing file without creating it', async () => {
+    const filePath = join(await createRoot(), 'nested', 'store.json')
+    let defaultNumber = 0
+    const store = new AtomicJsonStore(
+      filePath,
+      (input) => exampleSchema.parse(input),
+      () => ({ value: `default-${++defaultNumber}` }),
+    )
+
+    const first = await store.peek()
+    const second = await store.peek()
+
+    expect(first).toEqual({ value: 'default-1' })
+    expect(second).toEqual({ value: 'default-2' })
+    expect(first).not.toBe(second)
+    expect(await store.exists()).toBe(false)
+  })
+
+  it('peeks syntax-corrupt input without changing its exact bytes or creating siblings', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.from([0xff, 0xfe, 0x7b, 0x22, 0x76, 0x61, 0x6c, 0x75, 0x65])
+    await writeFile(filePath, corruptBytes)
+
+    await expect(createStore(filePath).peek()).resolves.toEqual({ value: 'default' })
+
+    expect(await readFile(filePath)).toEqual(corruptBytes)
+    expect(await readdir(root)).toEqual(['store.json'])
+  })
+
+  it('peeks semantically invalid JSON without changing its exact bytes or creating siblings', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const corruptBytes = Buffer.from('{\r\n  "value": 42\r\n}\r\n', 'utf8')
+    await writeFile(filePath, corruptBytes)
+
+    await expect(createStore(filePath).peek()).resolves.toEqual({ value: 'default' })
+
+    expect(await readFile(filePath)).toEqual(corruptBytes)
+    expect(await readdir(root)).toEqual(['store.json'])
+  })
+
   it('backs up syntax-corrupt input with its exact bytes and returns a default', async () => {
     const root = await createRoot()
     const filePath = join(root, 'store.json')

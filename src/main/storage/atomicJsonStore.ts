@@ -6,6 +6,11 @@ function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
+type ReadResult<T> =
+  | { status: 'valid'; value: T }
+  | { status: 'missing' }
+  | { status: 'invalid' }
+
 export class AtomicJsonStore<T> {
   private writeTail: Promise<void> = Promise.resolve()
 
@@ -17,24 +22,21 @@ export class AtomicJsonStore<T> {
   ) {}
 
   async read(): Promise<T> {
-    let contents: string
+    const result = await this.readValue()
 
-    try {
-      contents = await readFile(this.filePath, 'utf8')
-    } catch (error) {
-      if (hasErrorCode(error, 'ENOENT')) {
-        return this.createDefault()
-      }
-
-      throw error
+    if (result.status === 'valid') {
+      return result.value
     }
-
-    try {
-      return this.parse(JSON.parse(contents) as unknown)
-    } catch {
+    if (result.status === 'invalid') {
       await rename(this.filePath, `${this.filePath}.corrupt-${this.now()}`)
-      return this.createDefault()
     }
+
+    return this.createDefault()
+  }
+
+  async peek(): Promise<T> {
+    const result = await this.readValue()
+    return result.status === 'valid' ? result.value : this.createDefault()
   }
 
   write(value: T): Promise<void> {
@@ -53,6 +55,26 @@ export class AtomicJsonStore<T> {
       }
 
       throw error
+    }
+  }
+
+  private async readValue(): Promise<ReadResult<T>> {
+    let contents: string
+
+    try {
+      contents = await readFile(this.filePath, 'utf8')
+    } catch (error) {
+      if (hasErrorCode(error, 'ENOENT')) {
+        return { status: 'missing' }
+      }
+
+      throw error
+    }
+
+    try {
+      return { status: 'valid', value: this.parse(JSON.parse(contents) as unknown) }
+    } catch {
+      return { status: 'invalid' }
     }
   }
 

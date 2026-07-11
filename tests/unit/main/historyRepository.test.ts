@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { ZodError } from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -69,6 +69,22 @@ describe('HistoryRepository', () => {
     expect(entries.map((entry) => entry.id)).toEqual(['1'])
     expect(await readFile(filePath)).toEqual(beforeBytes)
     expect((await stat(filePath)).ino).toBe(beforeStat.ino)
+  })
+
+  it('leaves corrupt history byte-for-byte untouched when history is disabled', async () => {
+    const { filePath, repository } = await createRepository(() => 1_725_000_000_006)
+    const corruptBytes = Buffer.from([0xff, 0xfe, 0x5b, 0x7b, 0x22, 0x69, 0x64, 0x22])
+    await writeFile(filePath, corruptBytes)
+
+    const entries = await repository.add(createEntry('ignored', 1), {
+      enabled: false,
+      retention: 100,
+    })
+
+    expect(entries).toEqual([])
+    expect(await readdir(dirname(filePath))).toEqual(['history.json'])
+    expect(await readFile(filePath)).toEqual(corruptBytes)
+    expect(await repository.exists()).toBe(true)
   })
 
   it('lists persisted entries newest first with an ascending id tie-break', async () => {
