@@ -9,17 +9,17 @@
 
 TalkType is a privacy-conscious desktop dictation application inspired by the speed and low-friction interaction of WhisperFlow. A user presses a system-wide hotkey, speaks, presses the hotkey again, and receives polished text at the active cursor. The same text is always copied to the clipboard so a failed paste never loses the transcription.
 
-The application must feel dependable enough to remain running in the system tray throughout the day. It must explain model downloads and permission requirements, show visible state changes, recover cleanly from failures, and expose important behavior through understandable settings.
+The application must feel dependable enough to remain running in the system tray throughout the day. It must explain optional model downloads and permission requirements, show visible state changes, recover cleanly from failures, and expose important behavior through understandable settings.
 
 ## 2. Success criteria
 
 The first release is successful when all of the following are true:
 
-1. A Windows user can install and launch TalkType without installing Python or supplying a cloud API key.
-2. First-run setup guides the user through microphone access, offline model download, hotkey registration, and a recording test.
+1. A Windows user can install and launch TalkType without installing Python, supplying a cloud API key, or downloading a model separately.
+2. The installer includes the Balanced model and required inference runtime; first-run setup guides the user through microphone access, model verification, hotkey registration, and a recording test.
 3. `Ctrl+Shift+Space` starts dictation globally by default; pressing it again ends dictation. The shortcut is configurable.
 4. A compact always-on-top widget appears without taking focus from the application containing the user's cursor.
-5. Recorded speech is transcribed locally after the selected Whisper model has been downloaded.
+5. Recorded speech is transcribed locally using either the bundled Balanced model or an optional model the user explicitly installed.
 6. Successful text is automatically copied and, when enabled, pasted into the previously focused application.
 7. Light, dark, and system-following themes are complete and visually consistent.
 8. Settings cover microphone, hotkey, transcription model, language, inference preference, output behavior, sound cues, startup, and history privacy.
@@ -32,14 +32,14 @@ The first release is successful when all of the following are true:
 
 ### Included
 
-- Offline-first transcription using Whisper-compatible ONNX models through Transformers.js.
+- Offline-first transcription using Whisper-compatible ONNX models through Transformers.js, with the default Balanced model bundled in the installer.
 - A Windows installer and an unpacked development build.
 - A main management window, a compact dictation widget, and a tray menu.
 - A toggle-style global shortcut. The first press starts recording and the second stops it.
 - In-memory microphone capture and post-recording transcription.
 - Local settings and optional local transcript history.
 - Automatic clipboard copy and best-effort Windows paste automation.
-- English and multilingual model choices exposed as plain-language speed/accuracy presets.
+- English and multilingual model choices exposed as plain-language speed/accuracy presets. Optional non-bundled models require an explicit download disclosure and consent.
 
 ### Deliberately excluded from the first release
 
@@ -56,7 +56,9 @@ These exclusions preserve a coherent offline desktop product while leaving clear
 
 TalkType uses Electron, React, and TypeScript. Electron provides the application lifecycle, system tray, global shortcut, clipboard, native windows, and Windows startup integration. React provides the main interface and widget UI. Transformers.js runs Whisper inference in a dedicated Web Worker so model loading and transcription do not freeze the interface.
 
-The renderer captures mono floating-point audio with Web Audio, resamples it to 16 kHz, and transfers the sample buffer to the transcription worker. The worker attempts WebGPU when requested and available, then falls back to the supported browser/WASM path. Model assets download during onboarding and remain in the application's persistent browser cache for offline reuse.
+The renderer captures mono floating-point audio with Web Audio, resamples it to 16 kHz, and transfers the sample buffer to the transcription worker. The worker attempts WebGPU when requested and available, then falls back to the supported browser/WASM path. The Balanced preset uses the multilingual `Xenova/whisper-base` Transformers.js model. Packaging fetches only its required quantized inference, tokenizer, and configuration files from a pinned revision, verifies their SHA-256 hashes, and places them with the WASM runtime inside the installer. Remote model access is disabled during normal transcription.
+
+Fast or Accurate model variants may be installed later from the model manager. Before any optional download, TalkType displays the source, approximate size, licensing, and the fact that the hosting provider will receive ordinary network metadata such as the user's IP address and request time. The download begins only after explicit consent and is cached for subsequent offline use.
 
 The main and renderer processes communicate only through a narrow, typed preload bridge. Node integration remains disabled in renderers, context isolation remains enabled, and every IPC operation validates its input.
 
@@ -118,11 +120,22 @@ Raw audio remains in memory and is discarded after worker completion.
 Responsibilities:
 
 - Lazily load exactly one model configuration at a time.
-- Report model download and initialization progress.
+- Report model loading and initialization progress.
 - Transcribe transferred 16 kHz audio without blocking the UI thread.
 - Apply language and generation options supported by the chosen model.
 - Return structured success or normalized error responses.
 - Dispose and reload the pipeline when a changed model requires it.
+
+### Model manager
+
+Responsibilities:
+
+- Expose the bundled Balanced model as ready immediately after installation.
+- Present source, approximate size, license, and network-metadata disclosure before an optional model download.
+- Download only allowlisted model files after explicit consent and report file-level progress.
+- Verify downloaded files against a versioned SHA-256 manifest before making them available.
+- Store optional models under the Electron user-data directory and remove them on request.
+- Serve bundled and optional files to the worker through a read-only application protocol while keeping Transformers.js remote loading disabled.
 
 ### Settings and history stores
 
@@ -161,7 +174,7 @@ Onboarding contains four focused steps:
 
 1. Welcome and privacy explanation.
 2. Microphone permission and input-level test.
-3. Speed/accuracy preset selection and model download with file-level progress.
+3. Bundled Balanced model verification, with optional access to clearly disclosed Fast or Accurate model downloads.
 4. Hotkey and paste test inside a safe TalkType text field.
 
 The user can return to any step. Setup is considered complete only after microphone access and a usable model are confirmed.
@@ -254,7 +267,7 @@ Every session receives a unique identifier. Stop and cancel operations are idemp
 - **Microphone denied:** show the Windows permission path and a retry button.
 - **No input device:** keep manual navigation usable and link to device settings.
 - **Hotkey conflict:** preserve the previous working shortcut and explain that another application owns the proposed combination.
-- **Model download interrupted:** retain cached parts where supported and expose retry without restarting onboarding.
+- **Optional model download interrupted:** retain cached parts where supported and expose retry without affecting the bundled Balanced model.
 - **WebGPU unavailable or failed:** retry once through CPU/WASM and remember the working backend for the session.
 - **Out of memory:** recommend a smaller preset and unload the failed pipeline.
 - **Silence-only audio:** do not alter the clipboard or history; show “No speech detected.”
@@ -271,11 +284,13 @@ Production logs contain operational metadata but never transcript text or raw au
 - IPC settings and history payloads are schema-validated in the main process.
 - Navigation, new-window creation, and unexpected permission requests are denied.
 - Microphone access is granted only to the trusted application origin.
-- Model downloads are restricted to the selected Hugging Face model identifiers over HTTPS.
+- Normal transcription sets Transformers.js to local-only model and runtime paths with remote model loading disabled.
+- Optional model downloads are restricted to an allowlist of reviewed Hugging Face model identifiers over HTTPS and require explicit consent before the first request.
 - Audio is kept only in memory and transferred to the local worker.
 - History is local, optional, bounded, and clearable.
 - Paste automation uses a static command and never interpolates user text.
-- No analytics, crash upload, cloud transcription, or update telemetry is included.
+- No analytics, crash upload, cloud transcription, update telemetry, per-use fee, or user account is included.
+- Required third-party license notices ship with the application, and only permissively licensed model assets are eligible for bundling or optional installation.
 
 ## 14. Testing strategy
 
@@ -310,7 +325,7 @@ Production logs contain operational metadata but never transcript text or raw au
 
 ### Manual Windows verification
 
-- Real microphone capture and transcription using the downloaded model.
+- Real microphone capture and transcription using the bundled model.
 - Global shortcut while Notepad, a browser text field, and Microsoft Word are active.
 - Paste behavior in a normal process and documented fallback against an elevated process.
 - Tray behavior, startup registration, multi-monitor positioning, sleep/wake, and quit cleanup.
@@ -331,8 +346,7 @@ Implementation is not considered complete until:
 
 - Complete source code and locked dependency manifest.
 - Development and test commands in `README.md`.
-- Windows installer and unpacked build under the release output directory.
+- Windows installer and unpacked build under the release output directory, both containing the Balanced model and local inference runtime.
 - Automated test suite and coverage report.
 - Design screenshots used for visual review.
 - Verification record mapping success criteria to test or manual evidence.
-
