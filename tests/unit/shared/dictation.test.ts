@@ -7,6 +7,14 @@ import {
   type DictationState,
 } from '../../../src/shared/dictation'
 
+function requestSession(sessionId = 'current'): DictationState {
+  return reduceDictation(initialDictationState, { type: 'REQUESTED', sessionId })
+}
+
+function startListening(sessionId = 'current', startedAt = 100): DictationState {
+  return reduceDictation(requestSession(sessionId), { type: 'STARTED', sessionId, startedAt })
+}
+
 describe('dictation reducer', () => {
   it('starts idle and requests permission for a new session', () => {
     expect(initialDictationState).toEqual({ status: 'idle' })
@@ -22,14 +30,14 @@ describe('dictation reducer', () => {
     ).toBe(requested)
   })
 
-  it('starts listening from idle as a test seam', () => {
+  it('ignores STARTED while idle with the exact idle reference', () => {
     expect(
       reduceDictation(initialDictationState, {
         type: 'STARTED',
-        sessionId: 'direct',
+        sessionId: 'unrequested',
         startedAt: 100,
       }),
-    ).toEqual({ status: 'listening', sessionId: 'direct', startedAt: 100, level: 0 })
+    ).toBe(initialDictationState)
   })
 
   it('starts listening only for the matching permission request', () => {
@@ -47,11 +55,7 @@ describe('dictation reducer', () => {
   })
 
   it('changes only a matching listening level and clamps finite values', () => {
-    const listening = reduceDictation(initialDictationState, {
-      type: 'STARTED',
-      sessionId: 'current',
-      startedAt: 100,
-    })
+    const listening = startListening()
     const middle = reduceDictation(listening, {
       type: 'LEVEL_CHANGED',
       sessionId: 'current',
@@ -76,11 +80,7 @@ describe('dictation reducer', () => {
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
     'ignores the non-finite listening level %s',
     (level) => {
-      const listening = reduceDictation(initialDictationState, {
-        type: 'STARTED',
-        sessionId: 'current',
-        startedAt: 100,
-      })
+      const listening = startListening()
 
       expect(
         reduceDictation(listening, { type: 'LEVEL_CHANGED', sessionId: 'current', level }),
@@ -89,11 +89,7 @@ describe('dictation reducer', () => {
   )
 
   it('stops only a matching listening session and preserves startedAt', () => {
-    const listening = reduceDictation(initialDictationState, {
-      type: 'STARTED',
-      sessionId: 'current',
-      startedAt: 123,
-    })
+    const listening = startListening('current', 123)
 
     expect(reduceDictation(listening, { type: 'STOPPED', sessionId: 'stale' })).toBe(listening)
 
@@ -103,11 +99,7 @@ describe('dictation reducer', () => {
   })
 
   it('rejects a stale transcription result', () => {
-    const listening = reduceDictation(initialDictationState, {
-      type: 'STARTED',
-      sessionId: 'current',
-      startedAt: 100,
-    })
+    const listening = startListening()
     const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
 
     expect(
@@ -150,10 +142,12 @@ describe('dictation reducer', () => {
   })
 
   it('cancels matching requesting, listening, and processing sessions idempotently', () => {
+    const listening = startListening()
+    const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
     const activeStates = [
-      { status: 'requesting-permission', sessionId: 'current' },
-      { status: 'listening', sessionId: 'current', startedAt: 100, level: 0.5 },
-      { status: 'processing', sessionId: 'current', startedAt: 100 },
+      requestSession(),
+      listening,
+      processing,
     ] satisfies DictationState[]
 
     for (const active of activeStates) {
@@ -166,10 +160,12 @@ describe('dictation reducer', () => {
   })
 
   it('moves matching active sessions to a safe error state', () => {
+    const listening = startListening()
+    const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
     const activeStates = [
-      { status: 'requesting-permission', sessionId: 'current' },
-      { status: 'listening', sessionId: 'current', startedAt: 100, level: 0.5 },
-      { status: 'processing', sessionId: 'current', startedAt: 100 },
+      requestSession(),
+      listening,
+      processing,
     ] satisfies DictationState[]
 
     for (const active of activeStates) {
@@ -190,6 +186,8 @@ describe('dictation reducer', () => {
   })
 
   it('ignores mismatched session events with the exact state reference', () => {
+    const listening = startListening()
+    const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
     const cases: Array<{ state: DictationState; event: DictationEvent }> = [
       {
         state: { status: 'requesting-permission', sessionId: 'current' },
@@ -200,11 +198,11 @@ describe('dictation reducer', () => {
         event: { type: 'CANCELLED', sessionId: 'stale' },
       },
       {
-        state: { status: 'listening', sessionId: 'current', startedAt: 100, level: 0 },
+        state: listening,
         event: { type: 'FAILED', sessionId: 'stale', code: 'failure', message: 'Safe message' },
       },
       {
-        state: { status: 'processing', sessionId: 'current', startedAt: 100 },
+        state: processing,
         event: { type: 'TRANSCRIBED', sessionId: 'stale', text: 'wrong' },
       },
       {
@@ -219,6 +217,8 @@ describe('dictation reducer', () => {
   })
 
   it('ignores invalid transitions with the exact state reference', () => {
+    const listening = startListening()
+    const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
     const cases: Array<{ state: DictationState; event: DictationEvent }> = [
       {
         state: initialDictationState,
@@ -229,11 +229,11 @@ describe('dictation reducer', () => {
         event: { type: 'STOPPED', sessionId: 'current' },
       },
       {
-        state: { status: 'listening', sessionId: 'current', startedAt: 100, level: 0 },
+        state: listening,
         event: { type: 'TRANSCRIBED', sessionId: 'current', text: 'too soon' },
       },
       {
-        state: { status: 'processing', sessionId: 'current', startedAt: 100 },
+        state: processing,
         event: { type: 'LEVEL_CHANGED', sessionId: 'current', level: 0.2 },
       },
       {
@@ -255,6 +255,13 @@ describe('dictation reducer', () => {
     }
   })
 
+  it('ignores a runtime-unknown event with the exact state reference', () => {
+    const requested = requestSession()
+    const unknownEvent = { type: 'RUNTIME_UNKNOWN' } as unknown as DictationEvent
+
+    expect(reduceDictation(requested, unknownEvent)).toBe(requested)
+  })
+
   it('resets only terminal states to the shared idle state', () => {
     const terminalStates: DictationState[] = [
       { status: 'success', sessionId: 'current', text: 'done', output: 'copied' },
@@ -267,13 +274,23 @@ describe('dictation reducer', () => {
       expect(reduceDictation(terminal, { type: 'RESET' })).toBe(initialDictationState)
     }
 
-    const listening: DictationState = {
-      status: 'listening',
-      sessionId: 'current',
-      startedAt: 100,
-      level: 0,
-    }
+    const listening = startListening()
     expect(reduceDictation(listening, { type: 'RESET' })).toBe(listening)
     expect(reduceDictation(initialDictationState, { type: 'RESET' })).toBe(initialDictationState)
+  })
+
+  it('does not let a stale STARTED event revive a reset terminal session', () => {
+    const terminal: DictationState = {
+      status: 'success',
+      sessionId: 'completed',
+      text: 'done',
+      output: 'copied',
+    }
+    const idle = reduceDictation(terminal, { type: 'RESET' })
+
+    expect(idle).toBe(initialDictationState)
+    expect(
+      reduceDictation(idle, { type: 'STARTED', sessionId: 'completed', startedAt: 100 }),
+    ).toBe(idle)
   })
 })

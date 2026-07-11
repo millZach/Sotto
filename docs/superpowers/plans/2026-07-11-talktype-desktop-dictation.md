@@ -244,7 +244,7 @@ git commit -m "build: scaffold secure TalkType desktop app"
 - Create: `src/shared/dictation.ts`
 - Create: `src/shared/transcript.ts`
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 1: Write failing domain tests**
 
 ```ts
 // tests/unit/shared/settings.test.ts
@@ -266,9 +266,19 @@ import { initialDictationState, reduceDictation } from '../../../src/shared/dict
 
 describe('dictation reducer', () => {
   it('rejects a stale transcription result', () => {
-    const listening = reduceDictation(initialDictationState, { type: 'STARTED', sessionId: 'current' })
+    const requested = reduceDictation(initialDictationState, {
+      type: 'REQUESTED',
+      sessionId: 'current',
+    })
+    const listening = reduceDictation(requested, {
+      type: 'STARTED',
+      sessionId: 'current',
+      startedAt: 100,
+    })
     const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
-    expect(reduceDictation(processing, { type: 'TRANSCRIBED', sessionId: 'stale', text: 'wrong' })).toEqual(processing)
+    expect(
+      reduceDictation(processing, { type: 'TRANSCRIBED', sessionId: 'stale', text: 'wrong' }),
+    ).toBe(processing)
   })
 })
 
@@ -283,13 +293,13 @@ describe('formatTranscript', () => {
 })
 ```
 
-- [ ] **Step 2: Run the tests and observe RED**
+- [x] **Step 2: Run the tests and observe RED**
 
 Run: `npx vitest run tests/unit/shared/settings.test.ts tests/unit/shared/dictation.test.ts tests/unit/shared/transcript.test.ts`
 
 Expected: FAIL because the shared domain modules do not exist.
 
-- [ ] **Step 3: Implement the typed domain contracts**
+- [x] **Step 3: Implement the typed domain contracts**
 
 `src/shared/settings.ts` must export `Theme`, `ModelPreset`, `InferencePreference`, `HistoryRetention`, `AppSettings`, `DEFAULT_SETTINGS`, `settingsSchema`, and `parseSettings`. `parseSettings` merges one schema-validated field at a time so a bad persisted field cannot erase valid siblings. Defaults are: system theme, Balanced model, auto language, auto inference, auto-copy true, auto-paste true, 150 ms delay, 60-second recording limit, cues true, startup false, minimized false, history true, 100-entry retention, onboarding incomplete.
 
@@ -308,15 +318,15 @@ export type DictationState =
   | { status: 'error'; sessionId?: string; code: string; message: string }
 ```
 
-The reducer accepts only legal transitions, makes stop/cancel idempotent, and ignores mismatched session identifiers. `src/shared/history.ts` defines the exact persisted transcript entry schema. `src/shared/transcript.ts` trims and collapses whitespace and returns an empty string for silence.
+The reducer accepts `STARTED` only after a matching `REQUESTED` event, accepts only legal transitions, makes stop/cancel idempotent, and ignores mismatched session identifiers. `src/shared/history.ts` defines the exact persisted transcript entry schema. `src/shared/transcript.ts` trims and collapses whitespace and returns an empty string for silence.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/shared`
 
 Expected: all shared-domain tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/shared tests/unit/shared

@@ -48,10 +48,7 @@ export function reduceDictation(
         : state
 
     case 'STARTED':
-      if (
-        state.status !== 'idle' &&
-        (state.status !== 'requesting-permission' || state.sessionId !== event.sessionId)
-      ) {
+      if (state.status !== 'requesting-permission' || state.sessionId !== event.sessionId) {
         return state
       }
 
@@ -123,5 +120,11 @@ export function reduceDictation(
       return state.status === 'success' || state.status === 'cancelled' || state.status === 'error'
         ? initialDictationState
         : state
+
+    default: {
+      const exhaustiveEvent: never = event
+      void exhaustiveEvent
+      return state
+    }
   }
 }
