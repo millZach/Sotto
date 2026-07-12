@@ -1,6 +1,6 @@
 import type { DictationState } from './dictation'
 import type { HistoryEntry } from './history'
-import type { AppSettings, ModelPreset } from './settings'
+import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
 
 export type Unsubscribe = () => void
 
@@ -89,7 +89,7 @@ export type OutputResult = OutputOutcome | UnavailableResult
 
 export interface TalkTypeBridge {
   getSettings(): Promise<AppSettings>
-  updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  updateSettings(patch: SettingsPatch): Promise<AppSettings>
   resetSettings(): Promise<AppSettings>
 
   listHistory(): Promise<HistoryEntry[]>

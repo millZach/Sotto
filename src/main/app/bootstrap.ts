@@ -1,5 +1,6 @@
 import type { HotkeyChangeResult } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
+import type { RendererRole } from '../security'
 
 export interface PermissionWebContents {
   getURL(): string
@@ -7,9 +8,12 @@ export interface PermissionWebContents {
 }
 
 export interface TrustedRenderer {
+  readonly role: RendererRole
   readonly webContents: PermissionWebContents
   readonly url: string
 }
+
+export type TrustedRendererProvider = () => readonly TrustedRenderer[]
 
 export interface PermissionRequestDetails {
   readonly isMainFrame?: boolean
@@ -42,35 +46,63 @@ export interface SessionPermissionAdapter {
   setPermissionCheckHandler(handler: PermissionCheckHandler | null): void
 }
 
-const permissionOwners = new WeakMap<SessionPermissionAdapter, symbol>()
+interface InstalledPermissionPolicy {
+  readonly checkHandler: PermissionCheckHandler
+  readonly requestHandler: PermissionRequestHandler
+  readonly previous: InstalledPermissionPolicy | null
+  cancelled: boolean
+}
+
+const permissionOwners = new WeakMap<SessionPermissionAdapter, InstalledPermissionPolicy>()
+
+export class PermissionPolicyInstallError extends Error {
+  readonly code = 'PERMISSION_POLICY_INSTALL_FAILED'
+
+  constructor() {
+    super('Permission policy installation failed')
+    this.name = 'PermissionPolicyInstallError'
+  }
+}
+
+export class PermissionPolicyCleanupError extends Error {
+  readonly code = 'PERMISSION_POLICY_CLEANUP_FAILED'
+
+  constructor() {
+    super('Permission policy cleanup failed')
+    this.name = 'PermissionPolicyCleanupError'
+  }
+}
 
 function findTrustedRenderer(
   webContents: PermissionWebContents | null,
   requestedUrl: string | undefined,
-  trustedRenderers: readonly TrustedRenderer[],
+  trustedRenderers: TrustedRendererProvider,
 ): TrustedRenderer | undefined {
-  if (
-    webContents === null ||
-    requestedUrl === undefined ||
-    webContents.isDestroyed?.() === true
-  ) {
+  try {
+    if (
+      webContents === null ||
+      requestedUrl === undefined ||
+      webContents.isDestroyed?.() === true
+    ) {
+      return undefined
+    }
+    return trustedRenderers().find(
+      (trusted) =>
+        trusted.role === 'main' &&
+        trusted.webContents === webContents &&
+        trusted.url === requestedUrl &&
+        trusted.url === webContents.getURL(),
+    )
+  } catch {
     return undefined
   }
-
-  return trustedRenderers.find(
-    (trusted) =>
-      trusted.webContents === webContents &&
-      trusted.url === requestedUrl &&
-      trusted.url === webContents.getURL(),
-  )
 }
 
 export function installSessionPermissionPolicy(
   session: SessionPermissionAdapter,
-  trustedRenderers: readonly TrustedRenderer[],
+  trustedRenderers: TrustedRendererProvider,
 ): () => void {
-  const owner = Symbol('talktype-permission-owner')
-  permissionOwners.set(session, owner)
+  const previous = permissionOwners.get(session) ?? null
 
   const requestHandler: PermissionRequestHandler = (
     webContents,
@@ -100,20 +132,73 @@ export function installSessionPermissionPolicy(
     details.mediaType === 'audio' &&
     findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
 
-  session.setPermissionCheckHandler(checkHandler)
-  session.setPermissionRequestHandler(requestHandler)
+  const installed: InstalledPermissionPolicy = {
+    checkHandler,
+    requestHandler,
+    previous,
+    cancelled: false,
+  }
 
-  let cleaned = false
+  try {
+    setPermissionHandlers(session, installed)
+  } catch {
+    if (!trySetPermissionHandlers(session, previous)) {
+      trySetPermissionHandlers(session, null)
+      permissionOwners.delete(session)
+    }
+    throw new PermissionPolicyInstallError()
+  }
+  permissionOwners.set(session, installed)
+
   return () => {
-    if (cleaned) {
+    if (installed.cancelled) {
       return
     }
-    cleaned = true
-    if (permissionOwners.get(session) === owner) {
-      permissionOwners.delete(session)
-      session.setPermissionCheckHandler(null)
-      session.setPermissionRequestHandler(null)
+    if (permissionOwners.get(session) !== installed) {
+      installed.cancelled = true
+      return
     }
+
+    let restored = installed.previous
+    while (restored?.cancelled === true) {
+      restored = restored.previous
+    }
+    try {
+      setPermissionHandlers(session, restored)
+    } catch {
+      if (!trySetPermissionHandlers(session, installed)) {
+        trySetPermissionHandlers(session, null)
+        permissionOwners.delete(session)
+      }
+      throw new PermissionPolicyCleanupError()
+    }
+
+    installed.cancelled = true
+    if (restored === null) {
+      permissionOwners.delete(session)
+    } else {
+      permissionOwners.set(session, restored)
+    }
+  }
+}
+
+function setPermissionHandlers(
+  session: SessionPermissionAdapter,
+  policy: InstalledPermissionPolicy | null,
+): void {
+  session.setPermissionCheckHandler(policy?.checkHandler ?? null)
+  session.setPermissionRequestHandler(policy?.requestHandler ?? null)
+}
+
+function trySetPermissionHandlers(
+  session: SessionPermissionAdapter,
+  policy: InstalledPermissionPolicy | null,
+): boolean {
+  try {
+    setPermissionHandlers(session, policy)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -164,8 +249,18 @@ export interface NativeRuntimeDependencies {
   readonly settings: { get(): Promise<AppSettings> }
   readonly installPermissions: () => () => void
   readonly registerIpc: () => () => void
-  readonly log: (code: 'native-hotkey-registration-failed' | 'native-main-show-failed') => void
+  readonly log: (code: NativeRuntimeDiagnostic) => void
 }
+
+export type NativeRuntimeDiagnostic =
+  | 'native-hotkey-registration-failed'
+  | 'native-main-show-failed'
+  | 'native-window-begin-quit-failed'
+  | 'native-ipc-cleanup-failed'
+  | 'native-permission-cleanup-failed'
+  | 'native-hotkey-cleanup-failed'
+  | 'native-tray-cleanup-failed'
+  | 'native-window-cleanup-failed'
 
 export class NativeRuntimeStoppedError extends Error {
   readonly code = 'NATIVE_RUNTIME_STOPPED'
@@ -211,7 +306,10 @@ export class NativeRuntimeController implements RuntimeController {
       return
     }
     this.quitting = true
-    this.dependencies.windows.beginQuit()
+    this.runTeardownStep(
+      () => this.dependencies.windows.beginQuit(),
+      'native-window-begin-quit-failed',
+    )
   }
 
   dispose(): void {
@@ -221,21 +319,39 @@ export class NativeRuntimeController implements RuntimeController {
     this.disposed = true
     this.beginQuit()
 
-    this.ipcCleanup?.()
+    const ipcCleanup = this.ipcCleanup
     this.ipcCleanup = null
-    this.permissionCleanup?.()
+    const permissionCleanup = this.permissionCleanup
     this.permissionCleanup = null
-    this.dependencies.hotkeys.dispose()
-    this.dependencies.tray.dispose()
-    this.dependencies.windows.dispose()
+
+    this.runTeardownStep(ipcCleanup, 'native-ipc-cleanup-failed')
+    this.runTeardownStep(permissionCleanup, 'native-permission-cleanup-failed')
+    this.runTeardownStep(
+      () => this.dependencies.hotkeys.dispose(),
+      'native-hotkey-cleanup-failed',
+    )
+    this.runTeardownStep(
+      () => this.dependencies.tray.dispose(),
+      'native-tray-cleanup-failed',
+    )
+    this.runTeardownStep(
+      () => this.dependencies.windows.dispose(),
+      'native-window-cleanup-failed',
+    )
   }
 
   private async startOnce(): Promise<void> {
     await this.dependencies.windows.createWindows()
     this.assertRunning()
-    this.permissionCleanup = this.installCleanup(this.dependencies.installPermissions)
+    this.permissionCleanup = this.installCleanup(
+      this.dependencies.installPermissions,
+      'native-permission-cleanup-failed',
+    )
     this.assertRunning()
-    this.ipcCleanup = this.installCleanup(this.dependencies.registerIpc)
+    this.ipcCleanup = this.installCleanup(
+      this.dependencies.registerIpc,
+      'native-ipc-cleanup-failed',
+    )
     this.assertRunning()
     const settings = await this.dependencies.settings.get()
     this.assertRunning()
@@ -255,18 +371,37 @@ export class NativeRuntimeController implements RuntimeController {
     }
   }
 
-  private installCleanup(installer: () => () => void): () => void {
+  private installCleanup(
+    installer: () => () => void,
+    cleanupFailureCode:
+      | 'native-permission-cleanup-failed'
+      | 'native-ipc-cleanup-failed',
+  ): () => void {
     this.assertRunning()
     const cleanup = installer()
     if (this.isStopped()) {
-      try {
-        cleanup()
-      } catch {
-        // Shutdown ownership still wins if native cleanup itself fails.
-      }
+      this.runTeardownStep(cleanup, cleanupFailureCode)
       throw new NativeRuntimeStoppedError()
     }
     return cleanup
+  }
+
+  private runTeardownStep(
+    operation: (() => void) | null,
+    failureCode: NativeRuntimeDiagnostic,
+  ): void {
+    if (operation === null) {
+      return
+    }
+    try {
+      operation()
+    } catch {
+      try {
+        this.dependencies.log(failureCode)
+      } catch {
+        // Teardown must remain best-effort even when diagnostics are unavailable.
+      }
+    }
   }
 
   private assertRunning(): void {
@@ -283,6 +418,8 @@ export class NativeRuntimeController implements RuntimeController {
 export type BootstrapDiagnostic =
   | 'bootstrap-readiness-failed'
   | 'bootstrap-startup-failed'
+  | 'bootstrap-runtime-begin-quit-failed'
+  | 'bootstrap-runtime-dispose-failed'
 
 export interface BootstrapDependencies {
   readonly app: BootstrapApplication
@@ -308,8 +445,24 @@ export async function bootstrapTalkType(
   let runtimeStarted = false
   let pendingSecondInstance = false
   const stopRuntime = (candidate: RuntimeController): void => {
-    candidate.beginQuit()
-    candidate.dispose()
+    try {
+      candidate.beginQuit()
+    } catch {
+      try {
+        dependencies.log('bootstrap-runtime-begin-quit-failed')
+      } catch {
+        // Shutdown must remain best-effort even when diagnostics are unavailable.
+      }
+    }
+    try {
+      candidate.dispose()
+    } catch {
+      try {
+        dependencies.log('bootstrap-runtime-dispose-failed')
+      } catch {
+        // Shutdown must remain best-effort even when diagnostics are unavailable.
+      }
+    }
   }
   const onSecondInstance = (): void => {
     if (disposed) {

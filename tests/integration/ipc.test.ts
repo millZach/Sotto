@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
   bootstrapTalkType,
@@ -16,6 +16,7 @@ import {
   type IpcInvocationEvent,
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
+import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import { StartupService } from '../../src/main/startup/startupService'
 import {
   TrayController,
@@ -27,6 +28,7 @@ import {
   APP_MINIMIZE,
   APP_QUIT,
   APP_SHOW,
+  DICTATION_REQUEST,
   HISTORY_ADD,
   HISTORY_CLEAR,
   HISTORY_DELETE,
@@ -40,8 +42,14 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_PUBLISH,
 } from '../../src/shared/channels'
-import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import type { TalkTypeBridge } from '../../src/shared/contracts'
+import {
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type SettingsPatch,
+} from '../../src/shared/settings'
 
 const electronMock = vi.hoisted(() => {
   const exposed = { name: '', value: undefined as unknown }
@@ -71,6 +79,7 @@ import { createTalkTypeBridge } from '../../src/preload'
 class FakeIpcMain implements IpcMainAdapter {
   readonly handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
   readonly removed: string[] = []
+  readonly removeFailures = new Set<string>()
 
   handle(
     channel: string,
@@ -84,6 +93,9 @@ class FakeIpcMain implements IpcMainAdapter {
 
   removeHandler(channel: string): void {
     this.removed.push(channel)
+    if (this.removeFailures.has(channel)) {
+      throw new Error(`secret remove failure: ${channel}`)
+    }
     this.handlers.delete(channel)
   }
 
@@ -152,7 +164,9 @@ function createIpcHarness() {
     startup,
     hotkeys,
     app,
-    trustedSenders: () => [{ webContents: trustedContents, url: trustedUrl }],
+    trustedSenders: () => [
+      { role: 'main', webContents: trustedContents, url: trustedUrl },
+    ],
   })
   return {
     app,
@@ -214,6 +228,10 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('ipcRenderer')
   })
 
+  it('types generic settings updates without native-managed fields', () => {
+    expectTypeOf<Parameters<TalkTypeBridge['updateSettings']>[0]>().toEqualTypeOf<SettingsPatch>()
+  })
+
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
     const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
     const listener = vi.fn()
@@ -250,6 +268,115 @@ describe('typed preload bridge', () => {
 })
 
 describe('IPC validation and lifecycle', () => {
+  it.each([SETTINGS_GET, SETTINGS_UPDATE, HISTORY_CLEAR, APP_QUIT, WIDGET_PUBLISH])(
+    'denies widget renderer invocation of main-only channel %s',
+    async (channel) => {
+      const harness = createIpcHarness()
+      harness.cleanup()
+      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetFrame = { parent: null, url: widgetUrl }
+      const widgetContents = {
+        getURL: (): string => widgetUrl,
+        isDestroyed: (): boolean => false,
+        mainFrame: widgetFrame,
+      }
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          {
+            role: 'main' as const,
+            webContents: harness.trustedContents,
+            url: harness.trustedUrl,
+          },
+          { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+        ],
+      })
+
+      await expect(
+        harness.ipc.invokeArgs(channel, [], {
+          sender: widgetContents,
+          senderFrame: widgetFrame,
+        }),
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
+    },
+  )
+
+  it.each(['cancel', 'stop'] as const)(
+    'allows a widget renderer to request the least-privilege %s command',
+    async (type) => {
+      const harness = createIpcHarness()
+      harness.cleanup()
+      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetFrame = { parent: null, url: widgetUrl }
+      const widgetContents = {
+        getURL: (): string => widgetUrl,
+        isDestroyed: (): boolean => false,
+        mainFrame: widgetFrame,
+      }
+      const request = vi.fn()
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          { role: 'widget', webContents: widgetContents, url: widgetUrl },
+        ],
+        dictation: { request, publishWidgetState: vi.fn() },
+      })
+
+      await expect(
+        harness.ipc.invoke(
+          DICTATION_REQUEST,
+          { type },
+          { sender: widgetContents, senderFrame: widgetFrame },
+        ),
+      ).resolves.toEqual({ ok: true })
+      expect(request).toHaveBeenCalledWith({ type })
+    },
+  )
+
+  it.each(['start', 'toggle'] as const)(
+    'denies a widget renderer the privileged %s command',
+    async (type) => {
+      const harness = createIpcHarness()
+      harness.cleanup()
+      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetFrame = { parent: null, url: widgetUrl }
+      const widgetContents = {
+        getURL: (): string => widgetUrl,
+        isDestroyed: (): boolean => false,
+        mainFrame: widgetFrame,
+      }
+      const request = vi.fn()
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          { role: 'widget', webContents: widgetContents, url: widgetUrl },
+        ],
+        dictation: { request, publishWidgetState: vi.fn() },
+      })
+
+      await expect(
+        harness.ipc.invoke(
+          DICTATION_REQUEST,
+          { type },
+          { sender: widgetContents, senderFrame: widgetFrame },
+        ),
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
+      expect(request).not.toHaveBeenCalled()
+    },
+  )
+
   it('registers current settings, history, shortcut, startup, and app handlers', () => {
     const { ipc } = createIpcHarness()
 
@@ -296,6 +423,93 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).toHaveBeenCalledTimes(1)
   })
 
+  it.each([
+    ['hotkey', { hotkey: 'Alt+Space' }],
+    ['startup', { launchAtStartup: true }],
+  ] as const)('rejects native-managed %s in a generic settings payload', async (_name, patch) => {
+    const { ipc, settings } = createIpcHarness()
+
+    await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toMatchObject({
+      code: 'INVALID_IPC_PAYLOAD',
+    })
+    expect(settings.update).not.toHaveBeenCalled()
+  })
+
+  it('routes named hotkey and startup IPC through atomic native persistence', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    let persisted: AppSettings = { ...DEFAULT_SETTINGS }
+    let activeHotkey: string | null = persisted.hotkey
+    let startupEnabled = persisted.launchAtStartup
+    const repository = {
+      get: vi.fn(async () => ({ ...persisted })),
+      update: vi.fn(async (patch: Partial<AppSettings>) => {
+        persisted = { ...persisted, ...patch }
+        return { ...persisted }
+      }),
+      save: vi.fn(async (settings: AppSettings) => {
+        persisted = { ...settings }
+        return { ...persisted }
+      }),
+      reset: vi.fn(async () => {
+        persisted = { ...DEFAULT_SETTINGS }
+        return { ...persisted }
+      }),
+    }
+    const nativeHotkeys = {
+      current: vi.fn(() => activeHotkey),
+      replace: vi.fn((accelerator: string) => {
+        activeHotkey = accelerator
+        return { ok: true as const }
+      }),
+    }
+    const nativeStartup = {
+      get: vi.fn(() => ({ enabled: startupEnabled })),
+      set: vi.fn((enabled: boolean) => {
+        startupEnabled = enabled
+        return { enabled }
+      }),
+    }
+    const coordinator = new NativeSettingsCoordinator({
+      repository,
+      hotkeys: nativeHotkeys,
+      startup: nativeStartup,
+      onAutoPasteChanged: vi.fn(),
+    })
+    registerIpc(harness.ipc, {
+      settings: {
+        get: () => coordinator.getSettings(),
+        update: (patch) => coordinator.updateSettings(patch),
+        reset: () => coordinator.resetSettings(),
+      },
+      history: harness.history,
+      startup: {
+        get: () => coordinator.getStartup(),
+        set: (enabled) => coordinator.setStartup(enabled),
+      },
+      hotkeys: {
+        current: () => coordinator.getHotkey(),
+        replace: (accelerator) => coordinator.replaceHotkey(accelerator),
+      },
+      app: harness.app,
+      trustedSenders: () => [
+        {
+          role: 'main',
+          webContents: harness.trustedContents,
+          url: harness.trustedUrl,
+        },
+      ],
+    })
+
+    await expect(harness.ipc.invoke(HOTKEY_REPLACE, 'Alt+Space')).resolves.toEqual({
+      ok: true,
+    })
+    await expect(harness.ipc.invoke(STARTUP_SET, true)).resolves.toEqual({ enabled: true })
+    expect(activeHotkey).toBe('Alt+Space')
+    expect(startupEnabled).toBe(true)
+    expect(persisted).toMatchObject({ hotkey: 'Alt+Space', launchAtStartup: true })
+  })
+
   it('validates history and primitive payloads before calling repositories or services', async () => {
     const { history, hotkeys, ipc, startup } = createIpcHarness()
 
@@ -335,7 +549,11 @@ describe('IPC validation and lifecycle', () => {
       hotkeys: harness.hotkeys,
       app: harness.app,
       trustedSenders: () => [
-        { webContents: harness.trustedContents, url: harness.trustedUrl },
+        {
+          role: 'main',
+          webContents: harness.trustedContents,
+          url: harness.trustedUrl,
+        },
       ],
       output: { deliver },
     })
@@ -405,6 +623,18 @@ describe('IPC validation and lifecycle', () => {
       }),
     ],
     [
+      'throwing WebContents state check',
+      (harness: ReturnType<typeof createIpcHarness>) => ({
+        sender: {
+          ...harness.trustedContents,
+          isDestroyed: (): boolean => {
+            throw new Error('secret renderer teardown detail')
+          },
+        },
+        senderFrame: harness.trustedFrame,
+      }),
+    ],
+    [
       'subframe',
       (harness: ReturnType<typeof createIpcHarness>) => ({
         sender: harness.trustedContents,
@@ -448,6 +678,82 @@ describe('IPC validation and lifecycle', () => {
     expect(new Set(ipc.removed).size).toBe(ipc.removed.length)
   })
 
+  it('isolates per-channel cleanup failures and retains failed ownership safely', () => {
+    const harness = createIpcHarness()
+    const ownedChannels = [...harness.ipc.handlers.keys()]
+    const failedChannels = new Set<string>([SETTINGS_GET, HISTORY_LIST])
+    for (const channel of failedChannels) {
+      harness.ipc.removeFailures.add(channel)
+    }
+    let cleanupError: unknown
+
+    try {
+      harness.cleanup()
+    } catch (error) {
+      cleanupError = error
+    }
+
+    expect(cleanupError).toMatchObject({ code: 'IPC_CLEANUP_FAILED' })
+    expect(JSON.stringify(cleanupError)).not.toContain('secret')
+    expect(harness.ipc.removed).toStrictEqual(ownedChannels)
+    for (const channel of ownedChannels) {
+      expect(harness.ipc.handlers.has(channel)).toBe(failedChannels.has(channel))
+    }
+
+    const attemptsAfterCleanup = [...harness.ipc.removed]
+    expect(() =>
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          {
+            role: 'main',
+            webContents: harness.trustedContents,
+            url: harness.trustedUrl,
+          },
+        ],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'IPC_REGISTRATION_ACTIVE' }))
+    expect(harness.ipc.removed).toStrictEqual(attemptsAfterCleanup)
+
+    expect(() => harness.cleanup()).not.toThrow()
+    expect(harness.ipc.removed).toStrictEqual(attemptsAfterCleanup)
+  })
+
+  it('rejects overlapping registration without touching the active handlers', async () => {
+    const harness = createIpcHarness()
+    const activeSettingsHandler = harness.ipc.handlers.get(SETTINGS_GET)
+    const removedBefore = [...harness.ipc.removed]
+    let registrationError: unknown
+
+    try {
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          {
+            role: 'main',
+            webContents: harness.trustedContents,
+            url: harness.trustedUrl,
+          },
+        ],
+      })
+    } catch (error) {
+      registrationError = error
+    }
+
+    expect(registrationError).toMatchObject({ code: 'IPC_REGISTRATION_ACTIVE' })
+    expect(harness.ipc.handlers.get(SETTINGS_GET)).toBe(activeSettingsHandler)
+    expect(harness.ipc.removed).toStrictEqual(removedBefore)
+    await expect(harness.ipc.invoke(SETTINGS_GET)).resolves.toStrictEqual(DEFAULT_SETTINGS)
+  })
+
   it('rolls back partial registration without removing an externally owned handler', () => {
     const harness = createIpcHarness()
     harness.cleanup()
@@ -462,7 +768,11 @@ describe('IPC validation and lifecycle', () => {
         hotkeys: harness.hotkeys,
         app: harness.app,
         trustedSenders: () => [
-          { webContents: harness.trustedContents, url: harness.trustedUrl },
+          {
+            role: 'main',
+            webContents: harness.trustedContents,
+            url: harness.trustedUrl,
+          },
         ],
       }),
     ).toThrow(`handler already exists: ${HISTORY_LIST}`)
@@ -471,9 +781,82 @@ describe('IPC validation and lifecycle', () => {
       [HISTORY_LIST, externalHandler],
     ])
   })
+
+  it('preserves registration failure when rollback cleanup also fails', () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    harness.ipc.removed.splice(0)
+    const externalHandler = vi.fn()
+    harness.ipc.handlers.set(HISTORY_LIST, externalHandler)
+    harness.ipc.removeFailures.add(SETTINGS_GET)
+    let registrationError: unknown
+
+    try {
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [
+          {
+            role: 'main',
+            webContents: harness.trustedContents,
+            url: harness.trustedUrl,
+          },
+        ],
+      })
+    } catch (error) {
+      registrationError = error
+    }
+
+    expect(registrationError).toMatchObject({
+      message: `handler already exists: ${HISTORY_LIST}`,
+    })
+    expect(JSON.stringify(registrationError)).not.toContain('secret remove failure')
+    expect(harness.ipc.handlers.get(HISTORY_LIST)).toBe(externalHandler)
+    expect(harness.ipc.removed).toEqual(
+      expect.arrayContaining([SETTINGS_GET, SETTINGS_UPDATE, SETTINGS_RESET]),
+    )
+
+    const attemptsAfterRollback = [...harness.ipc.removed]
+    expect(() =>
+      registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => [],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'IPC_REGISTRATION_ACTIVE' }))
+    expect(harness.ipc.removed).toStrictEqual(attemptsAfterRollback)
+  })
 })
 
 describe('permission policy', () => {
+  function createAtomicSession() {
+    let permissionRequest: PermissionRequestHandler | null = null
+    let permissionCheck: PermissionCheckHandler | null = null
+    const session: SessionPermissionAdapter = {
+      setPermissionRequestHandler: vi.fn((handler) => {
+        permissionRequest = handler
+      }),
+      setPermissionCheckHandler: vi.fn((handler) => {
+        permissionCheck = handler
+      }),
+    }
+    return {
+      get permissionCheck() {
+        return permissionCheck
+      },
+      get permissionRequest() {
+        return permissionRequest
+      },
+      session,
+    }
+  }
+
   function createSession(): {
     permissionCheck: PermissionCheckHandler
     permissionRequest: PermissionRequestHandler
@@ -510,12 +893,17 @@ describe('permission policy', () => {
     const harness = createSession()
     const packagedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
     const developmentContents = { getURL: () => 'http://127.0.0.1:5173/' }
-    installSessionPermissionPolicy(harness.session, [
+    installSessionPermissionPolicy(harness.session, () => [
       {
+        role: 'main',
         webContents: packagedContents,
         url: 'file:///C:/TalkType/out/renderer/index.html',
       },
-      { webContents: developmentContents, url: 'http://127.0.0.1:5173/' },
+      {
+        role: 'main',
+        webContents: developmentContents,
+        url: 'http://127.0.0.1:5173/',
+      },
     ])
 
     const trustedAudio = vi.fn()
@@ -539,11 +927,195 @@ describe('permission policy', () => {
     ).toBe(true)
   })
 
+  it('resolves trusted renderer identity at request time after renderer replacement', () => {
+    const harness = createSession()
+    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const originalContents = { getURL: () => trustedUrl }
+    const replacementContents = { getURL: () => trustedUrl }
+    let trustedRenderers = [
+      { role: 'main' as const, webContents: originalContents, url: trustedUrl },
+    ]
+    installSessionPermissionPolicy(harness.session, () => trustedRenderers)
+
+    expect(
+      harness.permissionCheck(originalContents, 'media', trustedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: trustedUrl,
+      }),
+    ).toBe(true)
+
+    trustedRenderers = [
+      { role: 'main' as const, webContents: replacementContents, url: trustedUrl },
+    ]
+
+    expect(
+      harness.permissionCheck(originalContents, 'media', trustedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: trustedUrl,
+      }),
+    ).toBe(false)
+    expect(
+      harness.permissionCheck(replacementContents, 'media', trustedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: trustedUrl,
+      }),
+    ).toBe(true)
+  })
+
+  it('denies microphone permission to a trusted widget identity', () => {
+    const harness = createSession()
+    const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+    const widgetContents = { getURL: () => widgetUrl }
+    installSessionPermissionPolicy(harness.session, () => [
+      { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+    ])
+
+    expect(
+      harness.permissionCheck(widgetContents, 'media', widgetUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: widgetUrl,
+      }),
+    ).toBe(false)
+  })
+
+  it('fails closed when renderer liveness inspection throws', () => {
+    const harness = createSession()
+    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const trustedContents = {
+      getURL: () => trustedUrl,
+      isDestroyed: (): boolean => {
+        throw new Error('secret renderer teardown detail')
+      },
+    }
+    installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: trustedContents, url: trustedUrl },
+    ])
+
+    expect(() =>
+      harness.permissionCheck(trustedContents, 'media', trustedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: trustedUrl,
+      }),
+    ).not.toThrow()
+    expect(
+      harness.permissionCheck(trustedContents, 'media', trustedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: trustedUrl,
+      }),
+    ).toBe(false)
+  })
+
+  it('rolls back a partial first installation and permits a clean retry', () => {
+    const harness = createAtomicSession()
+    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const trustedContents = { getURL: () => trustedUrl }
+    vi.mocked(harness.session.setPermissionRequestHandler).mockImplementationOnce(() => {
+      throw new Error('secret native setter detail')
+    })
+    let installError: unknown
+
+    try {
+      installSessionPermissionPolicy(harness.session, () => [
+        { role: 'main', webContents: trustedContents, url: trustedUrl },
+      ])
+    } catch (error) {
+      installError = error
+    }
+
+    expect(installError).toMatchObject({ code: 'PERMISSION_POLICY_INSTALL_FAILED' })
+    expect(harness.permissionCheck).toBeNull()
+    expect(harness.permissionRequest).toBeNull()
+
+    expect(() =>
+      installSessionPermissionPolicy(harness.session, () => [
+        { role: 'main', webContents: trustedContents, url: trustedUrl },
+      ]),
+    ).not.toThrow()
+    expect(harness.permissionCheck).not.toBeNull()
+    expect(harness.permissionRequest).not.toBeNull()
+  })
+
+  it('restores the prior policy when replacement installation fails', () => {
+    const harness = createAtomicSession()
+    const originalUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const originalContents = { getURL: () => originalUrl }
+    const replacementUrl = 'file:///C:/TalkType/out/renderer/replacement.html'
+    const replacementContents = { getURL: () => replacementUrl }
+    const originalCleanup = installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: originalContents, url: originalUrl },
+    ])
+    const originalCheck = harness.permissionCheck
+    const originalRequest = harness.permissionRequest
+    vi.mocked(harness.session.setPermissionRequestHandler).mockImplementationOnce(() => {
+      throw new Error('secret native setter detail')
+    })
+
+    expect(() =>
+      installSessionPermissionPolicy(harness.session, () => [
+        { role: 'main', webContents: replacementContents, url: replacementUrl },
+      ]),
+    ).toThrow()
+
+    expect(harness.permissionCheck).toBe(originalCheck)
+    expect(harness.permissionRequest).toBe(originalRequest)
+    expect(
+      harness.permissionCheck?.(originalContents, 'media', originalUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: originalUrl,
+      }),
+    ).toBe(true)
+    originalCleanup()
+  })
+
+  it('restores nested ownership in order and stale cleanup never clears a newer policy', () => {
+    const harness = createAtomicSession()
+    const originalUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const originalContents = { getURL: () => originalUrl }
+    const replacementUrl = 'file:///C:/TalkType/out/renderer/replacement.html'
+    const replacementContents = { getURL: () => replacementUrl }
+    const originalCleanup = installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: originalContents, url: originalUrl },
+    ])
+    const originalCheck = harness.permissionCheck
+    const replacementCleanup = installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: replacementContents, url: replacementUrl },
+    ])
+    const replacementCheck = harness.permissionCheck
+
+    originalCleanup()
+    expect(harness.permissionCheck).toBe(replacementCheck)
+
+    replacementCleanup()
+    expect(harness.permissionCheck).toBeNull()
+    expect(harness.permissionRequest).toBeNull()
+
+    const restoredOriginalCleanup = installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: originalContents, url: originalUrl },
+    ])
+    const nestedCleanup = installSessionPermissionPolicy(harness.session, () => [
+      { role: 'main', webContents: replacementContents, url: replacementUrl },
+    ])
+    nestedCleanup()
+    expect(harness.permissionCheck).not.toBe(replacementCheck)
+    expect(harness.permissionCheck).not.toBeNull()
+    restoredOriginalCleanup()
+    expect(harness.permissionCheck).toBeNull()
+    expect(originalCheck).not.toBeNull()
+  })
+
   it('resets only its two permission handlers during idempotent cleanup', () => {
     const harness = createSession()
     const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
-    const cleanup = installSessionPermissionPolicy(harness.session, [
+    const cleanup = installSessionPermissionPolicy(harness.session, () => [
       {
+        role: 'main',
         webContents: trustedContents,
         url: 'file:///C:/TalkType/out/renderer/index.html',
       },
@@ -566,8 +1138,9 @@ describe('permission policy', () => {
     const harness = createSession()
     const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
     const untrustedContents = { getURL: () => 'https://attacker.invalid/' }
-    installSessionPermissionPolicy(harness.session, [
+    installSessionPermissionPolicy(harness.session, () => [
       {
+        role: 'main',
         webContents: trustedContents,
         url: 'file:///C:/TalkType/out/renderer/index.html',
       },
@@ -592,8 +1165,9 @@ describe('permission policy', () => {
   ])('denies trusted media from %s', (_name, detailOverrides) => {
     const harness = createSession()
     const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
-    installSessionPermissionPolicy(harness.session, [
+    installSessionPermissionPolicy(harness.session, () => [
       {
+        role: 'main',
         webContents: trustedContents,
         url: 'file:///C:/TalkType/out/renderer/index.html',
       },
@@ -908,6 +1482,36 @@ describe('bootstrap failure containment', () => {
     expect(log).toHaveBeenCalledWith('bootstrap-startup-failed')
     expect(app.quit).toHaveBeenCalledOnce()
   })
+
+  it.each([
+    ['beginQuit', 'bootstrap-runtime-begin-quit-failed'],
+    ['dispose', 'bootstrap-runtime-dispose-failed'],
+  ] as const)(
+    'isolates a throwing candidate %s during before-quit',
+    async (failingMethod, expectedCode) => {
+      const app = createApp(Promise.resolve())
+      const log = vi.fn()
+      const candidate = createRuntime()
+      candidate[failingMethod].mockImplementation(() => {
+        throw new Error('secret native teardown detail')
+      })
+      const result = await bootstrapTalkType({
+        app,
+        initialize: async () => candidate,
+        log,
+      })
+
+      expect(() => app.emit('before-quit')).not.toThrow()
+      expect(candidate.beginQuit).toHaveBeenCalledOnce()
+      expect(candidate.dispose).toHaveBeenCalledOnce()
+      expect(log).toHaveBeenCalledWith(expectedCode)
+      expect(JSON.stringify(log.mock.calls)).not.toContain('secret')
+
+      expect(() => result.dispose()).not.toThrow()
+      expect(candidate.beginQuit).toHaveBeenCalledOnce()
+      expect(candidate.dispose).toHaveBeenCalledOnce()
+    },
+  )
 })
 
 describe('NativeRuntimeController', () => {
@@ -1143,4 +1747,66 @@ describe('NativeRuntimeController', () => {
       code: 'NATIVE_RUNTIME_STOPPED',
     })
   })
+
+  it.each([
+    ['beginQuit', 'native-window-begin-quit-failed'],
+    ['ipc', 'native-ipc-cleanup-failed'],
+    ['permission', 'native-permission-cleanup-failed'],
+    ['hotkey', 'native-hotkey-cleanup-failed'],
+    ['tray', 'native-tray-cleanup-failed'],
+    ['window', 'native-window-cleanup-failed'],
+  ] as const)(
+    'isolates a throwing %s teardown and still releases every later resource once',
+    async (failingStep, expectedCode) => {
+      const throwing = (step: typeof failingStep) =>
+        vi.fn(() => {
+          if (failingStep === step) {
+            throw new Error('secret teardown detail')
+          }
+        })
+      const ipcCleanup = throwing('ipc')
+      const permissionCleanup = throwing('permission')
+      const windows = {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        beginQuit: throwing('beginQuit'),
+        dispose: throwing('window'),
+      }
+      const hotkeys = {
+        replace: vi.fn(() => ({ ok: true as const })),
+        dispose: throwing('hotkey'),
+      }
+      const tray = { update: vi.fn(), dispose: throwing('tray') }
+      const log = vi.fn()
+      const runtime = new NativeRuntimeController({
+        windows,
+        hotkeys,
+        tray,
+        startup: { set: vi.fn() },
+        settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+        installPermissions: () => permissionCleanup,
+        registerIpc: () => ipcCleanup,
+        log,
+      })
+      await runtime.start()
+
+      expect(() => runtime.dispose()).not.toThrow()
+      expect(windows.beginQuit).toHaveBeenCalledOnce()
+      expect(ipcCleanup).toHaveBeenCalledOnce()
+      expect(permissionCleanup).toHaveBeenCalledOnce()
+      expect(hotkeys.dispose).toHaveBeenCalledOnce()
+      expect(tray.dispose).toHaveBeenCalledOnce()
+      expect(windows.dispose).toHaveBeenCalledOnce()
+      expect(log).toHaveBeenCalledWith(expectedCode)
+      expect(JSON.stringify(log.mock.calls)).not.toContain('secret')
+
+      expect(() => runtime.dispose()).not.toThrow()
+      expect(windows.beginQuit).toHaveBeenCalledOnce()
+      expect(ipcCleanup).toHaveBeenCalledOnce()
+      expect(permissionCleanup).toHaveBeenCalledOnce()
+      expect(hotkeys.dispose).toHaveBeenCalledOnce()
+      expect(tray.dispose).toHaveBeenCalledOnce()
+      expect(windows.dispose).toHaveBeenCalledOnce()
+    },
+  )
 })

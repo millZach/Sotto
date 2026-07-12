@@ -20,14 +20,17 @@ import {
   installSessionPermissionPolicy,
   NativeRuntimeController,
   type BootstrapDiagnostic,
+  type NativeRuntimeDiagnostic,
   type PermissionCheckHandler,
   type PermissionRequestHandler,
   type SessionPermissionAdapter,
 } from './app/bootstrap'
+import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { HotkeyManager } from './hotkeys/hotkeyManager'
-import { registerIpc, type TrustedIpcSender } from './ipc/registerIpc'
+import { registerIpc } from './ipc/registerIpc'
 import { HistoryRepository } from './storage/historyRepository'
 import { SettingsRepository } from './storage/settingsRepository'
+import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
 import { StartupService } from './startup/startupService'
 import {
   TrayController,
@@ -35,6 +38,10 @@ import {
   type TrayMenuItem,
   type TrayState,
 } from './tray/trayController'
+import {
+  createTrayResource,
+  NativeTrayCreationError,
+} from './tray/trayIcon'
 import {
   parseDevelopmentRendererSources,
   WindowManager,
@@ -51,10 +58,11 @@ import type { DictationState } from '../shared/dictation'
 
 type NativeDiagnostic =
   | BootstrapDiagnostic
+  | NativeRuntimeDiagnostic
   | RendererDiagnostic
   | 'bootstrap-terminal-failed'
-  | 'native-hotkey-registration-failed'
-  | 'native-main-show-failed'
+  | 'native-main-send-failed'
+  | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
   | 'settings-update-failed'
 
@@ -211,6 +219,14 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.minimize()
   }
 
+  isMinimized(): boolean {
+    return this.window.isMinimized()
+  }
+
+  restore(): void {
+    this.window.restore()
+  }
+
   showInactive(): void {
     this.window.showInactive()
   }
@@ -258,9 +274,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     log: logOperational,
   })
 
+  const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
   const dispatchDictation = (command: DictationCommand): void => {
-    windows.sendToMain(DICTATION_COMMAND, command)
+    void messageDelivery.sendToMain(DICTATION_COMMAND, command).then((delivered) => {
+      if (!delivered) {
+        logOperational('native-main-send-failed')
+      }
+    })
   }
   const showWidget = (): void => {
     void windows.showWidget().catch(() => logOperational('native-widget-show-failed'))
@@ -275,8 +296,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     dispatchDictation({ type: 'cancel' })
   })
 
-  const nativeTray = new Tray(process.execPath)
-  nativeTray.setToolTip(APP_NAME)
+  const nativeTray = await createTrayResource({
+    executablePath: process.execPath,
+    getFileIcon: (path, options) => app.getFileIcon(path, options),
+    createTray: (icon) => new Tray(icon),
+    configure: (tray) => tray.setToolTip(APP_NAME),
+  })
+  try {
   const trayAdapter: TrayAdapter = {
     setMenu(items): void {
       nativeTray.setContextMenu(Menu.buildFromTemplate(items.map(toMenuTemplate)))
@@ -285,15 +311,20 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       nativeTray.destroy()
     },
   }
+  const settingsCoordinator = new NativeSettingsCoordinator({
+    repository: settings,
+    hotkeys,
+    startup,
+    onAutoPasteChanged(enabled): void {
+      currentTrayState = { ...currentTrayState, autoPaste: enabled }
+      trayController.update(currentTrayState)
+    },
+  })
   const trayController = new TrayController(trayAdapter, {
     toggleDictation,
     setAutoPaste(enabled): void {
-      void settings
-        .update({ autoPaste: enabled })
-        .then((updated) => {
-          currentTrayState = { ...currentTrayState, autoPaste: updated.autoPaste }
-          trayController.update(currentTrayState)
-        })
+      void settingsCoordinator
+        .updateSettings({ autoPaste: enabled })
         .catch(() => logOperational('settings-update-failed'))
     },
     show(): void {
@@ -314,14 +345,20 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 
   const publishWidgetState = (state: DictationState): void => {
-    windows.sendToWidget(WIDGET_STATE, state)
     const listening = state.status === 'listening'
+    const revealWidgetState = state.status !== 'idle'
+    void messageDelivery
+      .sendToWidget(WIDGET_STATE, state, revealWidgetState)
+      .then((delivered) => {
+        if (!delivered) {
+          logOperational('native-widget-state-delivery-failed')
+        }
+      })
     currentTrayState = { ...currentTrayState, dictating: listening }
     trayController.update(currentTrayState)
 
     if (listening) {
       hotkeys.beginListening()
-      showWidget()
       return
     }
     if (state.status === 'cancelled') {
@@ -334,7 +371,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 
   const permissionAdapter = createPermissionAdapter()
-  const trustedIpcSenders: TrustedIpcSender[] = []
   return new NativeRuntimeController({
     windows,
     hotkeys,
@@ -342,40 +378,38 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     startup,
     settings,
     installPermissions: () => {
-      const mainContents = windows.getMainWebContents()
-      if (mainContents === null) {
+      if (!windows.getTrustedRenderers().some((renderer) => renderer.role === 'main')) {
         throw new Error('Main renderer unavailable')
       }
-      const widgetContents = windows.getWidgetWebContents()
-      trustedIpcSenders.splice(
-        0,
-        trustedIpcSenders.length,
-        { webContents: mainContents, url: mainContents.getURL() },
-        ...(widgetContents === null
-          ? []
-          : [{ webContents: widgetContents, url: widgetContents.getURL() }]),
+      return installSessionPermissionPolicy(permissionAdapter, () =>
+        windows
+          .getTrustedRenderers()
+          .filter((renderer) => renderer.role === 'main'),
       )
-      const cleanupPermissions = installSessionPermissionPolicy(permissionAdapter, [
-        { webContents: mainContents, url: mainContents.getURL() },
-      ])
-      return () => {
-        trustedIpcSenders.splice(0)
-        cleanupPermissions()
-      }
     },
     registerIpc: () =>
       registerIpc(ipcMain, {
-        settings,
+        settings: {
+          get: () => settingsCoordinator.getSettings(),
+          update: (patch) => settingsCoordinator.updateSettings(patch),
+          reset: () => settingsCoordinator.resetSettings(),
+        },
         history,
-        startup,
-        hotkeys,
+        startup: {
+          get: () => settingsCoordinator.getStartup(),
+          set: (enabled) => settingsCoordinator.setStartup(enabled),
+        },
+        hotkeys: {
+          current: () => settingsCoordinator.getHotkey(),
+          replace: (accelerator) => settingsCoordinator.replaceHotkey(accelerator),
+        },
         app: {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
           quit: () => app.quit(),
         },
-        trustedSenders: () => trustedIpcSenders,
+        trustedSenders: () => windows.getTrustedRenderers(),
         dictation: {
           request(command): void {
             dispatchDictation(command)
@@ -388,6 +422,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }),
     log: logOperational,
   })
+  } catch {
+    try {
+      nativeTray.destroy()
+    } catch {
+      // Startup will report one finite failure even if native tray cleanup also fails.
+    }
+    throw new NativeTrayCreationError()
+  }
 }
 
 app.setAppUserModelId(APP_ID)

@@ -37,7 +37,13 @@ import {
   type StartupState,
 } from '../../shared/contracts'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
-import { settingsSchema, type AppSettings, type ModelPreset } from '../../shared/settings'
+import {
+  settingsSchema,
+  type AppSettings,
+  type ModelPreset,
+  type SettingsPatch,
+} from '../../shared/settings'
+import type { RendererRole } from '../security'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -45,7 +51,6 @@ const settingKeys = [
   'theme',
   'reducedMotion',
   'microphoneId',
-  'hotkey',
   'maxRecordingSeconds',
   'soundCues',
   'modelPreset',
@@ -56,21 +61,24 @@ const settingKeys = [
   'autoPaste',
   'pasteDelayMs',
   'successDisplayMs',
-  'launchAtStartup',
   'startMinimized',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
-] as const satisfies readonly (keyof AppSettings)[]
+] as const satisfies readonly (keyof SettingsPatch)[]
 
-const looseSettingsPatchSchema = settingsSchema.partial().strict().superRefine((patch, context) => {
-  if (Object.values(patch).some((value) => value === undefined)) {
-    context.addIssue({ code: 'custom', message: 'Undefined settings fields are not allowed' })
-  }
-})
+const looseSettingsPatchSchema = settingsSchema
+  .omit({ hotkey: true, launchAtStartup: true })
+  .partial()
+  .strict()
+  .superRefine((patch, context) => {
+    if (Object.values(patch).some((value) => value === undefined)) {
+      context.addIssue({ code: 'custom', message: 'Undefined settings fields are not allowed' })
+    }
+  })
 
-function copyDefinedSetting<Key extends keyof AppSettings>(
-  target: Partial<AppSettings>,
+function copyDefinedSetting<Key extends (typeof settingKeys)[number]>(
+  target: SettingsPatch,
   source: z.infer<typeof looseSettingsPatchSchema>,
   key: Key,
 ): void {
@@ -80,8 +88,8 @@ function copyDefinedSetting<Key extends keyof AppSettings>(
   }
 }
 
-const settingsPatchSchema = looseSettingsPatchSchema.transform((patch): Partial<AppSettings> => {
-  const exactPatch: Partial<AppSettings> = {}
+const settingsPatchSchema = looseSettingsPatchSchema.transform((patch): SettingsPatch => {
+  const exactPatch: SettingsPatch = {}
   for (const key of settingKeys) {
     copyDefinedSetting(exactPatch, patch, key)
   }
@@ -121,6 +129,7 @@ export interface IpcInvocationEvent {
 }
 
 export interface TrustedIpcSender {
+  readonly role: RendererRole
   readonly webContents: IpcWebContentsLike
   readonly url: string
 }
@@ -135,7 +144,7 @@ export interface IpcMainAdapter {
 
 export interface SettingsIpcService {
   get(): Promise<AppSettings>
-  update(patch: Partial<AppSettings>): Promise<AppSettings>
+  update(patch: SettingsPatch): Promise<AppSettings>
   reset(): Promise<AppSettings>
 }
 
@@ -156,8 +165,8 @@ export interface StartupIpcService {
 }
 
 export interface HotkeyIpcService {
-  current(): string | null
-  replace(accelerator: string): HotkeyChangeResult
+  current(): string | null | Promise<string | null>
+  replace(accelerator: string): HotkeyChangeResult | Promise<HotkeyChangeResult>
 }
 
 export interface AppIpcService {
@@ -215,6 +224,24 @@ export class UnauthorizedIpcSenderError extends Error {
   }
 }
 
+export class IpcRegistrationActiveError extends Error {
+  readonly code = 'IPC_REGISTRATION_ACTIVE'
+
+  constructor() {
+    super('IPC registration is already active')
+    this.name = 'IpcRegistrationActiveError'
+  }
+}
+
+export class IpcCleanupError extends Error {
+  readonly code = 'IPC_CLEANUP_FAILED'
+
+  constructor() {
+    super('IPC cleanup failed')
+    this.name = 'IpcCleanupError'
+  }
+}
+
 const handlerOwners = new WeakMap<IpcMainAdapter, Map<string, symbol>>()
 
 function parsePayload<Output>(schema: z.ZodType<Output>, payload: unknown): Output {
@@ -228,29 +255,48 @@ function parsePayload<Output>(schema: z.ZodType<Output>, payload: unknown): Outp
 export function isAuthorizedIpcSender(
   event: IpcInvocationEvent,
   trustedSenders: readonly TrustedIpcSender[],
+  allowedRoles: readonly RendererRole[],
 ): boolean {
-  if (event.senderFrame === null || event.senderFrame.parent !== null) {
-    return false
-  }
-  if (event.sender.isDestroyed()) {
-    return false
-  }
+  return findAuthorizedIpcSenderRole(event, trustedSenders, allowedRoles) !== null
+}
 
-  return trustedSenders.some(
-    (trusted) =>
-      trusted.webContents === event.sender &&
-      event.senderFrame === event.sender.mainFrame &&
-      trusted.url === event.sender.getURL() &&
-      trusted.url === event.senderFrame?.url,
-  )
+function findAuthorizedIpcSenderRole(
+  event: IpcInvocationEvent,
+  trustedSenders: readonly TrustedIpcSender[],
+  allowedRoles: readonly RendererRole[],
+): RendererRole | null {
+  try {
+    if (event.senderFrame === null || event.senderFrame.parent !== null) {
+      return null
+    }
+    if (event.sender.isDestroyed()) {
+      return null
+    }
+
+    const trusted = trustedSenders.find(
+      (trusted) =>
+        allowedRoles.includes(trusted.role) &&
+        trusted.webContents === event.sender &&
+        event.senderFrame === event.sender.mainFrame &&
+        trusted.url === event.sender.getURL() &&
+        trusted.url === event.senderFrame?.url,
+    )
+    return trusted?.role ?? null
+  } catch {
+    return null
+  }
 }
 
 export function registerIpc(
   ipcMain: IpcMainAdapter,
   dependencies: RegisterIpcDependencies,
 ): () => void {
+  const activeOwnership = handlerOwners.get(ipcMain)
+  if (activeOwnership !== undefined && activeOwnership.size > 0) {
+    throw new IpcRegistrationActiveError()
+  }
   const owner = Symbol('talktype-ipc-owner')
-  const ownership = handlerOwners.get(ipcMain) ?? new Map<string, symbol>()
+  const ownership = activeOwnership ?? new Map<string, symbol>()
   handlerOwners.set(ipcMain, ownership)
   const ownedChannels: string[] = []
 
@@ -258,22 +304,23 @@ export function registerIpc(
     channel: string,
     schema: z.ZodType<Input>,
     argumentCount: 0 | 1,
-    operation: (input: Input) => Result | Promise<Result>,
+    operation: (input: Input, role: RendererRole) => Result | Promise<Result>,
+    allowedRoles: readonly RendererRole[] = ['main'],
   ): void => {
-    if (ownership.has(channel)) {
-      ipcMain.removeHandler(channel)
-      ownership.delete(channel)
-    }
-
     ipcMain.handle(channel, async (event, ...args) => {
-      if (!isAuthorizedIpcSender(event, dependencies.trustedSenders())) {
+      const role = findAuthorizedIpcSenderRole(
+        event,
+        dependencies.trustedSenders(),
+        allowedRoles,
+      )
+      if (role === null) {
         throw new UnauthorizedIpcSenderError()
       }
       if (args.length !== argumentCount) {
         throw new InvalidIpcPayloadError()
       }
       const input = parsePayload(schema, argumentCount === 0 ? undefined : args[0])
-      return operation(input)
+      return operation(input, role)
     })
     ownership.set(channel, owner)
     ownedChannels.push(channel)
@@ -285,98 +332,139 @@ export function registerIpc(
       return
     }
     cleaned = true
+    let cleanupFailed = false
     for (const channel of ownedChannels) {
       if (ownership.get(channel) === owner) {
-        ipcMain.removeHandler(channel)
-        ownership.delete(channel)
+        try {
+          ipcMain.removeHandler(channel)
+          ownership.delete(channel)
+        } catch {
+          cleanupFailed = true
+        }
       }
     }
     if (ownership.size === 0) {
       handlerOwners.delete(ipcMain)
     }
+    if (cleanupFailed) {
+      throw new IpcCleanupError()
+    }
   }
 
   try {
+    register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get())
+    register(SETTINGS_UPDATE, settingsPatchSchema, 1, (patch) =>
+      dependencies.settings.update(patch),
+    )
+    register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
 
-  register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get())
-  register(SETTINGS_UPDATE, settingsPatchSchema, 1, (patch) =>
-    dependencies.settings.update(patch),
-  )
-  register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
-
-  register(HISTORY_LIST, noPayloadSchema, 0, () => dependencies.history.list())
-  register(HISTORY_ADD, historyEntrySchema.strict(), 1, async (entry) => {
-    const settings = await dependencies.settings.get()
-    return dependencies.history.add(entry, {
-      enabled: settings.historyEnabled,
-      retention: settings.historyRetention,
+    register(HISTORY_LIST, noPayloadSchema, 0, () => dependencies.history.list())
+    register(HISTORY_ADD, historyEntrySchema.strict(), 1, async (entry) => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.add(entry, {
+        enabled: settings.historyEnabled,
+        retention: settings.historyRetention,
+      })
     })
-  })
-  register(HISTORY_SEARCH, historyQuerySchema, 1, (query) => dependencies.history.search(query))
-  register(HISTORY_DELETE, historyIdSchema, 1, (id) => dependencies.history.delete(id))
-  register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
+    register(HISTORY_SEARCH, historyQuerySchema, 1, (query) =>
+      dependencies.history.search(query),
+    )
+    register(HISTORY_DELETE, historyIdSchema, 1, (id) =>
+      dependencies.history.delete(id),
+    )
+    register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
 
-  register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())
-  register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
-    dependencies.hotkeys.replace(accelerator),
-  )
+    register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())
+    register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
+      dependencies.hotkeys.replace(accelerator),
+    )
 
-  register(STARTUP_GET, noPayloadSchema, 0, () => dependencies.startup.get())
-  register(STARTUP_SET, z.boolean(), 1, (enabled) => dependencies.startup.set(enabled))
+    register(STARTUP_GET, noPayloadSchema, 0, () => dependencies.startup.get())
+    register(STARTUP_SET, z.boolean(), 1, (enabled) =>
+      dependencies.startup.set(enabled),
+    )
 
-  register(APP_SHOW, noPayloadSchema, 0, () => dependencies.app.show())
-  register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
-  register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
-  register(APP_QUIT, noPayloadSchema, 0, () => dependencies.app.quit())
+    register(APP_SHOW, noPayloadSchema, 0, () => dependencies.app.show())
+    register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
+    register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
+    register(APP_QUIT, noPayloadSchema, 0, () => dependencies.app.quit())
 
-  register(DICTATION_REQUEST, dictationCommandSchema, 1, async (command): Promise<CommandResult> => {
-    if (dependencies.dictation === undefined) {
-      return UNAVAILABLE
-    }
-    await dependencies.dictation.request(command)
-    return OK
-  })
-  register(WIDGET_PUBLISH, dictationStateSchema, 1, async (state): Promise<CommandResult> => {
-    if (dependencies.dictation === undefined) {
-      return UNAVAILABLE
-    }
-    await dependencies.dictation.publishWidgetState(state)
-    return OK
-  })
+    register(
+      DICTATION_REQUEST,
+      dictationCommandSchema,
+      1,
+      async (command, role): Promise<CommandResult> => {
+        if (role === 'widget' && command.type !== 'cancel' && command.type !== 'stop') {
+          throw new UnauthorizedIpcSenderError()
+        }
+        if (dependencies.dictation === undefined) {
+          return UNAVAILABLE
+        }
+        await dependencies.dictation.request(command)
+        return OK
+      },
+      ['main', 'widget'],
+    )
+    register(
+      WIDGET_PUBLISH,
+      dictationStateSchema,
+      1,
+      async (state): Promise<CommandResult> => {
+        if (dependencies.dictation === undefined) {
+          return UNAVAILABLE
+        }
+        await dependencies.dictation.publishWidgetState(state)
+        return OK
+      },
+    )
 
-  register(MODEL_GET_STATUS, modelPresetSchema, 1, async (preset) => {
-    if (dependencies.models === undefined) {
-      return UNAVAILABLE
-    }
-    return dependencies.models.getStatus(preset)
-  })
-  register(MODEL_INSTALL, modelInstallSchema, 1, async (request): Promise<CommandResult> => {
-    if (dependencies.models === undefined) {
-      return UNAVAILABLE
-    }
-    await dependencies.models.install(request)
-    return OK
-  })
-  register(MODEL_REMOVE, modelPresetSchema, 1, async (preset): Promise<CommandResult> => {
-    if (dependencies.models === undefined) {
-      return UNAVAILABLE
-    }
-    await dependencies.models.remove(preset)
-    return OK
-  })
-  register(OUTPUT_DELIVER, outputTextSchema, 1, async (text): Promise<OutputResult> => {
-    if (dependencies.output === undefined) {
-      return UNAVAILABLE
-    }
-    const settings = await dependencies.settings.get()
-    return dependencies.output.deliver(text, {
-      autoPaste: settings.autoPaste,
-      pasteDelayMs: settings.pasteDelayMs,
+    register(MODEL_GET_STATUS, modelPresetSchema, 1, async (preset) => {
+      if (dependencies.models === undefined) {
+        return UNAVAILABLE
+      }
+      return dependencies.models.getStatus(preset)
     })
-  })
-  } catch (error) {
-    cleanup()
-    throw error
+    register(
+      MODEL_INSTALL,
+      modelInstallSchema,
+      1,
+      async (request): Promise<CommandResult> => {
+        if (dependencies.models === undefined) {
+          return UNAVAILABLE
+        }
+        await dependencies.models.install(request)
+        return OK
+      },
+    )
+    register(
+      MODEL_REMOVE,
+      modelPresetSchema,
+      1,
+      async (preset): Promise<CommandResult> => {
+        if (dependencies.models === undefined) {
+          return UNAVAILABLE
+        }
+        await dependencies.models.remove(preset)
+        return OK
+      },
+    )
+    register(OUTPUT_DELIVER, outputTextSchema, 1, async (text): Promise<OutputResult> => {
+      if (dependencies.output === undefined) {
+        return UNAVAILABLE
+      }
+      const settings = await dependencies.settings.get()
+      return dependencies.output.deliver(text, {
+        autoPaste: settings.autoPaste,
+        pasteDelayMs: settings.pasteDelayMs,
+      })
+    })
+  } catch (registrationError) {
+    try {
+      cleanup()
+    } catch {
+      // Registration failure remains the primary diagnostic.
+    }
+    throw registrationError
   }
 
   return cleanup

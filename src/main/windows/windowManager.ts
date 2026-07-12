@@ -1,5 +1,5 @@
 import { APP_NAME } from '../../shared/constants'
-import { selectRendererSource } from '../security'
+import { selectRendererSource, type RendererRole } from '../security'
 
 const WIDGET_WIDTH = 420
 const WIDGET_HEIGHT = 92
@@ -88,6 +88,8 @@ export interface BrowserWindowLike {
   show(): void
   focus(): void
   minimize(): void
+  isMinimized(): boolean
+  restore(): void
   showInactive(): void
   setPosition(x: number, y: number, animate?: boolean): void
   destroy(): void
@@ -117,7 +119,7 @@ export interface WindowManagerDependencies {
   readonly log: (code: RendererDiagnostic) => void
 }
 
-type WindowKind = 'main' | 'widget'
+type WindowKind = RendererRole
 
 export type RendererDiagnostic =
   | 'renderer-load-failed:main:development'
@@ -128,6 +130,12 @@ export type RendererDiagnostic =
 export interface DevelopmentRendererSources {
   readonly main: URL
   readonly widget: URL
+}
+
+export interface WindowRendererIdentity {
+  readonly role: WindowKind
+  readonly webContents: WebContentsLike
+  readonly url: string
 }
 
 export class RendererLoadError extends Error {
@@ -214,6 +222,7 @@ export class WindowManager {
   private quitting = false
   private disposed = false
   private readonly cleanupByWindow = new Map<BrowserWindowLike, Set<() => void>>()
+  private readonly loadedRendererUrls = new Map<BrowserWindowLike, string>()
 
   constructor(private readonly dependencies: WindowManagerDependencies) {}
 
@@ -252,6 +261,7 @@ export class WindowManager {
     ).then(
       () => {
         this.assertLoadedWindow(window, 'main')
+        this.loadedRendererUrls.set(window, window.webContents.getURL())
         return window
       },
       (error: unknown) => {
@@ -325,6 +335,7 @@ export class WindowManager {
     ).then(
       () => {
         this.assertLoadedWindow(window, 'widget')
+        this.loadedRendererUrls.set(window, window.webContents.getURL())
         return window
       },
       (error: unknown) => {
@@ -364,6 +375,9 @@ export class WindowManager {
   async showMain(): Promise<void> {
     const window = await this.createMainWindow()
     this.assertRunning()
+    if (window.isMinimized()) {
+      window.restore()
+    }
     window.show()
     window.focus()
   }
@@ -395,12 +409,12 @@ export class WindowManager {
     this.widgetWindow?.hide()
   }
 
-  sendToMain(channel: string, payload: unknown): void {
-    this.mainWindow?.webContents.send(channel, payload)
+  sendToMain(channel: string, payload: unknown): boolean {
+    return this.sendToWindow(this.mainWindow, channel, payload)
   }
 
-  sendToWidget(channel: string, payload: unknown): void {
-    this.widgetWindow?.webContents.send(channel, payload)
+  sendToWidget(channel: string, payload: unknown): boolean {
+    return this.sendToWindow(this.widgetWindow, channel, payload)
   }
 
   getMainWebContents(): WebContentsLike | null {
@@ -409,6 +423,13 @@ export class WindowManager {
 
   getWidgetWebContents(): WebContentsLike | null {
     return this.widgetWindow?.webContents ?? null
+  }
+
+  getTrustedRenderers(): readonly WindowRendererIdentity[] {
+    const identities: WindowRendererIdentity[] = []
+    this.addTrustedRendererIdentity(identities, this.mainWindow, 'main')
+    this.addTrustedRendererIdentity(identities, this.widgetWindow, 'widget')
+    return identities
   }
 
   beginQuit(): void {
@@ -514,6 +535,7 @@ export class WindowManager {
   }
 
   private runWindowCleanup(window: BrowserWindowLike): void {
+    this.loadedRendererUrls.delete(window)
     const cleanups = this.cleanupByWindow.get(window)
     if (cleanups === undefined || !this.cleanupByWindow.delete(window)) {
       return
@@ -527,6 +549,45 @@ export class WindowManager {
     this.runWindowCleanup(window)
     if (!window.isDestroyed()) {
       window.destroy()
+    }
+  }
+
+  private addTrustedRendererIdentity(
+    identities: WindowRendererIdentity[],
+    window: BrowserWindowLike | null,
+    role: WindowKind,
+  ): void {
+    if (
+      window === null ||
+      window.isDestroyed() ||
+      window.webContents.isDestroyed()
+    ) {
+      return
+    }
+    const url = this.loadedRendererUrls.get(window)
+    if (url === undefined || url.length === 0) {
+      return
+    }
+    identities.push({ role, webContents: window.webContents, url })
+  }
+
+  private sendToWindow(
+    window: BrowserWindowLike | null,
+    channel: string,
+    payload: unknown,
+  ): boolean {
+    try {
+      if (
+        window === null ||
+        window.isDestroyed() ||
+        window.webContents.isDestroyed()
+      ) {
+        return false
+      }
+      window.webContents.send(channel, payload)
+      return true
+    } catch {
+      return false
     }
   }
 

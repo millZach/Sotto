@@ -28,6 +28,8 @@ class FakeWindow implements BrowserWindowLike {
   readonly show = vi.fn()
   readonly focus = vi.fn()
   readonly minimize = vi.fn()
+  readonly isMinimized = vi.fn(() => false)
+  readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
   private destroyed = false
@@ -204,6 +206,62 @@ describe('WindowManager construction', () => {
 })
 
 describe('WindowManager lifecycle', () => {
+  it('restores a minimized main window before showing and focusing it', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isMinimized.mockReturnValue(true)
+
+    await manager.showMain()
+
+    expect(main.restore).toHaveBeenCalledOnce()
+    expect(main.restore.mock.invocationCallOrder[0]).toBeLessThan(
+      main.show.mock.invocationCallOrder[0]!,
+    )
+    expect(main.show.mock.invocationCallOrder[0]).toBeLessThan(
+      main.focus.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('shows and focuses a hidden non-minimized main window without restoring it', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createMainWindow()
+    const main = windows[0]!
+
+    await manager.showMain()
+
+    expect(main.restore).not.toHaveBeenCalled()
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
+    expect(main.show.mock.invocationCallOrder[0]).toBeLessThan(
+      main.focus.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('reports renderer delivery success and contains missing, destroyed, or throwing sends', async () => {
+    const { manager, windows } = createHarness()
+
+    expect(manager.sendToMain('talktype:test', { value: 1 })).toBe(false)
+    await manager.createMainWindow()
+    const main = windows[0]!
+
+    expect(manager.sendToMain('talktype:test', { value: 2 })).toBe(true)
+    expect(main.webContents.send).toHaveBeenCalledWith('talktype:test', { value: 2 })
+
+    main.webContents.send.mockImplementationOnce(() => {
+      throw new Error('renderer stopped between the guard and send')
+    })
+    expect(manager.sendToMain('talktype:test', { value: 3 })).toBe(false)
+
+    main.webContents.isDestroyed.mockReturnValue(true)
+    expect(manager.sendToMain('talktype:test', { value: 4 })).toBe(false)
+
+    main.webContents.isDestroyed.mockImplementationOnce(() => {
+      throw new Error('destroyed check raced with native teardown')
+    })
+    expect(manager.sendToMain('talktype:test', { value: 5 })).toBe(false)
+  })
+
   it('hides the main window on close until application quit begins', async () => {
     const { manager, windows } = createHarness()
     await manager.createMainWindow()
@@ -346,6 +404,52 @@ describe('WindowManager lifecycle', () => {
     expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
     expect(windows[1]!.show).toHaveBeenCalledOnce()
     expect(windows[1]!.focus).toHaveBeenCalledOnce()
+  })
+
+  it('exposes only the live loaded renderer identities after crash recovery', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWindows()
+    const originalMain = windows[0]!
+    const originalWidget = windows[1]!
+
+    expect(manager.getTrustedRenderers()).toStrictEqual([
+      {
+        role: 'main',
+        webContents: originalMain.webContents,
+        url: 'file:///C:/TalkType/out/renderer/index.html',
+      },
+      {
+        role: 'widget',
+        webContents: originalWidget.webContents,
+        url: 'file:///C:/TalkType/out/renderer/index.html',
+      },
+    ])
+
+    originalMain.emitRenderProcessGone()
+    expect(manager.getTrustedRenderers()).toStrictEqual([
+      {
+        role: 'widget',
+        webContents: originalWidget.webContents,
+        url: 'file:///C:/TalkType/out/renderer/index.html',
+      },
+    ])
+
+    await manager.createMainWindow()
+    expect(manager.getTrustedRenderers()).toStrictEqual([
+      {
+        role: 'main',
+        webContents: windows[2]!.webContents,
+        url: 'file:///C:/TalkType/out/renderer/index.html',
+      },
+      {
+        role: 'widget',
+        webContents: originalWidget.webContents,
+        url: 'file:///C:/TalkType/out/renderer/index.html',
+      },
+    ])
+    expect(manager.getTrustedRenderers()).not.toContainEqual(
+      expect.objectContaining({ webContents: originalMain.webContents }),
+    )
   })
 
   it('destroys and replaces the widget window after its renderer process exits', async () => {

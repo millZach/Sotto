@@ -35,6 +35,10 @@ export interface AppSettings {
   onboardingComplete: boolean
 }
 
+export type SettingsPatch = Partial<
+  Omit<AppSettings, 'hotkey' | 'launchAtStartup'>
+>
+
 const fieldSchemas = {
   version: z.literal(SETTINGS_VERSION),
   theme: z.enum(['system', 'light', 'dark']),

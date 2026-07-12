@@ -1,5 +1,7 @@
 import type { WebPreferences } from 'electron'
 
+export type RendererRole = 'main' | 'widget'
+
 export type RendererSource =
   | Readonly<{ kind: 'url'; value: string }>
   | Readonly<{ kind: 'file'; value: string }>
