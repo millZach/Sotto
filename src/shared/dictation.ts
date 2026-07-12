@@ -5,7 +5,7 @@ export type DictationState =
   | { status: 'processing'; sessionId: string; startedAt: number }
   | { status: 'success'; sessionId: string; text: string; output: 'pasted' | 'copied' }
   | { status: 'cancelled'; sessionId: string }
-  | { status: 'error'; sessionId?: string; code: string; message: string }
+  | { status: 'error'; sessionId?: string | undefined; code: string; message: string }
 
 export type DictationEvent =
   | { type: 'REQUESTED'; sessionId: string }

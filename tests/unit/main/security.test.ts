@@ -15,21 +15,43 @@ describe('secureWebPreferences', () => {
 
 describe('selectRendererSource', () => {
   it('uses the development URL only while unpackaged', () => {
-    expect(selectRendererSource(false, 'http://localhost:5173', 'C:/app/index.html')).toEqual({
+    expect(
+      selectRendererSource(
+        false,
+        new URL('http://localhost:5173/src/renderer/index.html'),
+        'C:/app/index.html',
+      ),
+    ).toEqual({
       kind: 'url',
-      value: 'http://localhost:5173',
+      value: 'http://localhost:5173/src/renderer/index.html',
     })
   })
 
   it('uses bundled HTML when packaged even if a development URL is set', () => {
-    expect(selectRendererSource(true, 'https://example.invalid', 'C:/app/index.html')).toEqual({
+    expect(
+      selectRendererSource(
+        true,
+        new URL('https://example.invalid/renderer'),
+        'C:/app/index.html',
+      ),
+    ).toEqual({ kind: 'file', value: 'C:/app/index.html' })
+  })
+
+  it('uses bundled HTML when no development URL is available', () => {
+    expect(selectRendererSource(false, undefined, 'C:/app/index.html')).toEqual({
       kind: 'file',
       value: 'C:/app/index.html',
     })
   })
 
-  it('uses bundled HTML when no development URL is available', () => {
-    expect(selectRendererSource(false, undefined, 'C:/app/index.html')).toEqual({
+  it.each([
+    'https://attacker.invalid/src/renderer/index.html',
+    'http://user:password@localhost:5173/src/renderer/index.html',
+    'file:///C:/renderer/index.html',
+    'http://192.168.1.4:5173/src/renderer/index.html',
+    'http://localhost:5173/unexpected.html',
+  ])('rejects an unsafe unpackaged renderer URL: %s', (raw) => {
+    expect(selectRendererSource(false, new URL(raw), 'C:/app/index.html')).toEqual({
       kind: 'file',
       value: 'C:/app/index.html',
     })
