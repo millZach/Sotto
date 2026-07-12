@@ -22,8 +22,8 @@ export interface HistoryRepositoryOptions {
 }
 
 export interface AddHistoryOptions {
-  enabled: boolean
-  retention: number | 'unlimited'
+  readonly enabled: boolean
+  readonly retention: number | 'unlimited'
 }
 
 function cloneEntries(entries: readonly HistoryEntry[]): HistoryEntry[] {
@@ -84,18 +84,19 @@ export class HistoryRepository {
     return cloneEntries(await this.readSorted())
   }
 
-  add(entry: HistoryEntry, options: AddHistoryOptions): Promise<HistoryEntry[]> {
-    return this.enqueueMutation(async () => {
-      const parsedEntry = parseHistoryEntry(entry)
+  async add(entry: HistoryEntry, options: AddHistoryOptions): Promise<HistoryEntry[]> {
+    const parsedEntry = parseHistoryEntry(entry)
+    const { enabled, retention } = options
 
-      if (!options.enabled) {
+    return this.enqueueMutation(async () => {
+      if (!enabled) {
         return cloneEntries(await this.peekSorted())
       }
 
       const current = await this.readSorted()
       const withoutReplacement = current.filter((candidate) => candidate.id !== parsedEntry.id)
       const sorted = sortEntries([...withoutReplacement, parsedEntry])
-      const retained = applyRetention(sorted, options.retention)
+      const retained = applyRetention(sorted, retention)
       await this.store.write(retained)
       return cloneEntries(retained)
     })

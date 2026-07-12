@@ -76,6 +76,44 @@ describe('HistoryRepository', () => {
     expect((await stat(filePath)).ino).toBe(beforeStat.ino)
   })
 
+  it('uses invocation-time entry and options when history is disabled', async () => {
+    const { filePath, repository } = await createRepository()
+    const seededEntry = createEntry('seeded', 1, 'Existing transcript')
+    const seededBytes = Buffer.from(JSON.stringify([seededEntry]), 'utf8')
+    await writeFile(filePath, seededBytes)
+    const candidate = createEntry('candidate', 2, 'Original transcript')
+    const options = { enabled: false, retention: 100 }
+
+    const pending = repository.add(candidate, options)
+    candidate.id = 'mutated-candidate'
+    candidate.text = 'Mutated transcript'
+    candidate.createdAt = 99
+    options.enabled = true
+    options.retention = 0
+
+    await expect(pending).resolves.toEqual([seededEntry])
+    expect(await readFile(filePath)).toEqual(seededBytes)
+  })
+
+  it('persists an invocation-time entry and retention snapshot when history is enabled', async () => {
+    const { filePath, repository } = await createRepository()
+    const seededEntry = createEntry('seeded', 1, 'Existing transcript')
+    await writeFile(filePath, JSON.stringify([seededEntry]), 'utf8')
+    const originalCandidate = createEntry('candidate', 2, 'Original transcript')
+    const candidate = { ...originalCandidate }
+    const options = { enabled: true, retention: 2 }
+
+    const pending = repository.add(candidate, options)
+    candidate.id = 'mutated-candidate'
+    candidate.text = 'Mutated transcript'
+    candidate.createdAt = 99
+    options.retention = 0
+
+    await expect(pending).resolves.toEqual([originalCandidate, seededEntry])
+    expect(await repository.list()).toEqual([originalCandidate, seededEntry])
+    expect(await readFile(filePath, 'utf8')).not.toContain('Mutated transcript')
+  })
+
   it('leaves corrupt history byte-for-byte untouched when history is disabled', async () => {
     const { filePath, repository } = await createRepository(() => 1_725_000_000_006)
     const corruptBytes = Buffer.from([0xff, 0xfe, 0x5b, 0x7b, 0x22, 0x69, 0x64, 0x22])
@@ -269,14 +307,25 @@ describe('HistoryRepository', () => {
     expect(persisted).not.toContain('microphoneId')
   })
 
-  it('rejects an invalid added entry without creating a file', async () => {
+  it('rejects an invalid add as a promise without poisoning subsequent mutations', async () => {
     const { repository } = await createRepository()
     const invalid = { ...createEntry('1', 1), text: '' } as HistoryEntry
+    let invalidPromise: Promise<HistoryEntry[]> | undefined
+
+    expect(() => {
+      invalidPromise = repository.add(invalid, { enabled: true, retention: 'unlimited' })
+    }).not.toThrow()
+
+    expect(invalidPromise).toBeDefined()
+    await expect(invalidPromise).rejects.toBeInstanceOf(ZodError)
+    expect(await repository.exists()).toBe(false)
+
+    const validEntry = createEntry('valid', 2)
 
     await expect(
-      repository.add(invalid, { enabled: true, retention: 'unlimited' }),
-    ).rejects.toBeInstanceOf(ZodError)
-    expect(await repository.exists()).toBe(false)
+      repository.add(validEntry, { enabled: true, retention: 'unlimited' }),
+    ).resolves.toEqual([validEntry])
+    expect(await repository.list()).toEqual([validEntry])
   })
 
   it('backs up syntax-corrupt history and recovers to an empty list', async () => {
