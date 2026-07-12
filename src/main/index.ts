@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   globalShortcut,
   ipcMain,
   Menu,
@@ -13,6 +14,7 @@ import {
   type WebContentsWillNavigateEventParams,
   type WebContentsWillRedirectEventParams,
 } from 'electron'
+import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
 import {
@@ -28,6 +30,7 @@ import {
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { HotkeyManager } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
+import { createSpawnProcessAdapter, OutputService } from './output/outputService'
 import { HistoryRepository } from './storage/historyRepository'
 import { SettingsRepository } from './storage/settingsRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
@@ -273,6 +276,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     isPackaged: app.isPackaged,
     log: logOperational,
   })
+  const output = new OutputService({
+    clipboard,
+    widget: windows,
+    delay: (milliseconds) =>
+      new Promise((resolve) => {
+        setTimeout(resolve, milliseconds)
+      }),
+    process: createSpawnProcessAdapter((executable, args, options) =>
+      spawn(executable, args, options),
+    ),
+  })
 
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
@@ -415,6 +429,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           },
           publishWidgetState,
         },
+        output,
       }),
     log: logOperational,
   })
