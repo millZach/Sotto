@@ -118,7 +118,7 @@ describe('audio capture worklet', () => {
     expect(postMessage).not.toHaveBeenCalled()
   })
 
-  it('copies only channel zero into a fresh transferred buffer on every call', () => {
+  it('downmixes every bus-zero channel into a fresh transferred buffer on every call', () => {
     const { postMessage, processor } = loadProcessor()
     const channelZero = new Float32Array([0.25, -0.5, 0.75])
     const channelOne = new Float32Array([1, 1, 1])
@@ -128,14 +128,14 @@ describe('audio capture worklet', () => {
     const firstCopy = postMessage.mock.calls[0]?.[0] as Float32Array
     const firstTransfers = postMessage.mock.calls[0]?.[1] as ArrayBuffer[]
 
-    expect(firstCopy).toStrictEqual(new Float32Array([0.25, -0.5, 0.75]))
+    expect(firstCopy).toStrictEqual(new Float32Array([0.625, 0.25, 0.875]))
     expect(firstCopy).not.toBe(channelZero)
     expect(firstCopy.buffer).not.toBe(channelZero.buffer)
     expect(firstTransfers).toHaveLength(1)
     expect(firstTransfers[0]).toBe(firstCopy.buffer)
 
     channelZero.fill(0)
-    expect(firstCopy).toStrictEqual(new Float32Array([0.25, -0.5, 0.75]))
+    expect(firstCopy).toStrictEqual(new Float32Array([0.625, 0.25, 0.875]))
 
     expect(processor.process([[new Float32Array([0.1])]])).toBe(true)
     const secondCopy = postMessage.mock.calls[1]?.[0] as Float32Array
@@ -145,6 +145,20 @@ describe('audio capture worklet', () => {
     const secondTransfers = postMessage.mock.calls[1]?.[1] as ArrayBuffer[]
     expect(secondTransfers).toHaveLength(1)
     expect(secondTransfers[0]).toBe(secondCopy.buffer)
+  })
+
+  it('preserves mono and captures a signal present only on the right channel', () => {
+    const { postMessage, processor } = loadProcessor()
+
+    expect(processor.process([[new Float32Array([0.2, -0.4])]])).toBe(true)
+    expect(postMessage.mock.calls[0]?.[0]).toStrictEqual(new Float32Array([0.2, -0.4]))
+
+    expect(
+      processor.process([
+        [new Float32Array([0, 0]), new Float32Array([0.8, -0.6])],
+      ]),
+    ).toBe(true)
+    expect(postMessage.mock.calls[1]?.[0]).toStrictEqual(new Float32Array([0.4, -0.3]))
   })
 })
 
@@ -249,6 +263,70 @@ describe('AudioRecorder', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(2)
     await recorder.cancel()
   })
+
+  it('does not let a later stop replace cancel semantics during initialization', async () => {
+    const media = deferred<MediaStreamAdapter>()
+    const harness = createHarness({ mediaDevices: { getUserMedia: () => media.promise } })
+    const recorder = harness.recorder()
+    const starting = recorder.start()
+
+    await recorder.cancel()
+    await expect(recorder.stop()).resolves.toBeNull()
+    media.resolve(harness.stream)
+
+    await expect(starting).rejects.toMatchObject({ code: 'START_FAILED' })
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+  })
+
+  it.each(['resolve', 'reject'] as const)(
+    'treats stop during getUserMedia as clean cancellation after late %s',
+    async (outcome) => {
+      const media = deferred<MediaStreamAdapter>()
+      const harness = createHarness({ mediaDevices: { getUserMedia: () => media.promise } })
+      const onDurationLimit = vi.fn()
+      const onLevel = vi.fn()
+      const recorder = harness.recorder({ maxRecordingSeconds: 1, onDurationLimit, onLevel })
+      const starting = recorder.start()
+
+      await expect(recorder.stop()).resolves.toBeNull()
+      if (outcome === 'resolve') media.resolve(harness.stream)
+      else media.reject(new Error('late permission details'))
+      await expect(starting).resolves.toBeUndefined()
+
+      expect(recorder.getLastResult()).toBeNull()
+      expect(recorder.getLastError()).toBeNull()
+      expect(harness.track.stop).toHaveBeenCalledTimes(outcome === 'resolve' ? 1 : 0)
+      expect(harness.dependencies.createAudioContext).not.toHaveBeenCalled()
+      expect(harness.dependencies.setTimer).not.toHaveBeenCalled()
+      expect(onDurationLimit).not.toHaveBeenCalled()
+      expect(onLevel).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'treats stop during worklet loading as clean cancellation after late %s',
+    async (outcome) => {
+      const moduleLoad = deferred<undefined>()
+      const harness = createHarness()
+      harness.context.audioWorklet.addModule.mockImplementationOnce(() => moduleLoad.promise)
+      const recorder = harness.recorder({ maxRecordingSeconds: 1 })
+      const starting = recorder.start()
+      await vi.waitFor(() => expect(harness.context.audioWorklet.addModule).toHaveBeenCalledOnce())
+
+      await expect(recorder.stop()).resolves.toBeNull()
+      if (outcome === 'resolve') moduleLoad.resolve(undefined)
+      else moduleLoad.reject(new Error('late module details'))
+      await expect(starting).resolves.toBeUndefined()
+
+      expect(recorder.getLastResult()).toBeNull()
+      expect(recorder.getLastError()).toBeNull()
+      expect(harness.track.stop).toHaveBeenCalledOnce()
+      expect(harness.context.close).toHaveBeenCalledOnce()
+      expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
+      expect(harness.dependencies.createAudioWorkletNode).not.toHaveBeenCalled()
+      expect(harness.dependencies.setTimer).not.toHaveBeenCalled()
+    },
+  )
 
   it('stops automatically at the duration limit and exposes the result exactly once', async () => {
     const harness = createHarness()

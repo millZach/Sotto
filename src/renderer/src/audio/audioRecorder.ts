@@ -87,6 +87,7 @@ interface RecordingSession {
   sourceFrames: number
   starting: boolean
   terminated: boolean
+  resolveStartOnTermination?: boolean
   stream?: MediaStreamAdapter
   context?: AudioContextAdapter
   source?: AudioNodeAdapter
@@ -206,10 +207,12 @@ export class AudioRecorder {
       }
       session.starting = false
     } catch {
+      const resolveCancelledStart = session.resolveStartOnTermination === true
       session.starting = false
       session.terminated = true
       await this.cleanup(session)
       if (this.session === session) this.session = null
+      if (resolveCancelledStart) return
       throw new AudioRecorderError('START_FAILED', 'Unable to start microphone capture.')
     }
   }
@@ -217,6 +220,11 @@ export class AudioRecorder {
   async stop(): Promise<AudioRecordingResult | null> {
     const session = this.session
     if (session === null) return null
+    if (session.starting) {
+      if (!session.terminated) session.resolveStartOnTermination = true
+      await this.finalize(session, false)
+      return null
+    }
     const result = await this.finalize(session, true)
     return result === null ? null : cloneResult(result)
   }
