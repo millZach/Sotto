@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { access, copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 const MAX_CORRUPT_BACKUP_ATTEMPTS = 100
+const MAX_TEMPORARY_FILE_ATTEMPTS = 100
 
 function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
@@ -76,23 +78,54 @@ export class AtomicJsonStore<T> {
   private async writeImmediately(value: T): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true })
 
-    const temporaryPath = `${this.filePath}.tmp-${process.pid}-${this.createId()}`
+    let temporaryPath: string | undefined
     let handle: Awaited<ReturnType<typeof open>> | undefined
 
     try {
-      handle = await open(temporaryPath, 'wx', 0o600)
+      const temporaryFile = await this.openUniqueTemporaryFile()
+      temporaryPath = temporaryFile.path
+      handle = temporaryFile.handle
       await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
       await handle.sync()
       await handle.close()
       handle = undefined
       await rename(temporaryPath, this.filePath)
+      temporaryPath = undefined
     } catch (error) {
       if (handle !== undefined) {
         await handle.close().catch(() => undefined)
       }
-      await unlink(temporaryPath).catch(() => undefined)
+      if (temporaryPath !== undefined) {
+        await unlink(temporaryPath).catch(() => undefined)
+      }
       throw error
     }
+  }
+
+  private async openUniqueTemporaryFile(): Promise<{
+    path: string
+    handle: Awaited<ReturnType<typeof open>>
+  }> {
+    for (let attempt = 0; attempt < MAX_TEMPORARY_FILE_ATTEMPTS; attempt += 1) {
+      const temporaryPath = `${this.filePath}.tmp-${process.pid}-${this.createId()}`
+
+      try {
+        return {
+          path: temporaryPath,
+          handle: await open(temporaryPath, 'wx', 0o600),
+        }
+      } catch (error) {
+        if (hasErrorCode(error, 'EEXIST')) {
+          continue
+        }
+
+        throw error
+      }
+    }
+
+    throw new Error(
+      `Could not create temporary JSON file after ${MAX_TEMPORARY_FILE_ATTEMPTS} attempts`,
+    )
   }
 
   private async backUpCorruptFile(): Promise<void> {
@@ -100,17 +133,49 @@ export class AtomicJsonStore<T> {
 
     for (let attempt = 0; attempt < MAX_CORRUPT_BACKUP_ATTEMPTS; attempt += 1) {
       const backupPath = `${this.filePath}.corrupt-${timestamp}-${this.createId()}`
-      if (await this.pathExists(backupPath)) {
-        continue
+
+      try {
+        await copyFile(this.filePath, backupPath, fsConstants.COPYFILE_EXCL)
+      } catch (error) {
+        if (hasErrorCode(error, 'EEXIST')) {
+          if (await this.corruptSourceStillExists()) {
+            continue
+          }
+          return
+        }
+        if (hasErrorCode(error, 'ENOENT')) {
+          if (await this.corruptSourceStillExists()) {
+            continue
+          }
+          return
+        }
+
+        throw error
       }
 
-      await rename(this.filePath, backupPath)
+      try {
+        await unlink(this.filePath)
+      } catch (error) {
+        if (hasErrorCode(error, 'ENOENT')) {
+          if (await this.corruptSourceStillExists()) {
+            continue
+          }
+          return
+        }
+
+        throw error
+      }
+
       return
     }
 
     throw new Error(
       `Could not preserve corrupt JSON after ${MAX_CORRUPT_BACKUP_ATTEMPTS} backup attempts`,
     )
+  }
+
+  private async corruptSourceStillExists(): Promise<boolean> {
+    return (await this.readValue()).status === 'invalid'
   }
 
   private async pathExists(path: string): Promise<boolean> {

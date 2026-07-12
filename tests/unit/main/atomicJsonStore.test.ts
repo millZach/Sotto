@@ -1,4 +1,14 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -168,6 +178,66 @@ describe('AtomicJsonStore', () => {
     expect(await readdir(root)).toEqual(['store.json'])
   })
 
+  it('retries an occupied temporary candidate without deleting its bytes', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const occupiedBytes = Buffer.from('pre-existing temporary bytes', 'utf8')
+    const occupiedPath = `${filePath}.tmp-${process.pid}-occupied-temp`
+    const freshPath = `${filePath}.tmp-${process.pid}-fresh-temp`
+    await writeFile(occupiedPath, occupiedBytes)
+    const ids = ['occupied-temp', 'fresh-temp']
+    const store = createStore(filePath, Date.now, () => ids.shift() ?? 'unexpected-id')
+    let writeSucceeded = true
+
+    await store.write({ value: 'saved' }).catch(() => {
+      writeSucceeded = false
+    })
+
+    expect.soft(writeSucceeded).toBe(true)
+    expect.soft(await readFile(occupiedPath).catch(() => undefined)).toEqual(occupiedBytes)
+    expect.soft(await readFile(filePath, 'utf8').catch(() => undefined)).toBe(
+      '{\n  "value": "saved"\n}\n',
+    )
+    expect.soft(await readFile(freshPath).catch(() => undefined)).toBeUndefined()
+    expect(await readdir(root)).toEqual([
+      'store.json',
+      `store.json.tmp-${process.pid}-occupied-temp`,
+    ])
+  })
+
+  it('rejects after bounded temporary collisions without deleting any existing file', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const activeBytes = Buffer.from('{\n  "value": "original"\n}\n', 'utf8')
+    const occupiedIds = Array.from({ length: 100 }, (_, index) => `occupied-${index}`)
+    const occupiedFiles = occupiedIds.map((id) => ({
+      bytes: Buffer.from(`occupied temporary ${id}`, 'utf8'),
+      path: `${filePath}.tmp-${process.pid}-${id}`,
+    }))
+    await writeFile(filePath, activeBytes)
+    await Promise.all(occupiedFiles.map(({ bytes, path }) => writeFile(path, bytes)))
+    const remainingIds = [...occupiedIds]
+    const store = createStore(
+      filePath,
+      Date.now,
+      () => remainingIds.shift() ?? 'unexpected-extra-attempt',
+    )
+
+    const error = await store.write({ value: 'replacement' }).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+
+    expect.soft(error).toEqual(
+      new Error('Could not create temporary JSON file after 100 attempts'),
+    )
+    expect.soft(await readFile(filePath)).toEqual(activeBytes)
+    const preservedBytes = await Promise.all(
+      occupiedFiles.map(({ path }) => readFile(path).catch(() => undefined)),
+    )
+    expect(preservedBytes).toEqual(occupiedFiles.map(({ bytes }) => bytes))
+  })
+
   it('serializes concurrent writes so the last invoked write wins', async () => {
     const root = await createRoot()
     const filePath = join(root, 'store.json')
@@ -275,6 +345,44 @@ describe('AtomicJsonStore', () => {
       'store.json.corrupt-1725000000013-second-id',
     ])
   })
+
+  it(
+    'preserves an occupied broken-symlink backup candidate and retries with a new id',
+    async ({ skip }) => {
+      const root = await createRoot()
+      const filePath = join(root, 'store.json')
+      const corruptBytes = Buffer.from('{"value":', 'utf8')
+      const firstCandidate = `${filePath}.corrupt-1725000000015-broken-link`
+      const secondCandidate = `${filePath}.corrupt-1725000000015-fresh-backup`
+      const missingTarget = 'missing-backup-target'
+      await writeFile(filePath, corruptBytes)
+      try {
+        await symlink(missingTarget, firstCandidate)
+      } catch (error) {
+        const code =
+          typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+        if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES')) {
+          skip('Symbolic-link creation is not permitted on this Windows host')
+        }
+        throw error
+      }
+      const ids = ['broken-link', 'fresh-backup']
+      const store = createStore(
+        filePath,
+        () => 1_725_000_000_015,
+        () => ids.shift() ?? 'unexpected-id',
+      )
+
+      await expect(store.read()).resolves.toEqual({ value: 'default' })
+
+      expect(await readlink(firstCandidate)).toBe(missingTarget)
+      expect(await readFile(secondCandidate)).toEqual(corruptBytes)
+      expect(await readdir(root)).toEqual([
+        'store.json.corrupt-1725000000015-broken-link',
+        'store.json.corrupt-1725000000015-fresh-backup',
+      ])
+    },
+  )
 
   it('never replaces a pre-existing timestamp-only corrupt backup', async () => {
     const root = await createRoot()
