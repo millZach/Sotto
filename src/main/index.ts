@@ -113,6 +113,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     (event: { preventDefault(): void }, details: { readonly url: string }) => void,
     Map<NavigationEventName, () => void>
   >()
+  private readonly rendererProcessGoneCleanups = new Map<() => void, () => void>()
 
   constructor(private readonly window: BrowserWindow) {
     this.webContents = window.webContents
@@ -179,6 +180,19 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     if (cleanups?.size === 0) {
       this.navigationCleanups.delete(listener)
     }
+  }
+
+  onRenderProcessGone(listener: () => void): void {
+    const wrapped = (): void => listener()
+    this.window.webContents.on('render-process-gone', wrapped)
+    this.rendererProcessGoneCleanups.set(listener, () => {
+      this.window.webContents.removeListener('render-process-gone', wrapped)
+    })
+  }
+
+  removeRenderProcessGoneListener(listener: () => void): void {
+    this.rendererProcessGoneCleanups.get(listener)?.()
+    this.rendererProcessGoneCleanups.delete(listener)
   }
 
   hide(): void {

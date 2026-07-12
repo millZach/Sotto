@@ -167,6 +167,15 @@ export interface NativeRuntimeDependencies {
   readonly log: (code: 'native-hotkey-registration-failed' | 'native-main-show-failed') => void
 }
 
+export class NativeRuntimeStoppedError extends Error {
+  readonly code = 'NATIVE_RUNTIME_STOPPED'
+
+  constructor() {
+    super('Native runtime stopped')
+    this.name = 'NativeRuntimeStoppedError'
+  }
+}
+
 export class NativeRuntimeController implements RuntimeController {
   private startPromise: Promise<void> | null = null
   private permissionCleanup: (() => void) | null = null
@@ -177,11 +186,11 @@ export class NativeRuntimeController implements RuntimeController {
   constructor(private readonly dependencies: NativeRuntimeDependencies) {}
 
   start(): Promise<void> {
+    if (this.isStopped()) {
+      return Promise.reject(new NativeRuntimeStoppedError())
+    }
     if (this.startPromise !== null) {
       return this.startPromise
-    }
-    if (this.disposed) {
-      return Promise.reject(new Error('Native runtime is disposed'))
     }
 
     this.startPromise = this.startOnce()
@@ -189,6 +198,9 @@ export class NativeRuntimeController implements RuntimeController {
   }
 
   showMain(): void {
+    if (this.isStopped()) {
+      return
+    }
     void this.dependencies.windows.showMain().catch(() => {
       this.dependencies.log('native-main-show-failed')
     })
@@ -220,18 +232,51 @@ export class NativeRuntimeController implements RuntimeController {
 
   private async startOnce(): Promise<void> {
     await this.dependencies.windows.createWindows()
-    this.permissionCleanup = this.dependencies.installPermissions()
-    this.ipcCleanup = this.dependencies.registerIpc()
+    this.assertRunning()
+    this.permissionCleanup = this.installCleanup(this.dependencies.installPermissions)
+    this.assertRunning()
+    this.ipcCleanup = this.installCleanup(this.dependencies.registerIpc)
+    this.assertRunning()
     const settings = await this.dependencies.settings.get()
+    this.assertRunning()
     const hotkeyResult = this.dependencies.hotkeys.replace(settings.hotkey)
+    this.assertRunning()
     if (!hotkeyResult.ok) {
       this.dependencies.log('native-hotkey-registration-failed')
+      this.assertRunning()
     }
     this.dependencies.startup.set(settings.launchAtStartup)
+    this.assertRunning()
     this.dependencies.tray.update({ dictating: false, autoPaste: settings.autoPaste })
+    this.assertRunning()
     if (!settings.startMinimized) {
       await this.dependencies.windows.showMain()
+      this.assertRunning()
     }
+  }
+
+  private installCleanup(installer: () => () => void): () => void {
+    this.assertRunning()
+    const cleanup = installer()
+    if (this.isStopped()) {
+      try {
+        cleanup()
+      } catch {
+        // Shutdown ownership still wins if native cleanup itself fails.
+      }
+      throw new NativeRuntimeStoppedError()
+    }
+    return cleanup
+  }
+
+  private assertRunning(): void {
+    if (this.isStopped()) {
+      throw new NativeRuntimeStoppedError()
+    }
+  }
+
+  private isStopped(): boolean {
+    return this.disposed || this.quitting
   }
 }
 

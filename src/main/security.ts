@@ -33,8 +33,7 @@ function isTrustedDevelopmentRenderer(url: URL): boolean {
     hostname === '[::1]' ||
     hostname === '::1'
   const isKnownDocument =
-    url.pathname === '/src/renderer/index.html' ||
-    url.pathname === '/src/renderer/widget.html'
+    url.pathname === '/index.html' || url.pathname === '/widget.html'
 
   return (
     (url.protocol === 'http:' || url.protocol === 'https:') &&

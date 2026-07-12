@@ -30,11 +30,21 @@ class FakeWindow implements BrowserWindowLike {
   readonly minimize = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
-  readonly destroy = vi.fn()
-  readonly isDestroyed = vi.fn(() => false)
+  private destroyed = false
+  readonly destroy = vi.fn(() => {
+    this.destroyed = true
+  })
+  readonly isDestroyed = vi.fn(() => this.destroyed)
   readonly loadURL = vi.fn<(url: string) => Promise<void>>(async () => undefined)
   readonly loadFile = vi.fn<(path: string) => Promise<void>>(async () => undefined)
   readonly removedListeners: WindowEvent[] = []
+  readonly renderProcessGoneListeners = new Set<() => void>()
+  readonly onRenderProcessGone = vi.fn((listener: () => void) => {
+    this.renderProcessGoneListeners.add(listener)
+  })
+  readonly removeRenderProcessGoneListener = vi.fn((listener: () => void) => {
+    this.renderProcessGoneListeners.delete(listener)
+  })
 
   private readonly listeners = new Map<WindowEvent, Set<(event: { preventDefault(): void }) => void>>()
 
@@ -69,6 +79,22 @@ class FakeWindow implements BrowserWindowLike {
     }
     return nativeEvent
   }
+
+  emitRenderProcessGone(): void {
+    for (const listener of [...this.renderProcessGoneListeners]) {
+      listener()
+    }
+  }
+}
+
+function createDeferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
 }
 
 function createHarness(
@@ -256,6 +282,156 @@ describe('WindowManager lifecycle', () => {
       expect(navigationEvent.preventDefault).toHaveBeenCalledOnce()
     }
   })
+
+  it('rejects every create and show entry point after disposal without constructing a window', async () => {
+    const { createWindow, manager } = createHarness()
+    manager.dispose()
+
+    await expect(manager.createMainWindow()).rejects.toMatchObject({
+      name: 'WindowManagerStoppedError',
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    await expect(manager.createWidgetWindow()).rejects.toMatchObject({
+      name: 'WindowManagerStoppedError',
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    await expect(manager.showMain()).rejects.toMatchObject({
+      name: 'WindowManagerStoppedError',
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    await expect(manager.showWidget()).rejects.toMatchObject({
+      name: 'WindowManagerStoppedError',
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    expect(createWindow).not.toHaveBeenCalled()
+  })
+
+  it('does not resurrect or cache a main window when disposal wins an in-flight renderer load', async () => {
+    const rendererLoad = createDeferred<void>()
+    const { createWindow, manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => rendererLoad.promise)
+    })
+    const creation = manager.createMainWindow()
+
+    manager.dispose()
+    rendererLoad.resolve()
+
+    await expect(creation).rejects.toMatchObject({
+      name: 'WindowManagerStoppedError',
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    expect(windows[0]!.destroy).toHaveBeenCalledOnce()
+    await expect(manager.createMainWindow()).rejects.toMatchObject({
+      code: 'WINDOW_MANAGER_STOPPED',
+    })
+    expect(createWindow).toHaveBeenCalledOnce()
+  })
+
+  it('destroys and replaces the main window after its renderer process exits', async () => {
+    const { createWindow, manager, windows } = createHarness()
+    await manager.createMainWindow()
+    const crashed = windows[0]!
+
+    crashed.emitRenderProcessGone()
+
+    expect(crashed.destroy).toHaveBeenCalledOnce()
+    expect(crashed.removedListeners).toStrictEqual(['close', 'closed'])
+    expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
+    expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
+    expect(manager.getMainWebContents()).toBeNull()
+
+    await manager.showMain()
+
+    expect(createWindow).toHaveBeenCalledTimes(2)
+    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
+    expect(windows[1]!.show).toHaveBeenCalledOnce()
+    expect(windows[1]!.focus).toHaveBeenCalledOnce()
+  })
+
+  it('destroys and replaces the widget window after its renderer process exits', async () => {
+    const { createWindow, manager, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const crashed = windows[0]!
+
+    crashed.emitRenderProcessGone()
+
+    expect(crashed.destroy).toHaveBeenCalledOnce()
+    expect(crashed.removedListeners).toStrictEqual(['closed'])
+    expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
+    expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
+    expect(manager.getWidgetWebContents()).toBeNull()
+
+    await manager.showWidget()
+
+    expect(createWindow).toHaveBeenCalledTimes(2)
+    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/widget.html')
+    expect(windows[1]!.showInactive).toHaveBeenCalledOnce()
+  })
+
+  it('rejects an in-flight creation whose renderer exits and allows a fresh retry', async () => {
+    const firstLoad = createDeferred<void>()
+    let creationCount = 0
+    const { createWindow, manager, windows } = createHarness({}, (window) => {
+      if (creationCount === 0) {
+        window.loadFile.mockImplementationOnce(() => firstLoad.promise)
+      }
+      creationCount += 1
+    })
+    const creation = manager.createMainWindow()
+
+    windows[0]!.emitRenderProcessGone()
+    firstLoad.resolve()
+
+    await expect(creation).rejects.toMatchObject({
+      name: 'RendererProcessGoneError',
+      code: 'RENDERER_PROCESS_GONE',
+    })
+    expect(windows[0]!.destroy).toHaveBeenCalledOnce()
+    expect(windows[0]!.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
+
+    await expect(manager.createMainWindow()).resolves.toBe(windows[1])
+    expect(createWindow).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache a renderer that exits synchronously while its load starts', async () => {
+    const firstLoad = createDeferred<void>()
+    let creationCount = 0
+    const { createWindow, manager, windows } = createHarness({}, (window) => {
+      if (creationCount === 0) {
+        window.loadFile.mockImplementationOnce(() => {
+          window.emitRenderProcessGone()
+          return firstLoad.promise
+        })
+      }
+      creationCount += 1
+    })
+
+    const firstCreation = manager.createMainWindow()
+    const retry = manager.createMainWindow()
+
+    await expect(retry).resolves.toBe(windows[1])
+    expect(createWindow).toHaveBeenCalledTimes(2)
+    firstLoad.resolve()
+    await expect(firstCreation).rejects.toMatchObject({ code: 'RENDERER_PROCESS_GONE' })
+  })
+
+  it('does not duplicate cleanup when renderer exit overlaps a pending load and quit', async () => {
+    const rendererLoad = createDeferred<void>()
+    const { manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => rendererLoad.promise)
+    })
+    const creation = manager.createWidgetWindow()
+
+    manager.beginQuit()
+    manager.dispose()
+    windows[0]!.emitRenderProcessGone()
+    rendererLoad.resolve()
+
+    await expect(creation).rejects.toMatchObject({ code: 'WINDOW_MANAGER_STOPPED' })
+    expect(windows[0]!.destroy).toHaveBeenCalledOnce()
+    expect(windows[0]!.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
+    expect(windows[0]!.renderProcessGoneListeners.size).toBe(0)
+  })
 })
 
 describe('WindowManager renderer loading', () => {
@@ -272,7 +448,7 @@ describe('WindowManager renderer loading', () => {
     await manager.createMainWindow()
 
     expect(windows[0]!.loadURL).toHaveBeenCalledWith(
-      'http://127.0.0.1:5173/src/renderer/index.html',
+      'http://127.0.0.1:5173/index.html',
     )
     expect(windows[0]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
     expect(log).toHaveBeenCalledWith('renderer-load-failed:main:development')
@@ -334,10 +510,10 @@ describe('WindowManager renderer loading', () => {
     await manager.createWindows()
 
     expect(windows[0]!.loadURL).toHaveBeenCalledWith(
-      'https://localhost:5173/src/renderer/index.html',
+      'https://localhost:5173/index.html',
     )
     expect(windows[1]!.loadURL).toHaveBeenCalledWith(
-      'https://localhost:5173/src/renderer/widget.html',
+      'https://localhost:5173/widget.html',
     )
   })
 })
@@ -362,7 +538,8 @@ describe('parseDevelopmentRendererSources', () => {
 
       expect(sources?.main).toBeInstanceOf(URL)
       expect(sources?.widget).toBeInstanceOf(URL)
-      expect(sources?.main.href).not.toBe(sources?.widget.href)
+      expect(sources?.main.href).toBe(`${new URL(raw).origin}/index.html`)
+      expect(sources?.widget.href).toBe(`${new URL(raw).origin}/widget.html`)
     },
   )
 })

@@ -18,12 +18,12 @@ describe('selectRendererSource', () => {
     expect(
       selectRendererSource(
         false,
-        new URL('http://localhost:5173/src/renderer/index.html'),
+        new URL('http://localhost:5173/index.html'),
         'C:/app/index.html',
       ),
     ).toEqual({
       kind: 'url',
-      value: 'http://localhost:5173/src/renderer/index.html',
+      value: 'http://localhost:5173/index.html',
     })
   })
 
@@ -45,10 +45,10 @@ describe('selectRendererSource', () => {
   })
 
   it.each([
-    'https://attacker.invalid/src/renderer/index.html',
-    'http://user:password@localhost:5173/src/renderer/index.html',
+    'https://attacker.invalid/index.html',
+    'http://user:password@localhost:5173/index.html',
     'file:///C:/renderer/index.html',
-    'http://192.168.1.4:5173/src/renderer/index.html',
+    'http://192.168.1.4:5173/index.html',
     'http://localhost:5173/unexpected.html',
   ])('rejects an unsafe unpackaged renderer URL: %s', (raw) => {
     expect(selectRendererSource(false, new URL(raw), 'C:/app/index.html')).toEqual({

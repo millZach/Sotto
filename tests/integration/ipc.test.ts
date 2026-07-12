@@ -704,6 +704,16 @@ function createRuntime(start: () => Promise<void> = async () => undefined) {
   } satisfies RuntimeController
 }
 
+function createDeferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
+
 describe('bootstrap failure containment', () => {
   it('catches readiness rejection, emits only a safe diagnostic, and quits in a controlled way', async () => {
     const app = createApp(Promise.reject(new Error('secret token C:/Users/private')))
@@ -841,5 +851,168 @@ describe('NativeRuntimeController', () => {
       'tray:dispose',
       'windows:dispose',
     ])
+  })
+
+  it('halts startup when disposal wins while native windows are still loading', async () => {
+    const windowLoad = createDeferred<void>()
+    const windows = {
+      createWindows: vi.fn(() => windowLoad.promise),
+      showMain: vi.fn(async () => undefined),
+      beginQuit: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const hotkeys = { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() }
+    const tray = { update: vi.fn(), dispose: vi.fn() }
+    const startup = { set: vi.fn() }
+    const settingsGet = vi.fn(async () => ({ ...DEFAULT_SETTINGS }))
+    const installPermissions = vi.fn(() => vi.fn())
+    const registerIpc = vi.fn(() => vi.fn())
+    const runtime = new NativeRuntimeController({
+      windows,
+      hotkeys,
+      tray,
+      startup,
+      settings: { get: settingsGet },
+      installPermissions,
+      registerIpc,
+      log: vi.fn(),
+    })
+    const startupAttempt = runtime.start()
+
+    runtime.dispose()
+    windowLoad.resolve()
+
+    await expect(startupAttempt).rejects.toMatchObject({
+      name: 'NativeRuntimeStoppedError',
+      code: 'NATIVE_RUNTIME_STOPPED',
+    })
+    expect(installPermissions).not.toHaveBeenCalled()
+    expect(registerIpc).not.toHaveBeenCalled()
+    expect(settingsGet).not.toHaveBeenCalled()
+    expect(hotkeys.replace).not.toHaveBeenCalled()
+    expect(startup.set).not.toHaveBeenCalled()
+    expect(tray.update).not.toHaveBeenCalled()
+    expect(windows.showMain).not.toHaveBeenCalled()
+  })
+
+  it('halts startup after a pending settings read and cleans installed resources exactly once', async () => {
+    const settingsRead = createDeferred<typeof DEFAULT_SETTINGS>()
+    const permissionCleanup = vi.fn()
+    const ipcCleanup = vi.fn()
+    const windows = {
+      createWindows: vi.fn(async () => undefined),
+      showMain: vi.fn(async () => undefined),
+      beginQuit: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const hotkeys = { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() }
+    const tray = { update: vi.fn(), dispose: vi.fn() }
+    const startup = { set: vi.fn() }
+    const settingsGet = vi.fn(() => settingsRead.promise)
+    const runtime = new NativeRuntimeController({
+      windows,
+      hotkeys,
+      tray,
+      startup,
+      settings: { get: settingsGet },
+      installPermissions: () => permissionCleanup,
+      registerIpc: () => ipcCleanup,
+      log: vi.fn(),
+    })
+    const startupAttempt = runtime.start()
+    await vi.waitFor(() => expect(settingsGet).toHaveBeenCalledOnce())
+
+    runtime.dispose()
+    settingsRead.resolve({ ...DEFAULT_SETTINGS })
+
+    await expect(startupAttempt).rejects.toMatchObject({
+      name: 'NativeRuntimeStoppedError',
+      code: 'NATIVE_RUNTIME_STOPPED',
+    })
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(ipcCleanup).toHaveBeenCalledOnce()
+    expect(hotkeys.replace).not.toHaveBeenCalled()
+    expect(startup.set).not.toHaveBeenCalled()
+    expect(tray.update).not.toHaveBeenCalled()
+    expect(windows.showMain).not.toHaveBeenCalled()
+  })
+
+  it('immediately cleans a permission resource returned after disposal wins its installer', async () => {
+    const permissionCleanup = vi.fn()
+    const registerIpc = vi.fn(() => vi.fn())
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+      installPermissions: () => {
+        runtime.dispose()
+        return permissionCleanup
+      },
+      registerIpc,
+      log: vi.fn(),
+    })
+
+    await expect(runtime.start()).rejects.toMatchObject({ code: 'NATIVE_RUNTIME_STOPPED' })
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(registerIpc).not.toHaveBeenCalled()
+  })
+
+  it('immediately cleans an IPC resource returned after disposal wins its installer', async () => {
+    const permissionCleanup = vi.fn()
+    const ipcCleanup = vi.fn()
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+      installPermissions: () => permissionCleanup,
+      registerIpc: () => {
+        runtime.dispose()
+        return ipcCleanup
+      },
+      log: vi.fn(),
+    })
+
+    await expect(runtime.start()).rejects.toMatchObject({ code: 'NATIVE_RUNTIME_STOPPED' })
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(ipcCleanup).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a new start call after a completed runtime has been disposed', async () => {
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+      installPermissions: () => vi.fn(),
+      registerIpc: () => vi.fn(),
+      log: vi.fn(),
+    })
+    await runtime.start()
+    runtime.dispose()
+
+    await expect(runtime.start()).rejects.toMatchObject({
+      name: 'NativeRuntimeStoppedError',
+      code: 'NATIVE_RUNTIME_STOPPED',
+    })
   })
 })

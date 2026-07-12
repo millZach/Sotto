@@ -102,6 +102,8 @@ export interface BrowserWindowLike {
     event: NavigationEventName,
     listener: (event: NavigateEventLike, details: { readonly url: string }) => void,
   ): void
+  onRenderProcessGone(listener: () => void): void
+  removeRenderProcessGoneListener(listener: () => void): void
 }
 
 export interface WindowManagerDependencies {
@@ -132,6 +134,24 @@ export class RendererLoadError extends Error {
   constructor(readonly windowKind: WindowKind) {
     super(`${windowKind} renderer unavailable`)
     this.name = 'RendererLoadError'
+  }
+}
+
+export class WindowManagerStoppedError extends Error {
+  readonly code = 'WINDOW_MANAGER_STOPPED'
+
+  constructor() {
+    super('Window manager stopped')
+    this.name = 'WindowManagerStoppedError'
+  }
+}
+
+export class RendererProcessGoneError extends Error {
+  readonly code = 'RENDERER_PROCESS_GONE'
+
+  constructor(readonly windowKind: WindowKind) {
+    super(`${windowKind} renderer process stopped`)
+    this.name = 'RendererProcessGoneError'
   }
 }
 
@@ -181,8 +201,8 @@ export function parseDevelopmentRendererSources(
   }
 
   return Object.freeze({
-    main: new URL('/src/renderer/index.html', source),
-    widget: new URL('/src/renderer/widget.html', source),
+    main: new URL('/index.html', source),
+    widget: new URL('/widget.html', source),
   })
 }
 
@@ -198,6 +218,9 @@ export class WindowManager {
   constructor(private readonly dependencies: WindowManagerDependencies) {}
 
   createMainWindow(): Promise<BrowserWindowLike> {
+    if (this.isStopped()) {
+      return Promise.reject(new WindowManagerStoppedError())
+    }
     if (this.mainReady !== null) {
       return this.mainReady
     }
@@ -218,6 +241,7 @@ export class WindowManager {
     })
     this.mainWindow = window
     this.installMainLifecycle(window)
+    this.installRendererProcessLifecycle(window, 'main')
     this.installNavigationPolicy(window)
 
     const ready = this.loadRenderer(
@@ -226,12 +250,22 @@ export class WindowManager {
       this.dependencies.mainHtmlPath,
       this.dependencies.developmentSources?.main,
     ).then(
-      () => window,
+      () => {
+        this.assertLoadedWindow(window, 'main')
+        return window
+      },
       (error: unknown) => {
+        const rendererGone = this.isRendererGone(window, 'main')
         if (this.mainWindow === window) {
           this.mainWindow = null
         }
         this.disposeWindow(window)
+        if (this.isStopped()) {
+          throw new WindowManagerStoppedError()
+        }
+        if (rendererGone) {
+          throw new RendererProcessGoneError('main')
+        }
         throw error
       },
     )
@@ -241,10 +275,16 @@ export class WindowManager {
       }
     })
     this.mainReady = wrappedReady
+    if (this.isRendererGone(window, 'main')) {
+      this.mainReady = null
+    }
     return wrappedReady
   }
 
   createWidgetWindow(): Promise<BrowserWindowLike> {
+    if (this.isStopped()) {
+      return Promise.reject(new WindowManagerStoppedError())
+    }
     if (this.widgetReady !== null) {
       return this.widgetReady
     }
@@ -274,6 +314,7 @@ export class WindowManager {
     })
     this.widgetWindow = window
     this.installClosedLifecycle(window, 'widget')
+    this.installRendererProcessLifecycle(window, 'widget')
     this.installNavigationPolicy(window)
 
     const ready = this.loadRenderer(
@@ -282,12 +323,22 @@ export class WindowManager {
       this.dependencies.widgetHtmlPath,
       this.dependencies.developmentSources?.widget,
     ).then(
-      () => window,
+      () => {
+        this.assertLoadedWindow(window, 'widget')
+        return window
+      },
       (error: unknown) => {
+        const rendererGone = this.isRendererGone(window, 'widget')
         if (this.widgetWindow === window) {
           this.widgetWindow = null
         }
         this.disposeWindow(window)
+        if (this.isStopped()) {
+          throw new WindowManagerStoppedError()
+        }
+        if (rendererGone) {
+          throw new RendererProcessGoneError('widget')
+        }
         throw error
       },
     )
@@ -297,16 +348,22 @@ export class WindowManager {
       }
     })
     this.widgetReady = wrappedReady
+    if (this.isRendererGone(window, 'widget')) {
+      this.widgetReady = null
+    }
     return wrappedReady
   }
 
   async createWindows(): Promise<void> {
     await this.createMainWindow()
+    this.assertRunning()
     await this.createWidgetWindow()
+    this.assertRunning()
   }
 
   async showMain(): Promise<void> {
     const window = await this.createMainWindow()
+    this.assertRunning()
     window.show()
     window.focus()
   }
@@ -321,6 +378,7 @@ export class WindowManager {
 
   async showWidget(): Promise<void> {
     const widget = await this.createWidgetWindow()
+    this.assertRunning()
     const workArea = this.dependencies.display.getDisplayNearestPoint(
       this.dependencies.display.getCursorScreenPoint(),
     ).workArea
@@ -329,6 +387,7 @@ export class WindowManager {
     const x = clamp(centeredX, workArea.x, workArea.x + workArea.width - WIDGET_WIDTH)
     const y = clamp(aboveBottom, workArea.y, workArea.y + workArea.height - WIDGET_HEIGHT)
     widget.setPosition(x, y, false)
+    this.assertRunning()
     widget.showInactive()
   }
 
@@ -427,6 +486,27 @@ export class WindowManager {
     })
   }
 
+  private installRendererProcessLifecycle(
+    window: BrowserWindowLike,
+    kind: WindowKind,
+  ): void {
+    const onRendererProcessGone = (): void => {
+      if (kind === 'main' && this.mainWindow === window) {
+        this.mainWindow = null
+        this.mainReady = null
+      }
+      if (kind === 'widget' && this.widgetWindow === window) {
+        this.widgetWindow = null
+        this.widgetReady = null
+      }
+      this.disposeWindow(window)
+    }
+    window.onRenderProcessGone(onRendererProcessGone)
+    this.addCleanup(window, () => {
+      window.removeRenderProcessGoneListener(onRendererProcessGone)
+    })
+  }
+
   private addCleanup(window: BrowserWindowLike, cleanup: () => void): void {
     const cleanups = this.cleanupByWindow.get(window) ?? new Set<() => void>()
     cleanups.add(cleanup)
@@ -448,6 +528,32 @@ export class WindowManager {
     if (!window.isDestroyed()) {
       window.destroy()
     }
+  }
+
+  private assertRunning(): void {
+    if (this.isStopped()) {
+      throw new WindowManagerStoppedError()
+    }
+  }
+
+  private assertLoadedWindow(window: BrowserWindowLike, kind: WindowKind): void {
+    if (this.isStopped()) {
+      this.disposeWindow(window)
+      throw new WindowManagerStoppedError()
+    }
+    if (this.isRendererGone(window, kind)) {
+      this.disposeWindow(window)
+      throw new RendererProcessGoneError(kind)
+    }
+  }
+
+  private isRendererGone(window: BrowserWindowLike, kind: WindowKind): boolean {
+    const current = kind === 'main' ? this.mainWindow : this.widgetWindow
+    return current !== window || window.isDestroyed() || window.webContents.isDestroyed()
+  }
+
+  private isStopped(): boolean {
+    return this.disposed || this.quitting
   }
 
   private async loadRenderer(
