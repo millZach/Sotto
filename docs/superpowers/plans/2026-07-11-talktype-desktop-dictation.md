@@ -419,7 +419,7 @@ git commit -m "fix: serialize storage transactions and recovery"
 - Modify: `src/main/index.ts`
 - Modify: `src/preload/index.ts`
 
-- [ ] **Step 1: Write failing native-boundary tests**
+- [x] **Step 1: Write failing native-boundary tests**
 
 ```ts
 // tests/unit/main/hotkeyManager.test.ts
@@ -439,13 +439,13 @@ describe('HotkeyManager', () => {
 
 Window tests must assert complete BrowserWindow constructor option objects with exact equality, not `toMatchObject` or another permissive subset matcher, and must exercise the real `WindowManager`-to-`BrowserWindow` wiring. The complete main options are 1080×720 with secure preferences; widget options are 420×92, transparent, frameless, always-on-top, skip-taskbar, non-focusable, and `backgroundThrottling: false`; active-display positioning stays inside the work area. Startup/load tests must force renderer-load and readiness/bootstrap rejections, then prove each rejection is caught, produces safe operational diagnostics without sensitive content, and takes a controlled local fallback or quit path instead of becoming an unhandled rejection. Hotkey tests must also prove bare Escape is registered only while listening and removed for every stop, cancel, error, and quit. IPC tests must prove unknown navigation and permissions are denied, settings payloads are parsed, and the preload exposes named methods without a generic `send` function.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/main/windowManager.test.ts tests/unit/main/hotkeyManager.test.ts tests/integration/ipc.test.ts`
 
 Expected: FAIL because native service modules and typed channels do not exist.
 
-- [ ] **Step 3: Implement adapters and bootstrap**
+- [x] **Step 3: Implement adapters and bootstrap**
 
 `src/shared/channels.ts` exports literal channel names. `src/shared/contracts.ts` exports `TalkTypeBridge` with named methods for settings, history, dictation commands/events, widget state, model status, clipboard output, startup, and app controls.
 
@@ -453,7 +453,7 @@ Expected: FAIL because native service modules and typed channels do not exist.
 
 Preload uses `contextBridge.exposeInMainWorld('talktype', bridge)` with per-method `ipcRenderer.invoke` and unsubscribe-returning event listeners. No channel name is accepted from renderer input.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -465,7 +465,7 @@ npm run build
 
 Expected: focused tests pass and production bundles compile.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/shared/channels.ts src/shared/contracts.ts src/main src/preload tests/unit/main tests/integration/ipc.test.ts
