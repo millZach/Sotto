@@ -343,7 +343,7 @@ git commit -m "feat: define TalkType domain and settings contracts"
 - Create: `src/main/storage/settingsRepository.ts`
 - Create: `src/main/storage/historyRepository.ts`
 
-- [ ] **Step 1: Write failing real-filesystem tests**
+- [x] **Step 1: Write failing real-filesystem tests**
 
 ```ts
 // tests/unit/main/historyRepository.test.ts
@@ -370,13 +370,13 @@ describe('HistoryRepository', () => {
 
 Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>-<uuid>`, non-mutating `peek()` behavior for valid, missing, syntax-corrupt, and semantically invalid JSON, field-level settings recovery, disabled-history no-write behavior (including leaving a corrupt file byte-for-byte unchanged with no backup or temporary sibling), case-insensitive search, entry deletion, and clear. Use a deterministic clock and ID seam while exercising the real temporary filesystem to cover concurrent recovering reads, recovery/write invocation order in both directions, occupied backup-name retry, and operation-queue recovery after a rejected write. Add repository tests proving concurrent disjoint settings patches are both persisted, a `get()` invoked after a mutation observes it, and clearing history deletes exact `history.json.corrupt-*` recovery siblings without deleting unrelated files. Prove `HistoryRepository.add()` snapshots and validates its entry plus `enabled` and `retention` options at invocation time, before entering the mutation queue, so caller mutations cannot enable a disabled write, alter transcript content, or change retention; invalid input must reject as a Promise without entering or poisoning that queue.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npm.cmd test -- --run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts`
 
 Expected: FAIL because the storage modules do not exist.
 
-- [ ] **Step 3: Implement the repositories**
+- [x] **Step 3: Implement the repositories**
 
 `AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, a default factory, and optional clock and ID factories. A single rejection-resilient per-store operation queue serializes recovering `read()`, non-mutating `peek()`, `write()`, and `exists()` calls in invocation order while still returning each operation's rejection to its caller. `read()` parses UTF-8 JSON; on syntax or semantic validation failure it exclusively copies the original to a `*.corrupt-<timestamp>-<uuid>` sibling with `COPYFILE_EXCL`, then unlinks the active corrupt file and returns fresh defaults. Backup-name collisions request a new ID and retry with an explicit bound, never replacing already-preserved bytes; concurrent source disappearance is re-read safely, and a non-`ENOENT` unlink failure leaves the exclusive backup intact while propagating the failure. `peek()` uses the same parsing rules but returns fresh defaults for missing or invalid input without renaming, creating, or writing any filesystem entry. `write()` uses bounded `open(..., 'wx', 0o600)` retries to claim a unique sibling temporary file, tracks ownership only after a successful open, syncs and closes it, then renames it over the destination; failure cleanup unlinks only a temporary path claimed by that write.
 
@@ -384,7 +384,7 @@ Expected: FAIL because the storage modules do not exist.
 
 The temporary-file rename step is an atomic complete-file replacement, so readers do not observe a partially written JSON document. This design does not claim directory-entry durability across power loss because the parent directory is not synced.
 
-- [ ] **Step 4: Verify GREEN and regressions**
+- [x] **Step 4: Verify GREEN and regressions**
 
 Run:
 
@@ -395,7 +395,7 @@ npm.cmd test
 
 Expected: storage tests and the full suite pass with no warnings.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/main/storage tests/unit/main
