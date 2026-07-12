@@ -4,6 +4,7 @@ import {
   bootstrapTalkType,
   installSessionPermissionPolicy,
   NativeRuntimeController,
+  NativeRuntimeStoppedError,
   type BootstrapApplication,
   type PermissionCheckHandler,
   type PermissionRequestHandler,
@@ -779,6 +780,133 @@ describe('bootstrap failure containment', () => {
     expect(result.started).toBe(false)
     expect(app.quit).toHaveBeenCalledOnce()
     expect(initialize).not.toHaveBeenCalled()
+  })
+
+  it('stops before initialization when before-quit wins during readiness', async () => {
+    const readiness = createDeferred<void>()
+    const app = createApp(readiness.promise)
+    const initialize = vi.fn(async () => createRuntime())
+    const log = vi.fn()
+    const bootstrap = bootstrapTalkType({ app, initialize, log })
+
+    app.emit('before-quit')
+    readiness.resolve()
+
+    await expect(bootstrap).resolves.toMatchObject({ started: false })
+    expect(initialize).not.toHaveBeenCalled()
+    expect(log).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  it('disposes a late initialization candidate when before-quit has already won', async () => {
+    const initialization = createDeferred<RuntimeController>()
+    const app = createApp(Promise.resolve())
+    const initialize = vi.fn(() => initialization.promise)
+    const log = vi.fn()
+    const bootstrap = bootstrapTalkType({ app, initialize, log })
+    await vi.waitFor(() => expect(initialize).toHaveBeenCalledOnce())
+
+    app.emit('before-quit')
+    const candidate = createRuntime()
+    initialization.resolve(candidate)
+
+    await expect(bootstrap).resolves.toMatchObject({ started: false })
+    expect(candidate.start).not.toHaveBeenCalled()
+    expect(candidate.beginQuit).toHaveBeenCalledOnce()
+    expect(candidate.dispose).toHaveBeenCalledOnce()
+    expect(log).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  it('contains an expected stopped rejection after before-quit during runtime startup', async () => {
+    const startup = createDeferred<void>()
+    const app = createApp(Promise.resolve())
+    const runtime = createRuntime(() => startup.promise)
+    const log = vi.fn()
+    const bootstrap = bootstrapTalkType({
+      app,
+      initialize: async () => runtime,
+      log,
+    })
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce())
+
+    app.emit('second-instance')
+    app.emit('before-quit')
+    startup.reject(new NativeRuntimeStoppedError())
+
+    await expect(bootstrap).resolves.toMatchObject({ started: false })
+    expect(runtime.showMain).not.toHaveBeenCalled()
+    expect(runtime.beginQuit).toHaveBeenCalledOnce()
+    expect(runtime.dispose).toHaveBeenCalledOnce()
+    expect(log).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  it('coalesces second-instance intent across readiness and startup, then shows immediately', async () => {
+    const readiness = createDeferred<void>()
+    const startup = createDeferred<void>()
+    const app = createApp(readiness.promise)
+    const runtime = createRuntime(() => startup.promise)
+    const bootstrap = bootstrapTalkType({
+      app,
+      initialize: async () => runtime,
+      log: vi.fn(),
+    })
+
+    app.emit('second-instance')
+    app.emit('second-instance')
+    readiness.resolve()
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce())
+    app.emit('second-instance')
+    app.emit('second-instance')
+    const callsBeforeStartupCompleted = runtime.showMain.mock.calls.length
+    startup.resolve()
+
+    await expect(bootstrap).resolves.toMatchObject({ started: true })
+    expect(callsBeforeStartupCompleted).toBe(0)
+    expect(runtime.showMain).toHaveBeenCalledOnce()
+
+    app.emit('second-instance')
+    expect(runtime.showMain).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains second-instance intent while initialization is pending for a minimized runtime', async () => {
+    const initialization = createDeferred<RuntimeController>()
+    const app = createApp(Promise.resolve())
+    const initialize = vi.fn(() => initialization.promise)
+    const bootstrap = bootstrapTalkType({ app, initialize, log: vi.fn() })
+    await vi.waitFor(() => expect(initialize).toHaveBeenCalledOnce())
+
+    app.emit('second-instance')
+    app.emit('second-instance')
+    const minimizedRuntime = createRuntime()
+    initialization.resolve(minimizedRuntime)
+
+    await expect(bootstrap).resolves.toMatchObject({ started: true })
+    expect(minimizedRuntime.start).toHaveBeenCalledOnce()
+    expect(minimizedRuntime.showMain).toHaveBeenCalledOnce()
+  })
+
+  it('drops pending second-instance intent when startup fails', async () => {
+    const startup = createDeferred<void>()
+    const app = createApp(Promise.resolve())
+    const runtime = createRuntime(() => startup.promise)
+    const log = vi.fn()
+    const bootstrap = bootstrapTalkType({
+      app,
+      initialize: async () => runtime,
+      log,
+    })
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce())
+
+    app.emit('second-instance')
+    app.emit('second-instance')
+    startup.reject(new Error('real startup failure'))
+
+    await expect(bootstrap).resolves.toMatchObject({ started: false })
+    expect(runtime.showMain).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith('bootstrap-startup-failed')
+    expect(app.quit).toHaveBeenCalledOnce()
   })
 })
 

@@ -305,17 +305,40 @@ export async function bootstrapTalkType(
 
   let runtime: RuntimeController | null = null
   let disposed = false
-  const onSecondInstance = (): void => runtime?.showMain()
+  let runtimeStarted = false
+  let pendingSecondInstance = false
+  const stopRuntime = (candidate: RuntimeController): void => {
+    candidate.beginQuit()
+    candidate.dispose()
+  }
+  const onSecondInstance = (): void => {
+    if (disposed) {
+      return
+    }
+    if (runtimeStarted && runtime !== null) {
+      runtime.showMain()
+      return
+    }
+    pendingSecondInstance = true
+  }
+  const consumePendingSecondInstance = (): boolean => {
+    const pending = pendingSecondInstance
+    pendingSecondInstance = false
+    return pending
+  }
   const dispose = (): void => {
     if (disposed) {
       return
     }
     disposed = true
+    pendingSecondInstance = false
+    runtimeStarted = false
     app.removeListener('second-instance', onSecondInstance)
     app.removeListener('before-quit', onBeforeQuit)
-    if (runtime !== null) {
-      runtime.beginQuit()
-      runtime.dispose()
+    const activeRuntime = runtime
+    runtime = null
+    if (activeRuntime !== null) {
+      stopRuntime(activeRuntime)
     }
   }
   const onBeforeQuit = (): void => dispose()
@@ -326,20 +349,57 @@ export async function bootstrapTalkType(
   try {
     await app.whenReady()
   } catch {
+    if (disposed) {
+      return { started: false, dispose }
+    }
     dependencies.log('bootstrap-readiness-failed')
     dispose()
     app.quit()
     return { started: false, dispose }
   }
 
+  if (disposed) {
+    return { started: false, dispose }
+  }
+
+  let candidate: RuntimeController
   try {
-    runtime = await dependencies.initialize()
-    await runtime.start()
+    candidate = await dependencies.initialize()
   } catch {
+    if (disposed) {
+      return { started: false, dispose }
+    }
     dependencies.log('bootstrap-startup-failed')
     dispose()
     app.quit()
     return { started: false, dispose }
+  }
+
+  if (disposed) {
+    stopRuntime(candidate)
+    return { started: false, dispose }
+  }
+
+  runtime = candidate
+  try {
+    await candidate.start()
+  } catch {
+    if (disposed) {
+      return { started: false, dispose }
+    }
+    dependencies.log('bootstrap-startup-failed')
+    dispose()
+    app.quit()
+    return { started: false, dispose }
+  }
+
+  if (disposed) {
+    return { started: false, dispose }
+  }
+
+  runtimeStarted = true
+  if (consumePendingSecondInstance()) {
+    candidate.showMain()
   }
 
   return { started: true, dispose }
