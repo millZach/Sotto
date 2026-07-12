@@ -481,7 +481,7 @@ git commit -m "feat: add secure native app lifecycle and bridge"
 - Create: `src/main/output/outputService.ts`
 - Modify: `src/main/ipc/registerIpc.ts`
 
-- [ ] **Step 1: Write failing output tests**
+- [x] **Step 1: Write failing output tests**
 
 ```ts
 // tests/unit/main/pasteCommand.test.ts
@@ -503,23 +503,23 @@ describe('buildPasteInvocation', () => {
 
 Output-service tests use fakes and prove this order: ignore empty text; write clipboard; hide widget; wait configured delay; invoke static paste; return `pasted`. A spawn failure must return `copied` without clearing the clipboard or rejecting the transcription.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts`
 
 Expected: FAIL because output modules do not exist.
 
-- [ ] **Step 3: Implement clipboard and paste output**
+- [x] **Step 3: Implement clipboard and paste output**
 
 `buildPasteInvocation()` returns `powershell.exe` plus `-NoProfile`, `-NonInteractive`, `-WindowStyle`, `Hidden`, `-EncodedCommand`, and a UTF-16LE Base64 script that loads `System.Windows.Forms` and sends only `^v`. `OutputService` receives injected clipboard, widget, delay, and spawn adapters. It exposes `deliver(text, { autoPaste, pasteDelayMs }): Promise<'pasted' | 'copied' | 'empty'>` and never passes text to the process adapter.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts`
 
 Expected: all output tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/main/output src/main/ipc/registerIpc.ts tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts
