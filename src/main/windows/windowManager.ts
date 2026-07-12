@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url'
+
 import { APP_NAME } from '../../shared/constants'
 import { selectRendererSource, type RendererRole } from '../security'
 
@@ -628,8 +630,10 @@ export class WindowManager {
       developmentSource,
       bundledPath,
     )
+    const bundledUrl = pathToFileURL(bundledPath).href
 
     if (source.kind === 'url') {
+      this.loadedRendererUrls.set(window, source.value)
       try {
         await window.loadURL(source.value)
         return
@@ -638,6 +642,7 @@ export class WindowManager {
       }
     }
 
+    this.loadedRendererUrls.set(window, bundledUrl)
     try {
       await window.loadFile(bundledPath)
     } catch {

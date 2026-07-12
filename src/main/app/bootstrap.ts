@@ -341,18 +341,6 @@ export class NativeRuntimeController implements RuntimeController {
   }
 
   private async startOnce(): Promise<void> {
-    await this.dependencies.windows.createWindows()
-    this.assertRunning()
-    this.permissionCleanup = this.installCleanup(
-      this.dependencies.installPermissions,
-      'native-permission-cleanup-failed',
-    )
-    this.assertRunning()
-    this.ipcCleanup = this.installCleanup(
-      this.dependencies.registerIpc,
-      'native-ipc-cleanup-failed',
-    )
-    this.assertRunning()
     const settings = await this.dependencies.settings.get()
     this.assertRunning()
     const hotkeyResult = this.dependencies.hotkeys.replace(settings.hotkey)
@@ -364,6 +352,18 @@ export class NativeRuntimeController implements RuntimeController {
     this.dependencies.startup.set(settings.launchAtStartup)
     this.assertRunning()
     this.dependencies.tray.update({ dictating: false, autoPaste: settings.autoPaste })
+    this.assertRunning()
+    this.permissionCleanup = this.installCleanup(
+      this.dependencies.installPermissions,
+      'native-permission-cleanup-failed',
+    )
+    this.assertRunning()
+    this.ipcCleanup = this.installCleanup(
+      this.dependencies.registerIpc,
+      'native-ipc-cleanup-failed',
+    )
+    this.assertRunning()
+    await this.dependencies.windows.createWindows()
     this.assertRunning()
     if (!settings.startMinimized) {
       await this.dependencies.windows.showMain()

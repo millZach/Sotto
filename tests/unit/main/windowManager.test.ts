@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -539,6 +541,70 @@ describe('WindowManager lifecycle', () => {
 })
 
 describe('WindowManager renderer loading', () => {
+  it('publishes the bundled identity before invoking loadFile', async () => {
+    const managerRef: { current?: WindowManager } = {}
+    let identityDuringLoad: ReturnType<WindowManager['getTrustedRenderers']> = []
+    const harness = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(async () => {
+        identityDuringLoad = managerRef.current!.getTrustedRenderers()
+      })
+    })
+    managerRef.current = harness.manager
+
+    await harness.manager.createMainWindow()
+
+    expect(identityDuringLoad).toStrictEqual([
+      {
+        role: 'main',
+        webContents: harness.windows[0]!.webContents,
+        url: pathToFileURL('C:/TalkType/out/renderer/index.html').href,
+      },
+    ])
+  })
+
+  it('switches synchronous trust from the development URL to bundled fallback', async () => {
+    const managerRef: { current?: WindowManager } = {}
+    let identityDuringDevelopmentLoad: ReturnType<
+      WindowManager['getTrustedRenderers']
+    > = []
+    let identityDuringBundledFallback: ReturnType<
+      WindowManager['getTrustedRenderers']
+    > = []
+    const harness = createHarness(
+      {
+        isPackaged: false,
+        developmentSources: parseDevelopmentRendererSources('http://127.0.0.1:5173')!,
+      },
+      (window) => {
+        window.loadURL.mockImplementationOnce(async () => {
+          identityDuringDevelopmentLoad = managerRef.current!.getTrustedRenderers()
+          throw new Error('development renderer unavailable')
+        })
+        window.loadFile.mockImplementationOnce(async () => {
+          identityDuringBundledFallback = managerRef.current!.getTrustedRenderers()
+        })
+      },
+    )
+    managerRef.current = harness.manager
+
+    await harness.manager.createMainWindow()
+
+    expect(identityDuringDevelopmentLoad).toStrictEqual([
+      {
+        role: 'main',
+        webContents: harness.windows[0]!.webContents,
+        url: 'http://127.0.0.1:5173/index.html',
+      },
+    ])
+    expect(identityDuringBundledFallback).toStrictEqual([
+      {
+        role: 'main',
+        webContents: harness.windows[0]!.webContents,
+        url: pathToFileURL('C:/TalkType/out/renderer/index.html').href,
+      },
+    ])
+  })
+
   it('falls back from a failed development URL to the bundled local renderer without leaking details', async () => {
     const loadFailure = new Error('token=secret C:/Users/private/source')
     const { log, manager, windows } = createHarness(
@@ -586,6 +652,7 @@ describe('WindowManager renderer loading', () => {
     )
 
     await expect(manager.createMainWindow()).rejects.toEqual(new RendererLoadError('main'))
+    expect(manager.getTrustedRenderers()).toStrictEqual([])
     expect(log).toHaveBeenCalledWith('renderer-load-failed:main:bundled')
     expect(JSON.stringify(log.mock.calls)).not.toContain('private')
   })

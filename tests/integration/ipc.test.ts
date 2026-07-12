@@ -1515,6 +1515,125 @@ describe('bootstrap failure containment', () => {
 })
 
 describe('NativeRuntimeController', () => {
+  it('fully initializes native state and handlers before renderer construction begins', async () => {
+    const ipcHarness = createIpcHarness()
+    ipcHarness.cleanup()
+    const order: string[] = []
+    let activeHotkey: string | null = null
+    let startupEnabled = false
+    let trayAutoPaste = true
+    let permissionsInstalled = false
+    let rendererObservation: Readonly<{
+      hotkey: string | null
+      startup: boolean
+      autoPaste: boolean
+      permissions: boolean
+    }> | null = null
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => {
+          order.push('windows')
+          const hotkey = await ipcHarness.ipc.invoke(HOTKEY_GET)
+          const startup = (await ipcHarness.ipc.invoke(STARTUP_GET)) as {
+            readonly enabled: boolean
+          }
+          rendererObservation = {
+            hotkey: hotkey as string | null,
+            startup: startup.enabled,
+            autoPaste: trayAutoPaste,
+            permissions: permissionsInstalled,
+          }
+        }),
+        showMain: vi.fn(async () => {
+          order.push('show')
+        }),
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: {
+        replace: vi.fn((accelerator: string) => {
+          order.push('hotkey')
+          activeHotkey = accelerator
+          return { ok: true as const }
+        }),
+        dispose: vi.fn(),
+      },
+      tray: {
+        update: vi.fn((state) => {
+          order.push('tray')
+          trayAutoPaste = state.autoPaste
+        }),
+        dispose: vi.fn(),
+      },
+      startup: {
+        set: vi.fn((enabled: boolean) => {
+          order.push('startup')
+          startupEnabled = enabled
+        }),
+      },
+      settings: {
+        get: vi.fn(async () => {
+          order.push('settings')
+          return {
+            ...DEFAULT_SETTINGS,
+            hotkey: 'Alt+Space',
+            launchAtStartup: true,
+            autoPaste: false,
+          }
+        }),
+      },
+      installPermissions: vi.fn(() => {
+        order.push('permissions')
+        permissionsInstalled = true
+        return vi.fn()
+      }),
+      registerIpc: vi.fn(() => {
+        order.push('ipc')
+        return registerIpc(ipcHarness.ipc, {
+          settings: ipcHarness.settings,
+          history: ipcHarness.history,
+          startup: {
+            get: () => ({ enabled: startupEnabled }),
+            set: (enabled) => ({ enabled }),
+          },
+          hotkeys: {
+            current: () => activeHotkey,
+            replace: () => ({ ok: false, reason: 'unavailable' }),
+          },
+          app: ipcHarness.app,
+          trustedSenders: () => [
+            {
+              role: 'main',
+              webContents: ipcHarness.trustedContents,
+              url: ipcHarness.trustedUrl,
+            },
+          ],
+        })
+      }),
+      log: vi.fn(),
+    })
+
+    await runtime.start()
+
+    expect(rendererObservation).toStrictEqual({
+      hotkey: 'Alt+Space',
+      startup: true,
+      autoPaste: false,
+      permissions: true,
+    })
+    expect(order).toStrictEqual([
+      'settings',
+      'hotkey',
+      'startup',
+      'tray',
+      'permissions',
+      'ipc',
+      'windows',
+      'show',
+    ])
+    runtime.dispose()
+  })
+
   it('starts native services from validated settings and releases only owned resources once', async () => {
     const order: string[] = []
     const windows = {
@@ -1597,8 +1716,10 @@ describe('NativeRuntimeController', () => {
     const tray = { update: vi.fn(), dispose: vi.fn() }
     const startup = { set: vi.fn() }
     const settingsGet = vi.fn(async () => ({ ...DEFAULT_SETTINGS }))
-    const installPermissions = vi.fn(() => vi.fn())
-    const registerIpc = vi.fn(() => vi.fn())
+    const permissionCleanup = vi.fn()
+    const ipcCleanup = vi.fn()
+    const installPermissions = vi.fn(() => permissionCleanup)
+    const registerIpc = vi.fn(() => ipcCleanup)
     const runtime = new NativeRuntimeController({
       windows,
       hotkeys,
@@ -1610,6 +1731,7 @@ describe('NativeRuntimeController', () => {
       log: vi.fn(),
     })
     const startupAttempt = runtime.start()
+    await vi.waitFor(() => expect(windows.createWindows).toHaveBeenCalledOnce())
 
     runtime.dispose()
     windowLoad.resolve()
@@ -1618,16 +1740,18 @@ describe('NativeRuntimeController', () => {
       name: 'NativeRuntimeStoppedError',
       code: 'NATIVE_RUNTIME_STOPPED',
     })
-    expect(installPermissions).not.toHaveBeenCalled()
-    expect(registerIpc).not.toHaveBeenCalled()
-    expect(settingsGet).not.toHaveBeenCalled()
-    expect(hotkeys.replace).not.toHaveBeenCalled()
-    expect(startup.set).not.toHaveBeenCalled()
-    expect(tray.update).not.toHaveBeenCalled()
+    expect(settingsGet).toHaveBeenCalledOnce()
+    expect(hotkeys.replace).toHaveBeenCalledOnce()
+    expect(startup.set).toHaveBeenCalledOnce()
+    expect(tray.update).toHaveBeenCalledOnce()
+    expect(installPermissions).toHaveBeenCalledOnce()
+    expect(registerIpc).toHaveBeenCalledOnce()
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(ipcCleanup).toHaveBeenCalledOnce()
     expect(windows.showMain).not.toHaveBeenCalled()
   })
 
-  it('halts startup after a pending settings read and cleans installed resources exactly once', async () => {
+  it('halts before native initialization when disposal wins a pending settings read', async () => {
     const settingsRead = createDeferred<typeof DEFAULT_SETTINGS>()
     const permissionCleanup = vi.fn()
     const ipcCleanup = vi.fn()
@@ -1661,11 +1785,12 @@ describe('NativeRuntimeController', () => {
       name: 'NativeRuntimeStoppedError',
       code: 'NATIVE_RUNTIME_STOPPED',
     })
-    expect(permissionCleanup).toHaveBeenCalledOnce()
-    expect(ipcCleanup).toHaveBeenCalledOnce()
+    expect(permissionCleanup).not.toHaveBeenCalled()
+    expect(ipcCleanup).not.toHaveBeenCalled()
     expect(hotkeys.replace).not.toHaveBeenCalled()
     expect(startup.set).not.toHaveBeenCalled()
     expect(tray.update).not.toHaveBeenCalled()
+    expect(windows.createWindows).not.toHaveBeenCalled()
     expect(windows.showMain).not.toHaveBeenCalled()
   })
 

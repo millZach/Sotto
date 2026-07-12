@@ -377,16 +377,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     tray,
     startup,
     settings,
-    installPermissions: () => {
-      if (!windows.getTrustedRenderers().some((renderer) => renderer.role === 'main')) {
-        throw new Error('Main renderer unavailable')
-      }
-      return installSessionPermissionPolicy(permissionAdapter, () =>
+    installPermissions: () =>
+      installSessionPermissionPolicy(permissionAdapter, () =>
         windows
           .getTrustedRenderers()
           .filter((renderer) => renderer.role === 'main'),
-      )
-    },
+      ),
     registerIpc: () =>
       registerIpc(ipcMain, {
         settings: {
