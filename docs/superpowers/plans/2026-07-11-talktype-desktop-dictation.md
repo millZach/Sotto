@@ -537,7 +537,7 @@ git commit -m "feat: copy and safely paste dictation output"
 - Create: `src/renderer/src/audio/audioRecorder.ts`
 - Create: `src/renderer/src/audio/soundCues.ts`
 
-- [ ] **Step 1: Write failing audio tests**
+- [x] **Step 1: Write failing audio tests**
 
 ```ts
 // tests/unit/renderer/audioMath.test.ts
@@ -560,23 +560,23 @@ describe('audio math', () => {
 
 Recorder tests provide fake media tracks and audio nodes and prove selected `deviceId` constraints, level callbacks, one active session, maximum-duration stop, and release of every track/node on stop, cancel, or error. Sound-cue tests use an injected AudioContext and prove cues do nothing when disabled, start uses a short rising two-tone pattern, stop uses a short falling pattern, and all oscillator/gain nodes disconnect.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/audioMath.test.ts tests/unit/renderer/audioRecorder.test.ts tests/unit/renderer/soundCues.test.ts`
 
 Expected: FAIL because audio modules do not exist.
 
-- [ ] **Step 3: Implement the worklet recorder**
+- [x] **Step 3: Implement the worklet recorder**
 
 The worklet copies mono channel chunks into transferable `Float32Array` messages. `AudioRecorder.start` requests `{ audio: { deviceId: selected ? { exact: selected } : undefined, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }`, creates an AudioContext, loads the worklet, routes through a zero-gain node to keep processing active, and records chunks. `stop` concatenates once, resamples to 16 kHz, and returns `{ samples, sourceSampleRate, durationMs }`. `cancel` returns no audio. All termination paths clear timers and close resources. `SoundCuePlayer` synthesizes the tested 60–90 ms gain-ramped tones locally and never loads an audio asset.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/renderer/audioMath.test.ts tests/unit/renderer/audioRecorder.test.ts tests/unit/renderer/soundCues.test.ts`
 
 Expected: all audio tests pass without jsdom unhandled errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/public/audio-capture-worklet.js src/renderer/src/audio tests/unit/renderer
