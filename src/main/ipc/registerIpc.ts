@@ -107,7 +107,7 @@ const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate'])
 const modelInstallSchema = z
   .object({ preset: modelPresetSchema, consent: z.literal(true) })
   .strict()
-const outputTextSchema = z.string().min(1).max(200_000)
+const outputTextSchema = z.string().max(200_000)
 
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })

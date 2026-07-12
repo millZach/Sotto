@@ -576,7 +576,45 @@ describe('IPC validation and lifecycle', () => {
         pasteDelayMs: 0,
       }),
     ).rejects.toThrow('Invalid IPC payload')
+    await expect(harness.ipc.invoke(OUTPUT_DELIVER, 42)).rejects.toThrow(
+      'Invalid IPC payload',
+    )
+    await expect(
+      harness.ipc.invoke(OUTPUT_DELIVER, 'x'.repeat(200_001)),
+    ).rejects.toThrow('Invalid IPC payload')
     expect(deliver).toHaveBeenCalledTimes(1)
+  })
+
+  it('delivers empty output with the current main-process settings', async () => {
+    const harness = createIpcHarness()
+    const deliver = vi.fn(async () => 'empty' as const)
+    harness.cleanup()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        {
+          role: 'main',
+          webContents: harness.trustedContents,
+          url: harness.trustedUrl,
+        },
+      ],
+      output: { deliver },
+    })
+    harness.settings.get.mockResolvedValueOnce({
+      ...DEFAULT_SETTINGS,
+      autoPaste: true,
+      pasteDelayMs: 410,
+    })
+
+    await expect(harness.ipc.invoke(OUTPUT_DELIVER, '')).resolves.toBe('empty')
+    expect(deliver).toHaveBeenCalledWith('', {
+      autoPaste: true,
+      pasteDelayMs: 410,
+    })
   })
 
   it('uses settings privacy and retention when adding validated history', async () => {

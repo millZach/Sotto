@@ -26,6 +26,7 @@ export interface SpawnedProcessLike {
     event: 'exit',
     listener: (code: number | null, signal: string | null) => void,
   ): SpawnedProcessLike
+  kill(): boolean
 }
 
 export type SpawnProcess = (
@@ -37,6 +38,8 @@ export type SpawnProcess = (
     readonly stdio: 'ignore'
   },
 ) => SpawnedProcessLike
+
+export const PASTE_PROCESS_TIMEOUT_MS = 5_000
 
 export class OutputClipboardError extends Error {
   readonly code = 'OUTPUT_CLIPBOARD_FAILED'
@@ -52,9 +55,13 @@ export function createSpawnProcessAdapter(spawn: SpawnProcess): PasteProcessAdap
     run(invocation): Promise<boolean> {
       return new Promise((resolve) => {
         let settled = false
+        let timeout: ReturnType<typeof setTimeout> | undefined
         const finish = (successful: boolean): void => {
           if (!settled) {
             settled = true
+            if (timeout !== undefined) {
+              clearTimeout(timeout)
+            }
             resolve(successful)
           }
         }
@@ -67,6 +74,16 @@ export function createSpawnProcessAdapter(spawn: SpawnProcess): PasteProcessAdap
           })
           child.once('error', () => finish(false))
           child.once('exit', (code, signal) => finish(code === 0 && signal === null))
+          if (!settled) {
+            timeout = setTimeout(() => {
+              finish(false)
+              try {
+                child.kill()
+              } catch {
+                // Timeout remains a finite copied outcome even if termination fails.
+              }
+            }, PASTE_PROCESS_TIMEOUT_MS)
+          }
         } catch {
           finish(false)
         }

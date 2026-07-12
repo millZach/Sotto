@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   OutputService,
   OutputClipboardError,
+  PASTE_PROCESS_TIMEOUT_MS,
   createSpawnProcessAdapter,
   type SpawnedProcessLike,
   type OutputServiceDependencies,
@@ -182,6 +183,7 @@ describe('createSpawnProcessAdapter', () => {
         listeners.set(event, listener as (...args: never[]) => void)
         return this
       },
+      kill: vi.fn(() => true),
     }
     const spawn = vi.fn(() => child)
     const invocation: PasteInvocation = Object.freeze({
@@ -216,6 +218,7 @@ describe('createSpawnProcessAdapter', () => {
           listeners.set(event, listener as (...args: never[]) => void)
           return this
         },
+        kill: vi.fn(() => true),
       }
     })
     const adapter = createSpawnProcessAdapter(spawn)
@@ -239,6 +242,7 @@ describe('createSpawnProcessAdapter', () => {
         listeners.set(event, listener as (...args: never[]) => void)
         return this
       },
+      kill: vi.fn(() => true),
     }))
 
     const result = adapter.run({ executable: 'powershell.exe', args: [] })
@@ -246,5 +250,104 @@ describe('createSpawnProcessAdapter', () => {
     listeners.get('exit')?.(0 as never, null as never)
 
     await expect(result).resolves.toBe(false)
+  })
+
+  it('kills a child that never exits and resolves false at the bounded timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const kill = vi.fn(() => true)
+      const adapter = createSpawnProcessAdapter(() => ({
+        once(): SpawnedProcessLike {
+          return this
+        },
+        kill,
+      }))
+
+      const result = adapter.run({ executable: 'powershell.exe', args: [] })
+      await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS)
+
+      expect(kill).toHaveBeenCalledTimes(1)
+      await expect(result).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resolves false at timeout even when child termination throws', async () => {
+    vi.useFakeTimers()
+    try {
+      const adapter = createSpawnProcessAdapter(() => ({
+        once(): SpawnedProcessLike {
+          return this
+        },
+        kill: () => {
+          throw new Error('private OS detail')
+        },
+      }))
+
+      const result = adapter.run({ executable: 'powershell.exe', args: [] })
+      await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS)
+
+      await expect(result).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['exit', 'error'] as const)(
+    'clears the timeout after a normal %s and never kills later',
+    async (completion) => {
+      vi.useFakeTimers()
+      try {
+        const listeners = new Map<string, (...args: never[]) => void>()
+        const kill = vi.fn(() => true)
+        const adapter = createSpawnProcessAdapter(() => ({
+          once(event, listener): SpawnedProcessLike {
+            listeners.set(event, listener as (...args: never[]) => void)
+            return this
+          },
+          kill,
+        }))
+
+        const result = adapter.run({ executable: 'powershell.exe', args: [] })
+        if (completion === 'exit') {
+          listeners.get('exit')?.(0 as never, null as never)
+          await expect(result).resolves.toBe(true)
+        } else {
+          listeners.get('error')?.(new Error('private') as never)
+          await expect(result).resolves.toBe(false)
+        }
+        await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS)
+
+        expect(kill).not.toHaveBeenCalled()
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it('ignores a successful exit that arrives after timeout settlement', async () => {
+    vi.useFakeTimers()
+    try {
+      const listeners = new Map<string, (...args: never[]) => void>()
+      const kill = vi.fn(() => false)
+      const adapter = createSpawnProcessAdapter(() => ({
+        once(event, listener): SpawnedProcessLike {
+          listeners.set(event, listener as (...args: never[]) => void)
+          return this
+        },
+        kill,
+      }))
+
+      const result = adapter.run({ executable: 'powershell.exe', args: [] })
+      await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS)
+      listeners.get('exit')?.(0 as never, null as never)
+
+      expect(kill).toHaveBeenCalledTimes(1)
+      await expect(result).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
