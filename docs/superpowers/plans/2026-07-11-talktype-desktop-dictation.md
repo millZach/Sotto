@@ -600,7 +600,7 @@ git commit -m "feat: capture and resample microphone audio"
 - Modify: `.gitignore`
 - Modify: `electron-builder.yml`
 
-- [ ] **Step 1: Write failing model security tests**
+- [x] **Step 1: Write failing model security tests**
 
 ```ts
 // tests/unit/main/modelProtocol.test.ts
@@ -621,13 +621,13 @@ describe('resolveModelRequest', () => {
 
 Catalog tests assert all three pinned repositories and revisions, Apache-2.0 licensing, the exact allowlist, and declared quantized byte sizes: Fast encoder 10,124,910 and decoder 30,727,765; Balanced encoder 23,200,850 and decoder 53,707,539; Accurate encoder 92,324,809 and decoder 156,780,950. Model-manager tests prove no network adapter is called before `consent: true`, downloads use pinned URLs, a SHA mismatch deletes the temporary file, successful installation is atomic, progress contains no personal data, Balanced cannot be removed, and optional models can be removed completely.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/scripts/modelCatalog.test.ts tests/unit/main/modelProtocol.test.ts tests/unit/main/modelManager.test.ts`
 
 Expected: FAIL because the model scripts and protocol resolver do not exist.
 
-- [ ] **Step 3: Implement deterministic model preparation**
+- [x] **Step 3: Implement deterministic model preparation**
 
 `scripts/model-catalog.mjs` exports the three repositories and revisions from Task 2. Every model uses only these remote files: `added_tokens.json`, `config.json`, `generation_config.json`, `merges.txt`, `normalizer.json`, `onnx/decoder_model_merged_quantized.onnx`, `onnx/encoder_model_quantized.onnx`, `preprocessor_config.json`, `special_tokens_map.json`, `tokenizer.json`, `tokenizer_config.json`, and `vocab.json`.
 
@@ -635,7 +635,7 @@ Expected: FAIL because the model scripts and protocol resolver do not exist.
 
 `ModelManager` receives the shipped catalog lock, packaged model root, user-data model root, and an injected HTTPS downloader. `install(preset, { consent })` rejects bundled, unknown, or non-consented requests before network access; downloads only pinned allowlisted URLs; verifies size and SHA-256 before atomic rename; reports `{ preset, completedBytes, totalBytes }`; and marks a preset installed only after every file passes. `remove(preset)` refuses Balanced and removes an optional preset directory safely. `status()` returns installed/downloading/error state without making a request. IPC exposes disclosure data before the separate consented install call.
 
-- [ ] **Step 4: Prepare and verify the real bundled assets**
+- [x] **Step 4: Prepare and verify the real bundled assets**
 
 Run:
 
@@ -646,11 +646,11 @@ npm run model:verify
 
 Expected: 12 model files and the required runtime files verify; model payload is approximately 81 MB; no request uses an unpinned `main` URL.
 
-- [ ] **Step 5: Implement the read-only model protocol**
+- [x] **Step 5: Implement the read-only model protocol**
 
 Register the custom scheme before app readiness as secure, standard, fetch-enabled, and CORS-enabled. At runtime, load the committed manifest, allow only GET requests for manifest-listed paths, normalize separators, reject traversal and query manipulation, and respond through `net.fetch(pathToFileURL(resolved).toString())`. Packaged roots use `process.resourcesPath`; development roots use the repository `resources` directory.
 
-- [ ] **Step 6: Verify GREEN**
+- [x] **Step 6: Verify GREEN**
 
 Run:
 
@@ -661,7 +661,7 @@ npm run model:verify
 
 Expected: all model security tests and real-asset verification pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add scripts resources/models/catalog.lock.json resources/models/manifest.lock.json resources/runtime/manifest.lock.json src/main/models tests/unit/scripts tests/unit/main/modelProtocol.test.ts tests/unit/main/modelManager.test.ts .gitignore electron-builder.yml
