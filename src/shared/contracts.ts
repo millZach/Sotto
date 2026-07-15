@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { DictationState, WidgetSnapshot } from './dictation'
+import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
 
@@ -118,6 +118,14 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .strict(),
 ])
 
+export const outputDeliveryRequestSchema = z
+  .object({
+    text: z.string().max(200_000),
+    autoPaste: z.boolean(),
+    pasteDelayMs: z.number().int().min(50).max(1_000),
+  })
+  .strict()
+
 export const modelStatusSchema = z
   .object({
     preset: modelPresetSchema,
@@ -201,6 +209,7 @@ export interface ModelInstallRequest {
 
 export type OutputOutcome = 'pasted' | 'copied' | 'empty'
 export type OutputResult = OutputOutcome | UnavailableResult
+export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface TalkTypeBridge {
   getSettings(): Promise<AppSettings>
@@ -219,8 +228,8 @@ export interface TalkTypeBridge {
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe
 
-  publishWidgetState(state: DictationState): Promise<CommandResult>
-  onWidgetState(listener: (state: DictationState) => void): Unsubscribe
+  publishWidgetState(state: WidgetSnapshot): Promise<CommandResult>
+  onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
 
   getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
   listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
@@ -228,7 +237,7 @@ export interface TalkTypeBridge {
   removeModel(preset: ModelPreset): Promise<CommandResult>
   onModelStatus(listener: (status: ModelStatus) => void): Unsubscribe
 
-  deliverOutput(text: string): Promise<OutputResult>
+  deliverOutput(request: OutputDeliveryRequest): Promise<OutputResult>
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

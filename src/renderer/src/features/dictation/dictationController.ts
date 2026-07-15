@@ -7,6 +7,7 @@ import {
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
+import type { OutputDeliveryRequest } from '../../../../shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/settings'
 import { formatTranscript } from '../../../../shared/transcript'
 import {
@@ -47,7 +48,9 @@ export interface DictationControllerDependencies {
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
   readonly transcriber: DictationTranscriber
   readonly getSettings: () => AppSettings
-  readonly deliverOutput: (text: string) => DictationOutputResult | Promise<DictationOutputResult>
+  readonly deliverOutput: (
+    request: OutputDeliveryRequest,
+  ) => DictationOutputResult | Promise<DictationOutputResult>
   readonly addHistory: (entry: HistoryEntry) => unknown | Promise<unknown>
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
   readonly cuePlayer?: DictationCuePlayer
@@ -357,7 +360,11 @@ export class DictationController {
 
     let output: DictationOutputResult
     try {
-      output = await this.dependencies.deliverOutput(text)
+      output = await this.dependencies.deliverOutput({
+        text,
+        autoPaste: session.settings.autoPaste,
+        pasteDelayMs: session.settings.pasteDelayMs,
+      })
     } catch {
       if (this.isCurrent(session)) this.fail(session, 'OUTPUT_FAILED')
       return

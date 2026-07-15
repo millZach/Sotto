@@ -30,7 +30,7 @@ import {
   type SessionPermissionAdapter,
 } from './app/bootstrap'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
-import { HotkeyManager } from './hotkeys/hotkeyManager'
+import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
 import { HistoryRepository } from './storage/historyRepository'
@@ -59,7 +59,7 @@ import {
 import { DICTATION_COMMAND, MODEL_STATUS, WIDGET_STATE } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
-import type { DictationState } from '../shared/dictation'
+import type { WidgetSnapshot } from '../shared/dictation'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
 import {
@@ -385,7 +385,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   }
 
-  const publishWidgetState = (state: DictationState): void => {
+  const publishWidgetState = (state: WidgetSnapshot): void => {
     const listening = state.status === 'listening'
     const revealWidgetState = state.status !== 'idle'
     void messageDelivery
@@ -398,17 +398,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     currentTrayState = { ...currentTrayState, dictating: listening }
     trayController.update(currentTrayState)
 
-    if (listening) {
-      hotkeys.beginListening()
-      return
-    }
-    if (state.status === 'cancelled') {
-      hotkeys.cancelListening()
-    } else if (state.status === 'error') {
-      hotkeys.failListening()
-    } else {
-      hotkeys.stopListening()
-    }
+    syncEscapeForWidgetSnapshot(hotkeys, state)
   }
 
   const permissionAdapter = createPermissionAdapter()

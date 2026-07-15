@@ -49,8 +49,10 @@ import {
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type ModelDisclosureCatalog,
+  type OutputDeliveryRequest,
   type TalkTypeBridge,
 } from '../../src/shared/contracts'
+import type { WidgetSnapshot } from '../../src/shared/dictation'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -211,6 +213,14 @@ const disclosureCatalog: ModelDisclosureCatalog = Object.freeze({
   optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
 })
 
+const idleWidgetSnapshot = {
+  status: 'idle',
+  theme: 'system',
+  reducedMotion: 'system',
+  shortcut: 'Control+Shift+Space',
+  cancellable: false,
+} as const satisfies WidgetSnapshot
+
 describe('typed preload bridge', () => {
   beforeEach(() => {
     electronMock.ipcRenderer.invoke.mockClear()
@@ -259,6 +269,8 @@ describe('typed preload bridge', () => {
 
   it('types generic settings updates without native-managed fields', () => {
     expectTypeOf<Parameters<TalkTypeBridge['updateSettings']>[0]>().toEqualTypeOf<SettingsPatch>()
+    expectTypeOf<Parameters<TalkTypeBridge['deliverOutput']>[0]>().toEqualTypeOf<OutputDeliveryRequest>()
+    expectTypeOf<Parameters<TalkTypeBridge['publishWidgetState']>[0]>().toEqualTypeOf<WidgetSnapshot>()
   })
 
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
@@ -281,18 +293,52 @@ describe('typed preload bridge', () => {
     )
 
     const wrappedListener = electronMock.ipcRenderer.on.mock.calls[0]?.[1]
-    wrappedListener?.({}, { status: 'idle' })
-    expect(listener).toHaveBeenCalledWith({ status: 'idle' })
+    wrappedListener?.({}, idleWidgetSnapshot)
+    expect(listener).toHaveBeenCalledWith(idleWidgetSnapshot)
+
+    wrappedListener?.({}, {
+      status: 'success',
+      sessionId: 'session',
+      text: 'private transcript',
+      output: 'copied',
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
 
     wrappedListener?.({}, { status: 'hostile', injected: true })
     expect(listener).toHaveBeenCalledTimes(1)
 
-    wrappedListener?.({}, { status: 'idle' }, { extra: true })
+    wrappedListener?.({}, idleWidgetSnapshot, { extra: true })
     expect(listener).toHaveBeenCalledTimes(1)
 
     unsubscribe()
     unsubscribe()
     expect(electronMock.ipcRenderer.removeListener).toHaveBeenCalledOnce()
+  })
+
+  it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
+    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const request = {
+      text: 'session words',
+      autoPaste: false,
+      pasteDelayMs: 325,
+    } as const
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce('copied')
+      .mockResolvedValueOnce({ ok: true })
+
+    await expect(bridge.deliverOutput(request)).resolves.toBe('copied')
+    await expect(bridge.publishWidgetState(idleWidgetSnapshot)).resolves.toEqual({ ok: true })
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      1,
+      OUTPUT_DELIVER,
+      request,
+    )
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      2,
+      WIDGET_PUBLISH,
+      idleWidgetSnapshot,
+    )
   })
 
   it('strictly parses and freezes the no-payload model disclosure response', async () => {
@@ -315,7 +361,15 @@ describe('typed preload bridge', () => {
 })
 
 describe('IPC validation and lifecycle', () => {
-  it.each([SETTINGS_GET, SETTINGS_UPDATE, HISTORY_CLEAR, APP_QUIT, WIDGET_PUBLISH, MODEL_LIST_DISCLOSURES])(
+  it.each([
+    SETTINGS_GET,
+    SETTINGS_UPDATE,
+    HISTORY_CLEAR,
+    APP_QUIT,
+    WIDGET_PUBLISH,
+    OUTPUT_DELIVER,
+    MODEL_LIST_DISCLOSURES,
+  ])(
     'denies widget renderer invocation of main-only channel %s',
     async (channel) => {
       const harness = createIpcHarness()
@@ -614,7 +668,7 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).not.toHaveBeenCalled()
   })
 
-  it('derives output policy from main-process settings and accepts only bounded text', async () => {
+  it('uses the validated session output policy without rereading current settings', async () => {
     const harness = createIpcHarness()
     const deliver = vi.fn(async () => 'pasted' as const)
     harness.cleanup()
@@ -633,35 +687,38 @@ describe('IPC validation and lifecycle', () => {
       ],
       output: { deliver },
     })
-    harness.settings.get.mockResolvedValueOnce({
-      ...DEFAULT_SETTINGS,
-      autoPaste: false,
-      pasteDelayMs: 320,
-    })
-
-    await expect(harness.ipc.invoke(OUTPUT_DELIVER, 'hello world')).resolves.toBe('pasted')
+    const request = { text: 'hello world', autoPaste: false, pasteDelayMs: 320 }
+    await expect(harness.ipc.invoke(OUTPUT_DELIVER, request)).resolves.toBe('pasted')
     expect(deliver).toHaveBeenCalledWith('hello world', {
       autoPaste: false,
       pasteDelayMs: 320,
     })
+    expect(harness.settings.get).not.toHaveBeenCalled()
 
     await expect(
       harness.ipc.invoke(OUTPUT_DELIVER, {
         text: 'hostile',
         autoPaste: true,
-        pasteDelayMs: 0,
+        pasteDelayMs: 49,
       }),
     ).rejects.toThrow('Invalid IPC payload')
     await expect(harness.ipc.invoke(OUTPUT_DELIVER, 42)).rejects.toThrow(
       'Invalid IPC payload',
     )
     await expect(
-      harness.ipc.invoke(OUTPUT_DELIVER, 'x'.repeat(200_001)),
+      harness.ipc.invoke(OUTPUT_DELIVER, {
+        text: 'x'.repeat(200_001),
+        autoPaste: true,
+        pasteDelayMs: 150,
+      }),
+    ).rejects.toThrow('Invalid IPC payload')
+    await expect(
+      harness.ipc.invoke(OUTPUT_DELIVER, { ...request, injected: 'app:quit' }),
     ).rejects.toThrow('Invalid IPC payload')
     expect(deliver).toHaveBeenCalledTimes(1)
   })
 
-  it('delivers empty output with the current main-process settings', async () => {
+  it('delivers empty output with the captured session policy', async () => {
     const harness = createIpcHarness()
     const deliver = vi.fn(async () => 'empty' as const)
     harness.cleanup()
@@ -680,17 +737,47 @@ describe('IPC validation and lifecycle', () => {
       ],
       output: { deliver },
     })
-    harness.settings.get.mockResolvedValueOnce({
-      ...DEFAULT_SETTINGS,
+    await expect(harness.ipc.invoke(OUTPUT_DELIVER, {
+      text: '',
       autoPaste: true,
       pasteDelayMs: 410,
-    })
-
-    await expect(harness.ipc.invoke(OUTPUT_DELIVER, '')).resolves.toBe('empty')
+    })).resolves.toBe('empty')
     expect(deliver).toHaveBeenCalledWith('', {
       autoPaste: true,
       pasteDelayMs: 410,
     })
+  })
+
+  it('accepts only strict transcript-free widget snapshots', async () => {
+    const harness = createIpcHarness()
+    const publishWidgetState = vi.fn()
+    harness.cleanup()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [{
+        role: 'main',
+        webContents: harness.trustedContents,
+        url: harness.trustedUrl,
+      }],
+      dictation: { request: vi.fn(), publishWidgetState },
+    })
+
+    await expect(harness.ipc.invoke(WIDGET_PUBLISH, idleWidgetSnapshot)).resolves.toEqual({ ok: true })
+    expect(publishWidgetState).toHaveBeenCalledWith(idleWidgetSnapshot)
+    await expect(harness.ipc.invoke(WIDGET_PUBLISH, { status: 'idle' })).rejects.toMatchObject({
+      code: 'INVALID_IPC_PAYLOAD',
+    })
+    await expect(harness.ipc.invoke(WIDGET_PUBLISH, {
+      status: 'success',
+      sessionId: 'session',
+      text: 'private transcript',
+      output: 'copied',
+    })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    expect(publishWidgetState).toHaveBeenCalledTimes(1)
   })
 
   it('uses settings privacy and retention when adding validated history', async () => {

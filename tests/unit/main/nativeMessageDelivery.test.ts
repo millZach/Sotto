@@ -16,6 +16,9 @@ function createHarness() {
     showWidget: vi.fn(async () => {
       order.push('show:widget')
     }),
+    hideWidget: vi.fn(() => {
+      order.push('hide:widget')
+    }),
   }
   return { delivery: new NativeMessageDelivery(windows), order, windows }
 }
@@ -70,8 +73,10 @@ describe('NativeMessageDelivery', () => {
       'send:widget:initial',
       'create:widget',
       'send:widget:retry',
+      'hide:widget',
     ])
     expect(windows.showWidget).not.toHaveBeenCalled()
+    expect(windows.hideWidget).toHaveBeenCalledOnce()
   })
 
   it('reveals a recovered error widget only after its requested state is delivered', async () => {

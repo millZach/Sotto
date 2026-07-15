@@ -31,9 +31,9 @@ import {
 } from '../shared/channels'
 import {
   dictationCommandSchema,
-  dictationStateSchema,
   modelDisclosureCatalogSchema,
   modelStatusSchema,
+  widgetSnapshotSchema,
   type TalkTypeBridge,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
@@ -124,7 +124,7 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
 
     publishWidgetState: (state) =>
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
-    onWidgetState: (listener) => subscribe(renderer, WIDGET_STATE, dictationStateSchema, listener),
+    onWidgetState: (listener) => subscribe(renderer, WIDGET_STATE, widgetSnapshotSchema, listener),
 
     getModelStatus: (preset) =>
       invokeParsed(renderer, MODEL_GET_STATUS, modelResponseSchema, preset),
@@ -136,7 +136,8 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
       invokeParsed(renderer, MODEL_REMOVE, commandResultSchema, preset),
     onModelStatus: (listener) => subscribe(renderer, MODEL_STATUS, modelStatusSchema, listener),
 
-    deliverOutput: (text) => invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, text),
+    deliverOutput: (request) =>
+      invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, request),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),

@@ -27,7 +27,8 @@ import {
 } from '../../shared/channels'
 import {
   dictationCommandSchema,
-  dictationStateSchema,
+  outputDeliveryRequestSchema,
+  widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
   type HotkeyChangeResult,
@@ -35,6 +36,7 @@ import {
   type ModelDisclosureCatalog,
   type ModelStatus,
   type OutputOutcome,
+  type OutputDeliveryRequest,
   type OutputResult,
   type StartupState,
 } from '../../shared/contracts'
@@ -109,8 +111,6 @@ const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate'])
 const modelInstallSchema = z
   .object({ preset: modelPresetSchema, consent: z.literal(true) })
   .strict()
-const outputTextSchema = z.string().max(200_000)
-
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
 
@@ -180,7 +180,7 @@ export interface AppIpcService {
 
 export interface DictationIpcService {
   request(command: DictationCommand): void | Promise<void>
-  publishWidgetState(state: z.infer<typeof dictationStateSchema>): void | Promise<void>
+  publishWidgetState(state: z.infer<typeof widgetSnapshotSchema>): void | Promise<void>
 }
 
 export interface ModelIpcService {
@@ -193,7 +193,7 @@ export interface ModelIpcService {
 export interface OutputIpcService {
   deliver(
     text: string,
-    options: { readonly autoPaste: boolean; readonly pasteDelayMs: number },
+    options: Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'>,
   ): OutputOutcome | Promise<OutputOutcome>
 }
 
@@ -410,7 +410,7 @@ export function registerIpc(
     )
     register(
       WIDGET_PUBLISH,
-      dictationStateSchema,
+      widgetSnapshotSchema,
       1,
       async (state): Promise<CommandResult> => {
         if (dependencies.dictation === undefined) {
@@ -457,14 +457,13 @@ export function registerIpc(
         return OK
       },
     )
-    register(OUTPUT_DELIVER, outputTextSchema, 1, async (text): Promise<OutputResult> => {
+    register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {
         return UNAVAILABLE
       }
-      const settings = await dependencies.settings.get()
-      return dependencies.output.deliver(text, {
-        autoPaste: settings.autoPaste,
-        pasteDelayMs: settings.pasteDelayMs,
+      return dependencies.output.deliver(request.text, {
+        autoPaste: request.autoPaste,
+        pasteDelayMs: request.pasteDelayMs,
       })
     })
   } catch (registrationError) {

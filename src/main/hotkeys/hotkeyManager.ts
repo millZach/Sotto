@@ -1,4 +1,5 @@
 import type { HotkeyChangeResult } from '../../shared/contracts'
+import type { WidgetSnapshot } from '../../shared/dictation'
 
 const ESCAPE_ACCELERATOR = 'Escape'
 
@@ -151,5 +152,22 @@ export class HotkeyManager {
     } catch {
       // Native cleanup is best-effort; internal state is released first.
     }
+  }
+}
+
+export function syncEscapeForWidgetSnapshot(
+  hotkeys: HotkeyManager,
+  snapshot: Pick<WidgetSnapshot, 'status' | 'cancellable'>,
+): void {
+  if (snapshot.cancellable) {
+    hotkeys.beginListening()
+    return
+  }
+  if (snapshot.status === 'cancelled') {
+    hotkeys.cancelListening()
+  } else if (snapshot.status === 'error') {
+    hotkeys.failListening()
+  } else {
+    hotkeys.stopListening()
   }
 }

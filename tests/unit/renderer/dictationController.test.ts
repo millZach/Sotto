@@ -37,7 +37,7 @@ type HarnessOptions = {
   readonly currentSettings?: AppSettings
   readonly recorder?: Partial<DictationRecorder>
   readonly transcribe?: (options: TranscribeOptions) => Promise<TranscriptionResult>
-  readonly deliverOutput?: (text: string) => DictationOutputResult | Promise<DictationOutputResult>
+  readonly deliverOutput?: DictationControllerDependencies['deliverOutput']
   readonly addHistory?: DictationControllerDependencies['addHistory']
   readonly publishWidgetState?: DictationControllerDependencies['publishWidgetState']
   readonly cuePlayer?: NonNullable<DictationControllerDependencies['cuePlayer']>
@@ -138,7 +138,11 @@ describe('DictationController', () => {
     await harness.controller.start()
     await harness.controller.stop()
 
-    expect(harness.deliverOutput).toHaveBeenCalledWith('hello world')
+    expect(harness.deliverOutput).toHaveBeenCalledWith({
+      text: 'hello world',
+      autoPaste: true,
+      pasteDelayMs: 150,
+    })
     expect(harness.addHistory).toHaveBeenCalledWith({
       id: 'session',
       text: 'hello world',
@@ -362,7 +366,9 @@ describe('DictationController', () => {
     await Promise.all([oldStop, newStop])
 
     expect(harness.deliverOutput).toHaveBeenCalledTimes(1)
-    expect(harness.deliverOutput).toHaveBeenCalledWith('new session')
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'new session',
+    }))
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({
       id: 'new',
       language: 'fr',
@@ -418,12 +424,16 @@ describe('DictationController', () => {
     const formatted = createHarness()
     await formatted.controller.start()
     await formatted.controller.stop()
-    expect(formatted.deliverOutput).toHaveBeenCalledWith('hello world')
+    expect(formatted.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'hello world',
+    }))
 
     const verbatim = createHarness({ currentSettings: settings({ formatWhitespace: false }) })
     await verbatim.controller.start()
     await verbatim.controller.stop()
-    expect(verbatim.deliverOutput).toHaveBeenCalledWith('  hello   world  ')
+    expect(verbatim.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({
+      text: '  hello   world  ',
+    }))
   })
 
   it.each(['pasted', 'copied'] as const)(
@@ -548,6 +558,8 @@ describe('DictationController', () => {
       language: 'es',
       inferencePreference: 'wasm',
       formatWhitespace: true,
+      autoPaste: false,
+      pasteDelayMs: 320,
     })
     const stopping = deferred<NonNullable<Awaited<ReturnType<DictationRecorder['stop']>>>>()
     const harness = createHarness({
@@ -562,6 +574,8 @@ describe('DictationController', () => {
       language: 'de',
       inferencePreference: 'webgpu',
       formatWhitespace: false,
+      autoPaste: true,
+      pasteDelayMs: 900,
     })
     const stop = harness.controller.stop()
     stopping.resolve({
@@ -577,7 +591,11 @@ describe('DictationController', () => {
       language: 'es',
       inferencePreference: 'wasm',
     }))
-    expect(harness.deliverOutput).toHaveBeenCalledWith('hello world')
+    expect(harness.deliverOutput).toHaveBeenCalledWith({
+      text: 'hello world',
+      autoPaste: false,
+      pasteDelayMs: 320,
+    })
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'fast' }))
   })
 

@@ -4,6 +4,7 @@ export interface RecoverableWindowMessaging {
   createMainWindow(): Promise<unknown>
   createWidgetWindow(): Promise<unknown>
   showWidget(): Promise<void>
+  hideWidget(): void | Promise<void>
 }
 
 export class NativeMessageDelivery {
@@ -29,7 +30,7 @@ export class NativeMessageDelivery {
   ): Promise<boolean> {
     const delivered = this.trySend(() => this.windows.sendToWidget(channel, payload))
     if (delivered) {
-      return reveal ? this.revealWidget() : true
+      return reveal ? this.revealWidget() : this.concealWidget()
     }
 
     try {
@@ -40,7 +41,7 @@ export class NativeMessageDelivery {
     if (!this.trySend(() => this.windows.sendToWidget(channel, payload))) {
       return false
     }
-    return reveal ? this.revealWidget() : true
+    return reveal ? this.revealWidget() : this.concealWidget()
   }
 
   private trySend(send: () => boolean): boolean {
@@ -54,6 +55,15 @@ export class NativeMessageDelivery {
   private async revealWidget(): Promise<boolean> {
     try {
       await this.windows.showWidget()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async concealWidget(): Promise<boolean> {
+    try {
+      await this.windows.hideWidget()
       return true
     } catch {
       return false

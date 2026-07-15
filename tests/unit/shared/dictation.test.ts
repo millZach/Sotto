@@ -6,7 +6,10 @@ import {
   type DictationEvent,
   type DictationState,
 } from '../../../src/shared/dictation'
-import { widgetSnapshotSchema } from '../../../src/shared/contracts'
+import {
+  outputDeliveryRequestSchema,
+  widgetSnapshotSchema,
+} from '../../../src/shared/contracts'
 
 function requestSession(sessionId = 'current'): DictationState {
   return reduceDictation(initialDictationState, { type: 'REQUESTED', sessionId })
@@ -352,4 +355,25 @@ describe('widget snapshot contract', () => {
       }).success).toBe(false)
     },
   )
+})
+
+describe('output delivery request contract', () => {
+  it.each([50, 1_000])('accepts bounded paste delay %s', (pasteDelayMs) => {
+    expect(outputDeliveryRequestSchema.parse({
+      text: 'local words',
+      autoPaste: true,
+      pasteDelayMs,
+    })).toEqual({ text: 'local words', autoPaste: true, pasteDelayMs })
+  })
+
+  it.each([
+    { text: 'local words', autoPaste: true, pasteDelayMs: 49 },
+    { text: 'local words', autoPaste: true, pasteDelayMs: 1_001 },
+    { text: 'local words', autoPaste: true, pasteDelayMs: 50.5 },
+    { text: 'x'.repeat(200_001), autoPaste: true, pasteDelayMs: 150 },
+    { text: 'local words', autoPaste: 'yes', pasteDelayMs: 150 },
+    { text: 'local words', autoPaste: true, pasteDelayMs: 150, injected: true },
+  ])('rejects an invalid or non-strict request', (request) => {
+    expect(outputDeliveryRequestSchema.safeParse(request).success).toBe(false)
+  })
 })

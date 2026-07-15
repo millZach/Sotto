@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { HotkeyManager, type GlobalShortcutAdapter } from '../../../src/main/hotkeys/hotkeyManager'
+import {
+  HotkeyManager,
+  syncEscapeForWidgetSnapshot,
+  type GlobalShortcutAdapter,
+} from '../../../src/main/hotkeys/hotkeyManager'
 
 function createAdapter(registerResult: (accelerator: string) => boolean = () => true) {
   const active = new Map<string, () => void>()
@@ -86,7 +90,19 @@ describe('HotkeyManager primary shortcut', () => {
   })
 })
 
-describe('HotkeyManager listening-only Escape', () => {
+describe('HotkeyManager cancellable-session Escape', () => {
+  it('tracks snapshot cancellability during permission, listening, and processing', () => {
+    const { active, adapter } = createAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())
+
+    for (const status of ['requesting-permission', 'listening', 'processing'] as const) {
+      syncEscapeForWidgetSnapshot(manager, { status, cancellable: true })
+      expect(active.has('Escape')).toBe(true)
+      syncEscapeForWidgetSnapshot(manager, { status, cancellable: false })
+      expect(active.has('Escape')).toBe(false)
+    }
+  })
+
   it('registers Escape only after listening begins and invokes cancellation', () => {
     const { active, adapter } = createAdapter()
     const cancel = vi.fn()
