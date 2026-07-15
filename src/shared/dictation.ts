@@ -1,3 +1,5 @@
+import type { ReducedMotion, Theme } from './settings'
+
 export type DictationState =
   | { status: 'idle' }
   | { status: 'requesting-permission'; sessionId: string }
@@ -6,6 +8,54 @@ export type DictationState =
   | { status: 'success'; sessionId: string; text: string; output: 'pasted' | 'copied' }
   | { status: 'cancelled'; sessionId: string }
   | { status: 'error'; sessionId?: string | undefined; code: string; message: string }
+
+export type WidgetProcessingStage =
+  | 'preparing-audio'
+  | 'loading-model'
+  | 'transcribing'
+  | 'delivering-output'
+
+interface WidgetSnapshotMetadata {
+  readonly theme: Theme
+  readonly reducedMotion: ReducedMotion
+  readonly shortcut: string
+  readonly cancellable: boolean
+}
+
+/**
+ * The only dictation representation permitted to cross the widget boundary.
+ * Transcript text and captured audio are deliberately absent from every variant.
+ */
+export type WidgetSnapshot = WidgetSnapshotMetadata &
+  (
+    | { readonly status: 'idle' }
+    | { readonly status: 'requesting-permission'; readonly sessionId: string }
+    | {
+        readonly status: 'listening'
+        readonly sessionId: string
+        readonly startedAt: number
+        readonly level: number
+      }
+    | {
+        readonly status: 'processing'
+        readonly sessionId: string
+        readonly startedAt: number
+        readonly stage: WidgetProcessingStage
+        readonly progress: number
+      }
+    | {
+        readonly status: 'success'
+        readonly sessionId: string
+        readonly output: 'pasted' | 'copied'
+      }
+    | { readonly status: 'cancelled'; readonly sessionId: string }
+    | {
+        readonly status: 'error'
+        readonly sessionId?: string | undefined
+        readonly code: string
+        readonly message: string
+      }
+  )
 
 export type DictationEvent =
   | { type: 'REQUESTED'; sessionId: string }

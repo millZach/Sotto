@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { DictationState } from './dictation'
+import type { DictationState, WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
 
@@ -48,6 +48,72 @@ export const dictationStateSchema = z.discriminatedUnion('status', [
       sessionId: boundedSessionId.optional(),
       code: z.string().min(1).max(128),
       message: z.string().min(1).max(1_000),
+    })
+    .strict(),
+])
+
+const widgetMetadataSchema = {
+  theme: z.enum(['system', 'light', 'dark']),
+  reducedMotion: z.enum(['system', 'on']),
+  shortcut: z.string().min(1).max(128),
+  cancellable: z.boolean(),
+} as const
+
+export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('idle'), ...widgetMetadataSchema }).strict(),
+  z
+    .object({
+      status: z.literal('requesting-permission'),
+      sessionId: boundedSessionId,
+      ...widgetMetadataSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('listening'),
+      sessionId: boundedSessionId,
+      startedAt: z.number().finite().nonnegative(),
+      level: z.number().finite().min(0).max(1),
+      ...widgetMetadataSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('processing'),
+      sessionId: boundedSessionId,
+      startedAt: z.number().finite().nonnegative(),
+      stage: z.enum([
+        'preparing-audio',
+        'loading-model',
+        'transcribing',
+        'delivering-output',
+      ]),
+      progress: z.number().finite().min(0).max(1),
+      ...widgetMetadataSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('success'),
+      sessionId: boundedSessionId,
+      output: z.enum(['pasted', 'copied']),
+      ...widgetMetadataSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('cancelled'),
+      sessionId: boundedSessionId,
+      ...widgetMetadataSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('error'),
+      sessionId: boundedSessionId.optional(),
+      code: z.string().min(1).max(128),
+      message: z.string().min(1).max(1_000),
+      ...widgetMetadataSchema,
     })
     .strict(),
 ])

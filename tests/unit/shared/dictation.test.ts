@@ -6,6 +6,7 @@ import {
   type DictationEvent,
   type DictationState,
 } from '../../../src/shared/dictation'
+import { widgetSnapshotSchema } from '../../../src/shared/contracts'
 
 function requestSession(sessionId = 'current'): DictationState {
   return reduceDictation(initialDictationState, { type: 'REQUESTED', sessionId })
@@ -293,4 +294,62 @@ describe('dictation reducer', () => {
       reduceDictation(idle, { type: 'STARTED', sessionId: 'completed', startedAt: 100 }),
     ).toBe(idle)
   })
+})
+
+describe('widget snapshot contract', () => {
+  const metadata = {
+    theme: 'dark',
+    reducedMotion: 'on',
+    shortcut: 'Control+Shift+Space',
+    cancellable: false,
+  } as const
+
+  it('accepts bounded processing metadata without transcript or audio', () => {
+    expect(widgetSnapshotSchema.parse({
+      status: 'processing',
+      sessionId: 'session',
+      startedAt: 100,
+      stage: 'transcribing',
+      progress: 0.5,
+      ...metadata,
+      cancellable: true,
+    })).toEqual({
+      status: 'processing',
+      sessionId: 'session',
+      startedAt: 100,
+      stage: 'transcribing',
+      progress: 0.5,
+      ...metadata,
+      cancellable: true,
+    })
+  })
+
+  it.each([
+    { status: 'success', sessionId: 'session', output: 'copied', text: 'private', ...metadata },
+    {
+      status: 'processing',
+      sessionId: 'session',
+      startedAt: 100,
+      stage: 'transcribing',
+      progress: 0.5,
+      samples: [0.2],
+      ...metadata,
+    },
+  ])('rejects transcript or audio fields', (snapshot) => {
+    expect(widgetSnapshotSchema.safeParse(snapshot).success).toBe(false)
+  })
+
+  it.each([-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects unbounded progress %s',
+    (progress) => {
+      expect(widgetSnapshotSchema.safeParse({
+        status: 'processing',
+        sessionId: 'session',
+        startedAt: 100,
+        stage: 'transcribing',
+        progress,
+        ...metadata,
+      }).success).toBe(false)
+    },
+  )
 })

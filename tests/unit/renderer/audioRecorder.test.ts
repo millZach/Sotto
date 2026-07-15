@@ -408,6 +408,40 @@ describe('AudioRecorder', () => {
     },
   )
 
+  it.each([
+    'NotAllowedError',
+    'SecurityError',
+    'NotFoundError',
+    'DevicesNotFoundError',
+    'OverconstrainedError',
+  ])('preserves only the safe DOM failure name %s on start errors', async (name) => {
+    const harness = createHarness()
+    harness.getUserMedia.mockRejectedValueOnce({
+      name,
+      message: 'private browser or device detail',
+    })
+
+    await expect(harness.recorder().start()).rejects.toEqual(
+      new AudioRecorderError(
+        'START_FAILED',
+        'Unable to start microphone capture.',
+        name,
+      ),
+    )
+  })
+
+  it('does not preserve an arbitrary start error name or message', async () => {
+    const harness = createHarness()
+    harness.getUserMedia.mockRejectedValueOnce({
+      name: 'VendorPrivateError',
+      message: 'USB microphone serial 1234',
+    })
+
+    await expect(harness.recorder().start()).rejects.toEqual(
+      new AudioRecorderError('START_FAILED', 'Unable to start microphone capture.'),
+    )
+  })
+
   it('cleans up when a level callback throws without creating an unhandled rejection', async () => {
     const harness = createHarness()
     const recorder = harness.recorder({

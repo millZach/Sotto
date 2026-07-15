@@ -14,6 +14,7 @@ export class AudioRecorderError extends Error {
   constructor(
     readonly code: AudioRecorderErrorCode,
     message: string,
+    readonly startFailureName?: string,
   ) {
     super(message)
     this.name = 'AudioRecorderError'
@@ -206,14 +207,18 @@ export class AudioRecorder {
         }, this.options.maxRecordingSeconds * 1_000)
       }
       session.starting = false
-    } catch {
+    } catch (error: unknown) {
       const resolveCancelledStart = session.resolveStartOnTermination === true
       session.starting = false
       session.terminated = true
       await this.cleanup(session)
       if (this.session === session) this.session = null
       if (resolveCancelledStart) return
-      throw new AudioRecorderError('START_FAILED', 'Unable to start microphone capture.')
+      throw new AudioRecorderError(
+        'START_FAILED',
+        'Unable to start microphone capture.',
+        readStartFailureName(error),
+      )
     }
   }
 
@@ -372,4 +377,16 @@ export class AudioRecorder {
       // Best-effort release continues for the remaining independently owned resources.
     }
   }
+}
+
+function readStartFailureName(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('name' in error)) return undefined
+  const name = (error as { name?: unknown }).name
+  return name === 'NotAllowedError' ||
+    name === 'SecurityError' ||
+    name === 'NotFoundError' ||
+    name === 'DevicesNotFoundError' ||
+    name === 'OverconstrainedError'
+    ? name
+    : undefined
 }
