@@ -13,3 +13,10 @@ test-results/
 .DS_Store
 Thumbs.db
 .worktrees/
+
+# Generated local inference payloads (locks remain versioned).
+resources/models/**
+!resources/models/catalog.lock.json
+!resources/models/manifest.lock.json
+resources/runtime/*.wasm
+!resources/runtime/manifest.lock.json

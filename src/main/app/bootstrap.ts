@@ -248,6 +248,7 @@ export interface NativeRuntimeDependencies {
   readonly startup: NativeRuntimeStartupService
   readonly settings: { get(): Promise<AppSettings> }
   readonly installPermissions: () => () => void
+  readonly installProtocols?: () => () => void
   readonly registerIpc: () => () => void
   readonly log: (code: NativeRuntimeDiagnostic) => void
 }
@@ -257,6 +258,7 @@ export type NativeRuntimeDiagnostic =
   | 'native-main-show-failed'
   | 'native-window-begin-quit-failed'
   | 'native-ipc-cleanup-failed'
+  | 'native-protocol-cleanup-failed'
   | 'native-permission-cleanup-failed'
   | 'native-hotkey-cleanup-failed'
   | 'native-tray-cleanup-failed'
@@ -275,6 +277,7 @@ export class NativeRuntimeController implements RuntimeController {
   private startPromise: Promise<void> | null = null
   private permissionCleanup: (() => void) | null = null
   private ipcCleanup: (() => void) | null = null
+  private protocolCleanup: (() => void) | null = null
   private quitting = false
   private disposed = false
 
@@ -324,7 +327,11 @@ export class NativeRuntimeController implements RuntimeController {
     const permissionCleanup = this.permissionCleanup
     this.permissionCleanup = null
 
+    const protocolCleanup = this.protocolCleanup
+    this.protocolCleanup = null
+
     this.runTeardownStep(ipcCleanup, 'native-ipc-cleanup-failed')
+    this.runTeardownStep(protocolCleanup, 'native-protocol-cleanup-failed')
     this.runTeardownStep(permissionCleanup, 'native-permission-cleanup-failed')
     this.runTeardownStep(
       () => this.dependencies.hotkeys.dispose(),
@@ -358,6 +365,13 @@ export class NativeRuntimeController implements RuntimeController {
       'native-permission-cleanup-failed',
     )
     this.assertRunning()
+    if (this.dependencies.installProtocols !== undefined) {
+      this.protocolCleanup = this.installCleanup(
+        this.dependencies.installProtocols,
+        'native-protocol-cleanup-failed',
+      )
+      this.assertRunning()
+    }
     this.ipcCleanup = this.installCleanup(
       this.dependencies.registerIpc,
       'native-ipc-cleanup-failed',
@@ -375,6 +389,7 @@ export class NativeRuntimeController implements RuntimeController {
     installer: () => () => void,
     cleanupFailureCode:
       | 'native-permission-cleanup-failed'
+      | 'native-protocol-cleanup-failed'
       | 'native-ipc-cleanup-failed',
   ): () => void {
     this.assertRunning()

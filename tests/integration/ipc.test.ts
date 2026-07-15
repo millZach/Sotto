@@ -1625,6 +1625,10 @@ describe('NativeRuntimeController', () => {
         permissionsInstalled = true
         return vi.fn()
       }),
+      installProtocols: vi.fn(() => {
+        order.push('protocols')
+        return vi.fn()
+      }),
       registerIpc: vi.fn(() => {
         order.push('ipc')
         return registerIpc(ipcHarness.ipc, {
@@ -1665,6 +1669,7 @@ describe('NativeRuntimeController', () => {
       'startup',
       'tray',
       'permissions',
+      'protocols',
       'ipc',
       'windows',
       'show',
@@ -1694,6 +1699,7 @@ describe('NativeRuntimeController', () => {
     }
     const startup = { set: vi.fn() }
     const ipcCleanup = vi.fn(() => order.push('ipc:dispose'))
+    const protocolCleanup = vi.fn(() => order.push('protocols:dispose'))
     const permissionCleanup = vi.fn(() => order.push('permissions:dispose'))
     const runtime = new NativeRuntimeController({
       windows,
@@ -1710,6 +1716,7 @@ describe('NativeRuntimeController', () => {
         }),
       },
       installPermissions: () => permissionCleanup,
+      installProtocols: () => protocolCleanup,
       registerIpc: () => ipcCleanup,
       log: vi.fn(),
     })
@@ -1726,6 +1733,7 @@ describe('NativeRuntimeController', () => {
     runtime.dispose()
 
     expect(ipcCleanup).toHaveBeenCalledOnce()
+    expect(protocolCleanup).toHaveBeenCalledOnce()
     expect(permissionCleanup).toHaveBeenCalledOnce()
     expect(hotkeys.dispose).toHaveBeenCalledOnce()
     expect(tray.dispose).toHaveBeenCalledOnce()
@@ -1735,6 +1743,7 @@ describe('NativeRuntimeController', () => {
       'windows:show',
       'windows:quit',
       'ipc:dispose',
+      'protocols:dispose',
       'permissions:dispose',
       'hotkeys:dispose',
       'tray:dispose',
@@ -1886,6 +1895,65 @@ describe('NativeRuntimeController', () => {
     expect(ipcCleanup).toHaveBeenCalledOnce()
   })
 
+  it('immediately cleans a protocol resource returned after disposal wins its installer', async () => {
+    const permissionCleanup = vi.fn()
+    const protocolCleanup = vi.fn()
+    const registerIpc = vi.fn(() => vi.fn())
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+      installPermissions: () => permissionCleanup,
+      installProtocols: () => {
+        runtime.dispose()
+        return protocolCleanup
+      },
+      registerIpc,
+      log: vi.fn(),
+    })
+
+    await expect(runtime.start()).rejects.toMatchObject({ code: 'NATIVE_RUNTIME_STOPPED' })
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(protocolCleanup).toHaveBeenCalledOnce()
+    expect(registerIpc).not.toHaveBeenCalled()
+  })
+
+  it('rolls back earlier native resources when protocol installation fails', async () => {
+    const permissionCleanup = vi.fn()
+    const registerIpc = vi.fn(() => vi.fn())
+    const windows = {
+      createWindows: vi.fn(async () => undefined),
+      showMain: vi.fn(async () => undefined),
+      beginQuit: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const runtime = new NativeRuntimeController({
+      windows,
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
+      installPermissions: () => permissionCleanup,
+      installProtocols: () => { throw new Error('private protocol failure') },
+      registerIpc,
+      log: vi.fn(),
+    })
+
+    await expect(runtime.start()).rejects.toThrow('private protocol failure')
+    runtime.dispose()
+
+    expect(permissionCleanup).toHaveBeenCalledOnce()
+    expect(registerIpc).not.toHaveBeenCalled()
+    expect(windows.createWindows).not.toHaveBeenCalled()
+  })
+
   it('rejects a new start call after a completed runtime has been disposed', async () => {
     const runtime = new NativeRuntimeController({
       windows: {
@@ -1914,6 +1982,7 @@ describe('NativeRuntimeController', () => {
   it.each([
     ['beginQuit', 'native-window-begin-quit-failed'],
     ['ipc', 'native-ipc-cleanup-failed'],
+    ['protocol', 'native-protocol-cleanup-failed'],
     ['permission', 'native-permission-cleanup-failed'],
     ['hotkey', 'native-hotkey-cleanup-failed'],
     ['tray', 'native-tray-cleanup-failed'],
@@ -1928,6 +1997,7 @@ describe('NativeRuntimeController', () => {
           }
         })
       const ipcCleanup = throwing('ipc')
+      const protocolCleanup = throwing('protocol')
       const permissionCleanup = throwing('permission')
       const windows = {
         createWindows: vi.fn(async () => undefined),
@@ -1948,6 +2018,7 @@ describe('NativeRuntimeController', () => {
         startup: { set: vi.fn() },
         settings: { get: vi.fn(async () => ({ ...DEFAULT_SETTINGS })) },
         installPermissions: () => permissionCleanup,
+        installProtocols: () => protocolCleanup,
         registerIpc: () => ipcCleanup,
         log,
       })
@@ -1956,6 +2027,7 @@ describe('NativeRuntimeController', () => {
       expect(() => runtime.dispose()).not.toThrow()
       expect(windows.beginQuit).toHaveBeenCalledOnce()
       expect(ipcCleanup).toHaveBeenCalledOnce()
+      expect(protocolCleanup).toHaveBeenCalledOnce()
       expect(permissionCleanup).toHaveBeenCalledOnce()
       expect(hotkeys.dispose).toHaveBeenCalledOnce()
       expect(tray.dispose).toHaveBeenCalledOnce()
@@ -1966,6 +2038,7 @@ describe('NativeRuntimeController', () => {
       expect(() => runtime.dispose()).not.toThrow()
       expect(windows.beginQuit).toHaveBeenCalledOnce()
       expect(ipcCleanup).toHaveBeenCalledOnce()
+      expect(protocolCleanup).toHaveBeenCalledOnce()
       expect(permissionCleanup).toHaveBeenCalledOnce()
       expect(hotkeys.dispose).toHaveBeenCalledOnce()
       expect(tray.dispose).toHaveBeenCalledOnce()

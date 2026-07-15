@@ -5,6 +5,8 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  net,
+  protocol,
   screen,
   session,
   Tray,
@@ -54,10 +56,17 @@ import {
   type WebContentsLike,
   type WindowConstructorOptions,
 } from './windows/windowManager'
-import { DICTATION_COMMAND, WIDGET_STATE } from '../shared/channels'
+import { DICTATION_COMMAND, MODEL_STATUS, WIDGET_STATE } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { DictationState } from '../shared/dictation'
+import { loadCatalogLock, ModelManager } from './models/modelManager'
+import { createModelIpcService } from './models/modelIpcService'
+import {
+  loadVerifiedRuntimeSource,
+  registerLocalAssetProtocols,
+  registerModelSchemesAsPrivileged,
+} from './models/modelProtocol'
 
 type NativeDiagnostic =
   | BootstrapDiagnostic
@@ -276,6 +285,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     isPackaged: app.isPackaged,
     log: logOperational,
   })
+  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  const modelRoot = join(resourceRoot, 'models')
+  const runtimeRoot = join(resourceRoot, 'runtime')
+  const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
+  const runtimeSource = await loadVerifiedRuntimeSource(runtimeRoot)
+  const models = new ModelManager({
+    catalog,
+    packagedRoot: modelRoot,
+    userRoot: join(userDataPath, 'models'),
+    onProgress(progress) {
+      windows.sendToMain(MODEL_STATUS, { preset: progress.preset, state: 'downloading', progress: progress.totalBytes === 0 ? 0 : progress.completedBytes / progress.totalBytes })
+    },
+  })
   const output = new OutputService({
     clipboard,
     widget: windows,
@@ -397,6 +419,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           .getTrustedRenderers()
           .filter((renderer) => renderer.role === 'main'),
       ),
+    installProtocols: () =>
+      registerLocalAssetProtocols({
+        protocol,
+        net,
+        modelSources: () => models.protocolSources(),
+        runtimeSource,
+      }),
     registerIpc: () =>
       registerIpc(ipcMain, {
         settings: {
@@ -430,6 +459,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           publishWidgetState,
         },
         output,
+        models: createModelIpcService(models, (status) => {
+          windows.sendToMain(MODEL_STATUS, status)
+        }),
       }),
     log: logOperational,
   })
@@ -443,6 +475,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 }
 
+registerModelSchemesAsPrivileged(protocol)
 app.setAppUserModelId(APP_ID)
 
 void bootstrapTalkType({ app, initialize: createRuntime, log: logOperational }).catch(() => {
