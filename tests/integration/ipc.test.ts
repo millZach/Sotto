@@ -28,6 +28,7 @@ import {
   APP_MINIMIZE,
   APP_QUIT,
   APP_SHOW,
+  DICTATION_COMMAND,
   DICTATION_REQUEST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -45,6 +46,7 @@ import {
   STARTUP_GET,
   STARTUP_SET,
   WIDGET_PUBLISH,
+  WIDGET_STATE,
 } from '../../src/shared/channels'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
@@ -292,7 +294,9 @@ describe('typed preload bridge', () => {
       expect.any(Function),
     )
 
-    const wrappedListener = electronMock.ipcRenderer.on.mock.calls[0]?.[1]
+    const wrappedListener = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_STATE,
+    )?.[1]
     wrappedListener?.({}, idleWidgetSnapshot)
     expect(listener).toHaveBeenCalledWith(idleWidgetSnapshot)
 
@@ -312,7 +316,39 @@ describe('typed preload bridge', () => {
 
     unsubscribe()
     unsubscribe()
-    expect(electronMock.ipcRenderer.removeListener).toHaveBeenCalledOnce()
+    expect(electronMock.ipcRenderer.removeListener).not.toHaveBeenCalled()
+  })
+
+  it('buffers latest widget state and bounded command edges before first subscription only', () => {
+    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_STATE,
+    )?.[1]
+    const commandEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === DICTATION_COMMAND,
+    )?.[1]
+    const listening = {
+      status: 'listening', sessionId: 's', startedAt: 1, level: 0.2,
+      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: true,
+    } as const
+    widgetEvent?.({}, listening)
+    widgetEvent?.({}, idleWidgetSnapshot)
+    commandEvent?.({}, { type: 'start' })
+    commandEvent?.({}, { type: 'stop' })
+    const widgetListener = vi.fn()
+    const commandListener = vi.fn()
+    const unsubscribeWidget = bridge.onWidgetState(widgetListener)
+    const unsubscribeCommand = bridge.onDictationCommand(commandListener)
+    expect(widgetListener).toHaveBeenCalledOnce()
+    expect(widgetListener).toHaveBeenCalledWith(idleWidgetSnapshot)
+    expect(commandListener.mock.calls.map(([command]) => command.type)).toEqual(['start', 'stop'])
+    unsubscribeWidget()
+    unsubscribeWidget()
+    unsubscribeCommand()
+    commandEvent?.({}, { type: 'cancel' })
+    bridge.onDictationCommand(commandListener)
+    expect(commandListener).toHaveBeenCalledTimes(3)
+    expect(commandListener).toHaveBeenLastCalledWith({ type: 'cancel' })
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
@@ -776,6 +812,15 @@ describe('IPC validation and lifecycle', () => {
       sessionId: 'session',
       text: 'private transcript',
       output: 'copied',
+    })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    await expect(harness.ipc.invoke(WIDGET_PUBLISH, {
+      status: 'error', sessionId: 'session', code: 'NO_SPEECH',
+      message: 'arbitrary transcript-like detail',
+      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
+    })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    await expect(harness.ipc.invoke(WIDGET_PUBLISH, {
+      status: 'error', sessionId: 'session', code: 'ARBITRARY_DETAIL',
+      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
     })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     expect(publishWidgetState).toHaveBeenCalledTimes(1)
   })

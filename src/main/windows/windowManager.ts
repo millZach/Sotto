@@ -1,5 +1,3 @@
-import { pathToFileURL } from 'node:url'
-
 import { APP_NAME } from '../../shared/constants'
 import { selectRendererSource, type RendererRole } from '../security'
 
@@ -416,7 +414,9 @@ export class WindowManager {
   }
 
   sendToWidget(channel: string, payload: unknown): boolean {
-    return this.sendToWindow(this.widgetWindow, channel, payload)
+    const widget = this.widgetWindow
+    if (widget === null || !this.loadedRendererUrls.has(widget)) return false
+    return this.sendToWindow(widget, channel, payload)
   }
 
   getMainWebContents(): WebContentsLike | null {
@@ -630,10 +630,7 @@ export class WindowManager {
       developmentSource,
       bundledPath,
     )
-    const bundledUrl = pathToFileURL(bundledPath).href
-
     if (source.kind === 'url') {
-      this.loadedRendererUrls.set(window, source.value)
       try {
         await window.loadURL(source.value)
         return
@@ -642,7 +639,6 @@ export class WindowManager {
       }
     }
 
-    this.loadedRendererUrls.set(window, bundledUrl)
     try {
       await window.loadFile(bundledPath)
     } catch {

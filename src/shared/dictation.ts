@@ -15,6 +15,18 @@ export type WidgetProcessingStage =
   | 'transcribing'
   | 'delivering-output'
 
+export type WidgetErrorCode =
+  | 'MIC_PERMISSION_DENIED'
+  | 'MIC_DEVICE_NOT_FOUND'
+  | 'MIC_START_FAILED'
+  | 'RECORDING_FAILED'
+  | 'NO_SPEECH'
+  | 'TRANSCRIPTION_FAILED'
+  | 'OUTPUT_UNAVAILABLE'
+  | 'OUTPUT_FAILED'
+  | 'HISTORY_FAILED'
+  | 'SETTINGS_UNAVAILABLE'
+
 interface WidgetSnapshotMetadata {
   readonly theme: Theme
   readonly reducedMotion: ReducedMotion
@@ -52,8 +64,7 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
     | {
         readonly status: 'error'
         readonly sessionId?: string | undefined
-        readonly code: string
-        readonly message: string
+        readonly code: WidgetErrorCode
       }
   )
 

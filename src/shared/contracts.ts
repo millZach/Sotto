@@ -8,6 +8,18 @@ export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
 const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate'])
+const widgetErrorCodeSchema = z.enum([
+  'MIC_PERMISSION_DENIED',
+  'MIC_DEVICE_NOT_FOUND',
+  'MIC_START_FAILED',
+  'RECORDING_FAILED',
+  'NO_SPEECH',
+  'TRANSCRIPTION_FAILED',
+  'OUTPUT_UNAVAILABLE',
+  'OUTPUT_FAILED',
+  'HISTORY_FAILED',
+  'SETTINGS_UNAVAILABLE',
+])
 
 export const dictationCommandSchema = z
   .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel']) })
@@ -111,8 +123,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .object({
       status: z.literal('error'),
       sessionId: boundedSessionId.optional(),
-      code: z.string().min(1).max(128),
-      message: z.string().min(1).max(1_000),
+      code: widgetErrorCodeSchema,
       ...widgetMetadataSchema,
     })
     .strict(),

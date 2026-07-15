@@ -8,6 +8,14 @@ export interface RecoverableWindowMessaging {
 }
 
 export class NativeMessageDelivery {
+  private pendingWidget: {
+    channel: string
+    payload: unknown
+    reveal: boolean
+    resolves: Array<(result: boolean) => void>
+  } | null = null
+  private widgetDrain: Promise<void> | null = null
+
   constructor(private readonly windows: RecoverableWindowMessaging) {}
 
   async sendToMain(channel: string, payload: unknown): Promise<boolean> {
@@ -28,6 +36,47 @@ export class NativeMessageDelivery {
     payload: unknown,
     reveal: boolean,
   ): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (this.pendingWidget === null) {
+        this.pendingWidget = { channel, payload, reveal, resolves: [resolve] }
+      } else {
+        this.pendingWidget.channel = channel
+        this.pendingWidget.payload = payload
+        this.pendingWidget.reveal = reveal
+        this.pendingWidget.resolves.push(resolve)
+      }
+      if (this.widgetDrain === null) {
+        this.startWidgetDrain()
+      }
+    })
+  }
+
+  private startWidgetDrain(): void {
+    const drain = this.drainWidget()
+    this.widgetDrain = drain
+    void drain.finally(() => {
+      if (this.widgetDrain !== drain) return
+      this.widgetDrain = null
+      if (this.pendingWidget !== null) this.startWidgetDrain()
+    })
+  }
+
+  private async drainWidget(): Promise<void> {
+    while (this.pendingWidget !== null) {
+      const publication = this.pendingWidget
+      this.pendingWidget = null
+      const result = await this.deliverWidget(publication)
+      for (const resolve of publication.resolves) resolve(result)
+    }
+  }
+
+  private async deliverWidget(publication: {
+    channel: string
+    payload: unknown
+    reveal: boolean
+    resolves: Array<(result: boolean) => void>
+  }): Promise<boolean> {
+    const { channel, payload, reveal } = publication
     const delivered = this.trySend(() => this.windows.sendToWidget(channel, payload))
     if (delivered) {
       return reveal ? this.revealWidget() : this.concealWidget()
@@ -37,6 +86,11 @@ export class NativeMessageDelivery {
       await this.windows.createWidgetWindow()
     } catch {
       return false
+    }
+    if (this.pendingWidget !== null) {
+      this.pendingWidget.resolves.unshift(...publication.resolves)
+      publication.resolves.length = 0
+      return true
     }
     if (!this.trySend(() => this.windows.sendToWidget(channel, payload))) {
       return false

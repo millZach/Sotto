@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { NativeMessageDelivery } from '../../../src/main/app/nativeMessageDelivery'
 
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 function createHarness() {
   const order: string[] = []
   const windows = {
@@ -24,6 +30,31 @@ function createHarness() {
 }
 
 describe('NativeMessageDelivery', () => {
+  it('coalesces recovery publications so newest idle visibility wins', async () => {
+    const { delivery, windows } = createHarness()
+    const load = deferred()
+    windows.createWidgetWindow.mockImplementationOnce(() => load.promise)
+    windows.sendToWidget.mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const processing = delivery.sendToWidget('state', { status: 'processing' }, true)
+    const idle = delivery.sendToWidget('state', { status: 'idle' }, false)
+    load.resolve()
+    await expect(Promise.all([processing, idle])).resolves.toEqual([true, true])
+    expect(windows.sendToWidget).toHaveBeenLastCalledWith('state', { status: 'idle' })
+    expect(windows.showWidget).not.toHaveBeenCalled()
+    expect(windows.hideWidget).toHaveBeenCalledOnce()
+  })
+
+  it('does not lose a publication queued from the prior publication promise', async () => {
+    const { delivery, windows } = createHarness()
+    windows.sendToWidget.mockReturnValue(true)
+    const first = delivery.sendToWidget('state', { status: 'processing' }, true)
+    const latest = first.then(() =>
+      delivery.sendToWidget('state', { status: 'idle' }, false),
+    )
+    await expect(latest).resolves.toBe(true)
+    expect(windows.sendToWidget).toHaveBeenLastCalledWith('state', { status: 'idle' })
+    expect(windows.hideWidget).toHaveBeenCalledOnce()
+  })
   it('recreates a hidden main renderer and retries a failed command exactly once', async () => {
     const { delivery, order, windows } = createHarness()
     windows.sendToMain

@@ -1,5 +1,3 @@
-import { pathToFileURL } from 'node:url'
-
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -294,6 +292,19 @@ describe('WindowManager lifecycle', () => {
     expect(widget.focus).not.toHaveBeenCalled()
   })
 
+  it('does not report widget send success until renderer load completes', async () => {
+    const load = createDeferred<void>()
+    const { manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => load.promise)
+    })
+    const creation = manager.createWidgetWindow()
+    expect(manager.sendToWidget('state', { status: 'idle' })).toBe(false)
+    expect(windows[0]!.webContents.send).not.toHaveBeenCalled()
+    load.resolve()
+    await creation
+    expect(manager.sendToWidget('state', { status: 'idle' })).toBe(true)
+  })
+
   it('clamps the widget to the left and top edges of a small negative-coordinate work area', async () => {
     const { manager, windows } = createHarness({
       display: {
@@ -541,7 +552,7 @@ describe('WindowManager lifecycle', () => {
 })
 
 describe('WindowManager renderer loading', () => {
-  it('publishes the bundled identity before invoking loadFile', async () => {
+  it('withholds the bundled identity until loadFile resolves', async () => {
     const managerRef: { current?: WindowManager } = {}
     let identityDuringLoad: ReturnType<WindowManager['getTrustedRenderers']> = []
     const harness = createHarness({}, (window) => {
@@ -553,16 +564,10 @@ describe('WindowManager renderer loading', () => {
 
     await harness.manager.createMainWindow()
 
-    expect(identityDuringLoad).toStrictEqual([
-      {
-        role: 'main',
-        webContents: harness.windows[0]!.webContents,
-        url: pathToFileURL('C:/TalkType/out/renderer/index.html').href,
-      },
-    ])
+    expect(identityDuringLoad).toStrictEqual([])
   })
 
-  it('switches synchronous trust from the development URL to bundled fallback', async () => {
+  it('withholds trust during development and bundled fallback loads', async () => {
     const managerRef: { current?: WindowManager } = {}
     let identityDuringDevelopmentLoad: ReturnType<
       WindowManager['getTrustedRenderers']
@@ -589,20 +594,8 @@ describe('WindowManager renderer loading', () => {
 
     await harness.manager.createMainWindow()
 
-    expect(identityDuringDevelopmentLoad).toStrictEqual([
-      {
-        role: 'main',
-        webContents: harness.windows[0]!.webContents,
-        url: 'http://127.0.0.1:5173/index.html',
-      },
-    ])
-    expect(identityDuringBundledFallback).toStrictEqual([
-      {
-        role: 'main',
-        webContents: harness.windows[0]!.webContents,
-        url: pathToFileURL('C:/TalkType/out/renderer/index.html').href,
-      },
-    ])
+    expect(identityDuringDevelopmentLoad).toStrictEqual([])
+    expect(identityDuringBundledFallback).toStrictEqual([])
   })
 
   it('falls back from a failed development URL to the bundled local renderer without leaking details', async () => {

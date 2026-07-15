@@ -101,7 +101,55 @@ function subscribe<Output>(
   }
 }
 
+function createBufferedSubscription<Output>(
+  renderer: IpcRendererAdapter,
+  channel: string,
+  schema: z.ZodType<Output>,
+  capacity: number,
+): (listener: (payload: Output) => void) => () => void {
+  const buffered: Output[] = []
+  let listener: ((payload: Output) => void) | null = null
+  renderer.on(channel, (_event, ...args) => {
+    if (args.length !== 1) return
+    const result = schema.safeParse(args[0])
+    if (!result.success) return
+    if (listener !== null) {
+      listener(result.data)
+    } else {
+      buffered.push(result.data)
+      if (buffered.length > capacity) buffered.splice(0, buffered.length - capacity)
+    }
+  })
+  return (nextListener) => {
+    listener = nextListener
+    const replay = buffered.splice(0)
+    for (const payload of replay) {
+      if (listener !== nextListener) break
+      nextListener(payload)
+    }
+    let subscribed = true
+    return () => {
+      if (!subscribed) return
+      subscribed = false
+      if (listener === nextListener) listener = null
+      buffered.splice(0)
+    }
+  }
+}
+
 export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBridge {
+  const onDictationCommand = createBufferedSubscription(
+    renderer,
+    DICTATION_COMMAND,
+    dictationCommandSchema,
+    16,
+  )
+  const onWidgetState = createBufferedSubscription(
+    renderer,
+    WIDGET_STATE,
+    widgetSnapshotSchema,
+    1,
+  )
   const bridge: TalkTypeBridge = {
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
@@ -119,12 +167,11 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
 
     requestDictation: (command) =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, command),
-    onDictationCommand: (listener) =>
-      subscribe(renderer, DICTATION_COMMAND, dictationCommandSchema, listener),
+    onDictationCommand,
 
     publishWidgetState: (state) =>
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
-    onWidgetState: (listener) => subscribe(renderer, WIDGET_STATE, widgetSnapshotSchema, listener),
+    onWidgetState,
 
     getModelStatus: (preset) =>
       invokeParsed(renderer, MODEL_GET_STATUS, modelResponseSchema, preset),

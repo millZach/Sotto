@@ -4,6 +4,7 @@ import {
   type DictationEvent,
   type DictationState,
   type WidgetProcessingStage,
+  type WidgetErrorCode,
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
@@ -71,6 +72,7 @@ interface ActiveSession {
   progress: number
   acceptProgress: boolean
   processing?: Promise<void>
+  errorCode?: WidgetErrorCode
 }
 
 const ERROR_MESSAGES = Object.freeze({
@@ -83,9 +85,10 @@ const ERROR_MESSAGES = Object.freeze({
   OUTPUT_UNAVAILABLE: 'Output is unavailable.',
   OUTPUT_FAILED: 'The transcript could not be delivered.',
   HISTORY_FAILED: 'The transcript was delivered but history could not be updated.',
+  SETTINGS_UNAVAILABLE: 'Settings are unavailable.',
 } as const)
 
-type ControllerErrorCode = keyof typeof ERROR_MESSAGES
+type ControllerErrorCode = WidgetErrorCode
 
 const defaultSetTimer = (callback: () => void, delayMs: number): unknown =>
   globalThis.setTimeout(callback, delayMs)
@@ -156,10 +159,12 @@ export class DictationController {
     }
 
     let settings: Readonly<AppSettings>
+    let settingsAvailable = true
     try {
       settings = snapshotSettings(this.dependencies.getSettings())
     } catch {
       settings = snapshotSettings(DEFAULT_SETTINGS)
+      settingsAvailable = false
     }
 
     const session: ActiveSession = {
@@ -174,6 +179,10 @@ export class DictationController {
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
+    if (!settingsAvailable) {
+      this.fail(session, 'SETTINGS_UNAVAILABLE')
+      return Promise.resolve()
+    }
 
     try {
       session.recorder = this.dependencies.createRecorder({
@@ -432,6 +441,7 @@ export class DictationController {
   private fail(session: ActiveSession, code: ControllerErrorCode): void {
     if (!this.isCurrent(session)) return
     session.cancellable = false
+    session.errorCode = code
     this.dispatch(
       { type: 'FAILED', sessionId: session.id, code, message: ERROR_MESSAGES[code] },
       session,
@@ -499,8 +509,7 @@ export class DictationController {
         return {
           status: state.status,
           ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
-          code: state.code,
-          message: state.message,
+          code: session.errorCode ?? 'TRANSCRIPTION_FAILED',
           ...metadata,
           cancellable: false,
         }

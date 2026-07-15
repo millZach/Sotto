@@ -43,6 +43,7 @@ type HarnessOptions = {
   readonly cuePlayer?: NonNullable<DictationControllerDependencies['cuePlayer']>
   readonly now?: () => number
   readonly ids?: string[]
+  readonly getSettings?: () => AppSettings
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -88,7 +89,7 @@ function createHarness(options: HarnessOptions = {}) {
   const dependencies: DictationControllerDependencies = {
     createRecorder,
     transcriber,
-    getSettings: () => currentSettings,
+    getSettings: options.getSettings ?? (() => currentSettings),
     deliverOutput,
     addHistory,
     publishWidgetState,
@@ -132,6 +133,23 @@ function snapshots(harness: ReturnType<typeof createHarness>): WidgetSnapshot[] 
 }
 
 describe('DictationController', () => {
+  it('fails closed when settings are unavailable', async () => {
+    const harness = createHarness({
+      getSettings: () => { throw new Error('private settings path') },
+    })
+    await harness.controller.start()
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', code: 'SETTINGS_UNAVAILABLE',
+    })
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(snapshots(harness).at(-1)).toEqual(expect.objectContaining({
+      status: 'error', code: 'SETTINGS_UNAVAILABLE',
+    }))
+    expect(snapshots(harness).at(-1)).not.toHaveProperty('message')
+  })
   it('copies a successful result and records returned metadata', async () => {
     const harness = createHarness()
 
