@@ -15,6 +15,10 @@ export default defineConfig({
         input: {
           main: resolve(__dirname, 'src/renderer/index.html'),
           widget: resolve(__dirname, 'src/renderer/widget.html'),
+          transcriptionWorker: resolve(
+            __dirname,
+            'src/renderer/src/transcription/worker.ts',
+          ),
         },
       },
     },
