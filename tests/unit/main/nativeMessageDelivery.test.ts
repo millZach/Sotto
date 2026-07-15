@@ -11,8 +11,16 @@ function deferred() {
 function createHarness() {
   const order: string[] = []
   const windows = {
-    sendToMain: vi.fn(() => false),
-    sendToWidget: vi.fn(() => false),
+    sendToMain: vi.fn((channel: string, payload: unknown) => {
+      void channel
+      void payload
+      return false
+    }),
+    sendToWidget: vi.fn((channel: string, payload: unknown) => {
+      void channel
+      void payload
+      return false
+    }),
     createMainWindow: vi.fn(async () => {
       order.push('create:main')
     }),
@@ -73,6 +81,28 @@ describe('NativeMessageDelivery', () => {
     expect(windows.sendToMain).toHaveBeenCalledTimes(2)
     expect(windows.createMainWindow).toHaveBeenCalledOnce()
     expect(windows.showWidget).not.toHaveBeenCalled()
+  })
+
+  it('preserves concurrent command edges in order while main readiness is pending', async () => {
+    const { delivery, windows } = createHarness()
+    const load = deferred()
+    let ready = false
+    const delivered: string[] = []
+    windows.createMainWindow.mockImplementation(() => load.promise)
+    windows.sendToMain.mockImplementation((_channel, payload) => {
+      if (!ready) return false
+      delivered.push((payload as { type: string }).type)
+      return true
+    })
+
+    const toggle = delivery.sendToMain('dictation', { type: 'toggle' })
+    const cancel = delivery.sendToMain('dictation', { type: 'cancel' })
+    expect(delivered).toEqual([])
+    ready = true
+    load.resolve()
+
+    await expect(Promise.all([toggle, cancel])).resolves.toEqual([true, true])
+    expect(delivered).toEqual(['toggle', 'cancel'])
   })
 
   it('returns false without a second send when main recreation fails', async () => {

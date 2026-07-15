@@ -262,6 +262,19 @@ describe('WindowManager lifecycle', () => {
     expect(manager.sendToMain('talktype:test', { value: 5 })).toBe(false)
   })
 
+  it('does not report main send success until an in-flight renderer load completes', async () => {
+    const load = createDeferred<void>()
+    const { manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => load.promise)
+    })
+    const creation = manager.createMainWindow()
+    expect(manager.sendToMain('dictation', { type: 'toggle' })).toBe(false)
+    expect(windows[0]!.webContents.send).not.toHaveBeenCalled()
+    load.resolve()
+    await creation
+    expect(manager.sendToMain('dictation', { type: 'toggle' })).toBe(true)
+  })
+
   it('hides the main window on close until application quit begins', async () => {
     const { manager, windows } = createHarness()
     await manager.createMainWindow()

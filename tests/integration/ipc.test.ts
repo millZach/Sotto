@@ -319,7 +319,7 @@ describe('typed preload bridge', () => {
     expect(electronMock.ipcRenderer.removeListener).not.toHaveBeenCalled()
   })
 
-  it('buffers latest widget state and bounded command edges before first subscription only', () => {
+  it('preload retains post-ready command edges until AppContext subscribes', () => {
     const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,

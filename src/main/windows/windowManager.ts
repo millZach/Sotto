@@ -410,7 +410,9 @@ export class WindowManager {
   }
 
   sendToMain(channel: string, payload: unknown): boolean {
-    return this.sendToWindow(this.mainWindow, channel, payload)
+    const main = this.mainWindow
+    if (main === null || !this.loadedRendererUrls.has(main)) return false
+    return this.sendToWindow(main, channel, payload)
   }
 
   sendToWidget(channel: string, payload: unknown): boolean {
