@@ -56,7 +56,12 @@ import {
   type WebContentsLike,
   type WindowConstructorOptions,
 } from './windows/windowManager'
-import { DICTATION_COMMAND, MODEL_STATUS, WIDGET_STATE } from '../shared/channels'
+import {
+  DICTATION_COMMAND,
+  MODEL_STATUS,
+  SETTINGS_CHANGED,
+  WIDGET_STATE,
+} from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -359,6 +364,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onAutoPasteChanged(enabled): void {
       currentTrayState = { ...currentTrayState, autoPaste: enabled }
       trayController.update(currentTrayState)
+    },
+    async onSettingsChanged(settings): Promise<void> {
+      const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
+      if (!delivered) logOperational('native-main-send-failed')
     },
   })
   const trayController = new TrayController(trayAdapter, {

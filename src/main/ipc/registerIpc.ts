@@ -461,9 +461,13 @@ export function registerIpc(
       if (dependencies.output === undefined) {
         return UNAVAILABLE
       }
+      const settings = await dependencies.settings.get()
       return dependencies.output.deliver(request.text, {
-        autoPaste: request.autoPaste,
-        pasteDelayMs: request.pasteDelayMs,
+        autoPaste: request.autoPaste && settings.autoPaste,
+        pasteDelayMs: Math.min(
+          1_000,
+          Math.max(50, request.pasteDelayMs, settings.pasteDelayMs),
+        ),
       })
     })
   } catch (registrationError) {

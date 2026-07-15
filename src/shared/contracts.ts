@@ -226,6 +226,7 @@ export interface TalkTypeBridge {
   getSettings(): Promise<AppSettings>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
   resetSettings(): Promise<AppSettings>
+  onSettingsChanged(listener: (settings: AppSettings) => void): Unsubscribe
 
   listHistory(): Promise<HistoryEntry[]>
   addHistory(entry: HistoryEntry): Promise<HistoryEntry[]>

@@ -193,13 +193,15 @@ export function AppProvider({
         return Promise.resolve(false)
       }
       const generation = activeGenerationRef.current
-      ++settingsVersionRef.current
-      const queued = settingsTailRef.current.then(operation)
+      const queued = settingsTailRef.current.then(async () => {
+        const version = ++settingsVersionRef.current
+        return { next: await operation(), version }
+      })
       settingsTailRef.current = queued.then(() => undefined, () => undefined)
       return queued.then(
-        (next) => {
+        ({ next, version }) => {
           if (!isCurrentGeneration(generation)) return false
-          commitSettings(next)
+          if (settingsVersionRef.current === version) commitSettings(next)
           setFailure(null)
           return true
         },
@@ -251,6 +253,7 @@ export function AppProvider({
     let localController: AppController | null = null
     let unsubscribeCommands: (() => void) | null = null
     let unsubscribeModelStatus: (() => void) | null = null
+    let unsubscribeSettings: (() => void) | null = null
     setStatus('loading')
     setHistoryStatus('loading')
     setFailure(null)
@@ -351,6 +354,11 @@ export function AppProvider({
           controller = createController(bindings)
           localController = controller
           controllerRef.current = controller
+          unsubscribeSettings = bridge.onSettingsChanged((authoritativeSettings) => {
+            if (!isCurrentGeneration(generation) || localController !== controller) return
+            ++settingsVersionRef.current
+            commitSettings(authoritativeSettings)
+          })
           unsubscribeCommands = bridge.onDictationCommand((command) => {
             if (!isCurrentGeneration(generation) || localController !== controller) return
             switch (command.type) {
@@ -363,6 +371,10 @@ export function AppProvider({
           setDictation(controller.getState())
           setStatus('ready')
         } catch {
+          try { unsubscribeSettings?.() } catch { /* listener is already unreachable */ }
+          unsubscribeSettings = null
+          try { unsubscribeCommands?.() } catch { /* listener is already unreachable */ }
+          unsubscribeCommands = null
           localController?.dispose()
           localController = null
           controllerRef.current = null
@@ -385,6 +397,8 @@ export function AppProvider({
       if (activeGenerationRef.current === generation) activeGenerationRef.current = 0
       try { unsubscribeCommands?.() } catch { /* listener is already unreachable */ }
       unsubscribeCommands = null
+      try { unsubscribeSettings?.() } catch { /* listener is already unreachable */ }
+      unsubscribeSettings = null
       try { unsubscribeModelStatus?.() } catch { /* listener is already unreachable */ }
       unsubscribeModelStatus = null
       if (controllerRef.current === localController) controllerRef.current = null

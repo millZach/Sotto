@@ -22,6 +22,7 @@ import {
   MODEL_STATUS,
   OUTPUT_DELIVER,
   SETTINGS_GET,
+  SETTINGS_CHANGED,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
   STARTUP_GET,
@@ -53,6 +54,7 @@ export interface ContextBridgeAdapter {
 }
 
 const historyEntriesSchema = z.array(historyEntrySchema)
+const settingsChangedSchema = settingsSchema.strict()
 const hotkeyResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
   z
@@ -149,10 +151,17 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
     dictationCommandSchema,
     16,
   )
+  const onSettingsChanged = createBufferedSubscription(
+    renderer,
+    SETTINGS_CHANGED,
+    settingsChangedSchema,
+    1,
+  )
   const bridge: TalkTypeBridge = {
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
     resetSettings: () => invokeParsed(renderer, SETTINGS_RESET, settingsSchema),
+    onSettingsChanged,
 
     listHistory: () => invokeParsed(renderer, HISTORY_LIST, historyEntriesSchema),
     addHistory: (entry) => invokeParsed(renderer, HISTORY_ADD, historyEntriesSchema, entry),

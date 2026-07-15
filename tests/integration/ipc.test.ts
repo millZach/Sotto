@@ -17,6 +17,7 @@ import {
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
 import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
+import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
 import {
   TrayController,
@@ -40,6 +41,7 @@ import {
   MODEL_INSTALL,
   MODEL_LIST_DISCLOSURES,
   OUTPUT_DELIVER,
+  SETTINGS_CHANGED,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -255,6 +257,7 @@ describe('typed preload bridge', () => {
         'minimizeApp',
         'onDictationCommand',
         'onModelStatus',
+        'onSettingsChanged',
         'publishWidgetState',
         'quitApp',
         'removeModel',
@@ -322,10 +325,9 @@ describe('typed preload bridge', () => {
       ['electron', '--talktype-renderer-role=main'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktype', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(1)
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
-      DICTATION_COMMAND,
-      expect.any(Function),
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(2)
+    expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
+      [DICTATION_COMMAND, SETTINGS_CHANGED].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
@@ -431,6 +433,24 @@ describe('typed preload bridge', () => {
     mainBridge.onDictationCommand(commandListener)
     expect(commandListener).toHaveBeenCalledTimes(3)
     expect(commandListener).toHaveBeenLastCalledWith({ type: 'cancel' })
+  })
+
+  it('retains only the latest strict authoritative settings event for the main renderer', () => {
+    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const settingsEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === SETTINGS_CHANGED,
+    )?.[1]
+    settingsEvent?.({}, { ...DEFAULT_SETTINGS, theme: 'dark' })
+    settingsEvent?.({}, { ...DEFAULT_SETTINGS, theme: 'light' })
+    settingsEvent?.({}, { ...DEFAULT_SETTINGS, injected: true })
+    settingsEvent?.({}, { ...DEFAULT_SETTINGS, autoPaste: 'yes' })
+
+    const listener = vi.fn()
+    const unsubscribe = bridge.onSettingsChanged(listener)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme: 'light' })
+    unsubscribe()
+    unsubscribe()
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
@@ -723,6 +743,7 @@ describe('IPC validation and lifecycle', () => {
       hotkeys: nativeHotkeys,
       startup: nativeStartup,
       onAutoPasteChanged: vi.fn(),
+      onSettingsChanged: vi.fn(),
     })
     registerIpc(harness.ipc, {
       settings: {
@@ -786,9 +807,17 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).not.toHaveBeenCalled()
   })
 
-  it('uses the validated session output policy without rereading current settings', async () => {
+  it('clamps stale renderer output policy against current authoritative settings', async () => {
     const harness = createIpcHarness()
-    const deliver = vi.fn(async () => 'pasted' as const)
+    const pasteProcess = { run: vi.fn(async () => true) }
+    const clipboard = { writeText: vi.fn() }
+    const output = new OutputService({
+      clipboard,
+      widget: { hideWidget: vi.fn() },
+      delay: vi.fn(),
+      process: pasteProcess,
+    })
+    const deliver = vi.spyOn(output, 'deliver')
     harness.cleanup()
     registerIpc(harness.ipc, {
       settings: harness.settings,
@@ -803,15 +832,38 @@ describe('IPC validation and lifecycle', () => {
           url: harness.trustedUrl,
         },
       ],
-      output: { deliver },
+      output,
     })
-    const request = { text: 'hello world', autoPaste: false, pasteDelayMs: 320 }
-    await expect(harness.ipc.invoke(OUTPUT_DELIVER, request)).resolves.toBe('pasted')
+    harness.settings.get.mockResolvedValueOnce({
+      ...DEFAULT_SETTINGS,
+      autoPaste: false,
+      pasteDelayMs: 480,
+    })
+    const request = { text: 'hello world', autoPaste: true, pasteDelayMs: 120 }
+    await expect(harness.ipc.invoke(OUTPUT_DELIVER, request)).resolves.toBe('copied')
     expect(deliver).toHaveBeenCalledWith('hello world', {
       autoPaste: false,
-      pasteDelayMs: 320,
+      pasteDelayMs: 480,
     })
-    expect(harness.settings.get).not.toHaveBeenCalled()
+    expect(pasteProcess.run).not.toHaveBeenCalled()
+    expect(clipboard.writeText).toHaveBeenCalledWith('hello world')
+    expect(harness.settings.get).toHaveBeenCalledOnce()
+
+    harness.settings.get.mockResolvedValueOnce({
+      ...DEFAULT_SETTINGS,
+      autoPaste: true,
+      pasteDelayMs: 80,
+    })
+    await harness.ipc.invoke(OUTPUT_DELIVER, {
+      text: 'session disabled',
+      autoPaste: false,
+      pasteDelayMs: 700,
+    })
+    expect(deliver).toHaveBeenLastCalledWith('session disabled', {
+      autoPaste: false,
+      pasteDelayMs: 700,
+    })
+    expect(pasteProcess.run).not.toHaveBeenCalled()
 
     await expect(
       harness.ipc.invoke(OUTPUT_DELIVER, {
@@ -833,7 +885,7 @@ describe('IPC validation and lifecycle', () => {
     await expect(
       harness.ipc.invoke(OUTPUT_DELIVER, { ...request, injected: 'app:quit' }),
     ).rejects.toThrow('Invalid IPC payload')
-    expect(deliver).toHaveBeenCalledTimes(1)
+    expect(deliver).toHaveBeenCalledTimes(2)
   })
 
   it('delivers empty output with the captured session policy', async () => {

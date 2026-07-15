@@ -2,6 +2,7 @@ import { act, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import type {
   CommandResult,
   DictationCommand,
@@ -45,6 +46,7 @@ function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
     replaceHotkey: vi.fn(async () => OK),
     requestDictation: vi.fn(async () => OK),
     onDictationCommand: vi.fn(() => () => undefined),
+    onSettingsChanged: vi.fn(() => () => undefined),
     publishWidgetState: vi.fn(async () => OK),
     getModelStatus: vi.fn(async (preset) => ({ preset, state: 'ready' as const })),
     listModelDisclosures: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -226,6 +228,94 @@ describe('AppProvider dictation integration', () => {
     second.resolve({ ...DEFAULT_SETTINGS, theme: 'light' })
     await act(async () => Promise.all([firstUpdate, secondUpdate]))
     expect(currentContext?.settings?.theme).toBe('light')
+  })
+
+  it('applies authoritative tray settings to the next session and ignores an older invoke response', async () => {
+    const update = deferred<AppSettings>()
+    let settingsListener: ((settings: AppSettings) => void) | null = null
+    const bridge = createBridge({
+      updateSettings: vi.fn(() => update.promise),
+      onSettingsChanged: vi.fn((listener) => {
+        settingsListener = listener
+        return () => {
+          if (settingsListener === listener) settingsListener = null
+        }
+      }),
+    })
+    const harness = createControllerFactory()
+    mountProvider(bridge, harness.factory)
+    await waitFor(() => expect(currentContext?.status).toBe('ready'))
+
+    let response!: Promise<boolean>
+    act(() => {
+      response = currentContext!.actions.updateSettings({ theme: 'dark' })
+    })
+    await waitFor(() => expect(bridge.updateSettings).toHaveBeenCalledOnce())
+    act(() => settingsListener?.({
+      ...DEFAULT_SETTINGS,
+      theme: 'light',
+      autoPaste: false,
+      pasteDelayMs: 500,
+    }))
+    expect(currentContext?.settings).toMatchObject({ theme: 'light', autoPaste: false })
+    expect(harness.bindings[0]?.getSettings()).toMatchObject({
+      autoPaste: false,
+      pasteDelayMs: 500,
+    })
+
+    update.resolve({ ...DEFAULT_SETTINGS, theme: 'dark', autoPaste: true })
+    await act(async () => response)
+    expect(currentContext?.settings).toMatchObject({ theme: 'light', autoPaste: false })
+  })
+
+  it('propagates a tray coordinator commit into the next controller session snapshot', async () => {
+    let persisted: AppSettings = { ...DEFAULT_SETTINGS, autoPaste: true }
+    let settingsListener: ((settings: AppSettings) => void) | null = null
+    const repository = {
+      get: vi.fn(async () => ({ ...persisted })),
+      update: vi.fn(async (patch: Partial<AppSettings>) => {
+        persisted = { ...persisted, ...patch }
+        return { ...persisted }
+      }),
+      save: vi.fn(async (settings: AppSettings) => {
+        persisted = { ...settings }
+        return { ...persisted }
+      }),
+      reset: vi.fn(async () => {
+        persisted = { ...DEFAULT_SETTINGS }
+        return { ...persisted }
+      }),
+    }
+    const coordinator = new NativeSettingsCoordinator({
+      repository,
+      hotkeys: {
+        current: () => persisted.hotkey,
+        replace: () => ({ ok: true }),
+      },
+      startup: {
+        get: () => ({ enabled: persisted.launchAtStartup }),
+        set: (enabled) => ({ enabled }),
+      },
+      onAutoPasteChanged: vi.fn(),
+      onSettingsChanged: (settings) => settingsListener?.(settings),
+    })
+    const bridge = createBridge({
+      getSettings: () => coordinator.getSettings(),
+      onSettingsChanged: (listener) => {
+        settingsListener = listener
+        return () => {
+          if (settingsListener === listener) settingsListener = null
+        }
+      },
+    })
+    const harness = createControllerFactory()
+    mountProvider(bridge, harness.factory)
+    await waitFor(() => expect(currentContext?.status).toBe('ready'))
+    expect(harness.bindings[0]?.getSettings().autoPaste).toBe(true)
+
+    await act(async () => coordinator.updateSettings({ autoPaste: false }))
+    expect(currentContext?.settings?.autoPaste).toBe(false)
+    expect(harness.bindings[0]?.getSettings().autoPaste).toBe(false)
   })
 
   it('serializes hotkey, startup, and reset operations around authoritative settings refreshes', async () => {

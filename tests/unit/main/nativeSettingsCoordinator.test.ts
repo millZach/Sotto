@@ -45,17 +45,20 @@ function createHarness() {
     }),
   }
   const autoPasteChanged = vi.fn()
+  const settingsChanged = vi.fn()
   const coordinator = new NativeSettingsCoordinator({
     repository,
     hotkeys,
     startup,
     onAutoPasteChanged: autoPasteChanged,
+    onSettingsChanged: settingsChanged,
   })
   return {
     autoPasteChanged,
     coordinator,
     hotkeys,
     repository,
+    settingsChanged,
     startup,
     get activeHotkey() {
       return activeHotkey
@@ -96,6 +99,26 @@ describe('NativeSettingsCoordinator', () => {
 
     expect(harness.autoPasteChanged).toHaveBeenCalledWith(false)
     expect(harness.persisted).toMatchObject({ autoPaste: false, theme: 'dark' })
+    expect(harness.settingsChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPaste: false, theme: 'dark' }),
+    )
+  })
+
+  it('notifies only successful authoritative commits and contains notification failures', async () => {
+    const harness = createHarness()
+    harness.settingsChanged.mockRejectedValueOnce(new Error('renderer unavailable'))
+
+    await expect(harness.coordinator.updateSettings({ theme: 'dark' })).resolves.toMatchObject({
+      theme: 'dark',
+    })
+    expect(harness.settingsChanged).toHaveBeenCalledOnce()
+
+    harness.settingsChanged.mockClear()
+    harness.repository.update.mockRejectedValueOnce(new Error('private settings path'))
+    await expect(harness.coordinator.updateSettings({ theme: 'light' })).rejects.toMatchObject({
+      code: 'NATIVE_SETTINGS_TRANSACTION_FAILED',
+    })
+    expect(harness.settingsChanged).not.toHaveBeenCalled()
   })
 
   it('registers a hotkey before persisting it and rolls native state back on write failure', async () => {
@@ -112,6 +135,7 @@ describe('NativeSettingsCoordinator', () => {
     ])
     expect(harness.activeHotkey).toBe(DEFAULT_SETTINGS.hotkey)
     expect(harness.persisted.hotkey).toBe(DEFAULT_SETTINGS.hotkey)
+    expect(harness.settingsChanged).not.toHaveBeenCalled()
 
     await expect(harness.coordinator.replaceHotkey('Ctrl+Shift+M')).resolves.toEqual({
       ok: true,
@@ -192,6 +216,7 @@ describe('NativeSettingsCoordinator', () => {
     expect(harness.startup.set).toHaveBeenCalledWith(DEFAULT_SETTINGS.launchAtStartup)
     expect(harness.autoPasteChanged).toHaveBeenCalledWith(DEFAULT_SETTINGS.autoPaste)
     expect(harness.persisted).toStrictEqual(DEFAULT_SETTINGS)
+    expect(harness.settingsChanged).toHaveBeenLastCalledWith(DEFAULT_SETTINGS)
   })
 
   it('rolls every native reset step back when reset persistence fails', async () => {
@@ -203,6 +228,7 @@ describe('NativeSettingsCoordinator', () => {
     harness.hotkeys.replace.mockClear()
     harness.startup.set.mockClear()
     harness.autoPasteChanged.mockClear()
+    harness.settingsChanged.mockClear()
 
     await expect(harness.coordinator.resetSettings()).rejects.toMatchObject({
       code: 'NATIVE_SETTINGS_TRANSACTION_FAILED',
@@ -216,6 +242,7 @@ describe('NativeSettingsCoordinator', () => {
       autoPaste: false,
     })
     expect(harness.autoPasteChanged).toHaveBeenLastCalledWith(false)
+    expect(harness.settingsChanged).not.toHaveBeenCalled()
   })
 
   it('serializes concurrent native mutations in call order', async () => {
@@ -240,5 +267,9 @@ describe('NativeSettingsCoordinator', () => {
     await hotkey
     await startup
     expect(harness.startup.set).toHaveBeenCalledWith(true)
+    expect(harness.settingsChanged.mock.calls.some(([settings]) =>
+      settings.hotkey === 'Alt+Space')).toBe(true)
+    expect(harness.settingsChanged.mock.calls.some(([settings]) =>
+      settings.launchAtStartup === true)).toBe(true)
   })
 })

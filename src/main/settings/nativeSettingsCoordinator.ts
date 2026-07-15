@@ -27,6 +27,7 @@ export interface NativeSettingsCoordinatorDependencies {
   readonly hotkeys: NativeSettingsHotkeyService
   readonly startup: NativeSettingsStartupService
   readonly onAutoPasteChanged: (enabled: boolean) => void | Promise<void>
+  readonly onSettingsChanged: (settings: AppSettings) => void | Promise<void>
 }
 
 export class NativeManagedSettingMutationError extends Error {
@@ -71,6 +72,7 @@ export class NativeSettingsCoordinator {
         ) {
           await this.dependencies.onAutoPasteChanged(updated.autoPaste)
         }
+        await this.notifySettingsChanged(updated)
         return updated
       } catch {
         await this.restoreSettings(previous)
@@ -111,6 +113,7 @@ export class NativeSettingsCoordinator {
         if (updated.hotkey !== next) {
           throw new NativeSettingsTransactionError()
         }
+        await this.notifySettingsChanged(updated)
         return result
       } catch {
         await this.restoreHotkey(previousNative)
@@ -139,6 +142,7 @@ export class NativeSettingsCoordinator {
         if (updated.launchAtStartup !== enabled) {
           throw new NativeSettingsTransactionError()
         }
+        await this.notifySettingsChanged(updated)
         return changed
       } catch {
         await this.restoreStartup(previousNative.enabled)
@@ -181,6 +185,7 @@ export class NativeSettingsCoordinator {
         ) {
           throw new NativeSettingsTransactionError()
         }
+        await this.notifySettingsChanged(reset)
         return reset
       } catch {
         await this.restoreAutoPaste(previousSettings.autoPaste)
@@ -206,6 +211,14 @@ export class NativeSettingsCoordinator {
       await this.dependencies.repository.save(settings)
     } catch {
       // Preserve the original finite transaction failure at the IPC boundary.
+    }
+  }
+
+  private async notifySettingsChanged(settings: AppSettings): Promise<void> {
+    try {
+      await this.dependencies.onSettingsChanged({ ...settings })
+    } catch {
+      // Renderer synchronization is observational after the authoritative commit.
     }
   }
 
