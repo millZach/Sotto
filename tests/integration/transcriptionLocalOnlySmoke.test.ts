@@ -1,6 +1,8 @@
 import { env, pipeline } from '@huggingface/transformers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { configureLocalInferenceEnvironment } from '../../src/renderer/src/transcription/environment'
+
 const originalEnvironment = {
   allowRemoteModels: env.allowRemoteModels,
   allowLocalModels: env.allowLocalModels,
@@ -28,21 +30,17 @@ afterEach(() => {
 })
 
 describe('Transformers.js local-only resolution smoke', () => {
-  it('resolves the pinned repository only through TalkType protocols', async () => {
+  it('configures the real runtime root and resolves model metadata only locally', async () => {
     const observedUrls: string[] = []
     const fetchSpy = vi.fn<typeof fetch>(async (input) => {
-      observedUrls.push(String(input instanceof Request ? input.url : input))
+      const url = String(input instanceof Request ? input.url : input)
+      observedUrls.push(url)
       return new Response('', { status: 404 })
     })
-    env.allowRemoteModels = false
-    env.allowLocalModels = true
-    env.localModelPath = 'talktype-model://model/'
-    env.useFS = false
-    env.useBrowserCache = false
-    env.useFSCache = false
-    env.useCustomCache = false
-    env.backends.onnx.wasm!.wasmPaths = 'talktype-runtime://runtime/'
+    configureLocalInferenceEnvironment(env)
     env.fetch = fetchSpy
+
+    expect(env.backends.onnx.wasm?.wasmPaths).toBe('talktype-runtime://runtime/')
 
     await expect(
       pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
@@ -53,13 +51,9 @@ describe('Transformers.js local-only resolution smoke', () => {
     ).rejects.toThrow()
 
     expect(observedUrls.length).toBeGreaterThan(0)
-    expect(
-      observedUrls.every(
-        (url) =>
-          url.startsWith('talktype-model://model/') ||
-          url.startsWith('talktype-runtime://runtime/'),
-      ),
-    ).toBe(true)
+    expect(observedUrls.every((url) => url.startsWith('talktype-model://model/'))).toBe(
+      true,
+    )
     expect(fetchSpy).toHaveBeenCalled()
   })
 })

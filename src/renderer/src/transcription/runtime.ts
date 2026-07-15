@@ -112,11 +112,17 @@ function errorResponse(
 export function createTranscriptionRuntime(
   options: TranscriptionRuntimeOptions,
 ): TranscriptionRuntime {
-  let activePipeline:
-    | { readonly key: string; readonly pipeline: Promise<SpeechRecognitionPipeline> }
-    | undefined
+  interface ActivePipeline {
+    readonly key: string
+    readonly pipeline: Promise<SpeechRecognitionPipeline>
+  }
+
+  let activePipeline: ActivePipeline | undefined
   const cancelledRequests = new Set<string>()
-  const knownRequests = new Set<string>()
+  const requestMetadata = new Map<
+    string,
+    { readonly type: 'load' } | { readonly type: 'transcribe'; readonly sessionId: string }
+  >()
   let queue = Promise.resolve()
 
   const isCancelled = (requestId: string): boolean => cancelledRequests.has(requestId)
@@ -177,6 +183,26 @@ export function createTranscriptionRuntime(
     }
   }
 
+  const invalidatePipeline = async (failedPipeline: SpeechRecognitionPipeline): Promise<void> => {
+    const candidate = activePipeline
+    if (candidate === undefined) return
+
+    let candidatePipeline: SpeechRecognitionPipeline
+    try {
+      candidatePipeline = await candidate.pipeline
+    } catch {
+      return
+    }
+    if (activePipeline !== candidate || candidatePipeline !== failedPipeline) return
+
+    activePipeline = undefined
+    try {
+      await failedPipeline.dispose?.()
+    } catch {
+      // Backend cleanup is best-effort and never exposes library errors.
+    }
+  }
+
   const loadForPreference = async (
     request: LoadRequest,
   ): Promise<{ pipeline: SpeechRecognitionPipeline; device: InferenceDevice }> => {
@@ -231,10 +257,16 @@ export function createTranscriptionRuntime(
       request.language === 'auto'
         ? ({ task: 'transcribe' } as const)
         : ({ task: 'transcribe', language: request.language } as const)
-    const output = await pipeline(request.audio, inferenceOptions)
+    let output: SpeechRecognitionOutput
+    try {
+      output = normalizedOutput(await pipeline(request.audio, inferenceOptions), request.language)
+    } catch (error) {
+      await invalidatePipeline(pipeline)
+      throw error
+    }
     if (isCancelled(request.requestId)) throw new RuntimeFailure('CANCELLED')
     reportProgress(request, 'transcribing', 1)
-    return normalizedOutput(output, request.language)
+    return output
   }
 
   const transcribeForPreference = async (
@@ -282,7 +314,7 @@ export function createTranscriptionRuntime(
   const processRequest = async (request: LoadRequest | TranscribeRequest): Promise<void> => {
     if (isCancelled(request.requestId)) {
       cancelledRequests.delete(request.requestId)
-      knownRequests.delete(request.requestId)
+      requestMetadata.delete(request.requestId)
       return
     }
     try {
@@ -330,7 +362,7 @@ export function createTranscriptionRuntime(
       )
     } finally {
       cancelledRequests.delete(request.requestId)
-      knownRequests.delete(request.requestId)
+      requestMetadata.delete(request.requestId)
     }
   }
 
@@ -344,14 +376,23 @@ export function createTranscriptionRuntime(
       }
 
       if (request.type === 'cancel') {
-        if (knownRequests.has(request.targetRequestId)) {
+        const target = requestMetadata.get(request.targetRequestId)
+        if (
+          target?.type === 'transcribe' &&
+          target.sessionId === request.sessionId
+        ) {
           cancelledRequests.add(request.targetRequestId)
         }
         return Promise.resolve()
       }
 
-      if (knownRequests.has(request.requestId)) return Promise.resolve()
-      knownRequests.add(request.requestId)
+      if (requestMetadata.has(request.requestId)) return Promise.resolve()
+      requestMetadata.set(
+        request.requestId,
+        request.type === 'load'
+          ? { type: 'load' }
+          : { type: 'transcribe', sessionId: request.sessionId },
+      )
 
       const work = queue.then(() => processRequest(request))
       queue = work.catch(() => undefined)

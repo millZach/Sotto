@@ -2,16 +2,10 @@
 
 import { env, pipeline } from '@huggingface/transformers'
 
+import { configureLocalInferenceEnvironment } from './environment'
 import { createTranscriptionRuntime, type PipelineFactory } from './runtime'
 
-env.allowRemoteModels = false
-env.allowLocalModels = true
-env.localModelPath = 'talktype-model://model/'
-env.useFS = false
-env.useBrowserCache = false
-env.useFSCache = false
-env.useCustomCache = false
-env.backends.onnx.wasm!.wasmPaths = 'talktype-runtime://runtime/'
+configureLocalInferenceEnvironment(env)
 
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
 const runtime = createTranscriptionRuntime({

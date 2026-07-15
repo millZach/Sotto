@@ -296,6 +296,45 @@ describe('local transcription worker runtime', () => {
     expect(responses).not.toContainEqual(expect.objectContaining({ requestId: 'second' }))
   })
 
+  it('ignores a queued cancellation whose session does not own the target request', async () => {
+    const firstResult = deferred<{ text: string }>()
+    const recognize = vi
+      .fn<SpeechRecognitionPipeline>()
+      .mockImplementationOnce(() => firstResult.promise)
+      .mockResolvedValue({ text: 'owned by session two' })
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    const first = runtime.handleMessage(
+      transcribeRequest({ requestId: 'first', sessionId: 'session-one' }),
+    )
+    const queued = runtime.handleMessage(
+      transcribeRequest({ requestId: 'second', sessionId: 'session-two' }),
+    )
+    await Promise.resolve()
+    await runtime.handleMessage({
+      type: 'cancel',
+      requestId: 'cancel-second',
+      targetRequestId: 'second',
+      sessionId: 'wrong-session',
+    })
+    firstResult.resolve({ text: 'first result' })
+    await Promise.all([first, queued])
+
+    expect(recognize).toHaveBeenCalledTimes(2)
+    expect(responses).toContainEqual(
+      expect.objectContaining({
+        type: 'result',
+        requestId: 'second',
+        sessionId: 'session-two',
+      }),
+    )
+  })
+
   it('suppresses progress and results when cancellation arrives during inference', async () => {
     const inference = deferred<{ text: string }>()
     const responses: unknown[] = []
@@ -324,6 +363,97 @@ describe('local transcription worker runtime', () => {
     expect(responses.at(-1)).not.toEqual(
       expect.objectContaining({ type: 'progress', progress: 1 }),
     )
+  })
+
+  it('ignores mismatched active cancellation and cancellation targeting a load request', async () => {
+    const activeInference = deferred<{ text: string }>()
+    const loadPipeline = deferred<SpeechRecognitionPipeline>()
+    const activePipeline = vi.fn(() => activeInference.promise)
+    const readyPipeline = vi.fn(async () => ({ text: 'unused' }))
+    const createPipeline = vi
+      .fn<PipelineFactory>()
+      .mockResolvedValueOnce(activePipeline)
+      .mockImplementationOnce(() => loadPipeline.promise)
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    const active = runtime.handleMessage(
+      transcribeRequest({ requestId: 'active', sessionId: 'owner-session' }),
+    )
+    await vi.waitFor(() => {
+      expect(activePipeline).toHaveBeenCalledOnce()
+    })
+    await runtime.handleMessage({
+      type: 'cancel',
+      requestId: 'wrong-cancel',
+      targetRequestId: 'active',
+      sessionId: 'intruder-session',
+    })
+    activeInference.resolve({ text: 'owner result' })
+    await active
+
+    const load = runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-request',
+      preset: 'accurate',
+      inferencePreference: 'wasm',
+    })
+    await vi.waitFor(() => {
+      expect(createPipeline).toHaveBeenCalledTimes(2)
+    })
+    await runtime.handleMessage({
+      type: 'cancel',
+      requestId: 'cancel-load',
+      targetRequestId: 'load-request',
+      sessionId: 'any-session',
+    })
+    loadPipeline.resolve(readyPipeline)
+    await load
+
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'result', requestId: 'active' }),
+    )
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-request' }),
+    )
+  })
+
+  it('forgets completed ownership metadata so a late cancel cannot affect later work', async () => {
+    const recognize = vi.fn(async () => ({ text: 'complete' }))
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage(
+      transcribeRequest({ requestId: 'reused-id', sessionId: 'owner-session' }),
+    )
+    await runtime.handleMessage({
+      type: 'cancel',
+      requestId: 'late-cancel',
+      targetRequestId: 'reused-id',
+      sessionId: 'owner-session',
+    })
+    await runtime.handleMessage(
+      transcribeRequest({ requestId: 'reused-id', sessionId: 'owner-session' }),
+    )
+
+    expect(recognize).toHaveBeenCalledTimes(2)
+    expect(
+      responses.filter(
+        (response) =>
+          typeof response === 'object' &&
+          response !== null &&
+          'type' in response &&
+          response.type === 'result',
+      ),
+    ).toHaveLength(2)
   })
 
   it('reuses a loaded pipeline without concurrent duplicate initialization', async () => {
@@ -413,23 +543,84 @@ describe('local transcription worker runtime', () => {
     )
   })
 
-  it('configures the production worker for local protocols with remote models disabled', () => {
+  it('disposes an OOM-failed WASM pipeline so the same key reloads cleanly', async () => {
+    const disposeFailed = vi.fn(async () => undefined)
+    const failedPipeline = Object.assign(
+      vi.fn(async () => {
+        throw new Error('out of memory in backend')
+      }),
+      { dispose: disposeFailed },
+    )
+    const replacementPipeline = vi.fn(async () => ({ text: 'recovered' }))
+    const createPipeline = vi
+      .fn<PipelineFactory>()
+      .mockResolvedValueOnce(failedPipeline)
+      .mockResolvedValueOnce(replacementPipeline)
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage(transcribeRequest({ requestId: 'oom' }))
+    await runtime.handleMessage(transcribeRequest({ requestId: 'retry' }))
+
+    expect(disposeFailed).toHaveBeenCalledOnce()
+    expect(createPipeline).toHaveBeenCalledTimes(2)
+    expect(responses).toContainEqual(
+      expect.objectContaining({ requestId: 'oom', code: 'OUT_OF_MEMORY' }),
+    )
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'result', requestId: 'retry', text: 'recovered' }),
+    )
+  })
+
+  it('disposes an explicit WebGPU backend failure before same-key retry', async () => {
+    const disposeFailed = vi.fn(async () => undefined)
+    const failedPipeline = Object.assign(
+      vi.fn(async () => {
+        throw new Error('GPU execution provider failed')
+      }),
+      { dispose: disposeFailed },
+    )
+    const replacementPipeline = vi.fn(async () => ({ text: 'gpu recovered' }))
+    const createPipeline = vi
+      .fn<PipelineFactory>()
+      .mockResolvedValueOnce(failedPipeline)
+      .mockResolvedValueOnce(replacementPipeline)
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => true,
+    })
+
+    await runtime.handleMessage(
+      transcribeRequest({ requestId: 'gpu-failure', inferencePreference: 'webgpu' }),
+    )
+    await runtime.handleMessage(
+      transcribeRequest({ requestId: 'gpu-retry', inferencePreference: 'webgpu' }),
+    )
+
+    expect(disposeFailed).toHaveBeenCalledOnce()
+    expect(createPipeline).toHaveBeenCalledTimes(2)
+    expect(responses).toContainEqual(
+      expect.objectContaining({ requestId: 'gpu-failure', code: 'WEBGPU_FAILED' }),
+    )
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'result', requestId: 'gpu-retry' }),
+    )
+  })
+
+  it('makes worker startup execute the shared production environment configurator', () => {
     const source = readFileSync(
       join(process.cwd(), 'src/renderer/src/transcription/worker.ts'),
       'utf8',
     )
 
-    expect(source).toContain('env.allowRemoteModels = false')
-    expect(source).toContain('env.allowLocalModels = true')
-    expect(source).toContain("env.localModelPath = 'talktype-model://model/'")
-    expect(source).toContain('env.useFS = false')
-    expect(source).toContain('env.useBrowserCache = false')
-    expect(source).toContain('env.useFSCache = false')
-    expect(source).toContain('env.useCustomCache = false')
-    expect(source).toContain(
-      "env.backends.onnx.wasm!.wasmPaths = 'talktype-runtime://runtime/'",
-    )
-    expect(source).not.toContain('env.allowRemoteModels = true')
-    expect(source).not.toMatch(/https?:\/\//)
+    expect(source).toContain('configureLocalInferenceEnvironment(env)')
+    expect(source).not.toContain('env.allowRemoteModels =')
+    expect(source).not.toContain('env.localModelPath =')
   })
 })
