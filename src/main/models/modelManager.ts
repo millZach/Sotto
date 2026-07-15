@@ -152,7 +152,7 @@ interface HttpsResponse extends Readable {
 interface HttpsRequest {
   setTimeout(milliseconds: number, callback: () => void): unknown
   once(event: 'error', callback: (error: Error) => void): unknown
-  destroy(error: Error): unknown
+  destroy(error?: Error): unknown
 }
 
 export type HttpsGet = (url: URL, callback: (response: HttpsResponse) => void) => HttpsRequest
@@ -182,20 +182,60 @@ export function createHttpsDownloader(
         const visited = new Set([parsed.href])
         let settled = false
         let activeRequest: HttpsRequest | null = null
+        let activeResponse: HttpsResponse | null = null
         let deadline: unknown | null = null
         const timer = timeout.timer ?? downloadTimer
-        const resolve = (): void => { if (!settled) { settled = true; if (deadline !== null) timer.clear(deadline); resolvePromise() } }
-        const reject = (): void => { if (!settled) { settled = true; if (deadline !== null) timer.clear(deadline); rejectPromise(new Error('Model download failed')) } }
-        deadline = timer.set(() => {
-          activeRequest?.destroy(new Error('Model download failed'))
-          reject()
-        }, timeout.overallMs ?? 15 * 60_000)
+        const clearDeadline = (): void => {
+          if (deadline === null) return
+          const handle = deadline
+          deadline = null
+          try { timer.clear(handle) } catch { /* cleanup is best effort */ }
+        }
+        const cancelResponse = (response: HttpsResponse | null): void => {
+          if (response === null) return
+          response.once('error', () => undefined)
+          try { response.destroy() } catch { /* cleanup is best effort */ }
+        }
+        const cancelRequest = (request: HttpsRequest | null): void => {
+          if (request === null) return
+          try { request.destroy() } catch { /* cleanup is best effort */ }
+        }
+        const resolve = (): void => {
+          if (settled) return
+          settled = true
+          activeRequest = null
+          activeResponse = null
+          clearDeadline()
+          resolvePromise()
+        }
+        const reject = (): void => {
+          if (settled) return
+          settled = true
+          const response = activeResponse
+          const request = activeRequest
+          activeResponse = null
+          activeRequest = null
+          clearDeadline()
+          cancelResponse(response)
+          cancelRequest(request)
+          rejectPromise(new Error('Model download failed'))
+        }
         const request = (current: URL, redirects: number): void => {
-          const operation = requestGet(current, (response) => {
-            if (settled) { response.resume(); return }
+          if (settled) return
+          let operation: HttpsRequest
+          let pendingResponse: HttpsResponse | null = null
+          let ready = false
+          const handleResponse = (response: HttpsResponse): void => {
+            if (settled) { cancelResponse(response); return }
+            activeResponse = response
+            response.once('error', () => { if (activeResponse === response) reject() })
             if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0)) {
               const location = response.headers.location
-              response.resume()
+              const redirectRequest = activeRequest
+              activeResponse = null
+              activeRequest = null
+              cancelResponse(response)
+              cancelRequest(redirectRequest)
               if (!location) { reject(); return }
               let next: URL
               try { next = validateDownloadRedirect(current.href, location, redirects) } catch { reject(); return }
@@ -204,17 +244,49 @@ export function createHttpsDownloader(
               request(next, redirects + 1)
               return
             }
-            if (response.statusCode !== 200) { response.resume(); reject(); return }
+            if (response.statusCode !== 200) { reject(); return }
             const declaredHeader = response.headers['content-length']
             const declaredLength = declaredHeader === undefined ? expectedBytes : Number(declaredHeader)
-            if (!Number.isSafeInteger(declaredLength) || declaredLength !== expectedBytes) { response.resume(); reject(); return }
+            if (!Number.isSafeInteger(declaredLength) || declaredLength !== expectedBytes) { reject(); return }
             let received = 0
             const limiter = new Transform({ transform(chunk: Buffer, _encoding, callback) { received += chunk.length; if (received > expectedBytes) callback(new Error('Model download failed')); else callback(null, chunk) } })
-            pipeline(response, limiter, output.createWriteStream()).then(() => { if (received === expectedBytes) resolve(); else reject() }, reject)
-          })
+            pipeline(response, limiter, output.createWriteStream()).then(() => {
+              if (received === expectedBytes) resolve()
+              else reject()
+            }, reject)
+          }
+          try {
+            operation = requestGet(current, (response) => {
+              if (!ready) { pendingResponse = response; return }
+              handleResponse(response)
+            })
+          } catch {
+            activeResponse = pendingResponse
+            reject()
+            return
+          }
           activeRequest = operation
-          operation.setTimeout(timeout.requestMs ?? 30_000, () => operation.destroy(new Error('Model download failed')))
-          operation.once('error', reject)
+          try {
+            operation.once('error', () => { if (activeRequest === operation) reject() })
+            operation.setTimeout(timeout.requestMs ?? 30_000, () => { if (activeRequest === operation) reject() })
+          } catch {
+            activeResponse = pendingResponse
+            reject()
+            return
+          }
+          ready = true
+          if (pendingResponse !== null) handleResponse(pendingResponse)
+        }
+        try {
+          const handle = timer.set(reject, timeout.overallMs ?? 15 * 60_000)
+          if (settled) {
+            try { timer.clear(handle) } catch { /* cleanup is best effort */ }
+          } else {
+            deadline = handle
+          }
+        } catch {
+          reject()
+          return
         }
         request(parsed, 0)
       })

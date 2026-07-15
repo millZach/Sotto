@@ -17,16 +17,21 @@ const allowedRedirectHosts = new Set(['huggingface.co', 'cdn-lfs.huggingface.co'
 
 function finiteError(message) { return new Error(`Model preparation failed: ${message}`) }
 
-async function fetchPinned(url, options = {}) {
+async function cancelResponseBody(response) {
+  await response?.body?.cancel().catch(() => undefined)
+}
+
+export async function fetchPinned(url, options = {}) {
   let current = new URL(url)
   if (current.protocol !== 'https:' || current.hostname !== 'huggingface.co' || current.username || current.password || current.port || current.pathname.includes('/main/')) throw finiteError('unsafe source')
   const visited = new Set([current.href])
   for (let redirects = 0; redirects <= 5; redirects += 1) {
-    const { timeoutMs = 60_000, ...fetchOptions } = options
-    const response = await globalThis.fetch(current, { ...fetchOptions, redirect: 'manual', signal: globalThis.AbortSignal.timeout(timeoutMs) })
+    const { timeoutMs = 60_000, fetchImpl = globalThis.fetch, ...fetchOptions } = options
+    const response = await fetchImpl(current, { ...fetchOptions, redirect: 'manual', signal: globalThis.AbortSignal.timeout(timeoutMs) })
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
-    const location = response.headers.get('location'); if (!location) throw finiteError('invalid redirect')
-    await response.body?.cancel().catch(() => undefined)
+    const location = response.headers.get('location')
+    await cancelResponseBody(response)
+    if (!location) throw finiteError('invalid redirect')
     const next = new URL(location, current)
     if (next.protocol !== 'https:' || !allowedRedirectHosts.has(next.hostname) || next.username || next.password || next.port || visited.has(next.href)) throw finiteError('unsafe redirect')
     visited.add(next.href)
@@ -35,10 +40,13 @@ async function fetchPinned(url, options = {}) {
   throw finiteError('too many redirects')
 }
 
-async function treeMetadata(model) {
+export async function treeMetadata(model, options = {}) {
   const url = `https://huggingface.co/api/models/${model.repository}/tree/${model.revision}?recursive=true&expand=true`
-  const response = await fetchPinned(url)
-  if (!response.ok) throw finiteError('metadata unavailable')
+  const response = await fetchPinned(url, options)
+  if (!response.ok) {
+    await cancelResponseBody(response)
+    throw finiteError('metadata unavailable')
+  }
   const entries = await response.json()
   if (!Array.isArray(entries)) throw finiteError('invalid metadata')
   return new Map(entries.map((entry) => [entry.path, entry]))
@@ -50,15 +58,26 @@ async function hashFile(path) {
   return { bytes, sha256: hash.digest('hex') }
 }
 
-async function download(url, destination, expectedBytes) {
+export async function download(url, destination, expectedBytes, options = {}) {
   if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0) throw finiteError('invalid expected size')
+  const { attempts = 3, fetchImpl = globalThis.fetch } = options
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 3) throw finiteError('invalid attempt count')
   await mkdir(dirname(destination), { recursive: true })
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let response
     try {
-      const response = await fetchPinned(url, { timeoutMs: 600_000 })
-      if (!response.ok || !response.body) throw finiteError('download unavailable')
+      response = await fetchPinned(url, { timeoutMs: 600_000, fetchImpl })
+      if (!response.ok || !response.body) {
+        await cancelResponseBody(response)
+        response = undefined
+        throw finiteError('download unavailable')
+      }
       const declared = response.headers.get('content-length')
-      if (declared !== null && Number(declared) !== expectedBytes) throw finiteError('download size mismatch')
+      if (declared !== null && Number(declared) !== expectedBytes) {
+        await cancelResponseBody(response)
+        response = undefined
+        throw finiteError('download size mismatch')
+      }
       let received = 0
       const limiter = new Transform({ transform(chunk, _encoding, callback) { received += chunk.length; callback(received > expectedBytes ? finiteError('download size mismatch') : null, chunk) } })
       await pipeline(response.body, limiter, createWriteStream(destination, { flags: 'wx' }))
@@ -66,8 +85,9 @@ async function download(url, destination, expectedBytes) {
       if (integrity.bytes !== expectedBytes) throw finiteError('download size mismatch')
       return integrity
     } catch (error) {
+      await cancelResponseBody(response)
       await rm(destination, { force: true })
-      if (attempt === 3) throw error
+      if (attempt === attempts) throw error
     }
   }
   throw finiteError('download unavailable')

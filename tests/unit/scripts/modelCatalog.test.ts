@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +14,7 @@ import {
   validateRuntimeManifest,
 } from '../../../scripts/model-catalog.mjs'
 import type { CatalogLock } from '../../../scripts/model-catalog.mjs'
-import { replaceDirectory, replacePreparedAssetSet } from '../../../scripts/prepare-model.mjs'
+import { download, fetchPinned, replaceDirectory, replacePreparedAssetSet, treeMetadata } from '../../../scripts/prepare-model.mjs'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -56,6 +56,82 @@ describe('build-time model catalog', () => {
         expect(url.pathname).not.toContain('/main/')
       }
     }
+  })
+
+  it('cancels a redirect body before fetching its target', async () => {
+    const redirect = rejectedResponse(302, { location: 'https://cdn-lfs.huggingface.co/signed' })
+    const success = rejectedResponse(200)
+    const fetchImpl = vi.fn(async () => {
+      if (fetchImpl.mock.calls.length === 1) return redirect.response
+      expect(redirect.cancel).toHaveBeenCalledOnce()
+      return success.response
+    })
+
+    await expect(fetchPinned(
+      'https://huggingface.co/Xenova/whisper-tiny/resolve/revision/config.json',
+      { fetchImpl },
+    )).resolves.toBe(success.response)
+  })
+
+  it('cancels a redirect body before rejecting a missing location', async () => {
+    const redirect = rejectedResponse(302)
+
+    await expect(fetchPinned(
+      'https://huggingface.co/Xenova/whisper-tiny/resolve/revision/config.json',
+      { fetchImpl: vi.fn(async () => redirect.response) },
+    )).rejects.toThrow('invalid redirect')
+
+    expect(redirect.cancel).toHaveBeenCalledOnce()
+  })
+
+  it('cancels an unsuccessful metadata response', async () => {
+    const unavailable = rejectedResponse(503)
+
+    await expect(treeMetadata(MODEL_CATALOG.fast, {
+      fetchImpl: vi.fn(async () => unavailable.response),
+    })).rejects.toThrow('metadata unavailable')
+
+    expect(unavailable.cancel).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['non-OK response', () => rejectedResponse(503)],
+    ['declared-size mismatch', () => rejectedResponse(200, { contentLength: '11' })],
+  ] as const)('cancels each %s before retrying a model download', async (_name, responseFactory) => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-download-')); roots.push(root)
+    const destination = join(root, 'partial.bin')
+    const responses = [responseFactory(), responseFactory()]
+    const fetchImpl = vi.fn(async () => {
+      const index = fetchImpl.mock.calls.length - 1
+      if (index > 0) expect(responses[index - 1]!.cancel).toHaveBeenCalledOnce()
+      return responses[index]!.response
+    })
+
+    await expect(download(
+      'https://huggingface.co/Xenova/whisper-tiny/resolve/revision/model.bin',
+      destination,
+      10,
+      { attempts: 2, fetchImpl },
+    )).rejects.toThrow()
+
+    expect(responses[1]!.cancel).toHaveBeenCalledOnce()
+    await expect(readFile(destination)).rejects.toThrow()
+  })
+
+  it('rejects a missing download body, retries finitely, and removes the destination', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-download-')); roots.push(root)
+    const destination = join(root, 'partial.bin')
+    const fetchImpl = vi.fn(async () => rejectedResponse(200, { body: false }).response)
+
+    await expect(download(
+      'https://huggingface.co/Xenova/whisper-tiny/resolve/revision/model.bin',
+      destination,
+      10,
+      { attempts: 2, fetchImpl },
+    )).rejects.toThrow('download unavailable')
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    await expect(readFile(destination)).rejects.toThrow()
   })
 
   it.each([
@@ -154,3 +230,20 @@ describe('build-time model catalog', () => {
     await expect(readFile(join(runtime, 'next-runtime'))).rejects.toThrow()
   })
 })
+
+function rejectedResponse(
+  status: number,
+  options: { readonly location?: string; readonly contentLength?: string; readonly body?: boolean } = {},
+) {
+  const cancel = vi.fn(async () => undefined)
+  const headers = new Headers()
+  if (options.location !== undefined) headers.set('location', options.location)
+  if (options.contentLength !== undefined) headers.set('content-length', options.contentLength)
+  const response = {
+    status,
+    ok: status >= 200 && status < 300,
+    headers,
+    body: options.body === false ? null : { cancel },
+  } as unknown as Response
+  return { response, cancel }
+}
