@@ -35,6 +35,7 @@ import {
   modelStatusSchema,
   widgetSnapshotSchema,
   type TalkTypeBridge,
+  type TalkTypeWidgetBridge,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
@@ -45,6 +46,10 @@ export interface IpcRendererAdapter {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
   on(channel: string, listener: RendererListener): unknown
   removeListener(channel: string, listener: RendererListener): unknown
+}
+
+export interface ContextBridgeAdapter {
+  exposeInMainWorld(name: string, value: unknown): void
 }
 
 const historyEntriesSchema = z.array(historyEntrySchema)
@@ -144,12 +149,6 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
     dictationCommandSchema,
     16,
   )
-  const onWidgetState = createBufferedSubscription(
-    renderer,
-    WIDGET_STATE,
-    widgetSnapshotSchema,
-    1,
-  )
   const bridge: TalkTypeBridge = {
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
@@ -171,8 +170,6 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
 
     publishWidgetState: (state) =>
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
-    onWidgetState,
-
     getModelStatus: (preset) =>
       invokeParsed(renderer, MODEL_GET_STATUS, modelResponseSchema, preset),
     listModelDisclosures: () =>
@@ -197,5 +194,50 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
   return Object.freeze(bridge)
 }
 
-const talkTypeBridge = createTalkTypeBridge(ipcRenderer)
-contextBridge.exposeInMainWorld('talktype', talkTypeBridge)
+export function createTalkTypeWidgetBridge(
+  renderer: IpcRendererAdapter,
+): TalkTypeWidgetBridge {
+  const onWidgetState = createBufferedSubscription(
+    renderer,
+    WIDGET_STATE,
+    widgetSnapshotSchema,
+    1,
+  )
+  return Object.freeze({
+    onWidgetState,
+    requestStop: () =>
+      invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
+    requestCancel: () =>
+      invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
+  })
+}
+
+const RENDERER_ROLE_PREFIX = '--talktype-renderer-role='
+
+export function parseRendererRoleArgument(
+  arguments_: readonly string[],
+): 'main' | 'widget' | null {
+  const matches = arguments_.filter((argument) => argument.startsWith(RENDERER_ROLE_PREFIX))
+  if (matches.length !== 1) return null
+  const role = matches[0]?.slice(RENDERER_ROLE_PREFIX.length)
+  return role === 'main' || role === 'widget' ? role : null
+}
+
+export function exposeRendererBridge(
+  context: ContextBridgeAdapter,
+  renderer: IpcRendererAdapter,
+  arguments_: readonly string[],
+): boolean {
+  const rendererRole = parseRendererRoleArgument(arguments_)
+  if (rendererRole === 'main') {
+    context.exposeInMainWorld('talktype', createTalkTypeBridge(renderer))
+    return true
+  }
+  if (rendererRole === 'widget') {
+    context.exposeInMainWorld('talktypeWidget', createTalkTypeWidgetBridge(renderer))
+    return true
+  }
+  return false
+}
+
+exposeRendererBridge(contextBridge, ipcRenderer, process.argv)

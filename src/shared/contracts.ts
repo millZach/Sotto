@@ -240,7 +240,6 @@ export interface TalkTypeBridge {
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe
 
   publishWidgetState(state: WidgetSnapshot): Promise<CommandResult>
-  onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
 
   getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
   listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
@@ -259,8 +258,16 @@ export interface TalkTypeBridge {
   quitApp(): Promise<void>
 }
 
+/** Least-privilege surface exposed only inside the non-focusing widget renderer. */
+export interface TalkTypeWidgetBridge {
+  onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
+  requestStop(): Promise<CommandResult>
+  requestCancel(): Promise<CommandResult>
+}
+
 declare global {
   interface Window {
-    talktype: TalkTypeBridge
+    talktype?: TalkTypeBridge
+    talktypeWidget?: TalkTypeWidgetBridge
   }
 }

@@ -84,7 +84,12 @@ vi.mock('electron', () => ({
   ipcRenderer: electronMock.ipcRenderer,
 }))
 
-import { createTalkTypeBridge } from '../../src/preload'
+import {
+  createTalkTypeBridge,
+  createTalkTypeWidgetBridge,
+  exposeRendererBridge,
+  parseRendererRoleArgument,
+} from '../../src/preload'
 
 class FakeIpcMain implements IpcMainAdapter {
   readonly handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
@@ -230,10 +235,9 @@ describe('typed preload bridge', () => {
     electronMock.ipcRenderer.removeListener.mockClear()
   })
 
-  it('is exposed under the exact isolated name and contains named operations without a generic sender', () => {
+  it('creates a frozen main-only surface without widget subscriptions or generic IPC', () => {
     const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
 
-    expect(electronMock.exposed.name).toBe('talktype')
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'addHistory',
@@ -251,7 +255,6 @@ describe('typed preload bridge', () => {
         'minimizeApp',
         'onDictationCommand',
         'onModelStatus',
-        'onWidgetState',
         'publishWidgetState',
         'quitApp',
         'removeModel',
@@ -267,6 +270,83 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('send')
     expect(bridge).not.toHaveProperty('invoke')
     expect(bridge).not.toHaveProperty('ipcRenderer')
+    expect(bridge).not.toHaveProperty('onWidgetState')
+    expect(Object.isFrozen(bridge)).toBe(true)
+  })
+
+  it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
+    const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
+    expect(Object.keys(bridge).sort()).toEqual(
+      ['onWidgetState', 'requestCancel', 'requestStop'].sort(),
+    )
+    expect(bridge).not.toHaveProperty('getSettings')
+    expect(bridge).not.toHaveProperty('listHistory')
+    expect(bridge).not.toHaveProperty('requestDictation')
+    expect(bridge).not.toHaveProperty('deliverOutput')
+    expect(Object.isFrozen(bridge)).toBe(true)
+
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+    await bridge.requestStop()
+    await bridge.requestCancel()
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      1,
+      DICTATION_REQUEST,
+      { type: 'stop' },
+    )
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      2,
+      DICTATION_REQUEST,
+      { type: 'cancel' },
+    )
+  })
+
+  it('accepts only one immutable main-created renderer role argument', () => {
+    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=main'])).toBe('main')
+    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=widget'])).toBe('widget')
+    expect(parseRendererRoleArgument(['electron'])).toBeNull()
+    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=admin'])).toBeNull()
+    expect(parseRendererRoleArgument([
+      'electron',
+      '--talktype-renderer-role=main',
+      '--talktype-renderer-role=widget',
+    ])).toBeNull()
+  })
+
+  it('exposes exactly the role-appropriate bridge name and attaches only its relevant early buffer', () => {
+    const context = { exposeInMainWorld: vi.fn() }
+    expect(exposeRendererBridge(
+      context,
+      electronMock.ipcRenderer,
+      ['electron', '--talktype-renderer-role=main'],
+    )).toBe(true)
+    expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktype', expect.any(Object))
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(1)
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+      DICTATION_COMMAND,
+      expect.any(Function),
+    )
+
+    context.exposeInMainWorld.mockClear()
+    electronMock.ipcRenderer.on.mockClear()
+    expect(exposeRendererBridge(
+      context,
+      electronMock.ipcRenderer,
+      ['electron', '--talktype-renderer-role=widget'],
+    )).toBe(true)
+    expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktypeWidget', expect.any(Object))
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(1)
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+      WIDGET_STATE,
+      expect.any(Function),
+    )
+
+    context.exposeInMainWorld.mockClear()
+    electronMock.ipcRenderer.on.mockClear()
+    expect(exposeRendererBridge(context, electronMock.ipcRenderer, ['electron'])).toBe(false)
+    expect(context.exposeInMainWorld).not.toHaveBeenCalled()
+    expect(electronMock.ipcRenderer.on).not.toHaveBeenCalled()
   })
 
   it('types generic settings updates without native-managed fields', () => {
@@ -284,7 +364,8 @@ describe('typed preload bridge', () => {
     })
 
     await bridge.updateSettings({ theme: 'dark' })
-    const unsubscribe = bridge.onWidgetState(listener)
+    const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
+    const unsubscribe = widgetBridge.onWidgetState(listener)
 
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(SETTINGS_UPDATE, {
       theme: 'dark',
@@ -320,7 +401,8 @@ describe('typed preload bridge', () => {
   })
 
   it('preload retains post-ready command edges until AppContext subscribes', () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const mainBridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,
     )?.[1]
@@ -337,8 +419,8 @@ describe('typed preload bridge', () => {
     commandEvent?.({}, { type: 'stop' })
     const widgetListener = vi.fn()
     const commandListener = vi.fn()
-    const unsubscribeWidget = bridge.onWidgetState(widgetListener)
-    const unsubscribeCommand = bridge.onDictationCommand(commandListener)
+    const unsubscribeWidget = widgetBridge.onWidgetState(widgetListener)
+    const unsubscribeCommand = mainBridge.onDictationCommand(commandListener)
     expect(widgetListener).toHaveBeenCalledOnce()
     expect(widgetListener).toHaveBeenCalledWith(idleWidgetSnapshot)
     expect(commandListener.mock.calls.map(([command]) => command.type)).toEqual(['start', 'stop'])
@@ -346,7 +428,7 @@ describe('typed preload bridge', () => {
     unsubscribeWidget()
     unsubscribeCommand()
     commandEvent?.({}, { type: 'cancel' })
-    bridge.onDictationCommand(commandListener)
+    mainBridge.onDictationCommand(commandListener)
     expect(commandListener).toHaveBeenCalledTimes(3)
     expect(commandListener).toHaveBeenLastCalledWith({ type: 'cancel' })
   })

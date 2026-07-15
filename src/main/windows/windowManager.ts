@@ -26,6 +26,7 @@ export interface DisplayAdapter {
 
 export interface WindowWebPreferences {
   readonly preload: string
+  readonly additionalArguments: [string]
   readonly contextIsolation: true
   readonly nodeIntegration: false
   readonly sandbox: true
@@ -163,9 +164,13 @@ export class RendererProcessGoneError extends Error {
   }
 }
 
-function securePreferences(preloadPath: string): WindowWebPreferences {
+function securePreferences(
+  preloadPath: string,
+  role: RendererRole,
+): WindowWebPreferences {
   return {
     preload: preloadPath,
+    additionalArguments: [`--talktype-renderer-role=${role}`],
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
@@ -246,7 +251,7 @@ export class WindowManager {
       title: APP_NAME,
       backgroundColor: '#111318',
       autoHideMenuBar: true,
-      webPreferences: securePreferences(this.dependencies.preloadPath),
+      webPreferences: securePreferences(this.dependencies.preloadPath, 'main'),
     })
     this.mainWindow = window
     this.installMainLifecycle(window)
@@ -318,7 +323,7 @@ export class WindowManager {
       hasShadow: true,
       autoHideMenuBar: true,
       webPreferences: {
-        ...securePreferences(this.dependencies.preloadPath),
+        ...securePreferences(this.dependencies.preloadPath, 'widget'),
         backgroundThrottling: false,
       },
     })

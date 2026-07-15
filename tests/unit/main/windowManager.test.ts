@@ -151,6 +151,7 @@ describe('WindowManager construction', () => {
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',
+          additionalArguments: ['--talktype-renderer-role=main'],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -182,6 +183,7 @@ describe('WindowManager construction', () => {
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',
+          additionalArguments: ['--talktype-renderer-role=widget'],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
