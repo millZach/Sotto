@@ -677,7 +677,7 @@ git commit -m "feat: bundle verified local Whisper assets"
 - Create: `src/renderer/src/transcription/client.ts`
 - Create: `src/renderer/src/transcription/worker.ts`
 
-- [ ] **Step 1: Write failing worker-contract tests**
+- [x] **Step 1: Write failing worker-contract tests**
 
 ```ts
 // tests/unit/renderer/transcriptionMessages.test.ts
@@ -699,17 +699,17 @@ describe('worker messages', () => {
 
 Client tests use a fake Worker and prove transferable audio dispatch, progress delivery, request correlation, cancellation, stale response rejection, pipeline errors, and worker termination.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/transcriptionMessages.test.ts tests/integration/transcriptionClient.test.ts`
 
 Expected: FAIL because transcription modules do not exist.
 
-- [ ] **Step 3: Implement worker schemas and client**
+- [x] **Step 3: Implement worker schemas and client**
 
 Use Zod discriminated unions for `load`, `transcribe`, `cancel`, `progress`, `ready`, `result`, and `error`. `TranscriptionClient` owns one module Worker, creates request identifiers with `crypto.randomUUID()`, transfers `Float32Array.buffer`, and rejects outstanding promises with typed `WORKER_TERMINATED` errors during disposal.
 
-- [ ] **Step 4: Implement local-only Transformers.js inference**
+- [x] **Step 4: Implement local-only Transformers.js inference**
 
 At worker startup set:
 
@@ -724,7 +724,7 @@ env.backends.onnx.wasm.wasmPaths = 'talktype-runtime://runtime/'
 
 Resolve the chosen preset through the immutable model catalog and load its locally installed repository ID with `dtype: 'q8'`; Balanced is the default and must always be available. In Auto mode, try `device: 'webgpu'` only when `navigator.gpu` exists, then retry once with `device: 'wasm'`. Pass the raw 16 kHz `Float32Array` to the automatic-speech-recognition pipeline with `task: 'transcribe'` and the selected language when it is not auto. Normalize library failures into `MODEL_MISSING`, `WEBGPU_FAILED`, `OUT_OF_MEMORY`, `CANCELLED`, or `TRANSCRIPTION_FAILED`; never include audio or transcript content in errors or logs.
 
-- [ ] **Step 5: Verify GREEN and a real worker smoke test**
+- [x] **Step 5: Verify GREEN and a real worker smoke test**
 
 Run:
 
@@ -736,7 +736,7 @@ npm run model:verify
 
 Expected: worker-contract tests pass and the worker bundle resolves only local model/runtime URLs.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/transcription tests/unit/renderer/transcriptionMessages.test.ts tests/integration/transcriptionClient.test.ts
