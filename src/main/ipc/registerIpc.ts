@@ -15,6 +15,7 @@ import {
   HOTKEY_REPLACE,
   MODEL_GET_STATUS,
   MODEL_INSTALL,
+  MODEL_LIST_DISCLOSURES,
   MODEL_REMOVE,
   OUTPUT_DELIVER,
   SETTINGS_GET,
@@ -31,6 +32,7 @@ import {
   type DictationCommand,
   type HotkeyChangeResult,
   type ModelInstallRequest,
+  type ModelDisclosureCatalog,
   type ModelStatus,
   type OutputOutcome,
   type OutputResult,
@@ -182,6 +184,7 @@ export interface DictationIpcService {
 }
 
 export interface ModelIpcService {
+  listDisclosures(): ModelDisclosureCatalog | Promise<ModelDisclosureCatalog>
   getStatus(preset: ModelPreset): ModelStatus | Promise<ModelStatus>
   install(request: ModelInstallRequest): void | Promise<void>
   remove(preset: ModelPreset): void | Promise<void>
@@ -418,6 +421,12 @@ export function registerIpc(
       },
     )
 
+    register(MODEL_LIST_DISCLOSURES, noPayloadSchema, 0, async () => {
+      if (dependencies.models === undefined) {
+        return UNAVAILABLE
+      }
+      return dependencies.models.listDisclosures()
+    })
     register(MODEL_GET_STATUS, modelPresetSchema, 1, async (preset) => {
       if (dependencies.models === undefined) {
         return UNAVAILABLE

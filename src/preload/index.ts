@@ -17,6 +17,7 @@ import {
   HOTKEY_REPLACE,
   MODEL_GET_STATUS,
   MODEL_INSTALL,
+  MODEL_LIST_DISCLOSURES,
   MODEL_REMOVE,
   MODEL_STATUS,
   OUTPUT_DELIVER,
@@ -31,6 +32,7 @@ import {
 import {
   dictationCommandSchema,
   dictationStateSchema,
+  modelDisclosureCatalogSchema,
   modelStatusSchema,
   type TalkTypeBridge,
 } from '../shared/contracts'
@@ -58,6 +60,7 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const modelResponseSchema = z.union([modelStatusSchema, unavailableSchema])
+const modelDisclosureResponseSchema = z.union([modelDisclosureCatalogSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean() }).strict()
 const voidSchema = z.undefined()
@@ -125,6 +128,8 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
 
     getModelStatus: (preset) =>
       invokeParsed(renderer, MODEL_GET_STATUS, modelResponseSchema, preset),
+    listModelDisclosures: () =>
+      invokeParsed(renderer, MODEL_LIST_DISCLOSURES, modelDisclosureResponseSchema),
     installModel: (request) =>
       invokeParsed(renderer, MODEL_INSTALL, commandResultSchema, request),
     removeModel: (preset) =>

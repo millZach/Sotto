@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 import type { DictationState } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
@@ -58,6 +60,53 @@ export const modelStatusSchema = z
   })
   .strict()
 
+export const MODEL_DOWNLOAD_PRIVACY_NOTICE = 'Downloading an optional model contacts Hugging Face, which receives ordinary network metadata such as your IP address and request time. Audio and transcripts are not sent.' as const
+
+const approvedDisclosureModels = {
+  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', bundled: false },
+  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', bundled: true },
+  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', bundled: false },
+} as const
+
+export const modelDisclosureSchema = z
+  .object({
+    preset: modelPresetSchema,
+    repository: z.string().min(1).max(128),
+    sourceProvider: z.literal('Hugging Face'),
+    sourceHost: z.literal('huggingface.co'),
+    revision: z.string().regex(/^[a-f0-9]{40}$/),
+    totalBytes: z.number().int().positive().safe(),
+    license: z.literal('Apache-2.0'),
+    bundled: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const expected = approvedDisclosureModels[value.preset]
+    if (value.repository !== expected.repository || value.revision !== expected.revision || value.bundled !== expected.bundled) {
+      context.addIssue({ code: 'custom', message: 'Model disclosure does not match the approved catalog' })
+    }
+  })
+  .transform((value) => Object.freeze(value))
+
+export const modelDisclosureCatalogSchema = z
+  .object({
+    models: z.array(modelDisclosureSchema).length(3),
+    optionalDownloadNotice: z.literal(MODEL_DOWNLOAD_PRIVACY_NOTICE),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.models.map((model) => model.preset).join() !== 'fast,balanced,accurate') {
+      context.addIssue({ code: 'custom', message: 'Model disclosure order is invalid' })
+    }
+  })
+  .transform((value) => Object.freeze({
+    models: Object.freeze(value.models),
+    optionalDownloadNotice: value.optionalDownloadNotice,
+  }))
+
+export type ModelDisclosure = z.infer<typeof modelDisclosureSchema>
+export type ModelDisclosureCatalog = z.infer<typeof modelDisclosureCatalogSchema>
+
 export type UnavailableResult = Readonly<{ ok: false; reason: 'unavailable' }>
 export type CommandResult = Readonly<{ ok: true }> | UnavailableResult
 
@@ -108,6 +157,7 @@ export interface TalkTypeBridge {
   onWidgetState(listener: (state: DictationState) => void): Unsubscribe
 
   getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
+  listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
   installModel(request: ModelInstallRequest): Promise<CommandResult>
   removeModel(preset: ModelPreset): Promise<CommandResult>
   onModelStatus(listener: (status: ModelStatus) => void): Unsubscribe
@@ -128,4 +178,3 @@ declare global {
     talktype: TalkTypeBridge
   }
 }
-import { z } from 'zod'

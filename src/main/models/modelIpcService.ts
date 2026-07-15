@@ -1,8 +1,9 @@
-import type { ModelInstallRequest, ModelStatus } from '../../shared/contracts'
+import type { ModelDisclosureCatalog, ModelInstallRequest, ModelStatus } from '../../shared/contracts'
 import type { ModelPreset } from '../../shared/settings'
 import type { ModelIpcService } from '../ipc/registerIpc'
 
 interface ModelOperations {
+  disclosures(): ModelDisclosureCatalog
   status(preset: ModelPreset): Promise<ModelStatus>
   install(preset: ModelPreset, input: { readonly consent: boolean }): Promise<void>
   remove(preset: ModelPreset): Promise<void>
@@ -30,6 +31,7 @@ export function createModelIpcService(
     }
   }
   const service: ModelIpcService = {
+    listDisclosures: () => models.disclosures(),
     getStatus: (preset: ModelPreset) => models.status(preset),
     install: (request: ModelInstallRequest) => run(request.preset, () => models.install(request.preset, { consent: request.consent })),
     remove: (preset: ModelPreset) => run(preset, () => models.remove(preset)),

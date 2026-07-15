@@ -60,7 +60,7 @@ import { DICTATION_COMMAND, MODEL_STATUS, WIDGET_STATE } from '../shared/channel
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { DictationState } from '../shared/dictation'
-import { loadCatalogLock, ModelManager } from './models/modelManager'
+import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
 import {
   loadVerifiedRuntimeSource,
@@ -289,9 +289,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const modelRoot = join(resourceRoot, 'models')
   const runtimeRoot = join(resourceRoot, 'runtime')
   const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
+  const bundledManifest = await loadBundledModelManifest(
+    join(modelRoot, 'manifest.lock.json'),
+    catalog,
+  )
   const runtimeSource = await loadVerifiedRuntimeSource(runtimeRoot)
   const models = new ModelManager({
     catalog,
+    bundledManifest,
     packagedRoot: modelRoot,
     userRoot: join(userDataPath, 'models'),
     onProgress(progress) {

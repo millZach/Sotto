@@ -36,6 +36,8 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  MODEL_INSTALL,
+  MODEL_LIST_DISCLOSURES,
   OUTPUT_DELIVER,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -44,7 +46,11 @@ import {
   STARTUP_SET,
   WIDGET_PUBLISH,
 } from '../../src/shared/channels'
-import type { TalkTypeBridge } from '../../src/shared/contracts'
+import {
+  MODEL_DOWNLOAD_PRIVACY_NOTICE,
+  type ModelDisclosureCatalog,
+  type TalkTypeBridge,
+} from '../../src/shared/contracts'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -183,6 +189,28 @@ function createIpcHarness() {
   }
 }
 
+const disclosureCatalog: ModelDisclosureCatalog = Object.freeze({
+  models: Object.freeze(([
+    ['fast', 'Xenova/whisper-tiny', false],
+    ['balanced', 'Xenova/whisper-base', true],
+    ['accurate', 'Xenova/whisper-small', false],
+  ] as const).map(([preset, repository, bundled]) => Object.freeze({
+    preset,
+    repository,
+    sourceProvider: 'Hugging Face' as const,
+    sourceHost: 'huggingface.co' as const,
+    revision: preset === 'fast'
+      ? '5332fcc35e32a33b86612b9a57a89be7906102b1'
+      : preset === 'balanced'
+        ? '64da57285918e20ea79ea5c88eed7197933abaa8'
+        : '2d67713f236afa48a18992566e7647f6ca848e13',
+    totalBytes: preset === 'fast' ? 42 : preset === 'balanced' ? 84 : 126,
+    license: 'Apache-2.0' as const,
+    bundled,
+  }))),
+  optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
+})
+
 describe('typed preload bridge', () => {
   beforeEach(() => {
     electronMock.ipcRenderer.invoke.mockClear()
@@ -206,6 +234,7 @@ describe('typed preload bridge', () => {
         'getStartup',
         'hideApp',
         'installModel',
+        'listModelDisclosures',
         'listHistory',
         'minimizeApp',
         'onDictationCommand',
@@ -265,10 +294,28 @@ describe('typed preload bridge', () => {
     unsubscribe()
     expect(electronMock.ipcRenderer.removeListener).toHaveBeenCalledOnce()
   })
+
+  it('strictly parses and freezes the no-payload model disclosure response', async () => {
+    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce(disclosureCatalog)
+
+    const result = await bridge.listModelDisclosures()
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(MODEL_LIST_DISCLOSURES)
+    expect(result).toEqual(disclosureCatalog)
+    expect(Object.isFrozen(result)).toBe(true)
+    if ('models' in result) {
+      expect(Object.isFrozen(result.models)).toBe(true)
+      expect(result.models.every(Object.isFrozen)).toBe(true)
+    }
+
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ...disclosureCatalog, injected: true })
+    await expect(bridge.listModelDisclosures()).rejects.toThrow()
+  })
 })
 
 describe('IPC validation and lifecycle', () => {
-  it.each([SETTINGS_GET, SETTINGS_UPDATE, HISTORY_CLEAR, APP_QUIT, WIDGET_PUBLISH])(
+  it.each([SETTINGS_GET, SETTINGS_UPDATE, HISTORY_CLEAR, APP_QUIT, WIDGET_PUBLISH, MODEL_LIST_DISCLOSURES])(
     'denies widget renderer invocation of main-only channel %s',
     async (channel) => {
       const harness = createIpcHarness()
@@ -304,6 +351,35 @@ describe('IPC validation and lifecycle', () => {
       ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
     },
   )
+
+  it('returns disclosure without installation and keeps consented install separate', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const listDisclosures = vi.fn(() => disclosureCatalog)
+    const install = vi.fn(async () => undefined)
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+      models: {
+        listDisclosures,
+        getStatus: vi.fn(async () => ({ preset: 'fast' as const, state: 'missing' as const })),
+        install,
+        remove: vi.fn(),
+      },
+    })
+
+    await expect(harness.ipc.invokeArgs(MODEL_LIST_DISCLOSURES, [])).resolves.toBe(disclosureCatalog)
+    expect(listDisclosures).toHaveBeenCalledOnce()
+    expect(install).not.toHaveBeenCalled()
+    await expect(harness.ipc.invokeArgs(MODEL_LIST_DISCLOSURES, [{ injected: true }])).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: false })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: true })).resolves.toEqual({ ok: true })
+    expect(install).toHaveBeenCalledOnce()
+  })
 
   it.each(['cancel', 'stop'] as const)(
     'allows a widget renderer to request the least-privilege %s command',
@@ -1328,6 +1404,22 @@ function createDeferred<Value>() {
 }
 
 describe('bootstrap failure containment', () => {
+  it('fails closed before runtime startup when bundled manifest initialization rejects', async () => {
+    const app = createApp(Promise.resolve())
+    const log = vi.fn()
+    const initialize = vi.fn(async (): Promise<RuntimeController> => {
+      throw new Error('Invalid bundled model manifest: private path')
+    })
+
+    const result = await bootstrapTalkType({ app, initialize, log })
+
+    expect(result.started).toBe(false)
+    expect(initialize).toHaveBeenCalledOnce()
+    expect(log).toHaveBeenCalledWith('bootstrap-startup-failed')
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private')
+    expect(app.quit).toHaveBeenCalledOnce()
+  })
+
   it('catches readiness rejection, emits only a safe diagnostic, and quits in a controlled way', async () => {
     const app = createApp(Promise.reject(new Error('secret token C:/Users/private')))
     const log = vi.fn()

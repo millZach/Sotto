@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -9,11 +9,14 @@ import { Readable } from 'node:stream'
 import {
   ModelManager,
   createHttpsDownloader,
+  loadBundledModelManifest,
+  readBoundedJsonFile,
   replaceDirectoryAtomic,
   validateDownloadRedirect,
   type CatalogLock,
   type HttpsGet,
 } from '../../../src/main/models/modelManager'
+import { MODEL_DOWNLOAD_PRIVACY_NOTICE } from '../../../src/shared/contracts'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -37,6 +40,13 @@ const lock: CatalogLock = {
     accurate: { repository: repositories.accurate, revision: revisions.accurate, license: 'Apache-2.0', bundled: false, files: files('accurate') },
   },
 }
+const bundledManifest = {
+  version: 1 as const,
+  preset: 'balanced' as const,
+  repository: lock.presets.balanced.repository,
+  revision: lock.presets.balanced.revision,
+  files: lock.presets.balanced.files,
+}
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'talktype-models-')); roots.push(root)
@@ -46,10 +56,32 @@ async function fixture() {
   const downloader = vi.fn(async (_url: string, destination: string) => { await writeFile(destination, bytes) })
   const progress = vi.fn()
   return { root, packagedRoot, userRoot, downloader, progress,
-    manager: new ModelManager({ catalog: lock, packagedRoot, userRoot, downloader, onProgress: progress, verifyFile: async () => true }) }
+    manager: new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, downloader, onProgress: progress, verifyFile: async () => true }) }
 }
 
 describe('ModelManager', () => {
+  it('returns an immutable no-network disclosure snapshot with exact locked totals', async () => {
+    const { manager, downloader } = await fixture()
+
+    const disclosure = manager.disclosures()
+
+    expect(disclosure.optionalDownloadNotice).toBe(MODEL_DOWNLOAD_PRIVACY_NOTICE)
+    expect(disclosure.models).toEqual((['fast', 'balanced', 'accurate'] as const).map((preset) => ({
+      preset,
+      repository: lock.presets[preset].repository,
+      sourceProvider: 'Hugging Face',
+      sourceHost: 'huggingface.co',
+      revision: lock.presets[preset].revision,
+      totalBytes: lock.presets[preset].files.reduce((total, file) => total + file.bytes, 0),
+      license: 'Apache-2.0',
+      bundled: preset === 'balanced',
+    })))
+    expect(Object.isFrozen(disclosure)).toBe(true)
+    expect(Object.isFrozen(disclosure.models)).toBe(true)
+    expect(disclosure.models.every(Object.isFrozen)).toBe(true)
+    expect(downloader).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['repository', (value: CatalogLock) => { Reflect.set(value.presets.fast, 'repository', 'Xenova/whisper-base') }],
     ['revision', (value: CatalogLock) => { Reflect.set(value.presets.fast, 'revision', revisions.balanced) }],
@@ -77,8 +109,19 @@ describe('ModelManager', () => {
   ] as const)('rejects hostile catalog drift in %s', (_name, mutate) => {
     const hostile = structuredClone(lock)
     mutate(hostile)
-    expect(() => new ModelManager({ catalog: hostile, packagedRoot: 'packaged', userRoot: 'user' }))
+    expect(() => new ModelManager({ catalog: hostile, bundledManifest, packagedRoot: 'packaged', userRoot: 'user' }))
       .toThrow('Invalid model catalog')
+  })
+
+  it('rejects a catalog-valid but altered bundled manifest before any service is available', () => {
+    const hostile = structuredClone(bundledManifest)
+    Reflect.set(hostile, 'injected', true)
+    expect(() => new ModelManager({
+      catalog: lock,
+      bundledManifest: hostile,
+      packagedRoot: 'packaged',
+      userRoot: 'user',
+    })).toThrow('Invalid bundled model manifest')
   })
 
   it('reports local status without network and protects bundled Balanced', async () => {
@@ -103,6 +146,7 @@ describe('ModelManager', () => {
     const root = await mkdtemp(join(tmpdir(), 'talktype-model-snapshot-')); roots.push(root)
     const manager = new ModelManager({
       catalog: mutable,
+      bundledManifest,
       packagedRoot: join(root, 'packaged'),
       userRoot: join(root, 'user'),
       downloader,
@@ -111,6 +155,11 @@ describe('ModelManager', () => {
     Reflect.set(mutable.presets.fast, 'repository', 'Xenova/whisper-base')
     Reflect.set(mutable.presets.fast.files[0]!, 'url', 'https://evil.invalid/model')
 
+    expect(manager.disclosures().models[0]).toMatchObject({
+      preset: 'fast',
+      repository: 'Xenova/whisper-tiny',
+      sourceHost: 'huggingface.co',
+    })
     await manager.install('fast', { consent: true })
 
     expect(downloader).toHaveBeenCalledWith(lock.presets.fast.files[0]!.url, expect.any(String), lock.presets.fast.files[0]!.bytes)
@@ -119,14 +168,14 @@ describe('ModelManager', () => {
 
   it('reports bundled assets as error when shipped files are unavailable without network', async () => {
     const { root, userRoot, downloader } = await fixture()
-    const manager = new ModelManager({ catalog: lock, packagedRoot: join(root, 'missing'), userRoot, downloader })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot: join(root, 'missing'), userRoot, downloader })
     await expect(manager.status('balanced')).resolves.toEqual({ preset: 'balanced', state: 'error' })
     expect(downloader).not.toHaveBeenCalled()
   })
 
   it('contains progress observer failures', async () => {
     const { packagedRoot, userRoot, downloader } = await fixture()
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot, downloader, verifyFile: async () => true, onProgress: () => { throw new Error('renderer gone') } })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, downloader, verifyFile: async () => true, onProgress: () => { throw new Error('renderer gone') } })
     await expect(manager.install('fast', { consent: true })).resolves.toBeUndefined()
   })
 
@@ -148,7 +197,7 @@ describe('ModelManager', () => {
     const { userRoot } = await fixture()
     await mkdir(join(userRoot, 'Xenova', 'whisper-tiny'), { recursive: true })
     await writeFile(join(userRoot, 'Xenova', 'whisper-tiny', 'sentinel'), 'old')
-    const bad = new ModelManager({ catalog: lock, packagedRoot: 'unused', userRoot,
+    const bad = new ModelManager({ catalog: lock, bundledManifest, packagedRoot: 'unused', userRoot,
       downloader: async (_url, destination) => writeFile(destination, 'wrong') })
     await expect(bad.install('fast', { consent: true })).rejects.toThrow()
     await expect(readFile(join(userRoot, 'Xenova', 'whisper-tiny', 'sentinel'), 'utf8')).resolves.toBe('old')
@@ -183,14 +232,14 @@ describe('ModelManager', () => {
     await mkdir(destination, { recursive: true })
     for (const file of lock.presets.fast.files) { const path = join(destination, ...file.path.split('/')); await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, Buffer.alloc(bytes.length, 1)) }
     await writeFile(join(destination, 'manifest.lock.json'), JSON.stringify({ version: 1, preset: 'fast', repository: lock.presets.fast.repository, revision: lock.presets.fast.revision, files: lock.presets.fast.files }))
-    const strict = new ModelManager({ catalog: lock, packagedRoot: 'unused', userRoot, verifyFile: async () => false, downloader: vi.fn() })
+    const strict = new ModelManager({ catalog: lock, bundledManifest, packagedRoot: 'unused', userRoot, verifyFile: async () => false, downloader: vi.fn() })
     await expect(strict.status('fast')).resolves.toEqual({ preset: 'fast', state: 'missing' })
   })
 
   it('caches verified readiness without rehashing on every protocol request', async () => {
     const { packagedRoot, userRoot } = await fixture()
     const verifyFile = vi.fn(async () => true)
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot, verifyFile })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, verifyFile })
 
     await manager.protocolSources()
     await manager.protocolSources()
@@ -240,7 +289,7 @@ describe('ModelManager', () => {
     })}\n`)
     await mkdir(userRoot)
     await symlink(outside, join(userRoot, 'Xenova'), 'junction')
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot, verifyFile: async () => true })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, verifyFile: async () => true })
 
     await expect(manager.status('fast')).resolves.toEqual({ preset: 'fast', state: 'missing' })
     expect(await manager.protocolSources()).not.toHaveProperty('Xenova/whisper-tiny')
@@ -255,7 +304,7 @@ describe('ModelManager', () => {
     await writeFile(join(outside, 'sentinel'), 'preserved')
     await symlink(outside, join(userRoot, 'Xenova'), 'junction')
     const downloader = vi.fn()
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot, downloader })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, downloader })
 
     await expect(manager.install('fast', { consent: true })).rejects.toThrow('Model installation failed')
 
@@ -273,7 +322,7 @@ describe('ModelManager', () => {
     await mkdir(outsideRepository, { recursive: true })
     await writeFile(join(outsideRepository, 'sentinel'), 'preserved')
     await symlink(outside, join(userRoot, 'Xenova'), 'junction')
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot })
 
     await expect(manager.remove('fast')).rejects.toThrow('Model removal failed')
 
@@ -288,7 +337,7 @@ describe('ModelManager', () => {
     await writeFile(join(outside, 'sentinel'), 'preserved')
     await symlink(outside, userRoot, 'junction')
     const downloader = vi.fn()
-    const manager = new ModelManager({ catalog: lock, packagedRoot, userRoot, downloader })
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, downloader })
 
     await expect(manager.install('fast', { consent: true })).rejects.toThrow('Model installation failed')
 
@@ -309,6 +358,59 @@ describe('ModelManager', () => {
     await expect(manager.remove('fast')).rejects.toThrow('Model removal failed')
 
     expect(await manager.protocolSources()).not.toHaveProperty('Xenova/whisper-tiny')
+  })
+})
+
+describe('bundled model manifest loader', () => {
+  it('caps an opened lock file even when it grows after the initial stat', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-bounded-lock-')); roots.push(root)
+    const path = join(root, 'growing.lock.json')
+    await writeFile(path, '{}')
+
+    await expect(readBoundedJsonFile(path, {
+      maximumBytes: 32,
+      beforeRead: () => appendFile(path, 'x'.repeat(32)),
+    })).rejects.toThrow('Invalid model manifest')
+  })
+
+  it('bounded-loads and freezes the exact Balanced manifest', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const path = join(root, 'manifest.lock.json')
+    await writeFile(path, JSON.stringify(bundledManifest))
+
+    const loaded = await loadBundledModelManifest(path, lock)
+
+    expect(loaded).toEqual(bundledManifest)
+    expect(Object.isFrozen(loaded)).toBe(true)
+    expect(Object.isFrozen(loaded.files)).toBe(true)
+    expect(loaded.files.every(Object.isFrozen)).toBe(true)
+  })
+
+  it.each([
+    ['extra key', (value: Record<string, unknown>) => { value.injected = true }],
+    ['wrong preset', (value: Record<string, unknown>) => { value.preset = 'fast' }],
+    ['repository mismatch', (value: Record<string, unknown>) => { value.repository = 'Xenova/whisper-tiny' }],
+    ['revision mismatch', (value: Record<string, unknown>) => { value.revision = revisions.fast }],
+    ['reordered files', (value: Record<string, unknown>) => { (value.files as unknown[]).reverse() }],
+    ['duplicate files', (value: Record<string, unknown>) => { const files = value.files as unknown[]; files[1] = structuredClone(files[0]) }],
+    ['altered file', (value: Record<string, unknown>) => { const files = value.files as Record<string, unknown>[]; files[0]!.bytes = Number(files[0]!.bytes) + 1 }],
+  ] as const)('rejects bundled manifest drift: %s', async (_name, mutate) => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const path = join(root, 'manifest.lock.json')
+    const hostile = structuredClone(bundledManifest) as unknown as Record<string, unknown>
+    mutate(hostile)
+    await writeFile(path, JSON.stringify(hostile))
+
+    await expect(loadBundledModelManifest(path, lock)).rejects.toThrow('Invalid bundled model manifest')
+  })
+
+  it.each(['missing', 'malformed', 'oversized'] as const)('fails closed for a %s bundled manifest', async (kind) => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const path = join(root, 'manifest.lock.json')
+    if (kind === 'malformed') await writeFile(path, '{')
+    if (kind === 'oversized') await writeFile(path, ' '.repeat(1_000_001))
+
+    await expect(loadBundledModelManifest(path, lock)).rejects.toThrow('Invalid bundled model manifest')
   })
 })
 

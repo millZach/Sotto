@@ -1,23 +1,36 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable, Transform } from 'node:stream'
 import { get } from 'node:https'
 
-import type { ModelStatus } from '../../shared/contracts'
+import {
+  MODEL_DOWNLOAD_PRIVACY_NOTICE,
+  modelDisclosureCatalogSchema,
+  type ModelDisclosureCatalog,
+  type ModelStatus,
+} from '../../shared/contracts'
 import type { ModelPreset } from '../../shared/settings'
 import type { FileSource } from './modelProtocol'
 
 export interface LockedFile { readonly path: string; readonly url: string; readonly bytes: number; readonly sha256: string }
 export interface LockedPreset { readonly repository: string; readonly revision: string; readonly license: 'Apache-2.0'; readonly bundled: boolean; readonly files: readonly LockedFile[] }
 export interface CatalogLock { readonly version: 1; readonly presets: Readonly<Record<ModelPreset, LockedPreset>> }
+export interface BundledModelManifest {
+  readonly version: 1
+  readonly preset: 'balanced'
+  readonly repository: string
+  readonly revision: string
+  readonly files: readonly LockedFile[]
+}
 export interface ModelProgress { readonly preset: ModelPreset; readonly completedBytes: number; readonly totalBytes: number }
 export type ModelDownloader = (url: string, destination: string, expectedBytes: number) => Promise<void>
 
 export interface ModelManagerOptions {
   readonly catalog: CatalogLock
+  readonly bundledManifest: BundledModelManifest
   readonly packagedRoot: string
   readonly userRoot: string
   readonly downloader?: ModelDownloader
@@ -59,20 +72,70 @@ function validateCatalog(value: CatalogLock): CatalogLock {
   return value
 }
 
+function validateBundledModelManifest(value: BundledModelManifest, catalog: CatalogLock): BundledModelManifest {
+  const balanced = catalog.presets.balanced
+  if (!value
+    || Object.keys(value).sort().join() !== ['files', 'preset', 'repository', 'revision', 'version'].join()
+    || value.version !== 1
+    || value.preset !== 'balanced'
+    || value.repository !== balanced.repository
+    || value.revision !== balanced.revision
+    || !Array.isArray(value.files)
+    || JSON.stringify(value.files) !== JSON.stringify(balanced.files)) throw new Error('Invalid bundled model manifest')
+  return value
+}
+
 function deepFreeze<Value>(value: Value): Value {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value
   for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
   return Object.freeze(value)
 }
 
-async function readBoundedJson(path: string): Promise<unknown> {
-  const info = await lstat(path)
-  if (!info.isFile() || info.isSymbolicLink() || info.size > 1_000_000) throw new Error('Invalid model manifest')
-  return JSON.parse(await readFile(path, 'utf8')) as unknown
+export async function readBoundedJsonFile(
+  path: string,
+  options: {
+    readonly maximumBytes?: number
+    readonly beforeRead?: () => void | Promise<void>
+  } = {},
+): Promise<unknown> {
+  const maximumBytes = options.maximumBytes ?? 1_000_000
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error('Invalid model manifest')
+  const pathInfo = await lstat(path)
+  if (!pathInfo.isFile() || pathInfo.isSymbolicLink() || pathInfo.size > maximumBytes) throw new Error('Invalid model manifest')
+  const handle = await open(path, 'r')
+  try {
+    const handleInfo = await handle.stat()
+    if (!handleInfo.isFile() || handleInfo.size > maximumBytes) throw new Error('Invalid model manifest')
+    await options.beforeRead?.()
+    const content = Buffer.alloc(maximumBytes + 1)
+    let offset = 0
+    while (offset < content.length) {
+      const { bytesRead } = await handle.read(content, offset, content.length - offset, null)
+      if (bytesRead === 0) break
+      offset += bytesRead
+    }
+    if (offset > maximumBytes) throw new Error('Invalid model manifest')
+    return JSON.parse(content.subarray(0, offset).toString('utf8')) as unknown
+  } finally {
+    await handle.close()
+  }
 }
 
 export async function loadCatalogLock(path: string): Promise<CatalogLock> {
-  return validateCatalog(await readBoundedJson(path) as CatalogLock)
+  return validateCatalog(await readBoundedJsonFile(path) as CatalogLock)
+}
+
+export async function loadBundledModelManifest(
+  path: string,
+  catalog: CatalogLock,
+): Promise<BundledModelManifest> {
+  try {
+    const validatedCatalog = validateCatalog(structuredClone(catalog))
+    const manifest = await readBoundedJsonFile(path) as BundledModelManifest
+    return deepFreeze(validateBundledModelManifest(manifest, validatedCatalog))
+  } catch {
+    throw new Error('Invalid bundled model manifest')
+  }
 }
 
 async function shaFile(path: string, maximumBytes: number): Promise<{ bytes: number; sha256: string }> {
@@ -212,6 +275,8 @@ export async function replaceDirectoryAtomic(
 
 export class ModelManager {
   private readonly catalog: CatalogLock
+  private readonly bundledManifest: BundledModelManifest
+  private readonly disclosureCatalog: ModelDisclosureCatalog
   private readonly operations = new Map<ModelPreset, Promise<unknown>>()
   private readonly downloading = new Set<ModelPreset>()
   private readonly completeness = new Map<ModelPreset, boolean>()
@@ -219,8 +284,33 @@ export class ModelManager {
 
   constructor(private readonly options: ModelManagerOptions) {
     this.catalog = deepFreeze(validateCatalog(structuredClone(options.catalog)))
+    this.bundledManifest = deepFreeze(validateBundledModelManifest(
+      structuredClone(options.bundledManifest),
+      this.catalog,
+    ))
+    this.disclosureCatalog = modelDisclosureCatalogSchema.parse({
+      models: PRESETS.map((preset) => {
+        const model = this.catalog.presets[preset]
+        const totalBytes = model.files.reduce((total, file) => total + file.bytes, 0)
+        if (!Number.isSafeInteger(totalBytes)) throw new Error('Invalid model catalog')
+        const sourceHost = new URL(model.files[0]!.url).hostname
+        return {
+          preset,
+          repository: model.repository,
+          sourceProvider: 'Hugging Face',
+          sourceHost,
+          revision: model.revision,
+          totalBytes,
+          license: model.license,
+          bundled: model.bundled,
+        }
+      }),
+      optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
+    })
     this.downloader = options.downloader ?? httpsDownloader
   }
+
+  disclosures(): ModelDisclosureCatalog { return this.disclosureCatalog }
 
   async status(preset: ModelPreset): Promise<ModelStatus> {
     const model = this.model(preset)
@@ -235,7 +325,7 @@ export class ModelManager {
       const model = this.catalog.presets[preset]
       if (await this.isComplete(preset)) {
         const boundaryRoot = model.bundled ? this.options.packagedRoot : this.options.userRoot
-        sources[model.repository] = Object.freeze({ root: this.repositoryRoot(boundaryRoot, model.repository), boundaryRoot, files: new Set(model.files.map((file) => file.path)) })
+        sources[model.repository] = Object.freeze({ root: this.repositoryRoot(boundaryRoot, model.repository), boundaryRoot, files: new Set(this.filesFor(preset).map((file) => file.path)) })
       }
     }
     return Object.freeze(sources)
@@ -314,19 +404,21 @@ export class ModelManager {
     try {
       await this.assertRealContained(boundaryRoot, root)
       if (!model.bundled) {
-        const manifest = await readBoundedJson(join(root, 'manifest.lock.json'))
+        const manifest = await readBoundedJsonFile(join(root, 'manifest.lock.json'))
         const expected = { version: 1, preset, repository: model.repository, revision: model.revision, files: model.files }
         if (JSON.stringify(manifest) !== JSON.stringify(expected)) return false
       }
-      const expectedFiles = new Set([...model.files.map((file) => file.path), ...(model.bundled ? [] : ['manifest.lock.json'])])
+      const lockedFiles = this.filesFor(preset)
+      const expectedFiles = new Set([...lockedFiles.map((file) => file.path), ...(model.bundled ? [] : ['manifest.lock.json'])])
       const actualFiles = await this.listFiles(root)
       if (actualFiles.length !== expectedFiles.size || actualFiles.some((file) => !expectedFiles.has(file))) return false
-      for (const file of model.files) { const path = this.contained(root, file.path); const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink()) return false; if (!(await this.verify(path, file))) return false }
+      for (const file of lockedFiles) { const path = this.contained(root, file.path); const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink()) return false; if (!(await this.verify(path, file))) return false }
       this.completeness.set(preset, true); return true
     } catch { this.completeness.delete(preset); return false }
   }
 
   private contained(root: string, relative: string): string { const base = resolve(root); const target = resolve(base, ...relative.split('/')); if (target !== base && !target.startsWith(`${base}${sep}`)) throw new Error('Unsafe model path'); return target }
+  private filesFor(preset: ModelPreset): readonly LockedFile[] { return preset === 'balanced' ? this.bundledManifest.files : this.catalog.presets[preset].files }
   private async assertRealContained(boundaryRoot: string, target: string): Promise<void> { const boundary = await realpath(boundaryRoot); const actual = await realpath(target); if (actual !== boundary && !actual.startsWith(`${boundary}${sep}`)) throw new Error('Unsafe model path') }
   private async assertManagedDirectory(boundaryRoot: string, target: string): Promise<void> {
     const [boundaryInfo, targetInfo] = await Promise.all([lstat(boundaryRoot), lstat(target)])

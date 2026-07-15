@@ -18,6 +18,7 @@ export const WIDGET_PUBLISH = 'talktype:widget:publish' as const
 export const WIDGET_STATE = 'talktype:widget:state' as const
 
 export const MODEL_GET_STATUS = 'talktype:model:get-status' as const
+export const MODEL_LIST_DISCLOSURES = 'talktype:model:list-disclosures' as const
 export const MODEL_INSTALL = 'talktype:model:install' as const
 export const MODEL_REMOVE = 'talktype:model:remove' as const
 export const MODEL_STATUS = 'talktype:model:status' as const
@@ -48,6 +49,7 @@ export const IPC_CHANNELS = Object.freeze({
   widgetPublish: WIDGET_PUBLISH,
   widgetState: WIDGET_STATE,
   modelGetStatus: MODEL_GET_STATUS,
+  modelListDisclosures: MODEL_LIST_DISCLOSURES,
   modelInstall: MODEL_INSTALL,
   modelRemove: MODEL_REMOVE,
   modelStatus: MODEL_STATUS,
