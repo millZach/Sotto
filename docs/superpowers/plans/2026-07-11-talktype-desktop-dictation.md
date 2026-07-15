@@ -753,7 +753,7 @@ git commit -m "feat: transcribe locally in an isolated Whisper worker"
 - Modify: `src/main/ipc/registerIpc.ts`
 - Modify: `src/preload/index.ts`
 
-- [ ] **Step 1: Write failing orchestration tests**
+- [x] **Step 1: Write failing orchestration tests**
 
 ```ts
 // tests/unit/renderer/dictationController.test.ts
@@ -776,21 +776,21 @@ describe('DictationController', () => {
 
 Add tests for shortcut toggle, repeated stop, global Escape cancellation, start/stop cue settings, cancel during listening, silence preserving clipboard/history, stale result suppression, permission denial recovery, duration-limit stop, paste fallback, and ignoring hotkeys while processing. Widget integration tests prove every reducer state is published to the widget and success distinguishes `pasted` from `copied`.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/dictationController.test.ts tests/integration/widgetSync.test.ts`
 
 Expected: FAIL because the controller and app context do not exist.
 
-- [ ] **Step 3: Implement the controller and application context**
+- [x] **Step 3: Implement the controller and application context**
 
 The controller is the only owner of recorder/transcriber calls. It creates one session ID, dispatches the legal reducer transitions, activates global Escape only while cancellation is legal, plays enabled start/stop cues, publishes serializable widget snapshots, applies `formatTranscript`, calls output before history, and always returns to idle after the configured success/error display time. Empty text produces `NO_SPEECH` without output or history. AppContext loads settings/history on mount, subscribes to shortcut/tray commands, exposes navigation and CRUD actions, and disposes listeners and controller resources on unmount.
 
-- [ ] **Step 4: Wire typed IPC end to end**
+- [x] **Step 4: Wire typed IPC end to end**
 
 Register handlers for settings get/update/reset, history list/add/delete/clear/search, output delivery, widget publishing, model status, startup update, app show/hide/minimize/quit, and dictation command events. Validate every renderer payload in the main process with the shared schemas. Preload must expose the matching named methods and return an unsubscribe function for every event subscription.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run:
 
@@ -801,7 +801,7 @@ npm run typecheck
 
 Expected: orchestration and IPC tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/features/dictation src/renderer/src/state src/main/ipc src/preload tests/unit/renderer/dictationController.test.ts tests/integration
