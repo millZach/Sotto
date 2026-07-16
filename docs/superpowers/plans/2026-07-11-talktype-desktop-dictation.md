@@ -896,7 +896,7 @@ git commit -m "feat: add polished private first-run onboarding"
 - Create: `src/renderer/src/features/help/HelpView.tsx`
 - Modify: `src/renderer/src/App.tsx`
 
-- [ ] **Step 1: Write failing screen tests**
+- [x] **Step 1: Write failing screen tests**
 
 ```tsx
 // tests/unit/renderer/historyView.test.tsx
@@ -920,17 +920,17 @@ describe('HistoryView', () => {
 
 Home tests cover ready/listening/processing/error status cards and manual start/stop. Settings tests cover immediate theme application, hotkey conflict rollback message, device choice, presets, language, inference, cues, duration, auto-paste, delay bounds, startup/minimized, history retention, destructive confirmations, model disclosure, separate consent before optional installation, progress, hash failure, successful preset selection, and optional-model removal. Help tests assert privacy and paste-fallback guidance.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/homeView.test.tsx tests/unit/renderer/historyView.test.tsx tests/unit/renderer/settingsView.test.tsx`
 
 Expected: FAIL because application views do not exist.
 
-- [ ] **Step 3: Implement the management experience**
+- [x] **Step 3: Implement the management experience**
 
 `AppShell` has a draggable custom title area, fixed navigation rail, main landmark, status footer, minimize and close controls, and a compact layout below 820 px. Home contains a dominant record card, model readiness, active shortcut, privacy badge, and five recent entries. History has local search, empty/privacy-disabled states, copy/delete actions, and a confirmation dialog for clear. Settings group Appearance, Capture, Transcription, Output, and Application with plain-language help and save feedback. Help provides microphone, hotkey, offline model, paste, elevated-window, and reset troubleshooting.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -941,7 +941,7 @@ npm run typecheck
 
 Expected: screen tests pass in both forced light and dark theme containers.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/src/components/AppShell.tsx src/renderer/src/features src/renderer/src/App.tsx tests/unit/renderer
