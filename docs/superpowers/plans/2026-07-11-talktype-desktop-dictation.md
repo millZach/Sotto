@@ -1130,23 +1130,23 @@ git commit -m "fix: resolve TalkType visual design review"
 - Create: `docs/verification/2026-07-11-talktype-verification.md`
 - Modify: production/test files required by verified findings
 
-- [ ] **Step 1: Dispatch the requested adversarial QA subagent**
+- [x] **Step 1: Dispatch the requested adversarial QA subagent**
 
 Give the subagent the approved spec, entire repository, built unpacked app, installer path, automated results, and design review. Require a requirement-by-requirement evidence table plus active attacks against: rapid shortcut repetition; cancel/stop races; renderer reload/crash; corrupt settings/history; missing/tampered model; offline startup; microphone denial/removal; silence and maximum duration; WebGPU fallback; clipboard preservation; paste spawn failure; elevated app; hotkey conflict; multiple instances; tray quit; sleep/wake; multi-monitor bounds; path traversal; malformed IPC; remote network attempts; transcript/audio logging; history disabled; scale/theme/reduced motion; installer resources and uninstall behavior.
 
-- [ ] **Step 2: Save and triage the report**
+- [x] **Step 2: Save and triage the report**
 
 Write severity, reproduction steps, evidence, affected requirement, and proposed regression test for every finding to `docs/qa/adversarial-review.md`. Treat uncertain evidence as not passing. Critical/high findings must be fixed; medium findings are fixed unless they conflict with the approved scope; low findings are documented with disposition.
 
-- [ ] **Step 3: Fix through TDD**
+- [x] **Step 3: Fix through TDD**
 
 For each accepted defect, first add the smallest failing automated test that reproduces it, run that test to record RED, implement the minimal fix, and run focused plus full suites. Never weaken an assertion to make a failure disappear.
 
-- [ ] **Step 4: Run real Windows manual verification**
+- [x] **Step 4: Run real Windows manual verification**
 
 Use a real microphone to dictate a unique sentence with the bundled model. Verify global toggle and output in Notepad, a browser text field, and Microsoft Word when available. Verify copied fallback against an elevated target, model operation with the network disabled, tray behavior, two displays when available, sleep/wake if feasible, startup registration, and installer launch in a clean Windows user profile or equivalent sandbox. Record exact observed results and any environment limitation; do not infer a pass from unrelated tests.
 
-- [ ] **Step 5: Run the final automated release gate**
+- [x] **Step 5: Run the final automated release gate**
 
 Run:
 
@@ -1163,7 +1163,7 @@ npm run package:win
 
 Expected: every command exits 0, coverage includes all critical domain/native services, and both release artifacts are recreated from a clean dependency install.
 
-- [ ] **Step 6: Write the completion audit**
+- [x] **Step 6: Write the completion audit**
 
 In `docs/verification/2026-07-11-talktype-verification.md`, map every numbered success criterion and every delivery artifact from the approved specification to authoritative evidence: test name/output, file path, screenshot, artifact hash, or recorded manual observation. Mark any missing or indirect evidence as incomplete and continue work until it is proven.
 
