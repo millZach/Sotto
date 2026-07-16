@@ -1,0 +1,46 @@
+appId: com.talktype.desktop
+productName: TalkType
+copyright: Copyright (c) 2026 TalkType
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+asar: true
+
+extraResources:
+  - from: resources/models
+    to: models
+  - from: resources/runtime
+    to: runtime
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: README.md
+    to: README.md
+
+win:
+  executableName: TalkType
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  include: build/installer.nsh
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createStartMenuShortcut: true
+  createDesktopShortcut: false
+  shortcutName: TalkType
+  deleteAppDataOnUninstall: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerSidebar: build/installer-sidebar.bmp
+  artifactName: '${productName} Setup ${version}.${ext}'

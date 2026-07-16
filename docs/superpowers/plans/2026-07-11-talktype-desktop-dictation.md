@@ -6,7 +6,7 @@
 
 **Architecture:** Electron owns native windows, tray, shortcuts, local persistence, clipboard, and best-effort Windows paste automation. React renderers own the management UI and floating widget, while Web Audio captures 16 kHz PCM and a dedicated Transformers.js worker performs local Whisper inference from bundled, hash-verified model files. All renderer/native communication crosses a narrow typed preload bridge with schema validation.
 
-**Tech Stack:** Electron 43.1.0, electron-vite 5.0.0, React 19.2.7, TypeScript 7.0.2, Vite 8.1.4, Transformers.js 4.2.0, Zod 4.4.3, Lucide React 1.24.0, Vitest 4.1.10, Playwright 1.61.1, electron-builder 26.15.3.
+**Tech Stack:** Electron 43.1.0, electron-vite 5.0.0, React 19.2.7, TypeScript 6.0.3, Vite 7.3.6, Transformers.js 4.2.0, Zod 4.4.3, Lucide React 1.24.0, Vitest 4.1.10, Playwright 1.61.1, electron-builder 26.15.3.
 
 **Approved specification:** `docs/superpowers/specs/2026-07-11-talktype-desktop-dictation-design.md`
 
@@ -141,19 +141,19 @@
 - Create: `src/renderer/src/widget.tsx`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: Install the pinned runtime and development toolchain**
+- [x] **Step 1: Install the pinned runtime and development toolchain**
 
 Run:
 
 ```powershell
 npm init -y
 npm install react@19.2.7 react-dom@19.2.7 @huggingface/transformers@4.2.0 zod@4.4.3 lucide-react@1.24.0
-npm install --save-dev electron@43.1.0 electron-vite@5.0.0 electron-builder@26.15.3 vite@8.1.4 typescript@7.0.2 vitest@4.1.10 @vitest/coverage-v8 @playwright/test@1.61.1 jsdom@29.1.1 @types/node @types/react @types/react-dom @testing-library/react @testing-library/jest-dom @testing-library/user-event eslint @eslint/js typescript-eslint
+npm install --save-dev electron@43.1.0 electron-vite@5.0.0 electron-builder@26.15.3 vite@7.3.6 typescript@6.0.3 vitest@4.1.10 @vitest/coverage-v8 @playwright/test@1.61.1 jsdom@29.1.1 @types/node @types/react @types/react-dom @testing-library/react @testing-library/jest-dom @testing-library/user-event eslint @eslint/js typescript-eslint
 ```
 
 Expected: dependencies install successfully and `package-lock.json` is created.
 
-- [ ] **Step 2: Write failing scaffold security tests**
+- [x] **Step 2: Write failing scaffold security tests**
 
 ```ts
 // tests/unit/shared/constants.test.ts
@@ -183,13 +183,13 @@ describe('secureWebPreferences', () => {
 })
 ```
 
-- [ ] **Step 3: Run the tests and observe RED**
+- [x] **Step 3: Run the tests and observe RED**
 
 Run: `npx vitest run tests/unit/shared/constants.test.ts tests/unit/main/security.test.ts`
 
 Expected: FAIL because `src/shared/constants.ts` and `src/main/security.ts` do not exist.
 
-- [ ] **Step 4: Add the minimal secure scaffold**
+- [x] **Step 4: Add the minimal secure scaffold**
 
 ```ts
 // src/shared/constants.ts
@@ -212,7 +212,7 @@ export function secureWebPreferences(preload: string): WebPreferences {
 
 Configure `package.json` with `main: "./out/main/index.js"` and scripts `dev`, `build`, `typecheck`, `lint`, `test`, `test:coverage`, `test:e2e`, `model:prepare`, `model:verify`, `package:dir`, and `package:win`. Configure electron-vite with main, preload, and two renderer HTML inputs. The initial main entry creates a single 1080×720 window using `secureWebPreferences`; both renderer entries mount a valid React root with the TalkType name so `npm run build` is green from this commit. Both HTML entries include a restrictive Content Security Policy allowing only the packaged origin, local model/runtime schemes, the application worker, microphone media, and inline style attributes required for dynamic level bars; scripts and network connections remain local-only.
 
-- [ ] **Step 5: Verify GREEN and the baseline build**
+- [x] **Step 5: Verify GREEN and the baseline build**
 
 Run:
 
@@ -225,7 +225,7 @@ npm run build
 
 Expected: 2 tests pass; typecheck, lint, main/preload/renderer builds all exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add package.json package-lock.json electron.vite.config.ts electron-builder.yml tsconfig*.json vitest.config.ts playwright.config.ts eslint.config.mjs tests/setup.ts tests/unit/shared/constants.test.ts tests/unit/main/security.test.ts src/shared/constants.ts src/main/security.ts src/main/index.ts src/preload/index.ts src/renderer .gitignore
@@ -244,7 +244,7 @@ git commit -m "build: scaffold secure TalkType desktop app"
 - Create: `src/shared/dictation.ts`
 - Create: `src/shared/transcript.ts`
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 1: Write failing domain tests**
 
 ```ts
 // tests/unit/shared/settings.test.ts
@@ -266,9 +266,19 @@ import { initialDictationState, reduceDictation } from '../../../src/shared/dict
 
 describe('dictation reducer', () => {
   it('rejects a stale transcription result', () => {
-    const listening = reduceDictation(initialDictationState, { type: 'STARTED', sessionId: 'current' })
+    const requested = reduceDictation(initialDictationState, {
+      type: 'REQUESTED',
+      sessionId: 'current',
+    })
+    const listening = reduceDictation(requested, {
+      type: 'STARTED',
+      sessionId: 'current',
+      startedAt: 100,
+    })
     const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
-    expect(reduceDictation(processing, { type: 'TRANSCRIBED', sessionId: 'stale', text: 'wrong' })).toEqual(processing)
+    expect(
+      reduceDictation(processing, { type: 'TRANSCRIBED', sessionId: 'stale', text: 'wrong' }),
+    ).toBe(processing)
   })
 })
 
@@ -283,13 +293,13 @@ describe('formatTranscript', () => {
 })
 ```
 
-- [ ] **Step 2: Run the tests and observe RED**
+- [x] **Step 2: Run the tests and observe RED**
 
 Run: `npx vitest run tests/unit/shared/settings.test.ts tests/unit/shared/dictation.test.ts tests/unit/shared/transcript.test.ts`
 
 Expected: FAIL because the shared domain modules do not exist.
 
-- [ ] **Step 3: Implement the typed domain contracts**
+- [x] **Step 3: Implement the typed domain contracts**
 
 `src/shared/settings.ts` must export `Theme`, `ModelPreset`, `InferencePreference`, `HistoryRetention`, `AppSettings`, `DEFAULT_SETTINGS`, `settingsSchema`, and `parseSettings`. `parseSettings` merges one schema-validated field at a time so a bad persisted field cannot erase valid siblings. Defaults are: system theme, Balanced model, auto language, auto inference, auto-copy true, auto-paste true, 150 ms delay, 60-second recording limit, cues true, startup false, minimized false, history true, 100-entry retention, onboarding incomplete.
 
@@ -308,15 +318,15 @@ export type DictationState =
   | { status: 'error'; sessionId?: string; code: string; message: string }
 ```
 
-The reducer accepts only legal transitions, makes stop/cancel idempotent, and ignores mismatched session identifiers. `src/shared/history.ts` defines the exact persisted transcript entry schema. `src/shared/transcript.ts` trims and collapses whitespace and returns an empty string for silence.
+The reducer accepts `STARTED` only after a matching `REQUESTED` event, accepts only legal transitions, makes stop/cancel idempotent, and ignores mismatched session identifiers. `src/shared/history.ts` defines the exact persisted transcript entry schema. `src/shared/transcript.ts` trims and collapses whitespace and returns an empty string for silence.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/shared`
 
 Expected: all shared-domain tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/shared tests/unit/shared
@@ -333,7 +343,7 @@ git commit -m "feat: define TalkType domain and settings contracts"
 - Create: `src/main/storage/settingsRepository.ts`
 - Create: `src/main/storage/historyRepository.ts`
 
-- [ ] **Step 1: Write failing real-filesystem tests**
+- [x] **Step 1: Write failing real-filesystem tests**
 
 ```ts
 // tests/unit/main/historyRepository.test.ts
@@ -358,34 +368,38 @@ describe('HistoryRepository', () => {
 })
 ```
 
-Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>`, field-level settings recovery, disabled-history no-write behavior, case-insensitive search, entry deletion, and clear.
+Add focused tests proving atomic temp-file replacement, corrupt-file recovery to `*.corrupt-<timestamp>-<uuid>`, non-mutating `peek()` behavior for valid, missing, syntax-corrupt, and semantically invalid JSON, field-level settings recovery, disabled-history no-write behavior (including leaving a corrupt file byte-for-byte unchanged with no backup or temporary sibling), case-insensitive search, entry deletion, and clear. Use a deterministic clock and ID seam while exercising the real temporary filesystem to cover concurrent recovering reads, recovery/write invocation order in both directions, occupied backup-name retry, and operation-queue recovery after a rejected write. Add repository tests proving concurrent disjoint settings patches are both persisted, a `get()` invoked after a mutation observes it, and clearing history deletes exact `history.json.corrupt-*` recovery siblings without deleting unrelated files. Prove `HistoryRepository.add()` snapshots and validates its entry plus `enabled` and `retention` options at invocation time, before entering the mutation queue, so caller mutations cannot enable a disabled write, alter transcript content, or change retention; invalid input must reject as a Promise without entering or poisoning that queue.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
-Run: `npx vitest run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts`
+Run: `npm.cmd test -- --run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts`
 
 Expected: FAIL because the storage modules do not exist.
 
-- [ ] **Step 3: Implement the repositories**
+- [x] **Step 3: Implement the repositories**
 
-`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, and a default factory. `read()` parses UTF-8 JSON; on syntax failure it renames the original with a timestamped `.corrupt-` suffix and returns defaults. `write()` writes a sibling temporary file with mode `0o600`, then renames it over the destination. `SettingsRepository` delegates to `parseSettings`. `HistoryRepository.add(entry, { enabled, retention })` validates every entry, returns without writing when disabled, sorts descending by `createdAt`, and applies finite retention after add.
+`AtomicJsonStore<T>` accepts a path, a `parse(unknown): T` function, a default factory, and optional clock and ID factories. A single rejection-resilient per-store operation queue serializes recovering `read()`, non-mutating `peek()`, `write()`, and `exists()` calls in invocation order while still returning each operation's rejection to its caller. `read()` parses UTF-8 JSON; on syntax or semantic validation failure it exclusively copies the original to a `*.corrupt-<timestamp>-<uuid>` sibling with `COPYFILE_EXCL`, then unlinks the active corrupt file and returns fresh defaults. Backup-name collisions request a new ID and retry with an explicit bound, never replacing already-preserved bytes; concurrent source disappearance is re-read safely, and a non-`ENOENT` unlink failure leaves the exclusive backup intact while propagating the failure. `peek()` uses the same parsing rules but returns fresh defaults for missing or invalid input without renaming, creating, or writing any filesystem entry. `write()` uses bounded `open(..., 'wx', 0o600)` retries to claim a unique sibling temporary file, tracks ownership only after a successful open, syncs and closes it, then renames it over the destination; failure cleanup unlinks only a temporary path claimed by that write.
 
-- [ ] **Step 4: Verify GREEN and regressions**
+`SettingsRepository` delegates to `parseSettings` and uses its own rejection-resilient mutation queue for complete save, update read→merge→parse→write, and reset transactions. Public `get()` and `exists()` wait for mutations invoked before them, while queued mutations call the store directly to avoid self-deadlock. `HistoryRepository.add(entry, { enabled, retention })` is async so validation failures are Promise rejections; it validates the entry to a copied value and snapshots both option primitives before enqueueing, then uses only those invocation-time values in the mutation. Disabled adds use `peek()` so even corrupt history remains byte-for-byte untouched; enabled adds sort entries descending by `createdAt` and apply finite retention after add. `HistoryRepository.clear()` keeps its prior active-file behavior and also removes only siblings beginning with the exact `<history-basename>.corrupt-` prefix so recovery files cannot retain transcript text.
+
+The temporary-file rename step is an atomic complete-file replacement, so readers do not observe a partially written JSON document. This design does not claim directory-entry durability across power loss because the parent directory is not synced.
+
+- [x] **Step 4: Verify GREEN and regressions**
 
 Run:
 
 ```powershell
-npx vitest run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts
-npm test
+npm.cmd test -- --run tests/unit/main/atomicJsonStore.test.ts tests/unit/main/settingsRepository.test.ts tests/unit/main/historyRepository.test.ts
+npm.cmd test
 ```
 
 Expected: storage tests and the full suite pass with no warnings.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/main/storage tests/unit/main
-git commit -m "feat: persist settings and private transcript history"
+git commit -m "fix: serialize storage transactions and recovery"
 ```
 
 ### Task 4: Build secure native windows, tray, shortcut, startup, IPC, and preload services
@@ -405,7 +419,7 @@ git commit -m "feat: persist settings and private transcript history"
 - Modify: `src/main/index.ts`
 - Modify: `src/preload/index.ts`
 
-- [ ] **Step 1: Write failing native-boundary tests**
+- [x] **Step 1: Write failing native-boundary tests**
 
 ```ts
 // tests/unit/main/hotkeyManager.test.ts
@@ -423,23 +437,23 @@ describe('HotkeyManager', () => {
 })
 ```
 
-Window tests must prove the main options are 1080×720 with secure preferences; widget options are 420×92, transparent, frameless, always-on-top, skip-taskbar, non-focusable, and `backgroundThrottling: false`; active-display positioning stays inside the work area. Hotkey tests must also prove bare Escape is registered only while listening and removed for every stop, cancel, error, and quit. IPC tests must prove unknown navigation and permissions are denied, settings payloads are parsed, and the preload exposes named methods without a generic `send` function.
+Window tests must assert complete BrowserWindow constructor option objects with exact equality, not `toMatchObject` or another permissive subset matcher, and must exercise the real `WindowManager`-to-`BrowserWindow` wiring. The complete main options are 1080×720 with secure preferences; widget options are 420×92, transparent, frameless, always-on-top, skip-taskbar, non-focusable, and `backgroundThrottling: false`; active-display positioning stays inside the work area. Startup/load tests must force renderer-load and readiness/bootstrap rejections, then prove each rejection is caught, produces safe operational diagnostics without sensitive content, and takes a controlled local fallback or quit path instead of becoming an unhandled rejection. Hotkey tests must also prove bare Escape is registered only while listening and removed for every stop, cancel, error, and quit. IPC tests must prove unknown navigation and permissions are denied, settings payloads are parsed, and the preload exposes named methods without a generic `send` function.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/main/windowManager.test.ts tests/unit/main/hotkeyManager.test.ts tests/integration/ipc.test.ts`
 
 Expected: FAIL because native service modules and typed channels do not exist.
 
-- [ ] **Step 3: Implement adapters and bootstrap**
+- [x] **Step 3: Implement adapters and bootstrap**
 
 `src/shared/channels.ts` exports literal channel names. `src/shared/contracts.ts` exports `TalkTypeBridge` with named methods for settings, history, dictation commands/events, widget state, model status, clipboard output, startup, and app controls.
 
-`WindowManager` keeps both BrowserWindow instances alive, intercepts main-window close to hide unless quitting, calls `showInactive()` for the widget, and positions the widget 32 logical pixels above the active display work area. `HotkeyManager.replace` registers the candidate before unregistering the previous shortcut and restores the old registration on failure. `TrayController` exposes Start/Stop Dictation, Show TalkType, Auto-paste, and Quit. `StartupService` delegates to Electron login item settings. Bootstrap enforces single-instance behavior, registers deny-by-default permission/navigation handlers, wires repositories/services, and unregisters all native resources on quit.
+`WindowManager` keeps both BrowserWindow instances alive, intercepts main-window close to hide unless quitting, calls `showInactive()` for the widget, and positions the widget 32 logical pixels above the active display work area. Renderer loading and readiness/bootstrap are awaited or caught; failures emit safe operational diagnostics and explicitly fall back to the bundled local renderer when viable or quit in a controlled way. `HotkeyManager.replace` registers the candidate before unregistering the previous shortcut and restores the old registration on failure. `TrayController` exposes Start/Stop Dictation, Show TalkType, Auto-paste, and Quit. `StartupService` delegates to Electron login item settings. Bootstrap enforces single-instance behavior, registers deny-by-default permission/navigation handlers, wires repositories/services, and unregisters all native resources on quit.
 
 Preload uses `contextBridge.exposeInMainWorld('talktype', bridge)` with per-method `ipcRenderer.invoke` and unsubscribe-returning event listeners. No channel name is accepted from renderer input.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -451,7 +465,7 @@ npm run build
 
 Expected: focused tests pass and production bundles compile.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/shared/channels.ts src/shared/contracts.ts src/main src/preload tests/unit/main tests/integration/ipc.test.ts
@@ -467,7 +481,7 @@ git commit -m "feat: add secure native app lifecycle and bridge"
 - Create: `src/main/output/outputService.ts`
 - Modify: `src/main/ipc/registerIpc.ts`
 
-- [ ] **Step 1: Write failing output tests**
+- [x] **Step 1: Write failing output tests**
 
 ```ts
 // tests/unit/main/pasteCommand.test.ts
@@ -489,23 +503,23 @@ describe('buildPasteInvocation', () => {
 
 Output-service tests use fakes and prove this order: ignore empty text; write clipboard; hide widget; wait configured delay; invoke static paste; return `pasted`. A spawn failure must return `copied` without clearing the clipboard or rejecting the transcription.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts`
 
 Expected: FAIL because output modules do not exist.
 
-- [ ] **Step 3: Implement clipboard and paste output**
+- [x] **Step 3: Implement clipboard and paste output**
 
 `buildPasteInvocation()` returns `powershell.exe` plus `-NoProfile`, `-NonInteractive`, `-WindowStyle`, `Hidden`, `-EncodedCommand`, and a UTF-16LE Base64 script that loads `System.Windows.Forms` and sends only `^v`. `OutputService` receives injected clipboard, widget, delay, and spawn adapters. It exposes `deliver(text, { autoPaste, pasteDelayMs }): Promise<'pasted' | 'copied' | 'empty'>` and never passes text to the process adapter.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts`
 
 Expected: all output tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/main/output src/main/ipc/registerIpc.ts tests/unit/main/pasteCommand.test.ts tests/unit/main/outputService.test.ts
@@ -523,7 +537,7 @@ git commit -m "feat: copy and safely paste dictation output"
 - Create: `src/renderer/src/audio/audioRecorder.ts`
 - Create: `src/renderer/src/audio/soundCues.ts`
 
-- [ ] **Step 1: Write failing audio tests**
+- [x] **Step 1: Write failing audio tests**
 
 ```ts
 // tests/unit/renderer/audioMath.test.ts
@@ -546,23 +560,23 @@ describe('audio math', () => {
 
 Recorder tests provide fake media tracks and audio nodes and prove selected `deviceId` constraints, level callbacks, one active session, maximum-duration stop, and release of every track/node on stop, cancel, or error. Sound-cue tests use an injected AudioContext and prove cues do nothing when disabled, start uses a short rising two-tone pattern, stop uses a short falling pattern, and all oscillator/gain nodes disconnect.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/audioMath.test.ts tests/unit/renderer/audioRecorder.test.ts tests/unit/renderer/soundCues.test.ts`
 
 Expected: FAIL because audio modules do not exist.
 
-- [ ] **Step 3: Implement the worklet recorder**
+- [x] **Step 3: Implement the worklet recorder**
 
 The worklet copies mono channel chunks into transferable `Float32Array` messages. `AudioRecorder.start` requests `{ audio: { deviceId: selected ? { exact: selected } : undefined, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }`, creates an AudioContext, loads the worklet, routes through a zero-gain node to keep processing active, and records chunks. `stop` concatenates once, resamples to 16 kHz, and returns `{ samples, sourceSampleRate, durationMs }`. `cancel` returns no audio. All termination paths clear timers and close resources. `SoundCuePlayer` synthesizes the tested 60–90 ms gain-ramped tones locally and never loads an audio asset.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `npx vitest run tests/unit/renderer/audioMath.test.ts tests/unit/renderer/audioRecorder.test.ts tests/unit/renderer/soundCues.test.ts`
 
 Expected: all audio tests pass without jsdom unhandled errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/public/audio-capture-worklet.js src/renderer/src/audio tests/unit/renderer
@@ -586,7 +600,7 @@ git commit -m "feat: capture and resample microphone audio"
 - Modify: `.gitignore`
 - Modify: `electron-builder.yml`
 
-- [ ] **Step 1: Write failing model security tests**
+- [x] **Step 1: Write failing model security tests**
 
 ```ts
 // tests/unit/main/modelProtocol.test.ts
@@ -607,13 +621,13 @@ describe('resolveModelRequest', () => {
 
 Catalog tests assert all three pinned repositories and revisions, Apache-2.0 licensing, the exact allowlist, and declared quantized byte sizes: Fast encoder 10,124,910 and decoder 30,727,765; Balanced encoder 23,200,850 and decoder 53,707,539; Accurate encoder 92,324,809 and decoder 156,780,950. Model-manager tests prove no network adapter is called before `consent: true`, downloads use pinned URLs, a SHA mismatch deletes the temporary file, successful installation is atomic, progress contains no personal data, Balanced cannot be removed, and optional models can be removed completely.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/scripts/modelCatalog.test.ts tests/unit/main/modelProtocol.test.ts tests/unit/main/modelManager.test.ts`
 
 Expected: FAIL because the model scripts and protocol resolver do not exist.
 
-- [ ] **Step 3: Implement deterministic model preparation**
+- [x] **Step 3: Implement deterministic model preparation**
 
 `scripts/model-catalog.mjs` exports the three repositories and revisions from Task 2. Every model uses only these remote files: `added_tokens.json`, `config.json`, `generation_config.json`, `merges.txt`, `normalizer.json`, `onnx/decoder_model_merged_quantized.onnx`, `onnx/encoder_model_quantized.onnx`, `preprocessor_config.json`, `special_tokens_map.json`, `tokenizer.json`, `tokenizer_config.json`, and `vocab.json`.
 
@@ -621,7 +635,7 @@ Expected: FAIL because the model scripts and protocol resolver do not exist.
 
 `ModelManager` receives the shipped catalog lock, packaged model root, user-data model root, and an injected HTTPS downloader. `install(preset, { consent })` rejects bundled, unknown, or non-consented requests before network access; downloads only pinned allowlisted URLs; verifies size and SHA-256 before atomic rename; reports `{ preset, completedBytes, totalBytes }`; and marks a preset installed only after every file passes. `remove(preset)` refuses Balanced and removes an optional preset directory safely. `status()` returns installed/downloading/error state without making a request. IPC exposes disclosure data before the separate consented install call.
 
-- [ ] **Step 4: Prepare and verify the real bundled assets**
+- [x] **Step 4: Prepare and verify the real bundled assets**
 
 Run:
 
@@ -632,11 +646,11 @@ npm run model:verify
 
 Expected: 12 model files and the required runtime files verify; model payload is approximately 81 MB; no request uses an unpinned `main` URL.
 
-- [ ] **Step 5: Implement the read-only model protocol**
+- [x] **Step 5: Implement the read-only model protocol**
 
 Register the custom scheme before app readiness as secure, standard, fetch-enabled, and CORS-enabled. At runtime, load the committed manifest, allow only GET requests for manifest-listed paths, normalize separators, reject traversal and query manipulation, and respond through `net.fetch(pathToFileURL(resolved).toString())`. Packaged roots use `process.resourcesPath`; development roots use the repository `resources` directory.
 
-- [ ] **Step 6: Verify GREEN**
+- [x] **Step 6: Verify GREEN**
 
 Run:
 
@@ -647,7 +661,7 @@ npm run model:verify
 
 Expected: all model security tests and real-asset verification pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add scripts resources/models/catalog.lock.json resources/models/manifest.lock.json resources/runtime/manifest.lock.json src/main/models tests/unit/scripts tests/unit/main/modelProtocol.test.ts tests/unit/main/modelManager.test.ts .gitignore electron-builder.yml
@@ -663,7 +677,7 @@ git commit -m "feat: bundle verified local Whisper assets"
 - Create: `src/renderer/src/transcription/client.ts`
 - Create: `src/renderer/src/transcription/worker.ts`
 
-- [ ] **Step 1: Write failing worker-contract tests**
+- [x] **Step 1: Write failing worker-contract tests**
 
 ```ts
 // tests/unit/renderer/transcriptionMessages.test.ts
@@ -685,17 +699,17 @@ describe('worker messages', () => {
 
 Client tests use a fake Worker and prove transferable audio dispatch, progress delivery, request correlation, cancellation, stale response rejection, pipeline errors, and worker termination.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/transcriptionMessages.test.ts tests/integration/transcriptionClient.test.ts`
 
 Expected: FAIL because transcription modules do not exist.
 
-- [ ] **Step 3: Implement worker schemas and client**
+- [x] **Step 3: Implement worker schemas and client**
 
 Use Zod discriminated unions for `load`, `transcribe`, `cancel`, `progress`, `ready`, `result`, and `error`. `TranscriptionClient` owns one module Worker, creates request identifiers with `crypto.randomUUID()`, transfers `Float32Array.buffer`, and rejects outstanding promises with typed `WORKER_TERMINATED` errors during disposal.
 
-- [ ] **Step 4: Implement local-only Transformers.js inference**
+- [x] **Step 4: Implement local-only Transformers.js inference**
 
 At worker startup set:
 
@@ -710,7 +724,7 @@ env.backends.onnx.wasm.wasmPaths = 'talktype-runtime://runtime/'
 
 Resolve the chosen preset through the immutable model catalog and load its locally installed repository ID with `dtype: 'q8'`; Balanced is the default and must always be available. In Auto mode, try `device: 'webgpu'` only when `navigator.gpu` exists, then retry once with `device: 'wasm'`. Pass the raw 16 kHz `Float32Array` to the automatic-speech-recognition pipeline with `task: 'transcribe'` and the selected language when it is not auto. Normalize library failures into `MODEL_MISSING`, `WEBGPU_FAILED`, `OUT_OF_MEMORY`, `CANCELLED`, or `TRANSCRIPTION_FAILED`; never include audio or transcript content in errors or logs.
 
-- [ ] **Step 5: Verify GREEN and a real worker smoke test**
+- [x] **Step 5: Verify GREEN and a real worker smoke test**
 
 Run:
 
@@ -722,7 +736,7 @@ npm run model:verify
 
 Expected: worker-contract tests pass and the worker bundle resolves only local model/runtime URLs.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/transcription tests/unit/renderer/transcriptionMessages.test.ts tests/integration/transcriptionClient.test.ts
@@ -739,7 +753,7 @@ git commit -m "feat: transcribe locally in an isolated Whisper worker"
 - Modify: `src/main/ipc/registerIpc.ts`
 - Modify: `src/preload/index.ts`
 
-- [ ] **Step 1: Write failing orchestration tests**
+- [x] **Step 1: Write failing orchestration tests**
 
 ```ts
 // tests/unit/renderer/dictationController.test.ts
@@ -762,21 +776,21 @@ describe('DictationController', () => {
 
 Add tests for shortcut toggle, repeated stop, global Escape cancellation, start/stop cue settings, cancel during listening, silence preserving clipboard/history, stale result suppression, permission denial recovery, duration-limit stop, paste fallback, and ignoring hotkeys while processing. Widget integration tests prove every reducer state is published to the widget and success distinguishes `pasted` from `copied`.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/dictationController.test.ts tests/integration/widgetSync.test.ts`
 
 Expected: FAIL because the controller and app context do not exist.
 
-- [ ] **Step 3: Implement the controller and application context**
+- [x] **Step 3: Implement the controller and application context**
 
 The controller is the only owner of recorder/transcriber calls. It creates one session ID, dispatches the legal reducer transitions, activates global Escape only while cancellation is legal, plays enabled start/stop cues, publishes serializable widget snapshots, applies `formatTranscript`, calls output before history, and always returns to idle after the configured success/error display time. Empty text produces `NO_SPEECH` without output or history. AppContext loads settings/history on mount, subscribes to shortcut/tray commands, exposes navigation and CRUD actions, and disposes listeners and controller resources on unmount.
 
-- [ ] **Step 4: Wire typed IPC end to end**
+- [x] **Step 4: Wire typed IPC end to end**
 
 Register handlers for settings get/update/reset, history list/add/delete/clear/search, output delivery, widget publishing, model status, startup update, app show/hide/minimize/quit, and dictation command events. Validate every renderer payload in the main process with the shared schemas. Preload must expose the matching named methods and return an unsubscribe function for every event subscription.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run:
 
@@ -787,7 +801,7 @@ npm run typecheck
 
 Expected: orchestration and IPC tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/features/dictation src/renderer/src/state src/main/ipc src/preload tests/unit/renderer/dictationController.test.ts tests/integration
@@ -813,7 +827,7 @@ git commit -m "feat: orchestrate global dictation from capture to output"
 - Create: `src/renderer/src/App.tsx`
 - Modify: `src/renderer/src/main.tsx`
 
-- [ ] **Step 1: Write failing component and onboarding tests**
+- [x] **Step 1: Write failing component and onboarding tests**
 
 ```tsx
 // tests/unit/renderer/onboarding.test.tsx
@@ -837,21 +851,21 @@ describe('Onboarding', () => {
 
 Design-system tests prove buttons have visible focus classes, icon-only controls require accessible labels, toggles expose checked state, fields link labels/descriptions/errors, and reduced motion disables decorative transitions.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/designSystem.test.tsx tests/unit/renderer/onboarding.test.tsx`
 
 Expected: FAIL because design-system and onboarding components do not exist.
 
-- [ ] **Step 3: Implement tokens and accessible primitives**
+- [x] **Step 3: Implement tokens and accessible primitives**
 
 Define complete light and dark custom properties for canvas, surface, elevated surface, text, muted text, border, primary, primary hover, cyan activity, success, warning, error, focus ring, shadows, and radii. System theme follows `prefers-color-scheme`; `[data-theme='light']` and `[data-theme='dark']` override it. Use a system font stack, 14–16 px body scale, 44 px minimum interactive height, and a global `:focus-visible` ring. A reduced-motion media query sets transition and animation duration to 1 ms.
 
-- [ ] **Step 4: Implement the four-step onboarding**
+- [x] **Step 4: Implement the four-step onboarding**
 
 Step 1 states that transcription is local, free, accountless, and telemetry-free. Step 2 requests microphone access and shows a live level meter plus Windows recovery instructions. Step 3 verifies the bundled Balanced model and explains optional model-download metadata before exposing Fast/Accurate actions. Step 4 shows the active shortcut and provides a safe paste test field. Back/Continue retain progress; Finish remains disabled until microphone and model are ready; completion persists through settings.
 
-- [ ] **Step 5: Verify GREEN and keyboard flow**
+- [x] **Step 5: Verify GREEN and keyboard flow**
 
 Run:
 
@@ -862,7 +876,7 @@ npm run typecheck
 
 Expected: all onboarding and design-system tests pass without accessibility query failures.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/styles src/renderer/src/components src/renderer/src/features/onboarding src/renderer/src/App.tsx src/renderer/src/main.tsx tests/unit/renderer
@@ -882,7 +896,7 @@ git commit -m "feat: add polished private first-run onboarding"
 - Create: `src/renderer/src/features/help/HelpView.tsx`
 - Modify: `src/renderer/src/App.tsx`
 
-- [ ] **Step 1: Write failing screen tests**
+- [x] **Step 1: Write failing screen tests**
 
 ```tsx
 // tests/unit/renderer/historyView.test.tsx
@@ -906,17 +920,17 @@ describe('HistoryView', () => {
 
 Home tests cover ready/listening/processing/error status cards and manual start/stop. Settings tests cover immediate theme application, hotkey conflict rollback message, device choice, presets, language, inference, cues, duration, auto-paste, delay bounds, startup/minimized, history retention, destructive confirmations, model disclosure, separate consent before optional installation, progress, hash failure, successful preset selection, and optional-model removal. Help tests assert privacy and paste-fallback guidance.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/homeView.test.tsx tests/unit/renderer/historyView.test.tsx tests/unit/renderer/settingsView.test.tsx`
 
 Expected: FAIL because application views do not exist.
 
-- [ ] **Step 3: Implement the management experience**
+- [x] **Step 3: Implement the management experience**
 
 `AppShell` has a draggable custom title area, fixed navigation rail, main landmark, status footer, minimize and close controls, and a compact layout below 820 px. Home contains a dominant record card, model readiness, active shortcut, privacy badge, and five recent entries. History has local search, empty/privacy-disabled states, copy/delete actions, and a confirmation dialog for clear. Settings group Appearance, Capture, Transcription, Output, and Application with plain-language help and save feedback. Help provides microphone, hotkey, offline model, paste, elevated-window, and reset troubleshooting.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -927,7 +941,7 @@ npm run typecheck
 
 Expected: screen tests pass in both forced light and dark theme containers.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/src/components/AppShell.tsx src/renderer/src/features src/renderer/src/App.tsx tests/unit/renderer
@@ -943,7 +957,7 @@ git commit -m "feat: add dashboard history settings and help"
 - Create: `src/renderer/src/widget/widget.css`
 - Modify: `src/renderer/src/widget.tsx`
 
-- [ ] **Step 1: Write failing widget-state tests**
+- [x] **Step 1: Write failing widget-state tests**
 
 ```tsx
 // tests/unit/renderer/widgetApp.test.tsx
@@ -963,17 +977,17 @@ describe('WidgetApp', () => {
 
 Add tests for listening timer/instruction, processing stage, no-speech, permission, model, paste, and generic error recovery text; accessible labels; and reduced-motion waveform behavior.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/widgetApp.test.tsx`
 
 Expected: FAIL because WidgetApp does not exist.
 
-- [ ] **Step 3: Implement the widget**
+- [x] **Step 3: Implement the widget**
 
 Render a 420×92 pill with a state icon, 12-bar level visualization, status label, timer/progress text, shortcut hint, and mouse-accessible cancel button that does not request focus. Listening uses indigo glow and cyan levels; processing uses a restrained orbit; success uses teal; errors use coral with one recovery sentence. Theme comes from settings snapshots and uses the same tokens as the main renderer. The preview query `?preview=listening|processing|pasted|copied|error&theme=light|dark` supplies deterministic states only when `TALKTYPE_VISUAL_PREVIEW=1` is injected by tests.
 
-- [ ] **Step 4: Verify GREEN and capture deterministic previews**
+- [x] **Step 4: Verify GREEN and capture deterministic previews**
 
 Run:
 
@@ -985,7 +999,7 @@ npx playwright test tests/e2e/visual-previews.spec.ts
 
 Expected: widget tests pass and screenshots are written under `artifacts/design/baseline` for all states in light and dark.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/src/widget src/renderer/src/widget.tsx tests/unit/renderer/widgetApp.test.tsx tests/e2e/visual-previews.spec.ts
@@ -1006,7 +1020,7 @@ git commit -m "feat: add global dictation status widget"
 - Modify: `playwright.config.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing end-to-end workflows**
+- [x] **Step 1: Write failing end-to-end workflows**
 
 ```ts
 // tests/e2e/app.spec.ts
@@ -1031,25 +1045,25 @@ test('onboards, dictates, copies, pastes, and records local history', async () =
 
 Add workflows for history disabled, theme persistence, hotkey-conflict message, microphone denial recovery, silence preserving clipboard, paste failure showing copied fallback, settings reload, window hide-to-tray, and single-instance behavior. E2E mode may inject deterministic recorder/transcriber/native adapters only at the bootstrap boundary; production builds must tree-shake or reject that mode unless `!app.isPackaged`.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npm run build && npx playwright test tests/e2e/app.spec.ts`
 
 Expected: FAIL until the e2e adapters and complete workflow selectors are wired.
 
-- [ ] **Step 3: Complete the deterministic e2e seam and tests**
+- [x] **Step 3: Complete the deterministic e2e seam and tests**
 
 Use `TALKTYPE_E2E=1` only in development output to supply one-second fake PCM, the exact fixture transcript, in-memory shortcut/clipboard/paste adapters, and a temporary user-data path. Keep all production path behavior unchanged. Add stable `data-testid` only where role/name selection cannot identify a dynamic waveform or native title control.
 
-- [ ] **Step 4: Produce the TalkType brand assets**
+- [x] **Step 4: Produce the TalkType brand assets**
 
 Use the imagegen skill to create an original indigo TalkType bitmap icon: a rounded dark/white tile containing a symmetric microphone capsule whose negative-space stem becomes a text caret, plus two cyan audio ticks. Export 1024×1024 PNG, a multi-resolution Windows ICO (16, 24, 32, 48, 64, 128, 256), and a quiet installer sidebar. Verify legibility at 16 px and in both Windows themes. Record the icon-generation provenance in `THIRD_PARTY_NOTICES.md`.
 
-- [ ] **Step 5: Configure packaging and documentation**
+- [x] **Step 5: Configure packaging and documentation**
 
 Electron Builder must produce x64 NSIS assisted install plus `win-unpacked`, use per-user installation, create Start Menu and optional desktop shortcuts, preserve user data on uninstall by default, include model/runtime extraResources and notices, and set product metadata. README must contain prerequisites, privacy promise, development commands, model preparation, test matrix, packaging, default shortcut, first run, settings, elevated-window paste limitation, troubleshooting, and release artifact paths.
 
-- [ ] **Step 6: Verify GREEN and build both artifacts**
+- [x] **Step 6: Verify GREEN and build both artifacts**
 
 Run:
 
@@ -1064,7 +1078,7 @@ npm run package:win
 
 Expected: all checks pass; `release/win-unpacked/TalkType.exe` and an NSIS `TalkType Setup 0.1.0.exe` exist; `resources/models/Xenova/whisper-base` and runtime WASM files exist inside `win-unpacked/resources`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add tests/e2e tests/fixtures build README.md THIRD_PARTY_NOTICES.md electron-builder.yml playwright.config.ts package.json package-lock.json
@@ -1078,27 +1092,27 @@ git commit -m "build: package verified TalkType Windows release"
 - Modify: UI/style/component files identified by review
 - Modify: focused UI tests identified by review
 
-- [ ] **Step 1: Capture the complete review set**
+- [x] **Step 1: Capture the complete review set**
 
 Run the built app in deterministic preview mode and save light/dark screenshots for onboarding steps, Home in ready/listening/processing/error, populated and empty History, every Settings group, Help, and each widget state. Also capture 100%, 125%, 150%, and 200% Windows scaling equivalents through Playwright viewport/deviceScaleFactor settings.
 
-- [ ] **Step 2: Dispatch a dedicated design subagent**
+- [x] **Step 2: Dispatch a dedicated design subagent**
 
 Give the subagent the approved spec, token CSS, screenshots, and these explicit review dimensions: hierarchy, density, spacing rhythm, typography, light/dark parity, contrast, focus states, clipping, text wrapping, empty/error feedback, motion, widget glanceability, and resemblance risk to WhisperFlow. Require severity-ranked findings with exact screenshot/component references and concrete proposed corrections. Save the returned review to `docs/qa/design-review.md`.
 
-- [ ] **Step 3: Write failing visual or component tests for each accepted finding**
+- [x] **Step 3: Write failing visual or component tests for each accepted finding**
 
 For every functional/accessibility finding, add a role/state assertion that fails before the fix. For clipping or layout findings, add a Playwright screenshot or bounding-box assertion at the failing scale. Record any purely aesthetic low-severity choice that is intentionally not changed with a reason in the review document.
 
-- [ ] **Step 4: Fix critical, high, and accepted medium findings**
+- [x] **Step 4: Fix critical, high, and accepted medium findings**
 
 Change tokens/components rather than applying page-specific overrides when the issue is systemic. Re-run the focused RED test after each change and preserve both themes and reduced motion.
 
-- [ ] **Step 5: Re-capture and request design recheck**
+- [x] **Step 5: Re-capture and request design recheck**
 
 Re-run the full screenshot matrix and ask the same design subagent to confirm each finding is resolved. Append the recheck verdict and evidence paths to `docs/qa/design-review.md`.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm test && npx playwright test tests/e2e/visual-previews.spec.ts`
 
@@ -1116,23 +1130,23 @@ git commit -m "fix: resolve TalkType visual design review"
 - Create: `docs/verification/2026-07-11-talktype-verification.md`
 - Modify: production/test files required by verified findings
 
-- [ ] **Step 1: Dispatch the requested adversarial QA subagent**
+- [x] **Step 1: Dispatch the requested adversarial QA subagent**
 
 Give the subagent the approved spec, entire repository, built unpacked app, installer path, automated results, and design review. Require a requirement-by-requirement evidence table plus active attacks against: rapid shortcut repetition; cancel/stop races; renderer reload/crash; corrupt settings/history; missing/tampered model; offline startup; microphone denial/removal; silence and maximum duration; WebGPU fallback; clipboard preservation; paste spawn failure; elevated app; hotkey conflict; multiple instances; tray quit; sleep/wake; multi-monitor bounds; path traversal; malformed IPC; remote network attempts; transcript/audio logging; history disabled; scale/theme/reduced motion; installer resources and uninstall behavior.
 
-- [ ] **Step 2: Save and triage the report**
+- [x] **Step 2: Save and triage the report**
 
 Write severity, reproduction steps, evidence, affected requirement, and proposed regression test for every finding to `docs/qa/adversarial-review.md`. Treat uncertain evidence as not passing. Critical/high findings must be fixed; medium findings are fixed unless they conflict with the approved scope; low findings are documented with disposition.
 
-- [ ] **Step 3: Fix through TDD**
+- [x] **Step 3: Fix through TDD**
 
 For each accepted defect, first add the smallest failing automated test that reproduces it, run that test to record RED, implement the minimal fix, and run focused plus full suites. Never weaken an assertion to make a failure disappear.
 
-- [ ] **Step 4: Run real Windows manual verification**
+- [x] **Step 4: Run real Windows manual verification**
 
 Use a real microphone to dictate a unique sentence with the bundled model. Verify global toggle and output in Notepad, a browser text field, and Microsoft Word when available. Verify copied fallback against an elevated target, model operation with the network disabled, tray behavior, two displays when available, sleep/wake if feasible, startup registration, and installer launch in a clean Windows user profile or equivalent sandbox. Record exact observed results and any environment limitation; do not infer a pass from unrelated tests.
 
-- [ ] **Step 5: Run the final automated release gate**
+- [x] **Step 5: Run the final automated release gate**
 
 Run:
 
@@ -1149,11 +1163,11 @@ npm run package:win
 
 Expected: every command exits 0, coverage includes all critical domain/native services, and both release artifacts are recreated from a clean dependency install.
 
-- [ ] **Step 6: Write the completion audit**
+- [x] **Step 6: Write the completion audit**
 
 In `docs/verification/2026-07-11-talktype-verification.md`, map every numbered success criterion and every delivery artifact from the approved specification to authoritative evidence: test name/output, file path, screenshot, artifact hash, or recorded manual observation. Mark any missing or indirect evidence as incomplete and continue work until it is proven.
 
-- [ ] **Step 7: Request adversarial recheck and commit**
+- [x] **Step 7: Request adversarial recheck and commit**
 
 Ask the adversarial subagent to re-run critical/high reproductions and audit the final evidence document. It must explicitly state that no critical/high findings remain and identify any residual limitations.
 
