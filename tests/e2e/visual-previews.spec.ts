@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 import { expect, test } from '@playwright/test'
@@ -10,8 +10,23 @@ import sharp from 'sharp'
 const rendererRoot = resolve(process.cwd(), 'out/renderer')
 const baselineRoot = resolve(process.cwd(), 'artifacts/design/baseline')
 const actualRoot = resolve(process.cwd(), 'test-results/visual-previews/actual')
+const buildRoot = resolve(process.cwd(), 'test-results/visual-previews/builds')
 const previews = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
 const themes = ['light', 'dark'] as const
+const buildVariants = [
+  ['unset', undefined],
+  ['zero', '0'],
+  ['other', 'true'],
+  ['enabled', '1'],
+] as const
+type BuildVariant = (typeof buildVariants)[number][0]
+
+const variantRoots: Readonly<Record<BuildVariant, string>> = {
+  unset: resolve(buildRoot, 'unset'),
+  zero: resolve(buildRoot, 'zero'),
+  other: resolve(buildRoot, 'other'),
+  enabled: resolve(buildRoot, 'enabled'),
+}
 
 interface PreviewPresentation {
   readonly background: string
@@ -27,7 +42,7 @@ const contentTypes: Readonly<Record<string, string>> = {
   '.wasm': 'application/wasm',
 }
 
-let server: Server
+let server: Server | undefined
 let origin = ''
 
 function buildRenderer(visualPreviewEnvironment: string | undefined): void {
@@ -54,16 +69,54 @@ function digest(value: Buffer): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+async function assertProductionOutputRestored(): Promise<void> {
+  const restoredHtml = await readFile(resolve(rendererRoot, 'widget.html'))
+  const unsetHtml = await readFile(resolve(variantRoots.unset, 'widget.html'))
+  if (digest(restoredHtml) !== digest(unsetHtml)) {
+    throw new Error('Final renderer output does not match the unset production build')
+  }
+  const assetPaths = [...restoredHtml.toString('utf8').matchAll(/(?:src|href)="\.\/([^"]+)"/g)]
+    .map((match) => match[1])
+  for (const assetPath of assetPaths) {
+    if (assetPath === undefined) continue
+    const restored = await readFile(resolve(rendererRoot, assetPath))
+    const unset = await readFile(resolve(variantRoots.unset, assetPath))
+    if (digest(restored) !== digest(unset)) {
+      throw new Error(`Final renderer asset does not match unset build: ${assetPath}`)
+    }
+  }
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  buildRenderer(undefined)
-  server = createServer(async (request, response) => {
+  test.setTimeout(120_000)
+  await rm(buildRoot, { force: true, recursive: true })
+  await mkdir(buildRoot, { recursive: true })
+  try {
+    for (const [variant, environment] of buildVariants) {
+      buildRenderer(environment)
+      await rename(rendererRoot, variantRoots[variant])
+    }
+  } finally {
+    // Leave the ordinary production output restored and fail-closed after test preparation.
+    buildRenderer(undefined)
+  }
+  await assertProductionOutputRestored()
+
+  const previewServer = createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
-      const pathname = requestUrl.pathname === '/' ? '/widget.html' : requestUrl.pathname
-      const candidate = resolve(rendererRoot, `.${decodeURIComponent(pathname)}`)
-      if (candidate !== rendererRoot && !candidate.startsWith(`${rendererRoot}${sep}`)) {
+      const segments = decodeURIComponent(requestUrl.pathname).split('/').filter(Boolean)
+      const variant = segments.shift()
+      if (variant === undefined || !Object.hasOwn(variantRoots, variant)) {
+        response.writeHead(404).end('Not found')
+        return
+      }
+      const root = variantRoots[variant as BuildVariant]
+      const relativePath = segments.length === 0 ? 'widget.html' : segments.join('/')
+      const candidate = resolve(root, relativePath)
+      if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
         response.writeHead(403).end('Forbidden')
         return
       }
@@ -77,20 +130,27 @@ test.beforeAll(async () => {
       response.writeHead(404).end('Not found')
     }
   })
+  server = previewServer
   await new Promise<void>((resolveListening, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolveListening)
+    previewServer.once('error', reject)
+    previewServer.listen(0, '127.0.0.1', resolveListening)
   })
-  const address = server.address()
+  const address = previewServer.address()
   if (address === null || typeof address === 'string') throw new Error('Preview server has no TCP address')
   origin = `http://127.0.0.1:${address.port}`
 })
 
 test.afterAll(async () => {
+  const previewServer = server
+  if (previewServer === undefined || !previewServer.listening) return
   await new Promise<void>((resolveClosed, reject) => {
-    server.close((error) => error ? reject(error) : resolveClosed())
+    previewServer.close((error) => error ? reject(error) : resolveClosed())
   })
 })
+
+function previewUrl(variant: BuildVariant, query: string): string {
+  return `${origin}/${variant}/widget.html?${query}`
+}
 
 test('an unset production environment gate stays inert despite the immutable descriptor', async ({ page }) => {
   const pageErrors: string[] = []
@@ -102,7 +162,7 @@ test('an unset production environment gate stays inert despite the immutable des
     configurable: false,
     enumerable: false,
   })`)
-  await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
+  await page.goto(previewUrl('unset', 'preview=listening&theme=dark'))
   await expect(page.locator('.widget-shell')).toHaveCount(0)
   await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
   await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
@@ -118,9 +178,8 @@ test('compiled zero and other environment values remain inert', async ({ page })
     configurable: false,
     enumerable: false,
   })`)
-  for (const value of ['0', 'true']) {
-    buildRenderer(value)
-    await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
+  for (const variant of ['zero', 'other'] as const) {
+    await page.goto(previewUrl(variant, 'preview=listening&theme=dark'))
     await expect(page.locator('.widget-shell')).toHaveCount(0)
     await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
     await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
@@ -129,7 +188,6 @@ test('compiled zero and other environment values remain inert', async ({ page })
 })
 
 test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test previews', async ({ page }) => {
-  buildRenderer('1')
   await page.setViewportSize({ width: 420, height: 92 })
   await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
     value: true,
@@ -137,13 +195,13 @@ test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test prev
     configurable: false,
     enumerable: false,
   })`)
-  await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
+  await page.goto(previewUrl('enabled', 'preview=listening&theme=dark'))
   await expect(page.locator('.widget-shell')).toHaveCount(1)
 })
 
 test('preview query alone remains inert in a preview-enabled build', async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 92 })
-  await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
+  await page.goto(previewUrl('enabled', 'preview=listening&theme=dark'))
   await expect(page.locator('.widget-shell')).toHaveCount(0)
   await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
   await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
@@ -162,7 +220,7 @@ for (const theme of themes) {
         configurable: false,
         enumerable: false,
       })`)
-      await page.goto(`${origin}/widget.html?preview=${preview}&theme=${theme}`)
+      await page.goto(previewUrl('enabled', `preview=${preview}&theme=${theme}`))
 
       const shell = page.locator('.widget-shell')
       const pill = page.locator('.widget-pill')
