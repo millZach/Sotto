@@ -957,7 +957,7 @@ git commit -m "feat: add dashboard history settings and help"
 - Create: `src/renderer/src/widget/widget.css`
 - Modify: `src/renderer/src/widget.tsx`
 
-- [ ] **Step 1: Write failing widget-state tests**
+- [x] **Step 1: Write failing widget-state tests**
 
 ```tsx
 // tests/unit/renderer/widgetApp.test.tsx
@@ -977,17 +977,17 @@ describe('WidgetApp', () => {
 
 Add tests for listening timer/instruction, processing stage, no-speech, permission, model, paste, and generic error recovery text; accessible labels; and reduced-motion waveform behavior.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/widgetApp.test.tsx`
 
 Expected: FAIL because WidgetApp does not exist.
 
-- [ ] **Step 3: Implement the widget**
+- [x] **Step 3: Implement the widget**
 
 Render a 420×92 pill with a state icon, 12-bar level visualization, status label, timer/progress text, shortcut hint, and mouse-accessible cancel button that does not request focus. Listening uses indigo glow and cyan levels; processing uses a restrained orbit; success uses teal; errors use coral with one recovery sentence. Theme comes from settings snapshots and uses the same tokens as the main renderer. The preview query `?preview=listening|processing|pasted|copied|error&theme=light|dark` supplies deterministic states only when `TALKTYPE_VISUAL_PREVIEW=1` is injected by tests.
 
-- [ ] **Step 4: Verify GREEN and capture deterministic previews**
+- [x] **Step 4: Verify GREEN and capture deterministic previews**
 
 Run:
 
@@ -999,7 +999,7 @@ npx playwright test tests/e2e/visual-previews.spec.ts
 
 Expected: widget tests pass and screenshots are written under `artifacts/design/baseline` for all states in light and dark.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/renderer/src/widget src/renderer/src/widget.tsx tests/unit/renderer/widgetApp.test.tsx tests/e2e/visual-previews.spec.ts
