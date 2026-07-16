@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { mkdir, readFile, rename, rm } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 import { expect, test } from '@playwright/test'
@@ -13,6 +13,7 @@ const actualRoot = resolve(process.cwd(), 'test-results/visual-previews/actual')
 const buildRoot = resolve(process.cwd(), 'test-results/visual-previews/builds')
 const previews = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
 const themes = ['light', 'dark'] as const
+const updateWidgetBaselines = process.env.TALKTYPE_UPDATE_WIDGET_BASELINES === '1'
 const buildVariants = [
   ['unset', undefined],
   ['zero', '0'],
@@ -33,6 +34,7 @@ interface PreviewPresentation {
   readonly animated: ReadonlyArray<readonly [string, string]>
   readonly descriptor: PropertyDescriptor | undefined
   readonly overflows: readonly string[]
+  readonly detailFits: boolean
 }
 
 const contentTypes: Readonly<Record<string, string>> = {
@@ -255,18 +257,23 @@ for (const theme of themes) {
           animated,
           descriptor: Object.getOwnPropertyDescriptor(window, '__TALKTYPE_VISUAL_PREVIEW__'),
           overflows,
+          detailFits: (() => {
+            const detail = document.querySelector('.widget-copy > span')
+            return detail === null || detail.scrollWidth <= detail.clientWidth
+          })(),
         }
       })()`)
       expect(presentation.background).toBe('rgba(0, 0, 0, 0)')
       expect(presentation.descriptor).toMatchObject({ value: true, writable: false, configurable: false })
       expect(presentation.overflows).toEqual([])
+      expect(presentation.detailFits).toBe(true)
       for (const [animation, transition] of presentation.animated) {
         expect(parseFloat(animation) || 0).toBeLessThanOrEqual(0.001)
         expect(parseFloat(transition) || 0).toBeLessThanOrEqual(0.001)
       }
 
       const baselinePath = resolve(baselineRoot, `${preview}-${theme}.png`)
-      const baselineBefore = await readFile(baselinePath)
+      let baselineBefore: Buffer = await readFile(baselinePath)
       const baselineDigest = digest(baselineBefore)
       const screenshotPath = resolve(actualRoot, `${preview}-${theme}.png`)
       const image = await page.screenshot({
@@ -279,6 +286,10 @@ for (const theme of themes) {
       expect(info.height).toBe(92)
       expect(info.channels).toBe(4)
 
+      if (updateWidgetBaselines) {
+        await writeFile(baselinePath, image)
+        baselineBefore = image
+      }
       const baseline = await sharp(baselineBefore).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
       expect(baseline.info.width).toBe(info.width)
       expect(baseline.info.height).toBe(info.height)
@@ -296,14 +307,17 @@ for (const theme of themes) {
       }
       expect(changedPixels).toBe(0)
       expect(maximumChannelDelta).toBe(0)
-      expect(digest(await readFile(baselinePath))).toBe(baselineDigest)
+      if (!updateWidgetBaselines) expect(digest(await readFile(baselinePath))).toBe(baselineDigest)
 
       const alphaAt = (x: number, y: number): number => data[(y * info.width + x) * 4 + 3] ?? 255
-      // A very faint edge alpha is the pill's deliberate drop shadow, never a canvas fill.
-      expect(alphaAt(0, 0)).toBeLessThanOrEqual(16)
-      expect(alphaAt(419, 0)).toBeLessThanOrEqual(16)
-      expect(alphaAt(0, 91)).toBeLessThanOrEqual(16)
-      expect(alphaAt(419, 91)).toBeLessThanOrEqual(16)
+      for (let x = 0; x < info.width; x += 1) {
+        expect(alphaAt(x, 0), `top edge pixel ${x}`).toBe(0)
+        expect(alphaAt(x, info.height - 1), `bottom edge pixel ${x}`).toBe(0)
+      }
+      for (let y = 0; y < info.height; y += 1) {
+        expect(alphaAt(0, y), `left edge pixel ${y}`).toBe(0)
+        expect(alphaAt(info.width - 1, y), `right edge pixel ${y}`).toBe(0)
+      }
       let transparentEdgePixels = 0
       let visiblePixels = 0
       for (let index = 3; index < data.length; index += 4) {

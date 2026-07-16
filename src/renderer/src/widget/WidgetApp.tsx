@@ -17,6 +17,7 @@ import {
 } from 'react'
 
 import type { TalkTypeWidgetBridge } from '../../../shared/contracts'
+import { formatWindowsAccelerator } from '../../../shared/accelerator'
 import type {
   WidgetErrorCode,
   WidgetProcessingStage,
@@ -135,7 +136,7 @@ function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
   switch (snapshot.status) {
     case 'idle':
       return {
-        tone: 'idle', title: 'Ready', detail: snapshot.shortcut,
+        tone: 'idle', title: 'Ready', detail: formatWindowsAccelerator(snapshot.shortcut),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
@@ -145,7 +146,7 @@ function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
       }
     case 'listening':
       return {
-        tone: 'listening', title: 'Listening', detail: `${snapshot.shortcut} to finish`,
+        tone: 'listening', title: 'Listening', detail: `${formatWindowsAccelerator(snapshot.shortcut)} to finish`,
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'processing':
@@ -287,7 +288,7 @@ export function WidgetApp({ snapshot, now, onStop, onCancel }: WidgetAppProps): 
           {isListening && (
             <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
               <Square aria-hidden="true" size={13} fill="currentColor" />
-              <span>Stop</span>
+              <span className="widget-action__label">Stop</span>
             </WidgetAction>
           )}
           {snapshot.cancellable && (

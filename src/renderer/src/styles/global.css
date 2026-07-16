@@ -45,6 +45,10 @@ input:not([type='checkbox']):not([type='radio']) {
   outline-offset: 3px;
 }
 
+h1[tabindex='-1']:focus {
+  outline: none;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--tt-primary) 28%, transparent);
 }
@@ -158,15 +162,29 @@ input:not([type='checkbox']):not([type='radio']) {
 }
 
 .tt-toggle {
-  display: inline-flex;
+  display: grid;
+  width: 100%;
   min-height: 44px;
-  align-items: center;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   border: 0;
   background: transparent;
   padding: 4px 0;
   cursor: pointer;
   text-align: left;
+}
+
+.tt-toggle__copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.tt-toggle__copy > strong,
+.tt-toggle__copy > .tt-field__description {
+  display: block;
 }
 
 .tt-toggle__track {
@@ -758,6 +776,9 @@ input:not([type='checkbox']):not([type='radio']) {
 
 .home-record-card {
   display: grid;
+  grid-template-areas:
+    "icon copy action"
+    "icon meter action";
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
@@ -771,14 +792,44 @@ input:not([type='checkbox']):not([type='radio']) {
   box-shadow: 0 16px 46px color-mix(in srgb, var(--tt-activity) 13%, transparent);
 }
 
+.home-record-card[data-tone='success'] {
+  border-color: var(--tt-success);
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--tt-success) 10%, transparent), transparent 58%),
+    var(--tt-surface);
+}
+
+.home-record-card[data-tone='error'] {
+  border-color: var(--tt-error);
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--tt-error) 10%, transparent), transparent 58%),
+    var(--tt-surface);
+}
+
 .home-record-card__icon {
   display: grid;
+  grid-area: icon;
   width: 58px;
   height: 58px;
   place-items: center;
   border-radius: 18px;
   background: color-mix(in srgb, var(--tt-primary) 14%, var(--tt-surface));
   color: var(--tt-primary);
+}
+
+.home-record-card__copy {
+  min-width: 0;
+  grid-area: copy;
+}
+
+.home-record-card[data-tone='success'] .home-record-card__icon {
+  background: color-mix(in srgb, var(--tt-success) 16%, var(--tt-surface));
+  color: var(--tt-success);
+}
+
+.home-record-card[data-tone='error'] .home-record-card__icon {
+  background: color-mix(in srgb, var(--tt-error) 16%, var(--tt-surface));
+  color: var(--tt-error);
 }
 
 .home-record-card__copy h2,
@@ -808,6 +859,7 @@ input:not([type='checkbox']):not([type='radio']) {
 
 .home-record-card__action {
   display: grid;
+  grid-area: action;
   justify-items: end;
   gap: 11px;
 }
@@ -822,7 +874,7 @@ input:not([type='checkbox']):not([type='radio']) {
 
 .home-record-card .tt-level-meter,
 .home-inline-alert {
-  grid-column: 2 / -1;
+  grid-area: meter;
 }
 
 .home-inline-alert,
@@ -844,7 +896,7 @@ input:not([type='checkbox']):not([type='radio']) {
 }
 
 .home-grid .tt-card {
-  min-height: 250px;
+  min-height: 220px;
 }
 
 .section-heading,
@@ -1234,6 +1286,13 @@ input:not([type='checkbox']):not([type='radio']) {
     grid-template-columns: 1fr;
   }
 
+  .home-record-card {
+    grid-template-areas:
+      "copy"
+      "meter"
+      "action";
+  }
+
   .home-record-card__icon {
     display: none;
   }
@@ -1244,7 +1303,7 @@ input:not([type='checkbox']):not([type='radio']) {
 
   .home-record-card .tt-level-meter,
   .home-inline-alert {
-    grid-column: 1;
+    grid-area: meter;
   }
 
   .settings-fields-grid {

@@ -22,7 +22,7 @@ export function Toggle({ label, checked, onCheckedChange, disabled = false, desc
       onClick={() => onCheckedChange(!checked)}
     >
       <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
-      <span>
+      <span className="tt-toggle__copy">
         <strong>{label}</strong>
         {description === undefined ? null : (
           <span

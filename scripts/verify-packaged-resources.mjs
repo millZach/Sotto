@@ -55,6 +55,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
   if (workerEntry === undefined) fail('transcription worker is missing from app.asar')
   const workerUrl = pathToFileURL(join(asarPath, workerEntry.slice(1))).href
   const profile = await mkdtemp(join(tmpdir(), 'talktype-packaged-smoke-'))
+  const forbiddenE2EProfile = join(profile, 'forbidden-e2e-profile')
   const appData = join(profile, 'AppData', 'Roaming')
   const localAppData = join(profile, 'AppData', 'Local')
   await mkdir(appData, { recursive: true })
@@ -71,7 +72,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
         LOCALAPPDATA: localAppData,
         TALKTYPE_E2E: '1',
         TALKTYPE_E2E_SCENARIO: 'success',
-        TALKTYPE_E2E_USER_DATA: join(profile, 'forbidden-e2e-profile'),
+        TALKTYPE_E2E_USER_DATA: forbiddenE2EProfile,
       },
       timeout: 45_000,
     })
@@ -167,6 +168,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
     if (!result.workletUrl.endsWith('/out/renderer/audio-capture-worklet.js')) {
       fail('worklet did not resolve relative to the packaged renderer')
     }
+    if (existsSync(forbiddenE2EProfile)) fail('packaged build created the forbidden E2E profile')
     return result
   } finally {
     await application?.close().catch(() => undefined)

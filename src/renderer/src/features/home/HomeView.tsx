@@ -102,7 +102,7 @@ export function HomeView({
         <div className="privacy-badge"><LockKeyhole size={16} aria-hidden="true" />Speech stays on this computer</div>
       </header>
 
-      <Card className="home-record-card" data-active={active}>
+      <Card className="home-record-card" data-active={active} data-tone={copy.tone}>
         <div className="home-record-card__icon" aria-hidden="true">{dictation.status === 'listening' ? <Square /> : <Mic />}</div>
         <div className="home-record-card__copy" role={copy.tone === 'error' ? 'alert' : 'status'} aria-live={copy.tone === 'error' ? 'assertive' : 'polite'}>
           <p className="home-record-card__label">Private dictation</p>

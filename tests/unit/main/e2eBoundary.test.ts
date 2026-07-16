@@ -4,10 +4,11 @@ import {
   isTrustedMainE2ESender,
   resolveE2EConfiguration,
 } from '../../../src/main/e2e/e2eBoundary'
+import { e2eScenarioSchema } from '../../../src/shared/e2e'
 
 describe('development-only E2E admission', () => {
   it('rejects the boundary in packaged builds', () => {
-    for (const scenario of ['success', 'design-permission', 'design-processing']) {
+    for (const scenario of e2eScenarioSchema.options) {
       expect(resolveE2EConfiguration(true, {
         TALKTYPE_E2E: '1',
         TALKTYPE_E2E_SCENARIO: scenario,

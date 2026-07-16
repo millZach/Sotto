@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import React from 'react'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -30,6 +32,8 @@ const baseProps = {
   onOpenSettings: vi.fn(),
 }
 
+const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
+
 describe('HomeView', () => {
   it.each(['light', 'dark'] as const)('renders a complete ready dashboard in a forced %s container', (theme) => {
     render(<div data-theme={theme}><HomeView {...baseProps} /></div>)
@@ -56,6 +60,14 @@ describe('HomeView', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
+  it('uses stable named grid areas so listening detail cannot displace the compact action', () => {
+    expect(globalCss).toMatch(/\.home-record-card\s*\{[^}]*grid-template-areas:\s*"icon copy action"\s*"icon meter action"/su)
+    expect(globalCss).toMatch(/\.home-record-card__icon\s*\{[^}]*grid-area:\s*icon/su)
+    expect(globalCss).toMatch(/\.home-record-card__copy\s*\{[^}]*grid-area:\s*copy/su)
+    expect(globalCss).toMatch(/\.home-record-card \.tt-level-meter[^}]*grid-area:\s*meter/su)
+    expect(globalCss).toMatch(/\.home-record-card__action\s*\{[^}]*grid-area:\s*action/su)
+  })
+
   it('gates recording while the selected model is unavailable or work is processing', () => {
     const { rerender } = render(<HomeView {...baseProps} modelStatus={{ preset: 'balanced', state: 'missing' }} />)
     expect(screen.getByRole('button', { name: /model required/i })).toBeDisabled()
@@ -70,6 +82,14 @@ describe('HomeView', () => {
     render(<HomeView {...baseProps} dictation={{ status: 'error', code: 'TRANSCRIPTION_FAILED', message: 'private stack detail' }} />)
     expect(screen.getByRole('alert')).toHaveTextContent(/could not transcribe/i)
     expect(document.body).not.toHaveTextContent('private stack detail')
+  })
+
+  it('gives success and error dictation cards distinct semantic visual tones', () => {
+    const rendered = render(<HomeView {...baseProps} dictation={{ status: 'success', sessionId: 'done', output: 'pasted' }} />)
+    expect(rendered.container.querySelector('.home-record-card')).toHaveAttribute('data-tone', 'success')
+
+    rendered.rerender(<HomeView {...baseProps} dictation={{ status: 'error', code: 'TRANSCRIPTION_FAILED' }} />)
+    expect(rendered.container.querySelector('.home-record-card')).toHaveAttribute('data-tone', 'error')
   })
 
   it('shows exactly the five newest local transcripts', () => {

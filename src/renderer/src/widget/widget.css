@@ -53,15 +53,15 @@ button {
   height: 80px;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid color-mix(in srgb, var(--tt-primary) 36%, var(--tt-border));
   border-radius: 26px;
   background:
     linear-gradient(140deg, color-mix(in srgb, var(--tt-primary) 7%, transparent), transparent 42%),
     color-mix(in srgb, var(--tt-surface-elevated) 96%, transparent);
   box-shadow:
-    0 16px 42px rgb(15 23 42 / 20%),
-    inset 0 1px 0 rgb(255 255 255 / 12%);
+    inset 0 1px 0 rgb(255 255 255 / 12%),
+    inset 0 -10px 26px rgb(15 23 42 / 5%);
   padding: 10px 12px;
   -webkit-app-region: no-drag;
 }
@@ -80,8 +80,8 @@ button {
 .widget-shell[data-tone='listening'] .widget-pill {
   border-color: color-mix(in srgb, var(--tt-activity) 60%, var(--tt-primary));
   box-shadow:
-    0 14px 40px color-mix(in srgb, var(--tt-primary) 22%, transparent),
-    0 0 24px color-mix(in srgb, var(--tt-activity) 13%, transparent);
+    inset 0 0 22px color-mix(in srgb, var(--tt-activity) 11%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
 }
 
 .widget-shell[data-tone='listening'] .widget-state-icon {
@@ -184,7 +184,7 @@ button {
 
 .widget-copy span {
   color: var(--tt-text-muted);
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -263,6 +263,16 @@ button {
   border-color: color-mix(in srgb, var(--tt-primary) 52%, var(--tt-border));
   background: var(--tt-primary);
   color: var(--tt-primary-contrast);
+}
+
+.widget-action__label,
+.widget-action__cancel-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @keyframes widget-orbit {

@@ -11,6 +11,7 @@ import type {
   StartupState,
   UnavailableResult,
 } from '../../../../shared/contracts'
+import { formatWindowsAccelerator, parseWindowsAccelerator } from '../../../../shared/accelerator'
 import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
 import type {
   AppSettings,
@@ -101,6 +102,10 @@ function applyMotionPreference(reducedMotion: ReducedMotion): void {
   else document.documentElement.dataset.reducedMotion = 'on'
 }
 
+function canonicalAccelerator(value: string): string {
+  return parseWindowsAccelerator(formatWindowsAccelerator(value)) ?? value.trim()
+}
+
 export function SettingsView({
   settings,
   modelStatuses,
@@ -117,7 +122,7 @@ export function SettingsView({
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [hotkeyDraft, setHotkeyDraft] = useState(settings.hotkey)
+  const [hotkeyDraft, setHotkeyDraft] = useState(() => formatWindowsAccelerator(settings.hotkey))
   const [pasteDelayDraft, setPasteDelayDraft] = useState(String(settings.pasteDelayMs))
   const [successDurationDraft, setSuccessDurationDraft] = useState(String(settings.successDisplayMs))
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
@@ -157,20 +162,24 @@ export function SettingsView({
   useEffect(() => {
     const submission = hotkeySubmissionRef.current
     if (submission === null) {
-      hotkeyDraftRef.current = settings.hotkey
-      setHotkeyDraft(settings.hotkey)
+      const display = formatWindowsAccelerator(settings.hotkey)
+      hotkeyDraftRef.current = display
+      setHotkeyDraft(display)
       return
     }
-    if (settings.hotkey === submission.submitted) {
+    const authoritative = canonicalAccelerator(settings.hotkey)
+    if (authoritative === submission.submitted) {
       if (hotkeyEditVersionRef.current === submission.editVersion) {
-        hotkeyDraftRef.current = settings.hotkey
-        setHotkeyDraft(settings.hotkey)
+        const display = formatWindowsAccelerator(settings.hotkey)
+        hotkeyDraftRef.current = display
+        setHotkeyDraft(display)
       }
       hotkeySubmissionRef.current = null
-    } else if (settings.hotkey !== submission.authoritativeAtSubmit) {
+    } else if (authoritative !== submission.authoritativeAtSubmit) {
       hotkeySubmissionRef.current = null
-      hotkeyDraftRef.current = settings.hotkey
-      setHotkeyDraft(settings.hotkey)
+      const display = formatWindowsAccelerator(settings.hotkey)
+      hotkeyDraftRef.current = display
+      setHotkeyDraft(display)
     }
   }, [settings.hotkey])
   useEffect(() => {
@@ -388,17 +397,18 @@ export function SettingsView({
               }} />
             </Field>
             <Button variant="secondary" onClick={async () => {
-              const candidate = hotkeyDraftRef.current.trim()
-              if (candidate.length === 0) {
-                hotkeyDraftRef.current = settingsRef.current.hotkey
-                setHotkeyDraft(settingsRef.current.hotkey)
+              const candidate = parseWindowsAccelerator(hotkeyDraftRef.current)
+              if (candidate === null) {
+                const display = formatWindowsAccelerator(settingsRef.current.hotkey)
+                hotkeyDraftRef.current = display
+                setHotkeyDraft(display)
                 setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
                 return
               }
               const submission: DraftSubmission<string> = {
                 token: ++hotkeyTokenRef.current,
                 submitted: candidate,
-                authoritativeAtSubmit: settingsRef.current.hotkey,
+                authoritativeAtSubmit: canonicalAccelerator(settingsRef.current.hotkey),
                 editVersion: hotkeyEditVersionRef.current,
               }
               hotkeySubmissionRef.current = submission
@@ -408,8 +418,9 @@ export function SettingsView({
               else {
                 hotkeySubmissionRef.current = null
                 if (hotkeyEditVersionRef.current === submission.editVersion) {
-                  hotkeyDraftRef.current = settingsRef.current.hotkey
-                  setHotkeyDraft(settingsRef.current.hotkey)
+                  const display = formatWindowsAccelerator(settingsRef.current.hotkey)
+                  hotkeyDraftRef.current = display
+                  setHotkeyDraft(display)
                 }
                 setNotice({ text: result.reason === 'conflict' ? 'Another application is already using that shortcut. Your previous shortcut is still active.' : result.reason === 'invalid' ? 'That shortcut is not valid. Your previous shortcut is still active.' : 'The shortcut could not be updated. Your previous shortcut is still active.', error: true })
               }

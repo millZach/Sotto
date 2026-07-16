@@ -174,9 +174,24 @@ describe('SettingsView', () => {
     await user.clear(input)
     await user.type(input, 'Ctrl+Alt+Space')
     await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
-    expect(replace).toHaveBeenCalledWith('Ctrl+Alt+Space')
-    expect(input).toHaveValue(DEFAULT_SETTINGS.hotkey)
+    expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+Space')
+    expect(input).toHaveValue('Ctrl+Shift+Space')
     expect(screen.getByRole('alert')).toHaveTextContent(/another application is already using/i)
+  })
+
+  it('shows Windows-friendly shortcut text and translates edits to Electron canonical form', async () => {
+    const user = userEvent.setup()
+    const replace = vi.fn(async () => ({ ok: true as const }))
+    render(<SettingsView {...baseProps({ onReplaceHotkey: replace })} />)
+    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
+
+    expect(input).toHaveValue('Ctrl+Shift+Space')
+    expect(input).not.toHaveValue(expect.stringContaining('CommandOrControl'))
+    await user.clear(input)
+    await user.type(input, 'Ctrl+Alt+M')
+    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+
+    expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+M')
   })
 
   it('rolls a delayed hotkey conflict back to the newest authoritative shortcut', async () => {

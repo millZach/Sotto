@@ -1,15 +1,16 @@
 import React, { type ReactNode } from 'react'
 
+import { formatWindowsAccelerator } from '../../../shared/accelerator'
+
 export interface ShortcutKeyProps {
   readonly accelerator: string
 }
 
 export function ShortcutKey({ accelerator }: ShortcutKeyProps): ReactNode {
-  const keys = accelerator
+  const keys = formatWindowsAccelerator(accelerator)
     .split('+')
     .map((key) => key.trim())
     .filter(Boolean)
-    .map((key) => key === 'CommandOrControl' || key === 'CmdOrCtrl' ? 'Ctrl' : key)
   const displayAccelerator = keys.join('+')
   return (
     <span className="tt-shortcut" aria-label={displayAccelerator}>

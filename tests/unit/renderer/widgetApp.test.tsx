@@ -274,6 +274,20 @@ describe('WidgetApp', () => {
     expect(processingCopy).not.toHaveAttribute('role')
     expect(processingCopy).not.toHaveAttribute('aria-live')
   })
+
+  it('never exposes Electron accelerator vocabulary in live widget copy', () => {
+    render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'friendly', startedAt: 0, level: 0.2,
+          shortcut: 'CommandOrControl+Shift+Space',
+        })}
+        now={1_000}
+      />,
+    )
+    expect(screen.getByText('Ctrl+Shift+Space to finish')).toBeVisible()
+    expect(document.body).not.toHaveTextContent('CommandOrControl')
+  })
 })
 
 describe('WidgetEntry', () => {
