@@ -31,12 +31,13 @@ win:
         - x64
 
 nsis:
+  include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowElevation: true
   allowToChangeInstallationDirectory: true
   createStartMenuShortcut: true
-  createDesktopShortcut: true
+  createDesktopShortcut: false
   shortcutName: TalkType
   deleteAppDataOnUninstall: false
   installerIcon: build/icon.ico

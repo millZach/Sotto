@@ -2,7 +2,7 @@ node_modules/
 out/
 dist/
 dist-electron/
-release/
+/release/
 coverage/
 playwright-report/
 test-results/

@@ -31,7 +31,9 @@ describe('build-time model catalog', () => {
 
   it('copies only the binaries selected by Transformers 4.2.0 for WASM and WebGPU', () => {
     expect(RUNTIME_FILE_ALLOWLIST).toEqual([
+      'ort-wasm-simd-threaded.mjs',
       'ort-wasm-simd-threaded.wasm',
+      'ort-wasm-simd-threaded.asyncify.mjs',
       'ort-wasm-simd-threaded.asyncify.wasm',
     ])
   })

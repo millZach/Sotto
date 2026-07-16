@@ -48,6 +48,7 @@ export interface AudioContextAdapter {
 }
 
 export interface AudioRecorderDependencies {
+  readonly audioWorkletModuleUrl: string
   mediaDevices: {
     getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
   }
@@ -105,6 +106,7 @@ function defaultDependencies(): AudioRecorderDependencies {
         getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
       }
     }
+    document: { readonly baseURI: string }
     AudioContext: new () => AudioContextAdapter
     AudioWorkletNode: new (
       context: AudioContextAdapter,
@@ -114,6 +116,7 @@ function defaultDependencies(): AudioRecorderDependencies {
     clearTimeout(handle: number): void
   }
   return {
+    audioWorkletModuleUrl: new URL('audio-capture-worklet.js', browser.document.baseURI).href,
     mediaDevices: {
       getUserMedia: (constraints) => browser.navigator.mediaDevices.getUserMedia(constraints),
     },
@@ -178,7 +181,7 @@ export class AudioRecorder {
       this.assertSessionLive(session)
 
       session.context = this.dependencies.createAudioContext()
-      await session.context.audioWorklet.addModule('/audio-capture-worklet.js')
+      await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
       this.assertSessionLive(session)
 
       session.source = session.context.createMediaStreamSource(session.stream)

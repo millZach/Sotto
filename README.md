@@ -6,7 +6,7 @@ TalkType is a private, offline-first Windows dictation app. Press the global sho
 
 - Windows 10 or Windows 11, x64
 - A working microphone and permission for desktop apps to use it
-- About 500 MB of free space for the app, bundled Balanced speech model, and temporary installer files
+- At least 1.5 GB of free space during installation for the installer, temporary extraction, the app, bundled Balanced speech model, and safe working headroom; the installed app is about 500 MB before optional models
 - Node.js 22 or newer only when developing from source; installed users do not need Node.js, Python, an account, an API key, or a separate model download
 
 ## Privacy and cost
@@ -17,7 +17,7 @@ Optional Fast and Accurate models are not downloaded until you review their sour
 
 ## Install and first run
 
-Run `TalkType Setup 0.1.0.exe`, choose the per-user installation folder, and select the desktop shortcut option if wanted. The installer also creates a Start Menu shortcut. Uninstalling preserves settings, history, and optional downloaded models by default so an accidental uninstall does not silently destroy local data.
+Run `TalkType Setup 0.1.0.exe` and choose the per-user installation folder. The desktop shortcut is optional and unchecked by default; the installer always creates a Start Menu shortcut. Uninstalling removes either shortcut but preserves settings, history, and optional downloaded models by default so an accidental uninstall does not silently destroy local data.
 
 The locally built 0.1.0 artifact is not code-signed because no Windows signing certificate is stored in this repository. Windows may therefore show an **Unknown publisher** or SmartScreen prompt. A public release should be Authenticode-signed by its distributor without changing application behavior.
 
@@ -78,7 +78,7 @@ Artifacts are written to:
 - `release/win-unpacked/TalkType.exe` — unpacked x64 application
 - `release/TalkType Setup 0.1.0.exe` — assisted, per-user x64 NSIS installer
 
-The packaged `resources` directory contains `models/`, `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Release packaging must be performed after `npm run model:verify` succeeds.
+The packaged `resources` directory contains `models/`, `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source model before packaging and verifies the packaged model, runtime, notices, bridge, worker, and worklet afterward.
 
 ## Troubleshooting
 

@@ -18,7 +18,9 @@ export interface FileSource {
 }
 
 const RUNTIME_FILES = [
+  'ort-wasm-simd-threaded.mjs',
   'ort-wasm-simd-threaded.wasm',
+  'ort-wasm-simd-threaded.asyncify.mjs',
   'ort-wasm-simd-threaded.asyncify.wasm',
 ] as const
 const SHA256 = /^[a-f0-9]{64}$/

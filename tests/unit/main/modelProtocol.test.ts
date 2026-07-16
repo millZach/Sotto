@@ -89,7 +89,12 @@ describe('model protocols', () => {
     await expect(loadVerifiedRuntimeSource(root)).resolves.toMatchObject({
       root,
       boundaryRoot: root,
-      files: new Set(['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.asyncify.wasm']),
+      files: new Set([
+        'ort-wasm-simd-threaded.mjs',
+        'ort-wasm-simd-threaded.wasm',
+        'ort-wasm-simd-threaded.asyncify.mjs',
+        'ort-wasm-simd-threaded.asyncify.wasm',
+      ]),
     })
   })
 
@@ -97,7 +102,12 @@ describe('model protocols', () => {
     'rejects runtime manifest drift: %s',
     async (mutation) => {
       const root = await runtimeFixture()
-      const paths = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.asyncify.wasm']
+      const paths = [
+        'ort-wasm-simd-threaded.mjs',
+        'ort-wasm-simd-threaded.wasm',
+        'ort-wasm-simd-threaded.asyncify.mjs',
+        'ort-wasm-simd-threaded.asyncify.wasm',
+      ]
       const records = paths.map((path) => ({
         path,
         bytes: Buffer.from(path).length,
@@ -178,7 +188,12 @@ describe('model protocols', () => {
 
 async function runtimeFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'talktype-runtime-source-')); roots.push(root)
-  const paths = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.asyncify.wasm']
+  const paths = [
+    'ort-wasm-simd-threaded.mjs',
+    'ort-wasm-simd-threaded.wasm',
+    'ort-wasm-simd-threaded.asyncify.mjs',
+    'ort-wasm-simd-threaded.asyncify.wasm',
+  ]
   const records = []
   for (const path of paths) {
     const content = Buffer.from(path)

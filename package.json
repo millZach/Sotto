@@ -15,19 +15,17 @@
     "test:e2e": "npm run build && playwright test --workers=1",
     "model:prepare": "node scripts/prepare-model.mjs",
     "model:verify": "node scripts/verify-model.mjs",
-    "package:dir": "npm run build && electron-builder --dir --win --x64",
-    "package:win": "npm run build && electron-builder --win nsis --x64"
+    "notices:verify": "node scripts/verify-notices.mjs",
+    "package:dir": "npm run model:verify && npm run build && electron-builder --dir --win --x64 && node scripts/verify-packaged-resources.mjs release/win-unpacked",
+    "package:win": "npm run model:verify && npm run build && electron-builder --win nsis --x64 && node scripts/verify-packaged-resources.mjs release/win-unpacked"
   },
   "license": "UNLICENSED",
   "type": "commonjs",
   "dependencies": {
-    "@huggingface/transformers": "4.2.0",
-    "lucide-react": "1.24.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@huggingface/transformers": "4.2.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "6.9.1",
@@ -42,6 +40,9 @@
     "electron-vite": "5.0.0",
     "eslint": "10.7.0",
     "jsdom": "29.1.1",
+    "lucide-react": "1.24.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "sharp": "0.34.5",
     "typescript": "6.0.3",
     "typescript-eslint": "8.63.0",

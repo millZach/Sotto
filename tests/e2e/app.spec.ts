@@ -1,49 +1,16 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import {
   E2E_CONFLICTING_HOTKEY,
-  type E2EScenario,
   type E2ESnapshot,
   type TalkTypeE2EBridge,
 } from '../../src/shared/e2e'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
-
-interface LaunchedTalkType {
-  readonly app: ElectronApplication
-  readonly page: Page
-  readonly userData: string
-}
-
-function e2eEnvironment(scenario: E2EScenario, userData: string): Record<string, string> {
-  return Object.fromEntries(Object.entries({
-    ...process.env,
-    TALKTYPE_E2E: '1',
-    TALKTYPE_E2E_SCENARIO: scenario,
-    TALKTYPE_E2E_USER_DATA: userData,
-  }).filter((entry): entry is [string, string] => entry[1] !== undefined))
-}
-
-async function launchTalkType(scenario: E2EScenario = 'success', userData?: string): Promise<LaunchedTalkType> {
-  const profile = userData ?? await mkdtemp(join(tmpdir(), 'talktype-e2e-'))
-  const app = await electron.launch({
-    args: ['out/main/index.js'],
-    env: e2eEnvironment(scenario, profile),
-  })
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  return { app, page, userData: profile }
-}
-
-async function closeTalkType(launched: LaunchedTalkType): Promise<void> {
-  await launched.app.close().catch(() => undefined)
-  await rm(launched.userData, { recursive: true, force: true })
-}
+import { closeTalkType, e2eEnvironment, launchTalkType } from './support/talktypeLaunch'
 
 async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()

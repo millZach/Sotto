@@ -13,10 +13,13 @@ export const MODEL_FILE_ALLOWLIST = Object.freeze([
   'vocab.json',
 ])
 
-// These are the two filenames selected by Transformers 4.2.0's ONNX backend:
-// normal WASM and asyncify for the WebGPU execution provider.
+// Transformers 4.2.0's ONNX backend selects two runtime variants: normal WASM
+// and asyncify for the WebGPU execution provider. Each needs its JS glue module
+// and matching WASM binary, all served only through the verified local protocol.
 export const RUNTIME_FILE_ALLOWLIST = Object.freeze([
+  'ort-wasm-simd-threaded.mjs',
   'ort-wasm-simd-threaded.wasm',
+  'ort-wasm-simd-threaded.asyncify.mjs',
   'ort-wasm-simd-threaded.asyncify.wasm',
 ])
 

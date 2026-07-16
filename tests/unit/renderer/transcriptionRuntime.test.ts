@@ -61,7 +61,12 @@ describe('local transcription worker runtime', () => {
     expect(createPipeline).toHaveBeenCalledWith(
       'automatic-speech-recognition',
       'Xenova/whisper-base',
-      expect.objectContaining({ dtype: 'q8', device: 'wasm', local_files_only: true }),
+      expect.objectContaining({
+        dtype: 'q8',
+        device: 'wasm',
+        local_files_only: true,
+        session_options: { graphOptimizationLevel: 'disabled' },
+      }),
     )
     expect(recognize).toHaveBeenCalledWith(audio, { task: 'transcribe' })
     expect(responses).toContainEqual({

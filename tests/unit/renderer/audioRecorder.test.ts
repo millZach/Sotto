@@ -53,6 +53,8 @@ function createHarness(overrides: Partial<AudioRecorderDependencies> = {}) {
   const getUserMedia = vi.fn(async () => stream)
   let timer: (() => void) | undefined
   const dependencies: AudioRecorderDependencies = {
+    audioWorkletModuleUrl:
+      'file:///C:/Program%20Files/TalkType/resources/app.asar/out/renderer/audio-capture-worklet.js',
     mediaDevices: { getUserMedia },
     createAudioContext: vi.fn(() => context),
     createAudioWorkletNode: vi.fn(() => worklet),
@@ -179,7 +181,7 @@ describe('AudioRecorder', () => {
       },
     })
     expect(harness.context.audioWorklet.addModule).toHaveBeenCalledWith(
-      '/audio-capture-worklet.js',
+      'file:///C:/Program%20Files/TalkType/resources/app.asar/out/renderer/audio-capture-worklet.js',
     )
     expect(harness.dependencies.createAudioWorkletNode).toHaveBeenCalledWith(
       harness.context,
