@@ -40,59 +40,111 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | undefined>()
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
+  const microphoneMountedRef = useRef(false)
+  const microphoneStateRef = useRef<MicrophoneTestState>('idle')
+  const microphoneSettledStateRef = useRef<Exclude<MicrophoneTestState, 'requesting'>>('idle')
+  const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
+  const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const modelGenerationRef = useRef(0)
 
   useEffect(() => {
     applyDocumentPreferences(app.settings)
   }, [app.settings])
 
-  useEffect(() => () => {
-    ++microphoneGenerationRef.current
-    const controller = microphoneRef.current
-    microphoneRef.current = null
-    void controller?.stop().catch(() => undefined)
+  const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
+    const existing = microphoneReleasesRef.current.get(controller)
+    if (existing !== undefined) return existing
+    const release = microphoneReleaseTailRef.current
+      .then(() => controller.stop())
+      .catch(() => undefined)
+    microphoneReleasesRef.current.set(controller, release)
+    microphoneReleaseTailRef.current = release
+    return release
   }, [])
+
+  const commitMicrophoneState = useCallback((next: MicrophoneTestState): void => {
+    microphoneStateRef.current = next
+    if (next !== 'requesting') microphoneSettledStateRef.current = next
+    if (microphoneMountedRef.current) setMicrophoneState(next)
+  }, [])
+
+  useEffect(() => {
+    microphoneMountedRef.current = true
+    return () => {
+      microphoneMountedRef.current = false
+      ++microphoneGenerationRef.current
+      const controller = microphoneRef.current
+      microphoneRef.current = null
+      if (controller !== null) void releaseMicrophone(controller)
+    }
+  }, [releaseMicrophone])
 
   const stopMicrophone = useCallback(async (): Promise<void> => {
     ++microphoneGenerationRef.current
     const controller = microphoneRef.current
     microphoneRef.current = null
-    setMicrophoneLevel(0)
-    await controller?.stop().catch(() => undefined)
-  }, [])
+    if (microphoneMountedRef.current) {
+      setMicrophoneLevel(0)
+      if (microphoneStateRef.current === 'requesting') {
+        commitMicrophoneState(microphoneSettledStateRef.current)
+      }
+    }
+    if (controller !== null) await releaseMicrophone(controller)
+    else await microphoneReleaseTailRef.current
+  }, [commitMicrophoneState, releaseMicrophone])
 
   const requestMicrophone = useCallback(async (): Promise<void> => {
-    await stopMicrophone()
     const generation = ++microphoneGenerationRef.current
+    if (!microphoneMountedRef.current) return
+    const previousController = microphoneRef.current
+    microphoneRef.current = null
+    setMicrophoneLevel(0)
+    commitMicrophoneState('requesting')
+    if (previousController !== null) await releaseMicrophone(previousController)
+    else await microphoneReleaseTailRef.current
+    if (!microphoneMountedRef.current || microphoneGenerationRef.current !== generation) return
     let controller: MicrophoneTestController
     try { controller = createMicrophoneTest() } catch {
-      setMicrophoneState('error')
+      if (microphoneMountedRef.current && microphoneGenerationRef.current === generation) {
+        commitMicrophoneState('error')
+      }
+      return
+    }
+    if (!microphoneMountedRef.current || microphoneGenerationRef.current !== generation) {
+      await releaseMicrophone(controller)
       return
     }
     microphoneRef.current = controller
-    setMicrophoneState('requesting')
     const outcome = await controller.start((level) => {
-      if (microphoneGenerationRef.current === generation && microphoneRef.current === controller) {
+      if (
+        microphoneMountedRef.current &&
+        microphoneGenerationRef.current === generation &&
+        microphoneRef.current === controller
+      ) {
         setMicrophoneLevel(level)
       }
     }).catch(() => 'error' as const)
-    if (microphoneGenerationRef.current !== generation || microphoneRef.current !== controller) {
-      await controller.stop().catch(() => undefined)
+    if (
+      !microphoneMountedRef.current ||
+      microphoneGenerationRef.current !== generation ||
+      microphoneRef.current !== controller
+    ) {
+      await releaseMicrophone(controller)
       return
     }
-    setMicrophoneState(outcome)
+    commitMicrophoneState(outcome)
     if (outcome !== 'ready') {
       microphoneRef.current = null
-      await controller.stop().catch(() => undefined)
+      await releaseMicrophone(controller)
     }
-  }, [createMicrophoneTest, stopMicrophone])
+  }, [commitMicrophoneState, createMicrophoneTest, releaseMicrophone])
 
   const checkModel = useCallback(async (): Promise<void> => {
     const generation = ++modelGenerationRef.current
     setModelState('checking')
     const result = await app.actions.getModelStatus('balanced')
     if (modelGenerationRef.current !== generation) return
-    setModelState('preset' in result ? toModelState(result) : 'unavailable')
+    if (!('preset' in result)) setModelState('unavailable')
   }, [app.actions])
 
   useEffect(() => {
@@ -110,7 +162,10 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   useEffect(() => {
     const balanced = app.modelStatuses.balanced
-    if (balanced !== undefined) setModelState(toModelState(balanced))
+    if (balanced !== undefined) {
+      ++modelGenerationRef.current
+      setModelState(toModelState(balanced))
+    }
   }, [app.modelStatuses.balanced])
 
   if (app.status === 'loading') {

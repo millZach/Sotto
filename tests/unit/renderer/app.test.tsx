@@ -1,5 +1,5 @@
 import React, { StrictMode } from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -257,5 +257,151 @@ describe('TalkType application onboarding integration', () => {
 
     mounted.unmount()
     await waitFor(() => expect(microphone.stop).toHaveBeenCalled())
+  })
+
+  it('does not start a replacement microphone after navigation overtakes a deferred retest stop', async () => {
+    const user = userEvent.setup()
+    const stopped = deferred<void>()
+    const active = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(() => stopped.promise),
+    }
+    const replacement = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(async () => undefined),
+    }
+    const createMicrophoneTest = vi.fn()
+      .mockReturnValueOnce(active)
+      .mockReturnValue(replacement)
+    renderApp(createBridge(), createMicrophoneTest)
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: /test microphone/i }))
+    await screen.findByText(/microphone ready/i)
+
+    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+    await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    stopped.resolve()
+
+    await screen.findByRole('heading', { name: /your local model/i })
+    await act(async () => undefined)
+    expect(createMicrophoneTest).toHaveBeenCalledOnce()
+    expect(replacement.start).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    expect(screen.getByRole('button', { name: /finish setup/i })).toBeEnabled()
+  })
+
+  it('does not start or leak a replacement microphone after unmount overtakes a deferred retest', async () => {
+    const user = userEvent.setup()
+    const stopped = deferred<void>()
+    const active = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(() => stopped.promise),
+    }
+    const replacement = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(async () => undefined),
+    }
+    const createMicrophoneTest = vi.fn()
+      .mockReturnValueOnce(active)
+      .mockReturnValue(replacement)
+    const mounted = renderApp(createBridge(), createMicrophoneTest)
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: /test microphone/i }))
+    await screen.findByText(/microphone ready/i)
+
+    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+    await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
+    mounted.unmount()
+    stopped.resolve()
+
+    await act(async () => undefined)
+    expect(createMicrophoneTest).toHaveBeenCalledOnce()
+    expect(replacement.start).not.toHaveBeenCalled()
+    expect(replacement.stop).not.toHaveBeenCalled()
+  })
+
+  it('lets only the latest concurrent retest allocate a microphone controller', async () => {
+    const user = userEvent.setup()
+    const stopped = deferred<void>()
+    const active = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(() => stopped.promise),
+    }
+    const replacement = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(async () => undefined),
+    }
+    const staleReplacement = {
+      start: vi.fn(async () => 'ready' as const),
+      stop: vi.fn(async () => undefined),
+    }
+    const createMicrophoneTest = vi.fn()
+      .mockReturnValueOnce(active)
+      .mockReturnValueOnce(replacement)
+      .mockReturnValue(staleReplacement)
+    renderApp(createBridge(), createMicrophoneTest)
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: /test microphone/i }))
+    await screen.findByText(/microphone ready/i)
+
+    const retest = screen.getByRole('button', { name: /retest microphone/i })
+    act(() => {
+      retest.click()
+      retest.click()
+    })
+    await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
+    stopped.resolve()
+
+    await waitFor(() => expect(replacement.start).toHaveBeenCalledOnce())
+    expect(createMicrophoneTest).toHaveBeenCalledTimes(2)
+    expect(staleReplacement.start).not.toHaveBeenCalled()
+  })
+
+  it('stops a controller whose pending start is overtaken by navigation', async () => {
+    const user = userEvent.setup()
+    const started = deferred<'ready'>()
+    const microphone = {
+      start: vi.fn(() => started.promise),
+      stop: vi.fn(async () => undefined),
+    }
+    renderApp(createBridge(), () => microphone)
+    await reachMicrophoneStep(user)
+
+    await user.click(screen.getByRole('button', { name: /test microphone/i }))
+    await waitFor(() => expect(microphone.start).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
+    started.resolve('ready')
+
+    await screen.findByRole('heading', { name: /your local model/i })
+    await act(async () => undefined)
+    expect(microphone.stop).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a newer model-status event when an older explicit check resolves later', async () => {
+    const user = userEvent.setup()
+    const check = deferred<Awaited<ReturnType<TalkTypeBridge['getModelStatus']>>>()
+    const listeners: Array<Parameters<TalkTypeBridge['onModelStatus']>[0]> = []
+    const bridge = createBridge({
+      getModelStatus: vi.fn(() => check.promise),
+      onModelStatus: vi.fn((listener) => {
+        listeners.push(listener)
+        return () => undefined
+      }),
+    })
+    renderApp(bridge)
+    await waitFor(() => expect(listeners).toHaveLength(1))
+    await waitFor(() => expect(bridge.getModelStatus).toHaveBeenCalledWith('balanced'))
+
+    act(() => listeners[0]?.({ preset: 'balanced', state: 'ready' }))
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await screen.findByText(/balanced model is included and ready/i)
+
+    check.resolve({ preset: 'balanced', state: 'missing' })
+    await act(async () => undefined)
+    expect(screen.getByText(/balanced model is included and ready/i)).toBeVisible()
+    expect(screen.queryByText(/balanced model is not ready/i)).not.toBeInTheDocument()
   })
 })

@@ -263,6 +263,26 @@ describe('first-run onboarding', () => {
     expect(screen.getByText('Xenova/whisper-tiny')).toBeVisible()
   })
 
+  it.each(['checking', 'missing', 'error', 'unavailable'] as const)(
+    'does not claim Balanced is usable when disclosures are unavailable and the model is %s',
+    async (modelState) => {
+      const user = userEvent.setup()
+      render(
+        <Onboarding
+          microphoneState="ready"
+          modelState={modelState}
+          shortcut="Ctrl+Shift+Space"
+          onRequestMicrophone={vi.fn()}
+          onComplete={vi.fn()}
+        />,
+      )
+      await goToStep(user, 3)
+
+      expect(screen.queryByText(/balanced remains local and usable/i)).not.toBeInTheDocument()
+      expect(screen.getByText(/optional download details are unavailable/i)).toBeVisible()
+    },
+  )
+
   it('awaits completion persistence and preserves the setup when saving fails', async () => {
     const user = userEvent.setup()
     const save = deferred<boolean>()

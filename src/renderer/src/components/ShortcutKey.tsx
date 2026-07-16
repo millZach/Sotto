@@ -5,9 +5,14 @@ export interface ShortcutKeyProps {
 }
 
 export function ShortcutKey({ accelerator }: ShortcutKeyProps): ReactNode {
-  const keys = accelerator.split('+').map((key) => key.trim()).filter(Boolean)
+  const keys = accelerator
+    .split('+')
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .map((key) => key === 'CommandOrControl' || key === 'CmdOrCtrl' ? 'Ctrl' : key)
+  const displayAccelerator = keys.join('+')
   return (
-    <span className="tt-shortcut" aria-label={accelerator}>
+    <span className="tt-shortcut" aria-label={displayAccelerator}>
       {keys.map((key, index) => (
         <span key={`${key}-${index}`}>
           {index === 0 ? null : <span aria-hidden="true">+</span>}

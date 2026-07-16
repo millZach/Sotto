@@ -117,6 +117,30 @@ function mountProvider(bridge: TalkTypeBridge, createController: AppControllerFa
 }
 
 describe('AppProvider dictation integration', () => {
+  it('does not let an older explicit model-status response overwrite a newer event', async () => {
+    const requested = deferred<Awaited<ReturnType<TalkTypeBridge['getModelStatus']>>>()
+    const listeners: Array<Parameters<TalkTypeBridge['onModelStatus']>[0]> = []
+    const bridge = createBridge({
+      getModelStatus: vi.fn(() => requested.promise),
+      onModelStatus: vi.fn((listener) => {
+        listeners.push(listener)
+        return () => undefined
+      }),
+    })
+    const harness = createControllerFactory()
+    const view = mountProvider(bridge, harness.factory)
+    await waitFor(() => expect(currentContext?.status).toBe('ready'))
+
+    let request!: ReturnType<AppContextValue['actions']['getModelStatus']>
+    act(() => { request = currentContext!.actions.getModelStatus('balanced') })
+    act(() => listeners[0]?.({ preset: 'balanced', state: 'ready' }))
+    requested.resolve({ preset: 'balanced', state: 'missing' })
+    await act(async () => { await request })
+
+    expect(currentContext?.modelStatuses.balanced).toEqual({ preset: 'balanced', state: 'ready' })
+    view.unmount()
+  })
+
   it('loads settings and history in parallel, then replays every buffered command exactly once', async () => {
     const settings = deferred<AppSettings>()
     const history = deferred<HistoryEntry[]>()

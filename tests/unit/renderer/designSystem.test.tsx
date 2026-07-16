@@ -12,10 +12,44 @@ import { Select } from '../../../src/renderer/src/components/Select'
 import { ShortcutKey } from '../../../src/renderer/src/components/ShortcutKey'
 import { ToastRegion } from '../../../src/renderer/src/components/ToastRegion'
 import { Toggle } from '../../../src/renderer/src/components/Toggle'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const onboardingSource = readFileSync(join(process.cwd(), 'src/renderer/src/features/onboarding/Onboarding.tsx'), 'utf8')
+
+function channelToLinear(channel: number): number {
+  const value = channel / 255
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+function luminance(hex: string): number {
+  const channels = hex.slice(1).match(/.{2}/gu)?.map((value) => Number.parseInt(value, 16))
+  if (channels?.length !== 3) throw new Error(`Invalid test color: ${hex}`)
+  return 0.2126 * channelToLinear(channels[0]!)
+    + 0.7152 * channelToLinear(channels[1]!)
+    + 0.0722 * channelToLinear(channels[2]!)
+}
+
+function contrastRatio(first: string, second: string): number {
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter! + 0.05) / (darker! + 0.05)
+}
+
+function colorPalettes(): Array<Record<'canvas' | 'surface' | 'surface-elevated' | 'border', string>> {
+  const names = ['canvas', 'surface', 'surface-elevated', 'border'] as const
+  const declarations = [...tokensCss.matchAll(/--tt-(canvas|surface|surface-elevated|border):\s*(#[0-9a-f]{6});/giu)]
+  const palettes: Array<Partial<Record<(typeof names)[number], string>>> = []
+  for (const match of declarations) {
+    const name = match[1] as (typeof names)[number]
+    if (name === 'canvas') palettes.push({})
+    palettes.at(-1)![name] = match[2]!
+  }
+  return palettes.map((palette) => {
+    for (const name of names) if (palette[name] === undefined) throw new Error(`Missing ${name} token`)
+    return palette as Record<(typeof names)[number], string>
+  })
+}
 
 afterEach(cleanup)
 
@@ -129,5 +163,22 @@ describe('TalkType design-system primitives', () => {
 
   it('contains no common UTF-8 mojibake markers in user-visible onboarding copy', () => {
     expect(onboardingSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
+  })
+
+  it('keeps control and card borders at 3:1 contrast against every supported surface', () => {
+    const palettes = colorPalettes()
+    expect(palettes).toHaveLength(3)
+    for (const palette of palettes) {
+      for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
+        expect(contrastRatio(palette.border, palette[surface])).toBeGreaterThanOrEqual(3)
+      }
+    }
+  })
+
+  it('normalizes the production Electron shortcut for Windows display', () => {
+    render(<ShortcutKey accelerator={DEFAULT_SETTINGS.hotkey} />)
+
+    expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
+    expect(screen.queryByText('CommandOrControl')).not.toBeInTheDocument()
   })
 })

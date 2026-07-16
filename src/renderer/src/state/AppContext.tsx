@@ -171,6 +171,7 @@ export function AppProvider({
   const activeGenerationRef = useRef(0)
   const settingsVersionRef = useRef(0)
   const historyVersionRef = useRef(0)
+  const modelStatusVersionRef = useRef<Partial<Record<ModelPreset, number>>>({})
   const settingsTailRef = useRef<Promise<void>>(Promise.resolve())
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
 
@@ -261,6 +262,7 @@ export function AppProvider({
     settingsRef.current = null
     setHistory([])
     setModelStatuses({})
+    modelStatusVersionRef.current = {}
     setDictation(initialDictationState)
 
     if (bridge === undefined) {
@@ -276,6 +278,8 @@ export function AppProvider({
     try {
       unsubscribeModelStatus = bridge.onModelStatus((modelStatus) => {
         if (!isCurrentGeneration(generation)) return
+        modelStatusVersionRef.current[modelStatus.preset] =
+          (modelStatusVersionRef.current[modelStatus.preset] ?? 0) + 1
         setModelStatuses((current) => ({ ...current, [modelStatus.preset]: modelStatus }))
       })
     } catch {
@@ -461,9 +465,15 @@ export function AppProvider({
     getModelStatus: async (preset) => {
       if (bridge === undefined) return UNAVAILABLE
       const generation = activeGenerationRef.current
+      const version = (modelStatusVersionRef.current[preset] ?? 0) + 1
+      modelStatusVersionRef.current[preset] = version
       try {
         const result = await bridge.getModelStatus(preset)
-        if ('preset' in result && isCurrentGeneration(generation)) {
+        if (
+          'preset' in result &&
+          isCurrentGeneration(generation) &&
+          modelStatusVersionRef.current[preset] === version
+        ) {
           setModelStatuses((current) => ({ ...current, [result.preset]: result }))
         }
         return result

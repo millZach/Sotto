@@ -230,7 +230,13 @@ export function Onboarding({
             )}
             <p className="onboarding-lead">Balanced is the dependable default. You can add a smaller Fast model or a larger Accurate model later.</p>
             {disclosures === undefined ? (
-              <p className="onboarding-muted">Optional download details are unavailable. Balanced remains local and usable.</p>
+              <p className="onboarding-muted">
+                Optional download details are unavailable. {modelState === 'ready'
+                  ? 'Balanced remains local and usable.'
+                  : modelState === 'checking'
+                    ? 'Balanced availability is still being checked.'
+                    : 'Balanced must pass the model check before it can be used.'}
+              </p>
             ) : (
               <div className="onboarding-download-disclosure">
                 <p>{disclosures.optionalDownloadNotice}</p>
