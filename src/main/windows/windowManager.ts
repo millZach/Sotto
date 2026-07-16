@@ -118,6 +118,7 @@ export interface WindowManagerDependencies {
   readonly developmentSources: DevelopmentRendererSources | undefined
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
+  readonly onRendererProcessGone?: (kind: RendererRole) => void
 }
 
 type WindowKind = RendererRole
@@ -127,6 +128,8 @@ export type RendererDiagnostic =
   | 'renderer-load-failed:main:bundled'
   | 'renderer-load-failed:widget:development'
   | 'renderer-load-failed:widget:bundled'
+  | 'renderer-process-gone-handler-failed:main'
+  | 'renderer-process-gone-handler-failed:widget'
 
 export interface DevelopmentRendererSources {
   readonly main: URL
@@ -530,6 +533,11 @@ export class WindowManager {
         this.widgetReady = null
       }
       this.disposeWindow(window)
+      try {
+        this.dependencies.onRendererProcessGone?.(kind)
+      } catch {
+        this.dependencies.log(`renderer-process-gone-handler-failed:${kind}`)
+      }
     }
     window.onRenderProcessGone(onRendererProcessGone)
     this.addCleanup(window, () => {

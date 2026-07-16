@@ -30,6 +30,7 @@ import {
   type SessionPermissionAdapter,
 } from './app/bootstrap'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
+import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
@@ -60,7 +61,6 @@ import {
   DICTATION_COMMAND,
   MODEL_STATUS,
   SETTINGS_CHANGED,
-  WIDGET_STATE,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
@@ -302,6 +302,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
   })
+  let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
     display: screen,
@@ -313,6 +314,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : parseDevelopmentRendererSources(process.env.ELECTRON_RENDERER_URL),
     isPackaged: app.isPackaged,
     log: logOperational,
+    onRendererProcessGone: (kind) => handleRendererProcessGone(kind),
   })
   const productionModels = e2eConfiguration === null ? await (async () => {
     const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -434,20 +436,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   }
 
-  const publishWidgetState = (state: WidgetSnapshot): void => {
-    const listening = state.status === 'listening'
-    const revealWidgetState = state.status !== 'idle'
-    void messageDelivery
-      .sendToWidget(WIDGET_STATE, state, revealWidgetState)
-      .then((delivered) => {
-        if (!delivered) {
-          logOperational('native-widget-state-delivery-failed')
-        }
-      })
-    currentTrayState = { ...currentTrayState, dictating: listening }
-    trayController.update(currentTrayState)
-
-    syncEscapeForWidgetSnapshot(hotkeys, state)
+  const dictationLifecycle = new NativeDictationLifecycle({
+    delivery: messageDelivery,
+    getTrayState: () => currentTrayState,
+    updateTray(state): void {
+      currentTrayState = state
+      trayController.update(state)
+    },
+    syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+    log: logOperational,
+  })
+  handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
+  const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
+    await dictationLifecycle.publish(state)
   }
 
   const permissionAdapter = createPermissionAdapter()

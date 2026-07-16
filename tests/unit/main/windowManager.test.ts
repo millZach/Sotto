@@ -434,6 +434,20 @@ describe('WindowManager lifecycle', () => {
     expect(windows[1]!.focus).toHaveBeenCalledOnce()
   })
 
+  it('reports renderer loss through the public lifecycle seam and contains handler details', async () => {
+    const onRendererProcessGone = vi.fn(() => {
+      throw new Error('private renderer crash detail')
+    })
+    const { log, manager, windows } = createHarness({ onRendererProcessGone })
+    await manager.createMainWindow()
+
+    expect(() => windows[0]!.emitRenderProcessGone()).not.toThrow()
+
+    expect(onRendererProcessGone).toHaveBeenCalledWith('main')
+    expect(log).toHaveBeenCalledWith('renderer-process-gone-handler-failed:main')
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private renderer crash detail')
+  })
+
   it('exposes only the live loaded renderer identities after crash recovery', async () => {
     const { manager, windows } = createHarness()
     await manager.createWindows()
