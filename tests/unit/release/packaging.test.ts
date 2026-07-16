@@ -15,6 +15,7 @@ describe('Windows release contract', () => {
     }
 
     expect(Object.keys(packageJson.dependencies)).toEqual(['zod'])
+    expect(packageJson.devDependencies['@electron/asar']).toBe('3.4.1')
     for (const bundled of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom']) {
       expect(packageJson.devDependencies[bundled]).toBeTypeOf('string')
     }
@@ -24,6 +25,14 @@ describe('Windows release contract', () => {
         'node scripts/verify-packaged-resources.mjs release/win-unpacked',
       )
     }
+
+    const viteConfig = read('electron.vite.config.ts')
+    const verifier = read('scripts/verify-packaged-resources.mjs')
+    expect(viteConfig).toContain("externalDependencyInventory('main')")
+    expect(viteConfig).toContain("externalDependencyInventory('preload')")
+    expect(verifier).toContain("out/main/external-dependencies.json")
+    expect(verifier).toContain("out/preload/external-dependencies.json")
+    expect(verifier).not.toContain('.matchAll(')
   })
 
   it('offers a visible, unchecked desktop-shortcut choice and removes its shortcut on uninstall', () => {

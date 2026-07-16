@@ -11,6 +11,7 @@ import { _electron as electron } from '@playwright/test'
 
 import { verifyPreparedAssets } from './verify-model.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
+import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 
@@ -194,7 +195,9 @@ export async function verifyPackagedResources(input) {
   const entries = listPackage(asarPath)
   for (const required of [
     '\\out\\main\\index.js',
+    '\\out\\main\\external-dependencies.json',
     '\\out\\preload\\index.js',
+    '\\out\\preload\\external-dependencies.json',
     '\\out\\renderer\\index.html',
     '\\out\\renderer\\audio-capture-worklet.js',
     '\\package.json',
@@ -210,12 +213,15 @@ export async function verifyPackagedResources(input) {
   if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['zod'])) {
     fail('packaged dependency manifest is not minimal')
   }
-  const main = asarText(asarPath, 'out/main/index.js')
-  const preload = asarText(asarPath, 'out/preload/index.js')
-  const externalImports = [...main.matchAll(/require\("([^"]+)"\)/g), ...preload.matchAll(/require\("([^"]+)"\)/g)]
-    .map((match) => match[1])
-    .filter((name) => name !== 'electron' && name !== 'zod' && !name.startsWith('node:'))
-  if (externalImports.length > 0) fail(`unexpected external import: ${externalImports.join(', ')}`)
+  const externalInventories = {
+    main: JSON.parse(asarText(asarPath, 'out/main/external-dependencies.json')),
+    preload: JSON.parse(asarText(asarPath, 'out/preload/external-dependencies.json')),
+  }
+  try {
+    verifyExternalDependencyInventories(externalInventories, roots)
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
+  }
 
   const worklet = asarText(asarPath, 'out/renderer/audio-capture-worklet.js')
   if (!worklet.includes('talktype-audio-capture')) fail('packaged audio worklet is invalid')

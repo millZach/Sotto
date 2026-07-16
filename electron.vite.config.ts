@@ -6,6 +6,36 @@ import type { Plugin } from 'vite'
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.TALKTYPE_VISUAL_PREVIEW === '1' ? '1' : '0'
 
+function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
+  return {
+    name: `talktype-${scope}-external-dependency-inventory`,
+    generateBundle(_options, bundle) {
+      const outputFiles = new Set(Object.keys(bundle))
+      const imports = new Set<string>()
+      const dynamicImports = new Set<string>()
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue
+        for (const specifier of output.imports) {
+          if (!outputFiles.has(specifier)) imports.add(specifier)
+        }
+        for (const specifier of output.dynamicImports) {
+          if (!outputFiles.has(specifier)) dynamicImports.add(specifier)
+        }
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'external-dependencies.json',
+        source: `${JSON.stringify({
+          version: 1,
+          scope,
+          imports: [...imports].sort(),
+          dynamicImports: [...dynamicImports].sort(),
+        }, null, 2)}\n`,
+      })
+    },
+  }
+}
+
 function bundledDependencyInventory(): Plugin {
   return {
     name: 'talktype-bundled-dependency-inventory',
@@ -36,11 +66,14 @@ function bundledDependencyInventory(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), externalDependencyInventory('main')],
   },
   preload: {
     // Sandboxed preload scripts cannot resolve arbitrary node_modules at runtime.
-    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
+    plugins: [
+      externalizeDepsPlugin({ exclude: ['zod'] }),
+      externalDependencyInventory('preload'),
+    ],
   },
   renderer: {
     plugins: [bundledDependencyInventory()],

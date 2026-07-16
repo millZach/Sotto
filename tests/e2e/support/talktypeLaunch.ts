@@ -1,9 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 
+import { requireOwnedE2EProfile } from '../../../scripts/e2e-profile-policy.mjs'
 import type { E2EScenario } from '../../../src/shared/e2e'
 
 export interface LaunchedTalkType {
@@ -31,18 +32,8 @@ export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<
   }).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
-function assertOwnedProfile(path: string): void {
-  const absolute = resolve(path)
-  const temporaryRoot = resolve(tmpdir())
-  if (
-    dirname(absolute).toLocaleLowerCase() !== temporaryRoot.toLocaleLowerCase() ||
-    !/^talktype-e2e-[A-Za-z0-9_-]+$/.test(basename(absolute))
-  ) throw new Error('Refusing to remove an unsafe E2E profile path.')
-}
-
 async function removeOwnedProfile(path: string): Promise<void> {
-  assertOwnedProfile(path)
-  await rm(path, { recursive: true, force: true })
+  await rm(requireOwnedE2EProfile(path), { recursive: true, force: true })
 }
 
 const defaultDependencies: LaunchDependencies = {
