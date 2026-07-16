@@ -108,6 +108,7 @@ export interface AppActions {
   searchHistory(query: string): Promise<boolean>
   deleteHistory(id: string): Promise<boolean>
   clearHistory(): Promise<boolean>
+  copyHistory(text: string): Promise<boolean>
   getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
   listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
   installModel(request: ModelInstallRequest): ReturnType<TalkTypeBridge['installModel']>
@@ -461,6 +462,29 @@ export function AppProvider({
         await bridge.clearHistory()
         return []
       })
+    },
+    copyHistory: async (text) => {
+      if (bridge === undefined || activeGenerationRef.current === 0) return false
+      const current = settingsRef.current
+      if (current === null || text.trim().length === 0) return false
+      const generation = activeGenerationRef.current
+      try {
+        const result = await bridge.deliverOutput({
+          text,
+          autoPaste: false,
+          pasteDelayMs: current.pasteDelayMs,
+        })
+        if (!isCurrentGeneration(generation)) return false
+        if (result === 'copied') {
+          setFailure(null)
+          return true
+        }
+        setFailure('APP_ACTION_FAILED')
+        return false
+      } catch {
+        if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
+        return false
+      }
     },
     getModelStatus: async (preset) => {
       if (bridge === undefined) return UNAVAILABLE

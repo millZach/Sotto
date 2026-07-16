@@ -1,4 +1,4 @@
-import React, { type ButtonHTMLAttributes, type ReactNode } from 'react'
+import React, { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
@@ -8,14 +8,14 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly children: ReactNode
 }
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant = 'primary',
   iconOnly = false,
   className = '',
   type = 'button',
   children,
   ...props
-}: ButtonProps): ReactNode {
+}, ref): ReactNode {
   if (iconOnly && !props['aria-label']) {
     throw new Error('Icon-only buttons require an aria-label.')
   }
@@ -28,5 +28,5 @@ export function Button({
     className,
   ].filter(Boolean).join(' ')
 
-  return <button {...props} type={type} className={classes}>{children}</button>
-}
+  return <button ref={ref} {...props} type={type} className={classes}>{children}</button>
+})

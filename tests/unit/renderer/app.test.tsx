@@ -173,13 +173,47 @@ describe('TalkType application onboarding integration', () => {
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
   })
 
-  it('shows only a minimal ready shell after onboarding is already complete', async () => {
+  it('shows the complete management dashboard after onboarding is already complete', async () => {
     renderApp(createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /ready to dictate/i })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible())
     expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
+  })
+
+  it('navigates the management shell and copies History through the trusted bridge without auto-paste', async () => {
+    const user = userEvent.setup()
+    const deliverOutput = vi.fn(async () => 'copied' as const)
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, pasteDelayMs: 275 })),
+      listHistory: vi.fn(async () => [{ id: 'one', text: 'trusted local transcript', createdAt: 1, durationMs: 10, language: 'en', modelPreset: 'balanced' as const }]),
+      deliverOutput,
+    })
+    renderApp(bridge)
+    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await user.click(screen.getByRole('link', { name: 'History' }))
+    await user.click(screen.getByRole('button', { name: /copy trusted local transcript/i }))
+    expect(deliverOutput).toHaveBeenCalledWith({ text: 'trusted local transcript', autoPaste: false, pasteDelayMs: 275 })
+  })
+
+  it('minimizes natively and closes only to the tray without quitting', async () => {
+    const user = userEvent.setup()
+    const minimizeApp = vi.fn(async () => undefined)
+    const hideApp = vi.fn(async () => undefined)
+    const quitApp = vi.fn(async () => undefined)
+    renderApp(createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      minimizeApp,
+      hideApp,
+      quitApp,
+    }))
+    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await user.click(screen.getByRole('button', { name: /minimize talktype/i }))
+    await user.click(screen.getByRole('button', { name: /close talktype to tray/i }))
+    expect(minimizeApp).toHaveBeenCalledOnce()
+    expect(hideApp).toHaveBeenCalledOnce()
+    expect(quitApp).not.toHaveBeenCalled()
   })
 
   it('persists onboarding through AppContext before navigating to the ready shell', async () => {
@@ -190,7 +224,7 @@ describe('TalkType application onboarding integration', () => {
 
     await completeReadySetup(user)
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true }))
-    await waitFor(() => expect(screen.getByRole('heading', { name: /ready to dictate/i })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible())
   })
 
   it('installs an optional model only after returned disclosure and explicit consent', async () => {

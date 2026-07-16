@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 
 import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
 import type { AppSettings, ModelPreset } from '../../shared/settings'
+import { AppShell } from './components/AppShell'
 import { Card } from './components/Card'
+import { HelpView } from './features/help/HelpView'
+import { HistoryView } from './features/history/HistoryView'
+import { HomeView } from './features/home/HomeView'
 import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
 import {
   BrowserMicrophoneTest,
@@ -10,6 +14,7 @@ import {
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
 import { useApp } from './state/AppContext'
+import { SettingsView } from './features/settings/SettingsView'
 
 export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
@@ -168,6 +173,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     }
   }, [app.modelStatuses.balanced])
 
+  useEffect(() => {
+    if (
+      app.status !== 'ready' ||
+      app.settings === null ||
+      !app.settings.onboardingComplete ||
+      app.navigation === 'onboarding'
+    ) return
+    void app.actions.getModelStatus(app.settings.modelPreset)
+  }, [app.actions, app.navigation, app.settings, app.status])
+
   if (app.status === 'loading') {
     return <main className="app-loading" aria-busy="true"><p role="status">Preparing TalkType...</p></main>
   }
@@ -208,13 +223,68 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     )
   }
 
+  const navigation = app.navigation
+  const statusText = app.failure !== null
+    ? 'A local operation needs attention'
+    : app.dictation.status === 'listening'
+      ? 'Listening - press the shortcut again to finish'
+      : app.dictation.status === 'processing'
+        ? 'Transcribing locally'
+        : 'Ready for private dictation'
+
+  let view: ReactNode
+  switch (navigation) {
+    case 'history':
+      view = <HistoryView
+        entries={app.history}
+        enabled={app.settings.historyEnabled}
+        status={app.historyStatus}
+        onCopy={app.actions.copyHistory}
+        onDelete={app.actions.deleteHistory}
+        onClear={app.actions.clearHistory}
+      />
+      break
+    case 'settings':
+      view = <SettingsView
+        settings={app.settings}
+        modelStatuses={app.modelStatuses}
+        onUpdateSettings={app.actions.updateSettings}
+        onReplaceHotkey={app.actions.replaceHotkey}
+        onSetStartup={app.actions.setStartup}
+        onResetSettings={app.actions.resetSettings}
+        onClearHistory={app.actions.clearHistory}
+        onGetModelStatus={app.actions.getModelStatus}
+        onListModelDisclosures={app.actions.listModelDisclosures}
+        onInstallModel={app.actions.installModel}
+        onRemoveModel={app.actions.removeModel}
+      />
+      break
+    case 'help':
+      view = <HelpView shortcut={app.settings.hotkey} />
+      break
+    default:
+      view = <HomeView
+        settings={app.settings}
+        dictation={app.dictation}
+        modelStatus={app.modelStatuses[app.settings.modelPreset]}
+        entries={app.history}
+        historyStatus={app.historyStatus}
+        onStart={app.actions.start}
+        onStop={app.actions.stop}
+        onOpenHistory={() => app.actions.navigate('history')}
+        onOpenSettings={() => app.actions.navigate('settings')}
+      />
+  }
+
   return (
-    <main className="app-ready-shell">
-      <Card className="app-ready-shell__card">
-        <p className="onboarding-eyebrow">TalkType</p>
-        <h1>Ready to dictate</h1>
-        <p>Press {app.settings.hotkey} anywhere to start. Your full dashboard is next.</p>
-      </Card>
-    </main>
+    <AppShell
+      navigation={navigation}
+      statusText={statusText}
+      onNavigate={app.actions.navigate}
+      onMinimize={app.actions.minimizeApp}
+      onClose={app.actions.hideApp}
+    >
+      {view}
+    </AppShell>
   )
 }
