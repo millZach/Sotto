@@ -827,7 +827,7 @@ git commit -m "feat: orchestrate global dictation from capture to output"
 - Create: `src/renderer/src/App.tsx`
 - Modify: `src/renderer/src/main.tsx`
 
-- [ ] **Step 1: Write failing component and onboarding tests**
+- [x] **Step 1: Write failing component and onboarding tests**
 
 ```tsx
 // tests/unit/renderer/onboarding.test.tsx
@@ -851,21 +851,21 @@ describe('Onboarding', () => {
 
 Design-system tests prove buttons have visible focus classes, icon-only controls require accessible labels, toggles expose checked state, fields link labels/descriptions/errors, and reduced motion disables decorative transitions.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npx vitest run tests/unit/renderer/designSystem.test.tsx tests/unit/renderer/onboarding.test.tsx`
 
 Expected: FAIL because design-system and onboarding components do not exist.
 
-- [ ] **Step 3: Implement tokens and accessible primitives**
+- [x] **Step 3: Implement tokens and accessible primitives**
 
 Define complete light and dark custom properties for canvas, surface, elevated surface, text, muted text, border, primary, primary hover, cyan activity, success, warning, error, focus ring, shadows, and radii. System theme follows `prefers-color-scheme`; `[data-theme='light']` and `[data-theme='dark']` override it. Use a system font stack, 14–16 px body scale, 44 px minimum interactive height, and a global `:focus-visible` ring. A reduced-motion media query sets transition and animation duration to 1 ms.
 
-- [ ] **Step 4: Implement the four-step onboarding**
+- [x] **Step 4: Implement the four-step onboarding**
 
 Step 1 states that transcription is local, free, accountless, and telemetry-free. Step 2 requests microphone access and shows a live level meter plus Windows recovery instructions. Step 3 verifies the bundled Balanced model and explains optional model-download metadata before exposing Fast/Accurate actions. Step 4 shows the active shortcut and provides a safe paste test field. Back/Continue retain progress; Finish remains disabled until microphone and model are ready; completion persists through settings.
 
-- [ ] **Step 5: Verify GREEN and keyboard flow**
+- [x] **Step 5: Verify GREEN and keyboard flow**
 
 Run:
 
@@ -876,7 +876,7 @@ npm run typecheck
 
 Expected: all onboarding and design-system tests pass without accessibility query failures.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/renderer/src/styles src/renderer/src/components src/renderer/src/features/onboarding src/renderer/src/App.tsx src/renderer/src/main.tsx tests/unit/renderer
