@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import { APP_NAME } from '../../shared/constants'
+import { App } from './App'
 import { AppProvider } from './state/AppContext'
+import './styles/global.css'
 
 const rootElement = document.getElementById('root')
 
@@ -13,9 +14,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <AppProvider>
-      <main>
-        <h1>{APP_NAME}</h1>
-      </main>
+      <App />
     </AppProvider>
   </StrictMode>,
 )
