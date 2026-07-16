@@ -2,7 +2,7 @@
 
 Date: 2026-07-16  
 Build-input revision: `CAD61094C0E1F43FD233EDDBE6432932D57DA196D809FB0A5DB6ED4D51EA9FCF`  
-Status: Automated, packaged, and final Windows gates complete; independent adversarial recheck pending.
+Status: Complete; independent adversarial recheck approved with no unresolved Critical, High, or Medium finding.
 
 ## Final automated release gate
 
@@ -36,7 +36,7 @@ Build provenance v2 records 17 compiled artifacts, exact byte counts and SHA-256
 | 9 | Recent transcripts can be searched, copied, and deleted when history is enabled. | Repository, IPC, renderer, and E2E coverage; disabled-history no-read/no-write privacy regressions. | Pass. |
 | 10 | Failure states remain usable and provide recovery. | Permission, silence, model, paste, hotkey conflict, renderer loss, WebGPU→WASM, mic removal, corrupt-store notice, and model tamper tests; widget/UI error captures. | Pass. |
 | 11 | Unit, integration, and E2E cover critical state/native behavior. | 814 coverage tests, 25 E2E, native paste integrations, package/security attacks, 83.57% statement coverage. | Pass. |
-| 12 | Design and adversarial subagents review the running app and all Critical/High findings are resolved. | Approved Task 14 review; Task 15 initial attack; High fixes `ae2ce66`, `119fd90`; fresh final artifacts and Windows evidence. Final adversarial recheck pending. | Pending final recheck. |
+| 12 | Design and adversarial subagents review the running app and all Critical/High findings are resolved. | Approved Task 14 review; Task 15 initial attack and TDD fixes; fresh final artifacts/Windows evidence; 218/218 independent closure tests and final APPROVED verdict. | Pass. |
 
 ## Adversarial finding closure
 
@@ -68,7 +68,7 @@ Build provenance v2 records 17 compiled artifacts, exact byte counts and SHA-256
 | Third-party notices | `release/win-unpacked/resources/THIRD_PARTY_NOTICES.md`, 28,605 bytes, SHA-256 `8E65220A0F030F93C28133C7623FC4873D47F614EEF833F2FC11E39570E23D93`. | Present and inventory-verified. |
 | Automated tests/coverage | Vitest coverage report and Playwright E2E/design suites. | Present and green. |
 | Design screenshots | `artifacts/design/app-review/manifest.json` plus 102 app-review and 10 widget tuples. | Present and independently approved. |
-| Verification record | This document and `docs/qa/adversarial-review.md`. | Present; final adversarial verdict pending. |
+| Verification record | This document and `docs/qa/adversarial-review.md`. | Present and independently approved. |
 
 ## Direct Windows observations and limitations
 
@@ -89,4 +89,4 @@ Limitations: Word and an elevated target were not exercised; startup mutation an
 
 ## Final adversarial verdict
 
-Pending.
+**APPROVED.** The independent recheck found no unresolved Critical, High, or Medium issue. It reran 218 focused closures, hotkey-conflict E2E, native and Edge paste integrations, package provenance/equality, and local Balanced/WASM smoke; all passed. Residual Low limitations are listed in the adversarial report and do not contradict any first-release success criterion.

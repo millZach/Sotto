@@ -1167,7 +1167,7 @@ Expected: every command exits 0, coverage includes all critical domain/native se
 
 In `docs/verification/2026-07-11-talktype-verification.md`, map every numbered success criterion and every delivery artifact from the approved specification to authoritative evidence: test name/output, file path, screenshot, artifact hash, or recorded manual observation. Mark any missing or indirect evidence as incomplete and continue work until it is proven.
 
-- [ ] **Step 7: Request adversarial recheck and commit**
+- [x] **Step 7: Request adversarial recheck and commit**
 
 Ask the adversarial subagent to re-run critical/high reproductions and audit the final evidence document. It must explicitly state that no critical/high findings remain and identify any residual limitations.
 

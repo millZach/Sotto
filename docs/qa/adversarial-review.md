@@ -2,7 +2,7 @@
 
 Date: 2026-07-16  
 Scope: Task 15 hostile-path, privacy, native-runtime, and release audit  
-Status: Accepted Critical/High/Medium fixes, clean automated release gate, and final Windows observations complete; independent adversarial recheck pending.
+Status: Complete; independent adversarial recheck approved at `ea46ef6` with no unresolved Critical, High, or Medium finding.
 
 ## Method
 
@@ -111,6 +111,10 @@ Not yet exercised and not inferred as passes: a unique real spoken transcript, g
 
 Manual limitations: human speech was not used (the acoustic source was synthetic); Microsoft Word, an elevated target, startup mutation, sleep/wake, and multi-monitor hardware were unavailable or intentionally not exercised. The release is unsigned. These are recorded limitations, not inferred passes.
 
-## Recheck
+## Independent recheck verdict
 
-Pending independent adversarial recheck of the fixes and this evidence. No known Critical or High code/release finding remains.
+The final adversarial rechecker reran 218 focused closure tests, the hotkey-conflict Electron workflow, native TextBox and real Edge `SendInput` integrations, current-output/build-input provenance, installer extraction/equality, local Balanced/WASM startup, model/runtime/notices validation, and production E2E rejection. It independently recomputed the release-input digest and matched every documented artifact hash. No unresolved Critical, High, or Medium finding remains.
+
+Final verdict: **APPROVED**.
+
+Residual Low limitations remain as documented: unsigned binaries; arbitrary custom/elevated applications may ignore synthetic input but retain clipboard fallback; a same-privilege attacker capable of restoring all file identity/timestamp metadata is outside model-cache tamper detection; and the unavailable manual cases were human speech, Word, elevated target, startup mutation, sleep/wake, and physical multi-monitor hardware. Proxy-blocked HTTP(S), rather than complete OS network disconnection, supplied the manual offline evidence.
