@@ -22,6 +22,7 @@ import type {
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import type { HistoryEntry } from '../../../shared/history'
 import type { AppSettings, ModelPreset, SettingsPatch } from '../../../shared/settings'
+import type { RecoveryNotice } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
 import { SoundCuePlayer } from '../audio/soundCues'
 import {
@@ -128,6 +129,7 @@ export interface AppContextValue {
   readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
   readonly dictation: DictationState
   readonly navigation: AppNavigation
+  readonly recoveryNotices: readonly RecoveryNotice[]
   readonly actions: AppActions
 }
 
@@ -165,6 +167,7 @@ export function AppProvider({
   const [modelStatuses, setModelStatuses] = useState<Partial<Record<ModelPreset, ModelStatus>>>({})
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
+  const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
 
   const settingsRef = useRef<AppSettings | null>(null)
   const controllerRef = useRef<AppController | null>(null)
@@ -175,6 +178,14 @@ export function AppProvider({
   const modelStatusVersionRef = useRef<Partial<Record<ModelPreset, number>>>({})
   const settingsTailRef = useRef<Promise<void>>(Promise.resolve())
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
+
+  const commitRecoveryNotice = useCallback((notice: RecoveryNotice): void => {
+    setRecoveryNotices((current) =>
+      current.some((candidate) => candidate.code === notice.code)
+        ? current
+        : [...current, notice],
+    )
+  }, [])
 
   const isCurrentGeneration = useCallback(
     (generation: number): boolean => activeGenerationRef.current === generation,
@@ -256,6 +267,7 @@ export function AppProvider({
     let unsubscribeCommands: (() => void) | null = null
     let unsubscribeModelStatus: (() => void) | null = null
     let unsubscribeSettings: (() => void) | null = null
+    let unsubscribeRecoveryNotices: (() => void) | null = null
     setStatus('loading')
     setHistoryStatus('loading')
     setFailure(null)
@@ -265,6 +277,7 @@ export function AppProvider({
     setModelStatuses({})
     modelStatusVersionRef.current = {}
     setDictation(initialDictationState)
+    setRecoveryNotices([])
 
     if (bridge === undefined) {
       setStatus('unavailable')
@@ -276,6 +289,20 @@ export function AppProvider({
     }
 
     const initialHistoryVersion = ++historyVersionRef.current
+    try {
+      unsubscribeRecoveryNotices = bridge.onRecoveryNotice((notice) => {
+        if (isCurrentGeneration(generation)) commitRecoveryNotice(notice)
+      })
+    } catch {
+      // Retained notices remain available through the explicit snapshot below.
+    }
+    void bridge.listRecoveryNotices().then(
+      (notices) => {
+        if (!isCurrentGeneration(generation)) return
+        for (const notice of notices) commitRecoveryNotice(notice)
+      },
+      () => undefined,
+    )
     try {
       unsubscribeModelStatus = bridge.onModelStatus((modelStatus) => {
         if (!isCurrentGeneration(generation)) return
@@ -406,11 +433,13 @@ export function AppProvider({
       unsubscribeSettings = null
       try { unsubscribeModelStatus?.() } catch { /* listener is already unreachable */ }
       unsubscribeModelStatus = null
+      try { unsubscribeRecoveryNotices?.() } catch { /* listener is already unreachable */ }
+      unsubscribeRecoveryNotices = null
       if (controllerRef.current === localController) controllerRef.current = null
       try { localController?.dispose() } catch { /* resources are independently guarded */ }
       localController = null
     }
-  }, [bridge, commitHistory, commitSettings, createController, isCurrentGeneration])
+  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, createController, isCurrentGeneration])
 
   const actions = useMemo<AppActions>(() => ({
     start: () => invokeController(controllerRef.current, (controller) => controller.start()),
@@ -565,8 +594,9 @@ export function AppProvider({
     modelStatuses,
     dictation,
     navigation,
+    recoveryNotices,
     actions,
-  }), [actions, dictation, failure, history, historyStatus, modelStatuses, navigation, settings, status])
+  }), [actions, dictation, failure, history, historyStatus, modelStatuses, navigation, recoveryNotices, settings, status])
 
   return createElement(AppContext.Provider, { value }, children)
 }

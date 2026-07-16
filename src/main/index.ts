@@ -34,8 +34,8 @@ import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
-import { HistoryRepository } from './storage/historyRepository'
-import { SettingsRepository } from './storage/settingsRepository'
+import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
+import { createStorageRepositories } from './storage/repositories'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
 import { StartupService } from './startup/startupService'
 import {
@@ -60,6 +60,7 @@ import {
 import {
   DICTATION_COMMAND,
   MODEL_STATUS,
+  RECOVERY_NOTICE,
   SETTINGS_CHANGED,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
@@ -295,8 +296,8 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
-  const settings = new SettingsRepository(join(userDataPath, 'settings.json'))
-  const history = new HistoryRepository(join(userDataPath, 'history.json'))
+  const recoveryNotices = new RecoveryNoticeCenter()
+  const { settings, history } = createStorageRepositories(userDataPath, recoveryNotices)
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -508,8 +509,20 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         models: createModelIpcService(models, (status) => {
           windows.sendToMain(MODEL_STATUS, status)
         }),
+        recoveryNotices: {
+          list: () => recoveryNotices.list(),
+        },
       })
-      if (e2eState === null) return cleanup
+      const unsubscribeRecoveryNotices = recoveryNotices.subscribe((notice) => {
+        void messageDelivery.sendToMain(RECOVERY_NOTICE, notice).then((delivered) => {
+          if (!delivered) logOperational('native-main-send-failed')
+        })
+      })
+      const cleanupNativeIpc = (): void => {
+        unsubscribeRecoveryNotices()
+        cleanup()
+      }
+      if (e2eState === null) return cleanupNativeIpc
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
           throw new Error('E2E_SENDER_REJECTED')
@@ -531,7 +544,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       return () => {
         ipcMain.removeHandler(E2E_SNAPSHOT_CHANNEL)
         ipcMain.removeHandler(E2E_TRIGGER_SHORTCUT_CHANNEL)
-        cleanup()
+        cleanupNativeIpc()
       }
     },
     log: logOperational,

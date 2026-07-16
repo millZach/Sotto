@@ -1,9 +1,11 @@
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings'
+import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { AtomicJsonStore } from './atomicJsonStore'
 
 export interface SettingsRepositoryOptions {
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
+  onRecovery?: (notice: RecoveryNotice) => void
 }
 
 export class SettingsRepository {
@@ -18,6 +20,8 @@ export class SettingsRepository {
         parseSettings,
         () => parseSettings(DEFAULT_SETTINGS),
         options.now ?? Date.now,
+        undefined,
+        () => options.onRecovery?.({ code: 'SETTINGS_RECOVERED' }),
       )
   }
 

@@ -177,4 +177,28 @@ describe('SettingsRepository', () => {
     expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(false)
   })
+
+  it('reports one sanitized settings recovery after preserving syntax-corrupt bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-settings-repository-'))
+    roots.push(root)
+    const filePath = join(root, 'settings.json')
+    const corruptBytes = Buffer.from('{"microphoneId":"private-device",', 'utf8')
+    const recoveries: unknown[] = []
+    await writeFile(filePath, corruptBytes)
+    const repository = new SettingsRepository(filePath, {
+      now: () => 1_725_000_000_021,
+      onRecovery: (recovery) => recoveries.push(recovery),
+    })
+
+    await expect(repository.get()).resolves.toEqual(DEFAULT_SETTINGS)
+
+    const backups = (await readdir(dirname(filePath))).filter((name) =>
+      name.startsWith('settings.json.corrupt-1725000000021-'),
+    )
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
+    expect(recoveries).toEqual([{ code: 'SETTINGS_RECOVERED' }])
+    expect(JSON.stringify(recoveries)).not.toContain(root)
+    expect(JSON.stringify(recoveries)).not.toContain('private-device')
+  })
 })

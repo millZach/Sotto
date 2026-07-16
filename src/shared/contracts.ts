@@ -4,6 +4,7 @@ import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
 import type { TalkTypeE2EBridge } from './e2e'
+import type { RecoveryNotice } from './recoveryNotice'
 
 export type Unsubscribe = () => void
 
@@ -224,6 +225,9 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface TalkTypeBridge {
+  listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
+  onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
+
   getSettings(): Promise<AppSettings>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
   resetSettings(): Promise<AppSettings>

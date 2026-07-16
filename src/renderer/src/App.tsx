@@ -15,6 +15,12 @@ import {
 } from './features/onboarding/microphoneTest'
 import { useApp } from './state/AppContext'
 import { SettingsView } from './features/settings/SettingsView'
+import { ToastRegion, type ToastMessage } from './components/ToastRegion'
+
+const recoveryMessages = {
+  SETTINGS_RECOVERED: 'TalkType restored default settings after a local settings file could not be read. The original file was preserved.',
+  HISTORY_RECOVERED: 'TalkType started with an empty history after its local history file could not be read. The original file was preserved.',
+} as const
 
 export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
@@ -199,27 +205,34 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   }
 
   if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
+    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => ({
+      id: notice.code,
+      message: recoveryMessages[notice.code],
+    }))
     return (
-      <Onboarding
-        microphoneState={microphoneState}
-        microphoneLevel={microphoneLevel}
-        modelState={modelState}
-        shortcut={app.settings.hotkey}
-        {...(disclosures === undefined ? {} : { disclosures })}
-        onRequestMicrophone={requestMicrophone}
-        onStopMicrophone={stopMicrophone}
-        onRetryModel={checkModel}
-        onInstallModel={async (preset: Extract<ModelPreset, 'fast' | 'accurate'>) => {
-          const result = await app.actions.installModel({ preset, consent: true })
-          if (!result.ok) throw new Error('MODEL_INSTALL_UNAVAILABLE')
-        }}
-        onComplete={async () => {
-          await stopMicrophone()
-          const saved = await app.actions.updateSettings({ onboardingComplete: true })
-          if (saved) app.actions.navigate('home')
-          return saved
-        }}
-      />
+      <>
+        <Onboarding
+          microphoneState={microphoneState}
+          microphoneLevel={microphoneLevel}
+          modelState={modelState}
+          shortcut={app.settings.hotkey}
+          {...(disclosures === undefined ? {} : { disclosures })}
+          onRequestMicrophone={requestMicrophone}
+          onStopMicrophone={stopMicrophone}
+          onRetryModel={checkModel}
+          onInstallModel={async (preset: Extract<ModelPreset, 'fast' | 'accurate'>) => {
+            const result = await app.actions.installModel({ preset, consent: true })
+            if (!result.ok) throw new Error('MODEL_INSTALL_UNAVAILABLE')
+          }}
+          onComplete={async () => {
+            await stopMicrophone()
+            const saved = await app.actions.updateSettings({ onboardingComplete: true })
+            if (saved) app.actions.navigate('home')
+            return saved
+          }}
+        />
+        <ToastRegion messages={recoveryToasts} />
+      </>
     )
   }
 
@@ -277,14 +290,20 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   }
 
   return (
-    <AppShell
-      navigation={navigation}
-      statusText={statusText}
-      onNavigate={app.actions.navigate}
-      onMinimize={app.actions.minimizeApp}
-      onClose={app.actions.hideApp}
-    >
-      {view}
-    </AppShell>
+    <>
+      <AppShell
+        navigation={navigation}
+        statusText={statusText}
+        onNavigate={app.actions.navigate}
+        onMinimize={app.actions.minimizeApp}
+        onClose={app.actions.hideApp}
+      >
+        {view}
+      </AppShell>
+      <ToastRegion messages={app.recoveryNotices.map((notice) => ({
+        id: notice.code,
+        message: recoveryMessages[notice.code],
+      }))} />
+    </>
   )
 }

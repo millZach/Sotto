@@ -15,6 +15,10 @@ type ReadResult<T> =
   | { status: 'missing' }
   | { status: 'invalid' }
 
+export interface AtomicJsonRecoveryEvent {
+  readonly kind: 'corrupt-json-recovered'
+}
+
 export class AtomicJsonStore<T> {
   private operationTail: Promise<void> = Promise.resolve()
 
@@ -24,6 +28,7 @@ export class AtomicJsonStore<T> {
     private readonly createDefault: () => T,
     private readonly now: () => number = Date.now,
     private readonly createId: () => string = randomUUID,
+    private readonly onRecovery?: (event: AtomicJsonRecoveryEvent) => void,
   ) {}
 
   read(): Promise<T> {
@@ -50,6 +55,11 @@ export class AtomicJsonStore<T> {
     }
     if (result.status === 'invalid' && recover) {
       await this.backUpCorruptFile()
+      try {
+        this.onRecovery?.({ kind: 'corrupt-json-recovered' })
+      } catch {
+        // A presentation-only notice cannot make durable recovery fail.
+      }
     }
 
     return this.createDefault()

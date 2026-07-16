@@ -41,6 +41,8 @@ import {
   MODEL_INSTALL,
   MODEL_LIST_DISCLOSURES,
   OUTPUT_DELIVER,
+  RECOVERY_NOTICE,
+  RECOVERY_NOTICE_LIST,
   SETTINGS_CHANGED,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -255,9 +257,11 @@ describe('typed preload bridge', () => {
         'installModel',
         'listModelDisclosures',
         'listHistory',
+        'listRecoveryNotices',
         'minimizeApp',
         'onDictationCommand',
         'onModelStatus',
+        'onRecoveryNotice',
         'onSettingsChanged',
         'publishWidgetState',
         'quitApp',
@@ -326,9 +330,9 @@ describe('typed preload bridge', () => {
       ['electron', '--talktype-renderer-role=main'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktype', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(2)
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(3)
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
-      [DICTATION_COMMAND, SETTINGS_CHANGED].sort(),
+      [DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
@@ -485,6 +489,31 @@ describe('typed preload bridge', () => {
     expect(listener).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, theme: 'light' })
     unsubscribe()
     unsubscribe()
+  })
+
+  it('strictly buffers safe recovery codes and lists sanitized retained notices', async () => {
+    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const recoveryEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === RECOVERY_NOTICE,
+    )?.[1]
+    recoveryEvent?.({}, { code: 'SETTINGS_RECOVERED' })
+    recoveryEvent?.({}, { code: 'SETTINGS_RECOVERED', path: 'C:\\private\\settings.json' })
+    recoveryEvent?.({}, { code: 'HISTORY_RECOVERED', transcript: 'private words' })
+    const listener = vi.fn()
+    const unsubscribe = bridge.onRecoveryNotice(listener)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith({ code: 'SETTINGS_RECOVERED' })
+    unsubscribe()
+
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce([
+      { code: 'SETTINGS_RECOVERED' },
+      { code: 'HISTORY_RECOVERED' },
+    ])
+    await expect(bridge.listRecoveryNotices()).resolves.toEqual([
+      { code: 'SETTINGS_RECOVERED' },
+      { code: 'HISTORY_RECOVERED' },
+    ])
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(RECOVERY_NOTICE_LIST)
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
@@ -701,9 +730,45 @@ describe('IPC validation and lifecycle', () => {
           APP_HIDE,
           APP_MINIMIZE,
           APP_QUIT,
+          RECOVERY_NOTICE_LIST,
         ].sort(),
       ),
     )
+  })
+
+  it('returns typed retained recovery notices to the trusted main renderer', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const list = vi.fn(() => [
+      { code: 'SETTINGS_RECOVERED' as const },
+      { code: 'HISTORY_RECOVERED' as const },
+    ])
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl },
+      ],
+      recoveryNotices: { list },
+    })
+
+    await expect(harness.ipc.invokeArgs(RECOVERY_NOTICE_LIST, [])).resolves.toEqual([
+      { code: 'SETTINGS_RECOVERED' },
+      { code: 'HISTORY_RECOVERED' },
+    ])
+    expect(list).toHaveBeenCalledOnce()
+  })
+
+  it('does not ask storage to read history when the authoritative setting disables it', async () => {
+    const harness = createIpcHarness()
+    harness.settings.get.mockResolvedValue({ ...DEFAULT_SETTINGS, historyEnabled: false })
+
+    await expect(harness.ipc.invokeArgs(HISTORY_LIST, [])).resolves.toEqual([])
+
+    expect(harness.history.list).toHaveBeenCalledWith({ enabled: false })
   })
 
   it('validates a settings patch before persistence and strips no fields silently', async () => {

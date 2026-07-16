@@ -60,7 +60,7 @@ describe('HistoryRepository', () => {
     expect(await repository.exists()).toBe(false)
   })
 
-  it('returns existing history without rewriting it when history is disabled', async () => {
+  it('does not expose or rewrite existing history when history is disabled', async () => {
     const { filePath, repository } = await createRepository()
     await repository.add(createEntry('1', 1), { enabled: true, retention: 'unlimited' })
     const beforeBytes = await readFile(filePath)
@@ -71,7 +71,7 @@ describe('HistoryRepository', () => {
       retention: 'unlimited',
     })
 
-    expect(entries.map((entry) => entry.id)).toEqual(['1'])
+    expect(entries).toEqual([])
     expect(await readFile(filePath)).toEqual(beforeBytes)
     expect((await stat(filePath)).ino).toBe(beforeStat.ino)
   })
@@ -91,7 +91,7 @@ describe('HistoryRepository', () => {
     options.enabled = true
     options.retention = 0
 
-    await expect(pending).resolves.toEqual([seededEntry])
+    await expect(pending).resolves.toEqual([])
     expect(await readFile(filePath)).toEqual(seededBytes)
   })
 
@@ -128,6 +128,28 @@ describe('HistoryRepository', () => {
     expect(await readdir(dirname(filePath))).toEqual(['history.json'])
     expect(await readFile(filePath)).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(true)
+  })
+
+  it('does not report or recover corrupt history while disabled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-history-repository-'))
+    roots.push(root)
+    const filePath = join(root, 'history.json')
+    const corruptBytes = Buffer.from('[{"text":"private disabled transcript"}', 'utf8')
+    const recoveries: unknown[] = []
+    await writeFile(filePath, corruptBytes)
+    const repository = new HistoryRepository(filePath, {
+      now: () => 1_725_000_000_022,
+      onRecovery: (recovery) => recoveries.push(recovery),
+    })
+
+    await expect(repository.add(createEntry('ignored', 1), {
+      enabled: false,
+      retention: 100,
+    })).resolves.toEqual([])
+
+    expect(recoveries).toEqual([])
+    expect(await readFile(filePath)).toEqual(corruptBytes)
+    expect(await readdir(root)).toEqual(['history.json'])
   })
 
   it('lists persisted entries newest first with an ascending id tie-break', async () => {
@@ -339,6 +361,28 @@ describe('HistoryRepository', () => {
     expect(backups).toHaveLength(1)
     expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
     expect(await repository.exists()).toBe(false)
+  })
+
+  it('reports one sanitized history recovery after preserving syntax-corrupt transcript bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'talktype-history-repository-'))
+    roots.push(root)
+    const filePath = join(root, 'history.json')
+    const corruptBytes = Buffer.from('[{"text":"private transcript content"}', 'utf8')
+    const recoveries: unknown[] = []
+    await writeFile(filePath, corruptBytes)
+    const repository = new HistoryRepository(filePath, {
+      now: () => 1_725_000_000_023,
+      onRecovery: (recovery) => recoveries.push(recovery),
+    })
+
+    await expect(repository.list()).resolves.toEqual([])
+
+    const backups = await recoverySiblingNames(filePath)
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(dirname(filePath), backups[0]!))).toEqual(corruptBytes)
+    expect(recoveries).toEqual([{ code: 'HISTORY_RECOVERED' }])
+    expect(JSON.stringify(recoveries)).not.toContain(root)
+    expect(JSON.stringify(recoveries)).not.toContain('private transcript content')
   })
 
   it('backs up a history array containing an invalid entry', async () => {

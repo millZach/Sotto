@@ -9,6 +9,7 @@ import {
   type HistoryEntry,
 } from '../../shared/history'
 import { AtomicJsonStore } from './atomicJsonStore'
+import type { RecoveryNotice } from '../../shared/recoveryNotice'
 
 const historySchema = z.array(historyEntrySchema)
 
@@ -19,6 +20,7 @@ function hasErrorCode(error: unknown, code: string): boolean {
 export interface HistoryRepositoryOptions {
   now?: () => number
   store?: AtomicJsonStore<HistoryEntry[]>
+  onRecovery?: (notice: RecoveryNotice) => void
 }
 
 export interface AddHistoryOptions {
@@ -76,10 +78,13 @@ export class HistoryRepository {
         (input) => historySchema.parse(input),
         () => [],
         options.now ?? Date.now,
+        undefined,
+        () => options.onRecovery?.({ code: 'HISTORY_RECOVERED' }),
       )
   }
 
-  async list(): Promise<HistoryEntry[]> {
+  async list(options: { readonly enabled: boolean } = { enabled: true }): Promise<HistoryEntry[]> {
+    if (!options.enabled) return []
     await this.mutationTail
     return cloneEntries(await this.readSorted())
   }
@@ -90,7 +95,7 @@ export class HistoryRepository {
 
     return this.enqueueMutation(async () => {
       if (!enabled) {
-        return cloneEntries(await this.peekSorted())
+        return []
       }
 
       const current = await this.readSorted()
@@ -102,8 +107,11 @@ export class HistoryRepository {
     })
   }
 
-  async search(query: string): Promise<HistoryEntry[]> {
-    const entries = await this.list()
+  async search(
+    query: string,
+    options: { readonly enabled: boolean } = { enabled: true },
+  ): Promise<HistoryEntry[]> {
+    const entries = await this.list(options)
     const normalizedQuery = query.trim().toLowerCase()
 
     if (normalizedQuery.length === 0) {
@@ -115,7 +123,11 @@ export class HistoryRepository {
     )
   }
 
-  delete(id: string): Promise<boolean> {
+  delete(
+    id: string,
+    options: { readonly enabled: boolean } = { enabled: true },
+  ): Promise<boolean> {
+    if (!options.enabled) return Promise.resolve(false)
     return this.enqueueMutation(async () => {
       const current = await this.readSorted()
       const remaining = current.filter((entry) => entry.id !== id)
@@ -147,10 +159,6 @@ export class HistoryRepository {
 
   private async readSorted(): Promise<HistoryEntry[]> {
     return sortEntries(await this.store.read())
-  }
-
-  private async peekSorted(): Promise<HistoryEntry[]> {
-    return sortEntries(await this.store.peek())
   }
 
   private async removeRecoverySiblings(): Promise<void> {

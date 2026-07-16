@@ -18,6 +18,7 @@ import {
   MODEL_LIST_DISCLOSURES,
   MODEL_REMOVE,
   OUTPUT_DELIVER,
+  RECOVERY_NOTICE_LIST,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -48,6 +49,7 @@ import {
   type SettingsPatch,
 } from '../../shared/settings'
 import type { RendererRole } from '../security'
+import type { RecoveryNotice } from '../../shared/recoveryNotice'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -151,13 +153,13 @@ export interface SettingsIpcService {
 }
 
 export interface HistoryIpcService {
-  list(): Promise<HistoryEntry[]>
+  list(options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
   add(
     entry: HistoryEntry,
     options: { readonly enabled: boolean; readonly retention: number | 'unlimited' },
   ): Promise<HistoryEntry[]>
-  search(query: string): Promise<HistoryEntry[]>
-  delete(id: string): Promise<boolean>
+  search(query: string, options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
+  delete(id: string, options: { readonly enabled: boolean }): Promise<boolean>
   clear(): Promise<void>
 }
 
@@ -197,6 +199,10 @@ export interface OutputIpcService {
   ): OutputOutcome | Promise<OutputOutcome>
 }
 
+export interface RecoveryNoticeIpcService {
+  list(): readonly RecoveryNotice[] | Promise<readonly RecoveryNotice[]>
+}
+
 export interface RegisterIpcDependencies {
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
@@ -207,6 +213,7 @@ export interface RegisterIpcDependencies {
   readonly dictation?: DictationIpcService
   readonly models?: ModelIpcService
   readonly output?: OutputIpcService
+  readonly recoveryNotices?: RecoveryNoticeIpcService
 }
 
 export class InvalidIpcPayloadError extends Error {
@@ -355,13 +362,19 @@ export function registerIpc(
   }
 
   try {
+    register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
+      dependencies.recoveryNotices?.list() ?? [],
+    )
     register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get())
     register(SETTINGS_UPDATE, settingsPatchSchema, 1, (patch) =>
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
 
-    register(HISTORY_LIST, noPayloadSchema, 0, () => dependencies.history.list())
+    register(HISTORY_LIST, noPayloadSchema, 0, async () => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.list({ enabled: settings.historyEnabled })
+    })
     register(HISTORY_ADD, historyEntrySchema.strict(), 1, async (entry) => {
       const settings = await dependencies.settings.get()
       return dependencies.history.add(entry, {
@@ -369,12 +382,14 @@ export function registerIpc(
         retention: settings.historyRetention,
       })
     })
-    register(HISTORY_SEARCH, historyQuerySchema, 1, (query) =>
-      dependencies.history.search(query),
-    )
-    register(HISTORY_DELETE, historyIdSchema, 1, (id) =>
-      dependencies.history.delete(id),
-    )
+    register(HISTORY_SEARCH, historyQuerySchema, 1, async (query) => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.search(query, { enabled: settings.historyEnabled })
+    })
+    register(HISTORY_DELETE, historyIdSchema, 1, async (id) => {
+      const settings = await dependencies.settings.get()
+      return dependencies.history.delete(id, { enabled: settings.historyEnabled })
+    })
     register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
 
     register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())

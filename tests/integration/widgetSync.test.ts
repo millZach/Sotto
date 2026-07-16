@@ -34,6 +34,8 @@ const OK = Object.freeze({ ok: true as const })
 
 function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
   return {
+    listRecoveryNotices: vi.fn(async () => []),
+    onRecoveryNotice: vi.fn(() => () => undefined),
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),
     updateSettings: vi.fn(async (patch) => ({ ...DEFAULT_SETTINGS, ...patch })),
     resetSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),

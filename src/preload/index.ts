@@ -21,6 +21,8 @@ import {
   MODEL_REMOVE,
   MODEL_STATUS,
   OUTPUT_DELIVER,
+  RECOVERY_NOTICE,
+  RECOVERY_NOTICE_LIST,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -40,6 +42,7 @@ import {
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
+import { recoveryNoticeSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
@@ -164,7 +167,17 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
     settingsChangedSchema,
     1,
   )
+  const onRecoveryNotice = createBufferedSubscription(
+    renderer,
+    RECOVERY_NOTICE,
+    recoveryNoticeSchema,
+    2,
+  )
   const bridge: TalkTypeBridge = {
+    listRecoveryNotices: () =>
+      invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
+    onRecoveryNotice,
+
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
     resetSettings: () => invokeParsed(renderer, SETTINGS_RESET, settingsSchema),

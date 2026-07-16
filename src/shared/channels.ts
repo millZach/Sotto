@@ -3,6 +3,9 @@ export const SETTINGS_UPDATE = 'talktype:settings:update' as const
 export const SETTINGS_RESET = 'talktype:settings:reset' as const
 export const SETTINGS_CHANGED = 'talktype:settings:changed' as const
 
+export const RECOVERY_NOTICE_LIST = 'talktype:recovery-notice:list' as const
+export const RECOVERY_NOTICE = 'talktype:recovery-notice:event' as const
+
 export const HISTORY_LIST = 'talktype:history:list' as const
 export const HISTORY_ADD = 'talktype:history:add' as const
 export const HISTORY_SEARCH = 'talktype:history:search' as const
@@ -39,6 +42,8 @@ export const IPC_CHANNELS = Object.freeze({
   settingsUpdate: SETTINGS_UPDATE,
   settingsReset: SETTINGS_RESET,
   settingsChanged: SETTINGS_CHANGED,
+  recoveryNoticeList: RECOVERY_NOTICE_LIST,
+  recoveryNotice: RECOVERY_NOTICE,
   historyList: HISTORY_LIST,
   historyAdd: HISTORY_ADD,
   historySearch: HISTORY_SEARCH,

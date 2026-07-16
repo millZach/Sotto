@@ -62,6 +62,8 @@ function deferred<Value>() {
 
 function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
   return {
+    listRecoveryNotices: vi.fn(async () => []),
+    onRecoveryNotice: vi.fn(() => () => undefined),
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),
     updateSettings: vi.fn(async (patch) => ({ ...DEFAULT_SETTINGS, ...patch })),
     resetSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),
@@ -139,6 +141,32 @@ afterEach(() => {
 })
 
 describe('TalkType application onboarding integration', () => {
+  it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
+    let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [
+        { code: 'SETTINGS_RECOVERED' },
+        { code: 'HISTORY_RECOVERED' },
+      ]),
+      onRecoveryNotice: vi.fn((listener) => {
+        recoveryListener = listener
+        return () => undefined
+      }),
+    })
+    renderApp(bridge)
+    act(() => recoveryListener?.({ code: 'SETTINGS_RECOVERED' }))
+
+    await waitFor(() => expect(screen.getAllByRole('status').filter((node) =>
+      node.classList.contains('tt-toast'),
+    )).toHaveLength(2))
+    expect(screen.getByText(/restored default settings/i)).toBeVisible()
+    expect(screen.getByText(/started with an empty history/i)).toBeVisible()
+    expect(document.body).not.toHaveTextContent('C:\\private\\settings.json')
+    expect(document.body).not.toHaveTextContent('private transcript content')
+    expect(screen.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+  })
+
   it('renders loading and a finite recovery state when settings cannot load', async () => {
     const settings = deferred<AppSettings>()
     const bridge = createBridge({ getSettings: vi.fn(() => settings.promise) })
