@@ -103,8 +103,10 @@ test('an unset production environment gate stays inert despite the immutable des
     enumerable: false,
   })`)
   await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
-  await expect(page.locator('#root')).toBeEmpty()
   await expect(page.locator('.widget-shell')).toHaveCount(0)
+  await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
+  await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
+  await expect(page.locator('[data-announcement-channel="assertive"]')).toBeEmpty()
   expect(pageErrors).toEqual([])
 })
 
@@ -119,8 +121,10 @@ test('compiled zero and other environment values remain inert', async ({ page })
   for (const value of ['0', 'true']) {
     buildRenderer(value)
     await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
-    await expect(page.locator('#root')).toBeEmpty()
     await expect(page.locator('.widget-shell')).toHaveCount(0)
+    await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
+    await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
+    await expect(page.locator('[data-announcement-channel="assertive"]')).toBeEmpty()
   }
 })
 
@@ -140,8 +144,10 @@ test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test prev
 test('preview query alone remains inert in a preview-enabled build', async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 92 })
   await page.goto(`${origin}/widget.html?preview=listening&theme=dark`)
-  await expect(page.locator('#root')).toBeEmpty()
   await expect(page.locator('.widget-shell')).toHaveCount(0)
+  await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
+  await expect(page.locator('[data-announcement-channel="polite"]')).toBeEmpty()
+  await expect(page.locator('[data-announcement-channel="assertive"]')).toBeEmpty()
 })
 
 for (const theme of themes) {

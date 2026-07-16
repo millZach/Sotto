@@ -245,8 +245,8 @@ describe('WidgetApp', () => {
     expect(quiet).not.toEqual(loud)
   })
 
-  it('announces only stable state copy while keeping live meter, timer, and progress ticks quiet', () => {
-    const { rerender } = render(
+  it('keeps visible copy readable but non-live', () => {
+    const { container, rerender } = render(
       <WidgetApp
         snapshot={snapshot({
           status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.2,
@@ -255,27 +255,10 @@ describe('WidgetApp', () => {
         now={1_000}
       />,
     )
-    const listeningAnnouncement = screen.getByRole('status')
-    expect(listeningAnnouncement).toHaveAttribute('aria-live', 'polite')
-    expect(listeningAnnouncement).toHaveAttribute('aria-atomic', 'true')
-    expect(listeningAnnouncement).toHaveTextContent('Listening')
-    expect(listeningAnnouncement).toHaveTextContent('Ctrl+Shift+Space to finish')
-    expect(listeningAnnouncement.contains(screen.getByRole('meter'))).toBe(false)
-    expect(listeningAnnouncement.contains(screen.getByText('00:01'))).toBe(false)
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({
-          status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.9,
-          cancellable: true,
-        })}
-        now={2_000}
-      />,
-    )
-    expect(screen.getByRole('status')).toBe(listeningAnnouncement)
-    expect(screen.getByRole('status')).toHaveTextContent('ListeningCtrl+Shift+Space to finish')
-    expect(screen.getByText('00:02')).toHaveAttribute('aria-live', 'off')
-    expect(screen.getByRole('meter')).toHaveAttribute('aria-live', 'off')
+    const listeningCopy = container.querySelector('.widget-copy')
+    expect(listeningCopy).toHaveTextContent('ListeningCtrl+Shift+Space to finish')
+    expect(listeningCopy).not.toHaveAttribute('role')
+    expect(listeningCopy).not.toHaveAttribute('aria-live')
 
     rerender(
       <WidgetApp
@@ -286,32 +269,10 @@ describe('WidgetApp', () => {
         now={2_000}
       />,
     )
-    const processingAnnouncement = screen.getByRole('status')
-    expect(processingAnnouncement).toHaveTextContent('Transcribing locallyAudio stays on this PC')
-    expect(processingAnnouncement.contains(screen.getByRole('progressbar'))).toBe(false)
-    expect(screen.getByText('58%')).toHaveAttribute('aria-live', 'off')
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({ status: 'success', sessionId: 'announced', output: 'pasted' })}
-        now={2_000}
-      />,
-    )
-    expect(screen.getByRole('status')).toHaveTextContent('PastedText delivered')
-
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({
-          status: 'error', sessionId: 'announced', code: 'TRANSCRIPTION_FAILED',
-        })}
-        now={2_000}
-      />,
-    )
-    const alert = screen.getByRole('alert')
-    expect(alert).toHaveAttribute('aria-live', 'assertive')
-    expect(alert).toHaveAttribute('aria-atomic', 'true')
-    expect(alert).toHaveTextContent('Couldn’t transcribe')
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    const processingCopy = container.querySelector('.widget-copy')
+    expect(processingCopy).toHaveTextContent('Transcribing locallyAudio stays on this PC')
+    expect(processingCopy).not.toHaveAttribute('role')
+    expect(processingCopy).not.toHaveAttribute('aria-live')
   })
 })
 
@@ -345,7 +306,11 @@ describe('WidgetEntry', () => {
 
   it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
     const { rerender, container, unmount } = render(<WidgetEntry bridge={undefined} preview={null} />)
-    expect(container).toBeEmptyDOMElement()
+    const polite = screen.getByRole('status')
+    const assertive = screen.getByRole('alert')
+    expect(polite).toBeEmptyDOMElement()
+    expect(assertive).toBeEmptyDOMElement()
+    expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
 
     rerender(<WidgetEntry bridge={undefined} preview={snapshot({ status: 'idle', theme: 'light', reducedMotion: 'on' })} />)
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
@@ -356,6 +321,74 @@ describe('WidgetEntry', () => {
     unmount()
     expect(document.documentElement).not.toHaveAttribute('data-theme')
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
+  })
+
+  it('keeps persistent announcement channels across null, idle, normal, success, and error states', () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+    }
+    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    const polite = screen.getByRole('status')
+    const assertive = screen.getByRole('alert')
+    expect(polite).toHaveAttribute('aria-live', 'polite')
+    expect(polite).toHaveAttribute('aria-atomic', 'true')
+    expect(assertive).toHaveAttribute('aria-live', 'assertive')
+    expect(assertive).toHaveAttribute('aria-atomic', 'true')
+    expect(polite).toBeEmptyDOMElement()
+    expect(assertive).toBeEmptyDOMElement()
+
+    const emit = (next: WidgetSnapshot): void => {
+      act(() => listener?.(next))
+      expect(screen.getByRole('status')).toBe(polite)
+      expect(screen.getByRole('alert')).toBe(assertive)
+    }
+
+    emit(snapshot({ status: 'idle' }))
+    expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
+    expect(polite).toBeEmptyDOMElement()
+    expect(assertive).toBeEmptyDOMElement()
+
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'announce', cancellable: true }))
+    expect(polite).toHaveTextContent('Waiting for microphone. Approve access in Windows')
+    expect(assertive).toBeEmptyDOMElement()
+
+    emit(snapshot({
+      status: 'listening', sessionId: 'announce', startedAt: Date.now() - 1_000,
+      level: 0.4, cancellable: true,
+    }))
+    expect(polite).toHaveTextContent('Listening. Ctrl+Shift+Space to finish')
+    expect(assertive).toBeEmptyDOMElement()
+    expect(polite.contains(screen.getByRole('meter'))).toBe(false)
+    expect(polite.contains(container.querySelector('time'))).toBe(false)
+
+    emit(snapshot({
+      status: 'processing', sessionId: 'announce', startedAt: Date.now() - 1_000,
+      stage: 'transcribing', progress: 0.58, cancellable: true,
+    }))
+    expect(polite).toHaveTextContent('Transcribing locally. Audio stays on this PC')
+    expect(assertive).toBeEmptyDOMElement()
+    expect(polite.contains(screen.getByRole('progressbar'))).toBe(false)
+    expect(polite).not.toHaveTextContent('58%')
+
+    emit(snapshot({ status: 'success', sessionId: 'announce', output: 'pasted' }))
+    expect(polite).toHaveTextContent('Pasted. Text delivered')
+    expect(assertive).toBeEmptyDOMElement()
+
+    emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
+    expect(polite).toBeEmptyDOMElement()
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. Try again or choose the Balanced model.')
+    expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
+
+    emit(snapshot({ status: 'idle' }))
+    expect(polite).toBeEmptyDOMElement()
+    expect(assertive).toBeEmptyDOMElement()
+    expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
   })
 
   it('ticks the listening timer without changing the immutable snapshot', () => {

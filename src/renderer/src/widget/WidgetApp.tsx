@@ -83,6 +83,35 @@ interface WidgetCopy {
   readonly icon: ReactNode
 }
 
+function WidgetAnnouncements({ snapshot }: { readonly snapshot: WidgetSnapshot | null }): ReactNode {
+  const copy = snapshot === null || snapshot.status === 'idle' ? null : getCopy(snapshot)
+  const assertiveCopy = snapshot?.status === 'error' ? copy : null
+  const politeCopy = snapshot?.status === 'error' ? null : copy
+
+  return (
+    <>
+      <div
+        className="widget-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-announcement-channel="polite"
+      >
+        {politeCopy === null ? null : <><span>{politeCopy.title}.</span>{' '}<span>{politeCopy.detail}</span></>}
+      </div>
+      <div
+        className="widget-live-region"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+        data-announcement-channel="assertive"
+      >
+        {assertiveCopy === null ? null : <><span>{assertiveCopy.title}.</span>{' '}<span>{assertiveCopy.detail}</span></>}
+      </div>
+    </>
+  )
+}
+
 export interface WidgetAppProps {
   readonly snapshot: WidgetSnapshot
   readonly now: number
@@ -225,12 +254,7 @@ export function WidgetApp({ snapshot, now, onStop, onCancel }: WidgetAppProps): 
         <span className="widget-state-icon">{copy.icon}</span>
         {isListening && <LevelBars level={snapshot.level} active />}
         {isProcessing && <span className="widget-orbit" data-testid="processing-orbit" aria-hidden="true"><span /></span>}
-        <div
-          className="widget-copy"
-          role={snapshot.status === 'error' ? 'alert' : 'status'}
-          aria-live={snapshot.status === 'error' ? 'assertive' : 'polite'}
-          aria-atomic="true"
-        >
+        <div className="widget-copy">
           <strong>{copy.title}</strong>
           <span title={copy.detail}>{copy.detail}</span>
         </div>
@@ -326,8 +350,12 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
     }
   }, [bridge, preview])
 
-  if (snapshot === null) return null
-  return <WidgetApp snapshot={snapshot} now={now} {...actions} />
+  return (
+    <>
+      <WidgetAnnouncements snapshot={snapshot} />
+      {snapshot === null ? null : <WidgetApp snapshot={snapshot} now={now} {...actions} />}
+    </>
+  )
 }
 
 const previewNames = ['listening', 'processing', 'pasted', 'copied', 'error'] as const

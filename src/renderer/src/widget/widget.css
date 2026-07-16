@@ -28,6 +28,19 @@ button {
   font: inherit;
 }
 
+.widget-live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .widget-shell {
   width: 420px;
   height: 92px;
