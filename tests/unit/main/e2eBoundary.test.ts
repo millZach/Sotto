@@ -7,11 +7,13 @@ import {
 
 describe('development-only E2E admission', () => {
   it('rejects the boundary in packaged builds', () => {
-    expect(resolveE2EConfiguration(true, {
-      TALKTYPE_E2E: '1',
-      TALKTYPE_E2E_SCENARIO: 'success',
-      TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
-    })).toBeNull()
+    for (const scenario of ['success', 'design-permission', 'design-processing']) {
+      expect(resolveE2EConfiguration(true, {
+        TALKTYPE_E2E: '1',
+        TALKTYPE_E2E_SCENARIO: scenario,
+        TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
+      })).toBeNull()
+    }
   })
 
   it.each([
@@ -29,6 +31,16 @@ describe('development-only E2E admission', () => {
       TALKTYPE_E2E_SCENARIO: 'paste-failure',
       TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
     })).toEqual({ scenario: 'paste-failure', userDataPath: 'C:\\temp\\talktype-e2e' })
+  })
+
+  it('admits the deterministic processing capture only in a non-packaged app', () => {
+    for (const scenario of ['design-permission', 'design-processing']) {
+      expect(resolveE2EConfiguration(false, {
+        TALKTYPE_E2E: '1',
+        TALKTYPE_E2E_SCENARIO: scenario,
+        TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
+      })).toEqual({ scenario, userDataPath: 'C:\\temp\\talktype-e2e' })
+    }
   })
 
   it('accepts only the exact trusted main renderer sender', () => {

@@ -14,6 +14,8 @@ export const e2eScenarioSchema = z.enum([
   'silence',
   'paste-failure',
   'transcription-failure',
+  'design-permission',
+  'design-processing',
 ])
 
 export const e2eSnapshotSchema = z.object({

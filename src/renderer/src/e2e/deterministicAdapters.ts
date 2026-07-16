@@ -34,7 +34,12 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
   return {
     createRecorder(options: AudioRecorderOptions) {
       return {
-        async start(): Promise<void> { options.onLevel?.(0.58) },
+        async start(): Promise<void> {
+          if (scenario === 'design-permission') {
+            await new Promise<never>(() => undefined)
+          }
+          options.onLevel?.(0.58)
+        },
         async stop(): Promise<AudioRecordingResult | null> { return recording(scenario) },
         async cancel(): Promise<void> {},
       }
@@ -44,6 +49,9 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
         async transcribe(options) {
           if (scenario === 'transcription-failure') throw new Error('DETERMINISTIC_TRANSCRIPTION_FAILURE')
           options.onProgress?.({ stage: 'loading-model', progress: 1 })
+          if (scenario === 'design-processing') {
+            await new Promise<never>(() => undefined)
+          }
           options.onProgress?.({ stage: 'transcribing', progress: 1 })
           return { text: E2E_TRANSCRIPT, language: 'en' }
         },
