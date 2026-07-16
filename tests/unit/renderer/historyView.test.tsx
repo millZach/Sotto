@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,7 +33,7 @@ describe('HistoryView', () => {
     await user.type(screen.getByRole('searchbox', { name: /search transcripts/i }), '  ALPHA  ')
     expect(screen.getByText('Alpha note')).toBeVisible()
     expect(screen.queryByText('beta NOTE')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /copy alpha note/i }))
+    await user.click(screen.getAllByRole('button', { name: 'Copy transcript' })[0]!)
     expect(copy).toHaveBeenCalledWith('Alpha note')
     expect(writeText).not.toHaveBeenCalled()
   })
@@ -43,7 +43,7 @@ describe('HistoryView', () => {
     const remove = vi.fn(async () => true)
     render(<HistoryView {...baseProps} onDelete={remove} />)
 
-    const trigger = screen.getByRole('button', { name: /delete alpha note/i })
+    const trigger = screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!
     await user.click(trigger)
     expect(screen.getByRole('dialog', { name: /delete transcript/i })).toBeVisible()
     expect(screen.getByRole('button', { name: /keep transcript/i })).toHaveFocus()
@@ -51,6 +51,56 @@ describe('HistoryView', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
     expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('does not duplicate private transcript text in accessible action names', () => {
+    render(<HistoryView {...baseProps} />)
+    const rows = screen.getAllByRole('listitem')
+    for (const row of rows) {
+      expect(within(row).getByRole('button', { name: 'Copy transcript' })).toBeVisible()
+      expect(within(row).getByRole('button', { name: 'Delete saved transcript' })).toBeVisible()
+    }
+    expect(screen.queryByRole('button', { name: /alpha note|beta note/i })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['delete', 'Transcript could not be deleted.'],
+    ['clear', 'History could not be cleared.'],
+  ] as const)('keeps a finite %s failure visible inside the active dialog', async (operation, message) => {
+    const user = userEvent.setup()
+    render(<HistoryView {...baseProps} onDelete={vi.fn(async () => false)} onClear={vi.fn(async () => false)} />)
+    if (operation === 'delete') {
+      await user.click(screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!)
+      await user.click(screen.getByRole('button', { name: 'Delete transcript' }))
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Clear history' }))
+      await user.click(screen.getByRole('button', { name: 'Clear all transcripts' }))
+    }
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeVisible()
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(message)
+  })
+
+  it('focuses the History heading when successful deletion removes its trigger', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<HistoryView {...baseProps} onDelete={async () => {
+      rerender(<HistoryView {...baseProps} entries={entries.slice(1)} />)
+      return true
+    }} />)
+    await user.click(screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!)
+    await user.click(screen.getByRole('button', { name: 'Delete transcript' }))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'History' })).toHaveFocus())
+  })
+
+  it('focuses the History heading when clearing history removes its trigger', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<HistoryView {...baseProps} onClear={async () => {
+      rerender(<HistoryView {...baseProps} entries={[]} />)
+      return true
+    }} />)
+    await user.click(screen.getByRole('button', { name: 'Clear history' }))
+    await user.click(screen.getByRole('button', { name: 'Clear all transcripts' }))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'History' })).toHaveFocus())
   })
 
   it('blocks duplicate destructive submissions and clears only after confirmation', async () => {

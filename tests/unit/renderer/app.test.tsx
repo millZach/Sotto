@@ -193,7 +193,7 @@ describe('TalkType application onboarding integration', () => {
     renderApp(bridge)
     await screen.findByRole('heading', { level: 1, name: 'Home' })
     await user.click(screen.getByRole('link', { name: 'History' }))
-    await user.click(screen.getByRole('button', { name: /copy trusted local transcript/i }))
+    await user.click(screen.getByRole('button', { name: 'Copy transcript' }))
     expect(deliverOutput).toHaveBeenCalledWith({ text: 'trusted local transcript', autoPaste: false, pasteDelayMs: 275 })
   })
 

@@ -30,6 +30,13 @@ import { Toggle } from '../../components/Toggle'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
+interface DraftSubmission<T> {
+  readonly token: number
+  readonly submitted: T
+  readonly authoritativeAtSubmit: T
+  readonly editVersion: number
+}
+
 export interface SettingsViewProps {
   readonly settings: AppSettings
   readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
@@ -121,31 +128,75 @@ export function SettingsView({
   const [installPreset, setInstallPreset] = useState<Extract<ModelPreset, 'fast' | 'accurate'> | null>(null)
   const [installConsent, setInstallConsent] = useState(false)
   const [removePreset, setRemovePreset] = useState<Extract<ModelPreset, 'fast' | 'accurate'> | null>(null)
+  const [installFailure, setInstallFailure] = useState<string | null>(null)
+  const [removeFailure, setRemoveFailure] = useState<string | null>(null)
+  const [clearFailure, setClearFailure] = useState<string | null>(null)
+  const [resetFailure, setResetFailure] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
   const themeSequenceRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const hotkeyDraftRef = useRef(hotkeyDraft)
+  const hotkeyEditVersionRef = useRef(0)
+  const hotkeySubmissionRef = useRef<DraftSubmission<string> | null>(null)
+  const hotkeyTokenRef = useRef(0)
+  const pasteDelayDraftRef = useRef(pasteDelayDraft)
+  const pasteDelayEditVersionRef = useRef(0)
+  const pasteDelaySubmissionRef = useRef<DraftSubmission<number> | null>(null)
+  const pasteDelayTokenRef = useRef(0)
+  const successDurationDraftRef = useRef(successDurationDraft)
+  const successDurationEditVersionRef = useRef(0)
+  const successDurationSubmissionRef = useRef<DraftSubmission<number> | null>(null)
+  const successDurationTokenRef = useRef(0)
 
   settingsRef.current = settings
 
-  useEffect(() => setHotkeyDraft(settings.hotkey), [settings.hotkey])
   useEffect(() => {
-    setPasteDelayDraft(String(settings.pasteDelayMs))
-    setPasteDelayError(undefined)
+    const submission = hotkeySubmissionRef.current
+    if (submission === null) {
+      hotkeyDraftRef.current = settings.hotkey
+      setHotkeyDraft(settings.hotkey)
+      return
+    }
+    if (settings.hotkey === submission.submitted) {
+      if (hotkeyEditVersionRef.current === submission.editVersion) {
+        hotkeyDraftRef.current = settings.hotkey
+        setHotkeyDraft(settings.hotkey)
+      }
+      hotkeySubmissionRef.current = null
+    } else if (settings.hotkey !== submission.authoritativeAtSubmit) {
+      hotkeySubmissionRef.current = null
+      hotkeyDraftRef.current = settings.hotkey
+      setHotkeyDraft(settings.hotkey)
+    }
+  }, [settings.hotkey])
+  useEffect(() => {
+    const submission = pasteDelaySubmissionRef.current
+    if (submission === null || settings.pasteDelayMs !== submission.authoritativeAtSubmit) {
+      if (submission === null || settings.pasteDelayMs !== submission.submitted || pasteDelayEditVersionRef.current === submission.editVersion) {
+        const value = String(settings.pasteDelayMs)
+        pasteDelayDraftRef.current = value
+        setPasteDelayDraft(value)
+        setPasteDelayError(undefined)
+      }
+      if (submission !== null) pasteDelaySubmissionRef.current = null
+    }
   }, [settings.pasteDelayMs])
   useEffect(() => {
-    setSuccessDurationDraft(String(settings.successDisplayMs))
-    setSuccessDurationError(undefined)
-  }, [settings.successDisplayMs])
-
-  useEffect(() => {
-    if (installPreset !== null && modelReady(modelStatuses[installPreset])) {
-      setInstallConsent(false)
-      setInstallPreset(null)
+    const submission = successDurationSubmissionRef.current
+    if (submission === null || settings.successDisplayMs !== submission.authoritativeAtSubmit) {
+      if (submission === null || settings.successDisplayMs !== submission.submitted || successDurationEditVersionRef.current === submission.editVersion) {
+        const value = String(settings.successDisplayMs)
+        successDurationDraftRef.current = value
+        setSuccessDurationDraft(value)
+        setSuccessDurationError(undefined)
+      }
+      if (submission !== null) successDurationSubmissionRef.current = null
     }
-  }, [installPreset, modelStatuses])
+  }, [settings.successDisplayMs])
 
   useEffect(() => {
     if (mediaDevices === undefined) {
@@ -153,14 +204,16 @@ export function SettingsView({
       return
     }
     let current = true
+    let refreshVersion = 0
     const refresh = async (): Promise<void> => {
+      const version = ++refreshVersion
       try {
         const devices = await mediaDevices.enumerateDevices()
-        if (!current) return
+        if (!current || version !== refreshVersion) return
         setMicrophones(devices.filter((candidate) => candidate.kind === 'audioinput'))
         setDeviceState('ready')
       } catch {
-        if (current) setDeviceState('error')
+        if (current && version === refreshVersion) setDeviceState('error')
       }
     }
     const onDeviceChange = (): void => { void refresh() }
@@ -204,6 +257,56 @@ export function SettingsView({
     return saved
   }, [onUpdateSettings])
 
+  const savePasteDelay = async (): Promise<void> => {
+    const value = parseBoundedInteger(pasteDelayDraftRef.current, 50, 1_000)
+    if (value === null) {
+      setPasteDelayError('Enter a whole number between 50 and 1000.')
+      return
+    }
+    setPasteDelayError(undefined)
+    const submission: DraftSubmission<number> = {
+      token: ++pasteDelayTokenRef.current,
+      submitted: value,
+      authoritativeAtSubmit: settingsRef.current.pasteDelayMs,
+      editVersion: pasteDelayEditVersionRef.current,
+    }
+    pasteDelaySubmissionRef.current = submission
+    const saved = await save({ pasteDelayMs: value }, 'Paste delay saved.')
+    if (!saved && pasteDelaySubmissionRef.current?.token === submission.token) {
+      pasteDelaySubmissionRef.current = null
+      if (pasteDelayEditVersionRef.current === submission.editVersion) {
+        const authoritative = String(settingsRef.current.pasteDelayMs)
+        pasteDelayDraftRef.current = authoritative
+        setPasteDelayDraft(authoritative)
+      }
+    }
+  }
+
+  const saveSuccessDuration = async (): Promise<void> => {
+    const value = parseBoundedInteger(successDurationDraftRef.current, 500, 5_000)
+    if (value === null) {
+      setSuccessDurationError('Enter a whole number between 500 and 5000.')
+      return
+    }
+    setSuccessDurationError(undefined)
+    const submission: DraftSubmission<number> = {
+      token: ++successDurationTokenRef.current,
+      submitted: value,
+      authoritativeAtSubmit: settingsRef.current.successDisplayMs,
+      editVersion: successDurationEditVersionRef.current,
+    }
+    successDurationSubmissionRef.current = submission
+    const saved = await save({ successDisplayMs: value }, 'Success duration saved.')
+    if (!saved && successDurationSubmissionRef.current?.token === submission.token) {
+      successDurationSubmissionRef.current = null
+      if (successDurationEditVersionRef.current === submission.editVersion) {
+        const authoritative = String(settingsRef.current.successDisplayMs)
+        successDurationDraftRef.current = authoritative
+        setSuccessDurationDraft(authoritative)
+      }
+    }
+  }
+
   const optionalDisclosure = useCallback((preset: Extract<ModelPreset, 'fast' | 'accurate'>): ModelDisclosure | undefined => (
     disclosures?.models.find((model) => model.preset === preset && !model.bundled)
   ), [disclosures])
@@ -245,8 +348,8 @@ export function SettingsView({
         {disclosure === undefined ? null : <p>{bytesLabel(disclosure.totalBytes)} / {disclosure.license}</p>}
         <div className="settings-model-card__actions">
           <Button variant={selected ? 'ghost' : 'secondary'} disabled={!modelReady(status) || selected} onClick={() => void save({ modelPreset: preset }, `${MODEL_CATALOG[preset].label} selected.`)}>Use {MODEL_CATALOG[preset].label}</Button>
-          {optional && status?.state !== 'ready' ? <Button disabled={disclosure === undefined || !canInstall} onClick={() => { setInstallConsent(false); setInstallPreset(preset) }}>Install {MODEL_CATALOG[preset].label}</Button> : null}
-          {optional && status?.state === 'ready' ? <Button variant="ghost" onClick={() => setRemovePreset(preset)}><Trash2 size={15} />Remove {MODEL_CATALOG[preset].label}</Button> : null}
+          {optional && status?.state !== 'ready' ? <Button disabled={disclosure === undefined || !canInstall} onClick={() => { setInstallFailure(null); setInstallConsent(false); setInstallPreset(preset) }}>Install {MODEL_CATALOG[preset].label}</Button> : null}
+          {optional && status?.state === 'ready' ? <Button variant="ghost" onClick={() => { setRemoveFailure(null); setRemovePreset(preset) }}><Trash2 size={15} />Remove {MODEL_CATALOG[preset].label}</Button> : null}
         </div>
       </article>
     )
@@ -254,7 +357,7 @@ export function SettingsView({
 
   return (
     <div className="management-view settings-view">
-      <header className="management-view__header"><div><p className="management-eyebrow">Make TalkType yours</p><h1>Settings</h1><p>Changes are saved locally and apply to future recordings.</p></div></header>
+      <header className="management-view__header"><div><p className="management-eyebrow">Make TalkType yours</p><h1 ref={headingRef} tabIndex={-1}>Settings</h1><p>Changes are saved locally and apply to future recordings.</p></div></header>
       {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
 
       <Card className="settings-section">
@@ -277,15 +380,37 @@ export function SettingsView({
           </Field>
           <div className="settings-input-action">
             <Field label="Global shortcut" description="Used anywhere in Windows to start and stop dictation.">
-              <input className="tt-input" value={hotkeyDraft} onChange={(event) => setHotkeyDraft(event.currentTarget.value)} />
+              <input className="tt-input" value={hotkeyDraft} onChange={(event) => {
+                const value = event.currentTarget.value
+                hotkeyDraftRef.current = value
+                hotkeyEditVersionRef.current += 1
+                setHotkeyDraft(value)
+              }} />
             </Field>
             <Button variant="secondary" onClick={async () => {
-              const candidate = hotkeyDraft.trim()
-              if (candidate.length === 0) { setHotkeyDraft(settingsRef.current.hotkey); setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true }); return }
+              const candidate = hotkeyDraftRef.current.trim()
+              if (candidate.length === 0) {
+                hotkeyDraftRef.current = settingsRef.current.hotkey
+                setHotkeyDraft(settingsRef.current.hotkey)
+                setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
+                return
+              }
+              const submission: DraftSubmission<string> = {
+                token: ++hotkeyTokenRef.current,
+                submitted: candidate,
+                authoritativeAtSubmit: settingsRef.current.hotkey,
+                editVersion: hotkeyEditVersionRef.current,
+              }
+              hotkeySubmissionRef.current = submission
               const result = await onReplaceHotkey(candidate).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
+              if (hotkeySubmissionRef.current?.token !== submission.token) return
               if (result.ok) setNotice({ text: 'Global shortcut updated.', error: false })
               else {
-                setHotkeyDraft(settingsRef.current.hotkey)
+                hotkeySubmissionRef.current = null
+                if (hotkeyEditVersionRef.current === submission.editVersion) {
+                  hotkeyDraftRef.current = settingsRef.current.hotkey
+                  setHotkeyDraft(settingsRef.current.hotkey)
+                }
                 setNotice({ text: result.reason === 'conflict' ? 'Another application is already using that shortcut. Your previous shortcut is still active.' : result.reason === 'invalid' ? 'That shortcut is not valid. Your previous shortcut is still active.' : 'The shortcut could not be updated. Your previous shortcut is still active.', error: true })
               }
             }}>Apply shortcut</Button>
@@ -311,16 +436,8 @@ export function SettingsView({
         <div className="settings-fields-grid">
           <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always enabled for every successful non-empty transcript." />
           <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description="Best-effort Ctrl+V into the previously focused application." />
-          <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => setPasteDelayDraft(event.currentTarget.value)} /></Field><Button variant="secondary" onClick={() => {
-            const value = parseBoundedInteger(pasteDelayDraft, 50, 1_000)
-            if (value === null) { setPasteDelayError('Enter a whole number between 50 and 1000.'); return }
-            setPasteDelayError(undefined); void save({ pasteDelayMs: value }, 'Paste delay saved.')
-          }}>Save paste delay</Button></div>
-          <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => setSuccessDurationDraft(event.currentTarget.value)} /></Field><Button variant="secondary" onClick={() => {
-            const value = parseBoundedInteger(successDurationDraft, 500, 5_000)
-            if (value === null) { setSuccessDurationError('Enter a whole number between 500 and 5000.'); return }
-            setSuccessDurationError(undefined); void save({ successDisplayMs: value }, 'Success duration saved.')
-          }}>Save success duration</Button></div>
+          <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => { const value = event.currentTarget.value; pasteDelayDraftRef.current = value; pasteDelayEditVersionRef.current += 1; setPasteDelayDraft(value) }} /></Field><Button variant="secondary" onClick={() => void savePasteDelay()}>Save paste delay</Button></div>
+          <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field><Button variant="secondary" onClick={() => void saveSuccessDuration()}>Save success duration</Button></div>
         </div>
       </Card>
 
@@ -336,8 +453,8 @@ export function SettingsView({
           <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
         </div>
         <div className="settings-danger-zone">
-          <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div><Button variant="danger" onClick={() => setClearOpen(true)}>Clear history</Button>
-          <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Downloaded models and history remain in place.</p></div><Button variant="secondary" onClick={() => setResetOpen(true)}>Reset settings</Button>
+          <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div><Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
+          <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Downloaded models and history remain in place.</p></div><Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
         </div>
       </Card>
 
@@ -345,6 +462,14 @@ export function SettingsView({
         const disclosure = optionalDisclosure(installPreset)
         if (disclosure === undefined) return null
         const label = MODEL_CATALOG[installPreset].label
+        const installStatus = modelStatuses[installPreset]
+        const pendingStatus = installStatus?.state === 'downloading'
+          ? modelStateCopy(installStatus)
+          : installStatus?.state === 'error'
+            ? modelStateCopy(installStatus)
+            : installStatus !== undefined && modelReady(installStatus)
+              ? `${label} is installed and ready offline.`
+              : `Preparing the ${label} model download...`
         return <ConfirmationDialog
           title={`Download ${label} model?`}
           description={<div className="settings-download-dialog"><p>{disclosure.repository} / {bytesLabel(disclosure.totalBytes)} / {disclosure.license}</p><p>{disclosures?.optionalDownloadNotice}</p><label><input type="checkbox" checked={installConsent} onChange={(event) => setInstallConsent(event.currentTarget.checked)} />Allow this {label} model download</label></div>}
@@ -352,13 +477,17 @@ export function SettingsView({
           confirmLabel={`Download ${label} model`}
           danger={false}
           confirmDisabled={!installConsent}
+          pendingStatus={pendingStatus}
+          failureMessage={installFailure ?? `${label} could not be downloaded. Balanced is unchanged.`}
+          fallbackFocusRef={headingRef}
           onCancel={() => { setInstallConsent(false); setInstallPreset(null) }}
           onConfirm={async () => {
             if (!installConsent) return false
+            setInstallFailure(null)
             const result = await onInstallModel({ preset: installPreset, consent: true }).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
             setInstallConsent(false)
-            if (!result.ok) { setNotice({ text: `${label} could not be downloaded. Balanced is unchanged.`, error: true }); return false }
-            setNotice({ text: `${label} download started.`, error: false })
+            if (!result.ok) { setInstallFailure(`${label} could not be downloaded. Balanced is unchanged.`); return false }
+            setNotice({ text: `${label} is installed and ready offline.`, error: false })
             void onGetModelStatus(installPreset)
             return true
           }}
@@ -369,25 +498,28 @@ export function SettingsView({
         description="The downloaded files will be removed. Balanced always remains installed and ready."
         cancelLabel="Keep model"
         confirmLabel="Remove downloaded model"
+        failureMessage={removeFailure ?? 'The downloaded model could not be removed.'}
+        fallbackFocusRef={headingRef}
         onCancel={() => setRemovePreset(null)}
         onConfirm={async () => {
+          setRemoveFailure(null)
           if (settings.modelPreset === removePreset) {
             if (!modelReady(modelStatuses.balanced)) {
-              setNotice({ text: 'Balanced is not ready, so the selected model was not removed.', error: true })
+              setRemoveFailure('Balanced is not ready, so the selected model was not removed.')
               return false
             }
             const switched = await onUpdateSettings({ modelPreset: 'balanced' }).catch(() => false)
-            if (!switched) { setNotice({ text: 'Could not switch to Balanced, so the selected model was not removed.', error: true }); return false }
+            if (!switched) { setRemoveFailure('Could not switch to Balanced, so the selected model was not removed.'); return false }
           }
           const result = await onRemoveModel(removePreset).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
-          if (!result.ok) { setNotice({ text: 'The downloaded model could not be removed.', error: true }); return false }
+          if (!result.ok) { setRemoveFailure('The downloaded model could not be removed.'); return false }
           setNotice({ text: 'Downloaded model removed. Balanced remains ready.', error: false })
           void onGetModelStatus(removePreset)
           return true
         }}
       />}
-      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings and models are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" onCancel={() => setClearOpen(false)} onConfirm={async () => { const cleared = await onClearHistory().catch(() => false); setNotice(cleared ? { text: 'Transcript history cleared.', error: false } : { text: 'History could not be cleared.', error: true }); return cleared }} />}
-      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Downloaded models and saved history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" onCancel={() => setResetOpen(false)} onConfirm={async () => { const reset = await onResetSettings().catch(() => false); setNotice(reset ? { text: 'Settings reset to defaults.', error: false } : { text: 'Settings could not be reset.', error: true }); return reset }} />}
+      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings and models are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
+      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Downloaded models and saved history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
     </div>
   )
 }

@@ -1179,6 +1179,20 @@ input:not([type='checkbox']):not([type='radio']) {
   color: var(--tt-text-muted);
 }
 
+.tt-dialog__status {
+  margin: -10px 0 18px;
+  border-left: 3px solid var(--tt-primary);
+  border-radius: var(--tt-radius-sm);
+  background: color-mix(in srgb, var(--tt-primary) 9%, transparent);
+  padding: 10px 12px;
+  color: var(--tt-text);
+}
+
+.tt-dialog__status--error {
+  border-left-color: var(--tt-error);
+  background: color-mix(in srgb, var(--tt-error) 9%, transparent);
+}
+
 .tt-dialog__actions {
   display: flex;
   justify-content: flex-end;

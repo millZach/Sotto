@@ -1,4 +1,4 @@
-import React, { useMemo, useState, type ReactNode } from 'react'
+import React, { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Clipboard, Search, Trash2 } from 'lucide-react'
 
 import type { HistoryEntry } from '../../../../shared/history'
@@ -16,11 +16,6 @@ export interface HistoryViewProps {
   readonly onClear: () => Promise<boolean>
 }
 
-function accessibleExcerpt(text: string): string {
-  const normalized = text.replace(/\s+/gu, ' ').trim()
-  return normalized.length <= 48 ? normalized : `${normalized.slice(0, 45)}...`
-}
-
 function timestamp(createdAt: number): { dateTime?: string; label: string } {
   const date = new Date(createdAt)
   if (!Number.isFinite(date.valueOf())) return { label: 'Saved transcript' }
@@ -33,6 +28,7 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
   const [clearOpen, setClearOpen] = useState(false)
   const [copyingId, setCopyingId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const filtered = useMemo(() => entries.filter((entry) => (
     normalizedQuery.length === 0 || entry.text.toLocaleLowerCase().includes(normalizedQuery)
@@ -64,8 +60,8 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
             </div>
             <p>{entry.text}</p>
             <div className="history-entry__actions">
-              <Button variant="secondary" disabled={copyingId !== null} aria-label={`Copy ${accessibleExcerpt(entry.text)}`} onClick={() => void copy(entry)}><Clipboard size={16} />Copy</Button>
-              <Button variant="ghost" aria-label={`Delete ${accessibleExcerpt(entry.text)}`} onClick={() => setDeleteEntry(entry)}><Trash2 size={16} />Delete</Button>
+              <Button variant="secondary" disabled={copyingId !== null} aria-label="Copy transcript" onClick={() => void copy(entry)}><Clipboard size={16} />Copy</Button>
+              <Button variant="ghost" aria-label="Delete saved transcript" onClick={() => setDeleteEntry(entry)}><Trash2 size={16} />Delete</Button>
             </div>
           </Card>
         </li>
@@ -76,7 +72,7 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
   return (
     <div className="management-view history-view">
       <header className="management-view__header">
-        <div><p className="management-eyebrow">Local only</p><h1>History</h1><p>Search, copy, or remove transcripts stored on this computer.</p></div>
+        <div><p className="management-eyebrow">Local only</p><h1 ref={headingRef} tabIndex={-1}>History</h1><p>Search, copy, or remove transcripts stored on this computer.</p></div>
         {status === 'ready' && entries.length > 0 ? <Button variant="danger" onClick={() => setClearOpen(true)}>Clear history</Button> : null}
       </header>
       {!enabled && status === 'ready' && entries.length > 0 ? <p className="history-privacy-notice">History is turned off. Existing local transcripts remain available until you clear them.</p> : null}
@@ -95,6 +91,8 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
           description="This removes the selected transcript from this computer. It cannot be undone."
           cancelLabel="Keep transcript"
           confirmLabel="Delete transcript"
+          failureMessage="Transcript could not be deleted. Try again or keep the transcript."
+          fallbackFocusRef={headingRef}
           onCancel={() => setDeleteEntry(null)}
           onConfirm={async () => {
             const removed = await onDelete(deleteEntry.id).catch(() => false)
@@ -109,6 +107,8 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
           description="This permanently removes every saved transcript from this computer. Your settings and downloaded models are unchanged."
           cancelLabel="Keep history"
           confirmLabel="Clear all transcripts"
+          failureMessage="History could not be cleared. Your saved transcripts are unchanged."
+          fallbackFocusRef={headingRef}
           onCancel={() => setClearOpen(false)}
           onConfirm={async () => {
             const cleared = await onClear().catch(() => false)
