@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createE2EGlobalShortcuts,
   isTrustedMainE2ESender,
   resolveE2EConfiguration,
 } from '../../../src/main/e2e/e2eBoundary'
-import { e2eScenarioSchema } from '../../../src/shared/e2e'
+import { parseWindowsAccelerator } from '../../../src/shared/accelerator'
+import { E2E_CONFLICTING_HOTKEY, e2eScenarioSchema } from '../../../src/shared/e2e'
 
 describe('development-only E2E admission', () => {
   it('rejects the boundary in packaged builds', () => {
@@ -55,5 +57,17 @@ describe('development-only E2E admission', () => {
     expect(isTrustedMainE2ESender(widget, renderers)).toBe(false)
     expect(isTrustedMainE2ESender({}, renderers)).toBe(false)
     expect(isTrustedMainE2ESender(main, [{ role: 'widget', webContents: main }])).toBe(false)
+  })
+
+  it('preserves the registered shortcut when a friendly Windows spelling conflicts', () => {
+    const shortcuts = createE2EGlobalShortcuts('hotkey-conflict')
+    const previous = 'CommandOrControl+Shift+Space'
+    const callback = () => undefined
+    const candidate = parseWindowsAccelerator(E2E_CONFLICTING_HOTKEY)
+
+    expect(shortcuts.register(previous, callback)).toBe(true)
+    expect(candidate).toBe('CommandOrControl+Alt+9')
+    expect(shortcuts.register(candidate!, callback)).toBe(false)
+    expect(shortcuts.isRegistered?.(previous)).toBe(true)
   })
 })

@@ -21,10 +21,14 @@ describe('Windows release contract', () => {
     }
     for (const script of ['package:dir', 'package:win']) {
       expect(packageJson.scripts[script]).toMatch(/^npm run model:verify && npm run build && /)
+      expect(packageJson.scripts[script]).toContain('node scripts/write-build-provenance.mjs')
       expect(packageJson.scripts[script]).toContain(
         'node scripts/verify-packaged-resources.mjs release/win-unpacked',
       )
     }
+    expect(packageJson.scripts['package:win']).toContain(
+      '--installer "release/TalkType Setup 0.1.0.exe"',
+    )
 
     const viteConfig = read('electron.vite.config.ts')
     const verifier = read('scripts/verify-packaged-resources.mjs')

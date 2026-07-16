@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path'
 
+import { parseWindowsAccelerator } from '../../shared/accelerator'
 import {
   E2E_CONFLICTING_HOTKEY,
   E2E_PRESERVED_CLIPBOARD,
@@ -79,17 +80,21 @@ export interface E2EGlobalShortcutAdapter extends GlobalShortcutAdapter {
 
 export function createE2EGlobalShortcuts(scenario: E2EScenario): E2EGlobalShortcutAdapter {
   const registered = new Map<string, () => void>()
+  const conflict = parseWindowsAccelerator(E2E_CONFLICTING_HOTKEY) ?? E2E_CONFLICTING_HOTKEY
+  const canonical = (accelerator: string): string =>
+    parseWindowsAccelerator(accelerator) ?? accelerator.trim()
   return {
     register(accelerator, callback): boolean {
-      if (scenario === 'hotkey-conflict' && accelerator === E2E_CONFLICTING_HOTKEY) return false
-      if (registered.has(accelerator)) return false
-      registered.set(accelerator, callback)
+      const key = canonical(accelerator)
+      if (scenario === 'hotkey-conflict' && key === conflict) return false
+      if (registered.has(key)) return false
+      registered.set(key, callback)
       return true
     },
-    unregister(accelerator): void { registered.delete(accelerator) },
-    isRegistered(accelerator): boolean { return registered.has(accelerator) },
+    unregister(accelerator): void { registered.delete(canonical(accelerator)) },
+    isRegistered(accelerator): boolean { return registered.has(canonical(accelerator)) },
     trigger(accelerator): boolean {
-      const callback = registered.get(accelerator)
+      const callback = registered.get(canonical(accelerator))
       if (callback === undefined) return false
       callback()
       return true

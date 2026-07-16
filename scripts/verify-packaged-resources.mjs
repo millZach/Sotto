@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
+import { promisify } from 'node:util'
 
 import { extractFile, listPackage } from '@electron/asar'
 import { _electron as electron } from '@playwright/test'
@@ -12,8 +14,14 @@ import { _electron as electron } from '@playwright/test'
 import { verifyPreparedAssets } from './verify-model.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
+import {
+  fileSha256,
+  readSourceCommit,
+  verifyBuildProvenance,
+} from './release-provenance.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
+const execFileAsync = promisify(execFile)
 
 function fail(message) {
   throw new Error(`Packaged release verification failed: ${message}`)
@@ -31,6 +39,63 @@ function requireInsideRepositoryRelease(input) {
     fail('target must be a release subdirectory')
   }
   return target
+}
+
+function requireReleaseFile(input) {
+  const target = resolve(repositoryRoot, input)
+  const releaseRoot = resolve(repositoryRoot, 'release')
+  const child = relative(releaseRoot, target)
+  if (!child || child.startsWith(`..${sep}`) || child === '..' || isAbsolute(child)) {
+    fail('installer must be a file inside release')
+  }
+  if (!existsSync(target)) fail(`missing installer ${child}`)
+  return target
+}
+
+async function findFile(root, name) {
+  if (!root || !existsSync(root)) return null
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isFile() && entry.name.toLowerCase() === name.toLowerCase()) return path
+    if (entry.isDirectory()) {
+      const nested = await findFile(path, name)
+      if (nested !== null) return nested
+    }
+  }
+  return null
+}
+
+async function resolveSevenZip() {
+  if (process.env.TALKTYPE_7ZA_PATH && existsSync(process.env.TALKTYPE_7ZA_PATH)) {
+    return process.env.TALKTYPE_7ZA_PATH
+  }
+  const cache = join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache')
+  const sevenZip = await findFile(cache, '7za.exe')
+  if (sevenZip === null) fail('electron-builder 7-Zip tool is unavailable for installer verification')
+  return sevenZip
+}
+
+export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
+  const installerPath = requireReleaseFile(installerInput)
+  const extractionRoot = await mkdtemp(join(tmpdir(), 'talktype-installer-asar-'))
+  try {
+    const sevenZip = await resolveSevenZip()
+    await execFileAsync(sevenZip, [
+      'x', '-y', `-o${extractionRoot}`, installerPath, 'resources\\app.asar',
+    ], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 })
+    const embeddedAsarPath = join(extractionRoot, 'resources', 'app.asar')
+    if (!existsSync(embeddedAsarPath)) fail('installer does not contain resources/app.asar')
+    const [embedded, unpacked] = await Promise.all([
+      fileSha256(embeddedAsarPath),
+      fileSha256(unpackedAsarPath),
+    ])
+    if (JSON.stringify(embedded) !== JSON.stringify(unpacked)) {
+      fail('installer embedded app.asar differs from verified win-unpacked app.asar')
+    }
+    return { name: basename(installerPath), ...embedded }
+  } finally {
+    await rm(extractionRoot, { recursive: true, force: true })
+  }
 }
 
 function asarText(asarPath, path) {
@@ -176,7 +241,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
   }
 }
 
-export async function verifyPackagedResources(input) {
+export async function verifyPackagedResources(input, options = {}) {
   const target = requireInsideRepositoryRelease(input)
   const resources = join(target, 'resources')
   const asarPath = join(resources, 'app.asar')
@@ -200,11 +265,22 @@ export async function verifyPackagedResources(input) {
     '\\out\\main\\external-dependencies.json',
     '\\out\\preload\\index.js',
     '\\out\\preload\\external-dependencies.json',
+    '\\out\\build-provenance.json',
     '\\out\\renderer\\index.html',
     '\\out\\renderer\\audio-capture-worklet.js',
     '\\package.json',
   ]) {
     if (!entries.includes(required)) fail(`app.asar is missing ${required}`)
+  }
+  let provenance
+  try {
+    provenance = await verifyBuildProvenance({
+      outRoot: join(repositoryRoot, 'out'),
+      asarPath,
+      sourceCommit: readSourceCommit(repositoryRoot),
+    })
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
   }
   const roots = productionModuleRoots(entries)
   if (JSON.stringify(roots) !== JSON.stringify(['zod'])) {
@@ -240,6 +316,9 @@ export async function verifyPackagedResources(input) {
   const packagedNotices = await readFile(join(resources, 'THIRD_PARTY_NOTICES.md'))
   if (sha256(sourceNotices) !== sha256(packagedNotices)) fail('packaged notices differ from source')
 
+  const installer = options.installer === undefined
+    ? undefined
+    : await verifyInstallerAppAsar(options.installer, asarPath)
   const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
   const asarInfo = await stat(asarPath)
   const executableInfo = await stat(join(target, 'TalkType.exe'))
@@ -248,6 +327,12 @@ export async function verifyPackagedResources(input) {
     asarBytes: asarInfo.size,
     asarSha256: sha256(readFileSync(asarPath)),
     executableBytes: executableInfo.size,
+    provenance: {
+      sourceCommit: provenance.sourceCommit,
+      buildSha256: provenance.buildSha256,
+      artifactCount: provenance.artifacts.length,
+    },
+    ...(installer === undefined ? {} : { installer }),
     smoke,
   }
 }
@@ -255,6 +340,14 @@ export async function verifyPackagedResources(input) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const input = process.argv[2]
   if (!input) fail('expected the packaged directory argument')
-  const result = await verifyPackagedResources(input)
+  const installerFlag = process.argv[3]
+  const installer = process.argv[4]
+  if ((installerFlag === undefined) !== (installer === undefined) ||
+      (installerFlag !== undefined && installerFlag !== '--installer')) {
+    fail('expected optional --installer <release installer>')
+  }
+  const result = await verifyPackagedResources(input, {
+    ...(installer === undefined ? {} : { installer }),
+  })
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }

@@ -121,6 +121,13 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
     await launched.page.getByRole('button', { name: 'Apply shortcut' }).click()
     await expect(launched.page.getByRole('alert')).toContainText(/another application is already using/i)
     await expect(shortcut).toHaveValue(previous)
+
+    await triggerShortcut(launched.page)
+    const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
+    if (widget === undefined) throw new Error('Widget window unavailable')
+    await expect(widget.getByText('Listening', { exact: true })).toBeVisible()
+    await triggerShortcut(launched.page)
+    await expect(widget.getByText('Pasted', { exact: true })).toBeVisible()
   } finally {
     await closeTalkType(launched)
   }
