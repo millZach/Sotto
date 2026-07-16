@@ -1020,7 +1020,7 @@ git commit -m "feat: add global dictation status widget"
 - Modify: `playwright.config.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing end-to-end workflows**
+- [x] **Step 1: Write failing end-to-end workflows**
 
 ```ts
 // tests/e2e/app.spec.ts
@@ -1045,25 +1045,25 @@ test('onboards, dictates, copies, pastes, and records local history', async () =
 
 Add workflows for history disabled, theme persistence, hotkey-conflict message, microphone denial recovery, silence preserving clipboard, paste failure showing copied fallback, settings reload, window hide-to-tray, and single-instance behavior. E2E mode may inject deterministic recorder/transcriber/native adapters only at the bootstrap boundary; production builds must tree-shake or reject that mode unless `!app.isPackaged`.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 Run: `npm run build && npx playwright test tests/e2e/app.spec.ts`
 
 Expected: FAIL until the e2e adapters and complete workflow selectors are wired.
 
-- [ ] **Step 3: Complete the deterministic e2e seam and tests**
+- [x] **Step 3: Complete the deterministic e2e seam and tests**
 
 Use `TALKTYPE_E2E=1` only in development output to supply one-second fake PCM, the exact fixture transcript, in-memory shortcut/clipboard/paste adapters, and a temporary user-data path. Keep all production path behavior unchanged. Add stable `data-testid` only where role/name selection cannot identify a dynamic waveform or native title control.
 
-- [ ] **Step 4: Produce the TalkType brand assets**
+- [x] **Step 4: Produce the TalkType brand assets**
 
 Use the imagegen skill to create an original indigo TalkType bitmap icon: a rounded dark/white tile containing a symmetric microphone capsule whose negative-space stem becomes a text caret, plus two cyan audio ticks. Export 1024×1024 PNG, a multi-resolution Windows ICO (16, 24, 32, 48, 64, 128, 256), and a quiet installer sidebar. Verify legibility at 16 px and in both Windows themes. Record the icon-generation provenance in `THIRD_PARTY_NOTICES.md`.
 
-- [ ] **Step 5: Configure packaging and documentation**
+- [x] **Step 5: Configure packaging and documentation**
 
 Electron Builder must produce x64 NSIS assisted install plus `win-unpacked`, use per-user installation, create Start Menu and optional desktop shortcuts, preserve user data on uninstall by default, include model/runtime extraResources and notices, and set product metadata. README must contain prerequisites, privacy promise, development commands, model preparation, test matrix, packaging, default shortcut, first run, settings, elevated-window paste limitation, troubleshooting, and release artifact paths.
 
-- [ ] **Step 6: Verify GREEN and build both artifacts**
+- [x] **Step 6: Verify GREEN and build both artifacts**
 
 Run:
 
@@ -1078,7 +1078,7 @@ npm run package:win
 
 Expected: all checks pass; `release/win-unpacked/TalkType.exe` and an NSIS `TalkType Setup 0.1.0.exe` exist; `resources/models/Xenova/whisper-base` and runtime WASM files exist inside `win-unpacked/resources`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add tests/e2e tests/fixtures build README.md THIRD_PARTY_NOTICES.md electron-builder.yml playwright.config.ts package.json package-lock.json
