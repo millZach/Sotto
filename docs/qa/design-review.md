@@ -2,7 +2,7 @@
 
 Date: 2026-07-15  
 Scope: Task 14 deterministic desktop design review and accepted-finding fix pass  
-Status: Implementation and automated evidence complete; final independent reviewer recheck remains pending.
+Status: Complete; final independent reviewer recheck approved at commit `8fb207a741af5428aa2a60050f1156ecf7c0343c`.
 
 ## Review set and method
 
@@ -68,6 +68,8 @@ Tests were written against public component, style, capture, and packaged-bounda
 - `npx playwright test tests/e2e/visual-previews.spec.ts --workers=1`: 14/14 passed.
 - Electron leak check after browser runs: no Electron processes remained.
 
-## Recheck status
+## Independent recheck verdict
 
-The after matrix and contact sheets are ready for the same independent design reviewer. Automated checks and manual artifact inspection show every accepted High/Medium finding resolved, with no known unresolved Critical or High issue. The independent reviewer verdict is deliberately not inferred here and remains the next review action.
+The original reviewer rechecked the updated Settings, Home, widget, focus, motion, onboarding, scale, and full-surface evidence and reported every original finding resolved with no regression found. A fresh independent final approver then audited the committed review artifacts and representative 200% Help/Settings captures. It confirmed all eight accepted High/Medium findings resolved, strong light/dark parity, a cohesive and recognizably original design, complete bounded 200% surfaces, and no new Critical or High visual issue.
+
+Final verdict: **APPROVED**.

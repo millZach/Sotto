@@ -1092,27 +1092,27 @@ git commit -m "build: package verified TalkType Windows release"
 - Modify: UI/style/component files identified by review
 - Modify: focused UI tests identified by review
 
-- [ ] **Step 1: Capture the complete review set**
+- [x] **Step 1: Capture the complete review set**
 
 Run the built app in deterministic preview mode and save light/dark screenshots for onboarding steps, Home in ready/listening/processing/error, populated and empty History, every Settings group, Help, and each widget state. Also capture 100%, 125%, 150%, and 200% Windows scaling equivalents through Playwright viewport/deviceScaleFactor settings.
 
-- [ ] **Step 2: Dispatch a dedicated design subagent**
+- [x] **Step 2: Dispatch a dedicated design subagent**
 
 Give the subagent the approved spec, token CSS, screenshots, and these explicit review dimensions: hierarchy, density, spacing rhythm, typography, light/dark parity, contrast, focus states, clipping, text wrapping, empty/error feedback, motion, widget glanceability, and resemblance risk to WhisperFlow. Require severity-ranked findings with exact screenshot/component references and concrete proposed corrections. Save the returned review to `docs/qa/design-review.md`.
 
-- [ ] **Step 3: Write failing visual or component tests for each accepted finding**
+- [x] **Step 3: Write failing visual or component tests for each accepted finding**
 
 For every functional/accessibility finding, add a role/state assertion that fails before the fix. For clipping or layout findings, add a Playwright screenshot or bounding-box assertion at the failing scale. Record any purely aesthetic low-severity choice that is intentionally not changed with a reason in the review document.
 
-- [ ] **Step 4: Fix critical, high, and accepted medium findings**
+- [x] **Step 4: Fix critical, high, and accepted medium findings**
 
 Change tokens/components rather than applying page-specific overrides when the issue is systemic. Re-run the focused RED test after each change and preserve both themes and reduced motion.
 
-- [ ] **Step 5: Re-capture and request design recheck**
+- [x] **Step 5: Re-capture and request design recheck**
 
 Re-run the full screenshot matrix and ask the same design subagent to confirm each finding is resolved. Append the recheck verdict and evidence paths to `docs/qa/design-review.md`.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm test && npx playwright test tests/e2e/visual-previews.spec.ts`
 
