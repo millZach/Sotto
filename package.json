@@ -12,11 +12,11 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test --workers=1",
     "model:prepare": "node scripts/prepare-model.mjs",
     "model:verify": "node scripts/verify-model.mjs",
-    "package:dir": "npm run build && electron-builder --dir",
-    "package:win": "npm run build && electron-builder --win"
+    "package:dir": "npm run build && electron-builder --dir --win --x64",
+    "package:win": "npm run build && electron-builder --win nsis --x64"
   },
   "license": "UNLICENSED",
   "type": "commonjs",

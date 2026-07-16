@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
+import type { TalkTypeE2EBridge } from './e2e'
 
 export type Unsubscribe = () => void
 
@@ -270,6 +271,8 @@ declare global {
   interface Window {
     talktype?: TalkTypeBridge
     talktypeWidget?: TalkTypeWidgetBridge
+    /** Present only when the non-packaged main process admits TALKTYPE_E2E. */
+    talktypeE2E?: TalkTypeE2EBridge
     /**
      * Immutable second gate for visual tests. It is recognized only in a renderer compiled
      * with the exact test-only environment value TALKTYPE_VISUAL_PREVIEW=1.

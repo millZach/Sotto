@@ -72,6 +72,26 @@ import {
   registerLocalAssetProtocols,
   registerModelSchemesAsPrivileged,
 } from './models/modelProtocol'
+import {
+  createE2EClipboard,
+  createE2EGlobalShortcuts,
+  createE2ENativeState,
+  createE2EModelOperations,
+  createE2EPasteProcess,
+  resolveE2EConfiguration,
+  isTrustedMainE2ESender,
+  snapshotE2EState,
+} from './e2e/e2eBoundary'
+import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL } from '../shared/e2e'
+
+const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
+if (e2eConfiguration === null) {
+  delete process.env.TALKTYPE_E2E
+  delete process.env.TALKTYPE_E2E_SCENARIO
+  delete process.env.TALKTYPE_E2E_USER_DATA
+} else if (e2eConfiguration !== null) {
+  app.setPath('userData', e2eConfiguration.userDataPath)
+}
 
 type NativeDiagnostic =
   | BootstrapDiagnostic
@@ -277,7 +297,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
   const settings = new SettingsRepository(join(userDataPath, 'settings.json'))
   const history = new HistoryRepository(join(userDataPath, 'history.json'))
-  const startup = new StartupService(app)
+  let e2eOpenAtLogin = false
+  const startup = new StartupService(e2eConfiguration === null ? app : {
+    getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
+    setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
+  })
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
     display: screen,
@@ -290,34 +314,41 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     isPackaged: app.isPackaged,
     log: logOperational,
   })
-  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
-  const modelRoot = join(resourceRoot, 'models')
-  const runtimeRoot = join(resourceRoot, 'runtime')
-  const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
-  const bundledManifest = await loadBundledModelManifest(
-    join(modelRoot, 'manifest.lock.json'),
-    catalog,
-  )
-  const runtimeSource = await loadVerifiedRuntimeSource(runtimeRoot)
-  const models = new ModelManager({
-    catalog,
-    bundledManifest,
-    packagedRoot: modelRoot,
-    userRoot: join(userDataPath, 'models'),
-    onProgress(progress) {
-      windows.sendToMain(MODEL_STATUS, { preset: progress.preset, state: 'downloading', progress: progress.totalBytes === 0 ? 0 : progress.completedBytes / progress.totalBytes })
-    },
-  })
+  const productionModels = e2eConfiguration === null ? await (async () => {
+    const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+    const modelRoot = join(resourceRoot, 'models')
+    const runtimeRoot = join(resourceRoot, 'runtime')
+    const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
+    const bundledManifest = await loadBundledModelManifest(join(modelRoot, 'manifest.lock.json'), catalog)
+    const runtimeSource = await loadVerifiedRuntimeSource(runtimeRoot)
+    const manager = new ModelManager({
+      catalog,
+      bundledManifest,
+      packagedRoot: modelRoot,
+      userRoot: join(userDataPath, 'models'),
+      onProgress(progress) {
+        windows.sendToMain(MODEL_STATUS, { preset: progress.preset, state: 'downloading', progress: progress.totalBytes === 0 ? 0 : progress.completedBytes / progress.totalBytes })
+      },
+    })
+    return { manager, runtimeSource }
+  })() : null
+  const models = productionModels?.manager ?? createE2EModelOperations()
+  const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const output = new OutputService({
-    clipboard,
+    clipboard: e2eState === null ? clipboard : createE2EClipboard(e2eState),
     widget: windows,
     delay: (milliseconds) =>
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds)
       }),
-    process: createSpawnProcessAdapter((executable, args, options) =>
-      spawn(executable, args, options),
-    ),
+    process: e2eConfiguration === null
+      ? createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options))
+      : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
+        const mainWindow = BrowserWindow.getAllWindows().find(
+          (candidate) => candidate.getTitle() === APP_NAME,
+        )
+        mainWindow?.webContents.insertText(text)
+      }),
   })
 
   const messageDelivery = new NativeMessageDelivery(windows)
@@ -337,17 +368,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     showWidget()
   }
 
-  const hotkeys = new HotkeyManager(globalShortcut, toggleDictation, () => {
+  const e2eShortcuts = e2eConfiguration === null
+    ? null
+    : createE2EGlobalShortcuts(e2eConfiguration.scenario)
+  const hotkeys = new HotkeyManager(
+    e2eShortcuts ?? globalShortcut,
+    toggleDictation,
+    () => {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
-  })
+    },
+  )
 
-  const nativeTray = await createTrayResource({
-    executablePath: process.execPath,
-    getFileIcon: (path, options) => app.getFileIcon(path, options),
-    createTray: (icon) => new Tray(icon),
-    configure: (tray) => tray.setToolTip(APP_NAME),
-  })
+  const nativeTray = e2eConfiguration === null
+    ? await createTrayResource({
+        executablePath: process.execPath,
+        getFileIcon: (path, options) => app.getFileIcon(path, options),
+        createTray: (icon) => new Tray(icon),
+        configure: (tray) => tray.setToolTip(APP_NAME),
+      })
+    : { setContextMenu: () => undefined, destroy: () => undefined }
   try {
   const trayAdapter: TrayAdapter = {
     setMenu(items): void {
@@ -423,15 +463,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           .getTrustedRenderers()
           .filter((renderer) => renderer.role === 'main'),
       ),
-    installProtocols: () =>
-      registerLocalAssetProtocols({
-        protocol,
-        net,
-        modelSources: () => models.protocolSources(),
-        runtimeSource,
-      }),
-    registerIpc: () =>
-      registerIpc(ipcMain, {
+    installProtocols: productionModels === null
+      ? () => () => undefined
+      : () => registerLocalAssetProtocols({
+          protocol,
+          net,
+          modelSources: () => productionModels.manager.protocolSources(),
+          runtimeSource: productionModels.runtimeSource,
+        }),
+    registerIpc: () => {
+      const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => settingsCoordinator.updateSettings(patch),
@@ -466,7 +507,32 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         models: createModelIpcService(models, (status) => {
           windows.sendToMain(MODEL_STATUS, status)
         }),
-      }),
+      })
+      if (e2eState === null) return cleanup
+      ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
+        if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
+          throw new Error('E2E_SENDER_REJECTED')
+        }
+        return snapshotE2EState(
+          e2eState,
+          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
+        )
+      })
+      ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
+        if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
+          throw new Error('E2E_SENDER_REJECTED')
+        }
+        const accelerator = hotkeys.current()
+        if (accelerator === null || e2eShortcuts?.trigger(accelerator) !== true) {
+          throw new Error('E2E_SHORTCUT_UNAVAILABLE')
+        }
+      })
+      return () => {
+        ipcMain.removeHandler(E2E_SNAPSHOT_CHANNEL)
+        ipcMain.removeHandler(E2E_TRIGGER_SHORTCUT_CHANNEL)
+        cleanup()
+      }
+    },
     log: logOperational,
   })
   } catch {

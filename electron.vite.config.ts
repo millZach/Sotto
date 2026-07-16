@@ -10,7 +10,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // Sandboxed preload scripts cannot resolve arbitrary node_modules at runtime.
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
   },
   renderer: {
     define: {

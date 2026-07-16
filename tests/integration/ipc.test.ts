@@ -90,6 +90,7 @@ import {
   createTalkTypeBridge,
   createTalkTypeWidgetBridge,
   exposeRendererBridge,
+  exposeE2EBridge,
   parseRendererRoleArgument,
 } from '../../src/preload'
 
@@ -349,6 +350,39 @@ describe('typed preload bridge', () => {
     expect(exposeRendererBridge(context, electronMock.ipcRenderer, ['electron'])).toBe(false)
     expect(context.exposeInMainWorld).not.toHaveBeenCalled()
     expect(electronMock.ipcRenderer.on).not.toHaveBeenCalled()
+  })
+
+  it('exposes the E2E bridge only for an admitted main renderer environment and role', () => {
+    const context = { exposeInMainWorld: vi.fn() }
+    const admitted = {
+      TALKTYPE_E2E: '1',
+      TALKTYPE_E2E_SCENARIO: 'success',
+    }
+
+    exposeE2EBridge(context, electronMock.ipcRenderer, admitted, [
+      'electron',
+      '--talktype-renderer-role=widget',
+    ])
+    exposeE2EBridge(context, electronMock.ipcRenderer, admitted, ['electron'])
+    exposeE2EBridge(context, electronMock.ipcRenderer, {}, [
+      'electron',
+      '--talktype-renderer-role=main',
+    ])
+    exposeE2EBridge(context, electronMock.ipcRenderer, {
+      ...admitted,
+      TALKTYPE_E2E_SCENARIO: 'unknown',
+    }, ['electron', '--talktype-renderer-role=main'])
+    expect(context.exposeInMainWorld).not.toHaveBeenCalled()
+
+    exposeE2EBridge(context, electronMock.ipcRenderer, admitted, [
+      'electron',
+      '--talktype-renderer-role=main',
+    ])
+    expect(context.exposeInMainWorld).toHaveBeenCalledTimes(1)
+    expect(context.exposeInMainWorld).toHaveBeenCalledWith(
+      'talktypeE2E',
+      expect.objectContaining({ scenario: 'success' }),
+    )
   })
 
   it('types generic settings updates without native-managed fields', () => {

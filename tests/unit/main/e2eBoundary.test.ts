@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  isTrustedMainE2ESender,
+  resolveE2EConfiguration,
+} from '../../../src/main/e2e/e2eBoundary'
+
+describe('development-only E2E admission', () => {
+  it('rejects the boundary in packaged builds', () => {
+    expect(resolveE2EConfiguration(true, {
+      TALKTYPE_E2E: '1',
+      TALKTYPE_E2E_SCENARIO: 'success',
+      TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
+    })).toBeNull()
+  })
+
+  it.each([
+    {},
+    { TALKTYPE_E2E: '1' },
+    { TALKTYPE_E2E: '1', TALKTYPE_E2E_SCENARIO: 'unknown', TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e' },
+    { TALKTYPE_E2E: '1', TALKTYPE_E2E_SCENARIO: 'success', TALKTYPE_E2E_USER_DATA: 'relative-path' },
+  ])('rejects incomplete or invalid development input %#', (environment) => {
+    expect(resolveE2EConfiguration(false, environment)).toBeNull()
+  })
+
+  it('admits a validated non-packaged profile', () => {
+    expect(resolveE2EConfiguration(false, {
+      TALKTYPE_E2E: '1',
+      TALKTYPE_E2E_SCENARIO: 'paste-failure',
+      TALKTYPE_E2E_USER_DATA: 'C:\\temp\\talktype-e2e',
+    })).toEqual({ scenario: 'paste-failure', userDataPath: 'C:\\temp\\talktype-e2e' })
+  })
+
+  it('accepts only the exact trusted main renderer sender', () => {
+    const main = {}
+    const widget = {}
+    const renderers = [
+      { role: 'main', webContents: main },
+      { role: 'widget', webContents: widget },
+    ]
+    expect(isTrustedMainE2ESender(main, renderers)).toBe(true)
+    expect(isTrustedMainE2ESender(widget, renderers)).toBe(false)
+    expect(isTrustedMainE2ESender({}, renderers)).toBe(false)
+    expect(isTrustedMainE2ESender(main, [{ role: 'widget', webContents: main }])).toBe(false)
+  })
+})

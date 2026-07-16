@@ -40,6 +40,13 @@ import {
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
+import {
+  E2E_SNAPSHOT_CHANNEL,
+  E2E_TRIGGER_SHORTCUT_CHANNEL,
+  e2eScenarioSchema,
+  e2eSnapshotSchema,
+  type TalkTypeE2EBridge,
+} from '../shared/e2e'
 
 type RendererListener = (event: unknown, ...args: unknown[]) => void
 
@@ -249,4 +256,22 @@ export function exposeRendererBridge(
   return false
 }
 
+export function exposeE2EBridge(
+  context: ContextBridgeAdapter,
+  renderer: IpcRendererAdapter,
+  environment: NodeJS.ProcessEnv,
+  arguments_: readonly string[],
+): void {
+  if (environment.TALKTYPE_E2E !== '1' || parseRendererRoleArgument(arguments_) !== 'main') return
+  const scenario = e2eScenarioSchema.safeParse(environment.TALKTYPE_E2E_SCENARIO ?? 'success')
+  if (!scenario.success) return
+  const bridge: TalkTypeE2EBridge = Object.freeze({
+    scenario: scenario.data,
+    snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
+    triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),
+  })
+  context.exposeInMainWorld('talktypeE2E', bridge)
+}
+
 exposeRendererBridge(contextBridge, ipcRenderer, process.argv)
+exposeE2EBridge(contextBridge, ipcRenderer, process.env, process.argv)
