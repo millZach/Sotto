@@ -16,7 +16,10 @@ if (!rootElement) {
 
 const parameters = new URLSearchParams(window.location.search)
 const previewRequested = parameters.has('preview') || parameters.has('theme')
-const preview = parseVisualPreview(parameters, isVisualPreviewEnabled(window))
+const preview = parseVisualPreview(
+  parameters,
+  isVisualPreviewEnabled(window, import.meta.env.TALKTYPE_VISUAL_PREVIEW),
+)
 const bridge = preview === null && previewRequested ? undefined : window.talktypeWidget
 
 createRoot(rootElement).render(

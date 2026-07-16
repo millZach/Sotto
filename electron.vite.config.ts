@@ -2,6 +2,9 @@ import { resolve } from 'node:path'
 
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
+// Preview code is inert unless the renderer was built with this exact test-only gate.
+const visualPreviewEnvironment = process.env.TALKTYPE_VISUAL_PREVIEW === '1' ? '1' : '0'
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -10,6 +13,9 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
+    define: {
+      'import.meta.env.TALKTYPE_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
+    },
     build: {
       rollupOptions: {
         input: {

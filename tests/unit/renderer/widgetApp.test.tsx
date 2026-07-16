@@ -244,6 +244,75 @@ describe('WidgetApp', () => {
     expect(new Set(quiet).size).toBeGreaterThan(2)
     expect(quiet).not.toEqual(loud)
   })
+
+  it('announces only stable state copy while keeping live meter, timer, and progress ticks quiet', () => {
+    const { rerender } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.2,
+          cancellable: true,
+        })}
+        now={1_000}
+      />,
+    )
+    const listeningAnnouncement = screen.getByRole('status')
+    expect(listeningAnnouncement).toHaveAttribute('aria-live', 'polite')
+    expect(listeningAnnouncement).toHaveAttribute('aria-atomic', 'true')
+    expect(listeningAnnouncement).toHaveTextContent('Listening')
+    expect(listeningAnnouncement).toHaveTextContent('Ctrl+Shift+Space to finish')
+    expect(listeningAnnouncement.contains(screen.getByRole('meter'))).toBe(false)
+    expect(listeningAnnouncement.contains(screen.getByText('00:01'))).toBe(false)
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.9,
+          cancellable: true,
+        })}
+        now={2_000}
+      />,
+    )
+    expect(screen.getByRole('status')).toBe(listeningAnnouncement)
+    expect(screen.getByRole('status')).toHaveTextContent('ListeningCtrl+Shift+Space to finish')
+    expect(screen.getByText('00:02')).toHaveAttribute('aria-live', 'off')
+    expect(screen.getByRole('meter')).toHaveAttribute('aria-live', 'off')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'processing', sessionId: 'announced', startedAt: 0,
+          stage: 'transcribing', progress: 0.58, cancellable: true,
+        })}
+        now={2_000}
+      />,
+    )
+    const processingAnnouncement = screen.getByRole('status')
+    expect(processingAnnouncement).toHaveTextContent('Transcribing locallyAudio stays on this PC')
+    expect(processingAnnouncement.contains(screen.getByRole('progressbar'))).toBe(false)
+    expect(screen.getByText('58%')).toHaveAttribute('aria-live', 'off')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'success', sessionId: 'announced', output: 'pasted' })}
+        now={2_000}
+      />,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('PastedText delivered')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'error', sessionId: 'announced', code: 'TRANSCRIPTION_FAILED',
+        })}
+        now={2_000}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveAttribute('aria-live', 'assertive')
+    expect(alert).toHaveAttribute('aria-atomic', 'true')
+    expect(alert).toHaveTextContent('Couldn’t transcribe')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })
 
 describe('WidgetEntry', () => {
@@ -358,25 +427,28 @@ describe('visual preview parser', () => {
     expect(parseVisualPreview(new URLSearchParams('preview=listening&theme=dark&text=private'), true)).toBeNull()
   })
 
-  it('requires a truly immutable injected preview descriptor', () => {
+  it('requires both the exact environment gate and a truly immutable injected descriptor', () => {
     const immutable = {} as Window
     Object.defineProperty(immutable, '__TALKTYPE_VISUAL_PREVIEW__', {
       value: true, writable: false, configurable: false,
     })
-    expect(isVisualPreviewEnabled(immutable)).toBe(true)
+    expect(isVisualPreviewEnabled(immutable, '1')).toBe(true)
+    for (const disabled of [undefined, '', '0', 'true', '01', ' 1', '1 ']) {
+      expect(isVisualPreviewEnabled(immutable, disabled)).toBe(false)
+    }
 
     const writable = {} as Window
     Object.defineProperty(writable, '__TALKTYPE_VISUAL_PREVIEW__', {
       value: true, writable: true, configurable: false,
     })
-    expect(isVisualPreviewEnabled(writable)).toBe(false)
+    expect(isVisualPreviewEnabled(writable, '1')).toBe(false)
 
     const configurable = {} as Window
     Object.defineProperty(configurable, '__TALKTYPE_VISUAL_PREVIEW__', {
       value: true, writable: false, configurable: true,
     })
-    expect(isVisualPreviewEnabled(configurable)).toBe(false)
-    expect(isVisualPreviewEnabled({} as Window)).toBe(false)
+    expect(isVisualPreviewEnabled(configurable, '1')).toBe(false)
+    expect(isVisualPreviewEnabled({} as Window, '1')).toBe(false)
   })
 
   it('keeps widget source clean and the canvas transparent with complete motion overrides', () => {

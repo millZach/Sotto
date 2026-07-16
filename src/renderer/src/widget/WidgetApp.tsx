@@ -160,6 +160,7 @@ function LevelBars({ level, active }: { readonly level: number; readonly active:
       aria-valuemin={active ? 0 : undefined}
       aria-valuemax={active ? 100 : undefined}
       aria-valuenow={active ? Math.round(boundedLevel * 100) : undefined}
+      aria-live="off"
       aria-hidden={active ? undefined : true}
       data-active={active}
     >
@@ -224,19 +225,27 @@ export function WidgetApp({ snapshot, now, onStop, onCancel }: WidgetAppProps): 
         <span className="widget-state-icon">{copy.icon}</span>
         {isListening && <LevelBars level={snapshot.level} active />}
         {isProcessing && <span className="widget-orbit" data-testid="processing-orbit" aria-hidden="true"><span /></span>}
-        <div className="widget-copy">
+        <div
+          className="widget-copy"
+          role={snapshot.status === 'error' ? 'alert' : 'status'}
+          aria-live={snapshot.status === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+        >
           <strong>{copy.title}</strong>
           <span title={copy.detail}>{copy.detail}</span>
         </div>
         <div className="widget-metric">
           {isListening && (
-            <time dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}>
+            <time
+              dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}
+              aria-live="off"
+            >
               {formatElapsedTime(snapshot.startedAt, now)}
             </time>
           )}
           {isProcessing && (
             <>
-              <span>{progress}%</span>
+              <span aria-live="off">{progress}%</span>
               <span
                 className="widget-progress"
                 role="progressbar"
@@ -368,7 +377,11 @@ export function parseVisualPreview(
   }
 }
 
-export function isVisualPreviewEnabled(target: Window): boolean {
+export function isVisualPreviewEnabled(
+  target: Window,
+  environmentValue: string | undefined,
+): boolean {
+  if (environmentValue !== '1') return false
   const descriptor = Object.getOwnPropertyDescriptor(target, '__TALKTYPE_VISUAL_PREVIEW__')
   return descriptor?.value === true && descriptor.writable === false && descriptor.configurable === false
 }
