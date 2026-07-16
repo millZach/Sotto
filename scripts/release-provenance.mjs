@@ -7,6 +7,29 @@ import { extractFile, listPackage, statFile } from '@electron/asar'
 
 export const BUILD_PROVENANCE_FILE = 'build-provenance.json'
 
+const BUILD_INPUT_PATHS = Object.freeze([
+  'package.json',
+  'package-lock.json',
+  'electron.vite.config.ts',
+  'electron-builder.yml',
+  'tsconfig.json',
+  'tsconfig.node.json',
+  'tsconfig.web.json',
+  'README.md',
+  'THIRD_PARTY_NOTICES.md',
+  'build',
+  'src',
+  'resources/models',
+  'resources/runtime',
+  'scripts/model-catalog.mjs',
+  'scripts/release-external-dependencies.mjs',
+  'scripts/release-provenance.mjs',
+  'scripts/verify-model.mjs',
+  'scripts/verify-notices.mjs',
+  'scripts/verify-packaged-resources.mjs',
+  'scripts/write-build-provenance.mjs',
+])
+
 export function readSourceCommit(repositoryRoot) {
   return execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repositoryRoot,
@@ -17,6 +40,24 @@ export function readSourceCommit(repositoryRoot) {
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
+}
+
+export async function readBuildInputsRevision(repositoryRoot) {
+  const paths = []
+  for (const input of BUILD_INPUT_PATHS) {
+    const target = resolve(repositoryRoot, input)
+    const info = await stat(target).catch((error) => {
+      if (error?.code === 'ENOENT') return undefined
+      throw error
+    })
+    if (info?.isFile()) paths.push(input)
+    else if (info?.isDirectory()) paths.push(...await walkFiles(repositoryRoot, target))
+  }
+  const inputs = await Promise.all([...new Set(paths)].sort().map(async (path) => {
+    const value = await readFile(resolve(repositoryRoot, path))
+    return { path, bytes: value.byteLength, sha256: sha256(value) }
+  }))
+  return sha256(JSON.stringify(inputs))
 }
 
 async function walkFiles(root, directory = root) {
@@ -54,11 +95,29 @@ function buildSha256(artifacts) {
   return sha256(JSON.stringify(artifacts))
 }
 
-export async function writeBuildProvenance({ outRoot, sourceCommit }) {
+async function resolveBuildInputsRevision({ repositoryRoot, buildInputsRevision }) {
+  const revision = buildInputsRevision ?? (
+    repositoryRoot === undefined ? undefined : await readBuildInputsRevision(repositoryRoot)
+  )
+  if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/u.test(revision)) {
+    throw new Error('build-input revision must be a SHA-256 digest')
+  }
+  return revision
+}
+
+export async function writeBuildProvenance({ outRoot, sourceCommit, repositoryRoot, buildInputsRevision }) {
+  if (typeof sourceCommit !== 'string' || sourceCommit.length === 0) {
+    throw new Error('source commit must be recorded for release provenance')
+  }
   const artifacts = await localArtifacts(outRoot)
+  const resolvedBuildInputsRevision = await resolveBuildInputsRevision({
+    repositoryRoot,
+    buildInputsRevision,
+  })
   const provenance = {
-    version: 1,
+    version: 2,
     sourceCommit,
+    buildInputsRevision: resolvedBuildInputsRevision,
     buildSha256: buildSha256(artifacts),
     artifacts,
   }
@@ -69,7 +128,7 @@ export async function writeBuildProvenance({ outRoot, sourceCommit }) {
   return provenance
 }
 
-export async function verifyBuildProvenance({ outRoot, asarPath, sourceCommit }) {
+export async function verifyBuildProvenance({ outRoot, asarPath, repositoryRoot, buildInputsRevision }) {
   const local = await localArtifacts(outRoot)
   const packaged = packagedArtifacts(asarPath)
   if (JSON.stringify(packaged) !== JSON.stringify(local)) {
@@ -79,9 +138,17 @@ export async function verifyBuildProvenance({ outRoot, asarPath, sourceCommit })
   const packagedProvenance = JSON.parse(
     extractFile(asarPath, `out${sep}${BUILD_PROVENANCE_FILE}`).toString('utf8'),
   )
+  if (typeof packagedProvenance?.sourceCommit !== 'string' || packagedProvenance.sourceCommit.length === 0) {
+    throw new Error('packaged build provenance does not match the current source and output')
+  }
+  const resolvedBuildInputsRevision = await resolveBuildInputsRevision({
+    repositoryRoot,
+    buildInputsRevision,
+  })
   const expected = {
-    version: 1,
-    sourceCommit,
+    version: 2,
+    sourceCommit: packagedProvenance.sourceCommit,
+    buildInputsRevision: resolvedBuildInputsRevision,
     buildSha256: buildSha256(local),
     artifacts: local,
   }

@@ -16,7 +16,6 @@ import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 import {
   fileSha256,
-  readSourceCommit,
   verifyBuildProvenance,
 } from './release-provenance.mjs'
 
@@ -277,7 +276,7 @@ export async function verifyPackagedResources(input, options = {}) {
     provenance = await verifyBuildProvenance({
       outRoot: join(repositoryRoot, 'out'),
       asarPath,
-      sourceCommit: readSourceCommit(repositoryRoot),
+      repositoryRoot,
     })
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
@@ -329,6 +328,7 @@ export async function verifyPackagedResources(input, options = {}) {
     executableBytes: executableInfo.size,
     provenance: {
       sourceCommit: provenance.sourceCommit,
+      buildInputsRevision: provenance.buildInputsRevision,
       buildSha256: provenance.buildSha256,
       artifactCount: provenance.artifacts.length,
     },
