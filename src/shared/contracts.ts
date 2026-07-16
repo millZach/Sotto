@@ -270,5 +270,7 @@ declare global {
   interface Window {
     talktype?: TalkTypeBridge
     talktypeWidget?: TalkTypeWidgetBridge
+    /** Immutable test-only visual preview gate. Production code never defines it. */
+    readonly __TALKTYPE_VISUAL_PREVIEW__?: true
   }
 }

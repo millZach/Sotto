@@ -1,0 +1,392 @@
+import { readFileSync } from 'node:fs'
+
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import React, { StrictMode } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { TalkTypeWidgetBridge } from '../../../src/shared/contracts'
+import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
+import {
+  WidgetApp,
+  WidgetEntry,
+  formatElapsedTime,
+  isVisualPreviewEnabled,
+  parseVisualPreview,
+} from '../../../src/renderer/src/widget/WidgetApp'
+
+const metadata = {
+  theme: 'dark',
+  reducedMotion: 'system',
+  shortcut: 'Ctrl+Shift+Space',
+  cancellable: false,
+} as const
+
+function snapshot(
+  state: Omit<WidgetSnapshot, keyof typeof metadata> & Partial<typeof metadata>,
+): WidgetSnapshot {
+  return { ...metadata, ...state } as WidgetSnapshot
+}
+
+afterEach(() => {
+  cleanup()
+  document.documentElement.removeAttribute('data-theme')
+  document.documentElement.removeAttribute('data-reduced-motion')
+  vi.useRealTimers()
+})
+
+describe('WidgetApp', () => {
+  it('renders idle, permission, listening, success, and cancelled without private content', () => {
+    const privateFields = { text: 'private transcript', audio: [0.25], message: 'raw failure' }
+    const { rerender, container } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle', ...privateFields })} now={15_340} />,
+    )
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'requesting-permission', sessionId: 'permission', cancellable: true, ...privateFields,
+        })}
+        now={15_340}
+      />,
+    )
+    expect(screen.getByText('Waiting for microphone')).toBeVisible()
+    expect(screen.getByText('Approve access in Windows')).toBeVisible()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'listening', startedAt: 3_000, level: 0.65,
+          cancellable: true, ...privateFields,
+        })}
+        now={15_340}
+      />,
+    )
+    expect(screen.getByText('Listening')).toBeVisible()
+    expect(screen.getByText('00:12')).toBeVisible()
+    expect(screen.getByText(/Ctrl\+Shift\+Space to finish/i)).toBeVisible()
+    expect(screen.getAllByTestId('level-bar')).toHaveLength(12)
+    expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '65')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'pasted', ...privateFields })}
+        now={15_340}
+      />,
+    )
+    expect(screen.getByText('Pasted')).toBeVisible()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'copied', ...privateFields })}
+        now={15_340}
+      />,
+    )
+    expect(screen.getByText('Copied — paste manually')).toBeVisible()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'cancelled', sessionId: 'cancelled', ...privateFields })}
+        now={15_340}
+      />,
+    )
+    expect(screen.getByText('Cancelled')).toBeVisible()
+    expect(container).not.toHaveTextContent('private transcript')
+    expect(container).not.toHaveTextContent('raw failure')
+    expect(container.innerHTML).not.toContain('0.25')
+  })
+
+  it.each([
+    ['preparing-audio', 'Preparing audio'],
+    ['loading-model', 'Loading local model'],
+    ['transcribing', 'Transcribing locally'],
+    ['delivering-output', 'Delivering text'],
+  ] as const)('renders the %s processing stage with bounded progress', (stage, label) => {
+    render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'processing', sessionId: 'processing', startedAt: 1_000,
+          stage, progress: 0.428, cancellable: true,
+        })}
+        now={4_000}
+      />,
+    )
+    expect(screen.getByText(label)).toBeVisible()
+    expect(screen.getByText('43%')).toBeVisible()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '43')
+    expect(screen.getByTestId('processing-orbit')).toBeInTheDocument()
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+  })
+
+  it.each<[WidgetErrorCode, string, string]>([
+    ['MIC_PERMISSION_DENIED', 'Microphone blocked', 'Allow microphone access in Windows Settings.'],
+    ['MIC_DEVICE_NOT_FOUND', 'No microphone found', 'Connect a microphone and try again.'],
+    ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
+    ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
+    ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Try again or choose the Balanced model.'],
+    ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open TalkType and try again.'],
+    ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the TalkType app.'],
+    ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
+    ['SETTINGS_UNAVAILABLE', 'Settings unavailable', 'Open TalkType to restore settings.'],
+  ])('maps %s to finite safe recovery copy', (code, title, recovery) => {
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'error', sessionId: 'error', code,
+          message: 'C:\\Users\\private\\raw-model-error',
+        })}
+        now={0}
+      />,
+    )
+    expect(screen.getByText(title)).toBeVisible()
+    expect(screen.getByText(recovery)).toBeVisible()
+    expect(container).not.toHaveTextContent('raw-model-error')
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('exposes only semantic non-focusing stop and cancel actions in allowed states', () => {
+    const onStop = vi.fn()
+    const onCancel = vi.fn()
+    const { rerender } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4,
+          cancellable: true,
+        })}
+        now={1_000}
+        onStop={onStop}
+        onCancel={onCancel}
+      />,
+    )
+    const stop = screen.getByRole('button', { name: 'Stop dictation' })
+    const cancel = screen.getByRole('button', { name: 'Cancel dictation' })
+    expect(stop).toHaveAttribute('tabindex', '-1')
+    expect(cancel).toHaveAttribute('tabindex', '-1')
+    expect(fireEvent.mouseDown(stop)).toBe(false)
+    expect(fireEvent.mouseDown(cancel)).toBe(false)
+    fireEvent.click(stop)
+    fireEvent.click(cancel)
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onCancel).toHaveBeenCalledOnce()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'processing', sessionId: 'processing', startedAt: 0,
+          stage: 'transcribing', progress: 0.5, cancellable: false,
+        })}
+        now={1_000}
+        onStop={onStop}
+        onCancel={onCancel}
+      />,
+    )
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('gates permission and processing cancellation exactly by the snapshot contract', () => {
+    const onCancel = vi.fn()
+    const { rerender } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: false })}
+        now={0}
+        onCancel={onCancel}
+      />,
+    )
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
+        now={0}
+        onCancel={onCancel}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Stop dictation' })).not.toBeInTheDocument()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'processing', sessionId: 'processing', startedAt: 0,
+          stage: 'loading-model', progress: 0.2, cancellable: true,
+        })}
+        now={0}
+        onCancel={onCancel}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Cancel dictation' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Stop dictation' })).not.toBeInTheDocument()
+  })
+
+  it('formats elapsed time deterministically and caps it to a two-digit minute display', () => {
+    expect(formatElapsedTime(3_000, 15_340)).toBe('00:12')
+    expect(formatElapsedTime(5_000, 1_000)).toBe('00:00')
+    expect(formatElapsedTime(Number.NaN, 1_000)).toBe('00:00')
+    expect(formatElapsedTime(0, 6_600_000)).toBe('99:59')
+  })
+
+  it('derives all twelve listening bars from the one bounded scalar level', () => {
+    const { rerender } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 })}
+        now={0}
+      />,
+    )
+    const quiet = screen.getAllByTestId('level-bar').map((bar) => bar.getAttribute('style'))
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 1 })}
+        now={0}
+      />,
+    )
+    const loud = screen.getAllByTestId('level-bar').map((bar) => bar.getAttribute('style'))
+    expect(new Set(quiet).size).toBeGreaterThan(2)
+    expect(quiet).not.toEqual(loud)
+  })
+})
+
+describe('WidgetEntry', () => {
+  it('subscribes once per StrictMode mount lifecycle, routes commands, and cleans up', () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const unsubscribe = vi.fn()
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: vi.fn((next) => {
+        listener = next
+        return unsubscribe
+      }),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+    }
+    const view = render(
+      <StrictMode><WidgetEntry bridge={bridge} preview={null} /></StrictMode>,
+    )
+    expect(bridge.onWidgetState).toHaveBeenCalledTimes(2)
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    act(() => listener?.(snapshot({
+      status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true,
+    })))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    expect(bridge.requestStop).toHaveBeenCalledOnce()
+    expect(bridge.requestCancel).toHaveBeenCalledOnce()
+    view.unmount()
+    expect(unsubscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
+    const { rerender, container, unmount } = render(<WidgetEntry bridge={undefined} preview={null} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<WidgetEntry bridge={undefined} preview={snapshot({ status: 'idle', theme: 'light', reducedMotion: 'on' })} />)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(document.documentElement).toHaveAttribute('data-reduced-motion', 'on')
+    rerender(<WidgetEntry bridge={undefined} preview={snapshot({ status: 'idle', theme: 'system', reducedMotion: 'system' })} />)
+    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
+    unmount()
+    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
+  })
+
+  it('ticks the listening timer without changing the immutable snapshot', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const state = snapshot({ status: 'listening', sessionId: 'timer', startedAt: 0, level: 0.2 })
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+    }
+    render(<WidgetEntry bridge={bridge} preview={null} />)
+    act(() => listener?.(state))
+    expect(screen.getByText('00:01')).toBeVisible()
+    act(() => vi.advanceTimersByTime(1_000))
+    expect(screen.getByText('00:02')).toBeVisible()
+    expect(state).toEqual(expect.objectContaining({ startedAt: 0, level: 0.2 }))
+  })
+
+  it('contains rejected widget command promises without exposing an error', async () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => undefined
+      },
+      requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
+      requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
+    }
+    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    act(() => listener?.(snapshot({
+      status: 'listening', sessionId: 'rejected', startedAt: Date.now(), level: 0.2,
+      cancellable: true,
+    })))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    await act(async () => Promise.resolve())
+    expect(container).not.toHaveTextContent('private stop failure')
+    expect(container).not.toHaveTextContent('private cancel failure')
+  })
+})
+
+describe('visual preview parser', () => {
+  it.each([
+    ['listening', 'listening'],
+    ['processing', 'processing'],
+    ['pasted', 'success'],
+    ['copied', 'success'],
+    ['error', 'error'],
+  ] as const)('creates deterministic %s state only behind the injected gate', (preview, status) => {
+    const query = new URLSearchParams(`preview=${preview}&theme=dark`)
+    expect(parseVisualPreview(query, false)).toBeNull()
+    const first = parseVisualPreview(query, true)
+    const second = parseVisualPreview(query, true)
+    expect(first).toEqual(second)
+    expect(first).toEqual(expect.objectContaining({ status, theme: 'dark', reducedMotion: 'on' }))
+    if (first?.status === 'listening') expect(first.level).toBe(0.64)
+    if (first?.status === 'processing') expect(first.progress).toBe(0.58)
+  })
+
+  it('rejects unknown states, themes, duplicate parameters, and unrelated query data', () => {
+    expect(parseVisualPreview(new URLSearchParams('preview=listening&theme=system'), true)).toBeNull()
+    expect(parseVisualPreview(new URLSearchParams('preview=idle&theme=dark'), true)).toBeNull()
+    expect(parseVisualPreview(new URLSearchParams('preview=listening&preview=error&theme=dark'), true)).toBeNull()
+    expect(parseVisualPreview(new URLSearchParams('preview=listening&theme=dark&text=private'), true)).toBeNull()
+  })
+
+  it('requires a truly immutable injected preview descriptor', () => {
+    const immutable = {} as Window
+    Object.defineProperty(immutable, '__TALKTYPE_VISUAL_PREVIEW__', {
+      value: true, writable: false, configurable: false,
+    })
+    expect(isVisualPreviewEnabled(immutable)).toBe(true)
+
+    const writable = {} as Window
+    Object.defineProperty(writable, '__TALKTYPE_VISUAL_PREVIEW__', {
+      value: true, writable: true, configurable: false,
+    })
+    expect(isVisualPreviewEnabled(writable)).toBe(false)
+
+    const configurable = {} as Window
+    Object.defineProperty(configurable, '__TALKTYPE_VISUAL_PREVIEW__', {
+      value: true, writable: false, configurable: true,
+    })
+    expect(isVisualPreviewEnabled(configurable)).toBe(false)
+    expect(isVisualPreviewEnabled({} as Window)).toBe(false)
+  })
+
+  it('keeps widget source clean and the canvas transparent with complete motion overrides', () => {
+    const source = readFileSync('src/renderer/src/widget/WidgetApp.tsx', 'utf8')
+    const css = readFileSync('src/renderer/src/widget/widget.css', 'utf8')
+    expect(`${source}\n${css}`).not.toMatch(/[\u00e2\ufffd]/)
+    expect(css).toMatch(/html,\s*\nbody,\s*\n#root[\s\S]*background: transparent/)
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(css).toContain(":root[data-reduced-motion='on']")
+    expect(css).toContain('@keyframes widget-orbit')
+    expect(css).not.toMatch(/widget-levels[^}]*animation:/)
+  })
+})

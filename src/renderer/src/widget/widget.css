@@ -1,0 +1,275 @@
+@import '../styles/tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 420px;
+  height: 92px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body,
+button {
+  color: var(--tt-text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.widget-shell {
+  width: 420px;
+  height: 92px;
+  padding: 6px;
+}
+
+.widget-pill {
+  display: flex;
+  width: 408px;
+  height: 80px;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--tt-primary) 36%, var(--tt-border));
+  border-radius: 26px;
+  background:
+    linear-gradient(140deg, color-mix(in srgb, var(--tt-primary) 7%, transparent), transparent 42%),
+    color-mix(in srgb, var(--tt-surface-elevated) 96%, transparent);
+  box-shadow:
+    0 16px 42px rgb(15 23 42 / 20%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+  padding: 10px 12px;
+  -webkit-app-region: no-drag;
+}
+
+.widget-state-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tt-primary) 15%, var(--tt-surface));
+  color: var(--tt-primary);
+}
+
+.widget-shell[data-tone='listening'] .widget-pill {
+  border-color: color-mix(in srgb, var(--tt-activity) 60%, var(--tt-primary));
+  box-shadow:
+    0 14px 40px color-mix(in srgb, var(--tt-primary) 22%, transparent),
+    0 0 24px color-mix(in srgb, var(--tt-activity) 13%, transparent);
+}
+
+.widget-shell[data-tone='listening'] .widget-state-icon {
+  background: color-mix(in srgb, var(--tt-primary) 20%, var(--tt-surface));
+}
+
+.widget-shell[data-tone='success'] .widget-state-icon {
+  background: color-mix(in srgb, var(--tt-success) 15%, var(--tt-surface));
+  color: var(--tt-success);
+}
+
+.widget-shell[data-tone='error'] .widget-state-icon,
+.widget-shell[data-tone='permission'] .widget-state-icon {
+  background: color-mix(in srgb, var(--tt-error) 14%, var(--tt-surface));
+  color: var(--tt-error);
+}
+
+.widget-shell[data-tone='cancelled'] .widget-state-icon {
+  background: color-mix(in srgb, var(--tt-text-muted) 14%, var(--tt-surface));
+  color: var(--tt-text-muted);
+}
+
+.widget-levels {
+  display: flex;
+  width: 48px;
+  height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.widget-levels__bar {
+  width: 2px;
+  max-height: 37px;
+  border-radius: 999px;
+  background: var(--tt-primary);
+  opacity: 0.58;
+  transform-origin: center;
+  transition: height 90ms linear, opacity 90ms linear;
+}
+
+.widget-levels[data-active='true'] .widget-levels__bar {
+  background: var(--tt-activity);
+  opacity: 0.94;
+}
+
+.widget-orbit {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--tt-primary) 28%, transparent);
+  border-radius: 50%;
+}
+
+.widget-orbit::before {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--tt-activity) 34%, transparent);
+  border-radius: 50%;
+  content: '';
+  inset: 4px;
+}
+
+.widget-orbit > span {
+  position: absolute;
+  top: -2px;
+  left: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tt-activity);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--tt-activity) 68%, transparent);
+  transform-origin: 3px 21px;
+  animation: widget-orbit 1.3s linear infinite;
+}
+
+.widget-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.widget-copy strong,
+.widget-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-copy strong {
+  font-size: 14px;
+  font-weight: 740;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.widget-copy span {
+  color: var(--tt-text-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.widget-metric {
+  display: grid;
+  min-width: 38px;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 6px;
+  color: var(--tt-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+}
+
+.widget-metric time {
+  color: var(--tt-text);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.widget-progress {
+  display: block;
+  width: 38px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tt-border) 65%, transparent);
+}
+
+.widget-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--tt-primary), var(--tt-activity));
+  transition: width 180ms ease;
+}
+
+.widget-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.widget-actions:empty,
+.widget-metric:empty {
+  display: none;
+}
+
+.widget-action {
+  display: inline-flex;
+  min-width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--tt-border) 72%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--tt-surface) 78%, transparent);
+  padding: 0 8px;
+  color: var(--tt-text-muted);
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  outline: none;
+  user-select: none;
+}
+
+.widget-action:hover {
+  border-color: var(--tt-primary);
+  color: var(--tt-text);
+}
+
+.widget-action[data-tone='stop'] {
+  border-color: color-mix(in srgb, var(--tt-primary) 52%, var(--tt-border));
+  background: var(--tt-primary);
+  color: var(--tt-primary-contrast);
+}
+
+@keyframes widget-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+:root[data-reduced-motion='on'] *,
+:root[data-reduced-motion='on'] *::before,
+:root[data-reduced-motion='on'] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
