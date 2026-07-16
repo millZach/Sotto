@@ -289,6 +289,88 @@ describe('TranscriptionClient', () => {
     await expect(result).resolves.toEqual({ text: 'fresh fallback', language: 'en' })
   })
 
+  it('retries explicit WebGPU failure once in a fresh forced-WASM worker', async () => {
+    const firstWorker = new FakeWorker()
+    const replacementWorker = new FakeWorker()
+    const workerFactory = vi
+      .fn<() => FakeWorker>()
+      .mockReturnValueOnce(firstWorker)
+      .mockReturnValueOnce(replacementWorker)
+    const ids = ['gpu', 'wasm']
+    const client = new TranscriptionClient({
+      workerFactory,
+      createRequestId: () => ids.shift() ?? 'extra',
+    })
+    const result = client.load({ preset: 'balanced', inferencePreference: 'webgpu' })
+
+    firstWorker.emitMessage({
+      type: 'error',
+      requestId: 'gpu',
+      code: 'WEBGPU_FAILED',
+      message: 'WebGPU transcription is unavailable.',
+    })
+
+    expect(firstWorker.terminate).toHaveBeenCalledOnce()
+    expect(replacementWorker.posts[0]?.message).toEqual({
+      type: 'load',
+      requestId: 'wasm',
+      preset: 'balanced',
+      inferencePreference: 'wasm',
+    })
+    replacementWorker.emitMessage({
+      type: 'ready',
+      requestId: 'wasm',
+      preset: 'balanced',
+      device: 'wasm',
+    })
+    await expect(result).resolves.toMatchObject({ device: 'wasm' })
+    expect(workerFactory).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the recovered WASM backend for later GPU-capable requests in the client session', async () => {
+    const firstWorker = new FakeWorker()
+    const replacementWorker = new FakeWorker()
+    const workerFactory = vi
+      .fn<() => FakeWorker>()
+      .mockReturnValueOnce(firstWorker)
+      .mockReturnValueOnce(replacementWorker)
+    const ids = ['gpu', 'wasm-recovery', 'later']
+    const client = new TranscriptionClient({
+      workerFactory,
+      createRequestId: () => ids.shift() ?? 'extra',
+    })
+    const recovery = client.load({ preset: 'balanced', inferencePreference: 'auto' })
+    firstWorker.emitMessage({
+      type: 'error',
+      requestId: 'gpu',
+      code: 'WEBGPU_FAILED',
+      message: 'WebGPU transcription is unavailable.',
+    })
+    replacementWorker.emitMessage({
+      type: 'ready',
+      requestId: 'wasm-recovery',
+      preset: 'balanced',
+      device: 'wasm',
+    })
+    await recovery
+
+    const later = client.load({ preset: 'fast', inferencePreference: 'webgpu' })
+    expect(replacementWorker.posts[1]?.message).toEqual({
+      type: 'load',
+      requestId: 'later',
+      preset: 'fast',
+      inferencePreference: 'wasm',
+    })
+    replacementWorker.emitMessage({
+      type: 'ready',
+      requestId: 'later',
+      preset: 'fast',
+      device: 'wasm',
+    })
+    await expect(later).resolves.toMatchObject({ device: 'wasm' })
+    expect(workerFactory).toHaveBeenCalledTimes(2)
+  })
+
   it('cancellation can win after the fresh-worker fallback starts', async () => {
     const firstWorker = new FakeWorker()
     const replacementWorker = new FakeWorker()

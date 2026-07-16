@@ -7,6 +7,7 @@ export type AudioRecorderErrorCode =
   | 'INVALID_DURATION'
   | 'LEVEL_CALLBACK_FAILED'
   | 'DURATION_CALLBACK_FAILED'
+  | 'DEVICE_UNAVAILABLE'
   | 'FINALIZE_FAILED'
   | 'START_FAILED'
 
@@ -34,8 +35,16 @@ export interface AudioWorkletNodeAdapter extends AudioNodeAdapter {
   port: { onmessage: ((event: { data: unknown }) => void) | null }
 }
 
+export interface MediaStreamTrackAdapter {
+  stop(): void
+  addEventListener?(type: 'ended', listener: () => void): void
+  removeEventListener?(type: 'ended', listener: () => void): void
+}
+
 export interface MediaStreamAdapter {
-  getTracks(): { stop(): void }[]
+  getTracks(): MediaStreamTrackAdapter[]
+  addEventListener?(type: 'removetrack', listener: () => void): void
+  removeEventListener?(type: 'removetrack', listener: () => void): void
 }
 
 export interface AudioContextAdapter {
@@ -72,6 +81,7 @@ export interface AudioRecorderOptions {
   maxRecordingSeconds?: number
   onLevel?: (level: number) => void
   onDurationLimit?: (result: AudioRecordingResult) => void
+  onDeviceUnavailable?: () => void
 }
 
 export interface MicrophoneConstraints {
@@ -97,6 +107,12 @@ interface RecordingSession {
   gain?: GainNodeAdapter
   timer?: unknown
   finalization?: Promise<AudioRecordingResult | null>
+  trackEndListeners?: Array<{
+    track: MediaStreamTrackAdapter
+    listener: () => void
+  }>
+  streamRemoveListener?: () => void
+  captureTracks?: MediaStreamTrackAdapter[]
 }
 
 function defaultDependencies(): AudioRecorderDependencies {
@@ -179,6 +195,7 @@ export class AudioRecorder {
         },
       })
       this.assertSessionLive(session)
+      this.monitorTrackEnd(session)
 
       session.context = this.dependencies.createAudioContext()
       await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
@@ -286,6 +303,46 @@ export class AudioRecorder {
     }
   }
 
+  private monitorTrackEnd(session: RecordingSession): void {
+    const stream = session.stream
+    if (stream === undefined) return
+    let tracks: MediaStreamTrackAdapter[]
+    try {
+      tracks = stream.getTracks()
+    } catch {
+      return
+    }
+    session.captureTracks = tracks
+    const bindings: NonNullable<RecordingSession['trackEndListeners']> = []
+    for (const track of tracks) {
+      if (track.addEventListener === undefined) continue
+      const listener = (): void => this.handleDeviceUnavailable(session)
+      track.addEventListener('ended', listener)
+      bindings.push({ track, listener })
+    }
+    session.trackEndListeners = bindings
+    if (stream.addEventListener !== undefined) {
+      const listener = (): void => this.handleDeviceUnavailable(session)
+      stream.addEventListener('removetrack', listener)
+      session.streamRemoveListener = listener
+    }
+  }
+
+  private handleDeviceUnavailable(session: RecordingSession): void {
+    if (session.starting || session.terminated || this.session !== session) return
+    this.lastError = new AudioRecorderError(
+      'DEVICE_UNAVAILABLE',
+      'The microphone became unavailable.',
+    )
+    const finalization = this.finalize(session, false)
+    try {
+      this.options.onDeviceUnavailable?.()
+    } catch {
+      // Resource cleanup and the finite recorder error are already established.
+    }
+    void finalization.catch(() => undefined)
+  }
+
   private finalize(
     session: RecordingSession,
     includeAudio: boolean,
@@ -329,6 +386,20 @@ export class AudioRecorder {
   }
 
   private async cleanup(session: RecordingSession): Promise<void> {
+    const streamRemoveListener = session.streamRemoveListener
+    delete session.streamRemoveListener
+    if (streamRemoveListener !== undefined && session.stream !== undefined) {
+      this.safely(() =>
+        session.stream?.removeEventListener?.('removetrack', streamRemoveListener),
+      )
+    }
+
+    const trackEndListeners = session.trackEndListeners ?? []
+    delete session.trackEndListeners
+    for (const { track, listener } of trackEndListeners) {
+      this.safely(() => track.removeEventListener?.('ended', listener))
+    }
+
     const timer = session.timer
     delete session.timer
     if (timer !== undefined) this.safely(() => this.dependencies.clearTimer(timer))
@@ -353,9 +424,10 @@ export class AudioRecorder {
     const stream = session.stream
     delete session.stream
     if (stream !== undefined) {
-      let tracks: { stop(): void }[] = []
+      const tracks = new Set(session.captureTracks ?? [])
+      delete session.captureTracks
       try {
-        tracks = stream.getTracks()
+        for (const track of stream.getTracks()) tracks.add(track)
       } catch {
         // Continue closing graph/context resources when stream access itself fails.
       }

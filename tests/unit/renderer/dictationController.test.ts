@@ -714,6 +714,26 @@ describe('DictationController', () => {
     expect(JSON.stringify(harness.controller.getState())).not.toContain('safe recorder message')
   })
 
+  it('leaves listening with a finite device-unavailable error when the recorder loses its microphone', async () => {
+    const harness = createHarness()
+    await harness.controller.start()
+
+    recorderOptions(harness).onDeviceUnavailable?.()
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error',
+      code: 'MIC_DEVICE_NOT_FOUND',
+    })
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
+    expect(snapshots(harness).at(-1)).toMatchObject({
+      status: 'error',
+      code: 'MIC_DEVICE_NOT_FOUND',
+      cancellable: false,
+    })
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+  })
+
   it('creates a fresh recorder per session', async () => {
     const first = createHarness({ ids: ['first', 'second'] })
     await first.controller.start()

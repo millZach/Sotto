@@ -48,8 +48,27 @@ function deferred<T>() {
 function createHarness(overrides: Partial<AudioRecorderDependencies> = {}) {
   const context = new FakeContext()
   const worklet = new FakeWorkletNode()
-  const track = { stop: vi.fn() }
-  const stream: MediaStreamAdapter = { getTracks: vi.fn(() => [track]) }
+  const trackListeners = new Set<() => void>()
+  const track = {
+    stop: vi.fn(),
+    addEventListener: vi.fn((_type: string, listener: () => void) => {
+      trackListeners.add(listener)
+    }),
+    removeEventListener: vi.fn((_type: string, listener: () => void) => {
+      trackListeners.delete(listener)
+    }),
+  }
+  const streamListeners = new Set<() => void>()
+  let trackRemoved = false
+  const stream: MediaStreamAdapter = {
+    getTracks: vi.fn(() => trackRemoved ? [] : [track]),
+    addEventListener: vi.fn((_type: string, listener: () => void) => {
+      streamListeners.add(listener)
+    }),
+    removeEventListener: vi.fn((_type: string, listener: () => void) => {
+      streamListeners.delete(listener)
+    }),
+  }
   const getUserMedia = vi.fn(async () => stream)
   let timer: (() => void) | undefined
   const dependencies: AudioRecorderDependencies = {
@@ -68,6 +87,13 @@ function createHarness(overrides: Partial<AudioRecorderDependencies> = {}) {
   return {
     context,
     dependencies,
+    endTrack: () => {
+      for (const listener of [...trackListeners]) listener()
+    },
+    removeTrack: () => {
+      trackRemoved = true
+      for (const listener of [...streamListeners]) listener()
+    },
     fireTimer: () => timer?.(),
     getUserMedia,
     recorder: (options: ConstructorParameters<typeof AudioRecorder>[0] = {}) =>
@@ -347,6 +373,61 @@ describe('AudioRecorder', () => {
     expect(await recorder.stop()).toBeNull()
     expect(harness.context.close).toHaveBeenCalledOnce()
     expect(harness.track.stop).toHaveBeenCalledOnce()
+  })
+
+  it('reports a finite device-unavailable error and releases capture when the active track ends', async () => {
+    const harness = createHarness()
+    const onDeviceUnavailable = vi.fn()
+    const recorder = harness.recorder({ onDeviceUnavailable })
+    await recorder.start()
+
+    harness.endTrack()
+    await vi.waitFor(() => expect(onDeviceUnavailable).toHaveBeenCalledOnce())
+
+    expect(recorder.getLastError()).toMatchObject({
+      code: 'DEVICE_UNAVAILABLE',
+      message: 'The microphone became unavailable.',
+    })
+    await expect(recorder.stop()).resolves.toBeNull()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.source.disconnect).toHaveBeenCalledOnce()
+    expect(harness.worklet.disconnect).toHaveBeenCalledOnce()
+    expect(harness.context.gain.disconnect).toHaveBeenCalledOnce()
+    expect(harness.context.close).toHaveBeenCalledOnce()
+  })
+
+  it('reports active device loss without waiting for a slow audio-context close', async () => {
+    const close = deferred<undefined>()
+    const harness = createHarness()
+    harness.context.close.mockReturnValueOnce(close.promise)
+    const onDeviceUnavailable = vi.fn()
+    const recorder = harness.recorder({ onDeviceUnavailable })
+    await recorder.start()
+
+    harness.endTrack()
+    await Promise.resolve()
+
+    expect(onDeviceUnavailable).toHaveBeenCalledOnce()
+    close.resolve(undefined)
+    await recorder.cancel()
+  })
+
+  it('reports device unavailability and releases capture when the active track is removed', async () => {
+    const harness = createHarness()
+    const onDeviceUnavailable = vi.fn()
+    const recorder = harness.recorder({ onDeviceUnavailable })
+    await recorder.start()
+
+    harness.removeTrack()
+    await vi.waitFor(() => expect(onDeviceUnavailable).toHaveBeenCalledOnce())
+
+    expect(recorder.getLastError()).toMatchObject({ code: 'DEVICE_UNAVAILABLE' })
+    await expect(recorder.stop()).resolves.toBeNull()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.source.disconnect).toHaveBeenCalledOnce()
+    expect(harness.worklet.disconnect).toHaveBeenCalledOnce()
+    expect(harness.context.gain.disconnect).toHaveBeenCalledOnce()
+    expect(harness.context.close).toHaveBeenCalledOnce()
   })
 
   it('makes stop, timeout, and cancel races release resources only once', async () => {

@@ -190,6 +190,7 @@ export class DictationController {
         maxRecordingSeconds: settings.maxRecordingSeconds,
         onLevel: (level) => this.handleLevel(session, level),
         onDurationLimit: (result) => this.handleDurationLimit(session, result),
+        onDeviceUnavailable: () => this.handleDeviceUnavailable(session),
       })
     } catch (error: unknown) {
       this.fail(session, classifyStartFailure(error))
@@ -326,6 +327,19 @@ export class DictationController {
     const processing = this.processRecording(session, result)
     session.processing = processing
     void processing.catch(() => undefined)
+  }
+
+  private handleDeviceUnavailable(session: ActiveSession): void {
+    if (!this.isCurrent(session) || this.state.status !== 'listening') return
+    session.stopClaimed = true
+    let cancellation: Promise<void> | undefined
+    try {
+      cancellation = session.recorder?.cancel()
+    } catch {
+      // The finite device error still replaces listening when cleanup throws synchronously.
+    }
+    this.fail(session, 'MIC_DEVICE_NOT_FOUND')
+    void cancellation?.catch(() => undefined)
   }
 
   private async processRecording(

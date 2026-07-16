@@ -123,6 +123,7 @@ export class TranscriptionClient {
   private readonly pending = new Map<string, PendingRequest>()
   private binding: WorkerBinding
   private nextGeneration = 1
+  private sessionInferencePreference: 'wasm' | undefined
   private disposed = false
 
   constructor(options: TranscriptionClientOptions = {}) {
@@ -133,18 +134,19 @@ export class TranscriptionClient {
 
   load(options: LoadOptions): Promise<ReadyResponse> {
     if (this.disposed) return Promise.reject(new TranscriptionError('WORKER_TERMINATED'))
+    const inferencePreference = this.sessionInferencePreference ?? options.inferencePreference
 
     const request = parseWorkerRequest({
       type: 'load',
       requestId: this.createRequestId(),
       preset: options.preset,
-      inferencePreference: options.inferencePreference,
+      inferencePreference,
     })
 
     const result = this.createPending(request.requestId, {
       kind: 'ready',
       ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
-      ...(options.inferencePreference === 'auto'
+      ...(inferencePreference !== 'wasm'
         ? { autoRetry: { preset: options.preset } }
         : {}),
     })
@@ -154,6 +156,7 @@ export class TranscriptionClient {
 
   transcribe(options: TranscribeOptions): Promise<TranscriptionResult> {
     if (this.disposed) return Promise.reject(new TranscriptionError('WORKER_TERMINATED'))
+    const inferencePreference = this.sessionInferencePreference ?? options.inferencePreference
 
     const audio = transferableAudio(options.audio)
     const request = parseWorkerRequest({
@@ -164,10 +167,10 @@ export class TranscriptionClient {
       sampleRate: TRANSCRIPTION_SAMPLE_RATE,
       preset: options.preset,
       language: options.language,
-      inferencePreference: options.inferencePreference,
+      inferencePreference,
     })
     const autoRetry =
-      options.inferencePreference === 'auto'
+      inferencePreference !== 'wasm'
         ? {
             preset: options.preset,
             sessionId: options.sessionId,
@@ -322,6 +325,7 @@ export class TranscriptionClient {
       pending.reject(new TranscriptionError('WORKER_TERMINATED'))
       return
     }
+    this.sessionInferencePreference = 'wasm'
 
     const retryRequestId = this.createRequestId()
     let request: WorkerRequest
