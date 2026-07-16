@@ -16,6 +16,7 @@ import {
   type CatalogLock,
   type HttpsGet,
 } from '../../../src/main/models/modelManager'
+import { MODEL_SCHEME, registerLocalAssetProtocols } from '../../../src/main/models/modelProtocol'
 import { MODEL_DOWNLOAD_PRIVACY_NOTICE } from '../../../src/shared/contracts'
 
 const roots: string[] = []
@@ -246,6 +247,39 @@ describe('ModelManager', () => {
     await manager.status('balanced')
 
     expect(verifyFile).toHaveBeenCalledTimes(12)
+  })
+
+  it('rejects same-size model tampering after cached readiness before protocol bytes are served', async () => {
+    const { packagedRoot, userRoot } = await fixture()
+    const verifyFile = vi.fn(async (path: string) => (await readFile(path)).equals(bytes))
+    const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot, userRoot, verifyFile })
+    const handlers = new Map<string, (request: { readonly method: string; readonly url: string }) => Promise<Response>>()
+    const fetch = vi.fn(async () => new Response('verified model bytes'))
+    const cleanup = registerLocalAssetProtocols({
+      protocol: {
+        handle: (scheme, handler) => { handlers.set(scheme, handler) },
+        unhandle: (scheme) => { handlers.delete(scheme) },
+      },
+      net: { fetch },
+      modelSources: () => manager.protocolSources(),
+      runtimeSource: { root: packagedRoot, boundaryRoot: packagedRoot, files: new Set() },
+    })
+
+    expect(await manager.protocolSources()).toHaveProperty('Xenova/whisper-base')
+    expect(verifyFile).toHaveBeenCalledTimes(12)
+    const hostile = Buffer.from('hostile model bytes')
+    expect(hostile).toHaveLength(bytes.length)
+    await writeFile(join(packagedRoot, 'Xenova', 'whisper-base', 'config.json'), hostile)
+
+    const response = await handlers.get(MODEL_SCHEME)!({
+      method: 'GET',
+      url: 'talktype-model://model/Xenova/whisper-base/config.json',
+    })
+
+    expect(response.status).toBe(404)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(await manager.protocolSources()).not.toHaveProperty('Xenova/whisper-base')
+    cleanup()
   })
 
   it('does not permanently cache a missing optional installation', async () => {

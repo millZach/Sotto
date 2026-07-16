@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, type BigIntStats } from 'node:fs'
 import { lstat, mkdir, open, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -351,7 +351,7 @@ export class ModelManager {
   private readonly disclosureCatalog: ModelDisclosureCatalog
   private readonly operations = new Map<ModelPreset, Promise<unknown>>()
   private readonly downloading = new Set<ModelPreset>()
-  private readonly completeness = new Map<ModelPreset, boolean>()
+  private readonly completeness = new Map<ModelPreset, string>()
   private readonly downloader: ModelDownloader
 
   constructor(private readonly options: ModelManagerOptions) {
@@ -431,7 +431,7 @@ export class ModelManager {
         await this.assertOptionalDestinationSafe(destination, repositoryParent)
         await replaceDirectoryAtomic(temporary, destination)
         temporary = null
-        this.completeness.set(preset, true)
+        this.completeness.delete(preset)
       } catch { throw new Error('Model installation failed') }
       finally {
         this.downloading.delete(preset)
@@ -469,12 +469,19 @@ export class ModelManager {
 
   private async isComplete(preset: ModelPreset): Promise<boolean> {
     const cached = this.completeness.get(preset)
-    if (cached !== undefined) return cached
     const model = this.catalog.presets[preset]
     const boundaryRoot = model.bundled ? this.options.packagedRoot : this.options.userRoot
     const root = this.repositoryRoot(boundaryRoot, model.repository)
+    if (cached !== undefined) {
+      try {
+        if (await this.repositoryFingerprint(boundaryRoot, root) === cached) return true
+      } catch {
+        // Re-enter full verification below so a stale cache can never expose a source.
+      }
+      this.completeness.delete(preset)
+    }
     try {
-      await this.assertRealContained(boundaryRoot, root)
+      const fingerprintBeforeVerification = await this.repositoryFingerprint(boundaryRoot, root)
       if (!model.bundled) {
         const manifest = await readBoundedJsonFile(join(root, 'manifest.lock.json'))
         const expected = { version: 1, preset, repository: model.repository, revision: model.revision, files: model.files }
@@ -485,13 +492,54 @@ export class ModelManager {
       const actualFiles = await this.listFiles(root)
       if (actualFiles.length !== expectedFiles.size || actualFiles.some((file) => !expectedFiles.has(file))) return false
       for (const file of lockedFiles) { const path = this.contained(root, file.path); const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink()) return false; if (!(await this.verify(path, file))) return false }
-      this.completeness.set(preset, true); return true
+      const fingerprintAfterVerification = await this.repositoryFingerprint(boundaryRoot, root)
+      if (fingerprintAfterVerification !== fingerprintBeforeVerification) return false
+      this.completeness.set(preset, fingerprintAfterVerification); return true
     } catch { this.completeness.delete(preset); return false }
   }
 
   private contained(root: string, relative: string): string { const base = resolve(root); const target = resolve(base, ...relative.split('/')); if (target !== base && !target.startsWith(`${base}${sep}`)) throw new Error('Unsafe model path'); return target }
   private filesFor(preset: ModelPreset): readonly LockedFile[] { return preset === 'balanced' ? this.bundledManifest.files : this.catalog.presets[preset].files }
   private async assertRealContained(boundaryRoot: string, target: string): Promise<void> { const boundary = await realpath(boundaryRoot); const actual = await realpath(target); if (actual !== boundary && !actual.startsWith(`${boundary}${sep}`)) throw new Error('Unsafe model path') }
+  private async repositoryFingerprint(boundaryRoot: string, root: string): Promise<string> {
+    await this.assertRealContained(boundaryRoot, root)
+    const hash = createHash('sha256')
+    const record = (relative: string, info: BigIntStats): void => {
+      hash.update([
+        relative,
+        info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other',
+        info.dev,
+        info.ino,
+        info.mode,
+        info.nlink,
+        info.size,
+        info.mtimeNs,
+        info.ctimeNs,
+        info.birthtimeNs,
+      ].join('\0'))
+      hash.update('\0')
+    }
+    const visit = async (directory: string, relative: string): Promise<void> => {
+      const info = await lstat(directory, { bigint: true })
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Unsafe model path')
+      record(relative, info)
+      const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))
+      for (const entry of entries) {
+        const entryPath = join(directory, entry.name)
+        const entryRelative = relative ? `${relative}/${entry.name}` : entry.name
+        const entryInfo = await lstat(entryPath, { bigint: true })
+        if (entryInfo.isSymbolicLink()) throw new Error('Unsafe model path')
+        if (entryInfo.isDirectory()) await visit(entryPath, entryRelative)
+        else if (entryInfo.isFile()) record(entryRelative, entryInfo)
+        else throw new Error('Unsafe model path')
+      }
+    }
+    await visit(root, '')
+    // This metadata gate avoids hashing large ONNX graphs for every asset request.
+    // A same-privilege process able to restore every identity and timestamp field can
+    // evade a metadata cache; closing that limit requires per-request content hashing.
+    return hash.digest('hex')
+  }
   private async assertManagedDirectory(boundaryRoot: string, target: string): Promise<void> {
     const [boundaryInfo, targetInfo] = await Promise.all([lstat(boundaryRoot), lstat(target)])
     if (!boundaryInfo.isDirectory() || boundaryInfo.isSymbolicLink() || !targetInfo.isDirectory() || targetInfo.isSymbolicLink()) throw new Error('Unsafe model path')
