@@ -65,7 +65,7 @@ describe('local transcription worker runtime', () => {
         dtype: 'q8',
         device: 'wasm',
         local_files_only: true,
-        session_options: { graphOptimizationLevel: 'disabled' },
+        session_options: { graphOptimizationLevel: 'basic' },
       }),
     )
     expect(recognize).toHaveBeenCalledWith(audio, { task: 'transcribe' })

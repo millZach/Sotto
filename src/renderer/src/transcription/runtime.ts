@@ -28,7 +28,7 @@ export interface PipelineOptions {
   readonly dtype: 'q8'
   readonly device: InferenceDevice
   readonly local_files_only: true
-  readonly session_options: Readonly<{ graphOptimizationLevel: 'disabled' }>
+  readonly session_options: Readonly<{ graphOptimizationLevel: 'basic' }>
   readonly progress_callback: (event: unknown) => void
 }
 
@@ -169,9 +169,9 @@ export function createTranscriptionRuntime(
         dtype: catalogEntry.dtype,
         device,
         local_files_only: true,
-        // ORT 1.26's QDQ transpose optimization rejects the pinned q8 Whisper graphs.
-        // Disabling graph rewrites preserves the verified model while retaining local inference.
-        session_options: { graphOptimizationLevel: 'disabled' },
+        // ORT 1.26's QDQ transpose optimization rejects the pinned q8 Whisper graphs,
+        // so rewrites are capped at 'basic' instead of the extended/layout levels.
+        session_options: { graphOptimizationLevel: 'basic' },
         progress_callback: (event) => {
           const progress = normalizedProgress(event)
           if (progress !== undefined) reportProgress(request, 'loading-model', progress)
