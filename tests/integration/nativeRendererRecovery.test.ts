@@ -32,6 +32,8 @@ class LifecycleWindow implements BrowserWindowLike {
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
+  readonly getPosition = vi.fn(() => [0, 0] as const)
+  readonly setIgnoreMouseEvents = vi.fn()
   readonly destroy = vi.fn()
   readonly isDestroyed = vi.fn(() => false)
   readonly loadURL = vi.fn(async () => undefined)
@@ -108,6 +110,8 @@ describe('native recovery after the main renderer is lost', () => {
           nativeWindows.push(window)
           return window
         },
+        getWidgetPlacement: () => null,
+        onWidgetMoved: () => undefined,
         display: {
           getCursorScreenPoint: () => ({ x: 0, y: 0 }),
           getDisplayNearestPoint: () => ({
@@ -158,17 +162,20 @@ describe('native recovery after the main renderer is lost', () => {
 
       nativeWindows[0]!.emitRendererGone()
 
-      await vi.waitFor(() => expect(nativeWindows[1]!.hide).toHaveBeenCalled())
-      expect(nativeWindows[1]!.webContents.send).toHaveBeenLastCalledWith(
-        WIDGET_STATE,
-        {
-          status: 'idle',
-          theme: 'dark',
-          reducedMotion: 'on',
-          shortcut: 'Control+Shift+Space',
-          cancellable: false,
-        },
+      await vi.waitFor(() =>
+        expect(nativeWindows[1]!.webContents.send).toHaveBeenLastCalledWith(
+          WIDGET_STATE,
+          {
+            status: 'idle',
+            theme: 'dark',
+            reducedMotion: 'on',
+            shortcut: 'Control+Shift+Space',
+            cancellable: false,
+          },
+        ),
       )
+      // The idle sliver stays visible after recovery instead of hiding.
+      expect(nativeWindows[1]!.hide).not.toHaveBeenCalled()
       expect(trayState).toEqual({ dictating: false, autoPaste: false })
       expect(callbacks.has('Escape')).toBe(false)
       expect(callbacks.has('Control+Shift+Space')).toBe(true)

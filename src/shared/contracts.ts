@@ -269,6 +269,7 @@ export interface TalkTypeWidgetBridge {
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
+  setMouseInteractive(interactive: boolean): Promise<CommandResult>
 }
 
 declare global {

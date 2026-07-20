@@ -223,6 +223,7 @@ export interface RuntimeController {
 export interface NativeRuntimeWindowService {
   createWindows(): Promise<void>
   showMain(): Promise<void>
+  showWidget(): Promise<void>
   beginQuit(): void
   dispose(): void
 }
@@ -381,6 +382,11 @@ export class NativeRuntimeController implements RuntimeController {
     this.assertRunning()
     if (!settings.startMinimized) {
       await this.dependencies.windows.showMain()
+      this.assertRunning()
+    }
+    if (settings.onboardingComplete) {
+      // The dictation widget rests as a persistent sliver once setup is done.
+      await this.dependencies.windows.showWidget()
       this.assertRunning()
     }
   }

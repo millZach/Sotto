@@ -118,6 +118,7 @@ export interface WidgetAppProps {
   readonly now: number
   readonly onStop?: () => void
   readonly onCancel?: () => void
+  readonly onSliverHover?: (hovering: boolean) => void
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -237,8 +238,35 @@ function WidgetAction({
   )
 }
 
-export function WidgetApp({ snapshot, now, onStop, onCancel }: WidgetAppProps): ReactNode {
-  if (snapshot.status === 'idle') return null
+export function WidgetApp({
+  snapshot,
+  now,
+  onStop,
+  onCancel,
+  onSliverHover,
+}: WidgetAppProps): ReactNode {
+  if (snapshot.status === 'idle') {
+    return (
+      <aside
+        className="widget-shell"
+        aria-label="TalkType dictation status"
+        data-status="idle"
+        data-tone="idle"
+      >
+        <div
+          className="widget-sliver"
+          data-testid="widget-sliver"
+          onMouseEnter={() => onSliverHover?.(true)}
+          onMouseLeave={() => onSliverHover?.(false)}
+        >
+          <span className="widget-sliver__hint">
+            {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+          </span>
+        </div>
+      </aside>
+    )
+  }
+
   const copy = getCopy(snapshot)
   const isListening = snapshot.status === 'listening'
   const isProcessing = snapshot.status === 'processing'
@@ -251,53 +279,58 @@ export function WidgetApp({ snapshot, now, onStop, onCancel }: WidgetAppProps): 
       data-status={snapshot.status}
       data-tone={copy.tone}
     >
-      <div className="widget-pill">
-        <span className="widget-state-icon">{copy.icon}</span>
+      <div className="widget-capsule">
+        {isListening && <span className="widget-dot" aria-hidden="true" />}
         {isListening && <LevelBars level={snapshot.level} active />}
-        {isProcessing && <span className="widget-orbit" data-testid="processing-orbit" aria-hidden="true"><span /></span>}
-        <div className="widget-copy">
-          <strong>{copy.title}</strong>
-          <span title={copy.detail}>{copy.detail}</span>
-        </div>
-        <div className="widget-metric">
-          {isListening && (
-            <time
-              dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}
-              aria-live="off"
-            >
-              {formatElapsedTime(snapshot.startedAt, now)}
-            </time>
-          )}
-          {isProcessing && (
-            <>
-              <span aria-live="off">{progress}%</span>
-              <span
-                className="widget-progress"
-                role="progressbar"
-                aria-label={`${copy.title} progress`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-              >
-                <span style={{ width: `${progress}%` }} />
-              </span>
-            </>
-          )}
-        </div>
-        <div className="widget-actions">
-          {isListening && (
-            <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
-              <Square aria-hidden="true" size={13} fill="currentColor" />
-              <span className="widget-action__label">Stop</span>
-            </WidgetAction>
-          )}
-          {snapshot.cancellable && (
-            <WidgetAction label="Cancel dictation" onClick={onCancel}>
-              <X aria-hidden="true" size={16} />
-              <span className="widget-action__cancel-label">Cancel</span>
-            </WidgetAction>
-          )}
-        </div>
+        {isListening && (
+          <time
+            className="widget-time"
+            dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}
+            aria-live="off"
+          >
+            {formatElapsedTime(snapshot.startedAt, now)}
+          </time>
+        )}
+        {isProcessing && (
+          <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />
+        )}
+        {!isListening && !isProcessing && (
+          <span className="widget-state-icon">{copy.icon}</span>
+        )}
+        {!isListening && (
+          <span className="widget-copy" title={copy.detail}>
+            {copy.title}
+          </span>
+        )}
+        {isProcessing && (
+          <span
+            className="widget-progress"
+            role="progressbar"
+            aria-label={`${copy.title} progress`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <span style={{ width: `${progress}%` }} />
+          </span>
+        )}
+        {isListening && (
+          <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
+            <Square aria-hidden="true" size={10} fill="currentColor" />
+          </WidgetAction>
+        )}
+        {snapshot.cancellable && (
+          <button
+            type="button"
+            className="widget-esc"
+            aria-label="Cancel dictation"
+            tabIndex={-1}
+            onMouseDown={preventFocus}
+            onClick={onCancel}
+          >
+            esc
+          </button>
+        )}
       </div>
     </aside>
   )
@@ -343,11 +376,20 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
     return () => window.clearInterval(timer)
   }, [preview, snapshot?.status, snapshot?.status === 'listening' ? snapshot.sessionId : null])
 
+  const interactive = snapshot !== null && snapshot.status !== 'idle'
+  useEffect(() => {
+    if (preview !== null || bridge === undefined || snapshot === null) return
+    void bridge.setMouseInteractive(interactive).catch(() => undefined)
+  }, [bridge, preview, snapshot === null, interactive])
+
   const actions = useMemo(() => {
     if (bridge === undefined || preview !== null) return {}
     return {
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
+      onSliverHover: (hovering: boolean) => {
+        void bridge.setMouseInteractive(hovering).catch(() => undefined)
+      },
     }
   }, [bridge, preview])
 
@@ -359,7 +401,7 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   )
 }
 
-const previewNames = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
+const previewNames = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error'] as const
 type PreviewName = (typeof previewNames)[number]
 
 function isPreviewName(value: string | null): value is PreviewName {
@@ -390,6 +432,14 @@ export function parseVisualPreview(
     sessionId: 'visual-preview',
   } as const
   switch (name) {
+    case 'idle':
+      return {
+        status: 'idle',
+        theme,
+        reducedMotion: 'on',
+        shortcut: 'Ctrl+Shift+Space',
+        cancellable: false,
+      }
     case 'listening':
       return { ...common, status: 'listening', startedAt: 1_000, level: 0.64, cancellable: true }
     case 'processing':

@@ -29,6 +29,7 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
   WIDGET_STATE,
 } from '../shared/channels'
@@ -238,6 +239,8 @@ export function createTalkTypeWidgetBridge(
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
     requestCancel: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
+    setMouseInteractive: (interactive: boolean) =>
+      invokeParsed(renderer, WIDGET_INTERACTIVITY, commandResultSchema, interactive),
   })
 }
 

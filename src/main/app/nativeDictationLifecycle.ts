@@ -64,10 +64,12 @@ export class NativeDictationLifecycle {
   }
 
   private async deliver(state: WidgetSnapshot): Promise<boolean> {
+    // Every state reveals the widget: active sessions show the capsule and
+    // idle shows the persistent resting sliver.
     const delivered = await this.dependencies.delivery.sendToWidget(
       WIDGET_STATE,
       state,
-      state.status !== 'idle',
+      true,
     )
     if (!delivered) this.dependencies.log('native-widget-state-delivery-failed')
     return delivered

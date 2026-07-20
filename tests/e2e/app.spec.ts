@@ -60,7 +60,7 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
     await triggerShortcut(launched.page)
     const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
     if (widget === undefined) throw new Error('Widget window unavailable')
-    await expect(widget.getByText('Listening', { exact: true })).toBeVisible()
+    await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await triggerShortcut(launched.page)
 
     await expect(pasteTarget).toHaveValue(DETERMINISTIC_TRANSCRIPT)
@@ -125,7 +125,7 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
     await triggerShortcut(launched.page)
     const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
     if (widget === undefined) throw new Error('Widget window unavailable')
-    await expect(widget.getByText('Listening', { exact: true })).toBeVisible()
+    await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await triggerShortcut(launched.page)
     await expect(widget.getByText('Pasted', { exact: true })).toBeVisible()
   } finally {

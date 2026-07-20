@@ -24,6 +24,7 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
 } from '../../shared/channels'
 import {
@@ -214,6 +215,11 @@ export interface RegisterIpcDependencies {
   readonly models?: ModelIpcService
   readonly output?: OutputIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
+  readonly widget?: WidgetIpcService
+}
+
+export interface WidgetIpcService {
+  setMouseInteractive(interactive: boolean): void
 }
 
 export class InvalidIpcPayloadError extends Error {
@@ -422,6 +428,19 @@ export function registerIpc(
         return OK
       },
       ['main', 'widget'],
+    )
+    register(
+      WIDGET_INTERACTIVITY,
+      z.boolean(),
+      1,
+      async (interactive): Promise<CommandResult> => {
+        if (dependencies.widget === undefined) {
+          return UNAVAILABLE
+        }
+        dependencies.widget.setMouseInteractive(interactive)
+        return OK
+      },
+      ['widget'],
     )
     register(
       WIDGET_PUBLISH,

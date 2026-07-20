@@ -49,6 +49,7 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
   WIDGET_STATE,
 } from '../../src/shared/channels'
@@ -285,7 +286,7 @@ describe('typed preload bridge', () => {
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
     const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
-      ['onWidgetState', 'requestCancel', 'requestStop'].sort(),
+      ['onWidgetState', 'requestCancel', 'requestStop', 'setMouseInteractive'].sort(),
     )
     expect(bridge).not.toHaveProperty('getSettings')
     expect(bridge).not.toHaveProperty('listHistory')
@@ -2042,6 +2043,7 @@ describe('NativeRuntimeController', () => {
         showMain: vi.fn(async () => {
           order.push('show')
         }),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: vi.fn(),
         dispose: vi.fn(),
       },
@@ -2134,6 +2136,37 @@ describe('NativeRuntimeController', () => {
     runtime.dispose()
   })
 
+  it('reveals the resting widget sliver at startup only after onboarding is complete', async () => {
+    const createRuntime = (
+      onboardingComplete: boolean,
+      showWidget: () => Promise<void>,
+    ): NativeRuntimeController =>
+      new NativeRuntimeController({
+        windows: {
+          createWindows: vi.fn(async () => undefined),
+          showMain: vi.fn(async () => undefined),
+          showWidget,
+          beginQuit: vi.fn(),
+          dispose: vi.fn(),
+        },
+        hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+        tray: { update: vi.fn(), dispose: vi.fn() },
+        startup: { set: vi.fn() },
+        settings: { get: async () => ({ ...DEFAULT_SETTINGS, onboardingComplete }) },
+        installPermissions: () => vi.fn(),
+        registerIpc: () => vi.fn(),
+        log: vi.fn(),
+      })
+
+    const revealed = vi.fn(async () => undefined)
+    await createRuntime(true, revealed).start()
+    expect(revealed).toHaveBeenCalledOnce()
+
+    const concealed = vi.fn(async () => undefined)
+    await createRuntime(false, concealed).start()
+    expect(concealed).not.toHaveBeenCalled()
+  })
+
   it('starts native services from validated settings and releases only owned resources once', async () => {
     const order: string[] = []
     const windows = {
@@ -2143,6 +2176,7 @@ describe('NativeRuntimeController', () => {
       showMain: vi.fn(async () => {
         order.push('windows:show')
       }),
+      showWidget: vi.fn(async () => undefined),
       beginQuit: vi.fn(() => order.push('windows:quit')),
       dispose: vi.fn(() => order.push('windows:dispose')),
     }
@@ -2213,6 +2247,7 @@ describe('NativeRuntimeController', () => {
     const windows = {
       createWindows: vi.fn(() => windowLoad.promise),
       showMain: vi.fn(async () => undefined),
+      showWidget: vi.fn(async () => undefined),
       beginQuit: vi.fn(),
       dispose: vi.fn(),
     }
@@ -2262,6 +2297,7 @@ describe('NativeRuntimeController', () => {
     const windows = {
       createWindows: vi.fn(async () => undefined),
       showMain: vi.fn(async () => undefined),
+      showWidget: vi.fn(async () => undefined),
       beginQuit: vi.fn(),
       dispose: vi.fn(),
     }
@@ -2305,6 +2341,7 @@ describe('NativeRuntimeController', () => {
       windows: {
         createWindows: vi.fn(async () => undefined),
         showMain: vi.fn(async () => undefined),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: vi.fn(),
         dispose: vi.fn(),
       },
@@ -2332,6 +2369,7 @@ describe('NativeRuntimeController', () => {
       windows: {
         createWindows: vi.fn(async () => undefined),
         showMain: vi.fn(async () => undefined),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: vi.fn(),
         dispose: vi.fn(),
       },
@@ -2360,6 +2398,7 @@ describe('NativeRuntimeController', () => {
       windows: {
         createWindows: vi.fn(async () => undefined),
         showMain: vi.fn(async () => undefined),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: vi.fn(),
         dispose: vi.fn(),
       },
@@ -2388,6 +2427,7 @@ describe('NativeRuntimeController', () => {
     const windows = {
       createWindows: vi.fn(async () => undefined),
       showMain: vi.fn(async () => undefined),
+      showWidget: vi.fn(async () => undefined),
       beginQuit: vi.fn(),
       dispose: vi.fn(),
     }
@@ -2416,6 +2456,7 @@ describe('NativeRuntimeController', () => {
       windows: {
         createWindows: vi.fn(async () => undefined),
         showMain: vi.fn(async () => undefined),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: vi.fn(),
         dispose: vi.fn(),
       },
@@ -2459,6 +2500,7 @@ describe('NativeRuntimeController', () => {
       const windows = {
         createWindows: vi.fn(async () => undefined),
         showMain: vi.fn(async () => undefined),
+        showWidget: vi.fn(async () => undefined),
         beginQuit: throwing('beginQuit'),
         dispose: throwing('window'),
       }
@@ -2502,4 +2544,103 @@ describe('NativeRuntimeController', () => {
       expect(windows.dispose).toHaveBeenCalledOnce()
     },
   )
+})
+
+describe('widget interactivity channel', () => {
+  function widgetSender() {
+    const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+    const widgetFrame = { parent: null, url: widgetUrl }
+    const widgetContents = {
+      getURL: (): string => widgetUrl,
+      isDestroyed: (): boolean => false,
+      mainFrame: widgetFrame,
+    }
+    return { widgetContents, widgetFrame, widgetUrl }
+  }
+
+  it('lets only the widget renderer toggle its mouse interactivity', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setMouseInteractive = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setMouseInteractive },
+    })
+
+    await expect(
+      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+        sender: widgetContents,
+        senderFrame: widgetFrame,
+      }),
+    ).resolves.toEqual({ ok: true })
+    expect(setMouseInteractive).toHaveBeenCalledWith(true)
+
+    await expect(
+      harness.ipc.invoke(WIDGET_INTERACTIVITY, false, {
+        sender: widgetContents,
+        senderFrame: widgetFrame,
+      }),
+    ).resolves.toEqual({ ok: true })
+    expect(setMouseInteractive).toHaveBeenLastCalledWith(false)
+
+    await expect(harness.ipc.invoke(WIDGET_INTERACTIVITY, true)).rejects.toMatchObject({
+      code: 'UNAUTHORIZED_IPC_SENDER',
+    })
+  })
+
+  it('rejects non-boolean interactivity payloads', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setMouseInteractive: vi.fn() },
+    })
+
+    await expect(
+      harness.ipc.invoke(WIDGET_INTERACTIVITY, 'yes', {
+        sender: widgetContents,
+        senderFrame: widgetFrame,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+  })
+
+  it('reports unavailable when no widget interactivity dependency is registered', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+    })
+
+    await expect(
+      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+        sender: widgetContents,
+        senderFrame: widgetFrame,
+      }),
+    ).resolves.toEqual({ ok: false, reason: 'unavailable' })
+  })
 })

@@ -40,7 +40,8 @@ describe('WidgetApp', () => {
     const { rerender, container } = render(
       <WidgetApp snapshot={snapshot({ status: 'idle', ...privateFields })} now={15_340} />,
     )
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
 
     rerender(
       <WidgetApp
@@ -51,7 +52,10 @@ describe('WidgetApp', () => {
       />,
     )
     expect(screen.getByText('Waiting for microphone')).toBeVisible()
-    expect(screen.getByText('Approve access in Windows')).toBeVisible()
+    expect(screen.getByText('Waiting for microphone')).toHaveAttribute(
+      'title',
+      'Approve access in Windows',
+    )
 
     rerender(
       <WidgetApp
@@ -62,9 +66,7 @@ describe('WidgetApp', () => {
         now={15_340}
       />,
     )
-    expect(screen.getByText('Listening')).toBeVisible()
     expect(screen.getByText('00:12')).toBeVisible()
-    expect(screen.getByText(/Ctrl\+Shift\+Space to finish/i)).toBeVisible()
     expect(screen.getAllByTestId('level-bar')).toHaveLength(12)
     expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '65')
 
@@ -112,7 +114,6 @@ describe('WidgetApp', () => {
       />,
     )
     expect(screen.getByText(label)).toBeVisible()
-    expect(screen.getByText('43%')).toBeVisible()
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '43')
     expect(screen.getByTestId('processing-orbit')).toBeInTheDocument()
     expect(screen.queryByRole('meter')).not.toBeInTheDocument()
@@ -140,7 +141,7 @@ describe('WidgetApp', () => {
       />,
     )
     expect(screen.getByText(title)).toBeVisible()
-    expect(screen.getByText(recovery)).toBeVisible()
+    expect(screen.getByText(title)).toHaveAttribute('title', recovery)
     expect(container).not.toHaveTextContent('raw-model-error')
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
@@ -255,10 +256,10 @@ describe('WidgetApp', () => {
         now={1_000}
       />,
     )
-    const listeningCopy = container.querySelector('.widget-copy')
-    expect(listeningCopy).toHaveTextContent('ListeningCtrl+Shift+Space to finish')
-    expect(listeningCopy).not.toHaveAttribute('role')
-    expect(listeningCopy).not.toHaveAttribute('aria-live')
+    const listeningTime = container.querySelector('.widget-time')
+    expect(listeningTime).toHaveTextContent('00:01')
+    expect(listeningTime).not.toHaveAttribute('role')
+    expect(listeningTime).toHaveAttribute('aria-live', 'off')
 
     rerender(
       <WidgetApp
@@ -270,22 +271,22 @@ describe('WidgetApp', () => {
       />,
     )
     const processingCopy = container.querySelector('.widget-copy')
-    expect(processingCopy).toHaveTextContent('Transcribing locallyAudio stays on this PC')
+    expect(processingCopy).toHaveTextContent('Transcribing locally')
     expect(processingCopy).not.toHaveAttribute('role')
     expect(processingCopy).not.toHaveAttribute('aria-live')
   })
 
-  it('never exposes Electron accelerator vocabulary in live widget copy', () => {
+  it('never exposes Electron accelerator vocabulary in the resting hint', () => {
     render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'friendly', startedAt: 0, level: 0.2,
+          status: 'idle',
           shortcut: 'CommandOrControl+Shift+Space',
         })}
         now={1_000}
       />,
     )
-    expect(screen.getByText('Ctrl+Shift+Space to finish')).toBeVisible()
+    expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
     expect(document.body).not.toHaveTextContent('CommandOrControl')
   })
 })
@@ -301,6 +302,7 @@ describe('WidgetEntry', () => {
       }),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
     }
     const view = render(
       <StrictMode><WidgetEntry bridge={bridge} preview={null} /></StrictMode>,
@@ -346,6 +348,7 @@ describe('WidgetEntry', () => {
       },
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
     const polite = screen.getByRole('status')
@@ -364,7 +367,7 @@ describe('WidgetEntry', () => {
     }
 
     emit(snapshot({ status: 'idle' }))
-    expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
+    expect(container.querySelector('.widget-sliver')).toBeInTheDocument()
     expect(polite).toBeEmptyDOMElement()
     expect(assertive).toBeEmptyDOMElement()
 
@@ -402,7 +405,7 @@ describe('WidgetEntry', () => {
     emit(snapshot({ status: 'idle' }))
     expect(polite).toBeEmptyDOMElement()
     expect(assertive).toBeEmptyDOMElement()
-    expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
+    expect(container.querySelector('.widget-sliver')).toBeInTheDocument()
   })
 
   it('ticks the listening timer without changing the immutable snapshot', () => {
@@ -417,6 +420,7 @@ describe('WidgetEntry', () => {
       },
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
     }
     render(<WidgetEntry bridge={bridge} preview={null} />)
     act(() => listener?.(state))
@@ -435,6 +439,7 @@ describe('WidgetEntry', () => {
       },
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
     act(() => listener?.(snapshot({
@@ -469,7 +474,7 @@ describe('visual preview parser', () => {
 
   it('rejects unknown states, themes, duplicate parameters, and unrelated query data', () => {
     expect(parseVisualPreview(new URLSearchParams('preview=listening&theme=system'), true)).toBeNull()
-    expect(parseVisualPreview(new URLSearchParams('preview=idle&theme=dark'), true)).toBeNull()
+    expect(parseVisualPreview(new URLSearchParams('preview=paused&theme=dark'), true)).toBeNull()
     expect(parseVisualPreview(new URLSearchParams('preview=listening&preview=error&theme=dark'), true)).toBeNull()
     expect(parseVisualPreview(new URLSearchParams('preview=listening&theme=dark&text=private'), true)).toBeNull()
   })
