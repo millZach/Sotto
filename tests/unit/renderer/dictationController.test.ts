@@ -69,6 +69,7 @@ function createHarness(options: HarnessOptions = {}) {
       options.transcribe ??
         (async () => ({ text: '  hello   world  ', language: 'en' })),
     ),
+    load: vi.fn(async () => undefined),
     cancel: vi.fn(),
     dispose: vi.fn(),
   }
@@ -783,5 +784,70 @@ describe('DictationController', () => {
     await harness.controller.start()
     await harness.controller.stop()
     expect(harness.controller.getState().status).toBe('success')
+  })
+})
+
+describe('pipeline prewarm', () => {
+  it('warms the configured model and device without starting a dictation session', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ modelPreset: 'accurate', inferencePreference: 'webgpu' }),
+    })
+
+    await harness.controller.prewarm()
+
+    expect(harness.transcriber.load).toHaveBeenCalledWith({
+      preset: 'accurate',
+      inferencePreference: 'webgpu',
+    })
+    expect(harness.controller.getState().status).toBe('idle')
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+  })
+
+  it('resolves quietly when warm-up loading fails', async () => {
+    const harness = createHarness()
+    harness.transcriber.load.mockRejectedValueOnce(new Error('MODEL_MISSING'))
+
+    await expect(harness.controller.prewarm()).resolves.toBeUndefined()
+
+    expect(harness.controller.getState().status).toBe('idle')
+  })
+
+  it('does not warm while a dictation session is active', async () => {
+    const harness = createHarness()
+    await harness.controller.start()
+
+    await harness.controller.prewarm()
+
+    expect(harness.transcriber.load).not.toHaveBeenCalled()
+  })
+
+  it('does not warm after the controller is disposed', async () => {
+    const harness = createHarness()
+    harness.controller.dispose()
+
+    await expect(harness.controller.prewarm()).resolves.toBeUndefined()
+
+    expect(harness.transcriber.load).not.toHaveBeenCalled()
+  })
+
+  it('resolves quietly when settings are unavailable', async () => {
+    const harness = createHarness({
+      getSettings: () => {
+        throw new Error('SETTINGS_UNAVAILABLE')
+      },
+    })
+
+    await expect(harness.controller.prewarm()).resolves.toBeUndefined()
+
+    expect(harness.transcriber.load).not.toHaveBeenCalled()
+  })
+
+  it('supports transcribers without warm-up loading', async () => {
+    const harness = createHarness()
+    delete (harness.transcriber as { load?: unknown }).load
+
+    await expect(harness.controller.prewarm()).resolves.toBeUndefined()
+
+    expect(harness.controller.getState().status).toBe('idle')
   })
 })

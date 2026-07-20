@@ -36,6 +36,10 @@ import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
+import {
+  WidgetPlacementRepository,
+  type WidgetPlacement,
+} from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
 import { StartupService } from './startup/startupService'
 import {
@@ -66,6 +70,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
+import { enableWasmThreadSupport } from './security'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
 import {
@@ -166,13 +171,19 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed',
+    event: 'close' | 'closed' | 'moved',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     if (event === 'close') {
       const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
       this.window.on('close', wrapped)
       this.windowListenerCleanups.set(listener, () => this.window.removeListener('close', wrapped))
+      return
+    }
+    if (event === 'moved') {
+      const wrapped = (): void => listener({ preventDefault: () => undefined })
+      this.window.on('moved', wrapped)
+      this.windowListenerCleanups.set(listener, () => this.window.removeListener('moved', wrapped))
       return
     }
 
@@ -182,11 +193,20 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   removeListener(
-    _event: 'close' | 'closed',
+    _event: 'close' | 'closed' | 'moved',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     this.windowListenerCleanups.get(listener)?.()
     this.windowListenerCleanups.delete(listener)
+  }
+
+  getPosition(): readonly [number, number] {
+    const [x = 0, y = 0] = this.window.getPosition()
+    return [x, y]
+  }
+
+  setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void {
+    this.window.setIgnoreMouseEvents(ignore, options)
   }
 
   onNavigation(
@@ -303,6 +323,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
   })
+  const widgetPlacementStore = new WidgetPlacementRepository(
+    join(userDataPath, 'widget-placement.json'),
+  )
+  let widgetPlacement: WidgetPlacement | null = await widgetPlacementStore.get()
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
@@ -316,6 +340,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     isPackaged: app.isPackaged,
     log: logOperational,
     onRendererProcessGone: (kind) => handleRendererProcessGone(kind),
+    getWidgetPlacement: () => widgetPlacement,
+    onWidgetMoved: (point) => {
+      widgetPlacement = point
+      void widgetPlacementStore.save(point)
+    },
   })
   const productionModels = e2eConfiguration === null ? await (async () => {
     const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -409,6 +438,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(currentTrayState)
     },
     async onSettingsChanged(settings): Promise<void> {
+      if (settings.onboardingComplete) showWidget()
       const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
       if (!delivered) logOperational('native-main-send-failed')
     },
@@ -506,6 +536,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           publishWidgetState,
         },
         output,
+        widget: {
+          setMouseInteractive: (interactive) => windows.setWidgetMouseInteractive(interactive),
+        },
         models: createModelIpcService(models, (status) => {
           windows.sendToMain(MODEL_STATUS, status)
         }),
@@ -560,6 +593,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 }
 
 registerModelSchemesAsPrivileged(protocol)
+enableWasmThreadSupport(app.commandLine)
 app.setAppUserModelId(APP_ID)
 
 void bootstrapTalkType({ app, initialize: createRuntime, log: logOperational }).catch(() => {

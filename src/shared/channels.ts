@@ -20,6 +20,7 @@ export const DICTATION_COMMAND = 'talktype:dictation:command' as const
 
 export const WIDGET_PUBLISH = 'talktype:widget:publish' as const
 export const WIDGET_STATE = 'talktype:widget:state' as const
+export const WIDGET_INTERACTIVITY = 'talktype:widget:interactivity' as const
 
 export const MODEL_GET_STATUS = 'talktype:model:get-status' as const
 export const MODEL_LIST_DISCLOSURES = 'talktype:model:list-disclosures' as const
@@ -55,6 +56,7 @@ export const IPC_CHANNELS = Object.freeze({
   dictationCommand: DICTATION_COMMAND,
   widgetPublish: WIDGET_PUBLISH,
   widgetState: WIDGET_STATE,
+  widgetInteractivity: WIDGET_INTERACTIVITY,
   modelGetStatus: MODEL_GET_STATUS,
   modelListDisclosures: MODEL_LIST_DISCLOSURES,
   modelInstall: MODEL_INSTALL,

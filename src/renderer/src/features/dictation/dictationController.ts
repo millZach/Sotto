@@ -17,6 +17,7 @@ import {
   type AudioRecordingResult,
 } from '../../audio/audioRecorder'
 import type {
+  LoadOptions,
   TranscribeOptions,
   TranscriptionProgress,
   TranscriptionResult,
@@ -30,6 +31,7 @@ export interface DictationRecorder {
 
 export interface DictationTranscriber {
   transcribe(options: TranscribeOptions): Promise<TranscriptionResult>
+  load?(options: LoadOptions): Promise<unknown>
   cancel(sessionId: string): void
   dispose(): void
 }
@@ -149,6 +151,33 @@ export class DictationController {
 
   getState(): DictationState {
     return this.state
+  }
+
+  prewarm(): Promise<void> {
+    if (this.disposed || this.isActive()) return Promise.resolve()
+    const load = this.dependencies.transcriber.load
+    if (load === undefined) return Promise.resolve()
+
+    let settings: Readonly<AppSettings>
+    try {
+      settings = this.dependencies.getSettings()
+    } catch {
+      return Promise.resolve()
+    }
+
+    try {
+      return Promise.resolve(
+        this.dependencies.transcriber.load?.({
+          preset: settings.modelPreset,
+          inferencePreference: settings.inferencePreference,
+        }),
+      ).then(
+        () => undefined,
+        () => undefined,
+      )
+    } catch {
+      return Promise.resolve()
+    }
   }
 
   start(): Promise<void> {

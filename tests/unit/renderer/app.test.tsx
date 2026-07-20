@@ -467,3 +467,79 @@ describe('TalkType application onboarding integration', () => {
     expect(screen.queryByText(/balanced model is not ready/i)).not.toBeInTheDocument()
   })
 })
+
+describe('transcription pipeline prewarm', () => {
+  function createPrewarmHarness(bridge: TalkTypeBridge) {
+    const prewarm = vi.fn(async () => undefined)
+    const factory: AppControllerFactory = () => ({
+      getState: () => ({ status: 'idle' }),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      toggle: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+      prewarm,
+    })
+    render(
+      <AppProvider bridge={bridge} createController={factory}>
+        <App
+          createMicrophoneTest={() => ({
+            start: vi.fn(async () => 'ready' as const),
+            stop: vi.fn(async () => undefined),
+          })}
+        />
+      </AppProvider>,
+    )
+    return prewarm
+  }
+
+  it('prewarms the pipeline once the controller becomes ready', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    })
+
+    const prewarm = createPrewarmHarness(bridge)
+
+    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
+  })
+
+  it('prewarms again only when the model preset or inference preference changes', async () => {
+    let emitSettings: ((next: AppSettings) => void) | undefined
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      onSettingsChanged: vi.fn((listener: (next: AppSettings) => void) => {
+        emitSettings = listener
+        return () => undefined
+      }),
+    })
+
+    const prewarm = createPrewarmHarness(bridge)
+    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      emitSettings?.({ ...DEFAULT_SETTINGS, onboardingComplete: true, theme: 'dark' })
+    })
+    expect(prewarm).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      emitSettings?.({
+        ...DEFAULT_SETTINGS,
+        onboardingComplete: true,
+        theme: 'dark',
+        modelPreset: 'accurate',
+      })
+    })
+    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(2))
+
+    act(() => {
+      emitSettings?.({
+        ...DEFAULT_SETTINGS,
+        onboardingComplete: true,
+        theme: 'dark',
+        modelPreset: 'accurate',
+        inferencePreference: 'wasm',
+      })
+    })
+    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(3))
+  })
+})

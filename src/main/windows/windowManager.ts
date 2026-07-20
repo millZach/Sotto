@@ -1,9 +1,9 @@
 import { APP_NAME } from '../../shared/constants'
 import { selectRendererSource, type RendererRole } from '../security'
 
-const WIDGET_WIDTH = 420
-const WIDGET_HEIGHT = 92
-const WIDGET_BOTTOM_GAP = 32
+const WIDGET_WIDTH = 248
+const WIDGET_HEIGHT = 88
+const WIDGET_BOTTOM_GAP = 16
 
 export interface Point {
   readonly x: number
@@ -83,8 +83,11 @@ export interface WebContentsLike {
 
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
-  on(event: 'close' | 'closed', listener: (event: CloseEventLike) => void): void
-  removeListener(event: 'close' | 'closed', listener: (event: CloseEventLike) => void): void
+  on(event: 'close' | 'closed' | 'moved', listener: (event: CloseEventLike) => void): void
+  removeListener(
+    event: 'close' | 'closed' | 'moved',
+    listener: (event: CloseEventLike) => void,
+  ): void
   hide(): void
   show(): void
   focus(): void
@@ -93,6 +96,8 @@ export interface BrowserWindowLike {
   restore(): void
   showInactive(): void
   setPosition(x: number, y: number, animate?: boolean): void
+  getPosition(): readonly [number, number]
+  setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void
   destroy(): void
   isDestroyed(): boolean
   loadURL(url: string): Promise<void>
@@ -119,6 +124,8 @@ export interface WindowManagerDependencies {
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
   readonly onRendererProcessGone?: (kind: RendererRole) => void
+  readonly getWidgetPlacement: () => Point | null
+  readonly onWidgetMoved: (point: Point) => void
 }
 
 type WindowKind = RendererRole
@@ -334,6 +341,7 @@ export class WindowManager {
     this.installClosedLifecycle(window, 'widget')
     this.installRendererProcessLifecycle(window, 'widget')
     this.installNavigationPolicy(window)
+    this.installWidgetInteractionLifecycle(window)
 
     const ready = this.loadRenderer(
       window,
@@ -401,16 +409,36 @@ export class WindowManager {
   async showWidget(): Promise<void> {
     const widget = await this.createWidgetWindow()
     this.assertRunning()
+    const remembered = this.rememberedWidgetPlacement()
     const workArea = this.dependencies.display.getDisplayNearestPoint(
-      this.dependencies.display.getCursorScreenPoint(),
+      remembered ?? this.dependencies.display.getCursorScreenPoint(),
     ).workArea
     const centeredX = Math.round(workArea.x + (workArea.width - WIDGET_WIDTH) / 2)
     const aboveBottom = workArea.y + workArea.height - WIDGET_HEIGHT - WIDGET_BOTTOM_GAP
-    const x = clamp(centeredX, workArea.x, workArea.x + workArea.width - WIDGET_WIDTH)
-    const y = clamp(aboveBottom, workArea.y, workArea.y + workArea.height - WIDGET_HEIGHT)
+    const x = clamp(
+      remembered?.x ?? centeredX,
+      workArea.x,
+      workArea.x + workArea.width - WIDGET_WIDTH,
+    )
+    const y = clamp(
+      remembered?.y ?? aboveBottom,
+      workArea.y,
+      workArea.y + workArea.height - WIDGET_HEIGHT,
+    )
     widget.setPosition(x, y, false)
     this.assertRunning()
     widget.showInactive()
+  }
+
+  setWidgetMouseInteractive(interactive: boolean): void {
+    const widget = this.widgetWindow
+    if (widget === null || widget.isDestroyed()) return
+    try {
+      if (interactive) widget.setIgnoreMouseEvents(false)
+      else widget.setIgnoreMouseEvents(true, { forward: true })
+    } catch {
+      // Interactivity toggles are best effort; the widget stays usable either way.
+    }
   }
 
   hideWidget(): void {
@@ -488,6 +516,43 @@ export class WindowManager {
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
     })
+  }
+
+  private rememberedWidgetPlacement(): Point | null {
+    let placement: Point | null
+    try {
+      placement = this.dependencies.getWidgetPlacement()
+    } catch {
+      return null
+    }
+    if (
+      placement === null ||
+      !Number.isFinite(placement.x) ||
+      !Number.isFinite(placement.y)
+    ) {
+      return null
+    }
+    return placement
+  }
+
+  private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
+    // The widget rests as a click-through sliver; the renderer requests
+    // interactivity for active states and sliver hover.
+    try {
+      window.setIgnoreMouseEvents(true, { forward: true })
+    } catch {
+      // A widget that cannot pass clicks through still renders dictation state.
+    }
+    const onMoved = (): void => {
+      try {
+        const [x, y] = window.getPosition()
+        this.dependencies.onWidgetMoved({ x, y })
+      } catch {
+        // Placement memory is best effort.
+      }
+    }
+    window.on('moved', onMoved)
+    this.addCleanup(window, () => window.removeListener('moved', onMoved))
   }
 
   private installClosedLifecycle(window: BrowserWindowLike, kind: 'widget'): void {

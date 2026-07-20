@@ -53,6 +53,7 @@ export interface AppController {
   stop(): Promise<void>
   toggle(): Promise<void>
   cancel(): Promise<void>
+  prewarm?(): Promise<void>
   dispose(): void
 }
 
@@ -193,8 +194,18 @@ export function AppProvider({
   )
 
   const commitSettings = useCallback((next: AppSettings): void => {
+    const previous = settingsRef.current
     settingsRef.current = next
     setSettings(next)
+    if (
+      previous !== null &&
+      (previous.modelPreset !== next.modelPreset ||
+        previous.inferencePreference !== next.inferencePreference)
+    ) {
+      void invokeController(controllerRef.current, (controller) =>
+        controller.prewarm?.() ?? Promise.resolve(),
+      )
+    }
   }, [])
 
   const enqueueSettings = useCallback(
@@ -402,6 +413,7 @@ export function AppProvider({
           })
           setDictation(controller.getState())
           setStatus('ready')
+          void invokeController(controller, (value) => value.prewarm?.() ?? Promise.resolve())
         } catch {
           try { unsubscribeSettings?.() } catch { /* listener is already unreachable */ }
           unsubscribeSettings = null

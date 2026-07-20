@@ -65,7 +65,7 @@ describe('local transcription worker runtime', () => {
         dtype: 'q8',
         device: 'wasm',
         local_files_only: true,
-        session_options: { graphOptimizationLevel: 'disabled' },
+        session_options: { graphOptimizationLevel: 'basic' },
       }),
     )
     expect(recognize).toHaveBeenCalledWith(audio, { task: 'transcribe' })
@@ -624,7 +624,9 @@ describe('local transcription worker runtime', () => {
       'utf8',
     )
 
-    expect(source).toContain('configureLocalInferenceEnvironment(env)')
+    expect(source).toContain(
+      'configureLocalInferenceEnvironment(env, navigator.hardwareConcurrency)',
+    )
     expect(source).not.toContain('env.allowRemoteModels =')
     expect(source).not.toContain('env.localModelPath =')
   })

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { selectRendererSource, secureWebPreferences } from '../../../src/main/security'
+import {
+  enableWasmThreadSupport,
+  selectRendererSource,
+  secureWebPreferences,
+} from '../../../src/main/security'
 
 describe('secureWebPreferences', () => {
   it('isolates every renderer from Node', () => {
@@ -55,5 +59,19 @@ describe('selectRendererSource', () => {
       kind: 'file',
       value: 'C:/app/index.html',
     })
+  })
+})
+
+describe('wasm thread support', () => {
+  it('enables SharedArrayBuffer for multithreaded local inference before app readiness', () => {
+    const appended: Array<readonly [string, string]> = []
+
+    enableWasmThreadSupport({
+      appendSwitch: (key: string, value: string) => {
+        appended.push([key, value])
+      },
+    })
+
+    expect(appended).toEqual([['enable-features', 'SharedArrayBuffer']])
   })
 })

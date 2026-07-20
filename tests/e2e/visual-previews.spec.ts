@@ -11,7 +11,7 @@ const rendererRoot = resolve(process.cwd(), 'out/renderer')
 const baselineRoot = resolve(process.cwd(), 'artifacts/design/baseline')
 const actualRoot = resolve(process.cwd(), 'test-results/visual-previews/actual')
 const buildRoot = resolve(process.cwd(), 'test-results/visual-previews/builds')
-const previews = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
+const previews = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error'] as const
 const themes = ['light', 'dark'] as const
 const updateWidgetBaselines = process.env.TALKTYPE_UPDATE_WIDGET_BASELINES === '1'
 const buildVariants = [
@@ -157,7 +157,7 @@ function previewUrl(variant: BuildVariant, query: string): string {
 test('an unset production environment gate stays inert despite the immutable descriptor', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
-  await page.setViewportSize({ width: 420, height: 92 })
+  await page.setViewportSize({ width: 248, height: 88 })
   await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
@@ -173,7 +173,7 @@ test('an unset production environment gate stays inert despite the immutable des
 })
 
 test('compiled zero and other environment values remain inert', async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 92 })
+  await page.setViewportSize({ width: 248, height: 88 })
   await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
@@ -190,7 +190,7 @@ test('compiled zero and other environment values remain inert', async ({ page })
 })
 
 test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test previews', async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 92 })
+  await page.setViewportSize({ width: 248, height: 88 })
   await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
@@ -202,7 +202,7 @@ test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test prev
 })
 
 test('preview query alone remains inert in a preview-enabled build', async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 92 })
+  await page.setViewportSize({ width: 248, height: 88 })
   await page.goto(previewUrl('enabled', 'preview=listening&theme=dark'))
   await expect(page.locator('.widget-shell')).toHaveCount(0)
   await expect(page.locator('[data-announcement-channel]')).toHaveCount(2)
@@ -215,7 +215,7 @@ for (const theme of themes) {
     test(`${preview} ${theme} preview is deterministic, bounded, and transparent`, async ({ page }) => {
       const pageErrors: string[] = []
       page.on('pageerror', (error) => pageErrors.push(error.message))
-      await page.setViewportSize({ width: 420, height: 92 })
+      await page.setViewportSize({ width: 248, height: 88 })
       await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
         value: true,
         writable: false,
@@ -225,20 +225,20 @@ for (const theme of themes) {
       await page.goto(previewUrl('enabled', `preview=${preview}&theme=${theme}`))
 
       const shell = page.locator('.widget-shell')
-      const pill = page.locator('.widget-pill')
+      const pill = page.locator(preview === 'idle' ? '.widget-sliver' : '.widget-capsule')
       await expect(shell).toHaveCount(1)
       expect(pageErrors).toEqual([])
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
       await expect(shell).toHaveAttribute('data-status', preview === 'pasted' || preview === 'copied' ? 'success' : preview)
 
-      expect(await shell.boundingBox()).toEqual({ x: 0, y: 0, width: 420, height: 92 })
+      expect(await shell.boundingBox()).toEqual({ x: 0, y: 0, width: 248, height: 88 })
       const pillBox = await pill.boundingBox()
       expect(pillBox).not.toBeNull()
       expect(pillBox!.x).toBeGreaterThanOrEqual(0)
       expect(pillBox!.y).toBeGreaterThanOrEqual(0)
-      expect(pillBox!.x + pillBox!.width).toBeLessThanOrEqual(420)
-      expect(pillBox!.y + pillBox!.height).toBeLessThanOrEqual(92)
+      expect(pillBox!.x + pillBox!.width).toBeLessThanOrEqual(248)
+      expect(pillBox!.y + pillBox!.height).toBeLessThanOrEqual(88)
 
       const presentation = await page.evaluate<PreviewPresentation>(`(() => {
         const bodyStyle = getComputedStyle(document.body)
@@ -246,10 +246,10 @@ for (const theme of themes) {
           const style = getComputedStyle(element)
           return [style.animationDuration, style.transitionDuration]
         })
-        const overflows = Array.from(document.querySelectorAll('.widget-pill *'))
+        const overflows = Array.from(document.querySelectorAll('.widget-capsule *'))
           .filter((element) => {
             const bounds = element.getBoundingClientRect()
-            return bounds.left < 0 || bounds.top < 0 || bounds.right > 420 || bounds.bottom > 92
+            return bounds.left < 0 || bounds.top < 0 || bounds.right > 248 || bounds.bottom > 88
           })
           .map((element) => element.className)
         return {
@@ -258,7 +258,7 @@ for (const theme of themes) {
           descriptor: Object.getOwnPropertyDescriptor(window, '__TALKTYPE_VISUAL_PREVIEW__'),
           overflows,
           detailFits: (() => {
-            const detail = document.querySelector('.widget-copy > span')
+            const detail = document.querySelector('.widget-copy')
             return detail === null || detail.scrollWidth <= detail.clientWidth
           })(),
         }
@@ -273,8 +273,11 @@ for (const theme of themes) {
       }
 
       const baselinePath = resolve(baselineRoot, `${preview}-${theme}.png`)
-      let baselineBefore: Buffer = await readFile(baselinePath)
-      const baselineDigest = digest(baselineBefore)
+      let baselineBefore: Buffer | null = await readFile(baselinePath).catch(() => null)
+      if (baselineBefore === null && !updateWidgetBaselines) {
+        throw new Error(`Missing widget baseline: ${baselinePath}`)
+      }
+      const baselineDigest = baselineBefore === null ? null : digest(baselineBefore)
       const screenshotPath = resolve(actualRoot, `${preview}-${theme}.png`)
       const image = await page.screenshot({
         path: screenshotPath,
@@ -282,15 +285,15 @@ for (const theme of themes) {
         omitBackground: true,
       })
       const { data, info } = await sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-      expect(info.width).toBe(420)
-      expect(info.height).toBe(92)
+      expect(info.width).toBe(248)
+      expect(info.height).toBe(88)
       expect(info.channels).toBe(4)
 
       if (updateWidgetBaselines) {
         await writeFile(baselinePath, image)
         baselineBefore = image
       }
-      const baseline = await sharp(baselineBefore).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      const baseline = await sharp(baselineBefore!).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
       expect(baseline.info.width).toBe(info.width)
       expect(baseline.info.height).toBe(info.height)
       expect(baseline.info.channels).toBe(info.channels)
@@ -307,7 +310,7 @@ for (const theme of themes) {
       }
       expect(changedPixels).toBe(0)
       expect(maximumChannelDelta).toBe(0)
-      if (!updateWidgetBaselines) expect(digest(await readFile(baselinePath))).toBe(baselineDigest)
+      if (!updateWidgetBaselines) expect(digest(await readFile(baselinePath))).toBe(baselineDigest!)
 
       const alphaAt = (x: number, y: number): number => data[(y * info.width + x) * 4 + 3] ?? 255
       for (let x = 0; x < info.width; x += 1) {
@@ -325,7 +328,7 @@ for (const theme of themes) {
         if ((data[index] ?? 0) > 128) visiblePixels += 1
       }
       expect(transparentEdgePixels).toBeGreaterThan(500)
-      expect(visiblePixels).toBeGreaterThan(10_000)
+      expect(visiblePixels).toBeGreaterThan(preview === 'idle' ? 250 : 3_000)
     })
   }
 }

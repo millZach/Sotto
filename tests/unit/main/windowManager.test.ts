@@ -8,7 +8,7 @@ import {
   type WindowConstructorOptions,
 } from '../../../src/main/windows/windowManager'
 
-type WindowEvent = 'close' | 'closed'
+type WindowEvent = 'close' | 'closed' | 'moved'
 
 class FakeWindow implements BrowserWindowLike {
   readonly webContents = {
@@ -32,6 +32,9 @@ class FakeWindow implements BrowserWindowLike {
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
+  position: readonly [number, number] = [0, 0]
+  readonly getPosition = vi.fn(() => this.position)
+  readonly setIgnoreMouseEvents = vi.fn()
   private destroyed = false
   readonly destroy = vi.fn(() => {
     this.destroyed = true
@@ -113,6 +116,7 @@ function createHarness(
     return window
   })
   const log = vi.fn()
+  const onWidgetMoved = vi.fn()
   const manager = new WindowManager({
     createWindow,
     display: {
@@ -127,10 +131,12 @@ function createHarness(
     developmentSources: undefined,
     isPackaged: true,
     log,
+    getWidgetPlacement: () => null,
+    onWidgetMoved,
     ...overrides,
   })
 
-  return { createWindow, log, manager, options, windows }
+  return { createWindow, log, manager, onWidgetMoved, options, windows }
 }
 
 describe('WindowManager construction', () => {
@@ -167,8 +173,8 @@ describe('WindowManager construction', () => {
 
     expect(options).toStrictEqual([
       {
-        width: 420,
-        height: 92,
+        width: 248,
+        height: 88,
         show: false,
         resizable: false,
         maximizable: false,
@@ -301,10 +307,76 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(widget.setPosition).toHaveBeenCalledWith(1_390, 876, false)
+    expect(widget.setPosition).toHaveBeenCalledWith(1_476, 896, false)
     expect(widget.showInactive).toHaveBeenCalledOnce()
     expect(widget.show).not.toHaveBeenCalled()
     expect(widget.focus).not.toHaveBeenCalled()
+  })
+
+  it('shows the widget at a valid remembered position instead of the default anchor', async () => {
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => ({ x: 1_100, y: 300 }),
+    })
+    await manager.createWidgetWindow()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_100, 300, false)
+  })
+
+  it('clamps a remembered position that no longer fits any display work area', async () => {
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => ({ x: 5_000, y: 5_000 }),
+    })
+    await manager.createWidgetWindow()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_952, 912, false)
+  })
+
+  it('falls back to the default anchor when reading the remembered position throws', async () => {
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => {
+        throw new Error('placement store unavailable')
+      },
+    })
+    await manager.createWidgetWindow()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_476, 896, false)
+  })
+
+  it('reports widget moves so placement can be remembered', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    widget.position = [1_234, 567]
+    widget.emit('moved')
+
+    expect(onWidgetMoved).toHaveBeenCalledWith({ x: 1_234, y: 567 })
+  })
+
+  it('starts the widget mouse-passthrough and toggles interactivity on request', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    expect(widget.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
+
+    manager.setWidgetMouseInteractive(true)
+    expect(widget.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
+
+    manager.setWidgetMouseInteractive(false)
+    expect(widget.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+  })
+
+  it('ignores interactivity requests without a widget window', () => {
+    const { manager } = createHarness()
+
+    expect(() => manager.setWidgetMouseInteractive(true)).not.toThrow()
   })
 
   it('does not report widget send success until renderer load completes', async () => {
@@ -325,7 +397,7 @@ describe('WindowManager lifecycle', () => {
       display: {
         getCursorScreenPoint: () => ({ x: -1_900, y: -900 }),
         getDisplayNearestPoint: () => ({
-          workArea: { x: -2_000, y: -1_000, width: 440, height: 110 },
+          workArea: { x: -2_000, y: -1_000, width: 200, height: 90 },
         }),
       },
     })
@@ -333,7 +405,7 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(-1_990, -1_000, false)
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(-2_000, -1_000, false)
   })
 
   it('disposes both windows idempotently and releases listeners', async () => {
@@ -347,7 +419,7 @@ describe('WindowManager lifecycle', () => {
     expect(windows[1]!.destroy).toHaveBeenCalledOnce()
     expect(windows[0]!.removedListeners).toStrictEqual(['close', 'closed'])
     expect(windows[0]!.webContents.removeListener).toHaveBeenCalledTimes(3)
-    expect(windows[1]!.removedListeners).toStrictEqual(['closed'])
+    expect(windows[1]!.removedListeners).toStrictEqual(['closed', 'moved'])
     expect(windows[1]!.webContents.removeListener).toHaveBeenCalledTimes(3)
   })
 
@@ -502,7 +574,7 @@ describe('WindowManager lifecycle', () => {
     crashed.emitRenderProcessGone()
 
     expect(crashed.destroy).toHaveBeenCalledOnce()
-    expect(crashed.removedListeners).toStrictEqual(['closed'])
+    expect(crashed.removedListeners).toStrictEqual(['closed', 'moved'])
     expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
     expect(manager.getWidgetWebContents()).toBeNull()
