@@ -5,7 +5,7 @@ import { env, pipeline } from '@huggingface/transformers'
 import { configureLocalInferenceEnvironment } from './environment'
 import { createTranscriptionRuntime, type PipelineFactory } from './runtime'
 
-configureLocalInferenceEnvironment(env)
+configureLocalInferenceEnvironment(env, navigator.hardwareConcurrency)
 
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
 const runtime = createTranscriptionRuntime({

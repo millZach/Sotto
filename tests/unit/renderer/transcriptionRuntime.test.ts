@@ -624,7 +624,9 @@ describe('local transcription worker runtime', () => {
       'utf8',
     )
 
-    expect(source).toContain('configureLocalInferenceEnvironment(env)')
+    expect(source).toContain(
+      'configureLocalInferenceEnvironment(env, navigator.hardwareConcurrency)',
+    )
     expect(source).not.toContain('env.allowRemoteModels =')
     expect(source).not.toContain('env.localModelPath =')
   })

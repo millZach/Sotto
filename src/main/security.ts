@@ -6,6 +6,20 @@ export type RendererSource =
   | Readonly<{ kind: 'url'; value: string }>
   | Readonly<{ kind: 'file'; value: string }>
 
+export interface CommandLineAdapter {
+  appendSwitch(key: string, value: string): void
+}
+
+/**
+ * Chromium withholds SharedArrayBuffer without cross-origin isolation, which
+ * file:// renderers can never satisfy. Enabling the feature directly keeps the
+ * local inference worker eligible for multithreaded WASM. Must run before the
+ * app is ready.
+ */
+export function enableWasmThreadSupport(commandLine: CommandLineAdapter): void {
+  commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+}
+
 export function secureWebPreferences(preload: string): WebPreferences {
   return {
     preload,

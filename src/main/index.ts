@@ -66,6 +66,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
+import { enableWasmThreadSupport } from './security'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
 import {
@@ -560,6 +561,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 }
 
 registerModelSchemesAsPrivileged(protocol)
+enableWasmThreadSupport(app.commandLine)
 app.setAppUserModelId(APP_ID)
 
 void bootstrapTalkType({ app, initialize: createRuntime, log: logOperational }).catch(() => {
