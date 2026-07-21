@@ -139,22 +139,10 @@ export const widgetPresentationSchema = z.enum([
 ])
 export type WidgetPresentation = z.infer<typeof widgetPresentationSchema>
 
-const widgetDragDelta = z.number().int().min(-100_000).max(100_000)
-
-/**
- * One renderer-reported step of a widget drag gesture. Deltas are cumulative
- * screen-pixel offsets from the drag start, computed by the renderer from
- * screenX/screenY so the window moving under the pointer cannot corrupt them.
- */
+/** One renderer-reported phase of a widget drag gesture. */
 export const widgetDragSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('start') }).strict(),
-  z
-    .object({
-      phase: z.literal('move'),
-      deltaX: widgetDragDelta,
-      deltaY: widgetDragDelta,
-    })
-    .strict(),
+  z.object({ phase: z.literal('move') }).strict(),
   z.object({ phase: z.literal('end') }).strict(),
 ])
 

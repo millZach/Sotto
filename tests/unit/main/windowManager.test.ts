@@ -855,14 +855,14 @@ describe('WindowManager lifecycle', () => {
     manager.reportWidgetDrag({ phase: 'start' })
     widget.bounds = { x: 1_400, y: 700, width: 124, height: 54 }
     cursor.current = { x: 1_730, y: 950 }
-    manager.reportWidgetDrag({ phase: 'move', deltaX: -500, deltaY: 800 })
+    manager.reportWidgetDrag({ phase: 'move' })
 
     expect(widget.getBounds).toHaveBeenCalled()
     expect(getCursorScreenPoint).toHaveBeenCalledTimes(2)
     expect(widget.setPosition).toHaveBeenCalledWith(1_230, 480, false)
   })
 
-  it('moves from Electron cursor deltas and ignores renderer deltas', async () => {
+  it('moves from Electron cursor deltas without renderer coordinates', async () => {
     const cursor = { current: { x: 1_700, y: 970 } }
     const { manager, windows } = createHarness({
       display: {
@@ -878,9 +878,9 @@ describe('WindowManager lifecycle', () => {
 
     manager.reportWidgetDrag({ phase: 'start' })
     cursor.current = { x: 1_730, y: 950 }
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 999, deltaY: 999 })
+    manager.reportWidgetDrag({ phase: 'move' })
     cursor.current = { x: 1_710, y: 975 }
-    manager.reportWidgetDrag({ phase: 'move', deltaX: -999, deltaY: -999 })
+    manager.reportWidgetDrag({ phase: 'move' })
 
     expect(widget.setPosition.mock.calls).toStrictEqual([
       [1_230, 480, false],
@@ -907,7 +907,7 @@ describe('WindowManager lifecycle', () => {
     cursor.current = { x: 300, y: 200 }
     manager.reportWidgetDrag({ phase: 'start' })
     cursor.current = { x: 315, y: 180 }
-    manager.reportWidgetDrag({ phase: 'move', deltaX: -999, deltaY: 999 })
+    manager.reportWidgetDrag({ phase: 'move' })
 
     expect(widget.setPosition).toHaveBeenCalledOnce()
     expect(widget.setPosition).toHaveBeenCalledWith(1_415, 680, false)
@@ -925,7 +925,7 @@ describe('WindowManager lifecycle', () => {
     const widget = windows[0]!
     widget.getBounds.mockClear()
 
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
+    manager.reportWidgetDrag({ phase: 'move' })
     manager.reportWidgetDrag({ phase: 'end' })
 
     expect(getCursorScreenPoint).not.toHaveBeenCalled()
@@ -1000,8 +1000,8 @@ describe('WindowManager lifecycle', () => {
     cursorAdapter.getCursorScreenPoint.mockClear()
     cursorAdapter.failures.cursor = new Error('cursor unavailable')
 
-    cursorFailure.manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
-    cursorFailure.manager.reportWidgetDrag({ phase: 'move', deltaX: 20, deltaY: 20 })
+    cursorFailure.manager.reportWidgetDrag({ phase: 'move' })
+    cursorFailure.manager.reportWidgetDrag({ phase: 'move' })
     cursorFailure.manager.reportWidgetDrag({ phase: 'end' })
 
     expect(cursorAdapter.getCursorScreenPoint).toHaveBeenCalledOnce()
@@ -1017,8 +1017,8 @@ describe('WindowManager lifecycle', () => {
     })
     nativeFailure.manager.reportWidgetDrag({ phase: 'start' })
 
-    nativeFailure.manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
-    nativeFailure.manager.reportWidgetDrag({ phase: 'move', deltaX: 20, deltaY: 20 })
+    nativeFailure.manager.reportWidgetDrag({ phase: 'move' })
+    nativeFailure.manager.reportWidgetDrag({ phase: 'move' })
     nativeFailure.manager.reportWidgetDrag({ phase: 'end' })
 
     expect(nativeFailureWidget.setPosition).toHaveBeenCalledOnce()
@@ -1075,13 +1075,13 @@ describe('WindowManager lifecycle', () => {
         },
         (manager, _widget, adapter) => {
           adapter.failures.cursor = new Error('cursor unavailable')
-          manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
+          manager.reportWidgetDrag({ phase: 'move' })
         },
         (manager, widget) => {
           widget.setPosition.mockImplementationOnce(() => {
             throw new Error('native movement unavailable')
           })
-          manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
+          manager.reportWidgetDrag({ phase: 'move' })
         },
         (manager, widget) => {
           widget.getBounds.mockImplementationOnce(() => {
@@ -1133,7 +1133,7 @@ describe('WindowManager lifecycle', () => {
     const { manager } = createHarness()
 
     expect(() => manager.reportWidgetDrag({ phase: 'start' })).not.toThrow()
-    expect(() => manager.reportWidgetDrag({ phase: 'move', deltaX: 4, deltaY: 4 })).not.toThrow()
+    expect(() => manager.reportWidgetDrag({ phase: 'move' })).not.toThrow()
     expect(() => manager.reportWidgetDrag({ phase: 'end' })).not.toThrow()
   })
 

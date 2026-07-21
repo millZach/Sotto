@@ -364,8 +364,7 @@ describe('WidgetApp', () => {
     expect(onToggle).not.toHaveBeenCalled()
     expect(onDrag.mock.calls.map(([payload]) => payload)).toEqual([
       { phase: 'start' },
-      { phase: 'move', deltaX: 20, deltaY: -10 },
-      { phase: 'move', deltaX: 50, deltaY: 30 },
+      { phase: 'move' },
       { phase: 'end' },
     ])
 
@@ -671,7 +670,7 @@ describe('WidgetEntry', () => {
     fireEvent.pointerUp(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
       { phase: 'start' },
-      { phase: 'move', deltaX: 30, deltaY: 0 },
+      { phase: 'move' },
       { phase: 'end' },
     ])
     expect(bridge.requestToggle).not.toHaveBeenCalled()

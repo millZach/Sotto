@@ -333,7 +333,7 @@ describe('typed preload bridge', () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
     await bridge.setPresentation('idle-hovered')
-    await bridge.reportDrag({ phase: 'move', deltaX: 12, deltaY: -3 })
+    await bridge.reportDrag({ phase: 'move' })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
       WIDGET_PRESENTATION,
@@ -342,7 +342,7 @@ describe('typed preload bridge', () => {
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       5,
       WIDGET_DRAG,
-      { phase: 'move', deltaX: 12, deltaY: -3 },
+      { phase: 'move' },
     )
   })
 
@@ -2795,7 +2795,7 @@ describe('widget presentation and drag channels', () => {
 
     for (const payload of [
       { phase: 'start' },
-      { phase: 'move', deltaX: 24, deltaY: -8 },
+      { phase: 'move' },
       { phase: 'end' },
     ] as const) {
       await expect(
@@ -2832,10 +2832,9 @@ describe('widget presentation and drag channels', () => {
 
     for (const payload of [
       { phase: 'hover' },
-      { phase: 'move' },
-      { phase: 'move', deltaX: 1.5, deltaY: 0 },
-      { phase: 'move', deltaX: 200_000, deltaY: 0 },
-      { phase: 'start', deltaX: 1, deltaY: 1 },
+      { phase: 'move', x: 1, y: 0 },
+      { phase: 'move', extra: true },
+      { phase: 'start', x: 1, y: 1 },
       { phase: 'end', extra: true },
       'start',
       null,

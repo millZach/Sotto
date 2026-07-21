@@ -11,7 +11,6 @@ import {
   default as React,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -29,6 +28,7 @@ import type {
   WidgetProcessingStage,
   WidgetSnapshot,
 } from '../../../shared/dictation'
+import { useWidgetDragGesture } from './useWidgetDragGesture'
 
 const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
 const PREVIEW_NOW = 13_340
@@ -218,108 +218,6 @@ function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
   event.stopPropagation()
 }
 
-/** Movement past this many screen pixels turns a press into a drag. */
-const DRAG_THRESHOLD_PX = 4
-
-interface DragTracking {
-  pointerId: number
-  startX: number
-  startY: number
-  dragging: boolean
-}
-
-interface DragOrClickSurface {
-  readonly dragging: boolean
-  readonly isDragActive: () => boolean
-  readonly surfaceProps: {
-    readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onClick: () => void
-  }
-}
-
-/**
- * Discriminates a press on a widget surface into a click or a drag by a small
- * movement threshold. Deltas are computed from screenX/screenY so the window
- * moving under the pointer cannot corrupt them. A completed drag swallows the
- * click the browser dispatches after pointerup.
- */
-function useDragOrClick(
-  onClick: (() => void) | undefined,
-  onDrag: ((payload: WidgetDragPayload) => void) | undefined,
-  onDragFinished?: (() => void) | undefined,
-): DragOrClickSurface {
-  const trackingRef = useRef<DragTracking | null>(null)
-  const suppressClickRef = useRef(false)
-  const [dragging, setDragging] = useState(false)
-
-  const onPointerDown = (event: ReactPointerEvent<HTMLElement>): void => {
-    if (event.button !== 0 || event.isPrimary === false) return
-    suppressClickRef.current = false
-    trackingRef.current = {
-      pointerId: event.pointerId,
-      startX: event.screenX,
-      startY: event.screenY,
-      dragging: false,
-    }
-    try {
-      event.currentTarget.setPointerCapture?.(event.pointerId)
-    } catch {
-      // Pointer capture is unavailable in some environments; tracking still works.
-    }
-  }
-
-  const onPointerMove = (event: ReactPointerEvent<HTMLElement>): void => {
-    const tracking = trackingRef.current
-    if (tracking === null || event.pointerId !== tracking.pointerId) return
-    const deltaX = event.screenX - tracking.startX
-    const deltaY = event.screenY - tracking.startY
-    if (!tracking.dragging) {
-      if (Math.hypot(deltaX, deltaY) <= DRAG_THRESHOLD_PX) return
-      tracking.dragging = true
-      setDragging(true)
-      onDrag?.({ phase: 'start' })
-    }
-    onDrag?.({ phase: 'move', deltaX: Math.round(deltaX), deltaY: Math.round(deltaY) })
-  }
-
-  const finish = (event: ReactPointerEvent<HTMLElement>, cancelled: boolean): void => {
-    const tracking = trackingRef.current
-    if (tracking === null || event.pointerId !== tracking.pointerId) return
-    trackingRef.current = null
-    try {
-      event.currentTarget.releasePointerCapture?.(event.pointerId)
-    } catch {
-      // Releasing capture is best effort.
-    }
-    if (!tracking.dragging) return
-    suppressClickRef.current = !cancelled
-    setDragging(false)
-    onDrag?.({ phase: 'end' })
-    onDragFinished?.()
-  }
-
-  return {
-    dragging,
-    isDragActive: () => trackingRef.current?.dragging === true,
-    surfaceProps: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp: (event) => finish(event, false),
-      onPointerCancel: (event) => finish(event, true),
-      onClick: () => {
-        if (suppressClickRef.current) {
-          suppressClickRef.current = false
-          return
-        }
-        onClick?.()
-      },
-    },
-  }
-}
-
 function LevelBars({ level, active }: { readonly level: number; readonly active: boolean }): ReactNode {
   const boundedLevel = safeLevel(level)
   return (
@@ -403,7 +301,7 @@ export function WidgetApp({
   // Either surface becomes a drag once movement passes the threshold. When an
   // idle drag ends the window has snapped away from the pointer, so it returns
   // to the resting presentation.
-  const surface = useDragOrClick(
+  const surface = useWidgetDragGesture(
     isIdle ? onToggle : onStop,
     onDrag,
     isIdle ? () => setExpanded(false) : undefined,
