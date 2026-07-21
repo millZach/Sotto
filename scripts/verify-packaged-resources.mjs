@@ -172,7 +172,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
       if ('reason' in modelStatus || modelStatus.preset !== 'balanced' || modelStatus.state !== 'bundled') {
         throw new Error('bundled model is not available through the normal bridge')
       }
-      if ('reason' in disclosures || disclosures.models.length !== 3) {
+      if ('reason' in disclosures || disclosures.models.length !== 4) {
         throw new Error('model disclosure bridge failed')
       }
       if (!modelResponse.ok || !runtimeResponse.ok) {
