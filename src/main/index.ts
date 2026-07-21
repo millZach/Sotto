@@ -58,6 +58,7 @@ import {
   WindowManager,
   type BrowserWindowLike,
   type NavigationEventName,
+  type Rectangle,
   type RendererDiagnostic,
   type WebContentsLike,
   type WindowConstructorOptions,
@@ -289,6 +290,24 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
 
   showInactive(): void {
     this.window.showInactive()
+  }
+
+  getBounds(): Rectangle {
+    return this.window.getBounds()
+  }
+
+  setBounds(bounds: Rectangle, animate?: boolean): void {
+    const resizable = this.window.isResizable()
+    if (!resizable) {
+      this.window.setResizable(true)
+    }
+    try {
+      this.window.setBounds(bounds, animate)
+    } finally {
+      if (!resizable) {
+        this.window.setResizable(false)
+      }
+    }
   }
 
   setPosition(x: number, y: number, animate?: boolean): void {

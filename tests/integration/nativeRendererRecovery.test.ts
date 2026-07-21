@@ -10,6 +10,7 @@ import {
   WindowManager,
   type BrowserWindowLike,
   type NavigationEventName,
+  type Rectangle,
 } from '../../src/main/windows/windowManager'
 import { WIDGET_STATE } from '../../src/shared/channels'
 import type { WidgetSnapshot } from '../../src/shared/dictation'
@@ -31,9 +32,18 @@ class LifecycleWindow implements BrowserWindowLike {
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
-  readonly setPosition = vi.fn()
-  readonly setSize = vi.fn()
-  readonly getPosition = vi.fn(() => [0, 0] as const)
+  bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
+  readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
+  readonly setBounds = vi.fn((bounds: Rectangle): void => {
+    this.bounds = { ...bounds }
+  })
+  readonly setPosition = vi.fn((x: number, y: number): void => {
+    this.bounds = { ...this.bounds, x, y }
+  })
+  readonly setSize = vi.fn((width: number, height: number): void => {
+    this.bounds = { ...this.bounds, width, height }
+  })
+  readonly getPosition = vi.fn(() => [this.bounds.x, this.bounds.y] as const)
   readonly setIgnoreMouseEvents = vi.fn()
   readonly destroy = vi.fn()
   readonly isDestroyed = vi.fn(() => false)
