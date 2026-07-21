@@ -29,16 +29,22 @@ const paths = [
   'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx',
   'preprocessor_config.json', 'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json',
 ] as const
-const repositories = { fast: 'Xenova/whisper-tiny', balanced: 'Xenova/whisper-base', accurate: 'Xenova/whisper-small' } as const
-const revisions = { fast: '5332fcc35e32a33b86612b9a57a89be7906102b1', balanced: '64da57285918e20ea79ea5c88eed7197933abaa8', accurate: '2d67713f236afa48a18992566e7647f6ca848e13' } as const
-const onnxSizes = { fast: { decoder: 30_727_765, encoder: 10_124_910 }, balanced: { decoder: 53_707_539, encoder: 23_200_850 }, accurate: { decoder: 156_780_950, encoder: 92_324_809 } } as const
-const files = (preset: keyof typeof repositories) => paths.map((path) => ({ path, url: `https://huggingface.co/${repositories[preset]}/resolve/${revisions[preset]}/${path}`, bytes: path.includes('decoder_model') ? onnxSizes[preset].decoder : path.includes('encoder_model') ? onnxSizes[preset].encoder : bytes.length, sha256 }))
+const moonshinePaths = [
+  'config.json', 'generation_config.json', 'onnx/decoder_model_merged_quantized.onnx',
+  'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json',
+] as const
+const repositories = { fast: 'Xenova/whisper-tiny', balanced: 'Xenova/whisper-base', accurate: 'Xenova/whisper-small', instant: 'onnx-community/moonshine-base-ONNX' } as const
+const revisions = { fast: '5332fcc35e32a33b86612b9a57a89be7906102b1', balanced: '64da57285918e20ea79ea5c88eed7197933abaa8', accurate: '2d67713f236afa48a18992566e7647f6ca848e13', instant: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad' } as const
+const onnxSizes = { fast: { decoder: 30_727_765, encoder: 10_124_910 }, balanced: { decoder: 53_707_539, encoder: 23_200_850 }, accurate: { decoder: 156_780_950, encoder: 92_324_809 }, instant: { decoder: 42_498_870, encoder: 20_513_063 } } as const
+const licenses = { fast: 'Apache-2.0', balanced: 'Apache-2.0', accurate: 'Apache-2.0', instant: 'MIT' } as const
+const files = (preset: keyof typeof repositories) => (preset === 'instant' ? moonshinePaths : paths).map((path) => ({ path, url: `https://huggingface.co/${repositories[preset]}/resolve/${revisions[preset]}/${path}`, bytes: path.includes('decoder_model') ? onnxSizes[preset].decoder : path.includes('encoder_model') ? onnxSizes[preset].encoder : bytes.length, sha256 }))
 const lock: CatalogLock = {
   version: 1,
   presets: {
     fast: { repository: repositories.fast, revision: revisions.fast, license: 'Apache-2.0', bundled: false, files: files('fast') },
     balanced: { repository: repositories.balanced, revision: revisions.balanced, license: 'Apache-2.0', bundled: true, files: files('balanced') },
     accurate: { repository: repositories.accurate, revision: revisions.accurate, license: 'Apache-2.0', bundled: false, files: files('accurate') },
+    instant: { repository: repositories.instant, revision: revisions.instant, license: 'MIT', bundled: false, files: files('instant') },
   },
 }
 const bundledManifest = {
@@ -67,14 +73,14 @@ describe('ModelManager', () => {
     const disclosure = manager.disclosures()
 
     expect(disclosure.optionalDownloadNotice).toBe(MODEL_DOWNLOAD_PRIVACY_NOTICE)
-    expect(disclosure.models).toEqual((['fast', 'balanced', 'accurate'] as const).map((preset) => ({
+    expect(disclosure.models).toEqual((['fast', 'balanced', 'accurate', 'instant'] as const).map((preset) => ({
       preset,
       repository: lock.presets[preset].repository,
       sourceProvider: 'Hugging Face',
       sourceHost: 'huggingface.co',
       revision: lock.presets[preset].revision,
       totalBytes: lock.presets[preset].files.reduce((total, file) => total + file.bytes, 0),
-      license: 'Apache-2.0',
+      license: licenses[preset],
       bundled: preset === 'balanced',
     })))
     expect(Object.isFrozen(disclosure)).toBe(true)

@@ -4,7 +4,7 @@ import { DEFAULT_HOTKEY } from './constants'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type ReducedMotion = 'system' | 'on'
-export type ModelPreset = 'fast' | 'balanced' | 'accurate'
+export type ModelPreset = 'fast' | 'balanced' | 'accurate' | 'instant'
 export type InferencePreference = 'auto' | 'webgpu' | 'wasm'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 
@@ -48,7 +48,7 @@ const fieldSchemas = {
   hotkey: z.string().min(1),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  modelPreset: z.enum(['fast', 'balanced', 'accurate']),
+  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant']),
   language: z.string().min(1),
   inferencePreference: z.enum(['auto', 'webgpu', 'wasm']),
   formatWhitespace: z.boolean(),

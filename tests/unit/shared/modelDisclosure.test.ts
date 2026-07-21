@@ -20,6 +20,7 @@ describe('model disclosure contract', () => {
     entry,
     { ...entry, preset: 'balanced' as const, repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', bundled: true },
     { ...entry, preset: 'accurate' as const, repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13' },
+    { ...entry, preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT' as const },
   ]
 
   it('accepts exact finite metadata and returns a deeply immutable catalog', () => {
@@ -40,7 +41,9 @@ describe('model disclosure contract', () => {
     { ...entry, sourceHost: 'evil.invalid' },
     { ...entry, revision: 'main' },
     { ...entry, totalBytes: Number.POSITIVE_INFINITY },
+    // Each preset's license is pinned: whisper-tiny is Apache-2.0, not MIT.
     { ...entry, license: 'MIT' },
+    { ...entry, license: 'GPL-3.0' },
   ])('rejects malformed or extra disclosure metadata', (hostile) => {
     const models = validModels()
     models[0] = hostile as typeof entry

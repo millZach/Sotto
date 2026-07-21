@@ -64,7 +64,7 @@ const routes = [
   { prefix: '/runtime/', dir: RUNTIME_DIR },
   { prefix: '/ort/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-web', 'dist') },
   { prefix: '/ortcommon/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-common', 'dist', 'esm') },
-  { prefix: '/models/', dir: path.join(ROOT, 'resources', 'models') },
+  { prefix: '/models/', dir: path.resolve(argValue('models-dir', path.join(ROOT, 'resources', 'models'))) },
   { prefix: '/bench/', dir: path.join(BENCH_DIR, 'fixtures') },
 ]
 
@@ -117,6 +117,9 @@ page.on('console', (msg) => {
   if (text.startsWith('[bench]') || msg.type() === 'error') console.log(msg.type(), text)
 })
 page.on('pageerror', (err) => console.log('pageerror:', err.message))
+if (args.includes('--log-requests')) {
+  page.on('request', (request) => console.log('[request]', request.url()))
+}
 await page.goto(base + '/')
 await page.waitForFunction(() => typeof window.runBench === 'function', null, { timeout: 30000 })
 

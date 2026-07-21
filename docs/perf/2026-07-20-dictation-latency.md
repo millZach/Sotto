@@ -93,6 +93,21 @@ stop — Wispr Flow territory — without any architectural change. Streaming
 inference during recording remains the long-term option but is likely
 unnecessary once Moonshine is in.
 
+## Implementation status (same day)
+
+All four fixes landed on `perf/dictation-latency`:
+
+1. Warm paste helper (`src/main/output/pasteHelper.ts`) — persistent hidden
+   PowerShell process compiled once at startup, ~5 ms per paste, one-shot spawn
+   kept as fallback. Verified with the gated Windows smoke test.
+2. Moonshine ships as the **Instant** preset (`onnx-community/moonshine-base-ONNX`,
+   q8, ~67 MB optional download, MIT). English-only; Whisper presets remain for
+   multilingual. Local-files inference verified at ~126 ms for a 2 s clip using
+   exactly the seven locked files.
+3. `prewarm()` now runs 1 s of silence through a newly loaded pipeline before
+   reporting ready.
+4. `auto` inference preference resolves straight to WASM.
+
 ## Reproducing
 
 ```

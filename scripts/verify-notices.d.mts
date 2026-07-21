@@ -1,5 +1,6 @@
 export interface NoticeComponent {
   readonly name: string
+  readonly nameSuffix?: string
   readonly version: string
   readonly license: string
   readonly attribution: string

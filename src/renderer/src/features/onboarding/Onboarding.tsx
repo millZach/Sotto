@@ -7,6 +7,7 @@ import React, {
 } from 'react'
 
 import type { ModelDisclosure, ModelDisclosureCatalog } from '../../../../shared/contracts'
+import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
 import type { ModelPreset } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
@@ -26,7 +27,7 @@ export interface OnboardingProps {
   readonly onRequestMicrophone: () => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
   readonly onRetryModel?: () => void | Promise<void>
-  readonly onInstallModel?: (preset: Extract<ModelPreset, 'fast' | 'accurate'>) => void | Promise<void>
+  readonly onInstallModel?: (preset: Exclude<ModelPreset, 'balanced'>) => void | Promise<void>
   readonly onComplete: () => boolean | void | Promise<boolean | void>
 }
 
@@ -57,7 +58,7 @@ function OptionalModelCard({
   readonly onConsent: (consent: boolean) => void
   readonly onInstall?: (() => void) | undefined
 }): ReactNode {
-  const name = disclosure.preset === 'fast' ? 'Fast' : 'Accurate'
+  const name = MODEL_CATALOG[disclosure.preset].label
   const consentId = `optional-${disclosure.preset}-consent`
   return (
     <article className="onboarding-model-card">
@@ -100,9 +101,9 @@ export function Onboarding({
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
   const [pasteTest, setPasteTest] = useState('')
-  const [consent, setConsent] = useState({ fast: false, accurate: false })
-  const [installingPreset, setInstallingPreset] = useState<'fast' | 'accurate' | null>(null)
-  const [installationError, setInstallationError] = useState<'fast' | 'accurate' | null>(null)
+  const [consent, setConsent] = useState({ instant: false, fast: false, accurate: false })
+  const [installingPreset, setInstallingPreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
+  const [installationError, setInstallationError] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -135,7 +136,7 @@ export function Onboarding({
     }
   }
 
-  const installOptionalModel = async (preset: 'fast' | 'accurate'): Promise<void> => {
+  const installOptionalModel = async (preset: Exclude<ModelPreset, 'balanced'>): Promise<void> => {
     if (!consent[preset] || installingPreset !== null || onInstallModel === undefined) return
     setInstallingPreset(preset)
     setInstallationError(null)
@@ -149,8 +150,8 @@ export function Onboarding({
   }
 
   const optionalModels = disclosures?.models.filter(
-    (model): model is ModelDisclosure & { preset: 'fast' | 'accurate' } =>
-      model.preset === 'fast' || model.preset === 'accurate',
+    (model): model is ModelDisclosure & { preset: Exclude<ModelPreset, 'balanced'> } =>
+      model.preset !== 'balanced',
   ) ?? []
 
   return (
@@ -228,7 +229,7 @@ export function Onboarding({
                 {modelState === 'checking' ? null : <Button variant="secondary" onClick={() => void onRetryModel?.()}>Retry model check</Button>}
               </div>
             )}
-            <p className="onboarding-lead">Balanced is the dependable default. You can add a smaller Fast model or a larger Accurate model later.</p>
+            <p className="onboarding-lead">Balanced is the dependable default. You can add the English-only Instant model, a smaller Fast model, or a larger Accurate model later.</p>
             {disclosures === undefined ? (
               <p className="onboarding-muted">
                 Optional download details are unavailable. {modelState === 'ready'
@@ -257,7 +258,7 @@ export function Onboarding({
                 </div>
                 {installationError === null ? null : (
                   <p className="onboarding-completion-error" role="alert">
-                    The {installationError === 'fast' ? 'Fast' : 'Accurate'} download could not start. The included Balanced model is unchanged.
+                    The {MODEL_CATALOG[installationError].label} download could not start. The included Balanced model is unchanged.
                   </p>
                 )}
               </div>

@@ -7,7 +7,7 @@ import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { pathToFileURL, URL } from 'node:url'
 
-import { MODEL_CATALOG, MODEL_FILE_ALLOWLIST, RUNTIME_FILE_ALLOWLIST, modelFileUrl } from './model-catalog.mjs'
+import { MODEL_CATALOG, RUNTIME_FILE_ALLOWLIST, modelFileUrl } from './model-catalog.mjs'
 import { verifyPreparedAssets } from './verify-model.mjs'
 
 const projectRoot = resolve(import.meta.dirname, '..')
@@ -159,7 +159,7 @@ async function main() {
     const presets = {}
     for (const [preset, model] of Object.entries(MODEL_CATALOG)) {
       const tree = await treeMetadata(model); const files = []
-      for (const path of MODEL_FILE_ALLOWLIST) {
+      for (const path of model.files) {
         const entry = tree.get(path); if (!entry) throw finiteError('catalog file missing')
         const url = modelFileUrl(model, path)
         let integrity

@@ -107,6 +107,63 @@ describe('local transcription worker runtime', () => {
     )
   })
 
+  it('maps instant to the pinned Moonshine repository and calls it without Whisper options', async () => {
+    // Moonshine models take no task/language generation options and are
+    // English-only, so the result language is always 'en'.
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: 'moonshine text' }),
+    )
+    const responses: unknown[] = []
+    const createPipeline = vi.fn(async () => recognize) as unknown as PipelineFactory
+    const runtime = createTranscriptionRuntime({
+      createPipeline,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage(transcribeRequest({ preset: 'instant', language: 'auto' }))
+
+    expect(createPipeline).toHaveBeenCalledWith(
+      'automatic-speech-recognition',
+      'onnx-community/moonshine-base-ONNX',
+      expect.objectContaining({ dtype: 'q8', device: 'wasm', local_files_only: true }),
+    )
+    expect(recognize).toHaveBeenCalledTimes(1)
+    expect(recognize.mock.calls[0]).toHaveLength(1)
+    expect(responses.at(-1)).toEqual({
+      type: 'result',
+      requestId: 'request-1',
+      sessionId: 'session-1',
+      text: 'moonshine text',
+      language: 'en',
+    })
+  })
+
+  it('warms up an instant pipeline without Whisper options', async () => {
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: '' }),
+    )
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as unknown as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-instant',
+      preset: 'instant',
+      inferencePreference: 'wasm',
+    })
+
+    expect(recognize).toHaveBeenCalledTimes(1)
+    expect(recognize.mock.calls[0]).toHaveLength(1)
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-instant' }),
+    )
+  })
+
   it('passes an explicit language but omits language for auto detection', async () => {
     const recognize = vi.fn(async () => ({ text: 'bonjour', language: 'fr' }))
     const responses: unknown[] = []

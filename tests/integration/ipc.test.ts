@@ -205,23 +205,27 @@ function createIpcHarness() {
   }
 }
 
+const disclosureRevisions = {
+  fast: '5332fcc35e32a33b86612b9a57a89be7906102b1',
+  balanced: '64da57285918e20ea79ea5c88eed7197933abaa8',
+  accurate: '2d67713f236afa48a18992566e7647f6ca848e13',
+  instant: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
+} as const
+
 const disclosureCatalog: ModelDisclosureCatalog = Object.freeze({
   models: Object.freeze(([
-    ['fast', 'Xenova/whisper-tiny', false],
-    ['balanced', 'Xenova/whisper-base', true],
-    ['accurate', 'Xenova/whisper-small', false],
-  ] as const).map(([preset, repository, bundled]) => Object.freeze({
+    ['fast', 'Xenova/whisper-tiny', false, 42, 'Apache-2.0'],
+    ['balanced', 'Xenova/whisper-base', true, 84, 'Apache-2.0'],
+    ['accurate', 'Xenova/whisper-small', false, 126, 'Apache-2.0'],
+    ['instant', 'onnx-community/moonshine-base-ONNX', false, 63, 'MIT'],
+  ] as const).map(([preset, repository, bundled, totalBytes, license]) => Object.freeze({
     preset,
     repository,
     sourceProvider: 'Hugging Face' as const,
     sourceHost: 'huggingface.co' as const,
-    revision: preset === 'fast'
-      ? '5332fcc35e32a33b86612b9a57a89be7906102b1'
-      : preset === 'balanced'
-        ? '64da57285918e20ea79ea5c88eed7197933abaa8'
-        : '2d67713f236afa48a18992566e7647f6ca848e13',
-    totalBytes: preset === 'fast' ? 42 : preset === 'balanced' ? 84 : 126,
-    license: 'Apache-2.0' as const,
+    revision: disclosureRevisions[preset],
+    totalBytes,
+    license,
     bundled,
   }))),
   optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,

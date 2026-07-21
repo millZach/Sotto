@@ -9,7 +9,7 @@ import type { RecoveryNotice } from './recoveryNotice'
 export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
-const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate'])
+const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate', 'instant'])
 const widgetErrorCodeSchema = z.enum([
   'MIC_PERMISSION_DENIED',
   'MIC_DEVICE_NOT_FOUND',
@@ -171,9 +171,10 @@ export const modelStatusSchema = z
 export const MODEL_DOWNLOAD_PRIVACY_NOTICE = 'Downloading an optional model contacts Hugging Face, which receives ordinary network metadata such as your IP address and request time. Audio and transcripts are not sent.' as const
 
 const approvedDisclosureModels = {
-  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', bundled: false },
-  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', bundled: true },
-  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', bundled: false },
+  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', license: 'Apache-2.0', bundled: false },
+  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', license: 'Apache-2.0', bundled: true },
+  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', license: 'Apache-2.0', bundled: false },
+  instant: { repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', bundled: false },
 } as const
 
 export const modelDisclosureSchema = z
@@ -184,13 +185,13 @@ export const modelDisclosureSchema = z
     sourceHost: z.literal('huggingface.co'),
     revision: z.string().regex(/^[a-f0-9]{40}$/),
     totalBytes: z.number().int().positive().safe(),
-    license: z.literal('Apache-2.0'),
+    license: z.enum(['Apache-2.0', 'MIT']),
     bundled: z.boolean(),
   })
   .strict()
   .superRefine((value, context) => {
     const expected = approvedDisclosureModels[value.preset]
-    if (value.repository !== expected.repository || value.revision !== expected.revision || value.bundled !== expected.bundled) {
+    if (value.repository !== expected.repository || value.revision !== expected.revision || value.license !== expected.license || value.bundled !== expected.bundled) {
       context.addIssue({ code: 'custom', message: 'Model disclosure does not match the approved catalog' })
     }
   })
@@ -198,12 +199,12 @@ export const modelDisclosureSchema = z
 
 export const modelDisclosureCatalogSchema = z
   .object({
-    models: z.array(modelDisclosureSchema).length(3),
+    models: z.array(modelDisclosureSchema).length(4),
     optionalDownloadNotice: z.literal(MODEL_DOWNLOAD_PRIVACY_NOTICE),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.models.map((model) => model.preset).join() !== 'fast,balanced,accurate') {
+    if (value.models.map((model) => model.preset).join() !== 'fast,balanced,accurate,instant') {
       context.addIssue({ code: 'custom', message: 'Model disclosure order is invalid' })
     }
   })

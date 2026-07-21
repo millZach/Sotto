@@ -60,6 +60,11 @@ describe('settings', () => {
     })
   })
 
+  it('accepts the instant preset and recovers unknown presets to balanced', () => {
+    expect(parseSettings({ modelPreset: 'instant' }).modelPreset).toBe('instant')
+    expect(parseSettings({ modelPreset: 'turbo' }).modelPreset).toBe('balanced')
+  })
+
   it('defaults the widget idle visibility on and recovers invalid values to on', () => {
     expect(parseSettings({}).showWidgetWhenIdle).toBe(true)
     expect(parseSettings({ showWidgetWhenIdle: false }).showWidgetWhenIdle).toBe(false)

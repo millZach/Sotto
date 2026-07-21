@@ -114,7 +114,7 @@ const hotkeySchema = z
   .min(1)
   .max(128)
   .refine((accelerator) => accelerator.toLowerCase() !== 'escape')
-const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate'])
+const modelPresetSchema = z.enum(['fast', 'balanced', 'accurate', 'instant'])
 const modelInstallSchema = z
   .object({ preset: modelPresetSchema, consent: z.literal(true) })
   .strict()
