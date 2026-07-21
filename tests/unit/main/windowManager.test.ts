@@ -1093,12 +1093,6 @@ describe('WindowManager lifecycle', () => {
           adapter.failures.display = new Error('display unavailable')
           manager.reportWidgetDrag({ phase: 'end' })
         },
-        (manager, widget) => {
-          widget.setBounds.mockImplementationOnce(() => {
-            throw new Error('native snap unavailable')
-          })
-          manager.reportWidgetDrag({ phase: 'end' })
-        },
       ]
 
       for (const finishDrag of terminalPaths) {
@@ -1123,6 +1117,50 @@ describe('WindowManager lifecycle', () => {
         )
         manager.dispose()
       }
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('native drag-end snap failure clears ownership and the next monitor tick recovers', async () => {
+    vi.useFakeTimers()
+    try {
+      const adapter = createMutableTwoDisplayAdapter()
+      const { manager, onWidgetMoved, windows } = createHarness({ display: adapter.display })
+      await manager.showWidget()
+      const widget = windows[0]!
+      manager.reportWidgetDrag({ phase: 'start' })
+      widget.setBounds.mockClear()
+      widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+      widget.setBounds.mockImplementationOnce(() => {
+        throw new Error('native snap unavailable')
+      })
+
+      manager.reportWidgetDrag({ phase: 'end' })
+      manager.reportWidgetDrag({ phase: 'end' })
+
+      expect(widget.setBounds).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenLastCalledWith(
+        { x: 16, y: 338, width: 54, height: 124 },
+        false,
+      )
+      expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+
+      widget.setBounds.mockClear()
+      adapter.getCursorScreenPoint.mockClear()
+      adapter.getDisplayNearestPoint.mockClear()
+      adapter.cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(100)
+
+      expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+      expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenCalledWith(
+        { x: 1_016, y: 488, width: 54, height: 124 },
+        false,
+      )
+      expect(widget.bounds).toEqual({ x: 1_016, y: 488, width: 54, height: 124 })
+      manager.dispose()
     } finally {
       vi.clearAllTimers()
       vi.useRealTimers()

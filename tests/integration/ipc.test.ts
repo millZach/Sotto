@@ -20,6 +20,13 @@ import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSetting
 import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
 import {
+  WindowManager,
+  type BrowserWindowLike,
+  type NavigationEventName,
+  type Rectangle,
+  type WindowConstructorOptions,
+} from '../../src/main/windows/windowManager'
+import {
   TrayController,
   type TrayAdapter,
   type TrayMenuItem,
@@ -137,6 +144,82 @@ class FakeIpcMain implements IpcMainAdapter {
       return Promise.reject(new Error(`missing handler: ${channel}`))
     }
     return Promise.resolve(handler(event, ...args))
+  }
+}
+
+class IpcLifecycleWindow implements BrowserWindowLike {
+  readonly webContents: BrowserWindowLike['webContents']
+  readonly hide = vi.fn()
+  readonly show = vi.fn()
+  readonly focus = vi.fn()
+  readonly minimize = vi.fn()
+  readonly isMinimized = vi.fn(() => false)
+  readonly restore = vi.fn()
+  readonly showInactive = vi.fn()
+  bounds: Rectangle
+  readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
+  readonly setBounds = vi.fn((bounds: Rectangle): void => {
+    this.bounds = { ...bounds }
+  })
+  readonly setPosition = vi.fn((x: number, y: number): void => {
+    this.bounds = { ...this.bounds, x, y }
+  })
+  readonly getPosition = vi.fn(() => [this.bounds.x, this.bounds.y] as const)
+  readonly setSize = vi.fn((width: number, height: number): void => {
+    this.bounds = { ...this.bounds, width, height }
+  })
+  readonly setIgnoreMouseEvents = vi.fn()
+  readonly destroy = vi.fn()
+  readonly isDestroyed = vi.fn(() => false)
+  readonly loadURL = vi.fn(async () => undefined)
+  readonly loadFile = vi.fn(async () => undefined)
+
+  constructor(readonly role: 'main' | 'widget', options: WindowConstructorOptions) {
+    const url = `file:///C:/TalkType/out/renderer/${role === 'main' ? 'index' : 'widget'}.html`
+    const mainFrame = { parent: null, url }
+    this.webContents = {
+      mainFrame,
+      send: vi.fn(),
+      getURL: vi.fn(() => url),
+      isDestroyed: vi.fn(() => false),
+      setWindowOpenHandler: vi.fn(),
+    }
+    this.bounds = { x: 0, y: 0, width: options.width, height: options.height }
+  }
+
+  on(
+    event: 'close' | 'closed' | 'moved',
+    listener: (event: { preventDefault(): void }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  removeListener(
+    event: 'close' | 'closed' | 'moved',
+    listener: (event: { preventDefault(): void }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  onNavigation(
+    event: NavigationEventName,
+    listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  removeNavigationListener(
+    event: NavigationEventName,
+    listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  onRenderProcessGone(listener: () => void): void {
+    void listener
+  }
+  removeRenderProcessGoneListener(listener: () => void): void {
+    void listener
   }
 }
 
@@ -2723,6 +2806,75 @@ describe('widget presentation and drag channels', () => {
       expect(setPresentation).toHaveBeenLastCalledWith(presentation)
     }
     expect(setPresentation).toHaveBeenCalledTimes(3)
+  })
+
+  it('active presentation resizes without recreating the widget', async () => {
+    const nativeWindows: IpcLifecycleWindow[] = []
+    const createWindow = vi.fn((options: WindowConstructorOptions) => {
+      const role = options.webPreferences.additionalArguments[0].endsWith('widget')
+        ? 'widget'
+        : 'main'
+      const window = new IpcLifecycleWindow(role, options)
+      nativeWindows.push(window)
+      return window
+    })
+    const windows = new WindowManager({
+      createWindow,
+      display: {
+        getCursorScreenPoint: () => ({ x: 1_700, y: 970 }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+      preloadPath: 'C:/TalkType/out/preload/index.js',
+      mainHtmlPath: 'C:/TalkType/out/renderer/index.html',
+      widgetHtmlPath: 'C:/TalkType/out/renderer/widget.html',
+      developmentSources: undefined,
+      isPackaged: true,
+      log: vi.fn(),
+      getWidgetPlacement: () => null,
+      onWidgetMoved: vi.fn(),
+    })
+    const harness = createIpcHarness()
+    harness.cleanup()
+    let cleanup = (): void => undefined
+
+    try {
+      await windows.createWindows()
+      await windows.showWidget()
+      const widget = nativeWindows[1]!
+      cleanup = registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => windows.getTrustedRenderers(),
+        widget: {
+          setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
+          reportDrag: (payload) => windows.reportWidgetDrag(payload),
+        },
+      })
+      const widgetEvent = {
+        sender: widget.webContents,
+        senderFrame: widget.webContents.mainFrame,
+      }
+
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, 'active', widgetEvent),
+      ).resolves.toEqual({ ok: true })
+
+      expect(widget.getBounds()).toMatchObject({ width: 248, height: 88 })
+      expect(widget.setBounds).toHaveBeenLastCalledWith(
+        { x: 1_476, y: 896, width: 248, height: 88 },
+        false,
+      )
+      expect(createWindow).toHaveBeenCalledTimes(2)
+      expect(nativeWindows[1]).toBe(widget)
+    } finally {
+      cleanup()
+      windows.dispose()
+    }
   })
 
   it('rejects unknown non-string and object presentation payloads', async () => {

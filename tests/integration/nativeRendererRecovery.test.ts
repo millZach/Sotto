@@ -269,4 +269,133 @@ describe('native recovery after the main renderer is lost', () => {
       vi.useRealTimers()
     }
   })
+
+  it('widget renderer loss releases drag ownership and replacement follows cursor', async () => {
+    vi.useFakeTimers()
+    const displays = [
+      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
+      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
+    ] as const
+    const cursor = { current: { x: 100, y: 100 } }
+    const getCursorScreenPoint = vi.fn(() => cursor.current)
+    const getDisplayNearestPoint = vi.fn(
+      (point: { readonly x: number }) => (point.x < 1_000 ? displays[0] : displays[1]),
+    )
+    const nativeWindows: LifecycleWindow[] = []
+    const windows = new WindowManager({
+      createWindow: () => {
+        const window = new LifecycleWindow()
+        nativeWindows.push(window)
+        return window
+      },
+      getWidgetPlacement: () => null,
+      onWidgetMoved: vi.fn(),
+      display: { getCursorScreenPoint, getDisplayNearestPoint },
+      preloadPath: 'preload.js',
+      mainHtmlPath: 'index.html',
+      widgetHtmlPath: 'widget.html',
+      developmentSources: undefined,
+      isPackaged: true,
+      log: vi.fn(),
+    })
+
+    try {
+      await windows.createWindows()
+      await windows.showWidget()
+      const lostWidget = nativeWindows[1]!
+      windows.reportWidgetDrag({ phase: 'start' })
+      cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(100)
+      expect(lostWidget.setBounds).toHaveBeenCalledOnce()
+
+      lostWidget.emitRendererGone()
+      expect(vi.getTimerCount()).toBe(0)
+      await windows.showWidget()
+      const replacement = nativeWindows[2]!
+      expect(replacement).not.toBe(lostWidget)
+      expect(replacement.setBounds).toHaveBeenLastCalledWith(
+        { x: 1_538, y: 930, width: 124, height: 54 },
+        false,
+      )
+
+      replacement.setBounds.mockClear()
+      cursor.current = { x: 100, y: 100 }
+      vi.advanceTimersByTime(100)
+
+      expect(replacement.setBounds).toHaveBeenCalledWith(
+        { x: 438, y: 730, width: 124, height: 54 },
+        false,
+      )
+    } finally {
+      windows.dispose()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('hiding during drag releases ownership and stops monitor checks', async () => {
+    vi.useFakeTimers()
+    const displays = [
+      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
+      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
+    ] as const
+    const cursor = { current: { x: 100, y: 100 } }
+    const getCursorScreenPoint = vi.fn(() => cursor.current)
+    const getDisplayNearestPoint = vi.fn(
+      (point: { readonly x: number }) => (point.x < 1_000 ? displays[0] : displays[1]),
+    )
+    const nativeWindows: LifecycleWindow[] = []
+    const onWidgetMoved = vi.fn()
+    const windows = new WindowManager({
+      createWindow: () => {
+        const window = new LifecycleWindow()
+        nativeWindows.push(window)
+        return window
+      },
+      getWidgetPlacement: () => null,
+      onWidgetMoved,
+      display: { getCursorScreenPoint, getDisplayNearestPoint },
+      preloadPath: 'preload.js',
+      mainHtmlPath: 'index.html',
+      widgetHtmlPath: 'widget.html',
+      developmentSources: undefined,
+      isPackaged: true,
+      log: vi.fn(),
+    })
+
+    try {
+      await windows.createWindows()
+      await windows.showWidget()
+      const widget = nativeWindows[1]!
+      windows.reportWidgetDrag({ phase: 'start' })
+      widget.setBounds.mockClear()
+      getCursorScreenPoint.mockClear()
+      getDisplayNearestPoint.mockClear()
+
+      windows.hideWidget()
+      cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(200)
+      windows.reportWidgetDrag({ phase: 'move' })
+      windows.reportWidgetDrag({ phase: 'end' })
+
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getCursorScreenPoint).not.toHaveBeenCalled()
+      expect(getDisplayNearestPoint).not.toHaveBeenCalled()
+      expect(widget.setPosition).not.toHaveBeenCalled()
+      expect(widget.setBounds).not.toHaveBeenCalled()
+      expect(onWidgetMoved).not.toHaveBeenCalled()
+
+      await windows.showWidget()
+      expect(widget.showInactive).toHaveBeenCalledTimes(2)
+      expect(widget.setBounds).toHaveBeenCalledWith(
+        { x: 1_538, y: 930, width: 124, height: 54 },
+        false,
+      )
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      windows.dispose()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
 })

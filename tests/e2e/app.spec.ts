@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 import {
   E2E_CONFLICTING_HOTKEY,
@@ -42,6 +42,20 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
   )
   if (value === undefined) throw new Error('E2E bridge unavailable')
   return value
+}
+
+async function nativeWidgetBounds(app: ElectronApplication): Promise<{
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+} | null> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const widget = BrowserWindow.getAllWindows().find((candidate) =>
+      candidate.webContents.getURL().endsWith('/widget.html'),
+    )
+    return widget?.getBounds() ?? null
+  })
 }
 
 async function triggerShortcut(page: Page): Promise<void> {
@@ -195,6 +209,65 @@ test('persists settings through reload', async () => {
     await launched.page.reload()
     await launched.page.getByRole('link', { name: 'Settings' }).click()
     await expect(launched.page.getByLabel('Paste delay')).toHaveValue('275')
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('keeps the real main window frameless with one title bar before and after onboarding', async () => {
+  const launched = await launchTalkType()
+  try {
+    const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      if (main === undefined) return null
+      return {
+        bounds: main.getBounds(),
+        contentBounds: main.getContentBounds(),
+      }
+    })
+
+    expect(geometry).not.toBeNull()
+    expect(geometry?.contentBounds).toEqual(geometry?.bounds)
+    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+
+    await completeOnboarding(launched.page)
+
+    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('uses native widget bounds for the default bottom-edge presentations', async () => {
+  const launched = await launchTalkType()
+  try {
+    await completeOnboarding(launched.page)
+    const widget = launched.app.windows().find((candidate) =>
+      candidate.url().endsWith('/widget.html'),
+    )
+    if (widget === undefined) throw new Error('Widget window unavailable')
+    const sliver = widget.getByTestId('widget-sliver')
+    await expect(sliver).toBeVisible()
+
+    await expect.poll(() => nativeWidgetBounds(launched.app)).toMatchObject({
+      width: 124,
+      height: 54,
+    })
+
+    await sliver.hover()
+    await expect.poll(() => nativeWidgetBounds(launched.app)).toMatchObject({
+      width: 248,
+      height: 76,
+    })
+
+    await triggerShortcut(launched.page)
+    await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
+    await expect.poll(() => nativeWidgetBounds(launched.app)).toMatchObject({
+      width: 248,
+      height: 88,
+    })
   } finally {
     await closeTalkType(launched)
   }
