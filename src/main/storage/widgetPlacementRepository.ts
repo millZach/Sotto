@@ -1,4 +1,5 @@
 import { AtomicJsonStore } from './atomicJsonStore'
+import { clampOffset } from '../windows/widgetPlacementMath'
 import type { EdgePlacement, WidgetEdge } from '../windows/widgetPlacementMath'
 
 /** Edge-snapped placement persisted for the widget (record version 2). */
@@ -20,10 +21,6 @@ const WIDGET_EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 
 function isWidgetEdge(input: unknown): input is WidgetEdge {
   return typeof input === 'string' && (WIDGET_EDGES as readonly string[]).includes(input)
-}
-
-function clampOffset(offset: number): number {
-  return Number.isFinite(offset) ? Math.min(Math.max(offset, 0), 1) : 0.5
 }
 
 function parseWidgetPlacementRecord(input: unknown): WidgetPlacementRecord {

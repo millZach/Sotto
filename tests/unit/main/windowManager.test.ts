@@ -153,7 +153,7 @@ describe('WindowManager construction', () => {
         minHeight: 560,
         show: false,
         title: 'TalkType',
-        backgroundColor: '#111318',
+        backgroundColor: '#1b1917',
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',

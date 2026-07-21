@@ -6,6 +6,8 @@ export interface WeeklyStats {
   readonly minutes: number
   /** Word totals per calendar day, oldest first, ending with the day containing `now`. */
   readonly dailyWords: readonly number[]
+  /** Dictated minutes per calendar day, oldest first, ending with the day containing `now`. */
+  readonly dailyMinutes: readonly number[]
 }
 
 const DAY_MS = 86_400_000
@@ -34,6 +36,7 @@ function startOfDay(timestamp: number): number {
  */
 export function computeWeeklyStats(entries: readonly HistoryEntry[], now: number): WeeklyStats {
   const dailyWords = new Array<number>(BUCKET_COUNT).fill(0)
+  const dailyDurationMs = new Array<number>(BUCKET_COUNT).fill(0)
   const today = startOfDay(now)
   let words = 0
   let durationMs = 0
@@ -46,6 +49,7 @@ export function computeWeeklyStats(entries: readonly HistoryEntry[], now: number
     const daysBack = Math.round((today - startOfDay(entry.createdAt)) / DAY_MS)
     const bucket = Math.min(Math.max(BUCKET_COUNT - 1 - daysBack, 0), BUCKET_COUNT - 1)
     dailyWords[bucket] = (dailyWords[bucket] ?? 0) + entryWords
+    dailyDurationMs[bucket] = (dailyDurationMs[bucket] ?? 0) + entry.durationMs
   }
 
   const totalMinutes = durationMs / 60_000
@@ -54,5 +58,6 @@ export function computeWeeklyStats(entries: readonly HistoryEntry[], now: number
     avgWpm: totalMinutes === 0 ? 0 : Math.round(words / totalMinutes),
     minutes: Math.round(totalMinutes),
     dailyWords,
+    dailyMinutes: dailyDurationMs.map((ms) => ms / 60_000),
   }
 }

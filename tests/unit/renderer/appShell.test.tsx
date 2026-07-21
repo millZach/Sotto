@@ -16,7 +16,7 @@ describe('AppShell', () => {
     const minimize = vi.fn(async () => undefined)
     const close = vi.fn(async () => undefined)
     const { container } = render(
-      <AppShell navigation="home" statusText="Ready - Local & private" statusTone="ready" onNavigate={navigate} onMinimize={minimize} onClose={close}>
+      <AppShell navigation="home" statusText="Ready · Local & private" statusTone="ready" onNavigate={navigate} onMinimize={minimize} onClose={close}>
         <h1>Home</h1>
       </AppShell>,
     )
@@ -29,7 +29,7 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: /close talktype to tray/i }))
     expect(minimize).toHaveBeenCalledOnce()
     expect(close).toHaveBeenCalledOnce()
-    expect(screen.getByText('Ready - Local & private')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByText('Ready · Local & private')).toHaveAttribute('aria-live', 'polite')
     const cluster = container.querySelector('.app-navigation .app-navigation__status')
     expect(cluster).toHaveAttribute('data-tone', 'ready')
     expect(container.querySelector('.app-status-footer')).toBeNull()

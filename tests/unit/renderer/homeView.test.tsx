@@ -63,16 +63,16 @@ describe('HomeView', () => {
     expect(screen.getAllByText('this week')).toHaveLength(3)
   })
 
-  it('decorates the words and avg wpm tiles with hidden single-hue sparklines', () => {
+  it('decorates the words and minutes tiles with hidden single-hue sparklines', () => {
     render(<HomeView {...baseProps} />)
 
-    for (const label of ['Words', 'Avg WPM']) {
+    for (const label of ['Words', 'Minutes dictated']) {
       const sparkline = statTile(label).querySelector('svg.home-stat__sparkline')
       expect(sparkline).not.toBeNull()
       expect(sparkline).toHaveAttribute('aria-hidden', 'true')
       expect(sparkline?.querySelector('polyline')).toHaveAttribute('stroke', 'var(--tt-primary)')
     }
-    expect(statTile('Minutes dictated').querySelector('svg')).toBeNull()
+    expect(statTile('Avg WPM').querySelector('svg')).toBeNull()
   })
 
   it('zeroes every stat tile gracefully for empty history', () => {

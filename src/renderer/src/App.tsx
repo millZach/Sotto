@@ -245,7 +245,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         ? 'processing'
         : 'ready'
   const statusText = {
-    ready: 'Ready - Local & private',
+    ready: 'Ready · Local & private',
     listening: 'Listening',
     processing: 'Transcribing locally',
     attention: 'Needs attention',

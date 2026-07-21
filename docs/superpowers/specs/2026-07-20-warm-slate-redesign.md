@@ -24,6 +24,15 @@ Derive activity/success/warning/error/focus-ring colors to harmonize with the wa
 palette while preserving WCAG AA contrast on their surfaces (error stays clearly
 red — don't make destructive actions amber).
 
+> **Amendment (as built):** the shipped token values are hardened versions of the
+> prototype references above. The accent uses `#B25605` (light) so white button
+> text clears 4.5:1; `--tt-border` is `#8A8177` light / `#7D756E` dark so
+> interactive borders keep the repo's tested 3:1 contrast against every surface,
+> with the prototype's softer `#DDD7CF` / `#37332F` values landing in a new
+> `--tt-border-faint` tier for decorative hairlines. Edge snapping keeps the
+> widget's 16px soft margin from the snapped edge (matching its original
+> bottom-gap aesthetic) rather than a literal flush placement.
+
 ### Shape language: tonal, minimal borders
 
 - Surfaces are distinguished by tone (card slightly lighter/darker than canvas),

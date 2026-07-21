@@ -37,7 +37,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
 }
 
-function clampOffset(offset: number): number {
+export function clampOffset(offset: number): number {
   return Number.isFinite(offset) ? clamp(offset, 0, 1) : 0.5
 }
 

@@ -266,7 +266,7 @@ export class WindowManager {
       minHeight: 560,
       show: false,
       title: APP_NAME,
-      backgroundColor: '#111318',
+      backgroundColor: '#1b1917',
       autoHideMenuBar: true,
       webPreferences: securePreferences(this.dependencies.preloadPath, 'main'),
     })

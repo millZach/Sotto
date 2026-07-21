@@ -27,6 +27,7 @@ describe('computeWeeklyStats', () => {
     expect(stats.avgWpm).toBe(0)
     expect(stats.minutes).toBe(0)
     expect(stats.dailyWords).toEqual([0, 0, 0, 0, 0, 0, 0])
+    expect(stats.dailyMinutes).toEqual([0, 0, 0, 0, 0, 0, 0])
   })
 
   it('counts whitespace-separated words, minutes, and average wpm across the week', () => {
@@ -37,6 +38,7 @@ describe('computeWeeklyStats', () => {
     expect(stats.words).toBe(8)
     // 8 words over 3 minutes.
     expect(stats.avgWpm).toBe(3)
+    expect(stats.dailyMinutes.reduce((total, value) => total + value, 0)).toBe(3)
     expect(stats.minutes).toBe(3)
   })
 

@@ -158,8 +158,8 @@ export function HomeView({
 
       <div className="home-stats">
         <StatTile label="Words" value={stats.words} sparkline={stats.dailyWords} />
-        <StatTile label="Avg WPM" value={stats.avgWpm} sparkline={stats.dailyWords} />
-        <StatTile label="Minutes dictated" value={stats.minutes} />
+        <StatTile label="Avg WPM" value={stats.avgWpm} />
+        <StatTile label="Minutes dictated" value={stats.minutes} sparkline={stats.dailyMinutes} />
       </div>
 
       <Card className="home-dictation-bar" data-active={active} data-tone={copy.tone}>
