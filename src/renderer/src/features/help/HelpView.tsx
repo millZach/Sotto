@@ -9,7 +9,7 @@ export interface HelpViewProps { readonly shortcut: string }
 export function HelpView({ shortcut }: HelpViewProps): ReactNode {
   return (
     <div className="management-view help-view">
-      <header className="management-view__header"><div><p className="management-eyebrow">Guides and troubleshooting</p><h1>Help</h1><p>Everything you need to dictate confidently.</p></div></header>
+      <h1 className="tt-visually-hidden">Help</h1>
       <div className="help-grid">
         <Card><Keyboard aria-hidden="true" /><h2>Start and stop</h2><p>Press <ShortcutKey accelerator={shortcut} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p></Card>
         <Card><Mic aria-hidden="true" /><h2>Microphone access</h2><p>If recording cannot start, open Windows Settings, then Privacy or Privacy &amp; security, then Microphone, and allow desktop apps. Choose an available input in TalkType Settings.</p></Card>

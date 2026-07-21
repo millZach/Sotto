@@ -6,9 +6,12 @@ import { Button } from './Button'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
+export type AppStatusTone = 'ready' | 'listening' | 'processing' | 'attention'
+
 export interface AppShellProps {
   readonly navigation: ManagementNavigation
   readonly statusText: string
+  readonly statusTone: AppStatusTone
   readonly onNavigate: (destination: ManagementNavigation) => void
   readonly onMinimize: () => Promise<void> | void
   readonly onClose: () => Promise<void> | void
@@ -25,6 +28,7 @@ const destinations = [
 export function AppShell({
   navigation,
   statusText,
+  statusTone,
   onNavigate,
   onMinimize,
   onClose,
@@ -62,16 +66,12 @@ export function AppShell({
             </a>
           ))}
         </nav>
-        <div className="app-navigation__privacy">
+        <div className="app-navigation__status" data-tone={statusTone}>
           <span aria-hidden="true" />
-          <span>Local and private</span>
+          <span aria-live="polite" aria-atomic="true">{statusText}</span>
         </div>
       </aside>
       <main className="app-content" id="main-content">{children}</main>
-      <footer className="app-status-footer">
-        <span className="app-status-footer__indicator" aria-hidden="true" />
-        <span aria-live="polite" aria-atomic="true">{statusText}</span>
-      </footer>
     </div>
   )
 }

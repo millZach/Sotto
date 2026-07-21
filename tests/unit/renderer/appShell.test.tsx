@@ -10,13 +10,13 @@ import { AppShell } from '../../../src/renderer/src/components/AppShell'
 afterEach(cleanup)
 
 describe('AppShell', () => {
-  it('provides navigation, one main landmark, status footer, and tray-safe window controls', async () => {
+  it('provides navigation, one main landmark, a sidebar status cluster, and tray-safe window controls', async () => {
     const user = userEvent.setup()
     const navigate = vi.fn()
     const minimize = vi.fn(async () => undefined)
     const close = vi.fn(async () => undefined)
-    render(
-      <AppShell navigation="home" statusText="Ready" onNavigate={navigate} onMinimize={minimize} onClose={close}>
+    const { container } = render(
+      <AppShell navigation="home" statusText="Ready - Local & private" statusTone="ready" onNavigate={navigate} onMinimize={minimize} onClose={close}>
         <h1>Home</h1>
       </AppShell>,
     )
@@ -29,7 +29,29 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: /close talktype to tray/i }))
     expect(minimize).toHaveBeenCalledOnce()
     expect(close).toHaveBeenCalledOnce()
-    expect(screen.getByText('Ready')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByText('Ready - Local & private')).toHaveAttribute('aria-live', 'polite')
+    const cluster = container.querySelector('.app-navigation .app-navigation__status')
+    expect(cluster).toHaveAttribute('data-tone', 'ready')
+    expect(container.querySelector('.app-status-footer')).toBeNull()
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+  })
+
+  it.each(['ready', 'listening', 'processing', 'attention'] as const)('reflects the %s tone on the sidebar status dot', (tone) => {
+    const { container } = render(
+      <AppShell navigation="home" statusText="Status" statusTone={tone} onNavigate={vi.fn()} onMinimize={vi.fn()} onClose={vi.fn()}>
+        <h1>Home</h1>
+      </AppShell>,
+    )
+    expect(container.querySelector('.app-navigation__status')).toHaveAttribute('data-tone', tone)
+  })
+
+  it('keeps the two-row shell grid and tone-colored status dots in the stylesheet', () => {
+    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
+    expect(css).toMatch(/\.app-shell\s*\{[^}]*grid-template-rows:\s*52px minmax\(0, 1fr\);/su)
+    expect(css).not.toContain('.app-status-footer')
+    expect(css).toMatch(/\.app-navigation__status\[data-tone='listening'\][^}]*var\(--tt-activity\)/su)
+    expect(css).toMatch(/\.app-navigation__status\[data-tone='processing'\][^}]*var\(--tt-warning\)/su)
+    expect(css).toMatch(/\.app-navigation__status\[data-tone='attention'\][^}]*var\(--tt-error\)/su)
   })
 
   it('defines draggable chrome, no-drag controls, and the compact 820px layout without mojibake', () => {

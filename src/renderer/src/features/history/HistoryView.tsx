@@ -71,17 +71,17 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
 
   return (
     <div className="management-view history-view">
-      <header className="management-view__header">
-        <div><p className="management-eyebrow">Local only</p><h1 ref={headingRef} tabIndex={-1}>History</h1><p>Search, copy, or remove transcripts stored on this computer.</p></div>
-        {status === 'ready' && entries.length > 0 ? <Button variant="danger" onClick={() => setClearOpen(true)}>Clear history</Button> : null}
-      </header>
+      <h1 ref={headingRef} tabIndex={-1} className="tt-visually-hidden">History</h1>
       {!enabled && status === 'ready' && entries.length > 0 ? <p className="history-privacy-notice">History is turned off. Existing local transcripts remain available until you clear them.</p> : null}
       {status === 'ready' && entries.length > 0 ? (
-        <label className="history-search">
-          <span className="tt-visually-hidden">Search transcripts</span>
-          <Search size={18} aria-hidden="true" />
-          <input className="tt-input tt-focusable" type="search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search transcripts" />
-        </label>
+        <div className="history-toolbar">
+          <label className="history-search">
+            <span className="tt-visually-hidden">Search transcripts</span>
+            <Search size={18} aria-hidden="true" />
+            <input className="tt-input tt-focusable" type="search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search transcripts" />
+          </label>
+          <Button variant="danger" onClick={() => setClearOpen(true)}>Clear history</Button>
+        </div>
       ) : null}
       {notice === null ? null : <p className="history-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
       {body}

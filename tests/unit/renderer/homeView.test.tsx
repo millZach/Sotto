@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,10 +11,13 @@ import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 afterEach(cleanup)
 
+// Seven three-word transcripts spread across recent hours: 21 words over
+// 8.4 seconds of audio -> 21 words, 150 avg wpm, 0 whole minutes this week.
+const NOW = Date.now()
 const entries: HistoryEntry[] = Array.from({ length: 7 }, (_, index) => ({
   id: String(index + 1),
   text: `Local note ${index + 1}`,
-  createdAt: index + 1,
+  createdAt: NOW - (7 - index) * 3_600_000,
   durationMs: 1_200,
   language: 'en',
   modelPreset: 'balanced',
@@ -34,15 +37,50 @@ const baseProps = {
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 
+function statTile(label: string): HTMLElement {
+  const tile = screen.getByText(label).closest('.home-stat')
+  if (!(tile instanceof HTMLElement)) throw new Error(`Missing stat tile: ${label}`)
+  return tile
+}
+
 describe('HomeView', () => {
-  it.each(['light', 'dark'] as const)('renders a complete ready dashboard in a forced %s container', (theme) => {
+  it.each(['light', 'dark'] as const)('renders the stats-forward home in a forced %s container', (theme) => {
     render(<div data-theme={theme}><HomeView {...baseProps} /></div>)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /start dictation/i })).toBeEnabled()
-    expect(screen.getByText(/speech stays on this computer/i)).toBeVisible()
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
-    expect(screen.getByText(/balanced is ready/i)).toBeVisible()
+    expect(screen.getByRole('heading', { level: 2, name: /ready when you are/i })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 2, name: 'Recent' })).toBeVisible()
+  })
+
+  it('shows weekly words, average wpm, and dictated minutes in tabular stat tiles', () => {
+    render(<HomeView {...baseProps} />)
+
+    expect(within(statTile('Words')).getByText('21')).toHaveClass('tt-tabular')
+    expect(within(statTile('Avg WPM')).getByText('150')).toHaveClass('tt-tabular')
+    expect(within(statTile('Minutes dictated')).getByText('0')).toHaveClass('tt-tabular')
+    expect(screen.getAllByText('this week')).toHaveLength(3)
+  })
+
+  it('decorates the words and avg wpm tiles with hidden single-hue sparklines', () => {
+    render(<HomeView {...baseProps} />)
+
+    for (const label of ['Words', 'Avg WPM']) {
+      const sparkline = statTile(label).querySelector('svg.home-stat__sparkline')
+      expect(sparkline).not.toBeNull()
+      expect(sparkline).toHaveAttribute('aria-hidden', 'true')
+      expect(sparkline?.querySelector('polyline')).toHaveAttribute('stroke', 'var(--tt-primary)')
+    }
+    expect(statTile('Minutes dictated').querySelector('svg')).toBeNull()
+  })
+
+  it('zeroes every stat tile gracefully for empty history', () => {
+    render(<HomeView {...baseProps} entries={[]} />)
+
+    for (const label of ['Words', 'Avg WPM', 'Minutes dictated']) {
+      expect(within(statTile(label)).getByText('0')).toBeVisible()
+    }
   })
 
   it('starts and stops manually for the matching dictation states', async () => {
@@ -60,12 +98,12 @@ describe('HomeView', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
-  it('uses stable named grid areas so listening detail cannot displace the compact action', () => {
-    expect(globalCss).toMatch(/\.home-record-card\s*\{[^}]*grid-template-areas:\s*"icon copy action"\s*"icon meter action"/su)
-    expect(globalCss).toMatch(/\.home-record-card__icon\s*\{[^}]*grid-area:\s*icon/su)
-    expect(globalCss).toMatch(/\.home-record-card__copy\s*\{[^}]*grid-area:\s*copy/su)
-    expect(globalCss).toMatch(/\.home-record-card \.tt-level-meter[^}]*grid-area:\s*meter/su)
-    expect(globalCss).toMatch(/\.home-record-card__action\s*\{[^}]*grid-area:\s*action/su)
+  it('uses stable named grid areas so listening detail cannot displace the compact bar action', () => {
+    expect(globalCss).toMatch(/\.home-dictation-bar\s*\{[^}]*grid-template-areas:\s*"icon copy action"\s*"icon meter action"/su)
+    expect(globalCss).toMatch(/\.home-dictation-bar__icon\s*\{[^}]*grid-area:\s*icon/su)
+    expect(globalCss).toMatch(/\.home-dictation-bar__copy\s*\{[^}]*grid-area:\s*copy/su)
+    expect(globalCss).toMatch(/\.home-dictation-bar \.tt-level-meter[^}]*grid-area:\s*meter/su)
+    expect(globalCss).toMatch(/\.home-dictation-bar__action\s*\{[^}]*grid-area:\s*action/su)
   })
 
   it('gates recording while the selected model is unavailable or work is processing', () => {
@@ -76,6 +114,7 @@ describe('HomeView', () => {
     rerender(<HomeView {...baseProps} dictation={{ status: 'processing', sessionId: 'one', startedAt: 1 }} />)
     expect(screen.getByRole('status')).toHaveTextContent(/turning speech into text/i)
     expect(screen.getByRole('button', { name: /transcribing/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /open settings/i })).not.toBeInTheDocument()
   })
 
   it('shows finite recovery guidance for an error without exposing its message', () => {
@@ -84,19 +123,21 @@ describe('HomeView', () => {
     expect(document.body).not.toHaveTextContent('private stack detail')
   })
 
-  it('gives success and error dictation cards distinct semantic visual tones', () => {
+  it('gives success and error dictation bars distinct semantic visual tones', () => {
     const rendered = render(<HomeView {...baseProps} dictation={{ status: 'success', sessionId: 'done', output: 'pasted' }} />)
-    expect(rendered.container.querySelector('.home-record-card')).toHaveAttribute('data-tone', 'success')
+    expect(rendered.container.querySelector('.home-dictation-bar')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByRole('heading', { level: 2, name: 'Text pasted' })).toBeVisible()
 
     rendered.rerender(<HomeView {...baseProps} dictation={{ status: 'error', code: 'TRANSCRIPTION_FAILED' }} />)
-    expect(rendered.container.querySelector('.home-record-card')).toHaveAttribute('data-tone', 'error')
+    expect(rendered.container.querySelector('.home-dictation-bar')).toHaveAttribute('data-tone', 'error')
   })
 
-  it('shows exactly the five newest local transcripts', () => {
+  it('shows exactly the three newest local transcripts under Recent', () => {
     render(<HomeView {...baseProps} />)
     expect(screen.getByText('Local note 7')).toBeVisible()
-    expect(screen.getByText('Local note 3')).toBeVisible()
-    expect(screen.queryByText('Local note 2')).not.toBeInTheDocument()
+    expect(screen.getByText('Local note 5')).toBeVisible()
+    expect(screen.queryByText('Local note 4')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /view all history/i })).toBeEnabled()
   })
 
   it.each([
@@ -106,5 +147,13 @@ describe('HomeView', () => {
   ] as const)('renders the %s recent-history state', (historyStatus, enabled, message) => {
     render(<HomeView {...baseProps} historyStatus={historyStatus} settings={{ ...baseProps.settings, historyEnabled: enabled }} entries={[]} />)
     expect(screen.getByText(message)).toBeVisible()
+  })
+
+  it('no longer renders home page chrome: eyebrow strip, privacy pill, or model card', () => {
+    render(<HomeView {...baseProps} />)
+    expect(screen.queryByText(/dashboard/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/speech stays on this computer/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/transcription model/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /open settings/i })).not.toBeInTheDocument()
   })
 })
