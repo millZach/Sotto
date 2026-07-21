@@ -162,10 +162,6 @@ describe('native recovery after the main renderer is lost', () => {
         getTrayState: () => trayState,
         updateTray: trayUpdate,
         syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
-        widgetDisplay: {
-          lock: () => windows.lockWidgetDisplay(),
-          unlock: () => windows.unlockWidgetDisplay(),
-        },
         showWidgetWhenIdle: () => true,
         log: vi.fn(),
       })
@@ -214,4 +210,63 @@ describe('native recovery after the main renderer is lost', () => {
       expect(callbacks.has('Escape')).toBe(true)
     },
   )
+
+  it('renderer recovery leaves WindowManager free to follow the cursor', async () => {
+    vi.useFakeTimers()
+    const displays = [
+      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
+      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
+    ] as const
+    const cursor = { current: { x: 100, y: 100 } }
+    let rendererLoss: (kind: 'main' | 'widget') => void = () => undefined
+    const nativeWindows: LifecycleWindow[] = []
+    const windows = new WindowManager({
+      createWindow: () => {
+        const window = new LifecycleWindow()
+        nativeWindows.push(window)
+        return window
+      },
+      getWidgetPlacement: () => null,
+      onWidgetMoved: () => undefined,
+      display: {
+        getCursorScreenPoint: () => cursor.current,
+        getDisplayNearestPoint: (point) => (point.x < 1_000 ? displays[0] : displays[1]),
+      },
+      preloadPath: 'preload.js',
+      mainHtmlPath: 'index.html',
+      widgetHtmlPath: 'widget.html',
+      developmentSources: undefined,
+      isPackaged: true,
+      log: vi.fn(),
+      onRendererProcessGone: (kind) => rendererLoss(kind),
+    })
+
+    try {
+      await windows.createWindows()
+      const lifecycle = new NativeDictationLifecycle({
+        delivery: new NativeMessageDelivery(windows),
+        getTrayState: () => ({ dictating: false, autoPaste: false }),
+        updateTray: vi.fn(),
+        syncEscape: vi.fn(),
+        showWidgetWhenIdle: () => true,
+        log: vi.fn(),
+      })
+      rendererLoss = (kind) => lifecycle.rendererProcessGone(kind)
+      await lifecycle.publish(activeSnapshot('listening'))
+
+      nativeWindows[0]!.emitRendererGone()
+      await Promise.resolve()
+      cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(100)
+
+      expect(nativeWindows[1]!.setBounds).toHaveBeenLastCalledWith(
+        { x: 1_538, y: 930, width: 124, height: 54 },
+        false,
+      )
+    } finally {
+      windows.dispose()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
 })

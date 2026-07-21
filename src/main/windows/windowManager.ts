@@ -488,12 +488,6 @@ export class WindowManager {
     )
   }
 
-  // Kept as compatibility seams for the existing dictation lifecycle. Widget
-  // placement now follows the current display instead of locking per session.
-  lockWidgetDisplay(): void {}
-
-  unlockWidgetDisplay(): void {}
-
   /**
    * Applies one renderer-reported step of a widget drag gesture using Electron
    * cursor coordinates, then snaps the native bounds through the coordinator.

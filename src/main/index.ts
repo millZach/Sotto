@@ -536,10 +536,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(state)
     },
     syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
-    widgetDisplay: {
-      lock: () => windows.lockWidgetDisplay(),
-      unlock: () => windows.unlockWidgetDisplay(),
-    },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     log: logOperational,
   })

@@ -1137,29 +1137,6 @@ describe('WindowManager lifecycle', () => {
     expect(() => manager.reportWidgetDrag({ phase: 'end' })).not.toThrow()
   })
 
-  it('follows the cursor display even when legacy session locks are called', async () => {
-    const displays = [
-      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
-      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
-    ] as const
-    const cursor = { current: { x: 1_700, y: 970 } }
-    const { manager, windows } = createHarness({
-      display: {
-        getCursorScreenPoint: () => cursor.current,
-        getDisplayNearestPoint: (point) => (point.x < 1_000 ? displays[0] : displays[1]),
-      },
-    })
-
-    manager.lockWidgetDisplay()
-    cursor.current = { x: 100, y: 100 }
-    await manager.showWidget()
-
-    expect(windows[0]!.setBounds).toHaveBeenLastCalledWith(
-      { x: 438, y: 730, width: 124, height: 54 },
-      false,
-    )
-  })
-
   it('starts interactive and still honors explicit interactivity requests', async () => {
     const { manager, windows } = createHarness()
     await manager.createWidgetWindow()
