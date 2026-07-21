@@ -85,18 +85,21 @@ export function useWidgetDragGesture(
 
     activeRef.current = null
     if (active.frameId !== null) window.cancelAnimationFrame(active.frameId)
-    if (active.movePending) onDragRef.current?.({ phase: 'move' })
-    if (active.dragging) {
-      onDragRef.current?.({ phase: 'end' })
-      onDragFinishedRef.current?.()
-    }
-    removeTemporaryListeners()
     try {
-      active.captureTarget.releasePointerCapture?.(active.pointerId)
-    } catch {
-      // Releasing capture is best effort after every terminal path.
+      if (active.movePending) onDragRef.current?.({ phase: 'move' })
+      if (active.dragging) {
+        onDragRef.current?.({ phase: 'end' })
+        onDragFinishedRef.current?.()
+      }
+    } finally {
+      removeTemporaryListeners()
+      try {
+        active.captureTarget.releasePointerCapture?.(active.pointerId)
+      } catch {
+        // Releasing capture is best effort after every terminal path.
+      }
+      if (active.dragging) setDragging(false)
     }
-    if (active.dragging) setDragging(false)
   }
 
   const finishCompletedPointer = (pointerId: number): void => {
