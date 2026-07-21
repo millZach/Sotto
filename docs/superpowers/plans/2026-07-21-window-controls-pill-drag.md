@@ -1192,7 +1192,7 @@ git commit -m "fix: harden and coalesce widget drag gestures"
 - Modify: `tests/integration/nativeRendererRecovery.test.ts`
 - Modify: `tests/integration/ipc.test.ts`
 - Modify: `tests/e2e/app.spec.ts`
-- Refresh: `artifacts/design/baseline/idle-light.png` only if the focused visual-preview test proves the approved idle presentation moved while remaining deterministic, bounded, and transparent.
+- Refresh: `artifacts/design/baseline/idle-light.png` and `artifacts/design/baseline/idle-dark.png` only if focused visual-preview tests prove both approved idle presentations moved while remaining deterministic, bounded, and transparent.
 - Modify fake window support only where required by those tests.
 
 **Interfaces:**
@@ -1277,20 +1277,21 @@ npm run test:e2e
 
 Expected: every command exits successfully with no existing unit, integration, release, design-capture, or Electron regression.
 
-If the full Electron suite fails only because `idle-light.png` still records the old idle canvas position, first reproduce that exact test without update mode. Then refresh only the approved idle-light baseline:
+If the full Electron suite fails only because the idle light and/or dark baselines still record the old idle canvas position, first reproduce both focused tests without update mode. Then refresh the two approved idle baselines together:
 
 ```powershell
-$env:TALKTYPE_UPDATE_WIDGET_BASELINES = '1'; npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle light preview"; Remove-Item Env:TALKTYPE_UPDATE_WIDGET_BASELINES
-npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle light preview"
+npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle (light|dark) preview"
+$env:TALKTYPE_UPDATE_WIDGET_BASELINES = '1'; npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle (light|dark) preview"; Remove-Item Env:TALKTYPE_UPDATE_WIDGET_BASELINES
+npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle (light|dark) preview"
 npm run test:e2e
 ```
 
-Inspect `git status --short` and confirm that no other design baseline changed. The refreshed image must still pass the test's deterministic, bounded, alpha-edge, and visible-pixel assertions.
+Inspect `git status --short` and confirm that no non-idle design baseline changed. Both refreshed images must pass the tests' deterministic, bounded, alpha-edge, and visible-pixel assertions.
 
 - [ ] **Step 5: Commit verification coverage**
 
 ```text
-git add tests/unit/main/windowManager.test.ts tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts tests/e2e/app.spec.ts artifacts/design/baseline/idle-light.png
+git add tests/unit/main/windowManager.test.ts tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts tests/e2e/app.spec.ts artifacts/design/baseline/idle-light.png artifacts/design/baseline/idle-dark.png
 git commit -m "test: cover frameless chrome and widget placement lifecycle"
 ```
 
