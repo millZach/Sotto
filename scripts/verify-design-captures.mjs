@@ -78,8 +78,8 @@ for (const entry of manifest.entries) {
   if (decoded.info.width !== entry.width || decoded.info.height !== entry.height) throw new Error(`Capture geometry mismatch: ${entry.relativePath}`)
 
   if (entry.category === 'widget' || entry.state === 'widget-listening') {
-    if (entry.source === 'widget-baseline' && (decoded.info.width !== 420 || decoded.info.height !== 92)) throw new Error(`Widget geometry mismatch: ${entry.id}`)
-    if (entry.source === 'app-review' && (decoded.info.width < 420 || decoded.info.height < 92)) throw new Error(`Live widget raster is smaller than its 420x92 logical window: ${entry.id}`)
+    if (entry.source === 'widget-baseline' && (decoded.info.width !== 248 || decoded.info.height !== 88)) throw new Error(`Widget geometry mismatch: ${entry.id}`)
+    if (entry.source === 'app-review' && (decoded.info.width < 248 || decoded.info.height < 88)) throw new Error(`Live widget raster is smaller than its 248x88 logical window: ${entry.id}`)
     const alphaAt = (x, y) => decoded.data[(y * decoded.info.width + x) * 4 + 3] ?? 255
     for (let x = 0; x < decoded.info.width; x += 1) {
       if (alphaAt(x, 0) !== 0 || alphaAt(x, decoded.info.height - 1) !== 0) throw new Error(`Widget edge is not transparent: ${entry.id}`)

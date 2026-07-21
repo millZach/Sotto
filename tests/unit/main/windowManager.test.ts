@@ -390,6 +390,65 @@ describe('WindowManager lifecycle', () => {
     })
   })
 
+  it('follows renderer drag deltas without snapping, then snaps and reports on drag end', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+    widget.position = [1_200, 500]
+
+    manager.reportWidgetDrag({ phase: 'start' })
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 30, deltaY: -20 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_230, 480, false)
+
+    // Deltas are cumulative from the drag origin, not from the last move.
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 5 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_210, 505, false)
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    // The moved-event snap fallback must stay silent during the session.
+    widget.position = [1_210, 505]
+    widget.emit('moved')
+    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 505, false)
+    expect(onWidgetMoved).toHaveBeenCalledWith({
+      edge: 'left',
+      offset: expect.closeTo(405 / 812, 6),
+    })
+
+    // After the session ends the moved-event snap fallback works again.
+    widget.position = [1_100, 300]
+    widget.emit('moved')
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 300, false)
+  })
+
+  it('treats out-of-order drag phases as harmless and lets start re-anchor', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
+    manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    manager.reportWidgetDrag({ phase: 'start' })
+    widget.position = [1_100, 300]
+    manager.reportWidgetDrag({ phase: 'start' })
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 5, deltaY: 0 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_105, 300, false)
+  })
+
+  it('ignores drag reports without a widget window', () => {
+    const { manager } = createHarness()
+
+    expect(() => manager.reportWidgetDrag({ phase: 'start' })).not.toThrow()
+    expect(() => manager.reportWidgetDrag({ phase: 'move', deltaX: 4, deltaY: 4 })).not.toThrow()
+    expect(() => manager.reportWidgetDrag({ phase: 'end' })).not.toThrow()
+  })
+
   it('pins the widget to the session display while locked and releases it on unlock', async () => {
     const displays = [
       { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },

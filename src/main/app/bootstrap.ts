@@ -251,6 +251,7 @@ export interface NativeRuntimeDependencies {
   readonly installPermissions: () => () => void
   readonly installProtocols?: () => () => void
   readonly registerIpc: () => () => void
+  readonly publishIdleWidgetState?: (settings: AppSettings) => Promise<void>
   readonly log: (code: NativeRuntimeDiagnostic) => void
 }
 
@@ -388,6 +389,13 @@ export class NativeRuntimeController implements RuntimeController {
       // The dictation widget rests as a persistent sliver once setup is done,
       // unless the user turned the idle sliver off in Settings.
       await this.dependencies.windows.showWidget()
+      this.assertRunning()
+    }
+    if (settings.onboardingComplete && this.dependencies.publishIdleWidgetState !== undefined) {
+      // The widget renderer paints nothing until it receives a snapshot; the
+      // first session is the earliest a renderer would publish one, so the
+      // resting sliver needs this seed to exist on a cold launch.
+      await this.dependencies.publishIdleWidgetState(settings)
       this.assertRunning()
     }
   }

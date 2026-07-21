@@ -29,6 +29,7 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_DRAG,
   WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
   WIDGET_STATE,
@@ -40,6 +41,7 @@ import {
   widgetSnapshotSchema,
   type TalkTypeBridge,
   type TalkTypeWidgetBridge,
+  type WidgetDragPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
@@ -243,6 +245,8 @@ export function createTalkTypeWidgetBridge(
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
     setMouseInteractive: (interactive: boolean) =>
       invokeParsed(renderer, WIDGET_INTERACTIVITY, commandResultSchema, interactive),
+    reportDrag: (payload: WidgetDragPayload) =>
+      invokeParsed(renderer, WIDGET_DRAG, commandResultSchema, payload),
   })
 }
 

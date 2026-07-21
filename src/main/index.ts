@@ -70,6 +70,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
+import type { AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
@@ -440,8 +441,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     async onSettingsChanged(settings): Promise<void> {
       showWidgetWhenIdle = settings.showWidgetWhenIdle
-      if (settings.onboardingComplete && settings.showWidgetWhenIdle) {
-        showWidget()
+      if (settings.onboardingComplete && dictationLifecycle.isIdle()) {
+        // Re-seed the resting sliver so theme/shortcut changes repaint it and
+        // the idle-visibility reveal/conceal decision is re-evaluated.
+        await publishIdleWidgetState(settings)
       } else if (!settings.showWidgetWhenIdle && dictationLifecycle.isIdle()) {
         windows.hideWidget()
       }
@@ -492,6 +495,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
   }
+  const publishIdleWidgetState = async (current: AppSettings): Promise<void> => {
+    await dictationLifecycle.publish({
+      status: 'idle',
+      theme: current.theme,
+      reducedMotion: current.reducedMotion,
+      shortcut: current.hotkey,
+      cancellable: false,
+    })
+  }
 
   const permissionAdapter = createPermissionAdapter()
   return new NativeRuntimeController({
@@ -500,6 +512,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     tray,
     startup,
     settings,
+    publishIdleWidgetState,
     installPermissions: () =>
       installSessionPermissionPolicy(permissionAdapter, () =>
         windows
@@ -549,6 +562,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         output,
         widget: {
           setMouseInteractive: (interactive) => windows.setWidgetMouseInteractive(interactive),
+          reportDrag: (payload) => windows.reportWidgetDrag(payload),
         },
         models: createModelIpcService(models, (status) => {
           windows.sendToMain(MODEL_STATUS, status)

@@ -89,9 +89,11 @@ button {
 
 /* ---- resting sliver ---- */
 
-/* The idle sliver is a click-to-dictate control, so it is deliberately not a
-   drag region; reposition the widget by dragging the active capsule. */
+/* Both the idle sliver and the active capsule are pointer-driven click and
+   drag targets; a movement threshold in the renderer decides which. OS-level
+   app-region dragging is deliberately not used because it swallows clicks. */
 .widget-sliver {
+  touch-action: none;
   position: relative;
   display: flex;
   width: 88px;
@@ -178,9 +180,17 @@ button {
     inset 0 1px 0 rgb(255 255 255 / 20%);
   overflow: hidden;
   cursor: pointer;
+  touch-action: none;
   animation: widget-pop 0.2s cubic-bezier(0.25, 1, 0.4, 1);
-  -webkit-app-region: drag;
-  app-region: drag;
+}
+
+.widget-shell[data-dragging='true'] .widget-sliver,
+.widget-shell[data-dragging='true'] .widget-capsule {
+  cursor: grabbing;
+}
+
+.widget-shell[data-dragging='true'] .widget-sliver__hint {
+  opacity: 0;
 }
 
 
@@ -319,8 +329,6 @@ button {
 .widget-action,
 .widget-esc {
   flex: none;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 
 .widget-action {

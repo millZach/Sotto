@@ -187,7 +187,7 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
     const content = document.querySelector('.app-content')
     if (content !== null && content.scrollWidth > content.clientWidth + tolerance) problems.push('content-horizontal-overflow')
 
-    for (const selector of ['.app-shell', '.app-titlebar', '.app-navigation', '.app-content', '.app-status-footer', '.onboarding-shell']) {
+    for (const selector of ['.app-shell', '.app-titlebar', '.app-navigation', '.app-content', '.onboarding-shell']) {
       const element = document.querySelector(selector)
       if (element === null) continue
       const bounds = element.getBoundingClientRect()
@@ -234,13 +234,14 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
       if (shortcut.scrollWidth > shortcut.clientWidth + tolerance) problems.push('shortcut-horizontal-overflow')
     }
 
-    const listeningCard = document.querySelector('.home-record-card[data-active="true"]')
-    const homeGrid = document.querySelector('.home-grid')
+    const activeDictationBar = document.querySelector('.home-dictation-bar[data-active="true"]')
+    const homeRecent = document.querySelector('.home-recent')
     const contentBounds = content?.getBoundingClientRect()
-    if (listeningCard !== null && homeGrid !== null && contentBounds !== undefined) {
-      const gridBounds = homeGrid.getBoundingClientRect()
-      if (Math.min(gridBounds.bottom, contentBounds.bottom) - Math.max(gridBounds.top, contentBounds.top) < 120) {
-        problems.push('home-lower-cards-not-materially-visible')
+    if (activeDictationBar !== null && homeRecent !== null && contentBounds !== undefined) {
+      const recentBounds = homeRecent.getBoundingClientRect()
+      const visibleHeight = Math.min(recentBounds.bottom, contentBounds.bottom) - Math.max(recentBounds.top, contentBounds.top)
+      if (visibleHeight < Math.min(120, recentBounds.height) - tolerance) {
+        problems.push('home-recent-not-materially-visible')
       }
     }
     return [...new Set(problems)]
@@ -262,6 +263,29 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
   expect(outline.width).toBe('3px')
   expect(outline.style).not.toBe('none')
   expect(outline.color).not.toBe('rgba(0, 0, 0, 0)')
+}
+
+async function assertDictationBarTone(page: Page, tone: 'success' | 'error'): Promise<void> {
+  const bar = page.locator('.home-dictation-bar')
+  await expect(bar).toHaveAttribute('data-tone', tone)
+  const colors = await bar.evaluate((element: unknown, toneName: unknown) => {
+    const target = element as {
+      querySelector: (selector: string) => unknown
+      appendChild: (node: unknown) => unknown
+    }
+    const globals = globalThis as unknown as {
+      document: { createElement: (tag: string) => { style: { color: string }; remove: () => void } }
+      getComputedStyle: (candidate: unknown) => { color: string }
+    }
+    const icon = target.querySelector('.home-dictation-bar__icon')
+    const probe = globals.document.createElement('span')
+    probe.style.color = `var(--tt-${toneName as string})`
+    target.appendChild(probe)
+    const expected = globals.getComputedStyle(probe).color
+    probe.remove()
+    return { expected, icon: icon === null ? '' : globals.getComputedStyle(icon).color }
+  }, tone)
+  expect(colors.icon, `dictation bar icon must render the ${tone} tone`).toBe(colors.expected)
 }
 
 interface PixelDifference {
@@ -440,7 +464,7 @@ async function captureFullSurface(
     shell.style.setProperty('height', 'auto')
     shell.style.setProperty('min-height', '0')
     shell.style.setProperty('overflow', 'visible')
-    shell.style.setProperty('grid-template-rows', '52px auto 34px')
+    shell.style.setProperty('grid-template-rows', '52px auto')
     content.style.setProperty('overflow', 'visible')
     content.style.setProperty('height', 'auto')
   })()`)
@@ -472,17 +496,17 @@ async function captureFullSurface(
 async function captureWidget(page: Page, fileName: string, metadata: CaptureHint = {}): Promise<void> {
   await waitForStableFrame(page)
   const logicalViewport = await page.evaluate<readonly [number, number]>('[innerWidth, innerHeight]')
-  expect(logicalViewport[0]).toBeGreaterThanOrEqual(420)
-  expect(logicalViewport[0]).toBeLessThanOrEqual(424)
-  expect(logicalViewport[1]).toBeGreaterThanOrEqual(92)
-  expect(logicalViewport[1]).toBeLessThanOrEqual(96)
+  expect(logicalViewport[0]).toBeGreaterThanOrEqual(248)
+  expect(logicalViewport[0]).toBeLessThanOrEqual(252)
+  expect(logicalViewport[1]).toBeGreaterThanOrEqual(88)
+  expect(logicalViewport[1]).toBeLessThanOrEqual(92)
   const widgetProblems = await page.evaluate<string[]>(`(() => {
     const problems = []
-    for (const element of document.querySelectorAll('.widget-pill *')) {
+    for (const element of document.querySelectorAll('.widget-capsule, .widget-capsule *, .widget-sliver')) {
       const bounds = element.getBoundingClientRect()
-      if (bounds.left < 0 || bounds.top < 0 || bounds.right > 420 || bounds.bottom > 92) problems.push(element.className || element.tagName)
+      if (bounds.left < 0 || bounds.top < 0 || bounds.right > 248 || bounds.bottom > 88) problems.push(element.className || element.tagName)
     }
-    const detail = document.querySelector('.widget-copy > span')
+    const detail = document.querySelector('.widget-copy')
     if (detail !== null && (detail.scrollWidth > detail.clientWidth || detail.scrollHeight > detail.clientHeight)) problems.push('widget-detail-clipped:' + detail.textContent + ':' + detail.scrollWidth + 'x' + detail.scrollHeight + '>' + detail.clientWidth + 'x' + detail.clientHeight)
     return problems
   })()`)
@@ -493,8 +517,8 @@ async function captureWidget(page: Page, fileName: string, metadata: CaptureHint
     () => waitForStableFrame(page),
   )
   const dimensions = await sharp(image).metadata()
-  expect(dimensions.width).toBeGreaterThanOrEqual(420)
-  expect(dimensions.height).toBeGreaterThanOrEqual(92)
+  expect(dimensions.width).toBeGreaterThanOrEqual(248)
+  expect(dimensions.height).toBeGreaterThanOrEqual(88)
   const rgba = await sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const alphaAt = (x: number, y: number): number => rgba.data[(y * rgba.info.width + x) * 4 + 3] ?? 255
   for (let x = 0; x < rgba.info.width; x += 1) {
@@ -523,7 +547,7 @@ async function externalWidgetEntries(): Promise<CaptureEntry[]> {
       const path = resolve(repositoryRoot, `artifacts/design/baseline/${state}-${theme}.png`)
       const image = await readFile(path)
       const metadata = await sharp(image).metadata()
-      if (metadata.width !== 420 || metadata.height !== 92) throw new Error(`Unexpected widget baseline geometry: ${path}`)
+      if (metadata.width !== 248 || metadata.height !== 88) throw new Error(`Unexpected widget baseline geometry: ${path}`)
       const requirement = requiredMetadata(`widget-${state}-${theme}.png`)
       if (requirement.source !== 'widget-baseline') throw new Error(`External widget matrix source mismatch: ${state}-${theme}`)
       entries.push({
@@ -582,13 +606,7 @@ test.describe('authoritative design-review captures', () => {
         await capturePage(page, `home-listening-${theme}.png`, { category: 'home', state: 'listening', theme })
         await page.getByRole('button', { name: 'Stop and transcribe' }).click()
         await expect(page.getByRole('heading', { name: 'Text pasted' })).toBeVisible()
-        const successTone = await page.locator('.home-record-card').evaluate((card: unknown) => {
-          const target = card as { querySelector: (selector: string) => unknown }
-          const icon = target.querySelector('.home-record-card__icon')
-          const style = (globalThis as unknown as { getComputedStyle: (element: unknown) => { borderColor: string; color: string } }).getComputedStyle
-          return { border: style(card).borderColor, icon: icon === null ? '' : style(icon).color }
-        })
-        expect(successTone.border).toBe(successTone.icon)
+        await assertDictationBarTone(page, 'success')
         await capturePage(page, `home-success-${theme}.png`, { category: 'home', state: 'success-pasted', theme })
       })
 
@@ -603,13 +621,7 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('button', { name: 'Start dictation' }).click()
         await page.getByRole('button', { name: 'Stop and transcribe' }).click()
         await expect(page.getByRole('heading', { name: 'Dictation needs attention' })).toBeVisible()
-        const errorTone = await page.locator('.home-record-card').evaluate((card: unknown) => {
-          const target = card as { querySelector: (selector: string) => unknown }
-          const icon = target.querySelector('.home-record-card__icon')
-          const style = (globalThis as unknown as { getComputedStyle: (element: unknown) => { borderColor: string; color: string } }).getComputedStyle
-          return { border: style(card).borderColor, icon: icon === null ? '' : style(icon).color }
-        })
-        expect(errorTone.border).toBe(errorTone.icon)
+        await assertDictationBarTone(page, 'error')
         await capturePage(page, `home-error-${theme}.png`, { category: 'home', state: 'error', theme })
       })
 
@@ -690,7 +702,7 @@ test.describe('authoritative design-review captures', () => {
           await page.getByRole('button', { name: 'Start dictation' }).click()
           const liveWidget = await widgetPage(launched)
           await liveWidget.emulateMedia({ colorScheme: theme, reducedMotion: 'no-preference' })
-          await expect(liveWidget.getByText('Listening', { exact: true })).toBeVisible()
+          await expect(liveWidget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
           await captureWidget(liveWidget, `scale-${scalePercent}-widget-${theme}.png`)
           await liveWidget.getByRole('button', { name: 'Cancel dictation' }).click()
 
@@ -708,9 +720,16 @@ test.describe('authoritative design-review captures', () => {
 
     test(`${theme} widget states missing from the established widget baseline are captured`, async () => {
       await withTalkType(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+        // The renderer publishes its first widget snapshot from a dictation
+        // session, so cancel one and wait for the automatic reset back to the
+        // resting idle sliver before capturing it.
+        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched)
-        await expect(widget.locator('.widget-shell')).toHaveCount(0)
-        await captureWidget(widget, `widget-idle-${theme}.png`, { category: 'widget', state: 'idle-hidden', theme, reducedMotion: true })
+        await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
+        await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+        await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
+        await expect(widget.locator('.widget-sliver')).toBeVisible()
+        await captureWidget(widget, `widget-idle-${theme}.png`, { category: 'widget', state: 'idle-sliver', theme, reducedMotion: true })
       })
 
       await withTalkType(theme, { onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
@@ -723,7 +742,7 @@ test.describe('authoritative design-review captures', () => {
       await withTalkType(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched)
-        await expect(widget.getByText('Listening', { exact: true })).toBeVisible()
+        await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.getByText('Cancelled', { exact: true })).toBeVisible()
         await captureWidget(widget, `widget-cancelled-${theme}.png`, { category: 'widget', state: 'cancelled', theme, reducedMotion: true })
@@ -746,10 +765,10 @@ test.describe('authoritative design-review captures', () => {
         environmentGate: 'TALKTYPE_E2E=1',
         packagedRejectionProof: 'tests/unit/main/e2eBoundary.test.ts and scripts/verify-packaged-resources.mjs',
       },
-      viewport: 'TalkType main BrowserWindow (1080x720 logical window); widget 420x92.',
+      viewport: 'TalkType main BrowserWindow (1080x720 logical window); widget 248x88.',
       scalingMethod: 'Electron --force-device-scale-factor driven by Playwright at 100/125/150/200 percent; devicePixelRatio is asserted.',
       notes: [
-        'The idle widget is intentionally transparent because production renders no widget surface while idle.',
+        'The idle widget renders the resting click-to-dictate sliver; idle captures are recorded after a completed session returns to idle.',
         'Established Task 12 widget baselines are referenced in place; they are not duplicated.',
         'Every tuple records explicit normal or reduced motion; normal launches emulate no-preference and reduced launches are separately asserted.',
         'Full Settings and Help surfaces include content outside the management scrollport, including every Settings section and Reset safely help.',

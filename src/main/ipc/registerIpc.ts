@@ -24,12 +24,14 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_DRAG,
   WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
 } from '../../shared/channels'
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
+  widgetDragSchema,
   widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
@@ -41,6 +43,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type StartupState,
+  type WidgetDragPayload,
 } from '../../shared/contracts'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
@@ -221,6 +224,7 @@ export interface RegisterIpcDependencies {
 
 export interface WidgetIpcService {
   setMouseInteractive(interactive: boolean): void
+  reportDrag(payload: WidgetDragPayload): void
 }
 
 export class InvalidIpcPayloadError extends Error {
@@ -441,6 +445,19 @@ export function registerIpc(
           return UNAVAILABLE
         }
         dependencies.widget.setMouseInteractive(interactive)
+        return OK
+      },
+      ['widget'],
+    )
+    register(
+      WIDGET_DRAG,
+      widgetDragSchema,
+      1,
+      async (payload): Promise<CommandResult> => {
+        if (dependencies.widget === undefined) {
+          return UNAVAILABLE
+        }
+        dependencies.widget.reportDrag(payload)
         return OK
       },
       ['widget'],

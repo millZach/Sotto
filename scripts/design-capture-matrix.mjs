@@ -63,7 +63,7 @@ for (const theme of DESIGN_CAPTURE_THEMES) {
   }
 
   for (const [state, capturedState] of [
-    ['idle', 'idle-hidden'],
+    ['idle', 'idle-sliver'],
     ['permission', 'requesting-permission'],
     ['cancelled', 'cancelled'],
   ]) add({

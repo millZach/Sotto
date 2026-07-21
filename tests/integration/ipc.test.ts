@@ -49,6 +49,7 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_DRAG,
   WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
   WIDGET_STATE,
@@ -286,7 +287,7 @@ describe('typed preload bridge', () => {
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
     const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
-      ['onWidgetState', 'requestCancel', 'requestStop', 'requestToggle', 'setMouseInteractive'].sort(),
+      ['onWidgetState', 'reportDrag', 'requestCancel', 'requestStop', 'requestToggle', 'setMouseInteractive'].sort(),
     )
     expect(bridge).not.toHaveProperty('getSettings')
     expect(bridge).not.toHaveProperty('listHistory')
@@ -315,6 +316,14 @@ describe('typed preload bridge', () => {
       3,
       DICTATION_REQUEST,
       { type: 'toggle' },
+    )
+
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
+    await bridge.reportDrag({ phase: 'move', deltaX: 12, deltaY: -3 })
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      4,
+      WIDGET_DRAG,
+      { phase: 'move', deltaX: 12, deltaY: -3 },
     )
   })
 
@@ -2205,6 +2214,48 @@ describe('NativeRuntimeController', () => {
     runtime.dispose()
   })
 
+  it('publishes an initial idle widget snapshot at startup once onboarding is complete', async () => {
+    const createRuntime = (
+      settings: Partial<typeof DEFAULT_SETTINGS>,
+      publishIdleWidgetState: (settings: typeof DEFAULT_SETTINGS) => Promise<void>,
+    ): NativeRuntimeController =>
+      new NativeRuntimeController({
+        windows: {
+          createWindows: vi.fn(async () => undefined),
+          showMain: vi.fn(async () => undefined),
+          showWidget: vi.fn(async () => undefined),
+          beginQuit: vi.fn(),
+          dispose: vi.fn(),
+        },
+        hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+        tray: { update: vi.fn(), dispose: vi.fn() },
+        startup: { set: vi.fn() },
+        settings: { get: async () => ({ ...DEFAULT_SETTINGS, ...settings }) },
+        installPermissions: () => vi.fn(),
+        registerIpc: () => vi.fn(),
+        publishIdleWidgetState,
+        log: vi.fn(),
+      })
+
+    const published = vi.fn(async () => undefined)
+    await createRuntime({ onboardingComplete: true, hotkey: 'Alt+Space' }, published).start()
+    expect(published).toHaveBeenCalledOnce()
+    expect(published).toHaveBeenCalledWith(
+      expect.objectContaining({ onboardingComplete: true, hotkey: 'Alt+Space' }),
+    )
+
+    const publishedWhileHidden = vi.fn(async () => undefined)
+    await createRuntime(
+      { onboardingComplete: true, showWidgetWhenIdle: false },
+      publishedWhileHidden,
+    ).start()
+    expect(publishedWhileHidden).toHaveBeenCalledOnce()
+
+    const notPublished = vi.fn(async () => undefined)
+    await createRuntime({ onboardingComplete: false }, notPublished).start()
+    expect(notPublished).not.toHaveBeenCalled()
+  })
+
   it('starts native services from validated settings and releases only owned resources once', async () => {
     const order: string[] = []
     const windows = {
@@ -2611,7 +2662,7 @@ describe('widget interactivity channel', () => {
         { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive },
+      widget: { setMouseInteractive, reportDrag: vi.fn() },
     })
 
     await expect(
@@ -2648,7 +2699,7 @@ describe('widget interactivity channel', () => {
       trustedSenders: () => [
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn() },
+      widget: { setMouseInteractive: vi.fn(), reportDrag: vi.fn() },
     })
 
     await expect(
@@ -2676,6 +2727,102 @@ describe('widget interactivity channel', () => {
 
     await expect(
       harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+        sender: widgetContents,
+        senderFrame: widgetFrame,
+      }),
+    ).resolves.toEqual({ ok: false, reason: 'unavailable' })
+  })
+
+  it('lets only the widget renderer report drag phases and forwards each payload', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const reportDrag = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setMouseInteractive: vi.fn(), reportDrag },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const payload of [
+      { phase: 'start' },
+      { phase: 'move', deltaX: 24, deltaY: -8 },
+      { phase: 'end' },
+    ] as const) {
+      await expect(
+        harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
+      ).resolves.toEqual({ ok: true })
+      expect(reportDrag).toHaveBeenLastCalledWith(payload)
+    }
+    expect(reportDrag).toHaveBeenCalledTimes(3)
+
+    // The main renderer and unknown senders may not drive the widget window.
+    await expect(
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
+    expect(reportDrag).toHaveBeenCalledTimes(3)
+  })
+
+  it('rejects malformed drag payloads before they reach the window seam', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const reportDrag = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setMouseInteractive: vi.fn(), reportDrag },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const payload of [
+      { phase: 'hover' },
+      { phase: 'move' },
+      { phase: 'move', deltaX: 1.5, deltaY: 0 },
+      { phase: 'move', deltaX: 200_000, deltaY: 0 },
+      { phase: 'start', deltaX: 1, deltaY: 1 },
+      { phase: 'end', extra: true },
+      'start',
+      null,
+    ]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    expect(reportDrag).not.toHaveBeenCalled()
+  })
+
+  it('reports unavailable drag handling when no widget dependency is registered', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+    })
+
+    await expect(
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
