@@ -1,4 +1,5 @@
 @import './tokens.css';
+@import './fonts.css';
 
 *,
 *::before,
@@ -18,7 +19,7 @@ body {
   background: var(--tt-canvas);
   color: var(--tt-text);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
   font-size: 15px;
   line-height: 1.5;
@@ -124,11 +125,15 @@ h1[tabindex='-1']:focus {
 }
 
 .tt-card {
-  border: 1px solid var(--tt-border);
+  border: 1px solid transparent;
   border-radius: var(--tt-radius-lg);
   background: var(--tt-surface);
   box-shadow: var(--tt-shadow-sm);
   padding: 22px;
+}
+
+.tt-tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 .tt-field {
@@ -268,7 +273,7 @@ h1[tabindex='-1']:focus {
 }
 
 .tt-toast {
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-left: 4px solid var(--tt-primary);
   border-radius: var(--tt-radius-sm);
   background: var(--tt-surface-elevated);
@@ -416,7 +421,7 @@ h1[tabindex='-1']:focus {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px 20px;
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-md);
   background: var(--tt-surface-elevated);
   padding: 20px;
@@ -465,7 +470,7 @@ h1[tabindex='-1']:focus {
   justify-content: space-between;
   gap: 14px;
   margin: 16px 0;
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-sm);
   padding: 14px;
 }
@@ -490,7 +495,7 @@ h1[tabindex='-1']:focus {
 .onboarding-model-card {
   display: grid;
   gap: 10px;
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-md);
   padding: 14px;
 }
@@ -527,7 +532,7 @@ h1[tabindex='-1']:focus {
   justify-content: space-between;
   gap: 16px;
   margin: 22px 0;
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-md);
   background: var(--tt-surface-elevated);
   padding: 14px 16px;
@@ -542,7 +547,7 @@ h1[tabindex='-1']:focus {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--tt-border);
+  border-top: 1px solid var(--tt-border-faint);
   padding-top: 22px;
 }
 
@@ -608,8 +613,8 @@ h1[tabindex='-1']:focus {
   grid-column: 1 / -1;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--tt-border);
-  background: var(--tt-surface);
+  border-bottom: 1px solid var(--tt-border-faint);
+  background: var(--tt-surface-sunken);
   padding-left: 18px;
   user-select: none;
 }
@@ -651,8 +656,8 @@ h1[tabindex='-1']:focus {
   grid-row: 2 / 4;
   flex-direction: column;
   justify-content: space-between;
-  border-right: 1px solid var(--tt-border);
-  background: var(--tt-surface);
+  border-right: 1px solid var(--tt-border-faint);
+  background: var(--tt-surface-sunken);
   padding: 18px 12px;
 }
 
@@ -711,8 +716,8 @@ h1[tabindex='-1']:focus {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-top: 1px solid var(--tt-border);
-  background: var(--tt-surface);
+  border-top: 1px solid var(--tt-border-faint);
+  background: var(--tt-surface-sunken);
   padding: 0 18px;
   color: var(--tt-text-muted);
   font-size: 12px;
@@ -1013,7 +1018,7 @@ h1[tabindex='-1']:focus {
   display: grid;
   min-height: 260px;
   place-content: center;
-  border: 1px dashed var(--tt-border);
+  border: 1px dashed var(--tt-border-faint);
   border-radius: var(--tt-radius-lg);
   padding: 32px;
   text-align: center;
@@ -1085,7 +1090,7 @@ h1[tabindex='-1']:focus {
 .settings-model-card {
   display: grid;
   gap: 12px;
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-md);
   background: var(--tt-surface-elevated);
   padding: 16px;
@@ -1139,7 +1144,7 @@ h1[tabindex='-1']:focus {
   align-items: center;
   gap: 18px;
   margin-top: 24px;
-  border-top: 1px solid var(--tt-border);
+  border-top: 1px solid var(--tt-border-faint);
   padding-top: 22px;
 }
 
@@ -1214,7 +1219,7 @@ h1[tabindex='-1']:focus {
 
 .tt-dialog {
   width: min(480px, 100%);
-  border: 1px solid var(--tt-border);
+  border: 1px solid var(--tt-border-faint);
   border-radius: var(--tt-radius-lg);
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
