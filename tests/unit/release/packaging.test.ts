@@ -27,7 +27,7 @@ describe('Windows release contract', () => {
       )
     }
     expect(packageJson.scripts['package:win']).toContain(
-      '--installer "release/TalkType Setup 0.1.0.exe"',
+      `--installer "release/TalkType Setup ${packageJson.version}.exe"`,
     )
 
     const viteConfig = read('electron.vite.config.ts')
