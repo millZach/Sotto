@@ -1,5 +1,4 @@
-const PASTE_SCRIPT = `Add-Type -TypeDefinition @'
-using System;
+const PASTE_TYPE_DEFINITION = `using System;
 using System.Runtime.InteropServices;
 
 public static class TalkTypePaste
@@ -81,10 +80,33 @@ public static class TalkTypePaste
         uint accepted = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
         return accepted == (uint)inputs.Length;
     }
-}
+}`
+
+const PASTE_SCRIPT = `Add-Type -TypeDefinition @'
+${PASTE_TYPE_DEFINITION}
 '@
 
 if (-not [TalkTypePaste]::SendCtrlV()) { exit 1 }
+exit 0`
+
+// Long-lived helper: pays the Add-Type compile (~750 ms) once at spawn, then
+// answers 'paste' commands over stdin in a few milliseconds each.
+const PASTE_HELPER_SCRIPT = `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+${PASTE_TYPE_DEFINITION}
+'@
+
+$reader = [Console]::In
+$writer = [Console]::Out
+while ($true) {
+  $line = $reader.ReadLine()
+  if ($null -eq $line -or $line -eq 'exit') { break }
+  if ($line -ne 'paste') { continue }
+  $accepted = $false
+  try { $accepted = [TalkTypePaste]::SendCtrlV() } catch { $accepted = $false }
+  if ($accepted) { $writer.WriteLine('ok') } else { $writer.WriteLine('fail') }
+  $writer.Flush()
+}
 exit 0`
 
 export interface PasteInvocation {
@@ -92,8 +114,8 @@ export interface PasteInvocation {
   readonly args: readonly string[]
 }
 
-export function buildPasteInvocation(): Readonly<PasteInvocation> {
-  const encodedScript = Buffer.from(PASTE_SCRIPT, 'utf16le').toString('base64')
+function buildPowerShellInvocation(script: string): Readonly<PasteInvocation> {
+  const encodedScript = Buffer.from(script, 'utf16le').toString('base64')
   const args = Object.freeze([
     '-NoProfile',
     '-NonInteractive',
@@ -104,4 +126,12 @@ export function buildPasteInvocation(): Readonly<PasteInvocation> {
   ])
 
   return Object.freeze({ executable: 'powershell.exe', args })
+}
+
+export function buildPasteInvocation(): Readonly<PasteInvocation> {
+  return buildPowerShellInvocation(PASTE_SCRIPT)
+}
+
+export function buildPasteHelperInvocation(): Readonly<PasteInvocation> {
+  return buildPowerShellInvocation(PASTE_HELPER_SCRIPT)
 }

@@ -172,10 +172,12 @@ describe('local transcription worker runtime', () => {
   it('warms up a newly loaded pipeline with silence before reporting ready', async () => {
     // The first inference after model load is ~200 ms slower than steady
     // state, so prewarm pays it on silence instead of the first dictation.
-    const recognize = vi.fn(async () => ({ text: '' }))
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: '' }),
+    )
     const responses: unknown[] = []
     const runtime = createTranscriptionRuntime({
-      createPipeline: vi.fn(async () => recognize) as PipelineFactory,
+      createPipeline: vi.fn(async () => recognize) as unknown as PipelineFactory,
       postMessage: (message) => responses.push(message),
       probeWebGpu: async () => false,
     })
@@ -188,7 +190,7 @@ describe('local transcription worker runtime', () => {
     })
 
     expect(recognize).toHaveBeenCalledTimes(1)
-    const [audio] = recognize.mock.calls[0] as [Float32Array]
+    const audio = recognize.mock.calls[0]?.[0] as Float32Array
     expect(audio).toBeInstanceOf(Float32Array)
     expect(audio.length).toBe(16_000)
     expect(responses.at(-1)).toEqual(

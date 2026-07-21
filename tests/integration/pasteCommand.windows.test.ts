@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { buildPasteInvocation } from '../../src/main/output/pasteCommand'
 import { createSpawnProcessAdapter } from '../../src/main/output/outputService'
+import { createWarmPasteAdapter } from '../../src/main/output/pasteHelper'
 
 const SMOKE_TEXT = 'talktype-sendinput-smoke'
 const EDGE_TITLE = 'TalkType Edge native paste smoke'
@@ -327,6 +328,55 @@ describe.runIf(shouldRun)('Windows native paste integration', () => {
         'RESULT:PASS',
       )
     } finally {
+      if (target.exitCode === null) target.kill()
+    }
+  }, 20_000)
+
+  it('pastes through the warm helper process without using the fallback', async () => {
+    const target = spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-STA',
+        '-EncodedCommand',
+        encodePowerShell(TARGET_SCRIPT),
+      ],
+      { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] },
+    )
+    const targetMarkers = observeMarkers(target)
+    let fallbackUsed = false
+    const adapter = createWarmPasteAdapter({
+      spawnHelper: (invocation) =>
+        spawn(invocation.executable, [...invocation.args], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }),
+      fallback: {
+        run(): boolean {
+          fallbackUsed = true
+          return false
+        },
+      },
+    })
+
+    try {
+      adapter.start()
+      await expect(
+        targetMarkers.waitFor(['READY', 'HARNESS_FOCUS_FAILED']),
+      ).resolves.toBe('READY')
+
+      // The warm helper pastes within milliseconds; give the target window the
+      // same focus-settle time OutputService provides via pasteDelayMs.
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await expect(adapter.run(buildPasteInvocation())).resolves.toBe(true)
+      await expect(targetMarkers.waitFor(['RESULT:PASS', 'RESULT:TIMEOUT'])).resolves.toBe(
+        'RESULT:PASS',
+      )
+      expect(fallbackUsed).toBe(false)
+    } finally {
+      adapter.dispose()
       if (target.exitCode === null) target.kill()
     }
   }, 20_000)
