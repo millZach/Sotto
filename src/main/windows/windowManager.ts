@@ -517,19 +517,19 @@ export class WindowManager {
       return
     }
     if (drag.phase === 'move') {
-      const origin = this.widgetDrag
-      if (origin === null) return
+      const activeDrag = this.widgetDrag
+      if (activeDrag === null) return
       try {
         const cursor = this.dependencies.display.getCursorScreenPoint()
+        widget.setPosition(
+          activeDrag.windowOrigin.x + cursor.x - activeDrag.cursorOrigin.x,
+          activeDrag.windowOrigin.y + cursor.y - activeDrag.cursorOrigin.y,
+          false,
+        )
         const current = widget.getBounds()
-        this.applyWidgetBounds(widget, {
-          x: origin.windowOrigin.x + cursor.x - origin.cursorOrigin.x,
-          y: origin.windowOrigin.y + cursor.y - origin.cursorOrigin.y,
-          width: current.width,
-          height: current.height,
-        })
+        this.widgetLastAppliedBounds = current
       } catch {
-        // Dragging is best effort; the widget keeps its last good bounds.
+        this.widgetDrag = null
       }
       return
     }
