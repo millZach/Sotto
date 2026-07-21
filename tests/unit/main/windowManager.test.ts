@@ -7,6 +7,7 @@ import {
   type BrowserWindowLike,
   type WindowConstructorOptions,
 } from '../../../src/main/windows/windowManager'
+import type { StoredWidgetPlacement } from '../../../src/main/storage/widgetPlacementRepository'
 
 type WindowEvent = 'close' | 'closed' | 'moved'
 
@@ -311,6 +312,42 @@ describe('WindowManager lifecycle', () => {
     expect(widget.showInactive).toHaveBeenCalledOnce()
     expect(widget.show).not.toHaveBeenCalled()
     expect(widget.focus).not.toHaveBeenCalled()
+  })
+
+  it('performs the reveal window operations once per visibility transition, not per call', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    await manager.showWidget()
+    await manager.showWidget()
+    await manager.showWidget()
+
+    expect(widget.setPosition).toHaveBeenCalledTimes(1)
+    expect(widget.showInactive).toHaveBeenCalledTimes(1)
+
+    manager.hideWidget()
+    await manager.showWidget()
+
+    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+  })
+
+  it('repositions a revealed widget when the target placement changes', async () => {
+    let placement: StoredWidgetPlacement | null = null
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => placement,
+    })
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    await manager.showWidget()
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
+
+    placement = { kind: 'edge', edge: 'left', offset: 0.25 }
+    await manager.showWidget()
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 303, false)
+    expect(widget.setPosition).toHaveBeenCalledTimes(2)
   })
 
   it('applies a remembered edge placement along the active display edge', async () => {

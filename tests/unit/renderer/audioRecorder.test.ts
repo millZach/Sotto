@@ -234,6 +234,31 @@ describe('AudioRecorder', () => {
     })
   })
 
+  it('throttles level callbacks to the emit interval while chunks arrive at audio rate', async () => {
+    vi.useFakeTimers()
+    try {
+      const harness = createHarness()
+      const onLevel = vi.fn()
+      const recorder = harness.recorder({ onLevel })
+      await recorder.start()
+      const chunk = new Float32Array(128).fill(0.5)
+
+      // Worklet frames arrive every ~2.7ms; only ~30Hz may reach the callback.
+      for (let i = 0; i < 12; i += 1) {
+        harness.worklet.port.onmessage?.({ data: chunk })
+        vi.advanceTimersByTime(3)
+      }
+      expect(onLevel.mock.calls.length).toBeLessThanOrEqual(2)
+
+      vi.advanceTimersByTime(40)
+      harness.worklet.port.onmessage?.({ data: chunk })
+      expect(onLevel.mock.calls.length).toBeGreaterThanOrEqual(2)
+      await recorder.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('copies chunks, emits normalized levels, resamples, and reports captured duration', async () => {
     const harness = createHarness()
     const onLevel = vi.fn()
@@ -247,6 +272,7 @@ describe('AudioRecorder', () => {
 
     expect(onLevel).toHaveBeenCalledWith(0.5)
     expect(result?.sourceSampleRate).toBe(48_000)
+    expect(onLevel).toHaveBeenCalledTimes(1)
     expect(result?.samples).toHaveLength(1_600)
     expect(result?.samples[0]).toBeCloseTo(0.5)
     expect(result?.durationMs).toBe(100)

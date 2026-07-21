@@ -243,6 +243,7 @@ export class WindowManager {
   private disposed = false
   private widgetSessionAnchor: Point | null = null
   private widgetDragOrigin: Point | null = null
+  private widgetLastReveal: Point | null = null
   private readonly cleanupByWindow = new Map<BrowserWindowLike, Set<() => void>>()
   private readonly loadedRendererUrls = new Map<BrowserWindowLike, string>()
 
@@ -416,6 +417,13 @@ export class WindowManager {
   async showWidget(): Promise<void> {
     const widget = await this.createWidgetWindow()
     this.assertRunning()
+    // Reveals arrive per widget publication — at audio-level rate during a
+    // session — so the window operations only run on a visibility transition
+    // or when the target position actually changed. A renderer drag owns the
+    // window position outright while it is active.
+    if (this.widgetLastReveal !== null && this.widgetDragOrigin !== null) {
+      return
+    }
     // A locked session anchor keeps the widget on the display the cursor was
     // on when the dictation session started; otherwise follow the cursor.
     const anchor =
@@ -428,8 +436,16 @@ export class WindowManager {
       workArea,
       WIDGET_BOTTOM_GAP,
     )
+    if (
+      this.widgetLastReveal !== null &&
+      this.widgetLastReveal.x === x &&
+      this.widgetLastReveal.y === y
+    ) {
+      return
+    }
     widget.setPosition(x, y, false)
     this.assertRunning()
+    this.widgetLastReveal = { x, y }
     widget.showInactive()
   }
 
@@ -503,6 +519,7 @@ export class WindowManager {
   }
 
   hideWidget(): void {
+    this.widgetLastReveal = null
     this.widgetWindow?.hide()
   }
 
@@ -608,8 +625,9 @@ export class WindowManager {
   }
 
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
-    // A fresh widget window can never be mid-drag.
+    // A fresh widget window can never be mid-drag or revealed.
     this.widgetDragOrigin = null
+    this.widgetLastReveal = null
     // The widget rests as a click-through sliver; the renderer requests
     // interactivity for active states and sliver hover.
     try {

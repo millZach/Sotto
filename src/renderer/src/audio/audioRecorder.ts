@@ -2,6 +2,13 @@ import { calculateRms, resampleMono } from './audioMath'
 
 export const AUDIO_CAPTURE_PROCESSOR_NAME = 'talktype-audio-capture'
 
+/**
+ * Worklet frames arrive at audio-block rate (hundreds per second). Level
+ * callbacks fan out into React renders and cross-process widget publishes, so
+ * they are throttled to a rate the UI can actually display.
+ */
+export const LEVEL_EMIT_INTERVAL_MS = 33
+
 export type AudioRecorderErrorCode =
   | 'ALREADY_RECORDING'
   | 'INVALID_DURATION'
@@ -97,6 +104,7 @@ export interface MicrophoneConstraints {
 interface RecordingSession {
   chunks: Float32Array[]
   sourceFrames: number
+  lastLevelEmitAt: number
   starting: boolean
   terminated: boolean
   resolveStartOnTermination?: boolean
@@ -176,6 +184,7 @@ export class AudioRecorder {
     const session: RecordingSession = {
       chunks: [],
       sourceFrames: 0,
+      lastLevelEmitAt: Number.NEGATIVE_INFINITY,
       starting: true,
       terminated: false,
     }
@@ -278,6 +287,9 @@ export class AudioRecorder {
     const chunk = new Float32Array(data)
     session.chunks.push(chunk)
     session.sourceFrames += chunk.length
+    const now = Date.now()
+    if (now - session.lastLevelEmitAt < LEVEL_EMIT_INTERVAL_MS) return
+    session.lastLevelEmitAt = now
     try {
       this.options.onLevel?.(calculateRms(chunk))
     } catch {
