@@ -85,11 +85,23 @@ export function useWidgetDragGesture(
 
     activeRef.current = null
     if (active.frameId !== null) window.cancelAnimationFrame(active.frameId)
+    let firstError: unknown
+    let hasError = false
+    const dispatch = (callback: () => void): void => {
+      try {
+        callback()
+      } catch (error) {
+        if (!hasError) {
+          firstError = error
+          hasError = true
+        }
+      }
+    }
     try {
-      if (active.movePending) onDragRef.current?.({ phase: 'move' })
+      if (active.movePending) dispatch(() => onDragRef.current?.({ phase: 'move' }))
       if (active.dragging) {
-        onDragRef.current?.({ phase: 'end' })
-        onDragFinishedRef.current?.()
+        dispatch(() => onDragRef.current?.({ phase: 'end' }))
+        dispatch(() => onDragFinishedRef.current?.())
       }
     } finally {
       removeTemporaryListeners()
@@ -100,6 +112,7 @@ export function useWidgetDragGesture(
       }
       if (active.dragging) setDragging(false)
     }
+    if (hasError) throw firstError
   }
 
   const finishCompletedPointer = (pointerId: number): void => {

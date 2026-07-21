@@ -186,6 +186,47 @@ describe('useWidgetDragGesture', () => {
     }
   })
 
+  it('dispatches end and completion when a queued move callback throws', () => {
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const release = vi.fn()
+    const onDragFinished = vi.fn(() => {
+      throw new Error('completion callback failed')
+    })
+    const errors: Error[] = []
+    const captureError = (event: ErrorEvent): void => {
+      errors.push(event.error as Error)
+      event.preventDefault()
+    }
+    const onDrag = vi.fn((payload: WidgetDragPayload) => {
+      if (payload.phase === 'move') throw new Error('queued move callback failed')
+      if (payload.phase === 'end') throw new Error('end callback failed')
+    })
+    window.addEventListener('error', captureError)
+    render(<Harness onDrag={onDrag} onDragFinished={onDragFinished} />)
+    const surface = screen.getByTestId('surface')
+    surface.releasePointerCapture = release
+
+    try {
+      beginDrag(surface)
+      fireEvent.pointerUp(surface, { pointerId: 1 })
+
+      expect(errors.map((error) => error.message)).toEqual(['queued move callback failed'])
+      expect(payloads(onDrag)).toEqual([
+        { phase: 'start' },
+        { phase: 'move' },
+        { phase: 'end' },
+      ])
+      expect(onDragFinished).toHaveBeenCalledOnce()
+      expect(surface).not.toHaveAttribute('data-dragging')
+      expect(release).toHaveBeenCalledWith(1)
+      for (const eventName of ['pointermove', 'pointerup', 'pointercancel']) {
+        expect(remove.mock.calls.some(([name]) => name === eventName)).toBe(true)
+      }
+    } finally {
+      window.removeEventListener('error', captureError)
+    }
+  })
+
   it('continues through window move and pointer-up when capture throws', () => {
     const onDrag = vi.fn()
     render(<Harness onDrag={onDrag} />)
