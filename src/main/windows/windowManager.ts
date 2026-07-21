@@ -10,7 +10,8 @@ import {
 } from './widgetPlacementMath'
 import type { StoredWidgetPlacement } from '../storage/widgetPlacementRepository'
 
-const WIDGET_BOTTOM_GAP = 16
+const WIDGET_EDGE_INSET = 16
+const WIDGET_MONITOR_INTERVAL_MS = 100
 const IDLE_RESTING_WIDGET_SIZE = widgetSizeForPresentation('bottom', 'idle-resting')
 
 export interface Point {
@@ -260,6 +261,7 @@ export class WindowManager {
   private widgetLastAppliedBounds: Rectangle | null = null
   private widgetProgrammaticTarget: Rectangle | null = null
   private widgetVisible = false
+  private widgetMonitorTimer: ReturnType<typeof setInterval> | null = null
   private widgetDrag: {
     readonly windowOrigin: Point
     readonly cursorOrigin: Point
@@ -447,7 +449,7 @@ export class WindowManager {
         this.widgetPlacement,
         workArea,
         this.widgetPresentation,
-        WIDGET_BOTTOM_GAP,
+        WIDGET_EDGE_INSET,
       )
       this.applyWidgetBounds(widget, desired)
     }
@@ -455,7 +457,10 @@ export class WindowManager {
     this.assertRunning()
     const wasVisible = this.widgetVisible
     this.widgetVisible = true
-    if (!wasVisible) widget.showInactive()
+    if (!wasVisible) {
+      widget.showInactive()
+      this.startWidgetMonitor()
+    }
   }
 
   setWidgetPresentation(presentation: WidgetPresentation): void {
@@ -478,7 +483,7 @@ export class WindowManager {
         this.widgetPlacement,
         workArea,
         this.widgetPresentation,
-        WIDGET_BOTTOM_GAP,
+        WIDGET_EDGE_INSET,
       ),
     )
   }
@@ -547,6 +552,7 @@ export class WindowManager {
   hideWidget(): void {
     this.widgetVisible = false
     this.widgetDrag = null
+    this.stopWidgetMonitor()
     this.widgetWindow?.hide()
   }
 
@@ -587,6 +593,9 @@ export class WindowManager {
     }
     this.disposed = true
     this.quitting = true
+    this.widgetVisible = false
+    this.widgetDrag = null
+    this.stopWidgetMonitor()
 
     const main = this.mainWindow
     const widget = this.widgetWindow
@@ -672,6 +681,49 @@ export class WindowManager {
     }
   }
 
+  private startWidgetMonitor(): void {
+    if (this.widgetMonitorTimer !== null) return
+    this.widgetMonitorTimer = setInterval(
+      () => this.followCursorMonitor(),
+      WIDGET_MONITOR_INTERVAL_MS,
+    )
+  }
+
+  private stopWidgetMonitor(): void {
+    if (this.widgetMonitorTimer === null) return
+    clearInterval(this.widgetMonitorTimer)
+    this.widgetMonitorTimer = null
+  }
+
+  private followCursorMonitor(): void {
+    const widget = this.widgetWindow
+    if (
+      !this.widgetVisible ||
+      this.widgetDrag !== null ||
+      widget === null ||
+      widget.isDestroyed()
+    ) {
+      return
+    }
+
+    try {
+      const cursor = this.dependencies.display.getCursorScreenPoint()
+      const workArea = this.dependencies.display.getDisplayNearestPoint(cursor).workArea
+      if (sameRectangle(this.widgetWorkArea, workArea)) return
+
+      this.widgetWorkArea = workArea
+      const desired = placementToBounds(
+        this.widgetPlacement,
+        workArea,
+        this.widgetPresentation,
+        WIDGET_EDGE_INSET,
+      )
+      this.applyWidgetBounds(widget, desired)
+    } catch {
+      // Retain last valid bounds and retry on the next tick.
+    }
+  }
+
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
     this.widgetDrag = null
     this.widgetLastAppliedBounds = null
@@ -704,7 +756,7 @@ export class WindowManager {
         placement,
         workArea,
         this.widgetPresentation,
-        WIDGET_BOTTOM_GAP,
+        WIDGET_EDGE_INSET,
       )
       this.widgetPlacement = placement
       this.widgetWorkArea = workArea
@@ -741,6 +793,9 @@ export class WindowManager {
     const onClosed = (): void => {
       if (kind === 'widget' && this.widgetWindow === window) {
         this.widgetWindow = null
+        this.widgetVisible = false
+        this.widgetDrag = null
+        this.stopWidgetMonitor()
       }
       this.runWindowCleanup(window)
     }
@@ -778,6 +833,9 @@ export class WindowManager {
       if (kind === 'widget' && this.widgetWindow === window) {
         this.widgetWindow = null
         this.widgetReady = null
+        this.widgetVisible = false
+        this.widgetDrag = null
+        this.stopWidgetMonitor()
       }
       this.disposeWindow(window)
       try {

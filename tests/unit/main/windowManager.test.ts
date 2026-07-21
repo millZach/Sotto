@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   parseDevelopmentRendererSources,
@@ -158,6 +158,26 @@ function createHarness(
   return { createWindow, log, manager, onWidgetMoved, options, windows }
 }
 
+const monitorWorkAreas = {
+  left: { x: 0, y: 0, width: 1_000, height: 800 },
+  right: { x: 1_000, y: 100, width: 1_200, height: 900 },
+} as const
+
+function createMutableTwoDisplayAdapter() {
+  const cursor = { current: { x: 100, y: 100 } }
+  const getCursorScreenPoint = vi.fn(() => cursor.current)
+  const getDisplayNearestPoint = vi.fn((point: { readonly x: number }) => ({
+    workArea: point.x < 1_000 ? monitorWorkAreas.left : monitorWorkAreas.right,
+  }))
+
+  return {
+    cursor,
+    display: { getCursorScreenPoint, getDisplayNearestPoint },
+    getCursorScreenPoint,
+    getDisplayNearestPoint,
+  }
+}
+
 describe('WindowManager construction', () => {
   it('passes the complete secure main-window options to the real constructor seam', async () => {
     const { manager, options } = createHarness()
@@ -230,6 +250,230 @@ describe('WindowManager construction', () => {
     expect(secondMain).toBe(firstMain)
     expect(secondWidget).toBe(firstWidget)
     expect(createWindow).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('WindowManager cursor monitor following', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('follows the cursor monitor in every widget presentation', async () => {
+    const presentations = [
+      {
+        presentation: 'idle-resting' as const,
+        bounds: { x: 1_538, y: 930, width: 124, height: 54 },
+      },
+      {
+        presentation: 'idle-hovered' as const,
+        bounds: { x: 1_476, y: 908, width: 248, height: 76 },
+      },
+      {
+        presentation: 'active' as const,
+        bounds: { x: 1_476, y: 896, width: 248, height: 88 },
+      },
+    ]
+
+    for (const { bounds, presentation } of presentations) {
+      const adapter = createMutableTwoDisplayAdapter()
+      const { manager, windows } = createHarness({ display: adapter.display })
+      manager.setWidgetPresentation(presentation)
+      await manager.showWidget()
+      const widget = windows[0]!
+      widget.setBounds.mockClear()
+
+      adapter.cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(200)
+
+      expect(widget.setBounds).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenCalledWith(bounds, false)
+      manager.dispose()
+    }
+  })
+
+  it('preserves the edge and centers on the target monitor', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({
+      display: adapter.display,
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+  })
+
+  it('does no native work while the cursor remains on one monitor', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    widget.setSize.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    adapter.cursor.current = { x: 900, y: 700 }
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(widget.setSize).not.toHaveBeenCalled()
+  })
+
+  it('pauses monitor following while drag ownership is active', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.reportWidgetDrag({ phase: 'start' })
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(1)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('resumes following after drag end', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.reportWidgetDrag({ phase: 'start' })
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    manager.reportWidgetDrag({ phase: 'end' })
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('retries after cursor or display lookup failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    adapter.getCursorScreenPoint.mockImplementationOnce(() => {
+      throw new Error('cursor unavailable')
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 100, y: 100 }
+    adapter.getDisplayNearestPoint.mockImplementationOnce(() => {
+      throw new Error('display unavailable')
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('stops checks when hidden', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    manager.hideWidget()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('stops checks when widget closes or renderer is lost', async () => {
+    const closedAdapter = createMutableTwoDisplayAdapter()
+    const closedHarness = createHarness({ display: closedAdapter.display })
+    await closedHarness.manager.showWidget()
+    closedAdapter.getCursorScreenPoint.mockClear()
+    closedAdapter.getDisplayNearestPoint.mockClear()
+
+    closedHarness.windows[0]!.emit('closed')
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(closedAdapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(closedAdapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+
+    const lostAdapter = createMutableTwoDisplayAdapter()
+    const lostHarness = createHarness({ display: lostAdapter.display })
+    await lostHarness.manager.showWidget()
+    lostAdapter.getCursorScreenPoint.mockClear()
+    lostAdapter.getDisplayNearestPoint.mockClear()
+
+    lostHarness.windows[0]!.emitRenderProcessGone()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(lostAdapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(lostAdapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+  })
+
+  it('stops checks when WindowManager is disposed', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    manager.dispose()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
   })
 })
 
