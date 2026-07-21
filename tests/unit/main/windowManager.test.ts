@@ -33,6 +33,7 @@ class FakeWindow implements BrowserWindowLike {
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
+  readonly setSize = vi.fn()
   position: readonly [number, number] = [0, 0]
   readonly getPosition = vi.fn(() => this.position)
   readonly setIgnoreMouseEvents = vi.fn()
@@ -309,6 +310,7 @@ describe('WindowManager lifecycle', () => {
     await manager.showWidget()
 
     expect(widget.setPosition).toHaveBeenCalledWith(1_476, 896, false)
+    expect(widget.setSize).not.toHaveBeenCalled()
     expect(widget.showInactive).toHaveBeenCalledOnce()
     expect(widget.show).not.toHaveBeenCalled()
     expect(widget.focus).not.toHaveBeenCalled()
@@ -343,11 +345,50 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
     expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
+    expect(widget.setSize).not.toHaveBeenCalled()
 
+    // Moving to a side edge swaps the canvas to the vertical 88x248 window;
+    // the resize and the reposition happen together in the reveal path.
     placement = { kind: 'edge', edge: 'left', offset: 0.25 }
     await manager.showWidget()
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 303, false)
+    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 263, false)
     expect(widget.setPosition).toHaveBeenCalledTimes(2)
+
+    // Back to a horizontal edge restores the 248x88 canvas.
+    placement = { kind: 'edge', edge: 'top', offset: 0.5 }
+    await manager.showWidget()
+    expect(widget.setSize).toHaveBeenLastCalledWith(248, 88, false)
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 116, false)
+    expect(widget.setSize).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the reveal transition guard effective across size-only changes', async () => {
+    // These two placements resolve to the same top-left point but different
+    // canvas orientations, so the guard must consider size as well.
+    let placement: StoredWidgetPlacement = { kind: 'edge', edge: 'left', offset: 16 / 652 }
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => placement,
+    })
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    await manager.showWidget()
+    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 116, false)
+    expect(widget.showInactive).toHaveBeenCalledTimes(1)
+
+    placement = { kind: 'edge', edge: 'top', offset: 16 / 952 }
+    await manager.showWidget()
+    expect(widget.setSize).toHaveBeenLastCalledWith(248, 88, false)
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 116, false)
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+
+    // Identical bounds after that: the guard suppresses further window work.
+    await manager.showWidget()
+    expect(widget.setSize).toHaveBeenCalledTimes(2)
+    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
   })
 
   it('applies a remembered edge placement along the active display edge', async () => {
@@ -358,7 +399,8 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 303, false)
+    expect(windows[0]!.setSize).toHaveBeenCalledWith(88, 248, false)
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 263, false)
   })
 
   it('converts a legacy remembered point into a roughly equivalent edge placement', async () => {
@@ -369,7 +411,9 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    // (1100, 300) is nearest the left edge, 200px down the 812px travel range.
+    // (1100, 300) is nearest the left edge, 200px down the 652px vertical
+    // travel range of the 88x248 side-edge canvas.
+    expect(windows[0]!.setSize).toHaveBeenCalledWith(88, 248, false)
     expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 300, false)
   })
 
@@ -397,7 +441,7 @@ describe('WindowManager lifecycle', () => {
     expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_476, 896, false)
   })
 
-  it('snaps a drag-end position to the nearest edge and reports the placement', async () => {
+  it('snaps a drag-end position to the nearest edge, resizing for a side edge', async () => {
     const { manager, onWidgetMoved, windows } = createHarness()
     await manager.createWidgetWindow()
     const widget = windows[0]!
@@ -405,10 +449,11 @@ describe('WindowManager lifecycle', () => {
     widget.position = [1_234, 567]
     widget.emit('moved')
 
+    expect(widget.setSize).toHaveBeenCalledWith(88, 248, false)
     expect(widget.setPosition).toHaveBeenCalledWith(1_016, 567, false)
     expect(onWidgetMoved).toHaveBeenCalledWith({
       edge: 'left',
-      offset: expect.closeTo(467 / 812, 6),
+      offset: expect.closeTo(467 / 652, 6),
     })
   })
 
@@ -421,9 +466,11 @@ describe('WindowManager lifecycle', () => {
     widget.emit('moved')
 
     expect(widget.setPosition).not.toHaveBeenCalled()
+    // The orientation swap still applies even when the point already matches.
+    expect(widget.setSize).toHaveBeenCalledWith(88, 248, false)
     expect(onWidgetMoved).toHaveBeenCalledWith({
       edge: 'left',
-      offset: expect.closeTo(467 / 812, 6),
+      offset: expect.closeTo(467 / 652, 6),
     })
   })
 
@@ -449,10 +496,11 @@ describe('WindowManager lifecycle', () => {
     expect(onWidgetMoved).not.toHaveBeenCalled()
 
     manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
     expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 505, false)
     expect(onWidgetMoved).toHaveBeenCalledWith({
       edge: 'left',
-      offset: expect.closeTo(405 / 812, 6),
+      offset: expect.closeTo(405 / 652, 6),
     })
 
     // After the session ends the moved-event snap fallback works again.

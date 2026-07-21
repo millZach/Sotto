@@ -27,10 +27,16 @@ function snapshot(
   return { ...metadata, ...state } as WidgetSnapshot
 }
 
+function setWindowSize(width: number, height: number): void {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height })
+}
+
 afterEach(() => {
   cleanup()
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.removeAttribute('data-reduced-motion')
+  setWindowSize(1_024, 768)
   vi.useRealTimers()
 })
 
@@ -41,7 +47,7 @@ describe('WidgetApp', () => {
       <WidgetApp snapshot={snapshot({ status: 'idle', ...privateFields })} now={15_340} />,
     )
     expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
-    expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
     expect(screen.getByText('Click to dictate')).toBeInTheDocument()
 
     rerender(
@@ -399,7 +405,7 @@ describe('WidgetApp', () => {
     expect(onStop).toHaveBeenCalledOnce()
   })
 
-  it('never exposes Electron accelerator vocabulary in the resting hint', () => {
+  it('never exposes Electron accelerator vocabulary in the resting affordance', () => {
     render(
       <WidgetApp
         snapshot={snapshot({
@@ -409,8 +415,107 @@ describe('WidgetApp', () => {
         now={1_000}
       />,
     )
-    expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
     expect(document.body).not.toHaveTextContent('CommandOrControl')
+  })
+
+  it('reflects the window proportions as a shell orientation attribute', () => {
+    const { container, rerender } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} />,
+    )
+    expect(container.querySelector('.widget-shell')).toHaveAttribute(
+      'data-orientation',
+      'horizontal',
+    )
+
+    // The main process swapped the window to the 88x248 side-edge canvas.
+    setWindowSize(88, 248)
+    fireEvent(window, new Event('resize'))
+    expect(container.querySelector('.widget-shell')).toHaveAttribute(
+      'data-orientation',
+      'vertical',
+    )
+
+    // The active capsule shell carries the same orientation attribute.
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'vertical', startedAt: 0, level: 0.4,
+          cancellable: true,
+        })}
+        now={1_000}
+      />,
+    )
+    expect(container.querySelector('.widget-shell')).toHaveAttribute(
+      'data-orientation',
+      'vertical',
+    )
+
+    setWindowSize(248, 88)
+    fireEvent(window, new Event('resize'))
+    expect(container.querySelector('.widget-shell')).toHaveAttribute(
+      'data-orientation',
+      'horizontal',
+    )
+  })
+
+  it('starts vertical when mounted inside a portrait canvas', () => {
+    setWindowSize(88, 248)
+    const { container } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} />,
+    )
+    expect(container.querySelector('.widget-shell')).toHaveAttribute(
+      'data-orientation',
+      'vertical',
+    )
+  })
+
+  it('expands the idle sliver on hover into the inline affordance and collapses on hover-out', () => {
+    const onToggle = vi.fn()
+    const onSliverHover = vi.fn()
+    render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'idle' })}
+        now={0}
+        onToggle={onToggle}
+        onSliverHover={onSliverHover}
+      />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    expect(sliver).not.toHaveAttribute('data-expanded')
+
+    fireEvent.mouseEnter(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+    expect(screen.getByText('Click to dictate')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
+    expect(onSliverHover).toHaveBeenLastCalledWith(true)
+
+    // Clicking the expanded pill starts dictation through the same path.
+    fireEvent.click(sliver)
+    expect(onToggle).toHaveBeenCalledOnce()
+
+    fireEvent.mouseLeave(sliver)
+    expect(sliver).not.toHaveAttribute('data-expanded')
+    expect(onSliverHover).toHaveBeenLastCalledWith(false)
+  })
+
+  it('collapses the expanded sliver when a drag finishes and snaps the window away', () => {
+    const onDrag = vi.fn()
+    render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onDrag={onDrag} />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.mouseEnter(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+
+    fireEvent.pointerDown(sliver, { pointerId: 9, button: 0, isPrimary: true, screenX: 10, screenY: 10 })
+    fireEvent.pointerMove(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
+    fireEvent.pointerUp(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
+
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end' })
+    expect(sliver).not.toHaveAttribute('data-expanded')
   })
 })
 
@@ -700,5 +805,14 @@ describe('visual preview parser', () => {
     expect(css).toContain(":root[data-reduced-motion='on']")
     expect(css).toContain('@keyframes widget-orbit')
     expect(css).not.toMatch(/widget-levels[^}]*animation:/)
+    // The hover-expand affordance fully replaced the old floating tooltip.
+    expect(`${source}\n${css}`).not.toContain('widget-sliver__hint')
+    // Both orientations are styled off the shell orientation attribute.
+    expect(css).toContain("[data-orientation='vertical']")
+    // Reduced motion silences the sliver expansion and prompt transitions.
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.widget-sliver__prompt \{\s*\n\s*transition: none;/,
+    )
+    expect(css).toContain(":root[data-reduced-motion='on'] .widget-sliver__prompt")
   })
 })

@@ -39,11 +39,13 @@
   box-sizing: border-box;
 }
 
+/* The window is a fixed transparent canvas: 248x88 while snapped to a
+   horizontal edge, 88x248 while snapped to a side edge. */
 html,
 body,
 #root {
-  width: 248px;
-  height: 88px;
+  width: 100%;
+  height: 100%;
   margin: 0;
   overflow: hidden;
   background: transparent;
@@ -74,17 +76,25 @@ button {
   white-space: nowrap;
 }
 
-/* The window is a fixed 248x88 canvas; content anchors to its bottom-center so
-   the sliver and capsule appear to grow upward from the same resting spot. */
+/* On the horizontal canvas content anchors to its bottom-center so the sliver
+   and capsule appear to grow upward from the same resting spot. */
 .widget-shell {
   display: flex;
-  width: 248px;
-  height: 88px;
+  width: 100%;
+  height: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
   /* Shadow blur must fade fully inside the transparent window bounds. */
   padding-bottom: 24px;
+}
+
+/* On the vertical canvas the renderer cannot tell the left edge from the
+   right, so content centers on both axes: the 40-wide capsule keeps the same
+   24px shadow clearance to either side of the 88px canvas. */
+.widget-shell[data-orientation='vertical'] {
+  justify-content: center;
+  padding-bottom: 0;
 }
 
 /* ---- resting sliver ---- */
@@ -110,7 +120,12 @@ button {
     var(--widget-shadow-soft);
   opacity: 0.72;
   cursor: pointer;
-  transition: opacity 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    width 0.18s ease,
+    height 0.18s ease,
+    border-radius 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .widget-sliver:hover {
@@ -121,22 +136,57 @@ button {
     0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
 }
 
-.widget-sliver__hint {
+/* Hovering expands the sliver in place into a small pill that carries the
+   click-to-dictate affordance inline. The expanded footprint stays well
+   inside the transparent canvas (212x28 within 248x88). */
+.widget-sliver[data-expanded] {
+  width: 212px;
+  height: 28px;
+  border-radius: 14px;
+  opacity: 1;
+}
+
+/* Dragging collapses the pill back to the bare sliver. */
+.widget-shell[data-dragging='true'] .widget-sliver {
+  width: 88px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Vertical canvas: the resting sliver is a 6x88 bar; hovering grows it
+   sideways from the edge into a 76x88 pill whose text renders horizontally
+   for readability. 76px leaves 6px to each side of the 88px canvas so the
+   soft shadow blur still fades out fully inside the transparent window. */
+.widget-shell[data-orientation='vertical'] .widget-sliver {
+  width: 6px;
+  height: 88px;
+  background: linear-gradient(
+    90deg,
+    var(--widget-surface-top),
+    var(--widget-surface-bottom)
+  );
+}
+
+.widget-shell[data-orientation='vertical'] .widget-sliver[data-expanded] {
+  width: 76px;
+  height: 88px;
+  border-radius: 12px;
+}
+
+.widget-shell[data-orientation='vertical'][data-dragging='true'] .widget-sliver {
+  width: 6px;
+  height: 88px;
+  border-radius: 3px;
+}
+
+.widget-sliver__prompt {
   position: absolute;
-  bottom: calc(100% + 9px);
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 4px 9px;
-  border: 1px solid var(--widget-edge);
-  border-radius: 6px;
-  background: var(--widget-surface-top);
-  box-shadow:
-    0 0 0 1px var(--widget-rim),
-    var(--widget-shadow-soft);
-  color: var(--tt-text-muted);
+  overflow: hidden;
   font-size: 11px;
   white-space: nowrap;
   opacity: 0;
@@ -144,17 +194,31 @@ button {
   transition: opacity 0.15s ease;
 }
 
-.widget-sliver__hint-action {
+.widget-sliver[data-expanded] .widget-sliver__prompt {
+  opacity: 1;
+}
+
+.widget-shell[data-dragging='true'] .widget-sliver__prompt {
+  opacity: 0;
+}
+
+.widget-shell[data-orientation='vertical'] .widget-sliver__prompt {
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  font-size: 10px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.widget-sliver__prompt-action {
   color: var(--tt-text);
   font-weight: 600;
 }
 
-.widget-sliver__hint-keys {
+.widget-sliver__prompt-keys {
   color: var(--tt-text-muted);
-}
-
-.widget-sliver:hover .widget-sliver__hint {
-  opacity: 1;
 }
 
 /* ---- active capsule ---- */
@@ -184,15 +248,19 @@ button {
   animation: widget-pop 0.2s cubic-bezier(0.25, 1, 0.4, 1);
 }
 
+/* Vertical canvas: the capsule turns into a 40x212 column and its contents
+   stack top to bottom. */
+.widget-shell[data-orientation='vertical'] .widget-capsule {
+  width: 40px;
+  height: 212px;
+  flex-direction: column;
+  padding: 10px 0;
+}
+
 .widget-shell[data-dragging='true'] .widget-sliver,
 .widget-shell[data-dragging='true'] .widget-capsule {
   cursor: grabbing;
 }
-
-.widget-shell[data-dragging='true'] .widget-sliver__hint {
-  opacity: 0;
-}
-
 
 @keyframes widget-pop {
   from {
@@ -230,6 +298,17 @@ button {
   gap: 2.5px;
 }
 
+/* Vertically the visualizer rotates 90 degrees. The pre-rotation box is
+   80x38; the margins swap its layout footprint to 38x80 so the rotated bars
+   occupy the right amount of the column without overlapping neighbours. */
+.widget-shell[data-orientation='vertical'] .widget-levels {
+  flex: none;
+  width: 80px;
+  height: 38px;
+  margin: 21px -21px;
+  transform: rotate(90deg);
+}
+
 .widget-levels__bar {
   width: 2.5px;
   flex: none;
@@ -247,6 +326,11 @@ button {
   color: var(--tt-text-muted);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
+}
+
+/* The vertical timer reads top-to-bottom like a vertical toolbar. */
+.widget-shell[data-orientation='vertical'] .widget-time {
+  writing-mode: vertical-rl;
 }
 
 .widget-spinner {
@@ -294,6 +378,12 @@ button {
   white-space: nowrap;
 }
 
+.widget-shell[data-orientation='vertical'] .widget-copy {
+  min-width: auto;
+  min-height: 0;
+  writing-mode: vertical-rl;
+}
+
 .widget-shell[data-tone='success'] .widget-copy {
   color: var(--tt-primary);
 }
@@ -316,6 +406,7 @@ button {
 
 .widget-progress > span {
   display: block;
+  width: var(--widget-progress, 0%);
   height: 100%;
   border-radius: 1px;
   background: linear-gradient(
@@ -323,7 +414,28 @@ button {
     color-mix(in srgb, var(--tt-primary) 70%, var(--widget-surface-bottom)),
     var(--tt-primary)
   );
-  transition: width 0.2s ease;
+  transition: width 0.2s ease, height 0.2s ease;
+}
+
+/* The vertical capsule carries its progress as a thin strip along the side,
+   filling top to bottom. */
+.widget-shell[data-orientation='vertical'] .widget-progress {
+  top: 15px;
+  right: 4px;
+  bottom: 15px;
+  left: auto;
+  width: 2px;
+  height: auto;
+}
+
+.widget-shell[data-orientation='vertical'] .widget-progress > span {
+  width: 100%;
+  height: var(--widget-progress, 0%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tt-primary) 70%, var(--widget-surface-bottom)),
+    var(--tt-primary)
+  );
 }
 
 .widget-action,
@@ -390,7 +502,7 @@ button {
   .widget-levels__bar,
   .widget-progress > span,
   .widget-sliver,
-  .widget-sliver__hint {
+  .widget-sliver__prompt {
     transition: none;
   }
 }
@@ -412,6 +524,6 @@ button {
 :root[data-reduced-motion='on'] .widget-levels__bar,
 :root[data-reduced-motion='on'] .widget-progress > span,
 :root[data-reduced-motion='on'] .widget-sliver,
-:root[data-reduced-motion='on'] .widget-sliver__hint {
+:root[data-reduced-motion='on'] .widget-sliver__prompt {
   transition: none;
 }

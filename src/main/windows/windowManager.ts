@@ -3,16 +3,16 @@ import type { WidgetDragPayload } from '../../shared/contracts'
 import { selectRendererSource, type RendererRole } from '../security'
 import {
   DEFAULT_WIDGET_PLACEMENT,
+  HORIZONTAL_WIDGET_SIZE,
   placementToPosition,
   snapToEdge,
+  widgetSizeForEdge,
   type EdgePlacement,
+  type WidgetSize,
 } from './widgetPlacementMath'
 import type { StoredWidgetPlacement } from '../storage/widgetPlacementRepository'
 
-const WIDGET_WIDTH = 248
-const WIDGET_HEIGHT = 88
 const WIDGET_BOTTOM_GAP = 16
-const WIDGET_SIZE = { width: WIDGET_WIDTH, height: WIDGET_HEIGHT } as const
 
 export interface Point {
   readonly x: number
@@ -106,6 +106,7 @@ export interface BrowserWindowLike {
   showInactive(): void
   setPosition(x: number, y: number, animate?: boolean): void
   getPosition(): readonly [number, number]
+  setSize(width: number, height: number, animate?: boolean): void
   setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void
   destroy(): void
   isDestroyed(): boolean
@@ -243,7 +244,10 @@ export class WindowManager {
   private disposed = false
   private widgetSessionAnchor: Point | null = null
   private widgetDragOrigin: Point | null = null
-  private widgetLastReveal: Point | null = null
+  private widgetLastReveal: (Point & WidgetSize) | null = null
+  // The size the widget window currently has; the constructor seam always
+  // builds the horizontal canvas and snapping to a side edge swaps it.
+  private widgetSize: WidgetSize = HORIZONTAL_WIDGET_SIZE
   private readonly cleanupByWindow = new Map<BrowserWindowLike, Set<() => void>>()
   private readonly loadedRendererUrls = new Map<BrowserWindowLike, string>()
 
@@ -326,8 +330,8 @@ export class WindowManager {
     }
 
     const window = this.dependencies.createWindow({
-      width: WIDGET_WIDTH,
-      height: WIDGET_HEIGHT,
+      width: HORIZONTAL_WIDGET_SIZE.width,
+      height: HORIZONTAL_WIDGET_SIZE.height,
       show: false,
       resizable: false,
       maximizable: false,
@@ -430,22 +434,21 @@ export class WindowManager {
       this.widgetSessionAnchor ?? this.dependencies.display.getCursorScreenPoint()
     const workArea = this.dependencies.display.getDisplayNearestPoint(anchor).workArea
     const placement = this.rememberedWidgetPlacement()
-    const { x, y } = placementToPosition(
-      placement,
-      WIDGET_SIZE,
-      workArea,
-      WIDGET_BOTTOM_GAP,
-    )
+    const size = widgetSizeForEdge(placement.edge)
+    const { x, y } = placementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
     if (
       this.widgetLastReveal !== null &&
       this.widgetLastReveal.x === x &&
-      this.widgetLastReveal.y === y
+      this.widgetLastReveal.y === y &&
+      this.widgetLastReveal.width === size.width &&
+      this.widgetLastReveal.height === size.height
     ) {
       return
     }
+    this.applyWidgetSize(widget, size)
     widget.setPosition(x, y, false)
     this.assertRunning()
-    this.widgetLastReveal = { x, y }
+    this.widgetLastReveal = { x, y, width: size.width, height: size.height }
     widget.showInactive()
   }
 
@@ -621,13 +624,15 @@ export class WindowManager {
       x: stored.x,
       y: stored.y,
     }).workArea
-    return snapToEdge({ x: stored.x, y: stored.y }, WIDGET_SIZE, legacyWorkArea)
+    return snapToEdge({ x: stored.x, y: stored.y }, legacyWorkArea)
   }
 
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
-    // A fresh widget window can never be mid-drag or revealed.
+    // A fresh widget window can never be mid-drag or revealed, and is always
+    // constructed on the horizontal canvas.
     this.widgetDragOrigin = null
     this.widgetLastReveal = null
+    this.widgetSize = HORIZONTAL_WIDGET_SIZE
     // The widget rests as a click-through sliver; the renderer requests
     // interactivity for active states and sliver hover.
     try {
@@ -650,16 +655,14 @@ export class WindowManager {
     try {
       const [x, y] = window.getPosition()
       const workArea = this.dependencies.display.getDisplayNearestPoint({
-        x: x + WIDGET_WIDTH / 2,
-        y: y + WIDGET_HEIGHT / 2,
+        x: x + this.widgetSize.width / 2,
+        y: y + this.widgetSize.height / 2,
       }).workArea
-      const placement = snapToEdge({ x, y }, WIDGET_SIZE, workArea)
-      const snapped = placementToPosition(
-        placement,
-        WIDGET_SIZE,
-        workArea,
-        WIDGET_BOTTOM_GAP,
-      )
+      const placement = snapToEdge({ x, y }, workArea)
+      const snapped = placementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
+      // Snapping to a side edge swaps the canvas orientation; resize and
+      // reposition together so the widget lands as one coherent operation.
+      this.applyWidgetSize(window, widgetSizeForEdge(placement.edge))
       // Skip the no-op reposition so a programmatic snap cannot loop through
       // further moved events.
       if (snapped.x !== x || snapped.y !== y) {
@@ -669,6 +672,17 @@ export class WindowManager {
     } catch {
       // Placement memory is best effort.
     }
+  }
+
+  private applyWidgetSize(window: BrowserWindowLike, size: WidgetSize): void {
+    if (
+      this.widgetSize.width === size.width &&
+      this.widgetSize.height === size.height
+    ) {
+      return
+    }
+    window.setSize(size.width, size.height, false)
+    this.widgetSize = size
   }
 
   private installClosedLifecycle(window: BrowserWindowLike, kind: 'widget'): void {

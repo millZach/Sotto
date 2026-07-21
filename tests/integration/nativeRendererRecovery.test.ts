@@ -32,6 +32,7 @@ class LifecycleWindow implements BrowserWindowLike {
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setPosition = vi.fn()
+  readonly setSize = vi.fn()
   readonly getPosition = vi.fn(() => [0, 0] as const)
   readonly setIgnoreMouseEvents = vi.fn()
   readonly destroy = vi.fn()

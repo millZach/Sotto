@@ -185,6 +185,30 @@ function preventFocus(event: ReactMouseEvent<HTMLElement>): void {
   event.preventDefault()
 }
 
+export type WidgetOrientation = 'horizontal' | 'vertical'
+
+function readWidgetOrientation(): WidgetOrientation {
+  return window.innerHeight > window.innerWidth ? 'vertical' : 'horizontal'
+}
+
+/**
+ * The widget window is 248x88 on horizontal edges and 88x248 on vertical
+ * edges, so the canvas proportions alone identify the orientation; a resize
+ * listener follows the main process swapping the window between them.
+ */
+function useWidgetOrientation(): WidgetOrientation {
+  const [orientation, setOrientation] = useState<WidgetOrientation>(readWidgetOrientation)
+
+  useEffect(() => {
+    const update = (): void => setOrientation(readWidgetOrientation())
+    window.addEventListener('resize', update)
+    update()
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  return orientation
+}
+
 function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
   // Button presses must never start a widget drag session.
   event.stopPropagation()
@@ -364,6 +388,13 @@ export function WidgetApp({
   onDrag,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
+  const orientation = useWidgetOrientation()
+  // Hovering the idle sliver expands it in place into a small pill carrying
+  // the click-to-dictate affordance; hover-out collapses it back.
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    if (!isIdle) setExpanded(false)
+  }, [isIdle])
   // The idle sliver click starts dictation; the active capsule click stops it.
   // Either surface becomes a drag once movement passes the threshold. When an
   // idle drag ends the window has snapped away from the pointer, so hover-off
@@ -371,7 +402,12 @@ export function WidgetApp({
   const surface = useDragOrClick(
     isIdle ? onToggle : onStop,
     onDrag,
-    isIdle ? () => onSliverHover?.(false) : undefined,
+    isIdle
+      ? () => {
+          setExpanded(false)
+          onSliverHover?.(false)
+        }
+      : undefined,
   )
 
   if (snapshot.status === 'idle') {
@@ -381,23 +417,31 @@ export function WidgetApp({
         aria-label="TalkType dictation status"
         data-status="idle"
         data-tone="idle"
+        data-orientation={orientation}
         data-dragging={surface.dragging || undefined}
       >
         <div
           className="widget-sliver"
           data-testid="widget-sliver"
+          data-expanded={expanded || undefined}
           tabIndex={-1}
-          onMouseEnter={() => onSliverHover?.(true)}
+          onMouseEnter={() => {
+            setExpanded(true)
+            onSliverHover?.(true)
+          }}
           onMouseLeave={() => {
-            if (!surface.isDragActive()) onSliverHover?.(false)
+            if (!surface.isDragActive()) {
+              setExpanded(false)
+              onSliverHover?.(false)
+            }
           }}
           onMouseDown={preventFocus}
           {...surface.surfaceProps}
         >
-          <span className="widget-sliver__hint">
-            <span className="widget-sliver__hint-action">Click to dictate</span>
-            <span className="widget-sliver__hint-keys">
-              {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+          <span className="widget-sliver__prompt">
+            <span className="widget-sliver__prompt-action">Click to dictate</span>
+            <span className="widget-sliver__prompt-keys">
+              {formatWindowsAccelerator(snapshot.shortcut)}
             </span>
           </span>
         </div>
@@ -416,6 +460,7 @@ export function WidgetApp({
       aria-label="TalkType dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
+      data-orientation={orientation}
       data-dragging={surface.dragging || undefined}
     >
       <div
@@ -455,7 +500,9 @@ export function WidgetApp({
             aria-valuemax={100}
             aria-valuenow={progress}
           >
-            <span style={{ width: `${progress}%` }} />
+            {/* The custom property lets CSS map progress onto width in the
+                horizontal capsule and height in the vertical one. */}
+            <span style={{ '--widget-progress': `${progress}%` } as React.CSSProperties} />
           </span>
         )}
         {isListening && (

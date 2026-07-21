@@ -294,6 +294,22 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.setPosition(x, y, animate)
   }
 
+  setSize(width: number, height: number, animate?: boolean): void {
+    // Some Electron versions refuse programmatic resizes while the window is
+    // marked non-resizable, so the flag is lifted just for this operation.
+    const resizable = this.window.isResizable()
+    if (!resizable) {
+      this.window.setResizable(true)
+    }
+    try {
+      this.window.setSize(width, height, animate)
+    } finally {
+      if (!resizable) {
+        this.window.setResizable(false)
+      }
+    }
+  }
+
   destroy(): void {
     this.window.destroy()
   }
