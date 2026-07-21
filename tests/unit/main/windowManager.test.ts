@@ -157,6 +157,7 @@ describe('WindowManager construction', () => {
         title: 'TalkType',
         backgroundColor: '#1b1917',
         autoHideMenuBar: true,
+        frame: false,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',
           additionalArguments: ['--talktype-renderer-role=main'],

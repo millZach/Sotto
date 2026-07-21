@@ -273,6 +273,7 @@ export class WindowManager {
       title: APP_NAME,
       backgroundColor: '#1b1917',
       autoHideMenuBar: true,
+      frame: false,
       webPreferences: securePreferences(this.dependencies.preloadPath, 'main'),
     })
     this.mainWindow = window

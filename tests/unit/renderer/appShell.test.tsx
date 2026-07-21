@@ -10,13 +10,11 @@ import { AppShell } from '../../../src/renderer/src/components/AppShell'
 afterEach(cleanup)
 
 describe('AppShell', () => {
-  it('provides navigation, one main landmark, a sidebar status cluster, and tray-safe window controls', async () => {
+  it('provides navigation, one main landmark, and a sidebar status cluster without owning window controls', async () => {
     const user = userEvent.setup()
     const navigate = vi.fn()
-    const minimize = vi.fn(async () => undefined)
-    const close = vi.fn(async () => undefined)
     const { container } = render(
-      <AppShell navigation="home" statusText="Ready · Local & private" statusTone="ready" onNavigate={navigate} onMinimize={minimize} onClose={close}>
+      <AppShell navigation="home" statusText="Ready · Local & private" statusTone="ready" onNavigate={navigate}>
         <h1>Home</h1>
       </AppShell>,
     )
@@ -25,29 +23,31 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     expect(navigate).toHaveBeenCalledWith('settings')
-    await user.click(screen.getByRole('button', { name: /minimize talktype/i }))
-    await user.click(screen.getByRole('button', { name: /close talktype to tray/i }))
-    expect(minimize).toHaveBeenCalledOnce()
-    expect(close).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: /minimize talktype/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /close talktype to tray/i })).not.toBeInTheDocument()
     expect(screen.getByText('Ready · Local & private')).toHaveAttribute('aria-live', 'polite')
     const cluster = container.querySelector('.app-navigation .app-navigation__status')
     expect(cluster).toHaveAttribute('data-tone', 'ready')
+    expect(container.querySelector('.app-titlebar')).toBeNull()
     expect(container.querySelector('.app-status-footer')).toBeNull()
     expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
   })
 
   it.each(['ready', 'listening', 'processing', 'attention'] as const)('reflects the %s tone on the sidebar status dot', (tone) => {
     const { container } = render(
-      <AppShell navigation="home" statusText="Status" statusTone={tone} onNavigate={vi.fn()} onMinimize={vi.fn()} onClose={vi.fn()}>
+      <AppShell navigation="home" statusText="Status" statusTone={tone} onNavigate={vi.fn()}>
         <h1>Home</h1>
       </AppShell>,
     )
     expect(container.querySelector('.app-navigation__status')).toHaveAttribute('data-tone', tone)
   })
 
-  it('keeps the two-row shell grid and tone-colored status dots in the stylesheet', () => {
+  it('keeps the two-row app frame, body-filling shell, and tone-colored status dots in the stylesheet', () => {
     const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
-    expect(css).toMatch(/\.app-shell\s*\{[^}]*grid-template-rows:\s*52px minmax\(0, 1fr\);/su)
+    expect(css).toMatch(/\.app-frame\s*\{[^}]*grid-template-rows:\s*52px minmax\(0, 1fr\);/su)
+    expect(css).toMatch(/\.app-frame__body\s*\{[^}]*overflow:\s*hidden;/su)
+    expect(css).toMatch(/\.app-shell\s*\{[^}]*height:\s*100%;/su)
+    expect(css).not.toMatch(/\.app-shell\s*\{[^}]*grid-template-rows:/su)
     expect(css).not.toContain('.app-status-footer')
     expect(css).toMatch(/\.app-navigation__status\[data-tone='listening'\][^}]*var\(--tt-activity\)/su)
     expect(css).toMatch(/\.app-navigation__status\[data-tone='processing'\][^}]*var\(--tt-warning\)/su)
@@ -59,6 +59,7 @@ describe('AppShell', () => {
     const source = [
       'src/renderer/src/App.tsx',
       'src/renderer/src/components/AppShell.tsx',
+      'src/renderer/src/components/AppTitlebar.tsx',
       'src/renderer/src/components/ConfirmationDialog.tsx',
       'src/renderer/src/features/home/HomeView.tsx',
       'src/renderer/src/features/history/HistoryView.tsx',
