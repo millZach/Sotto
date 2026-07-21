@@ -136,6 +136,13 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
  * screen-pixel offsets from the drag start, computed by the renderer from
  * screenX/screenY so the window moving under the pointer cannot corrupt them.
  */
+export const widgetPresentationSchema = z.enum([
+  'idle-resting',
+  'idle-hovered',
+  'active',
+])
+export type WidgetPresentation = z.infer<typeof widgetPresentationSchema>
+
 const widgetDragDelta = z.number().int().min(-100_000).max(100_000)
 
 export const widgetDragSchema = z.discriminatedUnion('phase', [
