@@ -119,6 +119,7 @@ export function createTranscriptionRuntime(
   }
 
   let activePipeline: ActivePipeline | undefined
+  const warmedPipelines = new WeakSet<SpeechRecognitionPipeline>()
   const cancelledRequests = new Set<string>()
   const requestMetadata = new Map<
     string,
@@ -204,6 +205,20 @@ export function createTranscriptionRuntime(
       await failedPipeline.dispose?.()
     } catch {
       // Backend cleanup is best-effort and never exposes library errors.
+    }
+  }
+
+  // One second of silence: enough to trigger backend graph initialization so
+  // the first real dictation runs at steady-state speed.
+  const WARM_UP_SAMPLES = 16_000
+
+  const warmUpPipeline = async (pipeline: SpeechRecognitionPipeline): Promise<void> => {
+    if (warmedPipelines.has(pipeline)) return
+    warmedPipelines.add(pipeline)
+    try {
+      await pipeline(new Float32Array(WARM_UP_SAMPLES), { task: 'transcribe' })
+    } catch {
+      // Warm-up is best effort; the load still succeeded.
     }
   }
 
@@ -307,6 +322,7 @@ export function createTranscriptionRuntime(
     try {
       if (request.type === 'load') {
         const loaded = await loadForPreference(request)
+        await warmUpPipeline(loaded.pipeline)
         if (!isCancelled(request.requestId)) {
           options.postMessage({
             type: 'ready',
