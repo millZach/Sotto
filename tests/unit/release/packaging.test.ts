@@ -9,6 +9,7 @@ const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
 describe('Windows release contract', () => {
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
     const packageJson = JSON.parse(read('package.json')) as {
+      version: string
       dependencies: Record<string, string>
       devDependencies: Record<string, string>
       scripts: Record<string, string>
