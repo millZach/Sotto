@@ -253,7 +253,7 @@ export function SettingsView({
       },
       () => { if (current) setDisclosureState('error') },
     )
-    for (const preset of ['fast', 'balanced', 'accurate'] as const) void onGetModelStatus(preset)
+    for (const preset of ['instant', 'fast', 'balanced', 'accurate'] as const) void onGetModelStatus(preset)
     return () => { current = false }
   }, [onGetModelStatus, onListModelDisclosures])
 

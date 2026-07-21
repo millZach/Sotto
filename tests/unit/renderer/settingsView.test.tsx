@@ -303,6 +303,16 @@ describe('SettingsView', () => {
     expect(screen.queryByText(/auto-detect/i)).not.toBeInTheDocument()
   })
 
+  it('requests a status for every preset so each model card leaves the checking state', async () => {
+    const getStatus = vi.fn(async (preset: ModelStatus['preset']) =>
+      ({ preset, state: preset === 'balanced' ? 'bundled' : 'missing' } as ModelStatus))
+    render(<SettingsView {...baseProps({ onGetModelStatus: getStatus })} />)
+
+    for (const preset of ['instant', 'fast', 'balanced', 'accurate']) {
+      expect(getStatus).toHaveBeenCalledWith(preset)
+    }
+  })
+
   it('requires returned disclosure and fresh explicit consent before every optional install', async () => {
     const user = userEvent.setup()
     const install = vi.fn(async () => ({ ok: true as const }))
