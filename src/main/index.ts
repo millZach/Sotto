@@ -609,7 +609,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         output,
         widget: {
-          setMouseInteractive: (interactive) => windows.setWidgetMouseInteractive(interactive),
+          setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),
         },
         models: createModelIpcService(models, (status) => {

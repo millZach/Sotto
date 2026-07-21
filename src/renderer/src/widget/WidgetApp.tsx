@@ -18,7 +18,11 @@ import {
   type ReactNode,
 } from 'react'
 
-import type { TalkTypeWidgetBridge, WidgetDragPayload } from '../../../shared/contracts'
+import type {
+  TalkTypeWidgetBridge,
+  WidgetDragPayload,
+  WidgetPresentation,
+} from '../../../shared/contracts'
 import { formatWindowsAccelerator } from '../../../shared/accelerator'
 import type {
   WidgetErrorCode,
@@ -121,7 +125,7 @@ export interface WidgetAppProps {
   readonly onToggle?: () => void
   readonly onStop?: () => void
   readonly onCancel?: () => void
-  readonly onSliverHover?: (hovering: boolean) => void
+  readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
 }
 
@@ -192,9 +196,9 @@ function readWidgetOrientation(): WidgetOrientation {
 }
 
 /**
- * The widget window is 248x88 on horizontal edges and 88x248 on vertical
- * edges, so the canvas proportions alone identify the orientation; a resize
- * listener follows the main process swapping the window between them.
+ * Every native presentation footprint is landscape on horizontal edges and
+ * portrait on vertical edges. A resize listener follows presentation and edge
+ * changes applied by the main-process placement coordinator.
  */
 function useWidgetOrientation(): WidgetOrientation {
   const [orientation, setOrientation] = useState<WidgetOrientation>(readWidgetOrientation)
@@ -384,7 +388,7 @@ export function WidgetApp({
   onToggle,
   onStop,
   onCancel,
-  onSliverHover,
+  onPresentationChange,
   onDrag,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
@@ -397,18 +401,22 @@ export function WidgetApp({
   }, [isIdle])
   // The idle sliver click starts dictation; the active capsule click stops it.
   // Either surface becomes a drag once movement passes the threshold. When an
-  // idle drag ends the window has snapped away from the pointer, so hover-off
-  // restores the click-through baseline; re-hovering re-arms interactivity.
+  // idle drag ends the window has snapped away from the pointer, so it returns
+  // to the resting presentation.
   const surface = useDragOrClick(
     isIdle ? onToggle : onStop,
     onDrag,
-    isIdle
-      ? () => {
-          setExpanded(false)
-          onSliverHover?.(false)
-        }
-      : undefined,
+    isIdle ? () => setExpanded(false) : undefined,
   )
+  const presentation: WidgetPresentation = !isIdle
+    ? 'active'
+    : expanded || surface.dragging
+      ? 'idle-hovered'
+      : 'idle-resting'
+
+  useEffect(() => {
+    onPresentationChange?.(presentation)
+  }, [onPresentationChange, presentation])
 
   if (snapshot.status === 'idle') {
     return (
@@ -425,14 +433,10 @@ export function WidgetApp({
           data-testid="widget-sliver"
           data-expanded={expanded || undefined}
           tabIndex={-1}
-          onMouseEnter={() => {
-            setExpanded(true)
-            onSliverHover?.(true)
-          }}
+          onMouseEnter={() => setExpanded(true)}
           onMouseLeave={() => {
             if (!surface.isDragActive()) {
               setExpanded(false)
-              onSliverHover?.(false)
             }
           }}
           onMouseDown={preventFocus}
@@ -571,20 +575,14 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
     return () => window.clearInterval(timer)
   }, [preview, snapshot?.status, snapshot?.status === 'listening' ? snapshot.sessionId : null])
 
-  const interactive = snapshot !== null && snapshot.status !== 'idle'
-  useEffect(() => {
-    if (preview !== null || bridge === undefined || snapshot === null) return
-    void bridge.setMouseInteractive(interactive).catch(() => undefined)
-  }, [bridge, preview, snapshot === null, interactive])
-
   const actions = useMemo(() => {
     if (bridge === undefined || preview !== null) return {}
     return {
       onToggle: () => { void bridge.requestToggle().catch(() => undefined) },
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
-      onSliverHover: (hovering: boolean) => {
-        void bridge.setMouseInteractive(hovering).catch(() => undefined)
+      onPresentationChange: (presentation: WidgetPresentation) => {
+        void bridge.setPresentation(presentation).catch(() => undefined)
       },
       onDrag: (payload: WidgetDragPayload) => {
         void bridge.reportDrag(payload).catch(() => undefined)

@@ -300,7 +300,7 @@ export interface TalkTypeWidgetBridge {
   requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
-  setMouseInteractive(interactive: boolean): Promise<CommandResult>
+  setPresentation(presentation: WidgetPresentation): Promise<CommandResult>
   reportDrag(payload: WidgetDragPayload): Promise<CommandResult>
 }
 

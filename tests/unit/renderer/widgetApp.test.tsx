@@ -4,7 +4,10 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import React, { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { TalkTypeWidgetBridge } from '../../../src/shared/contracts'
+import type {
+  TalkTypeWidgetBridge,
+  WidgetPresentation,
+} from '../../../src/shared/contracts'
 import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
 import {
   WidgetApp,
@@ -428,8 +431,8 @@ describe('WidgetApp', () => {
       'horizontal',
     )
 
-    // The main process swapped the window to the 88x248 side-edge canvas.
-    setWindowSize(88, 248)
+    // The main process swapped the resting presentation to its vertical root.
+    setWindowSize(54, 124)
     fireEvent(window, new Event('resize'))
     expect(container.querySelector('.widget-shell')).toHaveAttribute(
       'data-orientation',
@@ -446,6 +449,8 @@ describe('WidgetApp', () => {
         now={1_000}
       />,
     )
+    setWindowSize(88, 248)
+    fireEvent(window, new Event('resize'))
     expect(container.querySelector('.widget-shell')).toHaveAttribute(
       'data-orientation',
       'vertical',
@@ -459,8 +464,8 @@ describe('WidgetApp', () => {
     )
   })
 
-  it('starts vertical when mounted inside a portrait canvas', () => {
-    setWindowSize(88, 248)
+  it('starts vertical when mounted inside a portrait presentation root', () => {
+    setWindowSize(54, 124)
     const { container } = render(
       <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} />,
     )
@@ -472,13 +477,11 @@ describe('WidgetApp', () => {
 
   it('expands the idle sliver on hover into the inline affordance and collapses on hover-out', () => {
     const onToggle = vi.fn()
-    const onSliverHover = vi.fn()
     render(
       <WidgetApp
         snapshot={snapshot({ status: 'idle' })}
         now={0}
         onToggle={onToggle}
-        onSliverHover={onSliverHover}
       />,
     )
 
@@ -489,7 +492,6 @@ describe('WidgetApp', () => {
     expect(sliver).toHaveAttribute('data-expanded', 'true')
     expect(screen.getByText('Click to dictate')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
-    expect(onSliverHover).toHaveBeenLastCalledWith(true)
 
     // Clicking the expanded pill starts dictation through the same path.
     fireEvent.click(sliver)
@@ -497,7 +499,70 @@ describe('WidgetApp', () => {
 
     fireEvent.mouseLeave(sliver)
     expect(sliver).not.toHaveAttribute('data-expanded')
-    expect(onSliverHover).toHaveBeenLastCalledWith(false)
+  })
+
+  it('reports idle-resting at rest and idle-hovered while hovered', () => {
+    const presentations: WidgetPresentation[] = []
+    render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'idle' })}
+        now={0}
+        onPresentationChange={(presentation) => presentations.push(presentation)}
+      />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    expect(presentations).toEqual(['idle-resting'])
+    fireEvent.mouseEnter(sliver)
+    expect(presentations).toEqual(['idle-resting', 'idle-hovered'])
+    fireEvent.mouseLeave(sliver)
+    expect(presentations).toEqual(['idle-resting', 'idle-hovered', 'idle-resting'])
+  })
+
+  it.each([
+    ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'permission' })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4 })],
+    ['processing', snapshot({
+      status: 'processing', sessionId: 'processing', startedAt: 0,
+      stage: 'transcribing', progress: 0.5,
+    })],
+    ['success', snapshot({ status: 'success', sessionId: 'success', output: 'copied' })],
+    ['cancelled', snapshot({ status: 'cancelled', sessionId: 'cancelled' })],
+    ['error', snapshot({ status: 'error', sessionId: 'error', code: 'NO_SPEECH' })],
+  ] as const)('reports active for %s snapshots', (_name, activeSnapshot) => {
+    const onPresentationChange = vi.fn<(presentation: WidgetPresentation) => void>()
+    render(
+      <WidgetApp
+        snapshot={activeSnapshot}
+        now={0}
+        onPresentationChange={onPresentationChange}
+      />,
+    )
+
+    expect(onPresentationChange).toHaveBeenCalledOnce()
+    expect(onPresentationChange).toHaveBeenCalledWith('active')
+  })
+
+  it('returns to idle-resting when an idle drag ends', () => {
+    const onPresentationChange = vi.fn<(presentation: WidgetPresentation) => void>()
+    render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'idle' })}
+        now={0}
+        onPresentationChange={onPresentationChange}
+      />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.mouseEnter(sliver)
+    expect(onPresentationChange).toHaveBeenLastCalledWith('idle-hovered')
+    fireEvent.pointerDown(sliver, {
+      pointerId: 9, button: 0, isPrimary: true, screenX: 10, screenY: 10,
+    })
+    fireEvent.pointerMove(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
+    expect(onPresentationChange).toHaveBeenLastCalledWith('idle-hovered')
+    fireEvent.pointerUp(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
+    expect(onPresentationChange).toHaveBeenLastCalledWith('idle-resting')
   })
 
   it('collapses the expanded sliver when a drag finishes and snaps the window away', () => {
@@ -531,7 +596,7 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const view = render(
@@ -561,19 +626,24 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
 
     act(() => listener?.(snapshot({ status: 'idle' })))
-    fireEvent.click(screen.getByTestId('widget-sliver'))
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-resting')
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.mouseEnter(sliver)
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+    fireEvent.click(sliver)
     expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
 
     act(() => listener?.(snapshot({
       status: 'listening', sessionId: 'click', startedAt: Date.now(), level: 0.4,
       cancellable: true,
     })))
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('active')
     fireEvent.click(container.querySelector('.widget-capsule')!)
     expect(bridge.requestStop).toHaveBeenCalledTimes(1)
     expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
@@ -589,7 +659,7 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     render(<WidgetEntry bridge={bridge} preview={null} />)
@@ -636,7 +706,7 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
@@ -710,7 +780,7 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     render(<WidgetEntry bridge={bridge} preview={null} />)
@@ -731,7 +801,7 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => Promise.reject(new Error('private toggle failure'))),
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
-      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)

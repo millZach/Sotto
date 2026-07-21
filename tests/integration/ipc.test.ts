@@ -50,7 +50,7 @@ import {
   STARTUP_GET,
   STARTUP_SET,
   WIDGET_DRAG,
-  WIDGET_INTERACTIVITY,
+  WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
   WIDGET_STATE,
 } from '../../src/shared/channels'
@@ -291,7 +291,14 @@ describe('typed preload bridge', () => {
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
     const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
-      ['onWidgetState', 'reportDrag', 'requestCancel', 'requestStop', 'requestToggle', 'setMouseInteractive'].sort(),
+      [
+        'onWidgetState',
+        'reportDrag',
+        'requestCancel',
+        'requestStop',
+        'requestToggle',
+        'setPresentation',
+      ].sort(),
     )
     expect(bridge).not.toHaveProperty('getSettings')
     expect(bridge).not.toHaveProperty('listHistory')
@@ -322,10 +329,18 @@ describe('typed preload bridge', () => {
       { type: 'toggle' },
     )
 
-    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+    await bridge.setPresentation('idle-hovered')
     await bridge.reportDrag({ phase: 'move', deltaX: 12, deltaY: -3 })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
+      WIDGET_PRESENTATION,
+      'idle-hovered',
+    )
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      5,
       WIDGET_DRAG,
       { phase: 'move', deltaX: 12, deltaY: -3 },
     )
@@ -2639,7 +2654,7 @@ describe('NativeRuntimeController', () => {
   )
 })
 
-describe('widget interactivity channel', () => {
+describe('widget presentation and drag channels', () => {
   function widgetSender() {
     const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
     const widgetFrame = { parent: null, url: widgetUrl }
@@ -2651,11 +2666,11 @@ describe('widget interactivity channel', () => {
     return { widgetContents, widgetFrame, widgetUrl }
   }
 
-  it('lets only the widget renderer toggle its mouse interactivity', async () => {
+  it('lets only the trusted widget renderer set presentation', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
     const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    const setMouseInteractive = vi.fn()
+    const setPresentation = vi.fn()
     registerIpc(harness.ipc, {
       settings: harness.settings,
       history: harness.history,
@@ -2666,31 +2681,77 @@ describe('widget interactivity channel', () => {
         { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive, reportDrag: vi.fn() },
+      widget: { setPresentation, reportDrag: vi.fn() },
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+      harness.ipc.invoke(WIDGET_PRESENTATION, 'idle-resting', {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
     ).resolves.toEqual({ ok: true })
-    expect(setMouseInteractive).toHaveBeenCalledWith(true)
+    expect(setPresentation).toHaveBeenCalledWith('idle-resting')
 
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, false, {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).resolves.toEqual({ ok: true })
-    expect(setMouseInteractive).toHaveBeenLastCalledWith(false)
-
-    await expect(harness.ipc.invoke(WIDGET_INTERACTIVITY, true)).rejects.toMatchObject({
-      code: 'UNAUTHORIZED_IPC_SENDER',
-    })
+      harness.ipc.invoke(WIDGET_PRESENTATION, 'active'),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
+    expect(setPresentation).toHaveBeenCalledOnce()
   })
 
-  it('rejects non-boolean interactivity payloads', async () => {
+  it('accepts idle-resting idle-hovered and active', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag: vi.fn() },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const presentation of ['idle-resting', 'idle-hovered', 'active'] as const) {
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, presentation, widgetEvent),
+      ).resolves.toEqual({ ok: true })
+      expect(setPresentation).toHaveBeenLastCalledWith(presentation)
+    }
+    expect(setPresentation).toHaveBeenCalledTimes(3)
+  })
+
+  it('rejects unknown non-string and object presentation payloads', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag: vi.fn() },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const payload of ['idle-expanded', 42, { presentation: 'active' }]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    expect(setPresentation).not.toHaveBeenCalled()
+  })
+
+  it('reports unavailable when no widget coordinator is registered', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
     const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
@@ -2703,34 +2764,10 @@ describe('widget interactivity channel', () => {
       trustedSenders: () => [
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag: vi.fn() },
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, 'yes', {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
-  })
-
-  it('reports unavailable when no widget interactivity dependency is registered', async () => {
-    const harness = createIpcHarness()
-    harness.cleanup()
-    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    registerIpc(harness.ipc, {
-      settings: harness.settings,
-      history: harness.history,
-      startup: harness.startup,
-      hotkeys: harness.hotkeys,
-      app: harness.app,
-      trustedSenders: () => [
-        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
-      ],
-    })
-
-    await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+      harness.ipc.invoke(WIDGET_PRESENTATION, 'idle-resting', {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
@@ -2752,7 +2789,7 @@ describe('widget interactivity channel', () => {
         { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag },
+      widget: { setPresentation: vi.fn(), reportDrag },
     })
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
@@ -2789,7 +2826,7 @@ describe('widget interactivity channel', () => {
       trustedSenders: () => [
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag },
+      widget: { setPresentation: vi.fn(), reportDrag },
     })
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
