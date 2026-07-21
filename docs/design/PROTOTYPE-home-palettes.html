@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway palette comparison for the Home redesign. Not production code.
+     Question it answers: which color direction replaces indigo-on-cream?
+     Four candidates × dark/light, rendered on the agreed stats-forward Home layout. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>TalkType — palette prototypes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #1c1d20;
+    color: #e8e8ea;
+    padding: 40px 24px 80px;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #9a9ba2; margin-bottom: 36px; font-size: 14px; }
+  .palette-section { margin-bottom: 56px; }
+  .palette-section > h2 {
+    font-size: 17px; margin-bottom: 4px;
+  }
+  .palette-section > p {
+    color: #9a9ba2; font-size: 13px; margin-bottom: 16px;
+  }
+  .pair { display: flex; gap: 24px; flex-wrap: wrap; }
+  .mock-wrap { flex: 1 1 480px; max-width: 620px; }
+  .mock-label {
+    font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    color: #9a9ba2; margin-bottom: 8px;
+  }
+
+  /* ---------- the window mock (uses vars set per palette) ---------- */
+  .win {
+    background: var(--canvas);
+    color: var(--text);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+    font-size: 13px;
+    border: 1px solid rgb(0 0 0 / 25%);
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--titlebar);
+    color: var(--titlebar-text);
+    font-weight: 600; font-size: 12.5px;
+  }
+  .titlebar .logo {
+    width: 20px; height: 20px; border-radius: 6px;
+    background: var(--accent); color: var(--accent-contrast);
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+  }
+  .titlebar .win-btns { margin-left: auto; display: flex; gap: 14px; opacity: 0.7; font-size: 11px; }
+  .body { display: flex; min-height: 330px; }
+  .sidebar {
+    width: 150px; padding: 14px 10px 12px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .nav-item {
+    padding: 7px 10px; border-radius: 8px; color: var(--text-muted);
+    font-weight: 500; font-size: 12.5px;
+  }
+  .nav-item.active {
+    background: var(--nav-active-bg); color: var(--nav-active-text); font-weight: 600;
+  }
+  .sidebar .status {
+    margin-top: auto; font-size: 10.5px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 6px; padding: 0 4px;
+  }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--state-ready); flex: none; }
+  .main { flex: 1; padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* stats row */
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px 8px;
+  }
+  .tile .k { font-size: 9.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+  .tile .v { font-size: 21px; font-weight: 700; margin: 2px 0 4px; letter-spacing: -0.3px; }
+  .tile .spark { display: block; width: 100%; height: 22px; }
+  .tile .note { font-size: 10px; color: var(--text-muted); }
+
+  /* dictation bar */
+  .dict {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px;
+  }
+  .dict .mic {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    background: var(--mic-bg); color: var(--accent);
+    display: grid; place-items: center; font-size: 14px;
+  }
+  .dict .label { font-weight: 600; font-size: 13.5px; }
+  .dict .sublabel { font-size: 11px; color: var(--text-muted); }
+  .dict .cta {
+    margin-left: auto;
+    background: var(--accent); color: var(--accent-contrast);
+    border-radius: 999px; padding: 8px 16px; font-weight: 600; font-size: 12.5px;
+  }
+  .keys { display: flex; gap: 4px; align-items: center; color: var(--text-muted); font-size: 10px; }
+  .key {
+    border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px;
+    font-size: 10px; font-weight: 600; color: var(--text);
+    background: var(--surface);
+  }
+
+  /* recents */
+  .recents { flex: 1; }
+  .recents .head { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
+  .recents .item {
+    padding: 7px 2px; border-bottom: 1px solid var(--border-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text); font-size: 12.5px;
+  }
+  .recents .item:last-of-type { border-bottom: none; }
+  .recents .more { text-align: right; font-weight: 600; color: var(--accent-text); font-size: 12px; padding-top: 6px; }
+
+  /* ============ PALETTES ============ */
+
+  /* 1 — Deep navy, dark-first */
+  .navy-dark {
+    --canvas: #0B1424; --sidebar: #0E1930; --surface: #13223D; --titlebar: #0E1930;
+    --titlebar-text: #EAF1FB; --text: #EAF1FB; --text-muted: #8FA3C4;
+    --border: #24385C; --border-faint: #1B2C4B;
+    --accent: #2FE0A8; --accent-contrast: #04241A; --accent-text: #4CE7B6;
+    --mic-bg: #16324C; --nav-active-bg: #1A2C4E; --nav-active-text: #EAF1FB;
+    --state-ready: #2FE0A8; --radius: 12px;
+  }
+  .navy-light {
+    --canvas: #EFF3FA; --sidebar: #E6ECF7; --surface: #FFFFFF; --titlebar: #14243F;
+    --titlebar-text: #EAF1FB; --text: #14243F; --text-muted: #54678C;
+    --border: #C6D2E6; --border-faint: #E2E8F4;
+    --accent: #0C8F6C; --accent-contrast: #FFFFFF; --accent-text: #0C8F6C;
+    --mic-bg: #DCEDE6; --nav-active-bg: #D8E2F3; --nav-active-text: #14243F;
+    --state-ready: #0C8F6C; --radius: 12px;
+  }
+
+  /* 2 — Graphite + teal */
+  .graphite-dark {
+    --canvas: #141619; --sidebar: #17191D; --surface: #1D2025; --titlebar: #17191D;
+    --titlebar-text: #F2F3F5; --text: #F2F3F5; --text-muted: #A2A9B4;
+    --border: #30343B; --border-faint: #26292F;
+    --accent: #3FC6D1; --accent-contrast: #0A2528; --accent-text: #55CFD9;
+    --mic-bg: #23343A; --nav-active-bg: #262A31; --nav-active-text: #F2F3F5;
+    --state-ready: #3FC6D1; --radius: 12px;
+  }
+  .graphite-light {
+    --canvas: #F4F5F6; --sidebar: #EDEEF0; --surface: #FFFFFF; --titlebar: #FFFFFF;
+    --titlebar-text: #1B1E23; --text: #1B1E23; --text-muted: #5C636E;
+    --border: #D6D9DE; --border-faint: #E8EAED;
+    --accent: #0E8A94; --accent-contrast: #FFFFFF; --accent-text: #0E8A94;
+    --mic-bg: #DFF0F2; --nav-active-bg: #E2E4E8; --nav-active-text: #1B1E23;
+    --state-ready: #0E8A94; --radius: 12px;
+  }
+
+  /* 3 — Warm slate + amber */
+  .warm-dark {
+    --canvas: #1B1917; --sidebar: #201D1B; --surface: #262321; --titlebar: #201D1B;
+    --titlebar-text: #F4F1ED; --text: #F4F1ED; --text-muted: #ABA29A;
+    --border: #3B3733; --border-faint: #2E2B28;
+    --accent: #F0A03C; --accent-contrast: #2A1B04; --accent-text: #F3AF58;
+    --mic-bg: #3A3126; --nav-active-bg: #2E2A27; --nav-active-text: #F4F1ED;
+    --state-ready: #E5924F; --radius: 12px;
+  }
+  .warm-light {
+    --canvas: #F6F4F0; --sidebar: #F0EDE8; --surface: #FFFEFC; --titlebar: #FFFEFC;
+    --titlebar-text: #262220; --text: #262220; --text-muted: #6E6660;
+    --border: #DDD7CF; --border-faint: #ECE8E2;
+    --accent: #C2610A; --accent-contrast: #FFFFFF; --accent-text: #B25605;
+    --mic-bg: #F6E7D4; --nav-active-bg: #E8E2DA; --nav-active-text: #262220;
+    --state-ready: #C2610A; --radius: 12px;
+  }
+
+  /* 4 — Mono + green signal */
+  .mono-dark {
+    --canvas: #101010; --sidebar: #141414; --surface: #1A1A1A; --titlebar: #141414;
+    --titlebar-text: #F5F5F5; --text: #F5F5F5; --text-muted: #8F8F8F;
+    --border: #2E2E2E; --border-faint: #222222;
+    --accent: #F5F5F5; --accent-contrast: #111111; --accent-text: #F5F5F5;
+    --mic-bg: #242424; --nav-active-bg: #232323; --nav-active-text: #F5F5F5;
+    --state-ready: #3DDC84; --radius: 8px;
+  }
+  .mono-light {
+    --canvas: #FAFAFA; --sidebar: #F3F3F3; --surface: #FFFFFF; --titlebar: #FFFFFF;
+    --titlebar-text: #111111; --text: #111111; --text-muted: #666666;
+    --border: #DEDEDE; --border-faint: #ECECEC;
+    --accent: #161616; --accent-contrast: #FFFFFF; --accent-text: #161616;
+    --mic-bg: #EFEFEF; --nav-active-bg: #E7E7E7; --nav-active-text: #111111;
+    --state-ready: #16A34A; --radius: 8px;
+  }
+
+  /* sparkline colors follow the palette */
+  .spark polyline { stroke: var(--accent-text); }
+  .mono-dark .spark polyline, .mono-light .spark polyline { stroke: var(--state-ready); }
+  .spark polygon { fill: var(--accent-text); opacity: 0.12; }
+  .mono-dark .spark polygon, .mono-light .spark polygon { fill: var(--state-ready); opacity: 0.12; }
+</style>
+</head>
+<body>
+  <h1>TalkType — Home palette prototypes</h1>
+  <p class="sub">Agreed layout (stats row → dictation bar → recents), rendered in four candidate palettes. Each shown dark + light.</p>
+
+  <template id="mock">
+    <div class="win">
+      <div class="titlebar">
+        <div class="logo">T</div> TalkType
+        <div class="win-btns"><span>—</span><span>✕</span></div>
+      </div>
+      <div class="body">
+        <div class="sidebar">
+          <div class="nav-item active">Home</div>
+          <div class="nav-item">History</div>
+          <div class="nav-item">Settings</div>
+          <div class="nav-item">Help</div>
+          <div class="status"><span class="dot"></span> Ready · Local &amp; private</div>
+        </div>
+        <div class="main">
+          <div class="stats">
+            <div class="tile">
+              <div class="k">Words</div>
+              <div class="v">12,480</div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <polygon points="0,24 0,16 14,12 28,18 42,8 56,13 70,4 84,9 100,6 100,24" />
+                <polyline points="0,16 14,12 28,18 42,8 56,13 70,4 84,9 100,6" fill="none" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="tile">
+              <div class="k">Avg WPM</div>
+              <div class="v">92</div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <polygon points="0,24 0,14 14,15 28,10 42,13 56,7 70,10 84,5 100,7 100,24" />
+                <polyline points="0,14 14,15 28,10 42,13 56,7 70,10 84,5 100,7" fill="none" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="tile">
+              <div class="k">Sessions</div>
+              <div class="v">41</div>
+              <div class="note">this week</div>
+            </div>
+          </div>
+          <div class="dict">
+            <div class="mic">🎙</div>
+            <div>
+              <div class="label">Ready when you are</div>
+              <div class="sublabel">Start here or use your shortcut anywhere</div>
+            </div>
+            <div class="cta">Start dictation</div>
+            <div class="keys"><span class="key">Ctrl</span>+<span class="key">Shift</span>+<span class="key">Space</span></div>
+          </div>
+          <div class="recents">
+            <div class="head">Recent</div>
+            <div class="item">Draft the launch summary and send it to the product team before the standup…</div>
+            <div class="item">Remember to confirm the accessibility review and install the updated…</div>
+            <div class="item">The microphone notes stay local and the final transcript is inserted…</div>
+            <div class="more">View all →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <div id="sections"></div>
+
+  <script>
+    const palettes = [
+      { title: '1 · Deep navy, dark-first', desc: 'Deep blue-black surfaces, electric mint accent. Light theme derived from the navy ink.', dark: 'navy-dark', light: 'navy-light' },
+      { title: '2 · Graphite + teal', desc: 'True grays, no warm tint, one restrained teal accent. Calm and tool-like.', dark: 'graphite-dark', light: 'graphite-light' },
+      { title: '3 · Warm slate + amber', desc: 'Soft warm grays with an amber accent. Friendlier, clearly not-corporate.', dark: 'warm-dark', light: 'warm-light' },
+      { title: '4 · Mono + green signal', desc: 'No color except state: green means ready/recording. Severe, minimal, pro-tool.', dark: 'mono-dark', light: 'mono-light' },
+    ];
+    const tpl = document.getElementById('mock');
+    const root = document.getElementById('sections');
+    for (const p of palettes) {
+      const section = document.createElement('section');
+      section.className = 'palette-section';
+      section.innerHTML = `<h2>${p.title}</h2><p>${p.desc}</p>`;
+      const pair = document.createElement('div');
+      pair.className = 'pair';
+      for (const mode of ['dark', 'light']) {
+        const wrap = document.createElement('div');
+        wrap.className = 'mock-wrap';
+        wrap.innerHTML = `<div class="mock-label">${mode}</div>`;
+        const mock = tpl.content.cloneNode(true);
+        mock.querySelector('.win').classList.add(p[mode]);
+        wrap.appendChild(mock);
+        pair.appendChild(wrap);
+      }
+      section.appendChild(pair);
+      root.appendChild(section);
+    }
+  </script>
+</body>
+</html>
