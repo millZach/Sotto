@@ -1,6 +1,6 @@
 {
   "name": "talktype",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Offline-first Windows dictation",
   "author": "TalkType",
   "private": true,
@@ -20,7 +20,7 @@
     "model:verify": "node scripts/verify-model.mjs",
     "notices:verify": "node scripts/verify-notices.mjs",
     "package:dir": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 && node scripts/verify-packaged-resources.mjs release/win-unpacked",
-    "package:win": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/TalkType Setup 0.1.0.exe\""
+    "package:win": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/TalkType Setup 1.0.0.exe\""
   },
   "license": "UNLICENSED",
   "type": "commonjs",
