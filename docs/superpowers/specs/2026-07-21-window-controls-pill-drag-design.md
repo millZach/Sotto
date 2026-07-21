@@ -69,7 +69,7 @@ type WidgetPlacement = {
 }
 ```
 
-A drag ending anywhere on a monitor chooses the nearest edge. Ties keep the existing deterministic priority unless tests establish a more intuitive ordering. Placement resolution always centers the widget along that edge:
+A drag ending anywhere on a monitor chooses the nearest edge. Equal distances use the existing deterministic priority: bottom, top, left, then right. Placement resolution always centers the widget along that edge:
 
 - top/bottom: centered horizontally;
 - left/right: centered vertically; and
@@ -79,13 +79,13 @@ The fixed inset is measured from Electron's work area, so taskbars and reserved 
 
 ### Storage migration
 
-The placement repository will write a new edge-only record version. Existing version-two `{ edge, offset }` records retain `edge` and discard `offset`. Legacy raw coordinate records resolve to their nearest edge on the referenced display and then center on that edge. Invalid records fall back to the default bottom edge.
+The placement repository will write a version-three edge-only record. Existing version-two `{ edge, offset }` records retain `edge` and discard `offset`. Legacy raw coordinate records resolve to their nearest edge on the referenced display and then center on that edge. Invalid records fall back to the default bottom edge.
 
 No display identifier is persisted because the pill follows the cursor's current monitor rather than a preferred monitor.
 
 ### Cursor-monitor following
 
-The main process will periodically compare the display containing `screen.getCursorScreenPoint()` with the display used for the pill's last resolved bounds. Electron does not expose a global cursor-monitor-change event, so a lightweight check is required while the widget is visible.
+Every 100 milliseconds while the widget is visible, the main process will compare the display containing `screen.getCursorScreenPoint()` with the display used for the pill's last resolved bounds. Electron does not expose a global cursor-monitor-change event, so this lightweight check provides a bounded monitor-switch latency without issuing native window operations for ordinary movement within one display.
 
 The check will:
 
@@ -107,7 +107,7 @@ The idle widget will no longer rely on this sequence:
 2. receive a forwarded renderer hover event; and
 3. asynchronously ask the main process to make the window interactive.
 
-Instead, the native widget bounds will follow the actual interactive presentation, with only the minimum transparent clearance required for the intended shadow. Presentation modes are:
+Instead, the native widget bounds will follow the actual interactive presentation. Each mode's bounds include its visible surface and shadow envelope but no additional transparent canvas, and the visible window remains mouse-interactive. Presentation modes are:
 
 - resting idle sliver;
 - hovered idle pill;
@@ -141,12 +141,13 @@ The renderer owns gesture classification only:
 
 1. accept the primary-button pointer down on the sliver or capsule;
 2. attempt pointer capture;
-3. classify movement beyond the existing threshold as a drag;
-4. emit one drag start;
-5. coalesce move notifications to at most one per animation frame; and
-6. emit one terminal drag notification.
+3. install temporary window-level pointer-move and pointer-up fallbacks for the active pointer so dragging remains observable if capture is unavailable;
+4. classify movement beyond the existing threshold as a drag;
+5. emit one drag start;
+6. coalesce move notifications to at most one per animation frame; and
+7. emit one terminal drag notification.
 
-Buttons within the capsule continue stopping pointer propagation so stop and cancel actions cannot begin a drag.
+The temporary window listeners are removed by the same terminal cleanup path regardless of how the gesture ends. Buttons within the capsule continue stopping pointer propagation so stop and cancel actions cannot begin a drag.
 
 A single idempotent finish path handles:
 
@@ -212,6 +213,7 @@ Using fake displays and controlled timers:
 ### Drag tests
 
 - Normal pointer-up ends and snaps a drag.
+- Window-level fallback movement and pointer-up continue a gesture when pointer capture is unavailable.
 - Pointer cancellation, lost pointer capture, blur, visibility loss, and unmount each end active drag ownership exactly once.
 - A final queued movement is processed before snapping.
 - High-frequency pointer moves are coalesced to one native move per animation frame.
@@ -240,7 +242,7 @@ Manual Windows verification will cover:
 - The main application never shows both native and custom window controls.
 - Loading, unavailable, onboarding, and normal screens remain movable, minimizable, and close-to-tray capable.
 - A drag always resolves to the centered top, bottom, left, or right edge with a 16 DIP inset.
-- Moving the cursor to another monitor moves the visible pill to the same edge on that monitor without requiring a new dictation session.
+- Moving the cursor to another monitor moves the visible pill to the same edge on that monitor within 200 milliseconds and without requiring a new dictation session.
 - The pill follows the cursor's monitor in every widget state except during an active drag.
 - Lost pointer capture or renderer lifecycle changes cannot leave the pill stuck in drag mode.
 - The first press on the visible idle pill does not pass through because of asynchronous interactivity arming.
