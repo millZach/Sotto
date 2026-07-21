@@ -9,7 +9,7 @@
   --widget-surface-bottom: var(--tt-surface);
   --widget-rim: rgb(255 255 255 / 75%);
   --widget-edge: rgb(38 34 32 / 22%);
-  --widget-shadow: 0 6px 16px rgb(38 34 32 / 28%);
+  --widget-shadow: 0 4px 11px rgb(38 34 32 / 28%);
   --widget-shadow-soft: 0 2px 6px rgb(38 34 32 / 24%);
 }
 
@@ -19,7 +19,7 @@
     --widget-surface-bottom: var(--tt-surface-sunken);
     --widget-rim: rgb(255 255 255 / 28%);
     --widget-edge: rgb(0 0 0 / 55%);
-    --widget-shadow: 0 6px 16px rgb(0 0 0 / 55%);
+    --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
     --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
   }
 }
@@ -29,7 +29,7 @@
   --widget-surface-bottom: var(--tt-surface-sunken);
   --widget-rim: rgb(255 255 255 / 28%);
   --widget-edge: rgb(0 0 0 / 55%);
-  --widget-shadow: 0 6px 16px rgb(0 0 0 / 55%);
+  --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
   --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
 }
 
@@ -162,7 +162,7 @@ button {
 .widget-capsule {
   position: relative;
   display: flex;
-  width: 200px;
+  width: 212px;
   height: 40px;
   align-items: center;
   gap: 8px;
