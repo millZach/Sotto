@@ -220,16 +220,9 @@ export function createTranscriptionRuntime(
       }
     }
 
-    if (request.inferencePreference === 'auto' && (await options.probeWebGpu())) {
-      try {
-        return { pipeline: await loadPipeline(request, 'webgpu'), device: 'webgpu' }
-      } catch {
-        // The client retries WASM in a fresh worker because failed ORT WebGPU
-        // initialization can poison this worker's global initialization promise.
-        throw new RuntimeFailure('WEBGPU_FAILED')
-      }
-    }
-
+    // 'auto' resolves to WASM: the packaged runtime ships no ORT jsep build,
+    // and measured q8 WebGPU inference is slower than WASM on integrated GPUs
+    // (docs/perf/2026-07-20-dictation-latency.md).
     try {
       return { pipeline: await loadPipeline(request, 'wasm'), device: 'wasm' }
     } catch (error) {
@@ -294,17 +287,7 @@ export function createTranscriptionRuntime(
       }
     }
 
-    if (request.inferencePreference === 'auto' && (await options.probeWebGpu())) {
-      try {
-        return await runOnDevice(request, 'webgpu')
-      } catch {
-        if (isCancelled(request.requestId)) throw new RuntimeFailure('CANCELLED')
-        // The client retries WASM in a fresh worker because failed ORT WebGPU
-        // initialization can poison this worker's global initialization promise.
-        throw new RuntimeFailure('WEBGPU_FAILED')
-      }
-    }
-
+    // 'auto' resolves to WASM — see loadForPreference.
     try {
       return await runOnDevice(request, 'wasm')
     } catch (error) {

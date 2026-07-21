@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TalkType inference bench</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "onnxruntime-web": "/ort/ort.bundle.min.mjs",
+          "onnxruntime-web/webgpu": "/ort/ort.webgpu.bundle.min.mjs",
+          "onnxruntime-web/wasm": "/ort/ort.wasm.bundle.min.mjs",
+          "onnxruntime-web/all": "/ort/ort.all.bundle.min.mjs",
+          "onnxruntime-web/jspi": "/ort/ort.jspi.bundle.min.mjs",
+          "onnxruntime-common": "/ortcommon/index.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      // Mirrors src/renderer/src/transcription/worker.ts + environment.ts config.
+      import { env, pipeline } from '/dist/transformers.web.js'
+
+      function parseWav(buffer) {
+        const view = new DataView(buffer)
+        // Minimal RIFF parse: find 'data' chunk; fixture is 16 kHz mono PCM16.
+        let offset = 12
+        let dataOffset = -1
+        let dataLength = 0
+        let sampleRate = 16000
+        let bitsPerSample = 16
+        while (offset + 8 <= view.byteLength) {
+          const id = String.fromCharCode(
+            view.getUint8(offset), view.getUint8(offset + 1),
+            view.getUint8(offset + 2), view.getUint8(offset + 3),
+          )
+          const size = view.getUint32(offset + 4, true)
+          if (id === 'fmt ') {
+            sampleRate = view.getUint32(offset + 12, true)
+            bitsPerSample = view.getUint16(offset + 22, true)
+          }
+          if (id === 'data') { dataOffset = offset + 8; dataLength = size; break }
+          offset += 8 + size + (size % 2)
+        }
+        if (dataOffset < 0) throw new Error('no data chunk')
+        if (bitsPerSample !== 16) throw new Error('expected PCM16')
+        const frames = dataLength / 2
+        const samples = new Float32Array(frames)
+        for (let i = 0; i < frames; i++) {
+          samples[i] = view.getInt16(dataOffset + i * 2, true) / 32768
+        }
+        return { samples, sampleRate }
+      }
+
+      window.runBench = async ({ device, clips, runs, threadsOverride, model, remote }) => {
+        const t = (label, ms, extra = '') =>
+          console.log(`[bench] ${label}: ${Math.round(ms)} ms ${extra}`)
+
+        const info = {
+          device,
+          crossOriginIsolated: self.crossOriginIsolated,
+          hardwareConcurrency: navigator.hardwareConcurrency,
+          webgpuAdapter: null,
+        }
+        if (navigator.gpu) {
+          try {
+            const adapter = await navigator.gpu.requestAdapter()
+            info.webgpuAdapter = adapter ? (adapter.info?.description || adapter.info?.vendor || 'present') : null
+          } catch { info.webgpuAdapter = null }
+        }
+
+        // environment.ts: min(4, hardwareConcurrency - 1)
+        const threads =
+          threadsOverride ?? Math.min(4, Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1))
+        env.allowRemoteModels = remote === true
+        env.allowLocalModels = remote !== true
+        env.localModelPath = '/models/'
+        env.useFS = false
+        env.useBrowserCache = false
+        env.useFSCache = false
+        env.useCustomCache = false
+        env.backends.onnx.wasm.wasmPaths = '/runtime/'
+        env.backends.onnx.wasm.numThreads = threads
+        info.threads = threads
+
+        const loadStart = performance.now()
+        const pipe = await pipeline('automatic-speech-recognition', model ?? 'Xenova/whisper-base', {
+          dtype: 'q8',
+          device,
+          local_files_only: remote !== true,
+          session_options: { graphOptimizationLevel: 'basic' },
+        })
+        const loadMs = performance.now() - loadStart
+        t('pipeline load', loadMs, `(device=${device}, threads=${threads})`)
+
+        const results = { info, loadMs, clips: {} }
+        for (const clip of clips) {
+          const wavBuffer = await (await fetch(`/bench/speech-${clip}.wav`)).arrayBuffer()
+          const { samples, sampleRate } = parseWav(wavBuffer)
+          const audioSeconds = samples.length / sampleRate
+          const timings = []
+          let text = ''
+          for (let i = 0; i < runs; i++) {
+            const start = performance.now()
+            const isMoonshine = (model ?? '').toLowerCase().includes('moonshine')
+            const output = isMoonshine
+              ? await pipe(samples)
+              : await pipe(samples, { task: 'transcribe', language: 'en' })
+            const ms = performance.now() - start
+            timings.push(Math.round(ms))
+            text = typeof output === 'string' ? output : output.text
+            t(`transcribe ${clip} run${i + 1}`, ms, `(audio ${audioSeconds.toFixed(1)}s)`)
+          }
+          results.clips[clip] = { audioSeconds: Number(audioSeconds.toFixed(2)), timings, text: text.trim() }
+        }
+        return results
+      }
+    </script>
+  </body>
+</html>

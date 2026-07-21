@@ -150,7 +150,7 @@ describe('local transcription worker runtime', () => {
       probeWebGpu: async () => true,
     })
 
-    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'auto' }))
+    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'webgpu' }))
 
     expect(createPipeline).toHaveBeenCalledTimes(1)
     expect(createPipeline).toHaveBeenCalledWith(
@@ -167,6 +167,39 @@ describe('local transcription worker runtime', () => {
       message: 'WebGPU transcription is unavailable.',
     })
     expect(JSON.stringify(responses)).not.toContain('private path')
+  })
+
+  it('uses WASM directly for auto even when a WebGPU adapter is present', async () => {
+    // The packaged runtime cannot initialize ORT WebGPU (no jsep build), and
+    // measured WebGPU inference is slower than WASM on integrated GPUs, so
+    // 'auto' must not pay a doomed WebGPU load + worker restart.
+    const createPipelineMock = vi.fn<PipelineFactory>(async () =>
+      vi.fn(async () => ({ text: 'wasm result' })),
+    )
+    const responses: unknown[] = []
+    const probeWebGpu = vi.fn(async () => true)
+    const runtime = createTranscriptionRuntime({
+      createPipeline: createPipelineMock,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu,
+    })
+
+    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'auto' }))
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-auto',
+      preset: 'balanced',
+      inferencePreference: 'auto',
+    })
+
+    expect(createPipelineMock).toHaveBeenCalledTimes(1)
+    expect(createPipelineMock.mock.calls[0]?.[2].device).toBe('wasm')
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'result', requestId: 'request-1', text: 'wasm result' }),
+    )
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-auto', device: 'wasm' }),
+    )
   })
 
   it('uses WASM directly for auto without navigator.gpu and rejects explicit WebGPU safely', async () => {
