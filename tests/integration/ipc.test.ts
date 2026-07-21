@@ -286,7 +286,7 @@ describe('typed preload bridge', () => {
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
     const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
-      ['onWidgetState', 'requestCancel', 'requestStop', 'setMouseInteractive'].sort(),
+      ['onWidgetState', 'requestCancel', 'requestStop', 'requestToggle', 'setMouseInteractive'].sort(),
     )
     expect(bridge).not.toHaveProperty('getSettings')
     expect(bridge).not.toHaveProperty('listHistory')
@@ -297,8 +297,10 @@ describe('typed preload bridge', () => {
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
     await bridge.requestStop()
     await bridge.requestCancel()
+    await bridge.requestToggle()
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       1,
       DICTATION_REQUEST,
@@ -308,6 +310,11 @@ describe('typed preload bridge', () => {
       2,
       DICTATION_REQUEST,
       { type: 'cancel' },
+    )
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      3,
+      DICTATION_REQUEST,
+      { type: 'toggle' },
     )
   })
 
@@ -637,7 +644,7 @@ describe('IPC validation and lifecycle', () => {
     expect(install).toHaveBeenCalledOnce()
   })
 
-  it.each(['cancel', 'stop'] as const)(
+  it.each(['cancel', 'stop', 'toggle'] as const)(
     'allows a widget renderer to request the least-privilege %s command',
     async (type) => {
       const harness = createIpcHarness()
@@ -673,7 +680,7 @@ describe('IPC validation and lifecycle', () => {
     },
   )
 
-  it.each(['start', 'toggle'] as const)(
+  it.each(['start'] as const)(
     'denies a widget renderer the privileged %s command',
     async (type) => {
       const harness = createIpcHarness()
@@ -2165,6 +2172,37 @@ describe('NativeRuntimeController', () => {
     const concealed = vi.fn(async () => undefined)
     await createRuntime(false, concealed).start()
     expect(concealed).not.toHaveBeenCalled()
+  })
+
+  it('keeps the widget hidden at startup when the idle-visibility setting is off', async () => {
+    const showWidget = vi.fn(async () => undefined)
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        showWidget,
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: {
+        get: async () => ({
+          ...DEFAULT_SETTINGS,
+          onboardingComplete: true,
+          showWidgetWhenIdle: false,
+        }),
+      },
+      installPermissions: () => vi.fn(),
+      registerIpc: () => vi.fn(),
+      log: vi.fn(),
+    })
+
+    await runtime.start()
+
+    expect(showWidget).not.toHaveBeenCalled()
+    runtime.dispose()
   })
 
   it('starts native services from validated settings and releases only owned resources once', async () => {

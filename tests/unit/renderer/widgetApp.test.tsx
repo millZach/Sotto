@@ -42,6 +42,7 @@ describe('WidgetApp', () => {
     )
     expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
+    expect(screen.getByText('Click to dictate')).toBeInTheDocument()
 
     rerender(
       <WidgetApp
@@ -276,6 +277,49 @@ describe('WidgetApp', () => {
     expect(processingCopy).not.toHaveAttribute('aria-live')
   })
 
+  it('starts dictation from a non-focusing click on the idle sliver', () => {
+    const onToggle = vi.fn()
+    render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    expect(sliver).toHaveAttribute('tabindex', '-1')
+    expect(fireEvent.mouseDown(sliver)).toBe(false)
+    fireEvent.click(sliver)
+    expect(onToggle).toHaveBeenCalledOnce()
+  })
+
+  it('stops the session from a capsule click without double-firing through action buttons', () => {
+    const onToggle = vi.fn()
+    const onStop = vi.fn()
+    const onCancel = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'click', startedAt: 0, level: 0.4,
+          cancellable: true,
+        })}
+        now={1_000}
+        onToggle={onToggle}
+        onStop={onStop}
+        onCancel={onCancel}
+      />,
+    )
+
+    const capsule = container.querySelector('.widget-capsule')
+    expect(capsule).not.toBeNull()
+    expect(fireEvent.mouseDown(capsule!)).toBe(false)
+    fireEvent.click(capsule!)
+    expect(onToggle).toHaveBeenCalledOnce()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onToggle).toHaveBeenCalledOnce()
+  })
+
   it('never exposes Electron accelerator vocabulary in the resting hint', () => {
     render(
       <WidgetApp
@@ -300,6 +344,7 @@ describe('WidgetEntry', () => {
         listener = next
         return unsubscribe
       }),
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
@@ -316,8 +361,35 @@ describe('WidgetEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
     expect(bridge.requestStop).toHaveBeenCalledOnce()
     expect(bridge.requestCancel).toHaveBeenCalledOnce()
+    expect(bridge.requestToggle).not.toHaveBeenCalled()
     view.unmount()
     expect(unsubscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('routes idle sliver clicks and capsule clicks through the toggle command', () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+    }
+    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+
+    act(() => listener?.(snapshot({ status: 'idle' })))
+    fireEvent.click(screen.getByTestId('widget-sliver'))
+    expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
+
+    act(() => listener?.(snapshot({
+      status: 'listening', sessionId: 'click', startedAt: Date.now(), level: 0.4,
+      cancellable: true,
+    })))
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(bridge.requestToggle).toHaveBeenCalledTimes(2)
   })
 
   it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
@@ -346,6 +418,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
@@ -418,6 +491,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
@@ -437,6 +511,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => undefined
       },
+      requestToggle: vi.fn(async () => Promise.reject(new Error('private toggle failure'))),
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),

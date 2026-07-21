@@ -26,6 +26,7 @@ const customSettings = {
   successDisplayMs: 5_000,
   launchAtStartup: true,
   startMinimized: true,
+  showWidgetWhenIdle: false,
   historyEnabled: false,
   historyRetention: 'unlimited',
   onboardingComplete: true,
@@ -52,10 +53,17 @@ describe('settings', () => {
       successDisplayMs: 1_400,
       launchAtStartup: false,
       startMinimized: false,
+      showWidgetWhenIdle: true,
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
     })
+  })
+
+  it('defaults the widget idle visibility on and recovers invalid values to on', () => {
+    expect(parseSettings({}).showWidgetWhenIdle).toBe(true)
+    expect(parseSettings({ showWidgetWhenIdle: false }).showWidgetWhenIdle).toBe(false)
+    expect(parseSettings({ showWidgetWhenIdle: 'sometimes' }).showWidgetWhenIdle).toBe(true)
   })
 
   it('recovers invalid fields without discarding valid fields', () => {

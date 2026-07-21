@@ -1,4 +1,37 @@
 @import '../styles/tokens.css';
+@import '../styles/fonts.css';
+
+/* Widget-local presentation tokens: a light contrast rim plus a soft shadow
+   separate the floating pill from any desktop background in both themes. */
+:root,
+:root[data-theme='light'] {
+  --widget-surface-top: var(--tt-surface-elevated);
+  --widget-surface-bottom: var(--tt-surface);
+  --widget-rim: rgb(255 255 255 / 75%);
+  --widget-edge: rgb(38 34 32 / 22%);
+  --widget-shadow: 0 6px 16px rgb(38 34 32 / 28%);
+  --widget-shadow-soft: 0 2px 6px rgb(38 34 32 / 24%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --widget-surface-top: var(--tt-surface-elevated);
+    --widget-surface-bottom: var(--tt-surface-sunken);
+    --widget-rim: rgb(255 255 255 / 28%);
+    --widget-edge: rgb(0 0 0 / 55%);
+    --widget-shadow: 0 6px 16px rgb(0 0 0 / 55%);
+    --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
+  }
+}
+
+:root[data-theme='dark'] {
+  --widget-surface-top: var(--tt-surface-elevated);
+  --widget-surface-bottom: var(--tt-surface-sunken);
+  --widget-rim: rgb(255 255 255 / 28%);
+  --widget-edge: rgb(0 0 0 / 55%);
+  --widget-shadow: 0 6px 16px rgb(0 0 0 / 55%);
+  --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
+}
 
 *,
 *::before,
@@ -18,10 +51,10 @@ body,
 
 body,
 button {
-  color: #e8eaed;
+  color: var(--tt-text);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    'Manrope', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
 }
 
 button {
@@ -56,26 +89,34 @@ button {
 
 /* ---- resting sliver ---- */
 
+/* The idle sliver is a click-to-dictate control, so it is deliberately not a
+   drag region; reposition the widget by dragging the active capsule. */
 .widget-sliver {
   position: relative;
   display: flex;
   width: 88px;
   height: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--widget-edge);
   border-radius: 3px;
-  background: linear-gradient(180deg, rgba(44, 48, 55, 0.95), rgba(15, 17, 20, 0.95));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(
+    180deg,
+    var(--widget-surface-top),
+    var(--widget-surface-bottom)
+  );
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft);
   opacity: 0.72;
+  cursor: pointer;
   transition: opacity 0.18s ease, box-shadow 0.18s ease;
-  -webkit-app-region: drag;
-  app-region: drag;
 }
 
 .widget-sliver:hover {
   opacity: 1;
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.5),
-    0 0 0 1px color-mix(in srgb, var(--tt-primary) 30%, transparent);
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft),
+    0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
 }
 
 .widget-sliver__hint {
@@ -83,17 +124,31 @@ button {
   bottom: calc(100% + 9px);
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--widget-edge);
   border-radius: 6px;
-  background: #181b20;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-  color: #9aa0a6;
+  background: var(--widget-surface-top);
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft);
+  color: var(--tt-text-muted);
   font-size: 11px;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
+}
+
+.widget-sliver__hint-action {
+  color: var(--tt-text);
+  font-weight: 600;
+}
+
+.widget-sliver__hint-keys {
+  color: var(--tt-text-muted);
 }
 
 .widget-sliver:hover .widget-sliver__hint {
@@ -110,13 +165,19 @@ button {
   align-items: center;
   gap: 8px;
   padding: 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--widget-edge);
   border-radius: 20px;
-  background: linear-gradient(180deg, #16181d 0%, #0b0c0e 100%);
+  background: linear-gradient(
+    180deg,
+    var(--widget-surface-top) 0%,
+    var(--widget-surface-bottom) 100%
+  );
   box-shadow:
-    0 6px 12px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow),
+    inset 0 1px 0 rgb(255 255 255 / 20%);
   overflow: hidden;
+  cursor: pointer;
   animation: widget-pop 0.2s cubic-bezier(0.25, 1, 0.4, 1);
   -webkit-app-region: drag;
   app-region: drag;
@@ -166,14 +227,14 @@ button {
   background: linear-gradient(
     180deg,
     var(--tt-primary),
-    color-mix(in srgb, var(--tt-primary) 55%, #0b0c0e)
+    color-mix(in srgb, var(--tt-primary) 55%, var(--widget-surface-bottom))
   );
   transition: height 90ms ease-out;
 }
 
 .widget-time {
   flex: none;
-  color: #9aa0a6;
+  color: var(--tt-text-muted);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -197,7 +258,7 @@ button {
 .widget-state-icon {
   display: inline-flex;
   flex: none;
-  color: #c9ced5;
+  color: var(--tt-text-muted);
 }
 
 .widget-state-icon svg {
@@ -210,14 +271,14 @@ button {
 }
 
 .widget-shell[data-tone='error'] .widget-state-icon {
-  color: #f4a894;
+  color: var(--tt-error);
 }
 
 .widget-copy {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: #c9ced5;
+  color: var(--tt-text);
   font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -228,7 +289,7 @@ button {
 }
 
 .widget-shell[data-tone='error'] .widget-copy {
-  color: #f4a894;
+  color: var(--tt-error);
 }
 
 .widget-progress {
@@ -240,7 +301,7 @@ button {
   height: 2px;
   overflow: hidden;
   border-radius: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--tt-text) 12%, transparent);
 }
 
 .widget-progress > span {
@@ -249,7 +310,7 @@ button {
   border-radius: 1px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--tt-primary) 70%, #0b0c0e),
+    color-mix(in srgb, var(--tt-primary) 70%, var(--widget-surface-bottom)),
     var(--tt-primary)
   );
   transition: width 0.2s ease;
@@ -271,25 +332,25 @@ button {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: #c9ced5;
+  background: color-mix(in srgb, var(--tt-text) 10%, transparent);
+  color: var(--tt-text);
   cursor: pointer;
 }
 
 .widget-action:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--tt-text) 18%, transparent);
 }
 
 .widget-action[data-tone='stop'] {
-  color: #f4a894;
+  color: var(--tt-error);
 }
 
 .widget-esc {
   padding: 2px 4px 3px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid color-mix(in srgb, var(--tt-text) 22%, transparent);
   border-radius: 4px;
   background: transparent;
-  color: #6b7280;
+  color: var(--tt-text-muted);
   font-size: 9px;
   letter-spacing: 0.3px;
   line-height: 1;
@@ -297,8 +358,8 @@ button {
 }
 
 .widget-esc:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #c9ced5;
+  border-color: color-mix(in srgb, var(--tt-text) 40%, transparent);
+  color: var(--tt-text);
 }
 
 /* ---- motion overrides ---- */
@@ -315,7 +376,7 @@ button {
 
   .widget-spinner {
     animation: none;
-    border-top-color: color-mix(in srgb, var(--tt-primary) 60%, #ffffff);
+    border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
   }
 
   .widget-levels__bar,
@@ -337,7 +398,7 @@ button {
 
 :root[data-reduced-motion='on'] .widget-spinner {
   animation: none;
-  border-top-color: color-mix(in srgb, var(--tt-primary) 60%, #ffffff);
+  border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
 }
 
 :root[data-reduced-motion='on'] .widget-levels__bar,

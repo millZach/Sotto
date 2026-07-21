@@ -30,6 +30,7 @@ export interface AppSettings {
   successDisplayMs: number
   launchAtStartup: boolean
   startMinimized: boolean
+  showWidgetWhenIdle: boolean
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
@@ -57,6 +58,7 @@ const fieldSchemas = {
   successDisplayMs: z.number().int().min(500).max(5_000),
   launchAtStartup: z.boolean(),
   startMinimized: z.boolean(),
+  showWidgetWhenIdle: z.boolean(),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
     z.literal(25),
@@ -87,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   successDisplayMs: 1_400,
   launchAtStartup: false,
   startMinimized: false,
+  showWidgetWhenIdle: true,
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
@@ -125,6 +128,7 @@ export function parseSettings(input: unknown): AppSettings {
     successDisplayMs: parseField(persisted, 'successDisplayMs'),
     launchAtStartup: parseField(persisted, 'launchAtStartup'),
     startMinimized: parseField(persisted, 'startMinimized'),
+    showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle'),
     historyEnabled: parseField(persisted, 'historyEnabled'),
     historyRetention: parseField(persisted, 'historyRetention'),
     onboardingComplete: parseField(persisted, 'onboardingComplete'),

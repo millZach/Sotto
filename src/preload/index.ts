@@ -235,6 +235,8 @@ export function createTalkTypeWidgetBridge(
   )
   return Object.freeze({
     onWidgetState,
+    requestToggle: () =>
+      invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'toggle' }),
     requestStop: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
     requestCancel: () =>

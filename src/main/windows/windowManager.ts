@@ -1,9 +1,17 @@
 import { APP_NAME } from '../../shared/constants'
 import { selectRendererSource, type RendererRole } from '../security'
+import {
+  DEFAULT_WIDGET_PLACEMENT,
+  placementToPosition,
+  snapToEdge,
+  type EdgePlacement,
+} from './widgetPlacementMath'
+import type { StoredWidgetPlacement } from '../storage/widgetPlacementRepository'
 
 const WIDGET_WIDTH = 248
 const WIDGET_HEIGHT = 88
 const WIDGET_BOTTOM_GAP = 16
+const WIDGET_SIZE = { width: WIDGET_WIDTH, height: WIDGET_HEIGHT } as const
 
 export interface Point {
   readonly x: number
@@ -124,8 +132,8 @@ export interface WindowManagerDependencies {
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
   readonly onRendererProcessGone?: (kind: RendererRole) => void
-  readonly getWidgetPlacement: () => Point | null
-  readonly onWidgetMoved: (point: Point) => void
+  readonly getWidgetPlacement: () => StoredWidgetPlacement | null
+  readonly onWidgetMoved: (placement: EdgePlacement) => void
 }
 
 type WindowKind = RendererRole
@@ -187,10 +195,6 @@ function securePreferences(
   }
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
-}
-
 export function parseDevelopmentRendererSources(
   rawSource: string | undefined,
 ): DevelopmentRendererSources | undefined {
@@ -236,6 +240,7 @@ export class WindowManager {
   private widgetReady: Promise<BrowserWindowLike> | null = null
   private quitting = false
   private disposed = false
+  private widgetSessionAnchor: Point | null = null
   private readonly cleanupByWindow = new Map<BrowserWindowLike, Set<() => void>>()
   private readonly loadedRendererUrls = new Map<BrowserWindowLike, string>()
 
@@ -409,25 +414,41 @@ export class WindowManager {
   async showWidget(): Promise<void> {
     const widget = await this.createWidgetWindow()
     this.assertRunning()
-    const remembered = this.rememberedWidgetPlacement()
-    const workArea = this.dependencies.display.getDisplayNearestPoint(
-      remembered ?? this.dependencies.display.getCursorScreenPoint(),
-    ).workArea
-    const centeredX = Math.round(workArea.x + (workArea.width - WIDGET_WIDTH) / 2)
-    const aboveBottom = workArea.y + workArea.height - WIDGET_HEIGHT - WIDGET_BOTTOM_GAP
-    const x = clamp(
-      remembered?.x ?? centeredX,
-      workArea.x,
-      workArea.x + workArea.width - WIDGET_WIDTH,
-    )
-    const y = clamp(
-      remembered?.y ?? aboveBottom,
-      workArea.y,
-      workArea.y + workArea.height - WIDGET_HEIGHT,
+    // A locked session anchor keeps the widget on the display the cursor was
+    // on when the dictation session started; otherwise follow the cursor.
+    const anchor =
+      this.widgetSessionAnchor ?? this.dependencies.display.getCursorScreenPoint()
+    const workArea = this.dependencies.display.getDisplayNearestPoint(anchor).workArea
+    const placement = this.rememberedWidgetPlacement()
+    const { x, y } = placementToPosition(
+      placement,
+      WIDGET_SIZE,
+      workArea,
+      WIDGET_BOTTOM_GAP,
     )
     widget.setPosition(x, y, false)
     this.assertRunning()
     widget.showInactive()
+  }
+
+  /**
+   * Anchors widget positioning to the display the cursor is on right now.
+   * Locking is idempotent for the duration of a session; only unlocking
+   * (when dictation returns to idle) releases the anchor.
+   */
+  lockWidgetDisplay(): void {
+    if (this.widgetSessionAnchor !== null) {
+      return
+    }
+    try {
+      this.widgetSessionAnchor = this.dependencies.display.getCursorScreenPoint()
+    } catch {
+      // Without a cursor point the widget simply follows the default display.
+    }
+  }
+
+  unlockWidgetDisplay(): void {
+    this.widgetSessionAnchor = null
   }
 
   setWidgetMouseInteractive(interactive: boolean): void {
@@ -518,21 +539,32 @@ export class WindowManager {
     })
   }
 
-  private rememberedWidgetPlacement(): Point | null {
-    let placement: Point | null
+  private rememberedWidgetPlacement(): EdgePlacement {
+    let stored: StoredWidgetPlacement | null
     try {
-      placement = this.dependencies.getWidgetPlacement()
+      stored = this.dependencies.getWidgetPlacement()
     } catch {
-      return null
+      return DEFAULT_WIDGET_PLACEMENT
     }
-    if (
-      placement === null ||
-      !Number.isFinite(placement.x) ||
-      !Number.isFinite(placement.y)
-    ) {
-      return null
+    if (stored === null) {
+      return DEFAULT_WIDGET_PLACEMENT
     }
-    return placement
+    if (stored.kind === 'edge') {
+      if (!Number.isFinite(stored.offset)) {
+        return DEFAULT_WIDGET_PLACEMENT
+      }
+      return { edge: stored.edge, offset: stored.offset }
+    }
+    if (!Number.isFinite(stored.x) || !Number.isFinite(stored.y)) {
+      return DEFAULT_WIDGET_PLACEMENT
+    }
+    // Legacy v1 records stored raw coordinates; convert them against the
+    // display they referenced so the position is roughly preserved.
+    const legacyWorkArea = this.dependencies.display.getDisplayNearestPoint({
+      x: stored.x,
+      y: stored.y,
+    }).workArea
+    return snapToEdge({ x: stored.x, y: stored.y }, WIDGET_SIZE, legacyWorkArea)
   }
 
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
@@ -546,7 +578,23 @@ export class WindowManager {
     const onMoved = (): void => {
       try {
         const [x, y] = window.getPosition()
-        this.dependencies.onWidgetMoved({ x, y })
+        const workArea = this.dependencies.display.getDisplayNearestPoint({
+          x: x + WIDGET_WIDTH / 2,
+          y: y + WIDGET_HEIGHT / 2,
+        }).workArea
+        const placement = snapToEdge({ x, y }, WIDGET_SIZE, workArea)
+        const snapped = placementToPosition(
+          placement,
+          WIDGET_SIZE,
+          workArea,
+          WIDGET_BOTTOM_GAP,
+        )
+        // Skip the no-op reposition so a programmatic snap cannot loop through
+        // further moved events.
+        if (snapped.x !== x || snapped.y !== y) {
+          window.setPosition(snapped.x, snapped.y, false)
+        }
+        this.dependencies.onWidgetMoved(placement)
       } catch {
         // Placement memory is best effort.
       }

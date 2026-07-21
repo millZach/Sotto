@@ -267,6 +267,7 @@ export interface TalkTypeBridge {
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface TalkTypeWidgetBridge {
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
+  requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
   setMouseInteractive(interactive: boolean): Promise<CommandResult>

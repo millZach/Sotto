@@ -116,6 +116,7 @@ function WidgetAnnouncements({ snapshot }: { readonly snapshot: WidgetSnapshot |
 export interface WidgetAppProps {
   readonly snapshot: WidgetSnapshot
   readonly now: number
+  readonly onToggle?: () => void
   readonly onStop?: () => void
   readonly onCancel?: () => void
   readonly onSliverHover?: (hovering: boolean) => void
@@ -177,7 +178,7 @@ function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
   }
 }
 
-function preventFocus(event: ReactMouseEvent<HTMLButtonElement>): void {
+function preventFocus(event: ReactMouseEvent<HTMLElement>): void {
   event.preventDefault()
 }
 
@@ -231,7 +232,11 @@ function WidgetAction({
       aria-label={label}
       tabIndex={-1}
       onMouseDown={preventFocus}
-      onClick={onClick}
+      onClick={(event) => {
+        // Keep the capsule's click-to-stop surface from double-handling.
+        event.stopPropagation()
+        onClick?.()
+      }}
     >
       {children}
     </button>
@@ -241,6 +246,7 @@ function WidgetAction({
 export function WidgetApp({
   snapshot,
   now,
+  onToggle,
   onStop,
   onCancel,
   onSliverHover,
@@ -256,11 +262,17 @@ export function WidgetApp({
         <div
           className="widget-sliver"
           data-testid="widget-sliver"
+          tabIndex={-1}
           onMouseEnter={() => onSliverHover?.(true)}
           onMouseLeave={() => onSliverHover?.(false)}
+          onMouseDown={preventFocus}
+          onClick={onToggle}
         >
           <span className="widget-sliver__hint">
-            {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+            <span className="widget-sliver__hint-action">Click to dictate</span>
+            <span className="widget-sliver__hint-keys">
+              {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+            </span>
           </span>
         </div>
       </aside>
@@ -279,7 +291,12 @@ export function WidgetApp({
       data-status={snapshot.status}
       data-tone={copy.tone}
     >
-      <div className="widget-capsule">
+      <div
+        className="widget-capsule"
+        tabIndex={-1}
+        onMouseDown={preventFocus}
+        onClick={onToggle}
+      >
         {isListening && <span className="widget-dot" aria-hidden="true" />}
         {isListening && <LevelBars level={snapshot.level} active />}
         {isListening && (
@@ -326,7 +343,10 @@ export function WidgetApp({
             aria-label="Cancel dictation"
             tabIndex={-1}
             onMouseDown={preventFocus}
-            onClick={onCancel}
+            onClick={(event) => {
+              event.stopPropagation()
+              onCancel?.()
+            }}
           >
             esc
           </button>
@@ -385,6 +405,7 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   const actions = useMemo(() => {
     if (bridge === undefined || preview !== null) return {}
     return {
+      onToggle: () => { void bridge.requestToggle().catch(() => undefined) },
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
       onSliverHover: (hovering: boolean) => {

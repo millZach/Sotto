@@ -69,6 +69,7 @@ const settingKeys = [
   'pasteDelayMs',
   'successDisplayMs',
   'startMinimized',
+  'showWidgetWhenIdle',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
@@ -418,7 +419,9 @@ export function registerIpc(
       dictationCommandSchema,
       1,
       async (command, role): Promise<CommandResult> => {
-        if (role === 'widget' && command.type !== 'cancel' && command.type !== 'stop') {
+        // The widget may toggle (click-to-dictate), stop, and cancel; only the
+        // explicit 'start' command stays a main-renderer privilege.
+        if (role === 'widget' && command.type === 'start') {
           throw new UnauthorizedIpcSenderError()
         }
         if (dependencies.dictation === undefined) {

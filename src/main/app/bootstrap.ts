@@ -384,8 +384,9 @@ export class NativeRuntimeController implements RuntimeController {
       await this.dependencies.windows.showMain()
       this.assertRunning()
     }
-    if (settings.onboardingComplete) {
-      // The dictation widget rests as a persistent sliver once setup is done.
+    if (settings.onboardingComplete && settings.showWidgetWhenIdle) {
+      // The dictation widget rests as a persistent sliver once setup is done,
+      // unless the user turned the idle sliver off in Settings.
       await this.dependencies.windows.showWidget()
       this.assertRunning()
     }
