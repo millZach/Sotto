@@ -1,22 +1,24 @@
 import { AtomicJsonStore } from './atomicJsonStore'
 import type { WidgetEdge, WidgetPlacement } from '../windows/widgetPlacementMath'
 
-/** Offset-bearing placement used only by the legacy version 2 storage adapter. */
-export interface VersionTwoWidgetPlacement extends WidgetPlacement {
-  readonly offset: number
-}
-
 /**
  * A remembered placement as read from disk: either the current edge shape or a
  * legacy version 1 raw point that callers convert to an edge placement.
  */
 export type StoredWidgetPlacement =
-  | { readonly kind: 'edge'; readonly edge: WidgetEdge; readonly offset: number }
+  | { readonly kind: 'edge'; readonly edge: WidgetEdge }
   | { readonly kind: 'point'; readonly x: number; readonly y: number }
 
 type WidgetPlacementRecord =
-  | { readonly version: 2; readonly placement: VersionTwoWidgetPlacement | null }
-  | { readonly version: 1; readonly placement: { readonly x: number; readonly y: number } | null }
+  | { readonly version: 3; readonly placement: WidgetPlacement | null }
+  | {
+      readonly version: 2
+      readonly placement: { readonly edge: WidgetEdge; readonly offset: number } | null
+    }
+  | {
+      readonly version: 1
+      readonly placement: { readonly x: number; readonly y: number } | null
+    }
 
 const WIDGET_EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 
@@ -24,14 +26,15 @@ function isWidgetEdge(input: unknown): input is WidgetEdge {
   return typeof input === 'string' && (WIDGET_EDGES as readonly string[]).includes(input)
 }
 
-function clampVersionTwoOffset(offset: number): number {
-  if (!Number.isFinite(offset)) return 0.5
-  return Math.min(Math.max(offset, 0), 1)
-}
-
 function parseWidgetPlacementRecord(input: unknown): WidgetPlacementRecord {
   if (typeof input === 'object' && input !== null) {
     const record = input as { version?: unknown; placement?: unknown }
+    if (record.version === 3 && typeof record.placement === 'object') {
+      const placement = record.placement as { edge?: unknown } | null
+      if (placement !== null && isWidgetEdge(placement.edge)) {
+        return { version: 3, placement: { edge: placement.edge } }
+      }
+    }
     if (record.version === 2 && typeof record.placement === 'object') {
       const placement = record.placement as { edge?: unknown; offset?: unknown } | null
       if (
@@ -62,7 +65,7 @@ function parseWidgetPlacementRecord(input: unknown): WidgetPlacementRecord {
       }
     }
   }
-  return { version: 2, placement: null }
+  return { version: 3, placement: null }
 }
 
 /** Remembers where the user dragged the dictation widget, best effort. */
@@ -71,7 +74,7 @@ export class WidgetPlacementRepository {
 
   constructor(filePath: string) {
     this.store = new AtomicJsonStore(filePath, parseWidgetPlacementRecord, () => ({
-      version: 2,
+      version: 3,
       placement: null,
     }))
   }
@@ -86,18 +89,25 @@ export class WidgetPlacementRepository {
     if (record.placement === null) {
       return null
     }
-    if (record.version === 2) {
+    if (record.version === 3) {
       return { kind: 'edge', ...record.placement }
+    }
+    if (record.version === 2) {
+      const migrated = { edge: record.placement.edge }
+      try {
+        await this.store.write({ version: 3, placement: migrated })
+      } catch {
+        // Migration persistence is best effort; the valid edge remains usable.
+      }
+      return { kind: 'edge', ...migrated }
     }
     return { kind: 'point', ...record.placement }
   }
 
-  async save(placement: VersionTwoWidgetPlacement): Promise<void> {
+  async save(placement: WidgetPlacement): Promise<void> {
     const record = parseWidgetPlacementRecord({
-      version: 2,
-      placement: isWidgetEdge(placement.edge)
-        ? { edge: placement.edge, offset: clampVersionTwoOffset(placement.offset) }
-        : null,
+      version: 3,
+      placement: isWidgetEdge(placement.edge) ? { edge: placement.edge } : null,
     })
     try {
       await this.store.write(record)
