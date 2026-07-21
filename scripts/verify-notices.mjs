@@ -37,6 +37,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@protobufjs/pool', '1.1.0', 'BSD-3-Clause', 'Daniel Wirtz'),
   packageComponent('@protobufjs/utf8', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
   Object.freeze({ name: 'Xenova/whisper-base', version: '64da57285918e20ea79ea5c88eed7197933abaa8', license: 'Apache-2.0', attribution: 'Hugging Face and OpenAI Whisper contributors' }),
+  Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
 ])
 
 export const EMBEDDED_BROWSER_DEPENDENCIES = Object.freeze([
@@ -74,7 +75,7 @@ export async function verifyThirdPartyNotices(options = {}) {
   const names = new Set(NOTICE_COMPONENTS.map((component) => component.name))
 
   for (const component of NOTICE_COMPONENTS) {
-    const marker = `| \`${component.name}\` | \`${component.version}\` |`
+    const marker = `| \`${component.name}\`${component.nameSuffix ?? ''} | \`${component.version}\` |`
     if (!notices.includes(marker) || !notices.includes(component.attribution)) {
       fail(`missing component evidence for ${component.name}`)
     }
@@ -139,6 +140,9 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Neither the name of its author, nor the names of its contributors',
     '## ONNX Runtime MIT license',
     'Copyright (c) Microsoft Corporation. All rights reserved.',
+    '## Manrope SIL Open Font License 1.1',
+    'onnx-community/moonshine-base-ONNX',
+    'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 
   if (options.packagedResources) {

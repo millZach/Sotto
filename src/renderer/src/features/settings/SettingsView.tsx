@@ -130,9 +130,9 @@ export function SettingsView({
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
   const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [installPreset, setInstallPreset] = useState<Extract<ModelPreset, 'fast' | 'accurate'> | null>(null)
+  const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
   const [installConsent, setInstallConsent] = useState(false)
-  const [removePreset, setRemovePreset] = useState<Extract<ModelPreset, 'fast' | 'accurate'> | null>(null)
+  const [removePreset, setRemovePreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
   const [installFailure, setInstallFailure] = useState<string | null>(null)
   const [removeFailure, setRemoveFailure] = useState<string | null>(null)
   const [clearFailure, setClearFailure] = useState<string | null>(null)
@@ -316,7 +316,7 @@ export function SettingsView({
     }
   }
 
-  const optionalDisclosure = useCallback((preset: Extract<ModelPreset, 'fast' | 'accurate'>): ModelDisclosure | undefined => (
+  const optionalDisclosure = useCallback((preset: Exclude<ModelPreset, 'balanced'>): ModelDisclosure | undefined => (
     disclosures?.models.find((model) => model.preset === preset && !model.bundled)
   ), [disclosures])
 
@@ -341,7 +341,7 @@ export function SettingsView({
     }
   }
 
-  const modelCards = useMemo(() => (['fast', 'balanced', 'accurate'] as const).map((preset) => {
+  const modelCards = useMemo(() => (['instant', 'fast', 'balanced', 'accurate'] as const).map((preset) => {
     const status = modelStatuses[preset]
     const optional = preset !== 'balanced'
     const disclosure = optional ? optionalDisclosure(preset) : undefined
@@ -350,7 +350,7 @@ export function SettingsView({
     return (
       <article className="settings-model-card" key={preset} data-selected={selected}>
         <div className="settings-model-card__heading">
-          <div><h3>{MODEL_CATALOG[preset].label}</h3><p>{preset === 'fast' ? 'Quickest response' : preset === 'balanced' ? 'Best everyday balance' : 'Highest accuracy'}</p></div>
+          <div><h3>{MODEL_CATALOG[preset].label}</h3><p>{preset === 'instant' ? 'Near-instant, English only' : preset === 'fast' ? 'Quickest response' : preset === 'balanced' ? 'Best everyday balance' : 'Highest accuracy'}</p></div>
           {selected ? <span className="settings-selected-badge"><Check size={14} />Selected</span> : null}
         </div>
         <p className="settings-model-card__status" aria-live="polite">{modelStateCopy(status)}</p>

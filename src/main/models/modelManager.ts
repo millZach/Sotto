@@ -16,7 +16,7 @@ import type { ModelPreset } from '../../shared/settings'
 import type { FileSource } from './modelProtocol'
 
 export interface LockedFile { readonly path: string; readonly url: string; readonly bytes: number; readonly sha256: string }
-export interface LockedPreset { readonly repository: string; readonly revision: string; readonly license: 'Apache-2.0'; readonly bundled: boolean; readonly files: readonly LockedFile[] }
+export interface LockedPreset { readonly repository: string; readonly revision: string; readonly license: 'Apache-2.0' | 'MIT'; readonly bundled: boolean; readonly files: readonly LockedFile[] }
 export interface CatalogLock { readonly version: 1; readonly presets: Readonly<Record<ModelPreset, LockedPreset>> }
 export interface BundledModelManifest {
   readonly version: 1
@@ -38,14 +38,16 @@ export interface ModelManagerOptions {
   readonly verifyFile?: (path: string, expected: LockedFile) => Promise<boolean>
 }
 
-const PRESETS = ['fast', 'balanced', 'accurate'] as const
+const PRESETS = ['fast', 'balanced', 'accurate', 'instant'] as const
 const SHA = /^[a-f0-9]{64}$/
 const REV = /^[a-f0-9]{40}$/
-const FILE_ALLOWLIST = ['added_tokens.json', 'config.json', 'generation_config.json', 'merges.txt', 'normalizer.json', 'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'] as const
+const WHISPER_FILES = ['added_tokens.json', 'config.json', 'generation_config.json', 'merges.txt', 'normalizer.json', 'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'] as const
+const MOONSHINE_FILES = ['config.json', 'generation_config.json', 'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json'] as const
 const EXPECTED = {
-  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', bundled: false, encoder: 10_124_910, decoder: 30_727_765 },
-  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', bundled: true, encoder: 23_200_850, decoder: 53_707_539 },
-  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', bundled: false, encoder: 92_324_809, decoder: 156_780_950 },
+  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', license: 'Apache-2.0', bundled: false, encoder: 10_124_910, decoder: 30_727_765, files: WHISPER_FILES },
+  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', license: 'Apache-2.0', bundled: true, encoder: 23_200_850, decoder: 53_707_539, files: WHISPER_FILES },
+  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', license: 'Apache-2.0', bundled: false, encoder: 92_324_809, decoder: 156_780_950, files: WHISPER_FILES },
+  instant: { repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', bundled: false, encoder: 20_513_063, decoder: 42_498_870, files: MOONSHINE_FILES },
 } as const
 
 function validateCatalog(value: CatalogLock): CatalogLock {
@@ -53,10 +55,10 @@ function validateCatalog(value: CatalogLock): CatalogLock {
   for (const preset of PRESETS) {
     const model = value.presets[preset]
     const expectedModel = EXPECTED[preset]
-    if (!model || !REV.test(model.revision) || model.license !== 'Apache-2.0' || !Array.isArray(model.files) || model.files.length === 0) throw new Error('Invalid model catalog')
+    if (!model || !REV.test(model.revision) || model.license !== expectedModel.license || !Array.isArray(model.files) || model.files.length === 0) throw new Error('Invalid model catalog')
     if (Object.keys(model).sort().join() !== ['bundled', 'files', 'license', 'repository', 'revision'].join()) throw new Error('Invalid model catalog')
     if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(model.repository)) throw new Error('Invalid model catalog')
-    if (model.repository !== expectedModel.repository || model.revision !== expectedModel.revision || model.bundled !== expectedModel.bundled || model.files.map((file) => file.path).join() !== FILE_ALLOWLIST.join()) throw new Error('Invalid model catalog')
+    if (model.repository !== expectedModel.repository || model.revision !== expectedModel.revision || model.bundled !== expectedModel.bundled || model.files.map((file) => file.path).join() !== expectedModel.files.join()) throw new Error('Invalid model catalog')
     const seen = new Set<string>()
     for (const file of model.files) {
       if (!file || Object.keys(file).sort().join() !== ['bytes', 'path', 'sha256', 'url'].join() || seen.has(file.path) || file.path.includes('\\') || file.path.split('/').some((part: string) => !part || part === '.' || part === '..') || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || !SHA.test(file.sha256)) throw new Error('Invalid model catalog')
@@ -68,7 +70,7 @@ function validateCatalog(value: CatalogLock): CatalogLock {
     const decoder = model.files.find((file) => file.path.includes('decoder_model'))
     if (encoder?.bytes !== expectedModel.encoder || decoder?.bytes !== expectedModel.decoder) throw new Error('Invalid model catalog')
   }
-  if (!value.presets.balanced.bundled || value.presets.fast.bundled || value.presets.accurate.bundled) throw new Error('Invalid model catalog')
+  if (!value.presets.balanced.bundled || value.presets.fast.bundled || value.presets.accurate.bundled || value.presets.instant.bundled) throw new Error('Invalid model catalog')
   return value
 }
 

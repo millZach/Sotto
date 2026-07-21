@@ -19,7 +19,7 @@ export interface SpeechRecognitionOutput {
 export interface SpeechRecognitionPipeline {
   (
     audio: Float32Array,
-    options: Readonly<{ task: 'transcribe'; language?: string }>,
+    options?: Readonly<{ task: 'transcribe'; language?: string }>,
   ): Promise<SpeechRecognitionOutput | string>
   dispose?: () => Promise<void> | void
 }
@@ -85,14 +85,16 @@ function normalizedProgress(event: unknown): number | undefined {
 function normalizedOutput(
   output: SpeechRecognitionOutput | string,
   requestedLanguage: string,
+  englishOnly: boolean,
 ): SpeechRecognitionOutput {
   const text = typeof output === 'string' ? output : output.text
   if (typeof text !== 'string' || text.length > 200_000) {
     throw new Error('Invalid inference output')
   }
 
-  // Transformers.js 4.2.0 defaults Whisper to English when language is omitted.
-  const language = requestedLanguage === 'auto' ? 'en' : requestedLanguage
+  // Transformers.js 4.2.0 defaults Whisper to English when language is
+  // omitted, and Moonshine models only transcribe English.
+  const language = englishOnly || requestedLanguage === 'auto' ? 'en' : requestedLanguage
   return { text, language }
 }
 
@@ -119,6 +121,7 @@ export function createTranscriptionRuntime(
   }
 
   let activePipeline: ActivePipeline | undefined
+  const warmedPipelines = new WeakSet<SpeechRecognitionPipeline>()
   const cancelledRequests = new Set<string>()
   const requestMetadata = new Map<
     string,
@@ -207,6 +210,24 @@ export function createTranscriptionRuntime(
     }
   }
 
+  // One second of silence: enough to trigger backend graph initialization so
+  // the first real dictation runs at steady-state speed.
+  const WARM_UP_SAMPLES = 16_000
+
+  const warmUpPipeline = async (
+    pipeline: SpeechRecognitionPipeline,
+    family: 'whisper' | 'moonshine',
+  ): Promise<void> => {
+    if (warmedPipelines.has(pipeline)) return
+    warmedPipelines.add(pipeline)
+    try {
+      if (family === 'moonshine') await pipeline(new Float32Array(WARM_UP_SAMPLES))
+      else await pipeline(new Float32Array(WARM_UP_SAMPLES), { task: 'transcribe' })
+    } catch {
+      // Warm-up is best effort; the load still succeeded.
+    }
+  }
+
   const loadForPreference = async (
     request: LoadRequest,
   ): Promise<{ pipeline: SpeechRecognitionPipeline; device: InferenceDevice }> => {
@@ -220,16 +241,9 @@ export function createTranscriptionRuntime(
       }
     }
 
-    if (request.inferencePreference === 'auto' && (await options.probeWebGpu())) {
-      try {
-        return { pipeline: await loadPipeline(request, 'webgpu'), device: 'webgpu' }
-      } catch {
-        // The client retries WASM in a fresh worker because failed ORT WebGPU
-        // initialization can poison this worker's global initialization promise.
-        throw new RuntimeFailure('WEBGPU_FAILED')
-      }
-    }
-
+    // 'auto' resolves to WASM: the packaged runtime ships no ORT jsep build,
+    // and measured q8 WebGPU inference is slower than WASM on integrated GPUs
+    // (docs/perf/2026-07-20-dictation-latency.md).
     try {
       return { pipeline: await loadPipeline(request, 'wasm'), device: 'wasm' }
     } catch (error) {
@@ -257,13 +271,21 @@ export function createTranscriptionRuntime(
     if (isCancelled(request.requestId)) throw new RuntimeFailure('CANCELLED')
 
     reportProgress(request, 'transcribing', 0)
+    const family = MODEL_CATALOG[request.preset].family
+    // Moonshine generation takes no task/language options.
     const inferenceOptions =
-      request.language === 'auto'
-        ? ({ task: 'transcribe' } as const)
-        : ({ task: 'transcribe', language: request.language } as const)
+      family === 'moonshine'
+        ? undefined
+        : request.language === 'auto'
+          ? ({ task: 'transcribe' } as const)
+          : ({ task: 'transcribe', language: request.language } as const)
     let output: SpeechRecognitionOutput
     try {
-      output = normalizedOutput(await pipeline(request.audio, inferenceOptions), request.language)
+      const raw =
+        inferenceOptions === undefined
+          ? await pipeline(request.audio)
+          : await pipeline(request.audio, inferenceOptions)
+      output = normalizedOutput(raw, request.language, family === 'moonshine')
     } catch (error) {
       await invalidatePipeline(pipeline)
       throw error
@@ -294,17 +316,7 @@ export function createTranscriptionRuntime(
       }
     }
 
-    if (request.inferencePreference === 'auto' && (await options.probeWebGpu())) {
-      try {
-        return await runOnDevice(request, 'webgpu')
-      } catch {
-        if (isCancelled(request.requestId)) throw new RuntimeFailure('CANCELLED')
-        // The client retries WASM in a fresh worker because failed ORT WebGPU
-        // initialization can poison this worker's global initialization promise.
-        throw new RuntimeFailure('WEBGPU_FAILED')
-      }
-    }
-
+    // 'auto' resolves to WASM — see loadForPreference.
     try {
       return await runOnDevice(request, 'wasm')
     } catch (error) {
@@ -324,6 +336,7 @@ export function createTranscriptionRuntime(
     try {
       if (request.type === 'load') {
         const loaded = await loadForPreference(request)
+        await warmUpPipeline(loaded.pipeline, MODEL_CATALOG[request.preset].family)
         if (!isCancelled(request.requestId)) {
           options.postMessage({
             type: 'ready',

@@ -220,7 +220,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
           onRetryModel={checkModel}
-          onInstallModel={async (preset: Extract<ModelPreset, 'fast' | 'accurate'>) => {
+          onInstallModel={async (preset: Exclude<ModelPreset, 'balanced'>) => {
             const result = await app.actions.installModel({ preset, consent: true })
             if (!result.ok) throw new Error('MODEL_INSTALL_UNAVAILABLE')
           }}

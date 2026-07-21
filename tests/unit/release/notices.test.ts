@@ -13,7 +13,7 @@ describe('third-party notice inventory', () => {
 
     const notices = readFileSync(resolve('THIRD_PARTY_NOTICES.md'), 'utf8')
     for (const component of NOTICE_COMPONENTS) {
-      expect(notices).toContain(`| \`${component.name}\` | \`${component.version}\` |`)
+      expect(notices).toContain(`| \`${component.name}\`${component.nameSuffix ?? ''} | \`${component.version}\` |`)
       expect(notices).toContain(component.attribution)
     }
     for (const heading of [

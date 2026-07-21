@@ -6,7 +6,6 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
 import {
-  MODEL_FILE_ALLOWLIST,
   RUNTIME_FILE_ALLOWLIST,
   validateBundledManifest,
   validateCatalogLock,
@@ -31,7 +30,7 @@ export async function verifyPreparedAssets(options = {}) {
   const catalog = await json(join(selectedModelRoot, 'catalog.lock.json')); const manifest = await json(join(selectedModelRoot, 'manifest.lock.json'))
   try { validateCatalogLock(catalog); validateBundledManifest(manifest, catalog) } catch { fail('catalog or manifest drift') }
   const balanced = catalog.presets.balanced
-  const expectedModelFiles = ['catalog.lock.json', 'manifest.lock.json', ...MODEL_FILE_ALLOWLIST.map((path) => `${balanced.repository}/${path}`)].sort()
+  const expectedModelFiles = ['catalog.lock.json', 'manifest.lock.json', ...balanced.files.map((file) => `${balanced.repository}/${file.path}`)].sort()
   if (JSON.stringify(await allFiles(selectedModelRoot)) !== JSON.stringify(expectedModelFiles)) fail('unexpected model files')
   for (const file of manifest.files) await checkFile(join(selectedModelRoot, balanced.repository), file)
 

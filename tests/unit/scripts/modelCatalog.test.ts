@@ -7,6 +7,7 @@ import { MODEL_CATALOG as SHARED_CATALOG } from '../../../src/shared/modelCatalo
 import {
   MODEL_CATALOG,
   MODEL_FILE_ALLOWLIST,
+  MOONSHINE_MODEL_FILES,
   RUNTIME_FILE_ALLOWLIST,
   modelFileUrl,
   validateBundledManifest,
@@ -21,7 +22,7 @@ afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recur
 
 describe('build-time model catalog', () => {
   it('matches the immutable renderer disclosure catalog', () => {
-    expect(Object.keys(MODEL_CATALOG)).toEqual(['fast', 'balanced', 'accurate'])
+    expect(Object.keys(MODEL_CATALOG)).toEqual(['fast', 'balanced', 'accurate', 'instant'])
     for (const preset of Object.keys(SHARED_CATALOG) as (keyof typeof SHARED_CATALOG)[]) {
       expect(MODEL_CATALOG[preset]).toMatchObject(SHARED_CATALOG[preset])
       expect(Object.isFrozen(MODEL_CATALOG[preset])).toBe(true)
@@ -38,19 +39,31 @@ describe('build-time model catalog', () => {
     ])
   })
 
-  it('has the exact transformer file allowlist', () => {
+  it('has the exact transformer file allowlist per model family', () => {
     expect(MODEL_FILE_ALLOWLIST).toEqual([
       'added_tokens.json', 'config.json', 'generation_config.json', 'merges.txt',
       'normalizer.json', 'onnx/decoder_model_merged_quantized.onnx',
       'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json',
       'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json',
     ])
+    // Observed via scripts/perf-bench with --log-requests: Transformers 4.2.0
+    // requests exactly these seven files for Moonshine q8 on WASM.
+    expect(MOONSHINE_MODEL_FILES).toEqual([
+      'config.json', 'generation_config.json', 'onnx/decoder_model_merged_quantized.onnx',
+      'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json',
+      'tokenizer.json', 'tokenizer_config.json',
+    ])
     expect(Object.isFrozen(MODEL_FILE_ALLOWLIST)).toBe(true)
+    expect(Object.isFrozen(MOONSHINE_MODEL_FILES)).toBe(true)
+    expect(MODEL_CATALOG.fast.files).toBe(MODEL_FILE_ALLOWLIST)
+    expect(MODEL_CATALOG.balanced.files).toBe(MODEL_FILE_ALLOWLIST)
+    expect(MODEL_CATALOG.accurate.files).toBe(MODEL_FILE_ALLOWLIST)
+    expect(MODEL_CATALOG.instant.files).toBe(MOONSHINE_MODEL_FILES)
   })
 
-  it('creates only pinned HTTPS Hugging Face URLs', () => {
+  it('creates only pinned HTTPS Hugging Face URLs and rejects unlisted files', () => {
     for (const entry of Object.values(MODEL_CATALOG)) {
-      for (const path of MODEL_FILE_ALLOWLIST) {
+      for (const path of entry.files) {
         const url = new URL(modelFileUrl(entry, path))
         expect(url.protocol).toBe('https:')
         expect(url.hostname).toBe('huggingface.co')
@@ -58,6 +71,7 @@ describe('build-time model catalog', () => {
         expect(url.pathname).not.toContain('/main/')
       }
     }
+    expect(() => modelFileUrl(MODEL_CATALOG.instant, 'merges.txt')).toThrow()
   })
 
   it('cancels a redirect body before fetching its target', async () => {

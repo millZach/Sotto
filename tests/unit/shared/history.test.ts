@@ -13,6 +13,10 @@ const validEntry = {
 } satisfies HistoryEntry
 
 describe('history entry contract', () => {
+  it('accepts entries produced by the instant preset', () => {
+    expect(parseHistoryEntry({ ...validEntry, modelPreset: 'instant' }).modelPreset).toBe('instant')
+  })
+
   it('parses exactly the persisted transcript fields', () => {
     expect(parseHistoryEntry(validEntry)).toEqual(validEntry)
     expect(Object.keys(historyEntrySchema.parse(validEntry))).toEqual([

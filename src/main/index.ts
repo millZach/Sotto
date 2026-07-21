@@ -34,6 +34,7 @@ import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
+import { createWarmPasteAdapter } from './output/pasteHelper'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import {
@@ -384,6 +385,23 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })() : null
   const models = productionModels?.manager ?? createE2EModelOperations()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
+  const warmPaste = e2eConfiguration === null
+    ? createWarmPasteAdapter({
+        spawnHelper: (invocation) =>
+          spawn(invocation.executable, [...invocation.args], {
+            shell: false,
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }),
+        fallback: createSpawnProcessAdapter((executable, args, options) =>
+          spawn(executable, args, options),
+        ),
+      })
+    : null
+  // Pay the helper's one-time Add-Type compile at startup instead of on the
+  // first dictation.
+  warmPaste?.start()
+  app.on('will-quit', () => warmPaste?.dispose())
   const output = new OutputService({
     clipboard: e2eState === null ? clipboard : createE2EClipboard(e2eState),
     widget: windows,
@@ -391,9 +409,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds)
       }),
-    process: e2eConfiguration === null
-      ? createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options))
-      : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
+    process: warmPaste
+      ?? createE2EPasteProcess(e2eState!, e2eConfiguration!.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === APP_NAME,
         )

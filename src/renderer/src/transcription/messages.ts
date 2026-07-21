@@ -10,7 +10,7 @@ const boundedIdSchema = z
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9._:-]+$/)
-const presetSchema = z.enum(['fast', 'balanced', 'accurate'])
+const presetSchema = z.enum(['fast', 'balanced', 'accurate', 'instant'])
 const inferencePreferenceSchema = z.enum(['auto', 'webgpu', 'wasm'])
 const inferenceDeviceSchema = z.enum(['webgpu', 'wasm'])
 const languageSchema = z

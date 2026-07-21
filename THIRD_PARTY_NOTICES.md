@@ -35,7 +35,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `Xenova/whisper-base` | `64da57285918e20ea79ea5c88eed7197933abaa8` | Apache-2.0 | Hugging Face and OpenAI Whisper contributors |
 | `Manrope` (font, latin + latin-ext woff2 subsets) | `v20 (Google Fonts static serving)` | OFL-1.1 | The Manrope Project Authors |
 
-Optional models are not part of the installer. If the user explicitly downloads them, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` and `Xenova/whisper-small` revision `2d67713f236afa48a18992566e7647f6ca848e13` are Apache-2.0 works from Hugging Face and OpenAI Whisper contributors.
+Optional models are not part of the installer. If the user explicitly downloads them, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` and `Xenova/whisper-small` revision `2d67713f236afa48a18992566e7647f6ca848e13` are Apache-2.0 works from Hugging Face and OpenAI Whisper contributors, and `onnx-community/moonshine-base-ONNX` revision `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad` is an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community.
 
 ## TalkType brand asset provenance
 

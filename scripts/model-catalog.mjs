@@ -13,6 +13,18 @@ export const MODEL_FILE_ALLOWLIST = Object.freeze([
   'vocab.json',
 ])
 
+// Observed via scripts/perf-bench with --log-requests: Transformers 4.2.0
+// requests exactly these seven files for Moonshine q8 on WASM.
+export const MOONSHINE_MODEL_FILES = Object.freeze([
+  'config.json',
+  'generation_config.json',
+  'onnx/decoder_model_merged_quantized.onnx',
+  'onnx/encoder_model_quantized.onnx',
+  'preprocessor_config.json',
+  'tokenizer.json',
+  'tokenizer_config.json',
+])
+
 // Transformers 4.2.0's ONNX backend selects two runtime variants: normal WASM
 // and asyncify for the WebGPU execution provider. Each needs its JS glue module
 // and matching WASM binary, all served only through the verified local protocol.
@@ -26,13 +38,14 @@ export const RUNTIME_FILE_ALLOWLIST = Object.freeze([
 const entry = (value) => Object.freeze(value)
 
 export const MODEL_CATALOG = Object.freeze({
-  fast: entry({ label: 'Fast', repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 10_124_910, decoderBytes: 30_727_765 }),
-  balanced: entry({ label: 'Balanced', repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: true, encoderBytes: 23_200_850, decoderBytes: 53_707_539 }),
-  accurate: entry({ label: 'Accurate', repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 92_324_809, decoderBytes: 156_780_950 }),
+  fast: entry({ label: 'Fast', repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 10_124_910, decoderBytes: 30_727_765, files: MODEL_FILE_ALLOWLIST }),
+  balanced: entry({ label: 'Balanced', repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: true, encoderBytes: 23_200_850, decoderBytes: 53_707_539, files: MODEL_FILE_ALLOWLIST }),
+  accurate: entry({ label: 'Accurate', repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 92_324_809, decoderBytes: 156_780_950, files: MODEL_FILE_ALLOWLIST }),
+  instant: entry({ label: 'Instant', repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', family: 'moonshine', dtype: 'q8', multilingual: false, license: 'MIT', bundled: false, encoderBytes: 20_513_063, decoderBytes: 42_498_870, files: MOONSHINE_MODEL_FILES }),
 })
 
 export function modelFileUrl(model, path) {
-  if (!MODEL_FILE_ALLOWLIST.includes(path)) throw new Error('Model file is not allowed')
+  if (!model.files.includes(path)) throw new Error('Model file is not allowed')
   return `https://huggingface.co/${model.repository}/resolve/${model.revision}/${path}`
 }
 
@@ -51,8 +64,8 @@ export function validateCatalogLock(value) {
       || model.license !== expected.license
       || model.bundled !== expected.bundled
       || !Array.isArray(model.files)
-      || model.files.length !== MODEL_FILE_ALLOWLIST.length
-      || model.files.map((file) => file?.path).join() !== MODEL_FILE_ALLOWLIST.join()) throw new Error('Invalid model catalog')
+      || model.files.length !== expected.files.length
+      || model.files.map((file) => file?.path).join() !== expected.files.join()) throw new Error('Invalid model catalog')
     for (const file of model.files) {
       if (!exactKeys(file, ['path', 'url', 'bytes', 'sha256'])
         || file.url !== modelFileUrl(expected, file.path)

@@ -107,6 +107,63 @@ describe('local transcription worker runtime', () => {
     )
   })
 
+  it('maps instant to the pinned Moonshine repository and calls it without Whisper options', async () => {
+    // Moonshine models take no task/language generation options and are
+    // English-only, so the result language is always 'en'.
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: 'moonshine text' }),
+    )
+    const responses: unknown[] = []
+    const createPipeline = vi.fn(async () => recognize) as unknown as PipelineFactory
+    const runtime = createTranscriptionRuntime({
+      createPipeline,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage(transcribeRequest({ preset: 'instant', language: 'auto' }))
+
+    expect(createPipeline).toHaveBeenCalledWith(
+      'automatic-speech-recognition',
+      'onnx-community/moonshine-base-ONNX',
+      expect.objectContaining({ dtype: 'q8', device: 'wasm', local_files_only: true }),
+    )
+    expect(recognize).toHaveBeenCalledTimes(1)
+    expect(recognize.mock.calls[0]).toHaveLength(1)
+    expect(responses.at(-1)).toEqual({
+      type: 'result',
+      requestId: 'request-1',
+      sessionId: 'session-1',
+      text: 'moonshine text',
+      language: 'en',
+    })
+  })
+
+  it('warms up an instant pipeline without Whisper options', async () => {
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: '' }),
+    )
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as unknown as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-instant',
+      preset: 'instant',
+      inferencePreference: 'wasm',
+    })
+
+    expect(recognize).toHaveBeenCalledTimes(1)
+    expect(recognize.mock.calls[0]).toHaveLength(1)
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-instant' }),
+    )
+  })
+
   it('passes an explicit language but omits language for auto detection', async () => {
     const recognize = vi.fn(async () => ({ text: 'bonjour', language: 'fr' }))
     const responses: unknown[] = []
@@ -150,7 +207,7 @@ describe('local transcription worker runtime', () => {
       probeWebGpu: async () => true,
     })
 
-    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'auto' }))
+    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'webgpu' }))
 
     expect(createPipeline).toHaveBeenCalledTimes(1)
     expect(createPipeline).toHaveBeenCalledWith(
@@ -167,6 +224,101 @@ describe('local transcription worker runtime', () => {
       message: 'WebGPU transcription is unavailable.',
     })
     expect(JSON.stringify(responses)).not.toContain('private path')
+  })
+
+  it('warms up a newly loaded pipeline with silence before reporting ready', async () => {
+    // The first inference after model load is ~200 ms slower than steady
+    // state, so prewarm pays it on silence instead of the first dictation.
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: '' }),
+    )
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as unknown as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-1',
+      preset: 'balanced',
+      inferencePreference: 'wasm',
+    })
+
+    expect(recognize).toHaveBeenCalledTimes(1)
+    const audio = recognize.mock.calls[0]?.[0] as Float32Array
+    expect(audio).toBeInstanceOf(Float32Array)
+    expect(audio.length).toBe(16_000)
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-1' }),
+    )
+
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-2',
+      preset: 'balanced',
+      inferencePreference: 'wasm',
+    })
+
+    expect(recognize).toHaveBeenCalledTimes(1)
+  })
+
+  it('still reports ready when the warm-up inference fails', async () => {
+    const recognize = vi.fn(async () => {
+      throw new Error('warm-up failed at a private path')
+    })
+    const responses: unknown[] = []
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as PipelineFactory,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu: async () => false,
+    })
+
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-1',
+      preset: 'balanced',
+      inferencePreference: 'wasm',
+    })
+
+    expect(responses.at(-1)).toEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-1' }),
+    )
+    expect(JSON.stringify(responses)).not.toContain('private path')
+  })
+
+  it('uses WASM directly for auto even when a WebGPU adapter is present', async () => {
+    // The packaged runtime cannot initialize ORT WebGPU (no jsep build), and
+    // measured WebGPU inference is slower than WASM on integrated GPUs, so
+    // 'auto' must not pay a doomed WebGPU load + worker restart.
+    const createPipelineMock = vi.fn<PipelineFactory>(async () =>
+      vi.fn(async () => ({ text: 'wasm result' })),
+    )
+    const responses: unknown[] = []
+    const probeWebGpu = vi.fn(async () => true)
+    const runtime = createTranscriptionRuntime({
+      createPipeline: createPipelineMock,
+      postMessage: (message) => responses.push(message),
+      probeWebGpu,
+    })
+
+    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'auto' }))
+    await runtime.handleMessage({
+      type: 'load',
+      requestId: 'load-auto',
+      preset: 'balanced',
+      inferencePreference: 'auto',
+    })
+
+    expect(createPipelineMock).toHaveBeenCalledTimes(1)
+    expect(createPipelineMock.mock.calls[0]?.[2].device).toBe('wasm')
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'result', requestId: 'request-1', text: 'wasm result' }),
+    )
+    expect(responses).toContainEqual(
+      expect.objectContaining({ type: 'ready', requestId: 'load-auto', device: 'wasm' }),
+    )
   })
 
   it('uses WASM directly for auto without navigator.gpu and rejects explicit WebGPU safely', async () => {
