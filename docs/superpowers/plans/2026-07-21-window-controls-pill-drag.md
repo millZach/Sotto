@@ -376,14 +376,16 @@ git commit -m "refactor: center widget placement by edge"
 
 ---
 
-### Task 3: Migrate Placement Storage to Version Three
+### Task 3: Migrate Placement Storage and Consumers to Version Three
 
 **Files:**
-- Modify: `src/main/storage/widgetPlacementRepository.ts:1-102`
+- Modify: `src/main/storage/widgetPlacementRepository.ts:1-108`
+- Modify: `src/main/windows/windowManager.ts:1-87,207-211,494-526,675-750`
 - Modify: `tests/unit/main/widgetPlacementRepository.test.ts`
+- Modify: `tests/unit/main/windowManager.test.ts:330-550`
 
 **Interfaces:**
-- Consumes: `WidgetPlacement` from Task 2.
+- Consumes: `WidgetPlacement`, `placementToBounds()`, and `snapToEdge()` from Task 2.
 - Produces:
 
 ```ts
@@ -392,9 +394,15 @@ export type StoredWidgetPlacement =
   | { readonly kind: 'point'; readonly x: number; readonly y: number }
 ```
 
-- [ ] **Step 1: Write failing migration tests**
+`WindowManagerDependencies.onWidgetMoved` becomes:
 
-Add tests named:
+```ts
+readonly onWidgetMoved: (placement: WidgetPlacement) => void
+```
+
+- [ ] **Step 1: Write failing repository and consumer migration tests**
+
+Add repository tests named:
 
 ```text
 writes a version 3 edge-only record
@@ -413,13 +421,15 @@ Assert the saved JSON is exactly:
 }
 ```
 
+Update `WindowManager` tests so current edge records contain no offset, version-two reads are already normalized by the repository boundary, legacy points choose their nearest edge and then center, and snap callbacks receive only `{ edge }`. Add a test named `centers an edge-only stored placement instead of restoring a legacy offset`.
+
 Run:
 
 ```text
-npm test -- tests/unit/main/widgetPlacementRepository.test.ts
+npm test -- tests/unit/main/widgetPlacementRepository.test.ts tests/unit/main/windowManager.test.ts
 ```
 
-Expected: FAIL because the repository still writes and returns offsets.
+Expected: FAIL because repository and `WindowManager` consumers still require offsets.
 
 - [ ] **Step 2: Implement record parsing and rewrite**
 
@@ -454,13 +464,52 @@ if (record.version === 2) {
 
 Keep version-one points for display-aware conversion by `WindowManager`. Make `save()` write only version three `{ edge }`.
 
-- [ ] **Step 3: Verify and commit**
+- [ ] **Step 3: Remove the transitional offset adapter from WindowManager**
+
+Delete `VersionTwoWidgetPlacement`, `DEFAULT_VERSION_TWO_WIDGET_PLACEMENT`, `clampVersionTwoOffset`, `toVersionTwoPlacement`, and `versionTwoPlacementToPosition` usage. Import `placementToBounds` and make remembered placement edge-only:
+
+```ts
+private rememberedWidgetPlacement(): WidgetPlacement {
+  let stored: StoredWidgetPlacement | null
+  try {
+    stored = this.dependencies.getWidgetPlacement()
+  } catch {
+    return DEFAULT_WIDGET_PLACEMENT
+  }
+  if (stored === null) return DEFAULT_WIDGET_PLACEMENT
+  if (stored.kind === 'edge') return { edge: stored.edge }
+  if (!Number.isFinite(stored.x) || !Number.isFinite(stored.y)) {
+    return DEFAULT_WIDGET_PLACEMENT
+  }
+
+  const workArea = this.dependencies.display.getDisplayNearestPoint(stored).workArea
+  const placement = snapToEdge(stored, workArea)
+  this.dependencies.onWidgetMoved(placement)
+  return placement
+}
+```
+
+In `showWidget()` and `snapWidgetToEdge()`, resolve active centered bounds with:
+
+```ts
+const bounds = placementToBounds(
+  placement,
+  workArea,
+  'active',
+  WIDGET_BOTTOM_GAP,
+)
+```
+
+Use `bounds.width`/`bounds.height` for size, `bounds.x`/`bounds.y` for position, and persist/callback only `{ edge }`.
+
+- [ ] **Step 4: Verify and commit**
 
 Run:
 
 ```text
-npm test -- tests/unit/main/widgetPlacementRepository.test.ts
+npm test -- tests/unit/main/widgetPlacementRepository.test.ts tests/unit/main/windowManager.test.ts
 npm run typecheck
+npm run lint
 ```
 
 Expected: all pass.
@@ -468,7 +517,7 @@ Expected: all pass.
 Commit:
 
 ```text
-git add src/main/storage/widgetPlacementRepository.ts tests/unit/main/widgetPlacementRepository.test.ts
+git add src/main/storage/widgetPlacementRepository.ts src/main/windows/windowManager.ts tests/unit/main/widgetPlacementRepository.test.ts tests/unit/main/windowManager.test.ts
 git commit -m "feat: migrate widget placement to version 3"
 ```
 
