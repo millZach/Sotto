@@ -458,6 +458,34 @@ describe('WindowManager lifecycle', () => {
     })
   })
 
+  it('preserves a snapped edge when the persisted placement is read on a later reveal', async () => {
+    let placement: StoredWidgetPlacement | null = null
+    const onWidgetMoved: ConstructorParameters<typeof WindowManager>[0]['onWidgetMoved'] = (
+      movedPlacement,
+    ) => {
+      placement = { kind: 'edge', ...movedPlacement }
+    }
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => placement,
+      onWidgetMoved,
+    })
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    widget.position = [1_234, 567]
+    widget.emit('moved')
+    widget.setPosition.mockClear()
+
+    await manager.showWidget()
+
+    expect(placement).toEqual({
+      kind: 'edge',
+      edge: 'left',
+      offset: expect.closeTo(467 / 652, 6),
+    })
+    expect(widget.setPosition).toHaveBeenCalledWith(1_016, 567, false)
+  })
+
   it('does not reposition when the widget is already snapped, avoiding move loops', async () => {
     const { manager, onWidgetMoved, windows } = createHarness()
     await manager.createWidgetWindow()

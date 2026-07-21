@@ -131,11 +131,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .strict(),
 ])
 
-/**
- * One renderer-reported step of a widget drag gesture. Deltas are cumulative
- * screen-pixel offsets from the drag start, computed by the renderer from
- * screenX/screenY so the window moving under the pointer cannot corrupt them.
- */
+/** Native widget visual states with distinct presentation footprints. */
 export const widgetPresentationSchema = z.enum([
   'idle-resting',
   'idle-hovered',
@@ -145,6 +141,11 @@ export type WidgetPresentation = z.infer<typeof widgetPresentationSchema>
 
 const widgetDragDelta = z.number().int().min(-100_000).max(100_000)
 
+/**
+ * One renderer-reported step of a widget drag gesture. Deltas are cumulative
+ * screen-pixel offsets from the drag start, computed by the renderer from
+ * screenX/screenY so the window moving under the pointer cannot corrupt them.
+ */
 export const widgetDragSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('start') }).strict(),
   z

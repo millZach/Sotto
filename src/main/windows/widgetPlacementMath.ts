@@ -42,9 +42,9 @@ const EXPECTED_WIDGET_SIZES = {
   },
 } as const
 
-export const DEFAULT_WIDGET_PLACEMENT: WidgetPlacement & EdgePlacement = Object.freeze({
+export const DEFAULT_WIDGET_PLACEMENT: WidgetPlacement = Object.freeze({
   edge: 'bottom',
-}) as WidgetPlacement & EdgePlacement
+})
 
 function isVerticalEdge(edge: WidgetEdge): boolean {
   return edge === 'left' || edge === 'right'
@@ -66,7 +66,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
 export function snapToEdge(
   position: WidgetPoint,
   workArea: WorkAreaRect,
-): WidgetPlacement & EdgePlacement {
+): WidgetPlacement {
   const distances: Record<WidgetEdge, number> = {
     bottom:
       workArea.y +
@@ -88,7 +88,7 @@ export function snapToEdge(
     }
   }
 
-  return { edge } as WidgetPlacement & EdgePlacement
+  return { edge }
 }
 
 export function placementToBounds(
@@ -125,34 +125,4 @@ export function placementToBounds(
     y: Math.round(clamp(point.y, workArea.y, workArea.y + workArea.height - size.height)),
     ...size,
   }
-}
-
-/** @deprecated Use WidgetPlacement. Retained until placement persistence migrates. */
-export interface EdgePlacement extends WidgetPlacement {
-  readonly offset: number
-}
-
-/** @deprecated Use widgetSizeForPresentation with the active presentation. */
-export const HORIZONTAL_WIDGET_SIZE = EXPECTED_WIDGET_SIZES.active.horizontal
-/** @deprecated Use widgetSizeForPresentation with the active presentation. */
-export const VERTICAL_WIDGET_SIZE = EXPECTED_WIDGET_SIZES.active.vertical
-
-/** @deprecated Use widgetSizeForPresentation with the active presentation. */
-export function widgetSizeForEdge(edge: WidgetEdge): WidgetSize {
-  return widgetSizeForPresentation(edge, 'active')
-}
-
-/** @deprecated Offset persistence is removed by the edge-only placement model. */
-export function clampOffset(offset: number): number {
-  return Number.isFinite(offset) ? clamp(offset, 0, 1) : 0.5
-}
-
-/** @deprecated Use placementToBounds with the active presentation. */
-export function placementToPosition(
-  placement: EdgePlacement,
-  workArea: WorkAreaRect,
-  inset: number,
-): WidgetPoint {
-  const { x, y } = placementToBounds(placement, workArea, 'active', inset)
-  return { x, y }
 }

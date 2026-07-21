@@ -3,16 +3,88 @@ import type { WidgetDragPayload } from '../../shared/contracts'
 import { selectRendererSource, type RendererRole } from '../security'
 import {
   DEFAULT_WIDGET_PLACEMENT,
-  HORIZONTAL_WIDGET_SIZE,
-  placementToPosition,
   snapToEdge,
-  widgetSizeForEdge,
-  type EdgePlacement,
+  widgetSizeForPresentation,
+  type WidgetPlacement,
+  type WidgetPoint,
   type WidgetSize,
+  type WorkAreaRect,
 } from './widgetPlacementMath'
-import type { StoredWidgetPlacement } from '../storage/widgetPlacementRepository'
+import type {
+  StoredWidgetPlacement,
+  VersionTwoWidgetPlacement,
+} from '../storage/widgetPlacementRepository'
 
 const WIDGET_BOTTOM_GAP = 16
+const ACTIVE_HORIZONTAL_WIDGET_SIZE = widgetSizeForPresentation('bottom', 'active')
+const DEFAULT_VERSION_TWO_WIDGET_PLACEMENT: VersionTwoWidgetPlacement = Object.freeze({
+  ...DEFAULT_WIDGET_PLACEMENT,
+  offset: 0.5,
+})
+
+function activeWidgetSize(edge: WidgetPlacement['edge']): WidgetSize {
+  return widgetSizeForPresentation(edge, 'active')
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
+}
+
+function clampVersionTwoOffset(offset: number): number {
+  if (!Number.isFinite(offset)) return 0.5
+  return clamp(offset, 0, 1)
+}
+
+function toVersionTwoPlacement(
+  placement: WidgetPlacement,
+  position: WidgetPoint,
+  workArea: WorkAreaRect,
+): VersionTwoWidgetPlacement {
+  const size = activeWidgetSize(placement.edge)
+  const vertical = placement.edge === 'left' || placement.edge === 'right'
+  const origin = vertical ? workArea.y : workArea.x
+  const coordinate = vertical ? position.y : position.x
+  const usable = vertical ? workArea.height - size.height : workArea.width - size.width
+  const offset = usable <= 0 ? 0.5 : clampVersionTwoOffset((coordinate - origin) / usable)
+  return { ...placement, offset }
+}
+
+function versionTwoPlacementToPosition(
+  placement: VersionTwoWidgetPlacement,
+  workArea: WorkAreaRect,
+  inset: number,
+): WidgetPoint {
+  const size = activeWidgetSize(placement.edge)
+  const offset = clampVersionTwoOffset(placement.offset)
+  const usableX = workArea.width - size.width
+  const usableY = workArea.height - size.height
+
+  let x: number
+  let y: number
+  switch (placement.edge) {
+    case 'bottom':
+      x = workArea.x + Math.round(offset * Math.max(0, usableX))
+      y = workArea.y + workArea.height - size.height - inset
+      break
+    case 'top':
+      x = workArea.x + Math.round(offset * Math.max(0, usableX))
+      y = workArea.y + inset
+      break
+    case 'left':
+      x = workArea.x + inset
+      y = workArea.y + Math.round(offset * Math.max(0, usableY))
+      break
+    case 'right':
+      x = workArea.x + workArea.width - size.width - inset
+      y = workArea.y + Math.round(offset * Math.max(0, usableY))
+      break
+  }
+
+  return {
+    x: Math.round(clamp(x, workArea.x, workArea.x + usableX)),
+    y: Math.round(clamp(y, workArea.y, workArea.y + usableY)),
+  }
+}
 
 export interface Point {
   readonly x: number
@@ -135,7 +207,7 @@ export interface WindowManagerDependencies {
   readonly log: (code: RendererDiagnostic) => void
   readonly onRendererProcessGone?: (kind: RendererRole) => void
   readonly getWidgetPlacement: () => StoredWidgetPlacement | null
-  readonly onWidgetMoved: (placement: EdgePlacement) => void
+  readonly onWidgetMoved: (placement: VersionTwoWidgetPlacement) => void
 }
 
 type WindowKind = RendererRole
@@ -247,7 +319,7 @@ export class WindowManager {
   private widgetLastReveal: (Point & WidgetSize) | null = null
   // The size the widget window currently has; the constructor seam always
   // builds the horizontal canvas and snapping to a side edge swaps it.
-  private widgetSize: WidgetSize = HORIZONTAL_WIDGET_SIZE
+  private widgetSize: WidgetSize = ACTIVE_HORIZONTAL_WIDGET_SIZE
   private readonly cleanupByWindow = new Map<BrowserWindowLike, Set<() => void>>()
   private readonly loadedRendererUrls = new Map<BrowserWindowLike, string>()
 
@@ -331,8 +403,8 @@ export class WindowManager {
     }
 
     const window = this.dependencies.createWindow({
-      width: HORIZONTAL_WIDGET_SIZE.width,
-      height: HORIZONTAL_WIDGET_SIZE.height,
+      width: ACTIVE_HORIZONTAL_WIDGET_SIZE.width,
+      height: ACTIVE_HORIZONTAL_WIDGET_SIZE.height,
       show: false,
       resizable: false,
       maximizable: false,
@@ -435,8 +507,8 @@ export class WindowManager {
       this.widgetSessionAnchor ?? this.dependencies.display.getCursorScreenPoint()
     const workArea = this.dependencies.display.getDisplayNearestPoint(anchor).workArea
     const placement = this.rememberedWidgetPlacement()
-    const size = widgetSizeForEdge(placement.edge)
-    const { x, y } = placementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
+    const size = activeWidgetSize(placement.edge)
+    const { x, y } = versionTwoPlacementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
     if (
       this.widgetLastReveal !== null &&
       this.widgetLastReveal.x === x &&
@@ -600,24 +672,24 @@ export class WindowManager {
     })
   }
 
-  private rememberedWidgetPlacement(): EdgePlacement {
+  private rememberedWidgetPlacement(): VersionTwoWidgetPlacement {
     let stored: StoredWidgetPlacement | null
     try {
       stored = this.dependencies.getWidgetPlacement()
     } catch {
-      return DEFAULT_WIDGET_PLACEMENT
+      return DEFAULT_VERSION_TWO_WIDGET_PLACEMENT
     }
     if (stored === null) {
-      return DEFAULT_WIDGET_PLACEMENT
+      return DEFAULT_VERSION_TWO_WIDGET_PLACEMENT
     }
     if (stored.kind === 'edge') {
       if (!Number.isFinite(stored.offset)) {
-        return DEFAULT_WIDGET_PLACEMENT
+        return DEFAULT_VERSION_TWO_WIDGET_PLACEMENT
       }
       return { edge: stored.edge, offset: stored.offset }
     }
     if (!Number.isFinite(stored.x) || !Number.isFinite(stored.y)) {
-      return DEFAULT_WIDGET_PLACEMENT
+      return DEFAULT_VERSION_TWO_WIDGET_PLACEMENT
     }
     // Legacy v1 records stored raw coordinates; convert them against the
     // display they referenced so the position is roughly preserved.
@@ -625,7 +697,8 @@ export class WindowManager {
       x: stored.x,
       y: stored.y,
     }).workArea
-    return snapToEdge({ x: stored.x, y: stored.y }, legacyWorkArea)
+    const placement = snapToEdge({ x: stored.x, y: stored.y }, legacyWorkArea)
+    return toVersionTwoPlacement(placement, stored, legacyWorkArea)
   }
 
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
@@ -633,7 +706,7 @@ export class WindowManager {
     // constructed on the horizontal canvas.
     this.widgetDragOrigin = null
     this.widgetLastReveal = null
-    this.widgetSize = HORIZONTAL_WIDGET_SIZE
+    this.widgetSize = ACTIVE_HORIZONTAL_WIDGET_SIZE
     // The widget rests as a click-through sliver; the renderer requests
     // interactivity for active states and sliver hover.
     try {
@@ -659,11 +732,12 @@ export class WindowManager {
         x: x + this.widgetSize.width / 2,
         y: y + this.widgetSize.height / 2,
       }).workArea
-      const placement = snapToEdge({ x, y }, workArea)
-      const snapped = placementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
+      const edgePlacement = snapToEdge({ x, y }, workArea)
+      const placement = toVersionTwoPlacement(edgePlacement, { x, y }, workArea)
+      const snapped = versionTwoPlacementToPosition(placement, workArea, WIDGET_BOTTOM_GAP)
       // Snapping to a side edge swaps the canvas orientation; resize and
       // reposition together so the widget lands as one coherent operation.
-      this.applyWidgetSize(window, widgetSizeForEdge(placement.edge))
+      this.applyWidgetSize(window, activeWidgetSize(placement.edge))
       // Skip the no-op reposition so a programmatic snap cannot loop through
       // further moved events.
       if (snapped.x !== x || snapped.y !== y) {

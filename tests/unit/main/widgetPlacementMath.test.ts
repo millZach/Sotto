@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { WidgetPresentation } from '../../../src/shared/contracts'
 import {
@@ -117,8 +117,10 @@ describe('widget presentation geometry', () => {
   })
 
   it('returns only an edge and never an offset', () => {
-    const placement: WidgetPlacement = snapToEdge({ x: 1_100, y: 300 }, WORK_AREA)
+    const placement = snapToEdge({ x: 1_100, y: 300 }, WORK_AREA)
 
+    expectTypeOf(placement).toEqualTypeOf<WidgetPlacement>()
+    expectTypeOf(DEFAULT_WIDGET_PLACEMENT).toEqualTypeOf<WidgetPlacement>()
     expect(placement).toEqual({ edge: 'left' })
     expect(Object.keys(placement)).toEqual(['edge'])
     expect(DEFAULT_WIDGET_PLACEMENT).toEqual({ edge: 'bottom' })

@@ -1,9 +1,10 @@
 import { AtomicJsonStore } from './atomicJsonStore'
-import { clampOffset } from '../windows/widgetPlacementMath'
-import type { EdgePlacement, WidgetEdge } from '../windows/widgetPlacementMath'
+import type { WidgetEdge, WidgetPlacement } from '../windows/widgetPlacementMath'
 
-/** Edge-snapped placement persisted for the widget (record version 2). */
-export type WidgetPlacement = EdgePlacement
+/** Offset-bearing placement used only by the legacy version 2 storage adapter. */
+export interface VersionTwoWidgetPlacement extends WidgetPlacement {
+  readonly offset: number
+}
 
 /**
  * A remembered placement as read from disk: either the current edge shape or a
@@ -14,13 +15,18 @@ export type StoredWidgetPlacement =
   | { readonly kind: 'point'; readonly x: number; readonly y: number }
 
 type WidgetPlacementRecord =
-  | { readonly version: 2; readonly placement: EdgePlacement | null }
+  | { readonly version: 2; readonly placement: VersionTwoWidgetPlacement | null }
   | { readonly version: 1; readonly placement: { readonly x: number; readonly y: number } | null }
 
 const WIDGET_EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 
 function isWidgetEdge(input: unknown): input is WidgetEdge {
   return typeof input === 'string' && (WIDGET_EDGES as readonly string[]).includes(input)
+}
+
+function clampVersionTwoOffset(offset: number): number {
+  if (!Number.isFinite(offset)) return 0.5
+  return Math.min(Math.max(offset, 0), 1)
 }
 
 function parseWidgetPlacementRecord(input: unknown): WidgetPlacementRecord {
@@ -86,11 +92,11 @@ export class WidgetPlacementRepository {
     return { kind: 'point', ...record.placement }
   }
 
-  async save(placement: WidgetPlacement): Promise<void> {
+  async save(placement: VersionTwoWidgetPlacement): Promise<void> {
     const record = parseWidgetPlacementRecord({
       version: 2,
       placement: isWidgetEdge(placement.edge)
-        ? { edge: placement.edge, offset: clampOffset(placement.offset) }
+        ? { edge: placement.edge, offset: clampVersionTwoOffset(placement.offset) }
         : null,
     })
     try {
