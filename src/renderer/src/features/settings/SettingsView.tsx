@@ -366,7 +366,7 @@ export function SettingsView({
 
   return (
     <div className="management-view settings-view">
-      <header className="management-view__header"><div><p className="management-eyebrow">Make TalkType yours</p><h1 ref={headingRef} tabIndex={-1}>Settings</h1><p>Changes are saved locally and apply to future recordings.</p></div></header>
+      <h1 className="tt-visually-hidden" ref={headingRef} tabIndex={-1}>Settings</h1>
       {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
 
       <Card className="settings-section">
@@ -374,6 +374,7 @@ export function SettingsView({
         <div className="settings-fields-grid">
           <Field label="Theme" description="Follow Windows or force a complete light or dark theme."><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
           <Field label="Reduced motion" description="Follow Windows or minimize non-essential motion."><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+          <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
         </div>
       </Card>
 

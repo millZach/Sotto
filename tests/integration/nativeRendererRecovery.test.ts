@@ -151,6 +151,11 @@ describe('native recovery after the main renderer is lost', () => {
         getTrayState: () => trayState,
         updateTray: trayUpdate,
         syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+        widgetDisplay: {
+          lock: () => windows.lockWidgetDisplay(),
+          unlock: () => windows.unlockWidgetDisplay(),
+        },
+        showWidgetWhenIdle: () => true,
         log: vi.fn(),
       })
       rendererLoss = (kind) => lifecycle.rendererProcessGone(kind)

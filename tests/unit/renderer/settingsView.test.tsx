@@ -71,13 +71,24 @@ describe('SettingsView', () => {
     render(<div data-theme={theme}><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     for (const name of [
-      'Theme', 'Reduced motion', 'Microphone', 'Global shortcut', 'Maximum recording time',
-      'Sound cues', 'Language', 'Inference', 'Whitespace formatting', 'Automatic clipboard copy',
-      'Automatic paste', 'Paste delay', 'Success message duration', 'Launch when Windows starts',
-      'Start minimized', 'Keep local history', 'History retention',
-    ]) expect(screen.getByRole(name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === 'Launch when Windows starts' || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
+      'Theme', 'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
+      'Maximum recording time', 'Sound cues', 'Language', 'Inference', 'Whitespace formatting',
+      'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
+      'Launch when Windows starts', 'Start minimized', 'Keep local history', 'History retention',
+    ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === 'Launch when Windows starts' || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
+    expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeDisabled()
+  })
+
+  it('saves the widget idle-visibility preference through the ordinary patch flow', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+
+    await user.click(screen.getByRole('switch', { name: 'Show floating widget when idle' }))
+
+    expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
   })
 
   it('applies theme immediately and resynchronizes numeric drafts from authoritative settings', async () => {

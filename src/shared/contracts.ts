@@ -131,6 +131,27 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .strict(),
 ])
 
+/**
+ * One renderer-reported step of a widget drag gesture. Deltas are cumulative
+ * screen-pixel offsets from the drag start, computed by the renderer from
+ * screenX/screenY so the window moving under the pointer cannot corrupt them.
+ */
+const widgetDragDelta = z.number().int().min(-100_000).max(100_000)
+
+export const widgetDragSchema = z.discriminatedUnion('phase', [
+  z.object({ phase: z.literal('start') }).strict(),
+  z
+    .object({
+      phase: z.literal('move'),
+      deltaX: widgetDragDelta,
+      deltaY: widgetDragDelta,
+    })
+    .strict(),
+  z.object({ phase: z.literal('end') }).strict(),
+])
+
+export type WidgetDragPayload = z.infer<typeof widgetDragSchema>
+
 export const outputDeliveryRequestSchema = z
   .object({
     text: z.string().max(200_000),
@@ -267,9 +288,11 @@ export interface TalkTypeBridge {
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface TalkTypeWidgetBridge {
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
+  requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
   setMouseInteractive(interactive: boolean): Promise<CommandResult>
+  reportDrag(payload: WidgetDragPayload): Promise<CommandResult>
 }
 
 declare global {

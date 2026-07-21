@@ -11,12 +11,14 @@ import {
   default as React,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
 
-import type { TalkTypeWidgetBridge } from '../../../shared/contracts'
+import type { TalkTypeWidgetBridge, WidgetDragPayload } from '../../../shared/contracts'
 import { formatWindowsAccelerator } from '../../../shared/accelerator'
 import type {
   WidgetErrorCode,
@@ -116,9 +118,11 @@ function WidgetAnnouncements({ snapshot }: { readonly snapshot: WidgetSnapshot |
 export interface WidgetAppProps {
   readonly snapshot: WidgetSnapshot
   readonly now: number
+  readonly onToggle?: () => void
   readonly onStop?: () => void
   readonly onCancel?: () => void
   readonly onSliverHover?: (hovering: boolean) => void
+  readonly onDrag?: (payload: WidgetDragPayload) => void
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -177,8 +181,115 @@ function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
   }
 }
 
-function preventFocus(event: ReactMouseEvent<HTMLButtonElement>): void {
+function preventFocus(event: ReactMouseEvent<HTMLElement>): void {
   event.preventDefault()
+}
+
+function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
+  // Button presses must never start a widget drag session.
+  event.stopPropagation()
+}
+
+/** Movement past this many screen pixels turns a press into a drag. */
+const DRAG_THRESHOLD_PX = 4
+
+interface DragTracking {
+  pointerId: number
+  startX: number
+  startY: number
+  dragging: boolean
+}
+
+interface DragOrClickSurface {
+  readonly dragging: boolean
+  readonly isDragActive: () => boolean
+  readonly surfaceProps: {
+    readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void
+    readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void
+    readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void
+    readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void
+    readonly onClick: () => void
+  }
+}
+
+/**
+ * Discriminates a press on a widget surface into a click or a drag by a small
+ * movement threshold. Deltas are computed from screenX/screenY so the window
+ * moving under the pointer cannot corrupt them. A completed drag swallows the
+ * click the browser dispatches after pointerup.
+ */
+function useDragOrClick(
+  onClick: (() => void) | undefined,
+  onDrag: ((payload: WidgetDragPayload) => void) | undefined,
+  onDragFinished?: (() => void) | undefined,
+): DragOrClickSurface {
+  const trackingRef = useRef<DragTracking | null>(null)
+  const suppressClickRef = useRef(false)
+  const [dragging, setDragging] = useState(false)
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLElement>): void => {
+    if (event.button !== 0 || event.isPrimary === false) return
+    suppressClickRef.current = false
+    trackingRef.current = {
+      pointerId: event.pointerId,
+      startX: event.screenX,
+      startY: event.screenY,
+      dragging: false,
+    }
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    } catch {
+      // Pointer capture is unavailable in some environments; tracking still works.
+    }
+  }
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLElement>): void => {
+    const tracking = trackingRef.current
+    if (tracking === null || event.pointerId !== tracking.pointerId) return
+    const deltaX = event.screenX - tracking.startX
+    const deltaY = event.screenY - tracking.startY
+    if (!tracking.dragging) {
+      if (Math.hypot(deltaX, deltaY) <= DRAG_THRESHOLD_PX) return
+      tracking.dragging = true
+      setDragging(true)
+      onDrag?.({ phase: 'start' })
+    }
+    onDrag?.({ phase: 'move', deltaX: Math.round(deltaX), deltaY: Math.round(deltaY) })
+  }
+
+  const finish = (event: ReactPointerEvent<HTMLElement>, cancelled: boolean): void => {
+    const tracking = trackingRef.current
+    if (tracking === null || event.pointerId !== tracking.pointerId) return
+    trackingRef.current = null
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId)
+    } catch {
+      // Releasing capture is best effort.
+    }
+    if (!tracking.dragging) return
+    suppressClickRef.current = !cancelled
+    setDragging(false)
+    onDrag?.({ phase: 'end' })
+    onDragFinished?.()
+  }
+
+  return {
+    dragging,
+    isDragActive: () => trackingRef.current?.dragging === true,
+    surfaceProps: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp: (event) => finish(event, false),
+      onPointerCancel: (event) => finish(event, true),
+      onClick: () => {
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false
+          return
+        }
+        onClick?.()
+      },
+    },
+  }
 }
 
 function LevelBars({ level, active }: { readonly level: number; readonly active: boolean }): ReactNode {
@@ -231,7 +342,12 @@ function WidgetAction({
       aria-label={label}
       tabIndex={-1}
       onMouseDown={preventFocus}
-      onClick={onClick}
+      onPointerDown={stopPointerPropagation}
+      onClick={(event) => {
+        // Keep the capsule's click-to-stop surface from double-handling.
+        event.stopPropagation()
+        onClick?.()
+      }}
     >
       {children}
     </button>
@@ -241,10 +357,23 @@ function WidgetAction({
 export function WidgetApp({
   snapshot,
   now,
+  onToggle,
   onStop,
   onCancel,
   onSliverHover,
+  onDrag,
 }: WidgetAppProps): ReactNode {
+  const isIdle = snapshot.status === 'idle'
+  // The idle sliver click starts dictation; the active capsule click stops it.
+  // Either surface becomes a drag once movement passes the threshold. When an
+  // idle drag ends the window has snapped away from the pointer, so hover-off
+  // restores the click-through baseline; re-hovering re-arms interactivity.
+  const surface = useDragOrClick(
+    isIdle ? onToggle : onStop,
+    onDrag,
+    isIdle ? () => onSliverHover?.(false) : undefined,
+  )
+
   if (snapshot.status === 'idle') {
     return (
       <aside
@@ -252,15 +381,24 @@ export function WidgetApp({
         aria-label="TalkType dictation status"
         data-status="idle"
         data-tone="idle"
+        data-dragging={surface.dragging || undefined}
       >
         <div
           className="widget-sliver"
           data-testid="widget-sliver"
+          tabIndex={-1}
           onMouseEnter={() => onSliverHover?.(true)}
-          onMouseLeave={() => onSliverHover?.(false)}
+          onMouseLeave={() => {
+            if (!surface.isDragActive()) onSliverHover?.(false)
+          }}
+          onMouseDown={preventFocus}
+          {...surface.surfaceProps}
         >
           <span className="widget-sliver__hint">
-            {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+            <span className="widget-sliver__hint-action">Click to dictate</span>
+            <span className="widget-sliver__hint-keys">
+              {formatWindowsAccelerator(snapshot.shortcut)} to dictate
+            </span>
           </span>
         </div>
       </aside>
@@ -278,8 +416,14 @@ export function WidgetApp({
       aria-label="TalkType dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
+      data-dragging={surface.dragging || undefined}
     >
-      <div className="widget-capsule">
+      <div
+        className="widget-capsule"
+        tabIndex={-1}
+        onMouseDown={preventFocus}
+        {...surface.surfaceProps}
+      >
         {isListening && <span className="widget-dot" aria-hidden="true" />}
         {isListening && <LevelBars level={snapshot.level} active />}
         {isListening && (
@@ -326,7 +470,11 @@ export function WidgetApp({
             aria-label="Cancel dictation"
             tabIndex={-1}
             onMouseDown={preventFocus}
-            onClick={onCancel}
+            onPointerDown={stopPointerPropagation}
+            onClick={(event) => {
+              event.stopPropagation()
+              onCancel?.()
+            }}
           >
             esc
           </button>
@@ -385,10 +533,14 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   const actions = useMemo(() => {
     if (bridge === undefined || preview !== null) return {}
     return {
+      onToggle: () => { void bridge.requestToggle().catch(() => undefined) },
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
       onSliverHover: (hovering: boolean) => {
         void bridge.setMouseInteractive(hovering).catch(() => undefined)
+      },
+      onDrag: (payload: WidgetDragPayload) => {
+        void bridge.reportDrag(payload).catch(() => undefined)
       },
     }
   }, [bridge, preview])

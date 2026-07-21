@@ -24,12 +24,14 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  WIDGET_DRAG,
   WIDGET_INTERACTIVITY,
   WIDGET_PUBLISH,
 } from '../../shared/channels'
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
+  widgetDragSchema,
   widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
@@ -41,6 +43,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type StartupState,
+  type WidgetDragPayload,
 } from '../../shared/contracts'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
@@ -69,6 +72,7 @@ const settingKeys = [
   'pasteDelayMs',
   'successDisplayMs',
   'startMinimized',
+  'showWidgetWhenIdle',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
@@ -220,6 +224,7 @@ export interface RegisterIpcDependencies {
 
 export interface WidgetIpcService {
   setMouseInteractive(interactive: boolean): void
+  reportDrag(payload: WidgetDragPayload): void
 }
 
 export class InvalidIpcPayloadError extends Error {
@@ -418,7 +423,9 @@ export function registerIpc(
       dictationCommandSchema,
       1,
       async (command, role): Promise<CommandResult> => {
-        if (role === 'widget' && command.type !== 'cancel' && command.type !== 'stop') {
+        // The widget may toggle (click-to-dictate), stop, and cancel; only the
+        // explicit 'start' command stays a main-renderer privilege.
+        if (role === 'widget' && command.type === 'start') {
           throw new UnauthorizedIpcSenderError()
         }
         if (dependencies.dictation === undefined) {
@@ -438,6 +445,19 @@ export function registerIpc(
           return UNAVAILABLE
         }
         dependencies.widget.setMouseInteractive(interactive)
+        return OK
+      },
+      ['widget'],
+    )
+    register(
+      WIDGET_DRAG,
+      widgetDragSchema,
+      1,
+      async (payload): Promise<CommandResult> => {
+        if (dependencies.widget === undefined) {
+          return UNAVAILABLE
+        }
+        dependencies.widget.reportDrag(payload)
         return OK
       },
       ['widget'],

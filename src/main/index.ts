@@ -38,7 +38,7 @@ import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import {
   WidgetPlacementRepository,
-  type WidgetPlacement,
+  type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
 import { StartupService } from './startup/startupService'
@@ -70,6 +70,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
+import type { AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
@@ -326,7 +327,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )
-  let widgetPlacement: WidgetPlacement | null = await widgetPlacementStore.get()
+  let widgetPlacement: StoredWidgetPlacement | null = await widgetPlacementStore.get()
+  let showWidgetWhenIdle = (await settings.get()).showWidgetWhenIdle
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
@@ -341,9 +343,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     log: logOperational,
     onRendererProcessGone: (kind) => handleRendererProcessGone(kind),
     getWidgetPlacement: () => widgetPlacement,
-    onWidgetMoved: (point) => {
-      widgetPlacement = point
-      void widgetPlacementStore.save(point)
+    onWidgetMoved: (placement) => {
+      widgetPlacement = { kind: 'edge', ...placement }
+      void widgetPlacementStore.save(placement)
     },
   })
   const productionModels = e2eConfiguration === null ? await (async () => {
@@ -438,7 +440,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(currentTrayState)
     },
     async onSettingsChanged(settings): Promise<void> {
-      if (settings.onboardingComplete) showWidget()
+      showWidgetWhenIdle = settings.showWidgetWhenIdle
+      if (settings.onboardingComplete && dictationLifecycle.isIdle()) {
+        // Re-seed the resting sliver so theme/shortcut changes repaint it and
+        // the idle-visibility reveal/conceal decision is re-evaluated.
+        await publishIdleWidgetState(settings)
+      } else if (!settings.showWidgetWhenIdle && dictationLifecycle.isIdle()) {
+        windows.hideWidget()
+      }
       const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
       if (!delivered) logOperational('native-main-send-failed')
     },
@@ -475,11 +484,25 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(state)
     },
     syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
+    widgetDisplay: {
+      lock: () => windows.lockWidgetDisplay(),
+      unlock: () => windows.unlockWidgetDisplay(),
+    },
+    showWidgetWhenIdle: () => showWidgetWhenIdle,
     log: logOperational,
   })
   handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
+  }
+  const publishIdleWidgetState = async (current: AppSettings): Promise<void> => {
+    await dictationLifecycle.publish({
+      status: 'idle',
+      theme: current.theme,
+      reducedMotion: current.reducedMotion,
+      shortcut: current.hotkey,
+      cancellable: false,
+    })
   }
 
   const permissionAdapter = createPermissionAdapter()
@@ -489,6 +512,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     tray,
     startup,
     settings,
+    publishIdleWidgetState,
     installPermissions: () =>
       installSessionPermissionPolicy(permissionAdapter, () =>
         windows
@@ -538,6 +562,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         output,
         widget: {
           setMouseInteractive: (interactive) => windows.setWidgetMouseInteractive(interactive),
+          reportDrag: (payload) => windows.reportWidgetDrag(payload),
         },
         models: createModelIpcService(models, (status) => {
           windows.sendToMain(MODEL_STATUS, status)

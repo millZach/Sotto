@@ -42,6 +42,7 @@ describe('WidgetApp', () => {
     )
     expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+Space to dictate')).toBeInTheDocument()
+    expect(screen.getByText('Click to dictate')).toBeInTheDocument()
 
     rerender(
       <WidgetApp
@@ -276,6 +277,128 @@ describe('WidgetApp', () => {
     expect(processingCopy).not.toHaveAttribute('aria-live')
   })
 
+  it('starts dictation from a non-focusing click on the idle sliver', () => {
+    const onToggle = vi.fn()
+    render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    expect(sliver).toHaveAttribute('tabindex', '-1')
+    expect(fireEvent.mouseDown(sliver)).toBe(false)
+    fireEvent.click(sliver)
+    expect(onToggle).toHaveBeenCalledOnce()
+  })
+
+  it('stops the session from a capsule surface click without double-firing through action buttons', () => {
+    const onToggle = vi.fn()
+    const onStop = vi.fn()
+    const onCancel = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'click', startedAt: 0, level: 0.4,
+          cancellable: true,
+        })}
+        now={1_000}
+        onToggle={onToggle}
+        onStop={onStop}
+        onCancel={onCancel}
+      />,
+    )
+
+    const capsule = container.querySelector('.widget-capsule')
+    expect(capsule).not.toBeNull()
+    expect(fireEvent.mouseDown(capsule!)).toBe(false)
+    fireEvent.click(capsule!)
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    expect(onStop).toHaveBeenCalledTimes(2)
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('keeps sub-threshold pointer movement a click on the idle sliver', () => {
+    const onToggle = vi.fn()
+    const onDrag = vi.fn()
+    render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} onDrag={onDrag} />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.pointerDown(sliver, { pointerId: 1, button: 0, isPrimary: true, screenX: 100, screenY: 100 })
+    fireEvent.pointerMove(sliver, { pointerId: 1, screenX: 102, screenY: 101 })
+    fireEvent.pointerUp(sliver, { pointerId: 1, screenX: 102, screenY: 101 })
+    fireEvent.click(sliver)
+
+    expect(onToggle).toHaveBeenCalledOnce()
+    expect(onDrag).not.toHaveBeenCalled()
+  })
+
+  it('turns super-threshold movement into a drag that suppresses the click', () => {
+    const onToggle = vi.fn()
+    const onDrag = vi.fn()
+    render(
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} onDrag={onDrag} />,
+    )
+
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.pointerDown(sliver, { pointerId: 1, button: 0, isPrimary: true, screenX: 100, screenY: 100 })
+    fireEvent.pointerMove(sliver, { pointerId: 1, screenX: 120, screenY: 90 })
+    fireEvent.pointerMove(sliver, { pointerId: 1, screenX: 150, screenY: 130 })
+    fireEvent.pointerUp(sliver, { pointerId: 1, screenX: 150, screenY: 130 })
+    fireEvent.click(sliver)
+
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(onDrag.mock.calls.map(([payload]) => payload)).toEqual([
+      { phase: 'start' },
+      { phase: 'move', deltaX: 20, deltaY: -10 },
+      { phase: 'move', deltaX: 50, deltaY: 30 },
+      { phase: 'end' },
+    ])
+
+    // The suppression is consumed by the drag's own click; the next plain
+    // click is a fresh gesture and must work again.
+    fireEvent.click(sliver)
+    expect(onToggle).toHaveBeenCalledOnce()
+  })
+
+  it('drags the capsule with the same threshold while button presses never start drags', () => {
+    const onStop = vi.fn()
+    const onDrag = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'drag', startedAt: 0, level: 0.4,
+          cancellable: true,
+        })}
+        now={1_000}
+        onStop={onStop}
+        onDrag={onDrag}
+      />,
+    )
+
+    const capsule = container.querySelector('.widget-capsule')!
+    fireEvent.pointerDown(capsule, { pointerId: 2, button: 0, isPrimary: true, screenX: 10, screenY: 10 })
+    fireEvent.pointerMove(capsule, { pointerId: 2, screenX: 40, screenY: 10 })
+    fireEvent.pointerUp(capsule, { pointerId: 2, screenX: 40, screenY: 10 })
+    fireEvent.click(capsule)
+    expect(onStop).not.toHaveBeenCalled()
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end' })
+
+    onDrag.mockClear()
+    const stop = screen.getByRole('button', { name: 'Stop dictation' })
+    fireEvent.pointerDown(stop, { pointerId: 2, button: 0, isPrimary: true, screenX: 10, screenY: 10 })
+    fireEvent.pointerMove(capsule, { pointerId: 2, screenX: 60, screenY: 60 })
+    fireEvent.pointerUp(capsule, { pointerId: 2, screenX: 60, screenY: 60 })
+    fireEvent.click(stop)
+    expect(onDrag).not.toHaveBeenCalled()
+    expect(onStop).toHaveBeenCalledOnce()
+  })
+
   it('never exposes Electron accelerator vocabulary in the resting hint', () => {
     render(
       <WidgetApp
@@ -300,9 +423,11 @@ describe('WidgetEntry', () => {
         listener = next
         return unsubscribe
       }),
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const view = render(
       <StrictMode><WidgetEntry bridge={bridge} preview={null} /></StrictMode>,
@@ -316,8 +441,65 @@ describe('WidgetEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
     expect(bridge.requestStop).toHaveBeenCalledOnce()
     expect(bridge.requestCancel).toHaveBeenCalledOnce()
+    expect(bridge.requestToggle).not.toHaveBeenCalled()
     view.unmount()
     expect(unsubscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('routes idle sliver clicks to toggle and capsule surface clicks to stop', () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+
+    act(() => listener?.(snapshot({ status: 'idle' })))
+    fireEvent.click(screen.getByTestId('widget-sliver'))
+    expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
+
+    act(() => listener?.(snapshot({
+      status: 'listening', sessionId: 'click', startedAt: Date.now(), level: 0.4,
+      cancellable: true,
+    })))
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(bridge.requestStop).toHaveBeenCalledTimes(1)
+    expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports drag phases through the widget bridge', () => {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    render(<WidgetEntry bridge={bridge} preview={null} />)
+
+    act(() => listener?.(snapshot({ status: 'idle' })))
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.pointerDown(sliver, { pointerId: 3, button: 0, isPrimary: true, screenX: 50, screenY: 60 })
+    fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
+    fireEvent.pointerUp(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
+    expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
+      { phase: 'start' },
+      { phase: 'move', deltaX: 30, deltaY: 0 },
+      { phase: 'end' },
+    ])
+    expect(bridge.requestToggle).not.toHaveBeenCalled()
   })
 
   it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
@@ -346,9 +528,11 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
     const polite = screen.getByRole('status')
@@ -418,9 +602,11 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
     }
     render(<WidgetEntry bridge={bridge} preview={null} />)
     act(() => listener?.(state))
@@ -437,9 +623,11 @@ describe('WidgetEntry', () => {
         listener = next
         return () => undefined
       },
+      requestToggle: vi.fn(async () => Promise.reject(new Error('private toggle failure'))),
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
       setMouseInteractive: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
     act(() => listener?.(snapshot({

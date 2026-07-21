@@ -153,7 +153,7 @@ describe('WindowManager construction', () => {
         minHeight: 560,
         show: false,
         title: 'TalkType',
-        backgroundColor: '#111318',
+        backgroundColor: '#1b1917',
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',
@@ -313,26 +313,38 @@ describe('WindowManager lifecycle', () => {
     expect(widget.focus).not.toHaveBeenCalled()
   })
 
-  it('shows the widget at a valid remembered position instead of the default anchor', async () => {
+  it('applies a remembered edge placement along the active display edge', async () => {
     const { manager, windows } = createHarness({
-      getWidgetPlacement: () => ({ x: 1_100, y: 300 }),
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left', offset: 0.25 }),
     })
     await manager.createWidgetWindow()
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_100, 300, false)
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 303, false)
   })
 
-  it('clamps a remembered position that no longer fits any display work area', async () => {
+  it('converts a legacy remembered point into a roughly equivalent edge placement', async () => {
     const { manager, windows } = createHarness({
-      getWidgetPlacement: () => ({ x: 5_000, y: 5_000 }),
+      getWidgetPlacement: () => ({ kind: 'point', x: 1_100, y: 300 }),
     })
     await manager.createWidgetWindow()
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_952, 912, false)
+    // (1100, 300) is nearest the left edge, 200px down the 812px travel range.
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 300, false)
+  })
+
+  it('clamps a legacy remembered point that no longer fits any display work area', async () => {
+    const { manager, windows } = createHarness({
+      getWidgetPlacement: () => ({ kind: 'point', x: 5_000, y: 5_000 }),
+    })
+    await manager.createWidgetWindow()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_952, 896, false)
   })
 
   it('falls back to the default anchor when reading the remembered position throws', async () => {
@@ -348,7 +360,7 @@ describe('WindowManager lifecycle', () => {
     expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_476, 896, false)
   })
 
-  it('reports widget moves so placement can be remembered', async () => {
+  it('snaps a drag-end position to the nearest edge and reports the placement', async () => {
     const { manager, onWidgetMoved, windows } = createHarness()
     await manager.createWidgetWindow()
     const widget = windows[0]!
@@ -356,7 +368,117 @@ describe('WindowManager lifecycle', () => {
     widget.position = [1_234, 567]
     widget.emit('moved')
 
-    expect(onWidgetMoved).toHaveBeenCalledWith({ x: 1_234, y: 567 })
+    expect(widget.setPosition).toHaveBeenCalledWith(1_016, 567, false)
+    expect(onWidgetMoved).toHaveBeenCalledWith({
+      edge: 'left',
+      offset: expect.closeTo(467 / 812, 6),
+    })
+  })
+
+  it('does not reposition when the widget is already snapped, avoiding move loops', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    widget.position = [1_016, 567]
+    widget.emit('moved')
+
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(onWidgetMoved).toHaveBeenCalledWith({
+      edge: 'left',
+      offset: expect.closeTo(467 / 812, 6),
+    })
+  })
+
+  it('follows renderer drag deltas without snapping, then snaps and reports on drag end', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+    widget.position = [1_200, 500]
+
+    manager.reportWidgetDrag({ phase: 'start' })
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 30, deltaY: -20 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_230, 480, false)
+
+    // Deltas are cumulative from the drag origin, not from the last move.
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 5 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_210, 505, false)
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    // The moved-event snap fallback must stay silent during the session.
+    widget.position = [1_210, 505]
+    widget.emit('moved')
+    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 505, false)
+    expect(onWidgetMoved).toHaveBeenCalledWith({
+      edge: 'left',
+      offset: expect.closeTo(405 / 812, 6),
+    })
+
+    // After the session ends the moved-event snap fallback works again.
+    widget.position = [1_100, 300]
+    widget.emit('moved')
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 300, false)
+  })
+
+  it('treats out-of-order drag phases as harmless and lets start re-anchor', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
+    manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    manager.reportWidgetDrag({ phase: 'start' })
+    widget.position = [1_100, 300]
+    manager.reportWidgetDrag({ phase: 'start' })
+    manager.reportWidgetDrag({ phase: 'move', deltaX: 5, deltaY: 0 })
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_105, 300, false)
+  })
+
+  it('ignores drag reports without a widget window', () => {
+    const { manager } = createHarness()
+
+    expect(() => manager.reportWidgetDrag({ phase: 'start' })).not.toThrow()
+    expect(() => manager.reportWidgetDrag({ phase: 'move', deltaX: 4, deltaY: 4 })).not.toThrow()
+    expect(() => manager.reportWidgetDrag({ phase: 'end' })).not.toThrow()
+  })
+
+  it('pins the widget to the session display while locked and releases it on unlock', async () => {
+    const displays = [
+      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
+      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
+    ] as const
+    const cursor = { current: { x: 1_700, y: 970 } }
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => cursor.current,
+        getDisplayNearestPoint: (point) => (point.x < 1_000 ? displays[0] : displays[1]),
+      },
+    })
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+
+    // Session starts with the cursor on the second display.
+    manager.lockWidgetDisplay()
+    cursor.current = { x: 100, y: 100 }
+    await manager.showWidget()
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
+
+    // A second lock during the same session must not re-anchor to the cursor.
+    manager.lockWidgetDisplay()
+    await manager.showWidget()
+    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
+
+    // Back to idle: the widget follows the cursor display again.
+    manager.unlockWidgetDisplay()
+    await manager.showWidget()
+    expect(widget.setPosition).toHaveBeenLastCalledWith(376, 696, false)
   })
 
   it('starts the widget mouse-passthrough and toggles interactivity on request', async () => {

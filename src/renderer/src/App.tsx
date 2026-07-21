@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 
 import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
 import type { AppSettings, ModelPreset } from '../../shared/settings'
-import { AppShell } from './components/AppShell'
+import { AppShell, type AppStatusTone } from './components/AppShell'
 import { Card } from './components/Card'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
@@ -237,13 +237,19 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   }
 
   const navigation = app.navigation
-  const statusText = app.failure !== null
-    ? 'A local operation needs attention'
+  const statusTone: AppStatusTone = app.failure !== null
+    ? 'attention'
     : app.dictation.status === 'listening'
-      ? 'Listening - press the shortcut again to finish'
+      ? 'listening'
       : app.dictation.status === 'processing'
-        ? 'Transcribing locally'
-        : 'Ready for private dictation'
+        ? 'processing'
+        : 'ready'
+  const statusText = {
+    ready: 'Ready · Local & private',
+    listening: 'Listening',
+    processing: 'Transcribing locally',
+    attention: 'Needs attention',
+  }[statusTone]
 
   let view: ReactNode
   switch (navigation) {
@@ -294,6 +300,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       <AppShell
         navigation={navigation}
         statusText={statusText}
+        statusTone={statusTone}
         onNavigate={app.actions.navigate}
         onMinimize={app.actions.minimizeApp}
         onClose={app.actions.hideApp}
