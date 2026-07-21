@@ -1188,9 +1188,11 @@ git commit -m "fix: harden and coalesce widget drag gestures"
 ### Task 10: Add Electron Regression Coverage and Run Full Verification
 
 **Files:**
+- Modify: `tests/unit/main/windowManager.test.ts`
 - Modify: `tests/integration/nativeRendererRecovery.test.ts`
 - Modify: `tests/integration/ipc.test.ts`
 - Modify: `tests/e2e/app.spec.ts`
+- Refresh: `artifacts/design/baseline/idle-light.png` only if the focused visual-preview test proves the approved idle presentation moved while remaining deterministic, bounded, and transparent.
 - Modify fake window support only where required by those tests.
 
 **Interfaces:**
@@ -1204,12 +1206,15 @@ Add:
 widget renderer loss releases drag ownership and replacement follows cursor
 hiding during drag releases ownership and stops monitor checks
 active presentation resizes without recreating the widget
+native drag-end snap failure clears ownership and the next monitor tick recovers
 ```
+
+For the last test, move the fake widget to unsnapped bounds before `reportWidgetDrag({ phase: 'end' })`, make that snap's `setBounds` call throw, assert ownership is cleared, then advance the monitor timer and assert centered bounds are applied successfully.
 
 Run:
 
 ```text
-npm test -- tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts
+npm test -- tests/unit/main/windowManager.test.ts tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts
 ```
 
 Expected before final fixture updates: FAIL on missing combined lifecycle assertions.
@@ -1272,10 +1277,20 @@ npm run test:e2e
 
 Expected: every command exits successfully with no existing unit, integration, release, design-capture, or Electron regression.
 
+If the full Electron suite fails only because `idle-light.png` still records the old idle canvas position, first reproduce that exact test without update mode. Then refresh only the approved idle-light baseline:
+
+```powershell
+$env:TALKTYPE_UPDATE_WIDGET_BASELINES = '1'; npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle light preview"; Remove-Item Env:TALKTYPE_UPDATE_WIDGET_BASELINES
+npx playwright test --workers=1 tests/e2e/visual-previews.spec.ts -g "idle light preview"
+npm run test:e2e
+```
+
+Inspect `git status --short` and confirm that no other design baseline changed. The refreshed image must still pass the test's deterministic, bounded, alpha-edge, and visible-pixel assertions.
+
 - [ ] **Step 5: Commit verification coverage**
 
 ```text
-git add tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts tests/e2e/app.spec.ts
+git add tests/unit/main/windowManager.test.ts tests/integration/nativeRendererRecovery.test.ts tests/integration/ipc.test.ts tests/e2e/app.spec.ts artifacts/design/baseline/idle-light.png
 git commit -m "test: cover frameless chrome and widget placement lifecycle"
 ```
 
