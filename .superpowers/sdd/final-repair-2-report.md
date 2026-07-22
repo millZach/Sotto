@@ -190,3 +190,170 @@ Before the repair commit, `git diff --check` exited `0` and status listed exactl
 No unresolved repair concern.
 
 The Electron build continues to print the pre-existing Vite warnings that Lucide `"use client"` directives are ignored, plus Playwright's existing `NO_COLOR`/`FORCE_COLOR` warning. Six authoritative design-capture tests remain intentionally skipped; all 30 active Electron tests passed.
+
+---
+
+## Whole-branch follow-up repair: reveal ordering and drag recovery
+
+### Status
+
+DONE
+
+- Date: 2026-07-21
+- Branch: `fix/window-controls-pill-drag`
+- Base commit: `8cfd92a89a41266abb41dcab9caf329d5656ee52`
+- Repair commit: `bf2c390cb5fdf9dc150df51fcda71f1f87f1ed3a`
+- Repair commit subject: `fix: harden widget reveal and drag recovery`
+- Amend performed: no
+- Push performed: no
+- Tracked working tree after the repair commit: clean
+
+### Findings repaired
+
+1. **An in-flight reveal could resurrect the widget after a later hide**
+   - `showWidget()` now captures a monotonically increasing visibility generation before awaiting widget creation.
+   - `hideWidget()` invalidates every earlier reveal request even when the widget was not yet marked visible.
+   - A stale continuation returns before placement, visibility publication, `showInactive()`, or monitor startup, while a later explicit reveal remains the newest request.
+
+2. **A successful drag move followed by readback failure was never retried**
+   - After `setPosition()` returns, `widgetLastAppliedBounds` is invalidated before the native bounds readback.
+   - A successful readback replaces the invalidated cache with the actual rectangle as before.
+   - If readback throws, drag ownership clears and the next 100 ms monitor check cannot mistake the pre-drag rectangle for current native bounds; it reapplies the snapped target.
+
+### Files changed
+
+Production:
+
+- `D:/Talk to Text Application/src/main/windows/windowManager.ts`
+
+Tests:
+
+- `D:/Talk to Text Application/tests/unit/main/windowManager.test.ts`
+
+Report:
+
+- `D:/Talk to Text Application/.superpowers/sdd/final-repair-2-report.md`
+
+### Test-driven development evidence
+
+Production code for each finding was unchanged until its focused regression was added and observed failing for the reviewed symptom.
+
+#### Stale reveal RED
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "does not reveal after hide wins an in-flight widget load"
+```
+
+Exit `1`: 1 failed, 82 skipped.
+
+The deferred renderer load resolved after `hideWidget()`, and the stale continuation still published visible state:
+
+```text
+expected "vi.fn()" to not be called with arguments:
+[ 'talktype:widget:visibility', true ]
+Number of calls: 1
+```
+
+#### Stale reveal GREEN
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "does not reveal after hide wins an in-flight widget load"
+```
+
+Exit `0`: 1 passed, 82 skipped.
+
+The regression proves the winning hide remains native and logical state: `hide()` is called once, no visible publication occurs, `showInactive()` is not called, no monitor timer starts, and a repeated hide does not publish a spurious hidden transition.
+
+The cursor-monitor lifecycle group then passed:
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "WindowManager cursor monitor following"
+```
+
+Exit `0`: 12 passed, 71 skipped.
+
+#### Drag readback RED
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies snapped bounds after a drag move readback failure"
+```
+
+Exit `1`: 1 failed, 83 skipped.
+
+`setPosition()` moved the fake native widget from `x = 376` to `x = 476`, the following `getBounds()` threw, and the next same-monitor check issued no recovery operation:
+
+```text
+expected "vi.fn()" to be called with arguments:
+[ { x: 376, y: 708, width: 248, height: 76 }, false ]
+Number of calls: 0
+```
+
+#### Drag readback GREEN
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies snapped bounds after a drag move readback failure"
+```
+
+Exit `0`: 1 passed, 83 skipped.
+
+The regression proves that ownership clears after the failed readback and the next monitor tick calls `setBounds()` with the centered snapped rectangle, restoring the fake native widget to `x = 376`.
+
+The complete coordinator suite then passed:
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts
+```
+
+Exit `0`: 1 file passed, 84 tests passed.
+
+### Final verification commands and results
+
+#### Focused coordinator and renderer-recovery coverage
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts tests/integration/nativeRendererRecovery.test.ts
+```
+
+Exit `0`: 2 files passed, 90 tests passed.
+
+#### Typecheck
+
+```text
+npm run typecheck
+```
+
+Exit `0`: both Node and web TypeScript projects completed without diagnostics.
+
+#### Lint
+
+```text
+npm run lint
+```
+
+Exit `0`: ESLint completed without errors or warnings.
+
+#### Diff and branch checks
+
+```text
+git diff --check
+git status --short --branch
+git rev-parse HEAD
+```
+
+Before commit, `git diff --check` exited `0`; status showed only `src/main/windows/windowManager.ts` and `tests/unit/main/windowManager.test.ts` modified on `fix/window-controls-pill-drag`, with base `8cfd92a89a41266abb41dcab9caf329d5656ee52`. After repair commit `bf2c390cb5fdf9dc150df51fcda71f1f87f1ed3a`, the tracked working tree was clean before this report append.
+
+### Self-review
+
+- Re-read the approved design, implementation plan, prior repair report, current coordinator source, and relevant tests before editing.
+- Verified both supplied findings against base commit `8cfd92a89a41266abb41dcab9caf329d5656ee52` and observed each new regression fail for the expected reviewed symptom.
+- Confirmed every `showWidget()` call receives a distinct generation, so repeated or concurrent reveals leave only the latest request eligible to transition visibility; any later hide invalidates all earlier requests.
+- Kept the existing stopped-manager assertion after the await, so disposal and quit races continue rejecting instead of being silently treated as visibility cancellation.
+- Invalidated the bounds cache only after `setPosition()` returns, preserving the existing cursor-lookup and failed-`setPosition()` paths while repairing the verified partial-success path.
+- Confirmed the 100 ms monitor interval, edge-centered placement geometry, presentation footprints, persistence, renderer bridge, and native constructor options are unchanged.
+- Added no runtime dependency, IPC channel, payload field, visual baseline, or renderer behavior.
+- Focused review of the final source/test diff found no remaining verified Critical or Important issue.
+- No branch or worktree was created or switched, and no amend, force update, or push was performed.
+
+### Concerns
+
+No unresolved follow-up repair concern.
