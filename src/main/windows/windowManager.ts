@@ -694,7 +694,16 @@ export class WindowManager {
 
     try {
       const workArea = this.dependencies.display.getDisplayNearestPoint(stored).workArea
-      this.widgetPlacement = snapToEdge(stored, workArea)
+      this.widgetPlacement = snapToEdge(
+        {
+          ...stored,
+          ...widgetSizeForPresentation(
+            this.widgetPlacement.edge,
+            this.widgetPresentation,
+          ),
+        },
+        workArea,
+      )
     } catch {
       this.widgetPlacement = DEFAULT_WIDGET_PLACEMENT
       return

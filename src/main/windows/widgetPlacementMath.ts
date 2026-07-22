@@ -62,22 +62,16 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
 }
 
-/** Chooses the nearest edge. Ties prefer bottom, top, left, then right. */
+/** Chooses the nearest edge from the current native footprint. Ties prefer bottom, top, left, then right. */
 export function snapToEdge(
-  position: WidgetPoint,
+  bounds: WidgetBounds,
   workArea: WorkAreaRect,
 ): WidgetPlacement {
   const distances: Record<WidgetEdge, number> = {
-    bottom:
-      workArea.y +
-      workArea.height -
-      (position.y + widgetSizeForPresentation('bottom', 'active').height),
-    top: position.y - workArea.y,
-    left: position.x - workArea.x,
-    right:
-      workArea.x +
-      workArea.width -
-      (position.x + widgetSizeForPresentation('right', 'active').width),
+    bottom: workArea.y + workArea.height - (bounds.y + bounds.height),
+    top: bounds.y - workArea.y,
+    left: bounds.x - workArea.x,
+    right: workArea.x + workArea.width - (bounds.x + bounds.width),
   }
 
   const priority: readonly WidgetEdge[] = ['bottom', 'top', 'left', 'right']

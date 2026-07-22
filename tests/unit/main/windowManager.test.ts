@@ -991,6 +991,26 @@ describe('WindowManager lifecycle', () => {
     expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
   })
 
+  it('uses the current idle-resting footprint when migrating a legacy point', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness({
+      getWidgetPlacement: () => ({ kind: 'point', x: 5, y: 708 }),
+      display: {
+        getCursorScreenPoint: () => ({ x: 500, y: 400 }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 0, y: 0, width: 1_000, height: 800 },
+        }),
+      },
+    })
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 16, y: 338, width: 54, height: 124 },
+      false,
+    )
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+  })
+
   it('falls back to centered bottom after storage or display failure', async () => {
     const storageFailure = createHarness({
       getWidgetPlacement: () => {

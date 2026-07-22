@@ -108,16 +108,44 @@ describe('widget presentation geometry', () => {
 
   it('chooses the nearest edge with bottom top left right tie priority', () => {
     const square = { x: 0, y: 0, width: 1_000, height: 1_000 } as const
-    expect(snapToEdge({ x: 456, y: 456 }, square)).toEqual({ edge: 'bottom' })
-    expect(snapToEdge({ x: 100, y: 100 }, square)).toEqual({ edge: 'top' })
+    expect(snapToEdge({ x: 456, y: 456, width: 88, height: 88 }, square)).toEqual({
+      edge: 'bottom',
+    })
+    expect(snapToEdge({ x: 100, y: 100, width: 88, height: 88 }, square)).toEqual({
+      edge: 'top',
+    })
 
     const tall = { x: 0, y: 0, width: 500, height: 1_000 } as const
-    expect(snapToEdge({ x: 206, y: 400 }, tall)).toEqual({ edge: 'left' })
-    expect(snapToEdge({ x: 400, y: 400 }, tall)).toEqual({ edge: 'right' })
+    expect(snapToEdge({ x: 206, y: 400, width: 88, height: 88 }, tall)).toEqual({
+      edge: 'left',
+    })
+    expect(snapToEdge({ x: 400, y: 400, width: 88, height: 88 }, tall)).toEqual({
+      edge: 'right',
+    })
+  })
+
+  it('uses the current idle-hovered footprint when choosing the nearest edge', () => {
+    const workArea = { x: 0, y: 0, width: 1_000, height: 800 } as const
+    const currentBounds = { x: 5, y: 714, width: 248, height: 76 } as const
+
+    expect(snapToEdge(currentBounds, workArea)).toEqual({ edge: 'left' })
+  })
+
+  it('uses active vertical geometry without reintroducing an along-edge offset', () => {
+    const workArea = { x: 0, y: 0, width: 1_000, height: 800 } as const
+    const currentBounds = { x: 900, y: 540, width: 88, height: 248 } as const
+
+    const placement = snapToEdge(currentBounds, workArea)
+
+    expect(placement).toEqual({ edge: 'bottom' })
+    expect(Object.keys(placement)).toEqual(['edge'])
   })
 
   it('returns only an edge and never an offset', () => {
-    const placement = snapToEdge({ x: 1_100, y: 300 }, WORK_AREA)
+    const placement = snapToEdge(
+      { x: 1_100, y: 300, width: 88, height: 88 },
+      WORK_AREA,
+    )
 
     expectTypeOf(placement).toEqualTypeOf<WidgetPlacement>()
     expectTypeOf(DEFAULT_WIDGET_PLACEMENT).toEqualTypeOf<WidgetPlacement>()

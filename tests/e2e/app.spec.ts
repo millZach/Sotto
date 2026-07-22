@@ -281,6 +281,69 @@ test('keeps the real main window frameless with one title bar before and after o
   }
 })
 
+test('keeps onboarding Continue reachable and clickable at the supported 820x560 minimum', async () => {
+  const launched = await launchTalkType()
+  try {
+    await expect(
+      launched.page.getByRole('heading', { name: /private dictation/i }),
+    ).toBeVisible()
+    await launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      if (main === undefined) throw new Error('Main window unavailable')
+      main.setBounds({ ...main.getBounds(), width: 820, height: 560 }, false)
+    })
+    await expect.poll(() => launched.page.evaluate(() =>
+      (globalThis as unknown as { readonly innerWidth: number }).innerWidth,
+    )).toBe(820)
+    await expect.poll(() => launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      return main?.getMinimumSize() ?? null
+    })).toEqual([820, 560])
+
+    const continueButton = launched.page.getByRole('button', { name: 'Continue' })
+    const access = await continueButton.evaluate((button) => {
+      const shell = button.closest('.onboarding-shell')
+      if (shell === null) return null
+      const buttonInsideViewport = (): boolean => {
+        const bounds = button.getBoundingClientRect()
+        const viewportHeight = (
+          globalThis as unknown as { readonly innerHeight: number }
+        ).innerHeight
+        return bounds.top >= 0 && bounds.bottom <= viewportHeight
+      }
+      const initiallyVisible = buttonInsideViewport()
+      shell.scrollTop = shell.scrollHeight
+      return {
+        initiallyVisible,
+        clientHeight: shell.clientHeight,
+        scrollHeight: shell.scrollHeight,
+        scrollTop: shell.scrollTop,
+        visibleAfterScroll: buttonInsideViewport(),
+      }
+    })
+
+    expect(access).not.toBeNull()
+    expect(
+      access!.initiallyVisible || (
+        access!.scrollHeight > access!.clientHeight &&
+        access!.scrollTop > 0 &&
+        access!.visibleAfterScroll
+      ),
+    ).toBe(true)
+
+    await continueButton.click()
+    await expect(
+      launched.page.getByRole('heading', { name: /check your microphone/i }),
+    ).toBeVisible()
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
 test('uses stable content-sized native widget bounds for bottom-edge presentations', async () => {
   const launched = await launchTalkType()
   const expectedGeometry = async (width: number) => {
