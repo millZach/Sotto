@@ -264,7 +264,10 @@ export class WindowManager {
   private widgetProgrammaticTarget: Rectangle | null = null
   private widgetVisible = false
   private widgetVisibilityGeneration = 0
+  private widgetRevealGeneration: number | null = null
+  private widgetHoverResynchronizationGeneration: number | null = null
   private widgetMonitorTimer: ReturnType<typeof setInterval> | null = null
+  private widgetDragPresentationResizePending = false
   private widgetDrag: {
     readonly windowOrigin: Point
     readonly cursorOrigin: Point
@@ -442,47 +445,71 @@ export class WindowManager {
 
   async showWidget(): Promise<void> {
     const visibilityGeneration = ++this.widgetVisibilityGeneration
-    const widget = await this.createWidgetWindow()
-    this.assertRunning()
-    if (visibilityGeneration !== this.widgetVisibilityGeneration) return
-    if (this.widgetDrag !== null) return
-
-    this.loadWidgetPlacement()
-    const workArea = this.resolveCurrentWidgetWorkArea()
-    if (workArea !== null) {
-      const desired = placementToBounds(
-        this.widgetPlacement,
-        workArea,
-        this.widgetPresentation,
-        WIDGET_EDGE_INSET,
-      )
-      if (this.applyWidgetBounds(widget, desired)) {
-        this.widgetWorkArea = workArea
-      }
+    this.widgetRevealGeneration = visibilityGeneration
+    if (this.widgetHoverResynchronizationGeneration !== null) {
+      this.widgetHoverResynchronizationGeneration = visibilityGeneration
     }
+    try {
+      const widget = await this.createWidgetWindow()
+      this.assertRunning()
+      if (visibilityGeneration !== this.widgetVisibilityGeneration) return
+      if (this.widgetDrag !== null) return
 
-    this.assertRunning()
-    const wasVisible = this.widgetVisible
-    if (!wasVisible) {
-      this.sendToWidget(WIDGET_VISIBILITY, true)
-      try {
-        widget.showInactive()
-      } catch (error) {
-        this.sendToWidget(WIDGET_VISIBILITY, false)
-        throw error
+      this.loadWidgetPlacement()
+      const workArea = this.resolveCurrentWidgetWorkArea()
+      if (workArea !== null) {
+        const desired = placementToBounds(
+          this.widgetPlacement,
+          workArea,
+          this.widgetPresentation,
+          WIDGET_EDGE_INSET,
+        )
+        if (this.applyWidgetBounds(widget, desired)) {
+          this.widgetWorkArea = workArea
+        }
       }
-      this.widgetVisible = true
-      this.startWidgetMonitor()
+
+      this.assertRunning()
+      const wasVisible = this.widgetVisible
+      if (!wasVisible) {
+        this.sendToWidget(WIDGET_VISIBILITY, true)
+        try {
+          widget.showInactive()
+        } catch (error) {
+          this.sendToWidget(WIDGET_VISIBILITY, false)
+          throw error
+        }
+        this.widgetVisible = true
+        this.startWidgetMonitor()
+      }
+    } finally {
+      if (this.widgetRevealGeneration === visibilityGeneration) {
+        this.widgetRevealGeneration = null
+      }
     }
   }
 
   setWidgetPresentation(presentation: WidgetPresentation): void {
     const widget = this.widgetWindow
-    if (!this.widgetVisible || widget === null || widget.isDestroyed()) {
+    const reportGeneration = this.widgetVisible
+      ? this.widgetVisibilityGeneration
+      : this.widgetRevealGeneration
+    if (
+      reportGeneration === null ||
+      widget === null ||
+      widget.isDestroyed() ||
+      (presentation === 'idle-hovered' &&
+        this.widgetHoverResynchronizationGeneration === reportGeneration &&
+        !this.isCursorInsideWidget(widget))
+    ) {
       return
     }
 
     this.widgetPresentation = presentation
+    if (presentation === 'idle-hovered') {
+      this.widgetHoverResynchronizationGeneration = null
+    }
+    if (!this.widgetVisible) return
     if (this.widgetDrag !== null) {
       this.reconcileWidgetPresentationDuringDrag(widget)
       return
@@ -511,14 +538,17 @@ export class WindowManager {
     const widget = this.widgetWindow
     if (widget === null || widget.isDestroyed() || !this.widgetVisible) {
       this.widgetDrag = null
+      this.widgetDragPresentationResizePending = false
       return
     }
     if (drag.phase === 'start') {
+      this.widgetDragPresentationResizePending = false
       try {
         if (this.widgetVisible && this.widgetPresentation === 'idle-resting') {
           const workArea = this.widgetWorkArea ?? this.resolveCurrentWidgetWorkArea()
           if (workArea === null) {
             this.widgetDrag = null
+            this.widgetDragPresentationResizePending = false
             return
           }
           this.widgetPresentation = 'idle-hovered'
@@ -532,6 +562,7 @@ export class WindowManager {
             ),
           )) {
             this.widgetDrag = null
+            this.widgetDragPresentationResizePending = false
             return
           }
           this.widgetWorkArea = workArea
@@ -543,6 +574,7 @@ export class WindowManager {
         }
       } catch {
         this.widgetDrag = null
+        this.widgetDragPresentationResizePending = false
       }
       return
     }
@@ -561,11 +593,13 @@ export class WindowManager {
         this.widgetLastAppliedBounds = current
       } catch {
         this.widgetDrag = null
+        this.widgetDragPresentationResizePending = false
       }
       return
     }
     if (this.widgetDrag === null) return
     this.widgetDrag = null
+    this.widgetDragPresentationResizePending = false
     this.snapWidgetToEdge(widget)
   }
 
@@ -582,12 +616,17 @@ export class WindowManager {
 
   hideWidget(): void {
     this.widgetVisibilityGeneration += 1
+    this.widgetRevealGeneration = null
+    this.widgetHoverResynchronizationGeneration = this.widgetVisibilityGeneration + 1
     if (this.widgetVisible) {
       this.sendToWidget(WIDGET_VISIBILITY, false)
     }
     this.widgetVisible = false
     this.widgetDrag = null
-    this.widgetPresentation = 'idle-resting'
+    this.widgetDragPresentationResizePending = false
+    if (this.widgetPresentation === 'idle-hovered') {
+      this.widgetPresentation = 'idle-resting'
+    }
     this.stopWidgetMonitor()
     this.widgetWindow?.hide()
   }
@@ -630,7 +669,10 @@ export class WindowManager {
     this.disposed = true
     this.quitting = true
     this.widgetVisible = false
+    this.widgetRevealGeneration = null
+    this.widgetHoverResynchronizationGeneration = null
     this.widgetDrag = null
+    this.widgetDragPresentationResizePending = false
     this.stopWidgetMonitor()
 
     const main = this.mainWindow
@@ -724,6 +766,21 @@ export class WindowManager {
     }
   }
 
+  private isCursorInsideWidget(widget: BrowserWindowLike): boolean {
+    try {
+      const cursor = this.dependencies.display.getCursorScreenPoint()
+      const bounds = widget.getBounds()
+      return (
+        cursor.x >= bounds.x &&
+        cursor.x <= bounds.x + bounds.width &&
+        cursor.y >= bounds.y &&
+        cursor.y <= bounds.y + bounds.height
+      )
+    } catch {
+      return false
+    }
+  }
+
   private startWidgetMonitor(): void {
     if (this.widgetMonitorTimer !== null) return
     this.widgetMonitorTimer = setInterval(
@@ -740,12 +797,13 @@ export class WindowManager {
 
   private followCursorMonitor(): void {
     const widget = this.widgetWindow
-    if (
-      !this.widgetVisible ||
-      this.widgetDrag !== null ||
-      widget === null ||
-      widget.isDestroyed()
-    ) {
+    if (!this.widgetVisible || widget === null || widget.isDestroyed()) {
+      return
+    }
+    if (this.widgetDrag !== null) {
+      if (this.widgetDragPresentationResizePending) {
+        this.reconcileWidgetPresentationDuringDrag(widget)
+      }
       return
     }
 
@@ -768,6 +826,7 @@ export class WindowManager {
 
   private installWidgetInteractionLifecycle(window: BrowserWindowLike): void {
     this.widgetDrag = null
+    this.widgetDragPresentationResizePending = false
     this.widgetLastAppliedBounds = null
     this.widgetProgrammaticTarget = null
     this.widgetVisible = false
@@ -804,10 +863,22 @@ export class WindowManager {
           : this.widgetPresentation
       const size = widgetSizeForPresentation(this.widgetPlacement.edge, presentation)
       const desired = { ...current, ...size }
-      if (sameRectangle(current, desired)) return
+      if (sameRectangle(current, desired)) {
+        this.widgetDragPresentationResizePending = false
+        return
+      }
 
-      this.applyWidgetBounds(widget, desired)
+      const appliedExactly = this.applyWidgetBounds(widget, desired)
       const applied = this.widgetLastAppliedBounds
+      const appliedSize =
+        applied !== null &&
+        applied.width === desired.width &&
+        applied.height === desired.height
+      if (!appliedExactly && !appliedSize) {
+        this.widgetDragPresentationResizePending = true
+        return
+      }
+      this.widgetDragPresentationResizePending = false
       if (applied === null) return
 
       // Native content resizing can round the window origin at a mixed-DPI
@@ -821,7 +892,8 @@ export class WindowManager {
         cursorOrigin: drag.cursorOrigin,
       }
     } catch {
-      // Keep drag ownership valid; a later presentation or terminal snap can retry.
+      this.widgetDragPresentationResizePending = true
+      // Keep drag ownership valid; the monitor retries without relocating the drag.
     }
   }
 
@@ -877,7 +949,10 @@ export class WindowManager {
       if (kind === 'widget' && this.widgetWindow === window) {
         this.widgetWindow = null
         this.widgetVisible = false
+        this.widgetRevealGeneration = null
+        this.widgetHoverResynchronizationGeneration = null
         this.widgetDrag = null
+        this.widgetDragPresentationResizePending = false
         this.widgetPresentation = 'idle-resting'
         this.stopWidgetMonitor()
       }
@@ -918,7 +993,10 @@ export class WindowManager {
         this.widgetWindow = null
         this.widgetReady = null
         this.widgetVisible = false
+        this.widgetRevealGeneration = null
+        this.widgetHoverResynchronizationGeneration = null
         this.widgetDrag = null
+        this.widgetDragPresentationResizePending = false
         this.widgetPresentation = 'idle-resting'
         this.stopWidgetMonitor()
       }
