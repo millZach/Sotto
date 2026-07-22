@@ -501,7 +501,7 @@ export class WindowManager {
    */
   reportWidgetDrag(drag: WidgetDragPayload): void {
     const widget = this.widgetWindow
-    if (widget === null || widget.isDestroyed()) {
+    if (widget === null || widget.isDestroyed() || !this.widgetVisible) {
       this.widgetDrag = null
       return
     }

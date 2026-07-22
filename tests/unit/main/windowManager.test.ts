@@ -473,6 +473,39 @@ describe('WindowManager cursor monitor following', () => {
     expect(widget.setBounds).not.toHaveBeenCalled()
   })
 
+  it('rejects late drag reports while hidden and resumes reveal monitoring', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    manager.reportWidgetDrag({ phase: 'start' })
+    manager.reportWidgetDrag({ phase: 'move' })
+    await manager.showWidget()
+
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    manager.reportWidgetDrag({ phase: 'move' })
+    expect(widget.setPosition).not.toHaveBeenCalled()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
   it('stops checks when widget closes or renderer is lost', async () => {
     const closedAdapter = createMutableTwoDisplayAdapter()
     const closedHarness = createHarness({ display: closedAdapter.display })
@@ -951,9 +984,11 @@ describe('WindowManager lifecycle', () => {
         }),
       },
     })
-    await manager.createWidgetWindow()
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_200, y: 500, width: 124, height: 54 }
+    getCursorScreenPoint.mockClear()
 
     manager.reportWidgetDrag({ phase: 'start' })
     widget.bounds = { x: 1_400, y: 700, width: 124, height: 54 }
@@ -975,7 +1010,8 @@ describe('WindowManager lifecycle', () => {
         }),
       },
     })
-    await manager.createWidgetWindow()
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_200, y: 500, width: 124, height: 54 }
 
@@ -1001,7 +1037,8 @@ describe('WindowManager lifecycle', () => {
         }),
       },
     })
-    await manager.createWidgetWindow()
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_200, y: 500, width: 124, height: 54 }
 
@@ -1050,9 +1087,11 @@ describe('WindowManager lifecycle', () => {
         getDisplayNearestPoint,
       },
     })
-    await manager.createWidgetWindow()
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_100, y: 300, width: 124, height: 54 }
+    widget.setBounds.mockClear()
 
     manager.reportWidgetDrag({ phase: 'start' })
     getDisplayNearestPoint.mockClear()
@@ -1060,14 +1099,15 @@ describe('WindowManager lifecycle', () => {
 
     expect(getDisplayNearestPoint).toHaveBeenCalledWith({ x: 1_162, y: 327 })
     expect(widget.setBounds).toHaveBeenCalledWith(
-      { x: 1_016, y: 488, width: 54, height: 124 },
+      { x: 1_016, y: 488, width: 88, height: 124 },
       false,
     )
   })
 
   it('persists only the selected edge', async () => {
     const { manager, onWidgetMoved, windows } = createHarness()
-    await manager.createWidgetWindow()
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_100, y: 300, width: 124, height: 54 }
 
@@ -1081,9 +1121,10 @@ describe('WindowManager lifecycle', () => {
   it('centers the current presentation after orientation changes', async () => {
     const { manager, windows } = createHarness()
     manager.setWidgetPresentation('active')
-    await manager.createWidgetWindow()
+    await manager.showWidget()
     const widget = windows[0]!
     widget.bounds = { x: 1_100, y: 300, width: 248, height: 88 }
+    widget.setBounds.mockClear()
 
     manager.reportWidgetDrag({ phase: 'start' })
     manager.reportWidgetDrag({ phase: 'end' })
@@ -1097,8 +1138,10 @@ describe('WindowManager lifecycle', () => {
   it('clears ownership after cursor or native movement failure', async () => {
     const cursorAdapter = createMutableTwoDisplayAdapter()
     const cursorFailure = createHarness({ display: cursorAdapter.display })
-    await cursorFailure.manager.createWidgetWindow()
+    cursorFailure.manager.setWidgetPresentation('idle-hovered')
+    await cursorFailure.manager.showWidget()
     const cursorFailureWidget = cursorFailure.windows[0]!
+    cursorFailureWidget.setBounds.mockClear()
     cursorFailure.manager.reportWidgetDrag({ phase: 'start' })
     cursorAdapter.getCursorScreenPoint.mockClear()
     cursorAdapter.failures.cursor = new Error('cursor unavailable')
@@ -1113,8 +1156,10 @@ describe('WindowManager lifecycle', () => {
     expect(cursorFailure.onWidgetMoved).not.toHaveBeenCalled()
 
     const nativeFailure = createHarness()
-    await nativeFailure.manager.createWidgetWindow()
+    nativeFailure.manager.setWidgetPresentation('idle-hovered')
+    await nativeFailure.manager.showWidget()
     const nativeFailureWidget = nativeFailure.windows[0]!
+    nativeFailureWidget.setBounds.mockClear()
     nativeFailureWidget.setPosition.mockImplementationOnce(() => {
       throw new Error('native movement unavailable')
     })
@@ -1131,7 +1176,9 @@ describe('WindowManager lifecycle', () => {
 
   it('clears ownership when hidden closed or renderer is lost', async () => {
     const hidden = createHarness()
-    await hidden.manager.createWidgetWindow()
+    hidden.manager.setWidgetPresentation('idle-hovered')
+    await hidden.manager.showWidget()
+    hidden.windows[0]!.setBounds.mockClear()
     hidden.manager.reportWidgetDrag({ phase: 'start' })
     hidden.manager.hideWidget()
     hidden.manager.reportWidgetDrag({ phase: 'end' })
@@ -1139,7 +1186,9 @@ describe('WindowManager lifecycle', () => {
     expect(hidden.onWidgetMoved).not.toHaveBeenCalled()
 
     const closed = createHarness()
-    await closed.manager.createWidgetWindow()
+    closed.manager.setWidgetPresentation('idle-hovered')
+    await closed.manager.showWidget()
+    closed.windows[0]!.setBounds.mockClear()
     closed.manager.reportWidgetDrag({ phase: 'start' })
     closed.windows[0]!.emit('closed')
     closed.manager.reportWidgetDrag({ phase: 'end' })
@@ -1147,7 +1196,9 @@ describe('WindowManager lifecycle', () => {
     expect(closed.onWidgetMoved).not.toHaveBeenCalled()
 
     const rendererLost = createHarness()
-    await rendererLost.manager.createWidgetWindow()
+    rendererLost.manager.setWidgetPresentation('idle-hovered')
+    await rendererLost.manager.showWidget()
+    rendererLost.windows[0]!.setBounds.mockClear()
     rendererLost.manager.reportWidgetDrag({ phase: 'start' })
     rendererLost.windows[0]!.emitRenderProcessGone()
     rendererLost.manager.reportWidgetDrag({ phase: 'end' })
@@ -1155,7 +1206,9 @@ describe('WindowManager lifecycle', () => {
     expect(rendererLost.onWidgetMoved).not.toHaveBeenCalled()
 
     const disposed = createHarness()
-    await disposed.manager.createWidgetWindow()
+    disposed.manager.setWidgetPresentation('idle-hovered')
+    await disposed.manager.showWidget()
+    disposed.windows[0]!.setBounds.mockClear()
     disposed.manager.reportWidgetDrag({ phase: 'start' })
     disposed.manager.dispose()
     disposed.manager.reportWidgetDrag({ phase: 'end' })

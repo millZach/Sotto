@@ -699,6 +699,51 @@ describe('WidgetEntry', () => {
     expect(bridge.requestToggle).not.toHaveBeenCalled()
   })
 
+  it('resets idle hover state across native hide and reveal', () => {
+    vi.useFakeTimers()
+    let stateListener: ((state: WidgetSnapshot) => void) | null = null
+    let visibilityListener: ((visible: boolean) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        stateListener = next
+        return () => { stateListener = null }
+      },
+      onWidgetVisibilityChange: (next) => {
+        visibilityListener = next
+        return () => { visibilityListener = null }
+      },
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    render(<WidgetEntry bridge={bridge} preview={null} />)
+
+    act(() => stateListener?.(snapshot({ status: 'idle' })))
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.mouseEnter(sliver)
+    fireEvent.mouseLeave(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+    expect(vi.getTimerCount()).toBe(1)
+
+    act(() => {
+      visibilityListener?.(false)
+      visibilityListener?.(false)
+      visibilityListener?.(true)
+      visibilityListener?.(true)
+    })
+
+    expect(sliver).not.toHaveAttribute('data-expanded')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-resting')
+    expect(vi.getTimerCount()).toBe(0)
+
+    fireEvent.mouseEnter(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+  })
+
   it('terminates the renderer drag gesture when the native widget becomes hidden', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visible: boolean) => void) | null = null

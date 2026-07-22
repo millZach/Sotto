@@ -307,6 +307,12 @@ export function WidgetApp({
     hoverCollapseTimerRef.current = null
   }
   useEffect(() => {
+    // Native hiding invalidates both drag and idle-hover interaction state.
+    hoverInsideRef.current = false
+    clearHoverCollapse()
+    setExpanded(false)
+  }, [dragCancellationVersion])
+  useEffect(() => {
     if (!isIdle) {
       hoverInsideRef.current = false
       clearHoverCollapse()
