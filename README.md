@@ -17,9 +17,9 @@ Optional Fast and Accurate models are not downloaded until you review their sour
 
 ## Install and first run
 
-Run `TalkType Setup 0.1.0.exe` and choose the per-user installation folder. The desktop shortcut is optional and unchecked by default; the installer always creates a Start Menu shortcut. Uninstalling removes either shortcut but preserves settings, history, and optional downloaded models by default so an accidental uninstall does not silently destroy local data.
+Run `TalkType Setup 1.1.0.exe` and choose the per-user installation folder. The desktop shortcut is optional and unchecked by default; the installer always creates a Start Menu shortcut. Uninstalling removes either shortcut but preserves settings, history, and optional downloaded models by default so an accidental uninstall does not silently destroy local data.
 
-The locally built 0.1.0 artifact is not code-signed because no Windows signing certificate is stored in this repository. Windows may therefore show an **Unknown publisher** or SmartScreen prompt. A public release should be Authenticode-signed by its distributor without changing application behavior.
+The locally built 1.1.0 artifact is not code-signed because no Windows signing certificate is stored in this repository. Windows may therefore show an **Unknown publisher** or SmartScreen prompt. A public release should be Authenticode-signed by its distributor without changing application behavior.
 
 First-run setup explains privacy, tests microphone access, verifies the included Balanced model, and shows the active shortcut and safe paste-test field. The default global shortcut is `Ctrl+Shift+Space`. Press it once to start and again to stop and transcribe. `Escape` cancels an active session.
 
@@ -76,7 +76,7 @@ npm run package:win
 Artifacts are written to:
 
 - `release/win-unpacked/TalkType.exe` — unpacked x64 application
-- `release/TalkType Setup 0.1.0.exe` — assisted, per-user x64 NSIS installer
+- `release/TalkType Setup 1.1.0.exe` — assisted, per-user x64 NSIS installer
 
 The packaged `resources` directory contains `models/`, `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source model before packaging and verifies the packaged model, runtime, notices, bridge, worker, and worklet afterward.
 
