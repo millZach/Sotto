@@ -196,7 +196,7 @@ export function useWidgetDragGesture(
       onPointerMove: (event) => handlePointerMove(event),
       onPointerUp: (event) => finishCompletedPointer(event.pointerId),
       onPointerCancel: (event) => finish(event.pointerId),
-      onLostPointerCapture: (event) => finish(event.pointerId),
+      onLostPointerCapture: (event) => finishCompletedPointer(event.pointerId),
       onClick: () => {
         if (suppressClickRef.current) {
           suppressClickRef.current = false

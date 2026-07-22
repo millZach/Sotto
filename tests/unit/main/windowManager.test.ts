@@ -489,6 +489,33 @@ describe('WindowManager cursor monitor following', () => {
     expect(widget.bounds).toEqual({ x: 376, y: 708, width: 248, height: 76 })
   })
 
+  it('reapplies desired bounds after a moved-event readback failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, onWidgetMoved, windows } = createHarness({
+      display: adapter.display,
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+    widget.getBounds.mockImplementationOnce(() => {
+      throw new Error('moved bounds unavailable')
+    })
+
+    widget.emit('moved')
+
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 438, y: 730, width: 124, height: 54 })
+  })
+
   it('stops checks when hidden', async () => {
     const adapter = createMutableTwoDisplayAdapter()
     const { manager, windows } = createHarness({ display: adapter.display })
@@ -527,6 +554,57 @@ describe('WindowManager cursor monitor following', () => {
 
     manager.hideWidget()
     expect(widget.webContents.send).not.toHaveBeenCalledWith(WIDGET_VISIBILITY, false)
+  })
+
+  it('rolls back a failed native reveal so a later reveal retries and restarts monitoring', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness(
+      { display: adapter.display },
+      (window) => {
+        window.showInactive.mockImplementationOnce(() => {
+          throw new Error('native reveal failed')
+        })
+      },
+    )
+
+    await expect(manager.showWidget()).rejects.toThrow('native reveal failed')
+    const widget = windows[0]!
+
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      1,
+      WIDGET_VISIBILITY,
+      true,
+    )
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      2,
+      WIDGET_VISIBILITY,
+      false,
+    )
+    expect(widget.showInactive).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+
+    widget.getBounds.mockClear()
+    manager.reportWidgetDrag({ phase: 'start' })
+    expect(widget.getBounds).not.toHaveBeenCalled()
+
+    await manager.showWidget()
+
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      3,
+      WIDGET_VISIBILITY,
+      true,
+    )
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
   })
 
   it('rejects late drag reports while hidden and resumes reveal monitoring', async () => {
@@ -852,6 +930,45 @@ describe('WindowManager lifecycle', () => {
     expect(onWidgetMoved).not.toHaveBeenCalled()
   })
 
+  it('ignores native moved events while the widget is hidden', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, onWidgetMoved, windows } = createHarness({
+      display: adapter.display,
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+    onWidgetMoved.mockClear()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+
+    widget.emit('moved')
+
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+    expect(widget.bounds).toEqual({ x: 100, y: 300, width: 124, height: 54 })
+  })
+
+  it('reapplies the remembered edge after a hidden native move', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+    widget.emit('moved')
+    widget.setBounds.mockClear()
+
+    await manager.showWidget()
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+  })
+
   it('snaps a genuinely external move without recursion', async () => {
     const { manager, onWidgetMoved, windows } = createHarness(
       {},
@@ -859,8 +976,10 @@ describe('WindowManager lifecycle', () => {
         window.emitMovedOnSetBounds = true
       },
     )
-    await manager.createWidgetWindow()
+    await manager.showWidget()
     const widget = windows[0]!
+    widget.setBounds.mockClear()
+    onWidgetMoved.mockClear()
     widget.bounds = { x: 1_234, y: 567, width: 124, height: 54 }
 
     widget.emit('moved')

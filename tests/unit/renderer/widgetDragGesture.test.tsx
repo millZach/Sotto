@@ -275,6 +275,22 @@ describe('useWidgetDragGesture', () => {
       (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
   })
 
+  it('suppresses the click that follows lost pointer capture after a completed drag', () => {
+    const onClick = vi.fn()
+    render(<Harness onClick={onClick} />)
+    const surface = screen.getByTestId('surface')
+
+    beginDrag(surface)
+    fireEvent.lostPointerCapture(surface, { pointerId: 1 })
+    fireEvent.pointerUp(surface, { pointerId: 1 })
+    fireEvent.click(surface)
+
+    expect(onClick).not.toHaveBeenCalled()
+
+    fireEvent.click(surface)
+    expect(onClick).toHaveBeenCalledOnce()
+  })
+
   it('ends exactly once on blur', () => {
     const onDrag = vi.fn()
     render(<Harness onDrag={onDrag} />)

@@ -463,10 +463,15 @@ export class WindowManager {
 
     this.assertRunning()
     const wasVisible = this.widgetVisible
-    this.widgetVisible = true
     if (!wasVisible) {
       this.sendToWidget(WIDGET_VISIBILITY, true)
-      widget.showInactive()
+      try {
+        widget.showInactive()
+      } catch (error) {
+        this.sendToWidget(WIDGET_VISIBILITY, false)
+        throw error
+      }
+      this.widgetVisible = true
       this.startWidgetMonitor()
     }
   }
@@ -761,10 +766,15 @@ export class WindowManager {
     this.widgetVisible = false
 
     const onMoved = (): void => {
+      if (!this.widgetVisible) {
+        this.widgetLastAppliedBounds = null
+        return
+      }
       if (this.widgetDrag !== null || this.widgetProgrammaticTarget !== null) return
       try {
         if (sameRectangle(this.widgetLastAppliedBounds, window.getBounds())) return
       } catch {
+        this.widgetLastAppliedBounds = null
         return
       }
       this.widgetLastAppliedBounds = null
