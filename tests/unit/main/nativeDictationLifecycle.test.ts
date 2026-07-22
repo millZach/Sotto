@@ -27,18 +27,15 @@ function listening(): WidgetSnapshot {
 
 function createHarness(showWidgetWhenIdle = true) {
   const sendToWidget = vi.fn(async () => true)
-  const lockDisplay = vi.fn()
-  const unlockDisplay = vi.fn()
   const lifecycle = new NativeDictationLifecycle({
     delivery: { sendToWidget },
     getTrayState: () => ({ dictating: false, autoPaste: true }),
     updateTray: vi.fn(),
     syncEscape: vi.fn(),
-    widgetDisplay: { lock: lockDisplay, unlock: unlockDisplay },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     log: vi.fn(),
   })
-  return { lifecycle, lockDisplay, sendToWidget, unlockDisplay }
+  return { lifecycle, sendToWidget }
 }
 
 describe('NativeDictationLifecycle widget presence', () => {
@@ -103,25 +100,36 @@ describe('NativeDictationLifecycle widget presence', () => {
   })
 })
 
-describe('NativeDictationLifecycle session display lock', () => {
-  it('locks the display for non-idle snapshots and unlocks when idle returns', async () => {
-    const { lifecycle, lockDisplay, unlockDisplay } = createHarness()
+describe('NativeDictationLifecycle cursor-follow compatibility', () => {
+  it('does not lock a display when dictation becomes active', async () => {
+    const { lifecycle, sendToWidget } = createHarness()
+    const active = listening()
 
-    await lifecycle.publish(listening())
-    expect(lockDisplay).toHaveBeenCalledOnce()
-    expect(unlockDisplay).not.toHaveBeenCalled()
+    await lifecycle.publish(active)
 
-    await lifecycle.publish(snapshot({ status: 'idle' }))
-    expect(unlockDisplay).toHaveBeenCalledOnce()
+    expect(sendToWidget).toHaveBeenCalledWith(WIDGET_STATE, active, true)
   })
 
-  it('unlocks the display when the main renderer disappears mid-session', async () => {
-    const { lifecycle, unlockDisplay } = createHarness()
+  it('does not unlock a display when dictation returns to idle', async () => {
+    const { lifecycle, sendToWidget } = createHarness()
+    const idle = snapshot({ status: 'idle' })
+
     await lifecycle.publish(listening())
+    await lifecycle.publish(idle)
 
-    lifecycle.rendererProcessGone('main')
+    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, idle, true)
+  })
 
-    expect(unlockDisplay).toHaveBeenCalledOnce()
+  it('preserves widget publication and visibility behavior without display locking', async () => {
+    const { lifecycle, sendToWidget } = createHarness(false)
+    const active = listening()
+    const idle = snapshot({ status: 'idle' })
+
+    await lifecycle.publish(active)
+    await lifecycle.publish(idle)
+
+    expect(sendToWidget).toHaveBeenNthCalledWith(1, WIDGET_STATE, active, true)
+    expect(sendToWidget).toHaveBeenNthCalledWith(2, WIDGET_STATE, idle, false)
   })
 })
 

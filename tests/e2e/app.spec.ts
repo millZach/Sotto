@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 import {
   E2E_CONFLICTING_HOTKEY,
@@ -42,6 +42,61 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
   )
   if (value === undefined) throw new Error('E2E bridge unavailable')
   return value
+}
+
+interface NativeRectangle {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+interface NativeWidgetGeometry {
+  readonly contentBounds: NativeRectangle
+  readonly workArea: NativeRectangle
+}
+
+async function nativeWidgetGeometry(
+  app: ElectronApplication,
+): Promise<NativeWidgetGeometry | null> {
+  return app.evaluate(({ BrowserWindow, screen }) => {
+    const widget = BrowserWindow.getAllWindows().find((candidate) =>
+      candidate.webContents.getURL().endsWith('/widget.html'),
+    )
+    if (widget === undefined) return null
+    const bounds = widget.getBounds()
+    const workArea = screen.getDisplayNearestPoint({
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    }).workArea
+    return { contentBounds: widget.getContentBounds(), workArea }
+  })
+}
+
+async function sampleNativeWidgetContentBounds(
+  app: ElectronApplication,
+): Promise<readonly NativeRectangle[]> {
+  return app.evaluate(async ({ BrowserWindow }) => {
+    const widget = BrowserWindow.getAllWindows().find((candidate) =>
+      candidate.webContents.getURL().endsWith('/widget.html'),
+    )
+    if (widget === undefined) return []
+    const samples = []
+    for (let index = 0; index < 40; index += 1) {
+      samples.push(widget.getContentBounds())
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    return samples
+  })
+}
+
+async function nativeWidgetVisible(app: ElectronApplication): Promise<boolean | null> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const widget = BrowserWindow.getAllWindows().find((candidate) =>
+      candidate.webContents.getURL().endsWith('/widget.html'),
+    )
+    return widget?.isVisible() ?? null
+  })
 }
 
 async function triggerShortcut(page: Page): Promise<void> {
@@ -195,6 +250,187 @@ test('persists settings through reload', async () => {
     await launched.page.reload()
     await launched.page.getByRole('link', { name: 'Settings' }).click()
     await expect(launched.page.getByLabel('Paste delay')).toHaveValue('275')
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('keeps the real main window frameless with one title bar before and after onboarding', async () => {
+  const launched = await launchTalkType()
+  try {
+    const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      if (main === undefined) return null
+      return {
+        bounds: main.getBounds(),
+        contentBounds: main.getContentBounds(),
+      }
+    })
+
+    expect(geometry).not.toBeNull()
+    expect(geometry?.contentBounds).toEqual(geometry?.bounds)
+    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+
+    await completeOnboarding(launched.page)
+
+    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('keeps onboarding Continue reachable and clickable at the supported 820x560 minimum', async () => {
+  const launched = await launchTalkType()
+  try {
+    await expect(
+      launched.page.getByRole('heading', { name: /private dictation/i }),
+    ).toBeVisible()
+    await launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      if (main === undefined) throw new Error('Main window unavailable')
+      main.setBounds({ ...main.getBounds(), width: 820, height: 560 }, false)
+    })
+    await expect.poll(() => launched.page.evaluate(() =>
+      (globalThis as unknown as { readonly innerWidth: number }).innerWidth,
+    )).toBe(820)
+    await expect.poll(() => launched.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate.webContents.getURL().endsWith('/index.html'),
+      )
+      return main?.getMinimumSize() ?? null
+    })).toEqual([820, 560])
+
+    const continueButton = launched.page.getByRole('button', { name: 'Continue' })
+    const access = await continueButton.evaluate((button) => {
+      const shell = button.closest('.onboarding-shell')
+      if (shell === null) return null
+      const buttonInsideViewport = (): boolean => {
+        const bounds = button.getBoundingClientRect()
+        const viewportHeight = (
+          globalThis as unknown as { readonly innerHeight: number }
+        ).innerHeight
+        return bounds.top >= 0 && bounds.bottom <= viewportHeight
+      }
+      const initiallyVisible = buttonInsideViewport()
+      shell.scrollTop = shell.scrollHeight
+      return {
+        initiallyVisible,
+        clientHeight: shell.clientHeight,
+        scrollHeight: shell.scrollHeight,
+        scrollTop: shell.scrollTop,
+        visibleAfterScroll: buttonInsideViewport(),
+      }
+    })
+
+    expect(access).not.toBeNull()
+    expect(
+      access!.initiallyVisible || (
+        access!.scrollHeight > access!.clientHeight &&
+        access!.scrollTop > 0 &&
+        access!.visibleAfterScroll
+      ),
+    ).toBe(true)
+
+    await continueButton.click()
+    await expect(
+      launched.page.getByRole('heading', { name: /check your microphone/i }),
+    ).toBeVisible()
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('uses stable content-sized native widget bounds for bottom-edge presentations', async () => {
+  const launched = await launchTalkType()
+  const expectedGeometry = async (width: number) => {
+    const geometry = await nativeWidgetGeometry(launched.app)
+    if (geometry === null) return null
+    return {
+      width: geometry.contentBounds.width,
+      height: geometry.contentBounds.height,
+      centeredOffset: geometry.contentBounds.x - (
+        geometry.workArea.x + Math.round((geometry.workArea.width - width) / 2)
+      ),
+      bottomInset: geometry.workArea.y + geometry.workArea.height - (
+        geometry.contentBounds.y + geometry.contentBounds.height
+      ),
+    }
+  }
+
+  try {
+    await completeOnboarding(launched.page)
+    const widget = launched.app.windows().find((candidate) =>
+      candidate.url().endsWith('/widget.html'),
+    )
+    if (widget === undefined) throw new Error('Widget window unavailable')
+    const sliver = widget.getByTestId('widget-sliver')
+    await expect(sliver).toBeVisible()
+
+    await expect.poll(() => expectedGeometry(124)).toEqual({
+      width: 124,
+      height: 54,
+      centeredOffset: 0,
+      bottomInset: 16,
+    })
+
+    await sliver.hover()
+    await expect.poll(() => expectedGeometry(248)).toEqual({
+      width: 248,
+      height: 76,
+      centeredOffset: 0,
+      bottomInset: 16,
+    })
+    const hoveredSamples = await sampleNativeWidgetContentBounds(launched.app)
+    expect(hoveredSamples).toHaveLength(40)
+    expect(hoveredSamples.every(({ width, height }) => width === 248 && height === 76)).toBe(true)
+
+    await triggerShortcut(launched.page)
+    await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
+    await expect.poll(() => expectedGeometry(248)).toEqual({
+      width: 248,
+      height: 88,
+      centeredOffset: 0,
+      bottomInset: 16,
+    })
+  } finally {
+    await closeTalkType(launched)
+  }
+})
+
+test('hiding the idle widget terminates its renderer drag before the next reveal', async () => {
+  const launched = await launchTalkType()
+  try {
+    await completeOnboarding(launched.page)
+    const widget = launched.app.windows().find((candidate) =>
+      candidate.url().endsWith('/widget.html'),
+    )
+    if (widget === undefined) throw new Error('Widget window unavailable')
+    const sliver = widget.getByTestId('widget-sliver')
+    await expect(sliver).toBeVisible()
+
+    await sliver.dispatchEvent('pointerdown', {
+      pointerId: 17, button: 0, isPrimary: true, screenX: 50, screenY: 60,
+    })
+    await sliver.dispatchEvent('pointermove', {
+      pointerId: 17, button: 0, isPrimary: true, screenX: 80, screenY: 60,
+    })
+    await expect(widget.locator('.widget-shell')).toHaveAttribute('data-dragging', 'true')
+
+    await launched.page.getByRole('link', { name: 'Settings' }).click()
+    const idleWidgetToggle = launched.page.getByRole('switch', {
+      name: 'Show floating widget when idle',
+    })
+    await idleWidgetToggle.click()
+    await expect.poll(() => nativeWidgetVisible(launched.app)).toBe(false)
+    await expect(widget.locator('.widget-shell')).not.toHaveAttribute('data-dragging', 'true')
+
+    await idleWidgetToggle.click()
+    await expect.poll(() => nativeWidgetVisible(launched.app)).toBe(true)
+    await expect(widget.locator('.widget-shell')).not.toHaveAttribute('data-dragging', 'true')
   } finally {
     await closeTalkType(launched)
   }

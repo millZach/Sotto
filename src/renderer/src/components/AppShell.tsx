@@ -1,8 +1,7 @@
 import React, { type MouseEvent, type ReactNode } from 'react'
-import { CircleHelp, Clock3, Home, Minus, Settings, X } from 'lucide-react'
+import { CircleHelp, Clock3, Home, Settings } from 'lucide-react'
 
 import type { AppNavigation } from '../state/AppContext'
-import { Button } from './Button'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -13,8 +12,6 @@ export interface AppShellProps {
   readonly statusText: string
   readonly statusTone: AppStatusTone
   readonly onNavigate: (destination: ManagementNavigation) => void
-  readonly onMinimize: () => Promise<void> | void
-  readonly onClose: () => Promise<void> | void
   readonly children: ReactNode
 }
 
@@ -30,8 +27,6 @@ export function AppShell({
   statusText,
   statusTone,
   onNavigate,
-  onMinimize,
-  onClose,
   children,
 }: AppShellProps): ReactNode {
   const navigate = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
@@ -41,16 +36,6 @@ export function AppShell({
 
   return (
     <div className="app-shell">
-      <header className="app-titlebar">
-        <div className="app-titlebar__brand" aria-label="TalkType application">
-          <span className="app-titlebar__mark" aria-hidden="true">T</span>
-          <span>TalkType</span>
-        </div>
-        <div className="app-titlebar__controls">
-          <Button iconOnly variant="ghost" aria-label="Minimize TalkType" onClick={() => void onMinimize()}><Minus size={18} /></Button>
-          <Button iconOnly variant="ghost" aria-label="Close TalkType to tray" onClick={() => void onClose()}><X size={18} /></Button>
-        </div>
-      </header>
       <aside className="app-navigation">
         <nav aria-label="Primary navigation">
           {destinations.map(({ id, label, icon: Icon }) => (

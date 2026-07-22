@@ -10,7 +10,6 @@ export interface NativeDictationLifecycleDependencies {
   readonly getTrayState: () => TrayState
   readonly updateTray: (state: TrayState) => void
   readonly syncEscape: (state: Pick<WidgetSnapshot, 'status' | 'cancellable'>) => void
-  readonly widgetDisplay: { lock(): void; unlock(): void }
   readonly showWidgetWhenIdle: () => boolean
   readonly log: (code: NativeDictationLifecycleDiagnostic) => void
 }
@@ -71,14 +70,7 @@ export class NativeDictationLifecycle {
   }
 
   private async deliver(state: WidgetSnapshot): Promise<boolean> {
-    // Active sessions pin the widget to the display the cursor was on when the
-    // session started; returning to idle releases that anchor.
     const idle = state.status === 'idle'
-    if (idle) {
-      this.dependencies.widgetDisplay.unlock()
-    } else {
-      this.dependencies.widgetDisplay.lock()
-    }
     // Active states always reveal the capsule; the idle resting sliver is
     // revealed only while the idle-visibility setting is on.
     const reveal = !idle || this.dependencies.showWidgetWhenIdle()

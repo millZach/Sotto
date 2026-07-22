@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
 import type { AppSettings, ModelPreset } from '../../shared/settings'
 import { AppShell, type AppStatusTone } from './components/AppShell'
+import { AppTitlebar } from './components/AppTitlebar'
 import { Card } from './components/Card'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
@@ -189,12 +190,11 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     void app.actions.getModelStatus(app.settings.modelPreset)
   }, [app.actions, app.navigation, app.settings, app.status])
 
+  let content: ReactNode
   if (app.status === 'loading') {
-    return <main className="app-loading" aria-busy="true"><p role="status">Preparing TalkType...</p></main>
-  }
-
-  if (app.status === 'unavailable' || app.settings === null) {
-    return (
+    content = <main className="app-loading" aria-busy="true"><p role="status">Preparing TalkType...</p></main>
+  } else if (app.status === 'unavailable' || app.settings === null) {
+    content = (
       <main className="app-unavailable">
         <Card>
           <h1>TalkType could not finish starting</h1>
@@ -202,14 +202,12 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         </Card>
       </main>
     )
-  }
-
-  if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
+  } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
     const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => ({
       id: notice.code,
       message: recoveryMessages[notice.code],
     }))
-    return (
+    content = (
       <>
         <Onboarding
           microphoneState={microphoneState}
@@ -234,83 +232,91 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         <ToastRegion messages={recoveryToasts} />
       </>
     )
-  }
+  } else {
+    const navigation = app.navigation
+    const statusTone: AppStatusTone = app.failure !== null
+      ? 'attention'
+      : app.dictation.status === 'listening'
+        ? 'listening'
+        : app.dictation.status === 'processing'
+          ? 'processing'
+          : 'ready'
+    const statusText = {
+      ready: 'Ready · Local & private',
+      listening: 'Listening',
+      processing: 'Transcribing locally',
+      attention: 'Needs attention',
+    }[statusTone]
 
-  const navigation = app.navigation
-  const statusTone: AppStatusTone = app.failure !== null
-    ? 'attention'
-    : app.dictation.status === 'listening'
-      ? 'listening'
-      : app.dictation.status === 'processing'
-        ? 'processing'
-        : 'ready'
-  const statusText = {
-    ready: 'Ready · Local & private',
-    listening: 'Listening',
-    processing: 'Transcribing locally',
-    attention: 'Needs attention',
-  }[statusTone]
+    let view: ReactNode
+    switch (navigation) {
+      case 'history':
+        view = <HistoryView
+          entries={app.history}
+          enabled={app.settings.historyEnabled}
+          status={app.historyStatus}
+          onCopy={app.actions.copyHistory}
+          onDelete={app.actions.deleteHistory}
+          onClear={app.actions.clearHistory}
+        />
+        break
+      case 'settings':
+        view = <SettingsView
+          settings={app.settings}
+          modelStatuses={app.modelStatuses}
+          onUpdateSettings={app.actions.updateSettings}
+          onReplaceHotkey={app.actions.replaceHotkey}
+          onSetStartup={app.actions.setStartup}
+          onResetSettings={app.actions.resetSettings}
+          onClearHistory={app.actions.clearHistory}
+          onGetModelStatus={app.actions.getModelStatus}
+          onListModelDisclosures={app.actions.listModelDisclosures}
+          onInstallModel={app.actions.installModel}
+          onRemoveModel={app.actions.removeModel}
+        />
+        break
+      case 'help':
+        view = <HelpView shortcut={app.settings.hotkey} />
+        break
+      default:
+        view = <HomeView
+          settings={app.settings}
+          dictation={app.dictation}
+          modelStatus={app.modelStatuses[app.settings.modelPreset]}
+          entries={app.history}
+          historyStatus={app.historyStatus}
+          onStart={app.actions.start}
+          onStop={app.actions.stop}
+          onOpenHistory={() => app.actions.navigate('history')}
+          onOpenSettings={() => app.actions.navigate('settings')}
+        />
+    }
 
-  let view: ReactNode
-  switch (navigation) {
-    case 'history':
-      view = <HistoryView
-        entries={app.history}
-        enabled={app.settings.historyEnabled}
-        status={app.historyStatus}
-        onCopy={app.actions.copyHistory}
-        onDelete={app.actions.deleteHistory}
-        onClear={app.actions.clearHistory}
-      />
-      break
-    case 'settings':
-      view = <SettingsView
-        settings={app.settings}
-        modelStatuses={app.modelStatuses}
-        onUpdateSettings={app.actions.updateSettings}
-        onReplaceHotkey={app.actions.replaceHotkey}
-        onSetStartup={app.actions.setStartup}
-        onResetSettings={app.actions.resetSettings}
-        onClearHistory={app.actions.clearHistory}
-        onGetModelStatus={app.actions.getModelStatus}
-        onListModelDisclosures={app.actions.listModelDisclosures}
-        onInstallModel={app.actions.installModel}
-        onRemoveModel={app.actions.removeModel}
-      />
-      break
-    case 'help':
-      view = <HelpView shortcut={app.settings.hotkey} />
-      break
-    default:
-      view = <HomeView
-        settings={app.settings}
-        dictation={app.dictation}
-        modelStatus={app.modelStatuses[app.settings.modelPreset]}
-        entries={app.history}
-        historyStatus={app.historyStatus}
-        onStart={app.actions.start}
-        onStop={app.actions.stop}
-        onOpenHistory={() => app.actions.navigate('history')}
-        onOpenSettings={() => app.actions.navigate('settings')}
-      />
+    content = (
+      <>
+        <AppShell
+          navigation={navigation}
+          statusText={statusText}
+          statusTone={statusTone}
+          onNavigate={app.actions.navigate}
+        >
+          {view}
+        </AppShell>
+        <ToastRegion messages={app.recoveryNotices.map((notice) => ({
+          id: notice.code,
+          message: recoveryMessages[notice.code],
+        }))} />
+      </>
+    )
   }
 
   return (
-    <>
-      <AppShell
-        navigation={navigation}
-        statusText={statusText}
-        statusTone={statusTone}
-        onNavigate={app.actions.navigate}
+    <div className="app-frame">
+      <AppTitlebar
         onMinimize={app.actions.minimizeApp}
         onClose={app.actions.hideApp}
-      >
-        {view}
-      </AppShell>
-      <ToastRegion messages={app.recoveryNotices.map((notice) => ({
-        id: notice.code,
-        message: recoveryMessages[notice.code],
-      }))} />
-    </>
+      />
+      <div className="app-frame__body">{content}</div>
+    </div>
   )
 }

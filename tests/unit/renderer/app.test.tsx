@@ -140,6 +140,48 @@ afterEach(() => {
   delete document.documentElement.dataset.reducedMotion
 })
 
+describe('shared main-window frame', () => {
+  it.each([
+    {
+      name: 'loading',
+      createStateBridge: () => createBridge({
+        getSettings: vi.fn(() => new Promise<AppSettings>(() => undefined)),
+      }),
+      stateText: /preparing talktype/i,
+    },
+    {
+      name: 'unavailable',
+      createStateBridge: () => createBridge({
+        getSettings: vi.fn(async () => { throw new Error('startup failed') }),
+      }),
+      stateText: /could not finish starting/i,
+    },
+    {
+      name: 'onboarding',
+      createStateBridge: () => createBridge(),
+      stateText: /private dictation/i,
+    },
+    {
+      name: 'ready',
+      createStateBridge: () => createBridge({
+        getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      }),
+      stateText: 'Home',
+    },
+  ])('renders exactly one titlebar and both controls in the $name state', async ({
+    createStateBridge,
+    stateText,
+  }) => {
+    const { container } = renderApp(createStateBridge())
+
+    await waitFor(() => expect(document.body).toHaveTextContent(stateText))
+
+    expect(container.querySelectorAll('.app-titlebar')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Minimize TalkType' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close TalkType to tray' })).toBeVisible()
+  })
+})
+
 describe('TalkType application onboarding integration', () => {
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
     let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined

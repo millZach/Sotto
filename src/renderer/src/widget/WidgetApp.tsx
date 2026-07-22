@@ -18,15 +18,22 @@ import {
   type ReactNode,
 } from 'react'
 
-import type { TalkTypeWidgetBridge, WidgetDragPayload } from '../../../shared/contracts'
+import type {
+  TalkTypeWidgetBridge,
+  WidgetDragPayload,
+  WidgetDragPhase,
+  WidgetPresentation,
+} from '../../../shared/contracts'
 import { formatWindowsAccelerator } from '../../../shared/accelerator'
 import type {
   WidgetErrorCode,
   WidgetProcessingStage,
   WidgetSnapshot,
 } from '../../../shared/dictation'
+import { useWidgetDragGesture } from './useWidgetDragGesture'
 
 const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
+const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
@@ -121,8 +128,10 @@ export interface WidgetAppProps {
   readonly onToggle?: () => void
   readonly onStop?: () => void
   readonly onCancel?: () => void
-  readonly onSliverHover?: (hovering: boolean) => void
+  readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
+  readonly dragCancellationVersion?: number
+  readonly visibilityGeneration?: number
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -192,9 +201,9 @@ function readWidgetOrientation(): WidgetOrientation {
 }
 
 /**
- * The widget window is 248x88 on horizontal edges and 88x248 on vertical
- * edges, so the canvas proportions alone identify the orientation; a resize
- * listener follows the main process swapping the window between them.
+ * Every native presentation footprint is landscape on horizontal edges and
+ * portrait on vertical edges. A resize listener follows presentation and edge
+ * changes applied by the main-process placement coordinator.
  */
 function useWidgetOrientation(): WidgetOrientation {
   const [orientation, setOrientation] = useState<WidgetOrientation>(readWidgetOrientation)
@@ -212,108 +221,6 @@ function useWidgetOrientation(): WidgetOrientation {
 function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
   // Button presses must never start a widget drag session.
   event.stopPropagation()
-}
-
-/** Movement past this many screen pixels turns a press into a drag. */
-const DRAG_THRESHOLD_PX = 4
-
-interface DragTracking {
-  pointerId: number
-  startX: number
-  startY: number
-  dragging: boolean
-}
-
-interface DragOrClickSurface {
-  readonly dragging: boolean
-  readonly isDragActive: () => boolean
-  readonly surfaceProps: {
-    readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void
-    readonly onClick: () => void
-  }
-}
-
-/**
- * Discriminates a press on a widget surface into a click or a drag by a small
- * movement threshold. Deltas are computed from screenX/screenY so the window
- * moving under the pointer cannot corrupt them. A completed drag swallows the
- * click the browser dispatches after pointerup.
- */
-function useDragOrClick(
-  onClick: (() => void) | undefined,
-  onDrag: ((payload: WidgetDragPayload) => void) | undefined,
-  onDragFinished?: (() => void) | undefined,
-): DragOrClickSurface {
-  const trackingRef = useRef<DragTracking | null>(null)
-  const suppressClickRef = useRef(false)
-  const [dragging, setDragging] = useState(false)
-
-  const onPointerDown = (event: ReactPointerEvent<HTMLElement>): void => {
-    if (event.button !== 0 || event.isPrimary === false) return
-    suppressClickRef.current = false
-    trackingRef.current = {
-      pointerId: event.pointerId,
-      startX: event.screenX,
-      startY: event.screenY,
-      dragging: false,
-    }
-    try {
-      event.currentTarget.setPointerCapture?.(event.pointerId)
-    } catch {
-      // Pointer capture is unavailable in some environments; tracking still works.
-    }
-  }
-
-  const onPointerMove = (event: ReactPointerEvent<HTMLElement>): void => {
-    const tracking = trackingRef.current
-    if (tracking === null || event.pointerId !== tracking.pointerId) return
-    const deltaX = event.screenX - tracking.startX
-    const deltaY = event.screenY - tracking.startY
-    if (!tracking.dragging) {
-      if (Math.hypot(deltaX, deltaY) <= DRAG_THRESHOLD_PX) return
-      tracking.dragging = true
-      setDragging(true)
-      onDrag?.({ phase: 'start' })
-    }
-    onDrag?.({ phase: 'move', deltaX: Math.round(deltaX), deltaY: Math.round(deltaY) })
-  }
-
-  const finish = (event: ReactPointerEvent<HTMLElement>, cancelled: boolean): void => {
-    const tracking = trackingRef.current
-    if (tracking === null || event.pointerId !== tracking.pointerId) return
-    trackingRef.current = null
-    try {
-      event.currentTarget.releasePointerCapture?.(event.pointerId)
-    } catch {
-      // Releasing capture is best effort.
-    }
-    if (!tracking.dragging) return
-    suppressClickRef.current = !cancelled
-    setDragging(false)
-    onDrag?.({ phase: 'end' })
-    onDragFinished?.()
-  }
-
-  return {
-    dragging,
-    isDragActive: () => trackingRef.current?.dragging === true,
-    surfaceProps: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp: (event) => finish(event, false),
-      onPointerCancel: (event) => finish(event, true),
-      onClick: () => {
-        if (suppressClickRef.current) {
-          suppressClickRef.current = false
-          return
-        }
-        onClick?.()
-      },
-    },
-  }
 }
 
 function LevelBars({ level, active }: { readonly level: number; readonly active: boolean }): ReactNode {
@@ -384,31 +291,72 @@ export function WidgetApp({
   onToggle,
   onStop,
   onCancel,
-  onSliverHover,
+  onPresentationChange,
   onDrag,
+  dragCancellationVersion,
+  visibilityGeneration = 0,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const orientation = useWidgetOrientation()
   // Hovering the idle sliver expands it in place into a small pill carrying
-  // the click-to-dictate affordance; hover-out collapses it back.
+  // the click-to-dictate affordance. Native resize/re-centering can briefly
+  // synthesize leave/enter events, so collapse waits beyond the CSS transition.
   const [expanded, setExpanded] = useState(false)
+  const hoverInsideRef = useRef(false)
+  const hoverCollapseTimerRef = useRef<number | null>(null)
+  const clearHoverCollapse = (): void => {
+    if (hoverCollapseTimerRef.current === null) return
+    window.clearTimeout(hoverCollapseTimerRef.current)
+    hoverCollapseTimerRef.current = null
+  }
   useEffect(() => {
-    if (!isIdle) setExpanded(false)
+    // Native hiding invalidates both drag and idle-hover interaction state.
+    hoverInsideRef.current = false
+    clearHoverCollapse()
+    setExpanded(false)
+  }, [dragCancellationVersion])
+  useEffect(() => {
+    if (!isIdle) {
+      hoverInsideRef.current = false
+      clearHoverCollapse()
+      setExpanded(false)
+    }
   }, [isIdle])
+  useEffect(() => () => clearHoverCollapse(), [])
   // The idle sliver click starts dictation; the active capsule click stops it.
   // Either surface becomes a drag once movement passes the threshold. When an
-  // idle drag ends the window has snapped away from the pointer, so hover-off
-  // restores the click-through baseline; re-hovering re-arms interactivity.
-  const surface = useDragOrClick(
+  // idle drag ends the window has snapped away from the pointer, so it returns
+  // to the resting presentation.
+  const dragGenerationRef = useRef<number | null>(null)
+  const reportDragPhase = (phase: WidgetDragPhase): void => {
+    if (phase.phase === 'start') {
+      dragGenerationRef.current = visibilityGeneration
+    }
+    const generation = dragGenerationRef.current
+    if (generation === null) return
+    try {
+      onDrag?.({ ...phase, generation })
+    } finally {
+      if (phase.phase === 'end') {
+        dragGenerationRef.current = null
+      }
+    }
+  }
+  const surface = useWidgetDragGesture(
     isIdle ? onToggle : onStop,
-    onDrag,
-    isIdle
-      ? () => {
-          setExpanded(false)
-          onSliverHover?.(false)
-        }
-      : undefined,
+    reportDragPhase,
+    isIdle ? () => setExpanded(false) : undefined,
+    dragCancellationVersion,
   )
+  const presentation: WidgetPresentation = !isIdle
+    ? 'active'
+    : expanded || surface.dragging
+      ? 'idle-hovered'
+      : 'idle-resting'
+
+  useEffect(() => {
+    onPresentationChange?.(presentation)
+  }, [onPresentationChange, presentation, visibilityGeneration])
 
   if (snapshot.status === 'idle') {
     return (
@@ -426,14 +374,20 @@ export function WidgetApp({
           data-expanded={expanded || undefined}
           tabIndex={-1}
           onMouseEnter={() => {
+            hoverInsideRef.current = true
+            clearHoverCollapse()
             setExpanded(true)
-            onSliverHover?.(true)
           }}
           onMouseLeave={() => {
-            if (!surface.isDragActive()) {
-              setExpanded(false)
-              onSliverHover?.(false)
-            }
+            hoverInsideRef.current = false
+            if (surface.isDragActive()) return
+            clearHoverCollapse()
+            hoverCollapseTimerRef.current = window.setTimeout(() => {
+              hoverCollapseTimerRef.current = null
+              if (!hoverInsideRef.current && !surface.isDragActive()) {
+                setExpanded(false)
+              }
+            }, IDLE_HOVER_SETTLE_MS)
           }}
           onMouseDown={preventFocus}
           {...surface.surfaceProps}
@@ -553,10 +507,20 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
+  const [dragCancellationVersion, setDragCancellationVersion] = useState(0)
+  const [visibilityGeneration, setVisibilityGeneration] = useState(0)
 
   useEffect(() => {
     if (preview !== null || bridge === undefined) return undefined
     return bridge.onWidgetState(setLiveSnapshot)
+  }, [bridge, preview])
+
+  useEffect(() => {
+    if (preview !== null || bridge === undefined) return undefined
+    return bridge.onWidgetVisibilityChange((visibility) => {
+      setVisibilityGeneration(visibility.generation)
+      if (!visibility.visible) setDragCancellationVersion((version) => version + 1)
+    })
   }, [bridge, preview])
 
   useEffect(() => {
@@ -571,31 +535,36 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
     return () => window.clearInterval(timer)
   }, [preview, snapshot?.status, snapshot?.status === 'listening' ? snapshot.sessionId : null])
 
-  const interactive = snapshot !== null && snapshot.status !== 'idle'
-  useEffect(() => {
-    if (preview !== null || bridge === undefined || snapshot === null) return
-    void bridge.setMouseInteractive(interactive).catch(() => undefined)
-  }, [bridge, preview, snapshot === null, interactive])
-
   const actions = useMemo(() => {
     if (bridge === undefined || preview !== null) return {}
     return {
       onToggle: () => { void bridge.requestToggle().catch(() => undefined) },
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
-      onSliverHover: (hovering: boolean) => {
-        void bridge.setMouseInteractive(hovering).catch(() => undefined)
+      onPresentationChange: (presentation: WidgetPresentation) => {
+        void bridge.setPresentation({
+          presentation,
+          generation: visibilityGeneration,
+        }).catch(() => undefined)
       },
       onDrag: (payload: WidgetDragPayload) => {
         void bridge.reportDrag(payload).catch(() => undefined)
       },
     }
-  }, [bridge, preview])
+  }, [bridge, preview, visibilityGeneration])
 
   return (
     <>
       <WidgetAnnouncements snapshot={snapshot} />
-      {snapshot === null ? null : <WidgetApp snapshot={snapshot} now={now} {...actions} />}
+      {snapshot === null ? null : (
+        <WidgetApp
+          snapshot={snapshot}
+          now={now}
+          dragCancellationVersion={dragCancellationVersion}
+          visibilityGeneration={visibilityGeneration}
+          {...actions}
+        />
+      )}
     </>
   )
 }

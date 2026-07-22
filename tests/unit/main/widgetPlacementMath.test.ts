@@ -1,167 +1,156 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
+import type { WidgetPresentation } from '../../../src/shared/contracts'
 import {
   DEFAULT_WIDGET_PLACEMENT,
-  HORIZONTAL_WIDGET_SIZE,
-  VERTICAL_WIDGET_SIZE,
-  placementToPosition,
+  placementToBounds,
   snapToEdge,
-  widgetSizeForEdge,
+  widgetSizeForPresentation,
   type WidgetEdge,
+  type WidgetPlacement,
 } from '../../../src/main/windows/widgetPlacementMath'
 
 const WORK_AREA = { x: 1_000, y: 100, width: 1_200, height: 900 } as const
-const GAP = 16
+const INSET = 16
 
-describe('widgetSizeForEdge', () => {
-  it('keeps the horizontal canvas on the top and bottom edges', () => {
-    expect(widgetSizeForEdge('bottom')).toEqual({ width: 248, height: 88 })
-    expect(widgetSizeForEdge('top')).toEqual({ width: 248, height: 88 })
-    expect(widgetSizeForEdge('bottom')).toBe(HORIZONTAL_WIDGET_SIZE)
+const EXPECTED_SIZES = {
+  'idle-resting': {
+    horizontal: { width: 124, height: 54 },
+    vertical: { width: 54, height: 124 },
+  },
+  'idle-hovered': {
+    horizontal: { width: 248, height: 76 },
+    vertical: { width: 88, height: 124 },
+  },
+  active: {
+    horizontal: { width: 248, height: 88 },
+    vertical: { width: 88, height: 248 },
+  },
+} as const
+
+const EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
+const PRESENTATIONS: readonly WidgetPresentation[] = [
+  'idle-resting',
+  'idle-hovered',
+  'active',
+]
+
+describe('widget presentation geometry', () => {
+  it('returns the approved native footprint for every edge and presentation', () => {
+    for (const presentation of PRESENTATIONS) {
+      for (const edge of EDGES) {
+        const orientation = edge === 'left' || edge === 'right' ? 'vertical' : 'horizontal'
+        expect(widgetSizeForPresentation(edge, presentation)).toEqual(
+          EXPECTED_SIZES[presentation][orientation],
+        )
+      }
+    }
   })
 
-  it('swaps to the vertical canvas on the left and right edges', () => {
-    expect(widgetSizeForEdge('left')).toEqual({ width: 88, height: 248 })
-    expect(widgetSizeForEdge('right')).toEqual({ width: 88, height: 248 })
-    expect(widgetSizeForEdge('right')).toBe(VERTICAL_WIDGET_SIZE)
-  })
-})
+  it('centers every presentation 16 DIPs inside all four work-area edges', () => {
+    const expectedBounds: Record<WidgetPresentation, Record<WidgetEdge, object>> = {
+      'idle-resting': {
+        top: { x: 1_538, y: 116, width: 124, height: 54 },
+        bottom: { x: 1_538, y: 930, width: 124, height: 54 },
+        left: { x: 1_016, y: 488, width: 54, height: 124 },
+        right: { x: 2_130, y: 488, width: 54, height: 124 },
+      },
+      'idle-hovered': {
+        top: { x: 1_476, y: 116, width: 248, height: 76 },
+        bottom: { x: 1_476, y: 908, width: 248, height: 76 },
+        left: { x: 1_016, y: 488, width: 88, height: 124 },
+        right: { x: 2_096, y: 488, width: 88, height: 124 },
+      },
+      active: {
+        top: { x: 1_476, y: 116, width: 248, height: 88 },
+        bottom: { x: 1_476, y: 896, width: 248, height: 88 },
+        left: { x: 1_016, y: 426, width: 88, height: 248 },
+        right: { x: 2_096, y: 426, width: 88, height: 248 },
+      },
+    }
 
-describe('placementToPosition', () => {
-  it('centers the default bottom placement above the bottom gap', () => {
-    expect(placementToPosition(DEFAULT_WIDGET_PLACEMENT, WORK_AREA, GAP)).toEqual({
-      x: 1_476,
-      y: 896,
-    })
-  })
-
-  it('anchors each edge a gap away using that edge orientation size', () => {
-    expect(placementToPosition({ edge: 'bottom', offset: 0 }, WORK_AREA, GAP)).toEqual({
-      x: 1_000,
-      y: 896,
-    })
-    expect(placementToPosition({ edge: 'top', offset: 1 }, WORK_AREA, GAP)).toEqual({
-      x: 1_952,
-      y: 116,
-    })
-    // Side edges use the 88x248 vertical canvas: the offset travels the
-    // 900 - 248 = 652px vertical range.
-    expect(placementToPosition({ edge: 'left', offset: 0.5 }, WORK_AREA, GAP)).toEqual({
-      x: 1_016,
-      y: 426,
-    })
-    expect(placementToPosition({ edge: 'right', offset: 1 }, WORK_AREA, GAP)).toEqual({
-      x: 2_096,
-      y: 752,
-    })
+    for (const presentation of PRESENTATIONS) {
+      for (const edge of EDGES) {
+        expect(placementToBounds({ edge }, WORK_AREA, presentation, INSET)).toEqual(
+          expectedBounds[presentation][edge],
+        )
+      }
+    }
   })
 
-  it('clamps out-of-range and non-finite offsets so the widget stays fully on screen', () => {
-    expect(placementToPosition({ edge: 'bottom', offset: 4.2 }, WORK_AREA, GAP)).toEqual({
-      x: 1_952,
-      y: 896,
-    })
-    expect(placementToPosition({ edge: 'bottom', offset: -1 }, WORK_AREA, GAP)).toEqual({
-      x: 1_000,
-      y: 896,
-    })
+  it('centers correctly in negative-coordinate work areas', () => {
+    const negativeArea = { x: -1_920, y: -1_080, width: 1_920, height: 1_040 } as const
+
     expect(
-      placementToPosition({ edge: 'left', offset: Number.NaN }, WORK_AREA, GAP),
-    ).toEqual({ x: 1_016, y: 426 })
-  })
-
-  it('keeps the widget inside a work area smaller than the widget plus its gap', () => {
-    const tiny = { x: -2_000, y: -1_000, width: 200, height: 90 } as const
-
-    expect(placementToPosition({ edge: 'bottom', offset: 0.5 }, tiny, GAP)).toEqual({
-      x: -2_000,
-      y: -1_000,
-    })
-    // The 88-wide vertical canvas fits the 200-wide area a gap from the
-    // right edge; the 248-tall height cannot fit and clamps to the top.
-    expect(placementToPosition({ edge: 'right', offset: 0 }, tiny, GAP)).toEqual({
-      x: -1_904,
-      y: -1_000,
+      placementToBounds({ edge: 'top' }, negativeArea, 'idle-hovered', INSET),
+    ).toEqual({ x: -1_084, y: -1_064, width: 248, height: 76 })
+    expect(placementToBounds({ edge: 'right' }, negativeArea, 'active', INSET)).toEqual({
+      x: -104,
+      y: -684,
+      width: 88,
+      height: 248,
     })
   })
-})
 
-describe('snapToEdge', () => {
-  it('snaps to the nearest edge measured with that edge orientation size', () => {
-    expect(snapToEdge({ x: 1_100, y: 300 }, WORK_AREA).edge).toBe('left')
-    expect(snapToEdge({ x: 2_000, y: 300 }, WORK_AREA).edge).toBe('right')
-    expect(snapToEdge({ x: 1_400, y: 150 }, WORK_AREA).edge).toBe('top')
-    expect(snapToEdge({ x: 1_400, y: 850 }, WORK_AREA).edge).toBe('bottom')
-  })
+  it('clamps when the work area is smaller than the presentation', () => {
+    const tinyArea = { x: -2_000, y: -1_000, width: 40, height: 30 } as const
 
-  it('measures each candidate edge with the size the widget would have there', () => {
-    // In a 1000x1000 area at (700, 100) the naive horizontal 248-wide widget
-    // would be 52px from the right edge and snap right; the widget is 88 wide
-    // on that edge, so the true distance is 212px and the top edge (100px)
-    // wins instead.
-    const area = { x: 0, y: 0, width: 1_000, height: 1_000 } as const
-
-    expect(snapToEdge({ x: 700, y: 100 }, area).edge).toBe('top')
-    expect(snapToEdge({ x: 700, y: 480 }, area).edge).toBe('right')
-  })
-
-  it('preserves the fractional position along the snapped edge', () => {
-    const placement = snapToEdge({ x: 1_100, y: 300 }, WORK_AREA)
-
-    expect(placement.edge).toBe('left')
-    expect(placement.offset).toBeCloseTo((300 - 100) / (900 - 248), 6)
-
-    const horizontal = snapToEdge({ x: 1_476, y: 850 }, WORK_AREA)
-    expect(horizontal.edge).toBe('bottom')
-    expect(horizontal.offset).toBeCloseTo(0.5, 6)
-  })
-
-  it('clamps offsets for drag positions outside the work area', () => {
-    const low = snapToEdge({ x: 700, y: 1_500 }, WORK_AREA)
-    expect(low.edge).toBe('bottom')
-    expect(low.offset).toBe(0)
-
-    const high = snapToEdge({ x: 2_500, y: 1_500 }, WORK_AREA)
-    expect(high.edge).toBe('bottom')
-    expect(high.offset).toBe(1)
-  })
-
-  it('prefers the bottom edge when distances tie', () => {
-    // Centered exactly for the horizontal canvas: top and bottom tie.
-    const centered = {
-      x: WORK_AREA.x + (WORK_AREA.width - 248) / 2,
-      y: WORK_AREA.y + (WORK_AREA.height - 88) / 2,
-    }
-
-    expect(snapToEdge(centered, WORK_AREA).edge).toBe('bottom')
-  })
-
-  it('is a fixed point once a position has been snapped, for every edge', () => {
-    const starts: Record<WidgetEdge, { x: number; y: number }> = {
-      top: { x: 1_400, y: 150 },
-      bottom: { x: 1_555, y: 930 },
-      left: { x: 1_030, y: 400 },
-      right: { x: 2_050, y: 400 },
-    }
-
-    for (const [edge, start] of Object.entries(starts) as ReadonlyArray<
-      [WidgetEdge, { x: number; y: number }]
-    >) {
-      const placement = snapToEdge(start, WORK_AREA)
-      expect(placement.edge).toBe(edge)
-
-      const snapped = placementToPosition(placement, WORK_AREA, GAP)
-      const again = snapToEdge(snapped, WORK_AREA)
-
-      expect(again.edge).toBe(placement.edge)
-      expect(placementToPosition(again, WORK_AREA, GAP)).toEqual(snapped)
+    for (const presentation of PRESENTATIONS) {
+      for (const edge of EDGES) {
+        expect(placementToBounds({ edge }, tinyArea, presentation, INSET)).toEqual({
+          x: tinyArea.x,
+          y: tinyArea.y,
+          ...widgetSizeForPresentation(edge, presentation),
+        })
+      }
     }
   })
 
-  it('centers the offset when the work area cannot fit the widget', () => {
-    const tiny = { x: 0, y: 0, width: 100, height: 40 } as const
-    const placement = snapToEdge({ x: 10, y: 30 }, tiny)
+  it('chooses the nearest edge with bottom top left right tie priority', () => {
+    const square = { x: 0, y: 0, width: 1_000, height: 1_000 } as const
+    expect(snapToEdge({ x: 456, y: 456, width: 88, height: 88 }, square)).toEqual({
+      edge: 'bottom',
+    })
+    expect(snapToEdge({ x: 100, y: 100, width: 88, height: 88 }, square)).toEqual({
+      edge: 'top',
+    })
 
-    expect(placement.offset).toBe(0.5)
+    const tall = { x: 0, y: 0, width: 500, height: 1_000 } as const
+    expect(snapToEdge({ x: 206, y: 400, width: 88, height: 88 }, tall)).toEqual({
+      edge: 'left',
+    })
+    expect(snapToEdge({ x: 400, y: 400, width: 88, height: 88 }, tall)).toEqual({
+      edge: 'right',
+    })
+  })
+
+  it('uses the current idle-hovered footprint when choosing the nearest edge', () => {
+    const workArea = { x: 0, y: 0, width: 1_000, height: 800 } as const
+    const currentBounds = { x: 5, y: 714, width: 248, height: 76 } as const
+
+    expect(snapToEdge(currentBounds, workArea)).toEqual({ edge: 'left' })
+  })
+
+  it('uses active vertical geometry without reintroducing an along-edge offset', () => {
+    const workArea = { x: 0, y: 0, width: 1_000, height: 800 } as const
+    const currentBounds = { x: 900, y: 540, width: 88, height: 248 } as const
+
+    const placement = snapToEdge(currentBounds, workArea)
+
+    expect(placement).toEqual({ edge: 'bottom' })
+    expect(Object.keys(placement)).toEqual(['edge'])
+  })
+
+  it('returns only an edge and never an offset', () => {
+    const placement = snapToEdge(
+      { x: 1_100, y: 300, width: 88, height: 88 },
+      WORK_AREA,
+    )
+
+    expectTypeOf(placement).toEqualTypeOf<WidgetPlacement>()
+    expectTypeOf(DEFAULT_WIDGET_PLACEMENT).toEqualTypeOf<WidgetPlacement>()
+    expect(placement).toEqual({ edge: 'left' })
+    expect(Object.keys(placement)).toEqual(['edge'])
+    expect(DEFAULT_WIDGET_PLACEMENT).toEqual({ edge: 'bottom' })
   })
 })

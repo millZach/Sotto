@@ -30,18 +30,23 @@ import {
   STARTUP_GET,
   STARTUP_SET,
   WIDGET_DRAG,
-  WIDGET_INTERACTIVITY,
+  WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
   WIDGET_STATE,
+  WIDGET_VISIBILITY,
 } from '../shared/channels'
 import {
   dictationCommandSchema,
   modelDisclosureCatalogSchema,
   modelStatusSchema,
+  widgetDragSchema,
+  widgetPresentationPayloadSchema,
   widgetSnapshotSchema,
+  widgetVisibilitySchema,
   type TalkTypeBridge,
   type TalkTypeWidgetBridge,
   type WidgetDragPayload,
+  type WidgetPresentationPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
@@ -235,18 +240,35 @@ export function createTalkTypeWidgetBridge(
     widgetSnapshotSchema,
     1,
   )
+  const onWidgetVisibilityChange = createBufferedSubscription(
+    renderer,
+    WIDGET_VISIBILITY,
+    widgetVisibilitySchema,
+    1,
+  )
   return Object.freeze({
     onWidgetState,
+    onWidgetVisibilityChange,
     requestToggle: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'toggle' }),
     requestStop: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
     requestCancel: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
-    setMouseInteractive: (interactive: boolean) =>
-      invokeParsed(renderer, WIDGET_INTERACTIVITY, commandResultSchema, interactive),
-    reportDrag: (payload: WidgetDragPayload) =>
-      invokeParsed(renderer, WIDGET_DRAG, commandResultSchema, payload),
+    setPresentation: async (payload: WidgetPresentationPayload) =>
+      invokeParsed(
+        renderer,
+        WIDGET_PRESENTATION,
+        commandResultSchema,
+        widgetPresentationPayloadSchema.parse(payload),
+      ),
+    reportDrag: async (payload: WidgetDragPayload) =>
+      invokeParsed(
+        renderer,
+        WIDGET_DRAG,
+        commandResultSchema,
+        widgetDragSchema.parse(payload),
+      ),
   })
 }
 

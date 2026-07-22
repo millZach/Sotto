@@ -20,6 +20,13 @@ import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSetting
 import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
 import {
+  WindowManager,
+  type BrowserWindowLike,
+  type NavigationEventName,
+  type Rectangle,
+  type WindowConstructorOptions,
+} from '../../src/main/windows/windowManager'
+import {
   TrayController,
   type TrayAdapter,
   type TrayMenuItem,
@@ -50,9 +57,10 @@ import {
   STARTUP_GET,
   STARTUP_SET,
   WIDGET_DRAG,
-  WIDGET_INTERACTIVITY,
+  WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
   WIDGET_STATE,
+  WIDGET_VISIBILITY,
 } from '../../src/shared/channels'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
@@ -137,6 +145,82 @@ class FakeIpcMain implements IpcMainAdapter {
       return Promise.reject(new Error(`missing handler: ${channel}`))
     }
     return Promise.resolve(handler(event, ...args))
+  }
+}
+
+class IpcLifecycleWindow implements BrowserWindowLike {
+  readonly webContents: BrowserWindowLike['webContents']
+  readonly hide = vi.fn()
+  readonly show = vi.fn()
+  readonly focus = vi.fn()
+  readonly minimize = vi.fn()
+  readonly isMinimized = vi.fn(() => false)
+  readonly restore = vi.fn()
+  readonly showInactive = vi.fn()
+  bounds: Rectangle
+  readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
+  readonly setBounds = vi.fn((bounds: Rectangle): void => {
+    this.bounds = { ...bounds }
+  })
+  readonly setPosition = vi.fn((x: number, y: number): void => {
+    this.bounds = { ...this.bounds, x, y }
+  })
+  readonly getPosition = vi.fn(() => [this.bounds.x, this.bounds.y] as const)
+  readonly setSize = vi.fn((width: number, height: number): void => {
+    this.bounds = { ...this.bounds, width, height }
+  })
+  readonly setIgnoreMouseEvents = vi.fn()
+  readonly destroy = vi.fn()
+  readonly isDestroyed = vi.fn(() => false)
+  readonly loadURL = vi.fn(async () => undefined)
+  readonly loadFile = vi.fn(async () => undefined)
+
+  constructor(readonly role: 'main' | 'widget', options: WindowConstructorOptions) {
+    const url = `file:///C:/TalkType/out/renderer/${role === 'main' ? 'index' : 'widget'}.html`
+    const mainFrame = { parent: null, url }
+    this.webContents = {
+      mainFrame,
+      send: vi.fn(),
+      getURL: vi.fn(() => url),
+      isDestroyed: vi.fn(() => false),
+      setWindowOpenHandler: vi.fn(),
+    }
+    this.bounds = { x: 0, y: 0, width: options.width, height: options.height }
+  }
+
+  on(
+    event: 'close' | 'closed' | 'moved',
+    listener: (event: { preventDefault(): void }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  removeListener(
+    event: 'close' | 'closed' | 'moved',
+    listener: (event: { preventDefault(): void }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  onNavigation(
+    event: NavigationEventName,
+    listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  removeNavigationListener(
+    event: NavigationEventName,
+    listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
+  ): void {
+    void event
+    void listener
+  }
+  onRenderProcessGone(listener: () => void): void {
+    void listener
+  }
+  removeRenderProcessGoneListener(listener: () => void): void {
+    void listener
   }
 }
 
@@ -291,7 +375,15 @@ describe('typed preload bridge', () => {
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
     const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
-      ['onWidgetState', 'reportDrag', 'requestCancel', 'requestStop', 'requestToggle', 'setMouseInteractive'].sort(),
+      [
+        'onWidgetState',
+        'onWidgetVisibilityChange',
+        'reportDrag',
+        'requestCancel',
+        'requestStop',
+        'requestToggle',
+        'setPresentation',
+      ].sort(),
     )
     expect(bridge).not.toHaveProperty('getSettings')
     expect(bridge).not.toHaveProperty('listHistory')
@@ -322,13 +414,80 @@ describe('typed preload bridge', () => {
       { type: 'toggle' },
     )
 
-    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
-    await bridge.reportDrag({ phase: 'move', deltaX: 12, deltaY: -3 })
+    electronMock.ipcRenderer.invoke
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+    await bridge.setPresentation({ presentation: 'idle-hovered', generation: 7 })
+    await bridge.reportDrag({ phase: 'move', generation: 7, gestureId: 9 })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
-      WIDGET_DRAG,
-      { phase: 'move', deltaX: 12, deltaY: -3 },
+      WIDGET_PRESENTATION,
+      { presentation: 'idle-hovered', generation: 7 },
     )
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      5,
+      WIDGET_DRAG,
+      { phase: 'move', generation: 7, gestureId: 9 },
+    )
+  })
+
+  it('strictly validates generation-bound widget visibility presentation and drag payloads', async () => {
+    const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer) as unknown as {
+      onWidgetVisibilityChange(
+        listener: (visibility: { visible: boolean; generation: number }) => void,
+      ): () => void
+      setPresentation(payload: unknown): Promise<unknown>
+      reportDrag(payload: unknown): Promise<unknown>
+    }
+    const visibilityListener = vi.fn()
+    bridge.onWidgetVisibilityChange(visibilityListener)
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )?.[1]
+
+    visibilityEvent?.({}, { visible: true, generation: 4 })
+    for (const payload of [
+      { visible: true },
+      { visible: true, generation: -1 },
+      { visible: true, generation: 1.5 },
+      { visible: true, generation: 4, extra: true },
+    ]) {
+      visibilityEvent?.({}, payload)
+    }
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: true, generation: 4 })
+
+    electronMock.ipcRenderer.invoke.mockResolvedValue({ ok: true })
+    await expect(bridge.setPresentation({
+      presentation: 'active',
+      generation: 4,
+    })).resolves.toEqual({ ok: true })
+    await expect(bridge.reportDrag({
+      phase: 'move',
+      generation: 4,
+      gestureId: 2,
+    })).resolves.toEqual({ ok: true })
+
+    for (const payload of [
+      { presentation: 'active' },
+      { presentation: 'active', generation: -1 },
+      { presentation: 'active', generation: 1.5 },
+      { presentation: 'active', generation: 4, extra: true },
+    ]) {
+      await expect(bridge.setPresentation(payload)).rejects.toThrow()
+    }
+    for (const payload of [
+      { phase: 'move' },
+      { phase: 'move', generation: 4 },
+      { phase: 'move', generation: -1, gestureId: 2 },
+      { phase: 'move', generation: 1.5, gestureId: 2 },
+      { phase: 'move', generation: 4, gestureId: -1 },
+      { phase: 'move', generation: 4, gestureId: 1.5 },
+      { phase: 'move', generation: 4, gestureId: 2, extra: true },
+    ]) {
+      await expect(bridge.reportDrag(payload)).rejects.toThrow()
+    }
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledTimes(2)
   })
 
   it('accepts only one immutable main-created renderer role argument', () => {
@@ -364,10 +523,9 @@ describe('typed preload bridge', () => {
       ['electron', '--talktype-renderer-role=widget'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktypeWidget', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(1)
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
-      WIDGET_STATE,
-      expect.any(Function),
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(2)
+    expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
+      [WIDGET_STATE, WIDGET_VISIBILITY].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
@@ -419,6 +577,7 @@ describe('typed preload bridge', () => {
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
     const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
     const listener = vi.fn()
+    const visibilityListener = vi.fn()
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce({
       ...DEFAULT_SETTINGS,
       theme: 'dark',
@@ -427,12 +586,17 @@ describe('typed preload bridge', () => {
     await bridge.updateSettings({ theme: 'dark' })
     const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     const unsubscribe = widgetBridge.onWidgetState(listener)
+    const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
 
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(SETTINGS_UPDATE, {
       theme: 'dark',
     })
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
       'talktype:widget:state',
+      expect.any(Function),
+    )
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+      WIDGET_VISIBILITY,
       expect.any(Function),
     )
 
@@ -456,8 +620,20 @@ describe('typed preload bridge', () => {
     wrappedListener?.({}, idleWidgetSnapshot, { extra: true })
     expect(listener).toHaveBeenCalledTimes(1)
 
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )?.[1]
+    visibilityEvent?.({}, { visible: false, generation: 1 })
+    visibilityEvent?.({}, false)
+    visibilityEvent?.({}, { visible: false, generation: 1, extra: true })
+    visibilityEvent?.({}, { visible: true, generation: 2 }, { extra: true })
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: false, generation: 1 })
+
     unsubscribe()
     unsubscribe()
+    unsubscribeVisibility()
+    unsubscribeVisibility()
     expect(electronMock.ipcRenderer.removeListener).not.toHaveBeenCalled()
   })
 
@@ -466,6 +642,9 @@ describe('typed preload bridge', () => {
     const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,
+    )?.[1]
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
     )?.[1]
     const commandEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === DICTATION_COMMAND,
@@ -476,17 +655,24 @@ describe('typed preload bridge', () => {
     } as const
     widgetEvent?.({}, listening)
     widgetEvent?.({}, idleWidgetSnapshot)
+    visibilityEvent?.({}, { visible: false, generation: 2 })
+    visibilityEvent?.({}, { visible: true, generation: 3 })
     commandEvent?.({}, { type: 'start' })
     commandEvent?.({}, { type: 'stop' })
     const widgetListener = vi.fn()
+    const visibilityListener = vi.fn()
     const commandListener = vi.fn()
     const unsubscribeWidget = widgetBridge.onWidgetState(widgetListener)
+    const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
     const unsubscribeCommand = mainBridge.onDictationCommand(commandListener)
     expect(widgetListener).toHaveBeenCalledOnce()
     expect(widgetListener).toHaveBeenCalledWith(idleWidgetSnapshot)
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: true, generation: 3 })
     expect(commandListener.mock.calls.map(([command]) => command.type)).toEqual(['start', 'stop'])
     unsubscribeWidget()
     unsubscribeWidget()
+    unsubscribeVisibility()
     unsubscribeCommand()
     commandEvent?.({}, { type: 'cancel' })
     mainBridge.onDictationCommand(commandListener)
@@ -2639,7 +2825,7 @@ describe('NativeRuntimeController', () => {
   )
 })
 
-describe('widget interactivity channel', () => {
+describe('widget presentation and drag channels', () => {
   function widgetSender() {
     const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
     const widgetFrame = { parent: null, url: widgetUrl }
@@ -2651,11 +2837,68 @@ describe('widget interactivity channel', () => {
     return { widgetContents, widgetFrame, widgetUrl }
   }
 
-  it('lets only the widget renderer toggle its mouse interactivity', async () => {
+  it('forwards only strict generation-bound presentation and drag reports', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
     const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    const setMouseInteractive = vi.fn()
+    const setPresentation = vi.fn()
+    const reportDrag = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+    const presentation = { presentation: 'active', generation: 9 } as const
+    const drag = { phase: 'move', generation: 9, gestureId: 4 } as const
+
+    await expect(
+      harness.ipc.invoke(WIDGET_PRESENTATION, presentation, widgetEvent),
+    ).resolves.toEqual({ ok: true })
+    await expect(
+      harness.ipc.invoke(WIDGET_DRAG, drag, widgetEvent),
+    ).resolves.toEqual({ ok: true })
+    expect(setPresentation).toHaveBeenCalledWith(presentation)
+    expect(reportDrag).toHaveBeenCalledWith(drag)
+
+    for (const payload of [
+      { presentation: 'active' },
+      { presentation: 'active', generation: -1 },
+      { presentation: 'active', generation: 1.5 },
+      { presentation: 'active', generation: 9, extra: true },
+    ]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    for (const payload of [
+      { phase: 'move' },
+      { phase: 'move', generation: 9 },
+      { phase: 'move', generation: -1, gestureId: 4 },
+      { phase: 'move', generation: 1.5, gestureId: 4 },
+      { phase: 'move', generation: 9, gestureId: -1 },
+      { phase: 'move', generation: 9, gestureId: 1.5 },
+      { phase: 'move', generation: 9, gestureId: 4, extra: true },
+    ]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    expect(setPresentation).toHaveBeenCalledOnce()
+    expect(reportDrag).toHaveBeenCalledOnce()
+  })
+
+  it('lets only the trusted widget renderer set presentation', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
     registerIpc(harness.ipc, {
       settings: harness.settings,
       history: harness.history,
@@ -2666,31 +2909,152 @@ describe('widget interactivity channel', () => {
         { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive, reportDrag: vi.fn() },
+      widget: { setPresentation, reportDrag: vi.fn() },
     })
 
+    const report = { presentation: 'idle-resting', generation: 3 } as const
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+      harness.ipc.invoke(WIDGET_PRESENTATION, report, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
     ).resolves.toEqual({ ok: true })
-    expect(setMouseInteractive).toHaveBeenCalledWith(true)
+    expect(setPresentation).toHaveBeenCalledWith(report)
 
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, false, {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).resolves.toEqual({ ok: true })
-    expect(setMouseInteractive).toHaveBeenLastCalledWith(false)
-
-    await expect(harness.ipc.invoke(WIDGET_INTERACTIVITY, true)).rejects.toMatchObject({
-      code: 'UNAUTHORIZED_IPC_SENDER',
-    })
+      harness.ipc.invoke(WIDGET_PRESENTATION, { presentation: 'active', generation: 3 }),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
+    expect(setPresentation).toHaveBeenCalledOnce()
   })
 
-  it('rejects non-boolean interactivity payloads', async () => {
+  it('accepts idle-resting idle-hovered and active', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag: vi.fn() },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const presentation of ['idle-resting', 'idle-hovered', 'active'] as const) {
+      const report = { presentation, generation: 5 } as const
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, report, widgetEvent),
+      ).resolves.toEqual({ ok: true })
+      expect(setPresentation).toHaveBeenLastCalledWith(report)
+    }
+    expect(setPresentation).toHaveBeenCalledTimes(3)
+  })
+
+  it('active presentation resizes without recreating the widget', async () => {
+    const nativeWindows: IpcLifecycleWindow[] = []
+    const createWindow = vi.fn((options: WindowConstructorOptions) => {
+      const role = options.webPreferences.additionalArguments[0].endsWith('widget')
+        ? 'widget'
+        : 'main'
+      const window = new IpcLifecycleWindow(role, options)
+      nativeWindows.push(window)
+      return window
+    })
+    const windows = new WindowManager({
+      createWindow,
+      display: {
+        getCursorScreenPoint: () => ({ x: 1_700, y: 970 }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+      preloadPath: 'C:/TalkType/out/preload/index.js',
+      mainHtmlPath: 'C:/TalkType/out/renderer/index.html',
+      widgetHtmlPath: 'C:/TalkType/out/renderer/widget.html',
+      developmentSources: undefined,
+      isPackaged: true,
+      log: vi.fn(),
+      getWidgetPlacement: () => null,
+      onWidgetMoved: vi.fn(),
+    })
+    const harness = createIpcHarness()
+    harness.cleanup()
+    let cleanup = (): void => undefined
+
+    try {
+      await windows.createWindows()
+      await windows.showWidget()
+      const widget = nativeWindows[1]!
+      cleanup = registerIpc(harness.ipc, {
+        settings: harness.settings,
+        history: harness.history,
+        startup: harness.startup,
+        hotkeys: harness.hotkeys,
+        app: harness.app,
+        trustedSenders: () => windows.getTrustedRenderers(),
+        widget: {
+          setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
+          reportDrag: (payload) => windows.reportWidgetDrag(payload),
+        },
+      })
+      const widgetEvent = {
+        sender: widget.webContents,
+        senderFrame: widget.webContents.mainFrame,
+      }
+
+      await expect(
+        harness.ipc.invoke(
+          WIDGET_PRESENTATION,
+          { presentation: 'active', generation: 1 },
+          widgetEvent,
+        ),
+      ).resolves.toEqual({ ok: true })
+
+      expect(widget.getBounds()).toMatchObject({ width: 248, height: 88 })
+      expect(widget.setBounds).toHaveBeenLastCalledWith(
+        { x: 1_476, y: 896, width: 248, height: 88 },
+        false,
+      )
+      expect(createWindow).toHaveBeenCalledTimes(2)
+      expect(nativeWindows[1]).toBe(widget)
+    } finally {
+      cleanup()
+      windows.dispose()
+    }
+  })
+
+  it('rejects unknown non-string and object presentation payloads', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag: vi.fn() },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+
+    for (const payload of ['idle-expanded', 42, { presentation: 'active' }]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    expect(setPresentation).not.toHaveBeenCalled()
+  })
+
+  it('reports unavailable when no widget coordinator is registered', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
     const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
@@ -2703,34 +3067,13 @@ describe('widget interactivity channel', () => {
       trustedSenders: () => [
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag: vi.fn() },
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, 'yes', {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
-  })
-
-  it('reports unavailable when no widget interactivity dependency is registered', async () => {
-    const harness = createIpcHarness()
-    harness.cleanup()
-    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    registerIpc(harness.ipc, {
-      settings: harness.settings,
-      history: harness.history,
-      startup: harness.startup,
-      hotkeys: harness.hotkeys,
-      app: harness.app,
-      trustedSenders: () => [
-        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
-      ],
-    })
-
-    await expect(
-      harness.ipc.invoke(WIDGET_INTERACTIVITY, true, {
+      harness.ipc.invoke(WIDGET_PRESENTATION, {
+        presentation: 'idle-resting',
+        generation: 0,
+      }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
@@ -2752,14 +3095,14 @@ describe('widget interactivity channel', () => {
         { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag },
+      widget: { setPresentation: vi.fn(), reportDrag },
     })
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'start' },
-      { phase: 'move', deltaX: 24, deltaY: -8 },
-      { phase: 'end' },
+      { phase: 'start', generation: 5, gestureId: 8 },
+      { phase: 'move', generation: 5, gestureId: 8 },
+      { phase: 'end', generation: 5, gestureId: 8 },
     ] as const) {
       await expect(
         harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
@@ -2770,7 +3113,7 @@ describe('widget interactivity channel', () => {
 
     // The main renderer and unknown senders may not drive the widget window.
     await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }),
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 5 }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
     expect(reportDrag).toHaveBeenCalledTimes(3)
   })
@@ -2789,17 +3132,18 @@ describe('widget interactivity channel', () => {
       trustedSenders: () => [
         { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
       ],
-      widget: { setMouseInteractive: vi.fn(), reportDrag },
+      widget: { setPresentation: vi.fn(), reportDrag },
     })
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'hover' },
+      { phase: 'hover', generation: 1, gestureId: 3 },
+      { phase: 'move', generation: 1, gestureId: 3, x: 1, y: 0 },
+      { phase: 'move', generation: 1, gestureId: 3, extra: true },
+      { phase: 'start', generation: 1, gestureId: 3, x: 1, y: 1 },
+      { phase: 'end', generation: 1, gestureId: 3, extra: true },
+      { phase: 'move', generation: 1 },
       { phase: 'move' },
-      { phase: 'move', deltaX: 1.5, deltaY: 0 },
-      { phase: 'move', deltaX: 200_000, deltaY: 0 },
-      { phase: 'start', deltaX: 1, deltaY: 1 },
-      { phase: 'end', extra: true },
       'start',
       null,
     ]) {
@@ -2826,7 +3170,7 @@ describe('widget interactivity channel', () => {
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }, {
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 0, gestureId: 0 }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),

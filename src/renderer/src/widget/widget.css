@@ -39,8 +39,8 @@
   box-sizing: border-box;
 }
 
-/* The window is a fixed transparent canvas: 248x88 while snapped to a
-   horizontal edge, 88x248 while snapped to a side edge. */
+/* The native window follows the current presentation footprint. The renderer
+   fills that footprint without adding a larger transparent hit-test canvas. */
 html,
 body,
 #root {
@@ -76,25 +76,15 @@ button {
   white-space: nowrap;
 }
 
-/* On the horizontal canvas content anchors to its bottom-center so the sliver
-   and capsule appear to grow upward from the same resting spot. */
+/* Each visible surface is centered inside the native presentation-sized root,
+   whose remaining transparent pixels are only the approved shadow envelope. */
 .widget-shell {
   display: flex;
   width: 100%;
   height: 100%;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  /* Shadow blur must fade fully inside the transparent window bounds. */
-  padding-bottom: 24px;
-}
-
-/* On the vertical canvas the renderer cannot tell the left edge from the
-   right, so content centers on both axes: the 40-wide capsule keeps the same
-   24px shadow clearance to either side of the 88px canvas. */
-.widget-shell[data-orientation='vertical'] {
   justify-content: center;
-  padding-bottom: 0;
 }
 
 /* ---- resting sliver ---- */
@@ -136,27 +126,18 @@ button {
     0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
 }
 
-/* Hovering expands the sliver in place into a small pill that carries the
-   click-to-dictate affordance inline. The expanded footprint stays well
-   inside the transparent canvas (212x28 within 248x88). */
-.widget-sliver[data-expanded] {
+/* Hovering or dragging expands the sliver into the 212x28 pill while the
+   native idle-hovered footprint supplies only its shadow envelope. */
+.widget-sliver[data-expanded],
+.widget-shell[data-dragging='true'] .widget-sliver {
   width: 212px;
   height: 28px;
   border-radius: 14px;
   opacity: 1;
 }
 
-/* Dragging collapses the pill back to the bare sliver. */
-.widget-shell[data-dragging='true'] .widget-sliver {
-  width: 88px;
-  height: 6px;
-  border-radius: 3px;
-}
-
-/* Vertical canvas: the resting sliver is a 6x88 bar; hovering grows it
-   sideways from the edge into a 76x88 pill whose text renders horizontally
-   for readability. 76px leaves 6px to each side of the 88px canvas so the
-   soft shadow blur still fades out fully inside the transparent window. */
+/* Vertically the resting sliver is a 6x88 bar; hovering or dragging grows it
+   into the unchanged 76x88 pill inside its presentation-sized shadow root. */
 .widget-shell[data-orientation='vertical'] .widget-sliver {
   width: 6px;
   height: 88px;
@@ -167,16 +148,11 @@ button {
   );
 }
 
-.widget-shell[data-orientation='vertical'] .widget-sliver[data-expanded] {
+.widget-shell[data-orientation='vertical'] .widget-sliver[data-expanded],
+.widget-shell[data-orientation='vertical'][data-dragging='true'] .widget-sliver {
   width: 76px;
   height: 88px;
   border-radius: 12px;
-}
-
-.widget-shell[data-orientation='vertical'][data-dragging='true'] .widget-sliver {
-  width: 6px;
-  height: 88px;
-  border-radius: 3px;
 }
 
 .widget-sliver__prompt {
@@ -194,12 +170,9 @@ button {
   transition: opacity 0.15s ease;
 }
 
-.widget-sliver[data-expanded] .widget-sliver__prompt {
-  opacity: 1;
-}
-
+.widget-sliver[data-expanded] .widget-sliver__prompt,
 .widget-shell[data-dragging='true'] .widget-sliver__prompt {
-  opacity: 0;
+  opacity: 1;
 }
 
 .widget-shell[data-orientation='vertical'] .widget-sliver__prompt {

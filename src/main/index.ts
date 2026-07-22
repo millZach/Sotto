@@ -58,6 +58,7 @@ import {
   WindowManager,
   type BrowserWindowLike,
   type NavigationEventName,
+  type Rectangle,
   type RendererDiagnostic,
   type WebContentsLike,
   type WindowConstructorOptions,
@@ -203,7 +204,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   getPosition(): readonly [number, number] {
-    const [x = 0, y = 0] = this.window.getPosition()
+    const { x, y } = this.window.getContentBounds()
     return [x, y]
   }
 
@@ -291,24 +292,21 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.showInactive()
   }
 
+  getBounds(): Rectangle {
+    return this.window.getContentBounds()
+  }
+
+  setBounds(bounds: Rectangle, animate?: boolean): void {
+    this.window.setContentBounds(bounds, animate)
+  }
+
   setPosition(x: number, y: number, animate?: boolean): void {
-    this.window.setPosition(x, y, animate)
+    const bounds = this.window.getContentBounds()
+    this.window.setContentBounds({ ...bounds, x, y }, animate)
   }
 
   setSize(width: number, height: number, animate?: boolean): void {
-    // Some Electron versions refuse programmatic resizes while the window is
-    // marked non-resizable, so the flag is lifted just for this operation.
-    const resizable = this.window.isResizable()
-    if (!resizable) {
-      this.window.setResizable(true)
-    }
-    try {
-      this.window.setSize(width, height, animate)
-    } finally {
-      if (!resizable) {
-        this.window.setResizable(false)
-      }
-    }
+    this.window.setContentSize(width, height, animate)
   }
 
   destroy(): void {
@@ -517,10 +515,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(state)
     },
     syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
-    widgetDisplay: {
-      lock: () => windows.lockWidgetDisplay(),
-      unlock: () => windows.unlockWidgetDisplay(),
-    },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     log: logOperational,
   })
@@ -594,7 +588,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         output,
         widget: {
-          setMouseInteractive: (interactive) => windows.setWidgetMouseInteractive(interactive),
+          setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),
         },
         models: createModelIpcService(models, (status) => {

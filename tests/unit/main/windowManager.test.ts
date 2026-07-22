@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
 import {
   parseDevelopmentRendererSources,
   RendererLoadError,
   WindowManager,
   type BrowserWindowLike,
+  type Rectangle,
   type WindowConstructorOptions,
 } from '../../../src/main/windows/windowManager'
 import type { StoredWidgetPlacement } from '../../../src/main/storage/widgetPlacementRepository'
@@ -32,10 +34,26 @@ class FakeWindow implements BrowserWindowLike {
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
-  readonly setPosition = vi.fn()
-  readonly setSize = vi.fn()
-  position: readonly [number, number] = [0, 0]
-  readonly getPosition = vi.fn(() => this.position)
+  bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
+  readonly setBoundsCalls: Rectangle[] = []
+  readonly setPositionCalls: Array<readonly [number, number]> = []
+  readonly setSizeCalls: Array<readonly [number, number]> = []
+  emitMovedOnSetBounds = false
+  readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
+  readonly setBounds = vi.fn((bounds: Rectangle): void => {
+    this.bounds = { ...bounds }
+    this.setBoundsCalls.push({ ...bounds })
+    if (this.emitMovedOnSetBounds) this.emit('moved')
+  })
+  readonly setPosition = vi.fn((x: number, y: number): void => {
+    this.bounds = { ...this.bounds, x, y }
+    this.setPositionCalls.push([x, y])
+  })
+  readonly getPosition = vi.fn(() => [this.bounds.x, this.bounds.y] as const)
+  readonly setSize = vi.fn((width: number, height: number): void => {
+    this.bounds = { ...this.bounds, width, height }
+    this.setSizeCalls.push([width, height])
+  })
   readonly setIgnoreMouseEvents = vi.fn()
   private destroyed = false
   readonly destroy = vi.fn(() => {
@@ -138,7 +156,119 @@ function createHarness(
     ...overrides,
   })
 
+  visibilityGenerationReaders.set(manager, () => {
+    for (const window of [...windows].reverse()) {
+      for (const [channel, payload] of [...window.webContents.send.mock.calls].reverse()) {
+        if (
+          channel === WIDGET_VISIBILITY &&
+          typeof payload === 'object' &&
+          payload !== null &&
+          'generation' in payload &&
+          typeof payload.generation === 'number'
+        ) {
+          return payload.generation
+        }
+      }
+    }
+    return 0
+  })
+
   return { createWindow, log, manager, onWidgetMoved, options, windows }
+}
+
+const visibilityGenerationReaders = new WeakMap<WindowManager, () => number>()
+
+function currentWidgetVisibilityGeneration(manager: WindowManager): number {
+  return visibilityGenerationReaders.get(manager)?.() ?? 0
+}
+
+function setWidgetPresentation(
+  manager: WindowManager,
+  presentation: 'idle-resting' | 'idle-hovered' | 'active',
+  generation = currentWidgetVisibilityGeneration(manager),
+): void {
+  manager.setWidgetPresentation({ presentation, generation })
+}
+
+const dragGestureStates = new WeakMap<
+  WindowManager,
+  { activeGestureId: number | null; nextGestureId: number }
+>()
+
+function reportWidgetDrag(
+  manager: WindowManager,
+  phase: 'start' | 'move' | 'end',
+  generation = currentWidgetVisibilityGeneration(manager),
+): void {
+  const state = dragGestureStates.get(manager) ?? {
+    activeGestureId: null,
+    nextGestureId: 0,
+  }
+  dragGestureStates.set(manager, state)
+  if (phase === 'start') {
+    state.activeGestureId = state.nextGestureId
+    state.nextGestureId += 1
+  }
+  const gestureId = state.activeGestureId ?? state.nextGestureId
+  manager.reportWidgetDrag({ phase, generation, gestureId })
+  if (phase === 'end' && state.activeGestureId === gestureId) {
+    state.activeGestureId = null
+  }
+}
+
+interface GenerationBoundWindowManager {
+  setWidgetPresentation(report: {
+    readonly presentation: 'idle-resting' | 'idle-hovered' | 'active'
+    readonly generation: number
+  }): void
+  reportWidgetDrag(report: {
+    readonly phase: 'start' | 'move' | 'end'
+    readonly generation: number
+    readonly gestureId: number
+  }): void
+}
+
+function generationBound(manager: WindowManager): GenerationBoundWindowManager {
+  return manager as unknown as GenerationBoundWindowManager
+}
+
+const monitorWorkAreas = {
+  left: { x: 0, y: 0, width: 1_000, height: 800 },
+  right: { x: 1_000, y: 100, width: 1_200, height: 900 },
+} as const
+
+function createMutableTwoDisplayAdapter() {
+  const cursor = { current: { x: 100, y: 100 } }
+  const failures: { cursor: Error | null; display: Error | null } = {
+    cursor: null,
+    display: null,
+  }
+  const getCursorScreenPoint = vi.fn(() => {
+    if (failures.cursor !== null) {
+      const failure = failures.cursor
+      failures.cursor = null
+      throw failure
+    }
+    return cursor.current
+  })
+  const getDisplayNearestPoint = vi.fn((point: { readonly x: number }) => {
+    if (failures.display !== null) {
+      const failure = failures.display
+      failures.display = null
+      throw failure
+    }
+    return {
+      workArea: point.x < 1_000 ? monitorWorkAreas.left : monitorWorkAreas.right,
+    }
+  })
+
+  return {
+    cursor,
+    display: { getCursorScreenPoint, getDisplayNearestPoint },
+    failures,
+    getCursorScreenPoint,
+    getDisplayNearestPoint,
+  }
 }
 
 describe('WindowManager construction', () => {
@@ -157,6 +287,7 @@ describe('WindowManager construction', () => {
         title: 'TalkType',
         backgroundColor: '#1b1917',
         autoHideMenuBar: true,
+        frame: false,
         webPreferences: {
           preload: 'C:/TalkType/out/preload/index.js',
           additionalArguments: ['--talktype-renderer-role=main'],
@@ -175,8 +306,8 @@ describe('WindowManager construction', () => {
 
     expect(options).toStrictEqual([
       {
-        width: 248,
-        height: 88,
+        width: 124,
+        height: 54,
         show: false,
         resizable: false,
         maximizable: false,
@@ -212,6 +343,719 @@ describe('WindowManager construction', () => {
     expect(secondMain).toBe(firstMain)
     expect(secondWidget).toBe(firstWidget)
     expect(createWindow).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('WindowManager cursor monitor following', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('follows the cursor monitor in every widget presentation', async () => {
+    const presentations = [
+      {
+        presentation: 'idle-resting' as const,
+        bounds: { x: 1_538, y: 930, width: 124, height: 54 },
+      },
+      {
+        presentation: 'idle-hovered' as const,
+        bounds: { x: 1_476, y: 908, width: 248, height: 76 },
+      },
+      {
+        presentation: 'active' as const,
+        bounds: { x: 1_476, y: 896, width: 248, height: 88 },
+      },
+    ]
+
+    for (const { bounds, presentation } of presentations) {
+      const adapter = createMutableTwoDisplayAdapter()
+      const { manager, windows } = createHarness({ display: adapter.display })
+      await manager.showWidget()
+      setWidgetPresentation(manager, presentation)
+      const widget = windows[0]!
+      widget.setBounds.mockClear()
+
+      adapter.cursor.current = { x: 1_700, y: 970 }
+      vi.advanceTimersByTime(200)
+
+      expect(widget.setBounds).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenCalledWith(bounds, false)
+      manager.dispose()
+    }
+  })
+
+  it('preserves the edge and centers on the target monitor', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({
+      display: adapter.display,
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+  })
+
+  it('does no native work while the cursor remains on one monitor', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    widget.setSize.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    adapter.cursor.current = { x: 900, y: 700 }
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(widget.setSize).not.toHaveBeenCalled()
+  })
+
+  it('pauses monitor following while drag ownership is active', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    reportWidgetDrag(manager, 'start')
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(1)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('resumes following after drag end', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    reportWidgetDrag(manager, 'start')
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    reportWidgetDrag(manager, 'end')
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_476, y: 908, width: 248, height: 76 },
+      false,
+    )
+  })
+
+  it('keeps an idle reveal resting after a delayed active report from the previous visible generation', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    await manager.showWidget()
+    widget.setBounds.mockClear()
+
+    generationBound(manager).setWidgetPresentation({
+      presentation: 'active',
+      generation: 1,
+    })
+
+    expect(widget.bounds).toEqual({ x: 1_538, y: 930, width: 124, height: 54 })
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('remembers a current hidden idle report before the next reveal', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    generationBound(manager).setWidgetPresentation({
+      presentation: 'active',
+      generation: 1,
+    })
+    expect(widget.bounds).toEqual({ x: 1_476, y: 896, width: 248, height: 88 })
+
+    manager.hideWidget()
+    generationBound(manager).setWidgetPresentation({
+      presentation: 'idle-resting',
+      generation: 2,
+    })
+    widget.setBounds.mockClear()
+
+    await manager.showWidget()
+
+    expect(widget.bounds).toEqual({ x: 1_538, y: 930, width: 124, height: 54 })
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('reconciles a current show-generation active republish during the reveal gap', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+
+    const reveal = manager.showWidget()
+    generationBound(manager).setWidgetPresentation({
+      presentation: 'active',
+      generation: 3,
+    })
+    await reveal
+
+    expect(widget.webContents.send).toHaveBeenLastCalledWith(
+      WIDGET_VISIBILITY,
+      { visible: true, generation: 3 },
+    )
+    expect(widget.bounds).toEqual({ x: 1_476, y: 896, width: 248, height: 88 })
+  })
+
+  it('rejects delayed drag phases from a previous visible generation after rapid hide and show', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.hideWidget()
+    await manager.showWidget()
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    const stale = generationBound(manager)
+    stale.reportWidgetDrag({ phase: 'start', generation: 1, gestureId: 0 })
+    stale.reportWidgetDrag({ phase: 'move', generation: 1, gestureId: 0 })
+    stale.reportWidgetDrag({ phase: 'end', generation: 1, gestureId: 0 })
+
+    expect(widget.bounds).toEqual({ x: 438, y: 730, width: 124, height: 54 })
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(1)
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('rejects a hover report from the previous visibility generation after reveal', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    setWidgetPresentation(manager, 'idle-hovered')
+    expect(widget.bounds).toEqual({ x: 376, y: 708, width: 248, height: 76 })
+
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+    await manager.showWidget()
+
+    setWidgetPresentation(manager, 'idle-hovered', 1)
+
+    expect(widget.bounds).toEqual({ x: 438, y: 730, width: 124, height: 54 })
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('accepts a current hover after reveal when the cursor resynchronizes it', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.hideWidget()
+    await manager.showWidget()
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 500, y: 750 }
+
+    setWidgetPresentation(manager, 'idle-hovered')
+
+    expect(widget.bounds).toEqual({ x: 376, y: 708, width: 248, height: 76 })
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+  })
+
+  it('preserves an active presentation across concealment and reveal', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    setWidgetPresentation(manager, 'active')
+    expect(widget.bounds).toEqual({ x: 1_476, y: 896, width: 248, height: 88 })
+
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+    await manager.showWidget()
+
+    expect(widget.bounds).toEqual({ x: 1_476, y: 896, width: 248, height: 88 })
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses an active presentation published during the reveal gap', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+
+    const reveal = manager.showWidget()
+    setWidgetPresentation(manager, 'active', 3)
+    await reveal
+
+    expect(widget.bounds).toEqual({ x: 1_476, y: 896, width: 248, height: 88 })
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_476, y: 896, width: 248, height: 88 },
+      false,
+    )
+  })
+
+  it('expands a vertical idle drag to the active footprint without releasing drag ownership', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({
+      display: adapter.display,
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    setWidgetPresentation(manager, 'idle-hovered')
+    expect(widget.bounds).toEqual({ x: 16, y: 338, width: 88, height: 124 })
+
+    reportWidgetDrag(manager, 'start')
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+    widget.setBounds.mockImplementationOnce((bounds: Rectangle): void => {
+      widget.bounds = { ...bounds, x: bounds.x + 1, y: bounds.y + 2 }
+    })
+
+    setWidgetPresentation(manager, 'active')
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 16, y: 338, width: 88, height: 248 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 17, y: 340, width: 88, height: 248 })
+    expect(vi.getTimerCount()).toBe(1)
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(200)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+
+    adapter.cursor.current = { x: 120, y: 130 }
+    reportWidgetDrag(manager, 'move')
+    expect(widget.setPosition).toHaveBeenCalledWith(37, 370, false)
+  })
+
+  it('shrinks a vertical active drag through idle presentations without leaving an oversized blocker', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({
+      display: adapter.display,
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    setWidgetPresentation(manager, 'active')
+    expect(widget.bounds).toEqual({ x: 16, y: 276, width: 88, height: 248 })
+
+    reportWidgetDrag(manager, 'start')
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+
+    setWidgetPresentation(manager, 'idle-hovered')
+    setWidgetPresentation(manager, 'idle-resting')
+
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 16, y: 276, width: 88, height: 124 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 16, y: 276, width: 88, height: 124 })
+
+    adapter.cursor.current = { x: 130, y: 115 }
+    reportWidgetDrag(manager, 'move')
+    expect(widget.setPosition).toHaveBeenCalledWith(46, 291, false)
+  })
+
+  it.each([
+    {
+      initial: 'idle-hovered' as const,
+      next: 'active' as const,
+      initialBounds: { x: 16, y: 338, width: 88, height: 124 },
+      desiredBounds: { x: 16, y: 338, width: 88, height: 248 },
+    },
+    {
+      initial: 'active' as const,
+      next: 'idle-hovered' as const,
+      initialBounds: { x: 16, y: 276, width: 88, height: 248 },
+      desiredBounds: { x: 16, y: 276, width: 88, height: 124 },
+    },
+  ])(
+    'retries a failed $initial to $next resize while drag ownership is active',
+    async ({ desiredBounds, initial, initialBounds, next }) => {
+      const adapter = createMutableTwoDisplayAdapter()
+      const { manager, windows } = createHarness({
+        display: adapter.display,
+        getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+      })
+      await manager.showWidget()
+      const widget = windows[0]!
+      setWidgetPresentation(manager, initial)
+      expect(widget.bounds).toEqual(initialBounds)
+
+      reportWidgetDrag(manager, 'start')
+      widget.setBounds.mockClear()
+      adapter.getCursorScreenPoint.mockClear()
+      adapter.getDisplayNearestPoint.mockClear()
+      widget.setBounds.mockImplementationOnce(() => {
+        throw new Error('native resize unavailable')
+      })
+
+      setWidgetPresentation(manager, next)
+
+      expect(widget.setBounds).toHaveBeenCalledOnce()
+      expect(widget.bounds).toEqual(initialBounds)
+
+      vi.advanceTimersByTime(100)
+
+      expect(widget.setBounds).toHaveBeenCalledTimes(2)
+      expect(widget.setBounds).toHaveBeenLastCalledWith(desiredBounds, false)
+      expect(widget.bounds).toEqual(desiredBounds)
+      expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+      expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    },
+  )
+
+  it('retries after cursor or display lookup failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    adapter.getCursorScreenPoint.mockImplementationOnce(() => {
+      throw new Error('cursor unavailable')
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 100, y: 100 }
+    adapter.getDisplayNearestPoint.mockImplementationOnce(() => {
+      throw new Error('display unavailable')
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('retries the same target monitor after a transient bounds failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    widget.setBounds.mockImplementationOnce(() => {
+      throw new Error('native bounds unavailable')
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledTimes(2)
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('reapplies snapped bounds after a drag move readback failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+
+    reportWidgetDrag(manager, 'start')
+    adapter.cursor.current = { x: 200, y: 100 }
+    widget.getBounds.mockImplementationOnce(() => {
+      throw new Error('post-move bounds unavailable')
+    })
+
+    reportWidgetDrag(manager, 'move')
+
+    expect(widget.setPosition).toHaveBeenCalledWith(476, 708, false)
+    expect(widget.bounds).toEqual({ x: 476, y: 708, width: 248, height: 76 })
+
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 376, y: 708, width: 248, height: 76 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 376, y: 708, width: 248, height: 76 })
+  })
+
+  it('reapplies desired bounds after a moved-event readback failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, onWidgetMoved, windows } = createHarness({
+      display: adapter.display,
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+    widget.getBounds.mockImplementationOnce(() => {
+      throw new Error('moved bounds unavailable')
+    })
+
+    widget.emit('moved')
+
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 438, y: 730, width: 124, height: 54 })
+  })
+
+  it('stops checks when hidden', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    manager.hideWidget()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal after hide wins an in-flight widget load', async () => {
+    const rendererLoad = createDeferred<void>()
+    const { manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => rendererLoad.promise)
+    })
+
+    const reveal = manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    rendererLoad.resolve()
+    await reveal
+
+    expect(widget.hide).toHaveBeenCalledOnce()
+    expect(widget.webContents.send.mock.calls.filter(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )).toHaveLength(0)
+    expect(widget.showInactive).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+
+    manager.hideWidget()
+    expect(widget.webContents.send.mock.calls.filter(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )).toHaveLength(0)
+  })
+
+  it('rolls back a failed native reveal so a later reveal retries and restarts monitoring', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness(
+      { display: adapter.display },
+      (window) => {
+        window.showInactive.mockImplementationOnce(() => {
+          throw new Error('native reveal failed')
+        })
+      },
+    )
+
+    await expect(manager.showWidget()).rejects.toThrow('native reveal failed')
+    const widget = windows[0]!
+
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      1,
+      WIDGET_VISIBILITY,
+      { visible: true, generation: 1 },
+    )
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      2,
+      WIDGET_VISIBILITY,
+      { visible: false, generation: 2 },
+    )
+    expect(widget.showInactive).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+
+    widget.getBounds.mockClear()
+    reportWidgetDrag(manager, 'start')
+    expect(widget.getBounds).not.toHaveBeenCalled()
+
+    await manager.showWidget()
+
+    expect(widget.webContents.send).toHaveBeenNthCalledWith(
+      3,
+      WIDGET_VISIBILITY,
+      { visible: true, generation: 3 },
+    )
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+
+    widget.setBounds.mockClear()
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('rejects late drag reports while hidden and resumes reveal monitoring', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    reportWidgetDrag(manager, 'start')
+    reportWidgetDrag(manager, 'move')
+    await manager.showWidget()
+
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    reportWidgetDrag(manager, 'move')
+    expect(widget.setPosition).not.toHaveBeenCalled()
+
+    adapter.cursor.current = { x: 1_700, y: 970 }
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('stops checks when widget closes or renderer is lost', async () => {
+    const closedAdapter = createMutableTwoDisplayAdapter()
+    const closedHarness = createHarness({ display: closedAdapter.display })
+    await closedHarness.manager.showWidget()
+    closedAdapter.getCursorScreenPoint.mockClear()
+    closedAdapter.getDisplayNearestPoint.mockClear()
+
+    closedHarness.windows[0]!.emit('closed')
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(closedAdapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(closedAdapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+
+    const lostAdapter = createMutableTwoDisplayAdapter()
+    const lostHarness = createHarness({ display: lostAdapter.display })
+    await lostHarness.manager.showWidget()
+    lostAdapter.getCursorScreenPoint.mockClear()
+    lostAdapter.getDisplayNearestPoint.mockClear()
+
+    lostHarness.windows[0]!.emitRenderProcessGone()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(lostAdapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(lostAdapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+  })
+
+  it('stops checks when WindowManager is disposed', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+
+    manager.dispose()
+    vi.advanceTimersByTime(200)
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
   })
 })
 
@@ -302,21 +1146,262 @@ describe('WindowManager lifecycle', () => {
     expect(main.hide).toHaveBeenCalledOnce()
   })
 
-  it('shows the widget without activation and clamps it inside the active work area', async () => {
+  it('constructs the widget at the bottom idle-resting footprint', async () => {
+    const { manager, options, windows } = createHarness()
+
+    await manager.createWidgetWindow()
+
+    expect(options[0]).toMatchObject({ width: 124, height: 54 })
+    expect(windows[0]!.setIgnoreMouseEvents).not.toHaveBeenCalled()
+  })
+
+  it('applies presentation changes through one bounds path', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    widget.setSize.mockClear()
+
+    setWidgetPresentation(manager, 'idle-hovered')
+    setWidgetPresentation(manager, 'active')
+
+    expect(widget.setBounds.mock.calls).toStrictEqual([
+      [{ x: 1_476, y: 908, width: 248, height: 76 }, false],
+      [{ x: 1_476, y: 896, width: 248, height: 88 }, false],
+    ])
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(widget.setSize).not.toHaveBeenCalled()
+  })
+
+  it('preserves the selected edge and center while presentation changes', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness({
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+
+    setWidgetPresentation(manager, 'active')
+
+    expect(widget.setBounds).toHaveBeenLastCalledWith(
+      { x: 1_016, y: 426, width: 88, height: 248 },
+      false,
+    )
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('skips native work when desired bounds already match', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-resting')
+    manager.hideWidget()
+    await manager.showWidget()
+
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads back applied bounds and retries a mismatched native result', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+    widget.setBounds.mockImplementationOnce((bounds: Rectangle): void => {
+      widget.bounds = { ...bounds, height: bounds.height + 2 }
+      widget.setBoundsCalls.push({ ...widget.bounds })
+    })
+
+    await manager.showWidget()
+    expect(widget.bounds).toEqual({ x: 1_538, y: 930, width: 124, height: 56 })
+
+    await manager.showWidget()
+
+    expect(widget.setBounds).toHaveBeenCalledTimes(2)
+    expect(widget.bounds).toEqual({ x: 1_538, y: 930, width: 124, height: 54 })
+  })
+
+  it('loads remembered placement once', async () => {
+    const getWidgetPlacement = vi.fn<() => StoredWidgetPlacement | null>(() => ({
+      kind: 'edge',
+      edge: 'top',
+    }))
+    const { manager } = createHarness({ getWidgetPlacement })
+
+    await manager.showWidget()
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'active')
+
+    expect(getWidgetPlacement).toHaveBeenCalledOnce()
+  })
+
+  it('migrates a legacy point to a centered edge', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness({
+      getWidgetPlacement: () => ({ kind: 'point', x: 1_100, y: 300 }),
+    })
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+    expect(onWidgetMoved).toHaveBeenCalledOnce()
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+  })
+
+  it('uses the current idle-resting footprint when migrating a legacy point', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness({
+      getWidgetPlacement: () => ({ kind: 'point', x: 5, y: 708 }),
+      display: {
+        getCursorScreenPoint: () => ({ x: 500, y: 400 }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 0, y: 0, width: 1_000, height: 800 },
+        }),
+      },
+    })
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 16, y: 338, width: 54, height: 124 },
+      false,
+    )
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+  })
+
+  it('falls back to centered bottom after storage or display failure', async () => {
+    const storageFailure = createHarness({
+      getWidgetPlacement: () => {
+        throw new Error('placement store unavailable')
+      },
+    })
+    await storageFailure.manager.showWidget()
+    expect(storageFailure.windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+
+    let displayLookup = 0
+    const displayFailure = createHarness({
+      getWidgetPlacement: () => ({ kind: 'point', x: 1_100, y: 300 }),
+      display: {
+        getCursorScreenPoint: () => ({ x: 1_700, y: 970 }),
+        getDisplayNearestPoint: () => {
+          displayLookup += 1
+          if (displayLookup === 1) throw new Error('legacy display unavailable')
+          return { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } }
+        },
+      },
+    })
+    await displayFailure.manager.showWidget()
+    expect(displayFailure.windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
+    expect(displayFailure.onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('suppresses moved events caused by coordinator bounds', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness(
+      {},
+      (window) => {
+        window.emitMovedOnSetBounds = true
+      },
+    )
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setBounds).toHaveBeenCalledOnce()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('ignores native moved events while the widget is hidden', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, onWidgetMoved, windows } = createHarness({
+      display: adapter.display,
+    })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    widget.setBounds.mockClear()
+    onWidgetMoved.mockClear()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+
+    widget.emit('moved')
+
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+    expect(widget.bounds).toEqual({ x: 100, y: 300, width: 124, height: 54 })
+  })
+
+  it('reapplies the remembered edge after a hidden native move', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    await manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+    widget.emit('moved')
+    widget.setBounds.mockClear()
+
+    await manager.showWidget()
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 438, y: 730, width: 124, height: 54 },
+      false,
+    )
+  })
+
+  it('snaps a genuinely external move without recursion', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness(
+      {},
+      (window) => {
+        window.emitMovedOnSetBounds = true
+      },
+    )
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    onWidgetMoved.mockClear()
+    widget.bounds = { x: 1_234, y: 567, width: 124, height: 54 }
+
+    widget.emit('moved')
+
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+    expect(onWidgetMoved).toHaveBeenCalledOnce()
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+  })
+
+  it('shows the widget without activation inside the active work area', async () => {
     const { manager, windows } = createHarness()
     await manager.createWidgetWindow()
     const widget = windows[0]!
 
     await manager.showWidget()
 
-    expect(widget.setPosition).toHaveBeenCalledWith(1_476, 896, false)
-    expect(widget.setSize).not.toHaveBeenCalled()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
     expect(widget.showInactive).toHaveBeenCalledOnce()
     expect(widget.show).not.toHaveBeenCalled()
     expect(widget.focus).not.toHaveBeenCalled()
   })
 
-  it('performs the reveal window operations once per visibility transition, not per call', async () => {
+  it('shows the native widget once per visibility transition', async () => {
     const { manager, windows } = createHarness()
     await manager.createWidgetWindow()
     const widget = windows[0]!
@@ -325,99 +1410,67 @@ describe('WindowManager lifecycle', () => {
     await manager.showWidget()
     await manager.showWidget()
 
-    expect(widget.setPosition).toHaveBeenCalledTimes(1)
+    expect(widget.setBounds).toHaveBeenCalledTimes(1)
     expect(widget.showInactive).toHaveBeenCalledTimes(1)
 
     manager.hideWidget()
     await manager.showWidget()
 
-    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    expect(widget.setBounds).toHaveBeenCalledTimes(1)
     expect(widget.showInactive).toHaveBeenCalledTimes(2)
   })
 
-  it('repositions a revealed widget when the target placement changes', async () => {
-    let placement: StoredWidgetPlacement | null = null
-    const { manager, windows } = createHarness({
-      getWidgetPlacement: () => placement,
-    })
-    await manager.createWidgetWindow()
+  it('notifies the widget renderer before every native visibility transition', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
     const widget = windows[0]!
 
-    await manager.showWidget()
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
-    expect(widget.setSize).not.toHaveBeenCalled()
+    expect(widget.webContents.send).toHaveBeenCalledWith(
+      WIDGET_VISIBILITY,
+      { visible: true, generation: 1 },
+    )
 
-    // Moving to a side edge swaps the canvas to the vertical 88x248 window;
-    // the resize and the reposition happen together in the reveal path.
-    placement = { kind: 'edge', edge: 'left', offset: 0.25 }
-    await manager.showWidget()
-    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 263, false)
-    expect(widget.setPosition).toHaveBeenCalledTimes(2)
+    manager.hideWidget()
 
-    // Back to a horizontal edge restores the 248x88 canvas.
-    placement = { kind: 'edge', edge: 'top', offset: 0.5 }
-    await manager.showWidget()
-    expect(widget.setSize).toHaveBeenLastCalledWith(248, 88, false)
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 116, false)
-    expect(widget.setSize).toHaveBeenCalledTimes(2)
+    expect(widget.webContents.send).toHaveBeenLastCalledWith(
+      WIDGET_VISIBILITY,
+      { visible: false, generation: 2 },
+    )
+    expect(widget.webContents.send.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      widget.hide.mock.invocationCallOrder[0]!,
+    )
   })
 
-  it('keeps the reveal transition guard effective across size-only changes', async () => {
-    // These two placements resolve to the same top-left point but different
-    // canvas orientations, so the guard must consider size as well.
-    let placement: StoredWidgetPlacement = { kind: 'edge', edge: 'left', offset: 16 / 652 }
+  it('centers an edge-only stored placement instead of restoring a legacy offset', async () => {
     const { manager, windows } = createHarness({
-      getWidgetPlacement: () => placement,
-    })
-    await manager.createWidgetWindow()
-    const widget = windows[0]!
-
-    await manager.showWidget()
-    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 116, false)
-    expect(widget.showInactive).toHaveBeenCalledTimes(1)
-
-    placement = { kind: 'edge', edge: 'top', offset: 16 / 952 }
-    await manager.showWidget()
-    expect(widget.setSize).toHaveBeenLastCalledWith(248, 88, false)
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 116, false)
-    expect(widget.showInactive).toHaveBeenCalledTimes(2)
-
-    // Identical bounds after that: the guard suppresses further window work.
-    await manager.showWidget()
-    expect(widget.setSize).toHaveBeenCalledTimes(2)
-    expect(widget.setPosition).toHaveBeenCalledTimes(2)
-    expect(widget.showInactive).toHaveBeenCalledTimes(2)
-  })
-
-  it('applies a remembered edge placement along the active display edge', async () => {
-    const { manager, windows } = createHarness({
-      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left', offset: 0.25 }),
+      getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
     })
     await manager.createWidgetWindow()
 
     await manager.showWidget()
 
-    expect(windows[0]!.setSize).toHaveBeenCalledWith(88, 248, false)
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 263, false)
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
   })
 
-  it('converts a legacy remembered point into a roughly equivalent edge placement', async () => {
-    const { manager, windows } = createHarness({
+  it('chooses the nearest edge for a legacy point and centers it', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness({
       getWidgetPlacement: () => ({ kind: 'point', x: 1_100, y: 300 }),
     })
     await manager.createWidgetWindow()
 
     await manager.showWidget()
 
-    // (1100, 300) is nearest the left edge, 200px down the 652px vertical
-    // travel range of the 88x248 side-edge canvas.
-    expect(windows[0]!.setSize).toHaveBeenCalledWith(88, 248, false)
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_016, 300, false)
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 54, height: 124 },
+      false,
+    )
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
   })
 
-  it('clamps a legacy remembered point that no longer fits any display work area', async () => {
+  it('centers a legacy remembered point that no longer fits any display work area', async () => {
     const { manager, windows } = createHarness({
       getWidgetPlacement: () => ({ kind: 'point', x: 5_000, y: 5_000 }),
     })
@@ -425,7 +1478,10 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_952, 896, false)
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
   })
 
   it('falls back to the default anchor when reading the remembered position throws', async () => {
@@ -438,140 +1494,444 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(1_476, 896, false)
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: 1_538, y: 930, width: 124, height: 54 },
+      false,
+    )
   })
 
-  it('snaps a drag-end position to the nearest edge, resizing for a side edge', async () => {
-    const { manager, onWidgetMoved, windows } = createHarness()
-    await manager.createWidgetWindow()
+  it('expands a resting idle widget before recording the drag origin', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
     const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.getBounds.mockClear()
 
-    widget.position = [1_234, 567]
-    widget.emit('moved')
+    reportWidgetDrag(manager, 'start')
+    setWidgetPresentation(manager, 'idle-hovered')
 
-    expect(widget.setSize).toHaveBeenCalledWith(88, 248, false)
-    expect(widget.setPosition).toHaveBeenCalledWith(1_016, 567, false)
-    expect(onWidgetMoved).toHaveBeenCalledWith({
-      edge: 'left',
-      offset: expect.closeTo(467 / 652, 6),
-    })
+    expect(widget.setBounds).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_476, y: 908, width: 248, height: 76 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 1_476, y: 908, width: 248, height: 76 })
+    expect(widget.setBounds.mock.invocationCallOrder[0]).toBeLessThan(
+      widget.getBounds.mock.invocationCallOrder[0]!,
+    )
   })
 
-  it('does not reposition when the widget is already snapped, avoiding move loops', async () => {
+  it('does not acquire drag ownership when resting expansion fails', async () => {
     const { manager, onWidgetMoved, windows } = createHarness()
-    await manager.createWidgetWindow()
+    await manager.showWidget()
     const widget = windows[0]!
-
-    widget.position = [1_016, 567]
-    widget.emit('moved')
-
-    expect(widget.setPosition).not.toHaveBeenCalled()
-    // The orientation swap still applies even when the point already matches.
-    expect(widget.setSize).toHaveBeenCalledWith(88, 248, false)
-    expect(onWidgetMoved).toHaveBeenCalledWith({
-      edge: 'left',
-      offset: expect.closeTo(467 / 652, 6),
-    })
-  })
-
-  it('follows renderer drag deltas without snapping, then snaps and reports on drag end', async () => {
-    const { manager, onWidgetMoved, windows } = createHarness()
-    await manager.createWidgetWindow()
-    const widget = windows[0]!
-    widget.position = [1_200, 500]
-
-    manager.reportWidgetDrag({ phase: 'start' })
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 30, deltaY: -20 })
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_230, 480, false)
-
-    // Deltas are cumulative from the drag origin, not from the last move.
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 5 })
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_210, 505, false)
-    expect(onWidgetMoved).not.toHaveBeenCalled()
-
-    // The moved-event snap fallback must stay silent during the session.
-    widget.position = [1_210, 505]
-    widget.emit('moved')
-    expect(widget.setPosition).toHaveBeenCalledTimes(2)
-    expect(onWidgetMoved).not.toHaveBeenCalled()
-
-    manager.reportWidgetDrag({ phase: 'end' })
-    expect(widget.setSize).toHaveBeenLastCalledWith(88, 248, false)
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 505, false)
-    expect(onWidgetMoved).toHaveBeenCalledWith({
-      edge: 'left',
-      offset: expect.closeTo(405 / 652, 6),
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+    widget.setBounds.mockImplementationOnce(() => {
+      throw new Error('native expansion unavailable')
     })
 
-    // After the session ends the moved-event snap fallback works again.
-    widget.position = [1_100, 300]
-    widget.emit('moved')
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_016, 300, false)
-  })
+    reportWidgetDrag(manager, 'start')
+    reportWidgetDrag(manager, 'move')
+    reportWidgetDrag(manager, 'end')
 
-  it('treats out-of-order drag phases as harmless and lets start re-anchor', async () => {
-    const { manager, onWidgetMoved, windows } = createHarness()
-    await manager.createWidgetWindow()
-    const widget = windows[0]!
-
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 10, deltaY: 10 })
-    manager.reportWidgetDrag({ phase: 'end' })
+    expect(widget.setBounds).toHaveBeenCalledOnce()
     expect(widget.setPosition).not.toHaveBeenCalled()
     expect(onWidgetMoved).not.toHaveBeenCalled()
+  })
 
-    manager.reportWidgetDrag({ phase: 'start' })
-    widget.position = [1_100, 300]
-    manager.reportWidgetDrag({ phase: 'start' })
-    manager.reportWidgetDrag({ phase: 'move', deltaX: 5, deltaY: 0 })
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_105, 300, false)
+  it('records native window and Electron cursor origins on start', async () => {
+    const cursor = { current: { x: 1_700, y: 970 } }
+    const getCursorScreenPoint = vi.fn(() => ({ ...cursor.current }))
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint,
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
+    getCursorScreenPoint.mockClear()
+
+    reportWidgetDrag(manager, 'start')
+    widget.bounds = { x: 1_400, y: 700, width: 248, height: 76 }
+    cursor.current = { x: 1_730, y: 950 }
+    reportWidgetDrag(manager, 'move')
+
+    expect(widget.getBounds).toHaveBeenCalled()
+    expect(getCursorScreenPoint).toHaveBeenCalledTimes(2)
+    expect(widget.setPosition).toHaveBeenCalledWith(1_230, 480, false)
+  })
+
+  it('moves from Electron cursor deltas without renderer coordinates', async () => {
+    const cursor = { current: { x: 1_700, y: 970 } }
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => ({ ...cursor.current }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
+
+    reportWidgetDrag(manager, 'start')
+    cursor.current = { x: 1_730, y: 950 }
+    reportWidgetDrag(manager, 'move')
+    cursor.current = { x: 1_710, y: 975 }
+    reportWidgetDrag(manager, 'move')
+
+    expect(widget.setPosition.mock.calls).toStrictEqual([
+      [1_230, 480, false],
+      [1_210, 505, false],
+    ])
+  })
+
+  it('replaces stale ownership on repeated start', async () => {
+    const cursor = { current: { x: 100, y: 100 } }
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => ({ ...cursor.current }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
+
+    reportWidgetDrag(manager, 'start')
+    widget.bounds = { x: 1_400, y: 700, width: 248, height: 76 }
+    cursor.current = { x: 300, y: 200 }
+    reportWidgetDrag(manager, 'start')
+    cursor.current = { x: 315, y: 180 }
+    reportWidgetDrag(manager, 'move')
+
+    expect(widget.setPosition).toHaveBeenCalledOnce()
+    expect(widget.setPosition).toHaveBeenCalledWith(1_415, 680, false)
+  })
+
+  it('ignores a delayed end from an earlier gesture in the current visibility generation', async () => {
+    const cursor = { current: { x: 100, y: 100 } }
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => ({ ...cursor.current }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
+    const generation = currentWidgetVisibilityGeneration(manager)
+    const drag = generationBound(manager)
+
+    drag.reportWidgetDrag({ phase: 'start', generation, gestureId: 1 })
+    widget.bounds = { x: 1_400, y: 700, width: 248, height: 76 }
+    cursor.current = { x: 300, y: 200 }
+    drag.reportWidgetDrag({ phase: 'start', generation, gestureId: 2 })
+    drag.reportWidgetDrag({ phase: 'end', generation, gestureId: 1 })
+    cursor.current = { x: 315, y: 180 }
+    drag.reportWidgetDrag({ phase: 'move', generation, gestureId: 2 })
+
+    expect(widget.setPosition).toHaveBeenCalledOnce()
+    expect(widget.setPosition).toHaveBeenCalledWith(1_415, 680, false)
+  })
+
+  it('ignores move and end without ownership', async () => {
+    const getCursorScreenPoint = vi.fn(() => ({ x: 1_700, y: 970 }))
+    const getDisplayNearestPoint = vi.fn(() => ({
+      workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+    }))
+    const { manager, onWidgetMoved, windows } = createHarness({
+      display: { getCursorScreenPoint, getDisplayNearestPoint },
+    })
+    await manager.createWidgetWindow()
+    const widget = windows[0]!
+    widget.getBounds.mockClear()
+
+    reportWidgetDrag(manager, 'move')
+    reportWidgetDrag(manager, 'end')
+
+    expect(getCursorScreenPoint).not.toHaveBeenCalled()
+    expect(getDisplayNearestPoint).not.toHaveBeenCalled()
+    expect(widget.getBounds).not.toHaveBeenCalled()
+    expect(widget.setPosition).not.toHaveBeenCalled()
+    expect(widget.setBounds).not.toHaveBeenCalled()
+    expect(onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('snaps on the display containing the native window center', async () => {
+    const cursor = { current: { x: 100, y: 100 } }
+    const getDisplayNearestPoint = vi.fn((point: { readonly x: number }) => ({
+      workArea: point.x < 1_000 ? monitorWorkAreas.left : monitorWorkAreas.right,
+    }))
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => ({ ...cursor.current }),
+        getDisplayNearestPoint,
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_100, y: 300, width: 248, height: 76 }
+    widget.setBounds.mockClear()
+
+    reportWidgetDrag(manager, 'start')
+    getDisplayNearestPoint.mockClear()
+    reportWidgetDrag(manager, 'end')
+
+    expect(getDisplayNearestPoint).toHaveBeenCalledWith({ x: 1_224, y: 338 })
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 488, width: 88, height: 124 },
+      false,
+    )
+  })
+
+  it('persists only the selected edge', async () => {
+    const { manager, onWidgetMoved, windows } = createHarness()
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_100, y: 300, width: 248, height: 76 }
+
+    reportWidgetDrag(manager, 'start')
+    reportWidgetDrag(manager, 'end')
+
+    expect(onWidgetMoved).toHaveBeenCalledOnce()
+    expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+  })
+
+  it('centers the current presentation after orientation changes', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'active')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_100, y: 300, width: 248, height: 88 }
+    widget.setBounds.mockClear()
+
+    reportWidgetDrag(manager, 'start')
+    reportWidgetDrag(manager, 'end')
+
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 1_016, y: 426, width: 88, height: 248 },
+      false,
+    )
+  })
+
+  it('clears ownership after cursor or native movement failure', async () => {
+    const cursorAdapter = createMutableTwoDisplayAdapter()
+    const cursorFailure = createHarness({ display: cursorAdapter.display })
+    await cursorFailure.manager.showWidget()
+    setWidgetPresentation(cursorFailure.manager, 'idle-hovered')
+    const cursorFailureWidget = cursorFailure.windows[0]!
+    cursorFailureWidget.setBounds.mockClear()
+    reportWidgetDrag(cursorFailure.manager, 'start')
+    cursorAdapter.getCursorScreenPoint.mockClear()
+    cursorAdapter.failures.cursor = new Error('cursor unavailable')
+
+    reportWidgetDrag(cursorFailure.manager, 'move')
+    reportWidgetDrag(cursorFailure.manager, 'move')
+    reportWidgetDrag(cursorFailure.manager, 'end')
+
+    expect(cursorAdapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(cursorFailureWidget.setPosition).not.toHaveBeenCalled()
+    expect(cursorFailureWidget.setBounds).not.toHaveBeenCalled()
+    expect(cursorFailure.onWidgetMoved).not.toHaveBeenCalled()
+
+    const nativeFailure = createHarness()
+    await nativeFailure.manager.showWidget()
+    setWidgetPresentation(nativeFailure.manager, 'idle-hovered')
+    const nativeFailureWidget = nativeFailure.windows[0]!
+    nativeFailureWidget.setBounds.mockClear()
+    nativeFailureWidget.setPosition.mockImplementationOnce(() => {
+      throw new Error('native movement unavailable')
+    })
+    reportWidgetDrag(nativeFailure.manager, 'start')
+
+    reportWidgetDrag(nativeFailure.manager, 'move')
+    reportWidgetDrag(nativeFailure.manager, 'move')
+    reportWidgetDrag(nativeFailure.manager, 'end')
+
+    expect(nativeFailureWidget.setPosition).toHaveBeenCalledOnce()
+    expect(nativeFailureWidget.setBounds).not.toHaveBeenCalled()
+    expect(nativeFailure.onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('clears ownership when hidden closed or renderer is lost', async () => {
+    const hidden = createHarness()
+    await hidden.manager.showWidget()
+    setWidgetPresentation(hidden.manager, 'idle-hovered')
+    hidden.windows[0]!.setBounds.mockClear()
+    reportWidgetDrag(hidden.manager, 'start')
+    hidden.manager.hideWidget()
+    reportWidgetDrag(hidden.manager, 'end')
+    expect(hidden.windows[0]!.setBounds).not.toHaveBeenCalled()
+    expect(hidden.onWidgetMoved).not.toHaveBeenCalled()
+
+    const closed = createHarness()
+    await closed.manager.showWidget()
+    setWidgetPresentation(closed.manager, 'idle-hovered')
+    closed.windows[0]!.setBounds.mockClear()
+    reportWidgetDrag(closed.manager, 'start')
+    closed.windows[0]!.emit('closed')
+    reportWidgetDrag(closed.manager, 'end')
+    expect(closed.windows[0]!.setBounds).not.toHaveBeenCalled()
+    expect(closed.onWidgetMoved).not.toHaveBeenCalled()
+
+    const rendererLost = createHarness()
+    await rendererLost.manager.showWidget()
+    setWidgetPresentation(rendererLost.manager, 'idle-hovered')
+    rendererLost.windows[0]!.setBounds.mockClear()
+    reportWidgetDrag(rendererLost.manager, 'start')
+    rendererLost.windows[0]!.emitRenderProcessGone()
+    reportWidgetDrag(rendererLost.manager, 'end')
+    expect(rendererLost.windows[0]!.setBounds).not.toHaveBeenCalled()
+    expect(rendererLost.onWidgetMoved).not.toHaveBeenCalled()
+
+    const disposed = createHarness()
+    await disposed.manager.showWidget()
+    setWidgetPresentation(disposed.manager, 'idle-hovered')
+    disposed.windows[0]!.setBounds.mockClear()
+    reportWidgetDrag(disposed.manager, 'start')
+    disposed.manager.dispose()
+    reportWidgetDrag(disposed.manager, 'end')
+    expect(disposed.windows[0]!.setBounds).not.toHaveBeenCalled()
+    expect(disposed.onWidgetMoved).not.toHaveBeenCalled()
+  })
+
+  it('resumes monitor following after every terminal path', async () => {
+    vi.useFakeTimers()
+    try {
+      const terminalPaths: Array<
+        (
+          manager: WindowManager,
+          widget: FakeWindow,
+          adapter: ReturnType<typeof createMutableTwoDisplayAdapter>,
+        ) => void
+      > = [
+        (manager) => {
+          reportWidgetDrag(manager, 'end')
+        },
+        (manager, _widget, adapter) => {
+          adapter.failures.cursor = new Error('cursor unavailable')
+          reportWidgetDrag(manager, 'move')
+        },
+        (manager, widget) => {
+          widget.setPosition.mockImplementationOnce(() => {
+            throw new Error('native movement unavailable')
+          })
+          reportWidgetDrag(manager, 'move')
+        },
+        (manager, widget) => {
+          widget.getBounds.mockImplementationOnce(() => {
+            throw new Error('native bounds unavailable')
+          })
+          reportWidgetDrag(manager, 'end')
+        },
+        (manager, _widget, adapter) => {
+          adapter.failures.display = new Error('display unavailable')
+          reportWidgetDrag(manager, 'end')
+        },
+      ]
+
+      for (const finishDrag of terminalPaths) {
+        const adapter = createMutableTwoDisplayAdapter()
+        const { manager, windows } = createHarness({ display: adapter.display })
+        await manager.showWidget()
+        const widget = windows[0]!
+        reportWidgetDrag(manager, 'start')
+
+        finishDrag(manager, widget, adapter)
+        widget.setBounds.mockClear()
+        adapter.getCursorScreenPoint.mockClear()
+        adapter.getDisplayNearestPoint.mockClear()
+        adapter.cursor.current = { x: 1_700, y: 970 }
+        vi.advanceTimersByTime(100)
+
+        expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+        expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+        expect(widget.setBounds).toHaveBeenCalledWith(
+          { x: 1_476, y: 908, width: 248, height: 76 },
+          false,
+        )
+        manager.dispose()
+      }
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('native drag-end snap failure clears ownership and the next monitor tick recovers', async () => {
+    vi.useFakeTimers()
+    try {
+      const adapter = createMutableTwoDisplayAdapter()
+      const { manager, onWidgetMoved, windows } = createHarness({ display: adapter.display })
+      await manager.showWidget()
+      const widget = windows[0]!
+      reportWidgetDrag(manager, 'start')
+      widget.setBounds.mockClear()
+      widget.bounds = { x: 100, y: 300, width: 124, height: 54 }
+      widget.setBounds.mockImplementationOnce(() => {
+        throw new Error('native snap unavailable')
+      })
+
+      reportWidgetDrag(manager, 'end')
+      reportWidgetDrag(manager, 'end')
+
+      expect(widget.setBounds).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenLastCalledWith(
+        { x: 16, y: 338, width: 88, height: 124 },
+        false,
+      )
+      expect(onWidgetMoved).toHaveBeenCalledWith({ edge: 'left' })
+
+      widget.setBounds.mockClear()
+      adapter.getCursorScreenPoint.mockClear()
+      adapter.getDisplayNearestPoint.mockClear()
+      vi.advanceTimersByTime(100)
+
+      expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+      expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+      expect(widget.setBounds).toHaveBeenCalledWith(
+        { x: 16, y: 338, width: 88, height: 124 },
+        false,
+      )
+      expect(widget.bounds).toEqual({ x: 16, y: 338, width: 88, height: 124 })
+      manager.dispose()
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
   })
 
   it('ignores drag reports without a widget window', () => {
     const { manager } = createHarness()
 
-    expect(() => manager.reportWidgetDrag({ phase: 'start' })).not.toThrow()
-    expect(() => manager.reportWidgetDrag({ phase: 'move', deltaX: 4, deltaY: 4 })).not.toThrow()
-    expect(() => manager.reportWidgetDrag({ phase: 'end' })).not.toThrow()
+    expect(() => reportWidgetDrag(manager, 'start')).not.toThrow()
+    expect(() => reportWidgetDrag(manager, 'move')).not.toThrow()
+    expect(() => reportWidgetDrag(manager, 'end')).not.toThrow()
   })
 
-  it('pins the widget to the session display while locked and releases it on unlock', async () => {
-    const displays = [
-      { workArea: { x: 0, y: 0, width: 1_000, height: 800 } },
-      { workArea: { x: 1_000, y: 100, width: 1_200, height: 900 } },
-    ] as const
-    const cursor = { current: { x: 1_700, y: 970 } }
-    const { manager, windows } = createHarness({
-      display: {
-        getCursorScreenPoint: () => cursor.current,
-        getDisplayNearestPoint: (point) => (point.x < 1_000 ? displays[0] : displays[1]),
-      },
-    })
-    await manager.createWidgetWindow()
-    const widget = windows[0]!
-
-    // Session starts with the cursor on the second display.
-    manager.lockWidgetDisplay()
-    cursor.current = { x: 100, y: 100 }
-    await manager.showWidget()
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
-
-    // A second lock during the same session must not re-anchor to the cursor.
-    manager.lockWidgetDisplay()
-    await manager.showWidget()
-    expect(widget.setPosition).toHaveBeenLastCalledWith(1_476, 896, false)
-
-    // Back to idle: the widget follows the cursor display again.
-    manager.unlockWidgetDisplay()
-    await manager.showWidget()
-    expect(widget.setPosition).toHaveBeenLastCalledWith(376, 696, false)
-  })
-
-  it('starts the widget mouse-passthrough and toggles interactivity on request', async () => {
+  it('starts interactive and still honors explicit interactivity requests', async () => {
     const { manager, windows } = createHarness()
     await manager.createWidgetWindow()
     const widget = windows[0]!
 
-    expect(widget.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
+    expect(widget.setIgnoreMouseEvents).not.toHaveBeenCalled()
 
     manager.setWidgetMouseInteractive(true)
     expect(widget.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
@@ -599,7 +1959,7 @@ describe('WindowManager lifecycle', () => {
     expect(manager.sendToWidget('state', { status: 'idle' })).toBe(true)
   })
 
-  it('clamps the widget to the left and top edges of a small negative-coordinate work area', async () => {
+  it('centers the idle footprint in a small negative-coordinate work area', async () => {
     const { manager, windows } = createHarness({
       display: {
         getCursorScreenPoint: () => ({ x: -1_900, y: -900 }),
@@ -612,7 +1972,10 @@ describe('WindowManager lifecycle', () => {
 
     await manager.showWidget()
 
-    expect(windows[0]!.setPosition).toHaveBeenCalledWith(-2_000, -1_000, false)
+    expect(windows[0]!.setBounds).toHaveBeenCalledWith(
+      { x: -1_962, y: -980, width: 124, height: 54 },
+      false,
+    )
   })
 
   it('disposes both windows idempotently and releases listeners', async () => {
