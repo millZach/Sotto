@@ -417,18 +417,70 @@ describe('typed preload bridge', () => {
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
-    await bridge.setPresentation('idle-hovered')
-    await bridge.reportDrag({ phase: 'move' })
+    await bridge.setPresentation({ presentation: 'idle-hovered', generation: 7 })
+    await bridge.reportDrag({ phase: 'move', generation: 7 })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
       WIDGET_PRESENTATION,
-      'idle-hovered',
+      { presentation: 'idle-hovered', generation: 7 },
     )
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       5,
       WIDGET_DRAG,
-      { phase: 'move' },
+      { phase: 'move', generation: 7 },
     )
+  })
+
+  it('strictly validates generation-bound widget visibility presentation and drag payloads', async () => {
+    const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer) as unknown as {
+      onWidgetVisibilityChange(
+        listener: (visibility: { visible: boolean; generation: number }) => void,
+      ): () => void
+      setPresentation(payload: unknown): Promise<unknown>
+      reportDrag(payload: unknown): Promise<unknown>
+    }
+    const visibilityListener = vi.fn()
+    bridge.onWidgetVisibilityChange(visibilityListener)
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )?.[1]
+
+    visibilityEvent?.({}, { visible: true, generation: 4 })
+    for (const payload of [
+      { visible: true },
+      { visible: true, generation: -1 },
+      { visible: true, generation: 1.5 },
+      { visible: true, generation: 4, extra: true },
+    ]) {
+      visibilityEvent?.({}, payload)
+    }
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: true, generation: 4 })
+
+    electronMock.ipcRenderer.invoke.mockResolvedValue({ ok: true })
+    await expect(bridge.setPresentation({
+      presentation: 'active',
+      generation: 4,
+    })).resolves.toEqual({ ok: true })
+    await expect(bridge.reportDrag({ phase: 'move', generation: 4 })).resolves.toEqual({ ok: true })
+
+    for (const payload of [
+      { presentation: 'active' },
+      { presentation: 'active', generation: -1 },
+      { presentation: 'active', generation: 1.5 },
+      { presentation: 'active', generation: 4, extra: true },
+    ]) {
+      await expect(bridge.setPresentation(payload)).rejects.toThrow()
+    }
+    for (const payload of [
+      { phase: 'move' },
+      { phase: 'move', generation: -1 },
+      { phase: 'move', generation: 1.5 },
+      { phase: 'move', generation: 4, extra: true },
+    ]) {
+      await expect(bridge.reportDrag(payload)).rejects.toThrow()
+    }
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledTimes(2)
   })
 
   it('accepts only one immutable main-created renderer role argument', () => {
@@ -564,11 +616,12 @@ describe('typed preload bridge', () => {
     const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_VISIBILITY,
     )?.[1]
+    visibilityEvent?.({}, { visible: false, generation: 1 })
     visibilityEvent?.({}, false)
-    visibilityEvent?.({}, 'hidden')
-    visibilityEvent?.({}, true, { extra: true })
+    visibilityEvent?.({}, { visible: false, generation: 1, extra: true })
+    visibilityEvent?.({}, { visible: true, generation: 2 }, { extra: true })
     expect(visibilityListener).toHaveBeenCalledOnce()
-    expect(visibilityListener).toHaveBeenCalledWith(false)
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: false, generation: 1 })
 
     unsubscribe()
     unsubscribe()
@@ -595,8 +648,8 @@ describe('typed preload bridge', () => {
     } as const
     widgetEvent?.({}, listening)
     widgetEvent?.({}, idleWidgetSnapshot)
-    visibilityEvent?.({}, false)
-    visibilityEvent?.({}, true)
+    visibilityEvent?.({}, { visible: false, generation: 2 })
+    visibilityEvent?.({}, { visible: true, generation: 3 })
     commandEvent?.({}, { type: 'start' })
     commandEvent?.({}, { type: 'stop' })
     const widgetListener = vi.fn()
@@ -608,7 +661,7 @@ describe('typed preload bridge', () => {
     expect(widgetListener).toHaveBeenCalledOnce()
     expect(widgetListener).toHaveBeenCalledWith(idleWidgetSnapshot)
     expect(visibilityListener).toHaveBeenCalledOnce()
-    expect(visibilityListener).toHaveBeenCalledWith(true)
+    expect(visibilityListener).toHaveBeenCalledWith({ visible: true, generation: 3 })
     expect(commandListener.mock.calls.map(([command]) => command.type)).toEqual(['start', 'stop'])
     unsubscribeWidget()
     unsubscribeWidget()
@@ -2777,6 +2830,60 @@ describe('widget presentation and drag channels', () => {
     return { widgetContents, widgetFrame, widgetUrl }
   }
 
+  it('forwards only strict generation-bound presentation and drag reports', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
+    const setPresentation = vi.fn()
+    const reportDrag = vi.fn()
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      widget: { setPresentation, reportDrag },
+    })
+    const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
+    const presentation = { presentation: 'active', generation: 9 } as const
+    const drag = { phase: 'move', generation: 9 } as const
+
+    await expect(
+      harness.ipc.invoke(WIDGET_PRESENTATION, presentation, widgetEvent),
+    ).resolves.toEqual({ ok: true })
+    await expect(
+      harness.ipc.invoke(WIDGET_DRAG, drag, widgetEvent),
+    ).resolves.toEqual({ ok: true })
+    expect(setPresentation).toHaveBeenCalledWith(presentation)
+    expect(reportDrag).toHaveBeenCalledWith(drag)
+
+    for (const payload of [
+      { presentation: 'active' },
+      { presentation: 'active', generation: -1 },
+      { presentation: 'active', generation: 1.5 },
+      { presentation: 'active', generation: 9, extra: true },
+    ]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_PRESENTATION, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    for (const payload of [
+      { phase: 'move' },
+      { phase: 'move', generation: -1 },
+      { phase: 'move', generation: 1.5 },
+      { phase: 'move', generation: 9, extra: true },
+    ]) {
+      await expect(
+        harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    expect(setPresentation).toHaveBeenCalledOnce()
+    expect(reportDrag).toHaveBeenCalledOnce()
+  })
+
   it('lets only the trusted widget renderer set presentation', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
@@ -2795,16 +2902,17 @@ describe('widget presentation and drag channels', () => {
       widget: { setPresentation, reportDrag: vi.fn() },
     })
 
+    const report = { presentation: 'idle-resting', generation: 3 } as const
     await expect(
-      harness.ipc.invoke(WIDGET_PRESENTATION, 'idle-resting', {
+      harness.ipc.invoke(WIDGET_PRESENTATION, report, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
     ).resolves.toEqual({ ok: true })
-    expect(setPresentation).toHaveBeenCalledWith('idle-resting')
+    expect(setPresentation).toHaveBeenCalledWith(report)
 
     await expect(
-      harness.ipc.invoke(WIDGET_PRESENTATION, 'active'),
+      harness.ipc.invoke(WIDGET_PRESENTATION, { presentation: 'active', generation: 3 }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
     expect(setPresentation).toHaveBeenCalledOnce()
   })
@@ -2828,10 +2936,11 @@ describe('widget presentation and drag channels', () => {
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const presentation of ['idle-resting', 'idle-hovered', 'active'] as const) {
+      const report = { presentation, generation: 5 } as const
       await expect(
-        harness.ipc.invoke(WIDGET_PRESENTATION, presentation, widgetEvent),
+        harness.ipc.invoke(WIDGET_PRESENTATION, report, widgetEvent),
       ).resolves.toEqual({ ok: true })
-      expect(setPresentation).toHaveBeenLastCalledWith(presentation)
+      expect(setPresentation).toHaveBeenLastCalledWith(report)
     }
     expect(setPresentation).toHaveBeenCalledTimes(3)
   })
@@ -2889,7 +2998,11 @@ describe('widget presentation and drag channels', () => {
       }
 
       await expect(
-        harness.ipc.invoke(WIDGET_PRESENTATION, 'active', widgetEvent),
+        harness.ipc.invoke(
+          WIDGET_PRESENTATION,
+          { presentation: 'active', generation: 1 },
+          widgetEvent,
+        ),
       ).resolves.toEqual({ ok: true })
 
       expect(widget.getBounds()).toMatchObject({ width: 248, height: 88 })
@@ -2947,7 +3060,10 @@ describe('widget presentation and drag channels', () => {
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_PRESENTATION, 'idle-resting', {
+      harness.ipc.invoke(WIDGET_PRESENTATION, {
+        presentation: 'idle-resting',
+        generation: 0,
+      }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),
@@ -2974,9 +3090,9 @@ describe('widget presentation and drag channels', () => {
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', generation: 5 },
+      { phase: 'move', generation: 5 },
+      { phase: 'end', generation: 5 },
     ] as const) {
       await expect(
         harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
@@ -2987,7 +3103,7 @@ describe('widget presentation and drag channels', () => {
 
     // The main renderer and unknown senders may not drive the widget window.
     await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }),
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 5 }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED_IPC_SENDER' })
     expect(reportDrag).toHaveBeenCalledTimes(3)
   })
@@ -3011,11 +3127,12 @@ describe('widget presentation and drag channels', () => {
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'hover' },
-      { phase: 'move', x: 1, y: 0 },
-      { phase: 'move', extra: true },
-      { phase: 'start', x: 1, y: 1 },
-      { phase: 'end', extra: true },
+      { phase: 'hover', generation: 1 },
+      { phase: 'move', generation: 1, x: 1, y: 0 },
+      { phase: 'move', generation: 1, extra: true },
+      { phase: 'start', generation: 1, x: 1, y: 1 },
+      { phase: 'end', generation: 1, extra: true },
+      { phase: 'move' },
       'start',
       null,
     ]) {
@@ -3042,7 +3159,7 @@ describe('widget presentation and drag channels', () => {
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start' }, {
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 0 }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),

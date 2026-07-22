@@ -363,9 +363,9 @@ describe('WidgetApp', () => {
 
     expect(onToggle).not.toHaveBeenCalled()
     expect(onDrag.mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', generation: 0 },
+      { phase: 'move', generation: 0 },
+      { phase: 'end', generation: 0 },
     ])
 
     // The suppression is consumed by the drag's own click; the next plain
@@ -395,7 +395,7 @@ describe('WidgetApp', () => {
     fireEvent.pointerUp(capsule, { pointerId: 2, screenX: 40, screenY: 10 })
     fireEvent.click(capsule)
     expect(onStop).not.toHaveBeenCalled()
-    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end' })
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0 })
 
     onDrag.mockClear()
     const stop = screen.getByRole('button', { name: 'Stop dictation' })
@@ -598,7 +598,7 @@ describe('WidgetApp', () => {
     fireEvent.pointerMove(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
     fireEvent.pointerUp(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
 
-    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end' })
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0 })
     expect(sliver).not.toHaveAttribute('data-expanded')
   })
 })
@@ -653,10 +653,16 @@ describe('WidgetEntry', () => {
     const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
 
     act(() => listener?.(snapshot({ status: 'idle' })))
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-resting')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'idle-resting',
+      generation: 0,
+    })
     const sliver = screen.getByTestId('widget-sliver')
     fireEvent.mouseEnter(sliver)
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'idle-hovered',
+      generation: 0,
+    })
     fireEvent.click(sliver)
     expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
 
@@ -664,7 +670,10 @@ describe('WidgetEntry', () => {
       status: 'listening', sessionId: 'click', startedAt: Date.now(), level: 0.4,
       cancellable: true,
     })))
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('active')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'active',
+      generation: 0,
+    })
     fireEvent.click(container.querySelector('.widget-capsule')!)
     expect(bridge.requestStop).toHaveBeenCalledTimes(1)
     expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
@@ -692,17 +701,84 @@ describe('WidgetEntry', () => {
     fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     fireEvent.pointerUp(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', generation: 0 },
+      { phase: 'move', generation: 0 },
+      { phase: 'end', generation: 0 },
     ])
     expect(bridge.requestToggle).not.toHaveBeenCalled()
+  })
+
+  it('republishes an unchanged presentation for every visibility generation', () => {
+    let stateListener: ((state: WidgetSnapshot) => void) | null = null
+    let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        stateListener = next
+        return () => { stateListener = null }
+      },
+      onWidgetVisibilityChange: ((next: typeof visibilityListener) => {
+        visibilityListener = next
+        return () => { visibilityListener = null }
+      }) as unknown as TalkTypeWidgetBridge['onWidgetVisibilityChange'],
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    render(<WidgetEntry bridge={bridge} preview={null} />)
+    act(() => stateListener?.(snapshot({ status: 'idle' })))
+    vi.mocked(bridge.setPresentation).mockClear()
+
+    act(() => visibilityListener?.({ visible: false, generation: 2 }))
+    act(() => visibilityListener?.({ visible: true, generation: 3 }))
+
+    expect(vi.mocked(bridge.setPresentation).mock.calls.map(([report]) => report)).toEqual([
+      { presentation: 'idle-resting', generation: 2 },
+      { presentation: 'idle-resting', generation: 3 },
+    ])
+  })
+
+  it('binds every renderer drag phase to the generation where the gesture started', () => {
+    let stateListener: ((state: WidgetSnapshot) => void) | null = null
+    let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        stateListener = next
+        return () => { stateListener = null }
+      },
+      onWidgetVisibilityChange: ((next: typeof visibilityListener) => {
+        visibilityListener = next
+        return () => { visibilityListener = null }
+      }) as unknown as TalkTypeWidgetBridge['onWidgetVisibilityChange'],
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    render(<WidgetEntry bridge={bridge} preview={null} />)
+    act(() => visibilityListener?.({ visible: true, generation: 7 }))
+    act(() => stateListener?.(snapshot({ status: 'idle' })))
+
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.pointerDown(sliver, {
+      pointerId: 3, button: 0, isPrimary: true, screenX: 50, screenY: 60,
+    })
+    fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
+    act(() => visibilityListener?.({ visible: false, generation: 8 }))
+
+    expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
+      { phase: 'start', generation: 7 },
+      { phase: 'move', generation: 7 },
+      { phase: 'end', generation: 7 },
+    ])
   })
 
   it('resets idle hover state across native hide and reveal', () => {
     vi.useFakeTimers()
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
-    let visibilityListener: ((visible: boolean) => void) | null = null
+    let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: TalkTypeWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
@@ -725,28 +801,35 @@ describe('WidgetEntry', () => {
     fireEvent.mouseEnter(sliver)
     fireEvent.mouseLeave(sliver)
     expect(sliver).toHaveAttribute('data-expanded', 'true')
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'idle-hovered',
+      generation: 0,
+    })
     expect(vi.getTimerCount()).toBe(1)
 
     act(() => {
-      visibilityListener?.(false)
-      visibilityListener?.(false)
-      visibilityListener?.(true)
-      visibilityListener?.(true)
+      visibilityListener?.({ visible: false, generation: 1 })
+      visibilityListener?.({ visible: true, generation: 2 })
     })
 
     expect(sliver).not.toHaveAttribute('data-expanded')
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-resting')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'idle-resting',
+      generation: 2,
+    })
     expect(vi.getTimerCount()).toBe(0)
 
     fireEvent.mouseEnter(sliver)
     expect(sliver).toHaveAttribute('data-expanded', 'true')
-    expect(bridge.setPresentation).toHaveBeenLastCalledWith('idle-hovered')
+    expect(bridge.setPresentation).toHaveBeenLastCalledWith({
+      presentation: 'idle-hovered',
+      generation: 2,
+    })
   })
 
   it('terminates the renderer drag gesture when the native widget becomes hidden', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
-    let visibilityListener: ((visible: boolean) => void) | null = null
+    let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: TalkTypeWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
@@ -772,13 +855,13 @@ describe('WidgetEntry', () => {
     fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     expect(container.querySelector('.widget-shell')).toHaveAttribute('data-dragging', 'true')
 
-    act(() => visibilityListener?.(false))
+    act(() => visibilityListener?.({ visible: false, generation: 1 }))
 
     expect(container.querySelector('.widget-shell')).not.toHaveAttribute('data-dragging')
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', generation: 0 },
+      { phase: 'move', generation: 0 },
+      { phase: 'end', generation: 0 },
     ])
     fireEvent.pointerUp(window, { pointerId: 3 })
     expect(vi.mocked(bridge.reportDrag).mock.calls.filter(

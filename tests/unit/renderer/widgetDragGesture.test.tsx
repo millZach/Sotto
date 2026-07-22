@@ -2,12 +2,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { WidgetDragPayload } from '../../../src/shared/contracts'
+import type { WidgetDragPhase } from '../../../src/shared/contracts'
 import { useWidgetDragGesture } from '../../../src/renderer/src/widget/useWidgetDragGesture'
 
 interface HarnessProps {
   readonly onClick?: () => void
-  readonly onDrag?: (payload: WidgetDragPayload) => void
+  readonly onDrag?: (payload: WidgetDragPhase) => void
   readonly onDragFinished?: () => void
 }
 
@@ -163,7 +163,7 @@ describe('useWidgetDragGesture', () => {
       errors.push(event.error as Error)
       event.preventDefault()
     }
-    const onDrag = vi.fn((payload: WidgetDragPayload) => {
+    const onDrag = vi.fn((payload: WidgetDragPhase) => {
       if (payload.phase === 'end') throw new Error('drag callback failed')
     })
     window.addEventListener('error', captureError)
@@ -197,7 +197,7 @@ describe('useWidgetDragGesture', () => {
       errors.push(event.error as Error)
       event.preventDefault()
     }
-    const onDrag = vi.fn((payload: WidgetDragPayload) => {
+    const onDrag = vi.fn((payload: WidgetDragPhase) => {
       if (payload.phase === 'move') throw new Error('queued move callback failed')
       if (payload.phase === 'end') throw new Error('end callback failed')
     })
@@ -259,7 +259,7 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(window, { pointerId: 1 })
 
     expect(payloads(onDrag).filter((payload) =>
-      (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
+      (payload as WidgetDragPhase).phase === 'end')).toHaveLength(1)
   })
 
   it('ends exactly once on lostpointercapture', () => {
@@ -272,7 +272,7 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(window, { pointerId: 1 })
 
     expect(payloads(onDrag).filter((payload) =>
-      (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
+      (payload as WidgetDragPhase).phase === 'end')).toHaveLength(1)
   })
 
   it('suppresses the click that follows lost pointer capture after a completed drag', () => {
@@ -302,7 +302,7 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(window, { pointerId: 1 })
 
     expect(payloads(onDrag).filter((payload) =>
-      (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
+      (payload as WidgetDragPhase).phase === 'end')).toHaveLength(1)
   })
 
   it('ends exactly once when document becomes hidden', () => {
@@ -319,7 +319,7 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(window, { pointerId: 1 })
 
     expect(payloads(onDrag).filter((payload) =>
-      (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
+      (payload as WidgetDragPhase).phase === 'end')).toHaveLength(1)
     if (descriptor === undefined) delete (document as unknown as { visibilityState?: string }).visibilityState
     else Object.defineProperty(document, 'visibilityState', descriptor)
   })
@@ -334,7 +334,7 @@ describe('useWidgetDragGesture', () => {
     view.unmount()
 
     expect(payloads(onDrag).filter((payload) =>
-      (payload as WidgetDragPayload).phase === 'end')).toHaveLength(1)
+      (payload as WidgetDragPhase).phase === 'end')).toHaveLength(1)
   })
 
   it('removes temporary listeners through common cleanup', () => {

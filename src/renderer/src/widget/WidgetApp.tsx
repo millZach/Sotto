@@ -21,6 +21,7 @@ import {
 import type {
   TalkTypeWidgetBridge,
   WidgetDragPayload,
+  WidgetDragPhase,
   WidgetPresentation,
 } from '../../../shared/contracts'
 import { formatWindowsAccelerator } from '../../../shared/accelerator'
@@ -130,6 +131,7 @@ export interface WidgetAppProps {
   readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
+  readonly visibilityGeneration?: number
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -292,6 +294,7 @@ export function WidgetApp({
   onPresentationChange,
   onDrag,
   dragCancellationVersion,
+  visibilityGeneration = 0,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const orientation = useWidgetOrientation()
@@ -324,9 +327,24 @@ export function WidgetApp({
   // Either surface becomes a drag once movement passes the threshold. When an
   // idle drag ends the window has snapped away from the pointer, so it returns
   // to the resting presentation.
+  const dragGenerationRef = useRef<number | null>(null)
+  const reportDragPhase = (phase: WidgetDragPhase): void => {
+    if (phase.phase === 'start') {
+      dragGenerationRef.current = visibilityGeneration
+    }
+    const generation = dragGenerationRef.current
+    if (generation === null) return
+    try {
+      onDrag?.({ ...phase, generation })
+    } finally {
+      if (phase.phase === 'end') {
+        dragGenerationRef.current = null
+      }
+    }
+  }
   const surface = useWidgetDragGesture(
     isIdle ? onToggle : onStop,
-    onDrag,
+    reportDragPhase,
     isIdle ? () => setExpanded(false) : undefined,
     dragCancellationVersion,
   )
@@ -338,7 +356,7 @@ export function WidgetApp({
 
   useEffect(() => {
     onPresentationChange?.(presentation)
-  }, [onPresentationChange, presentation])
+  }, [onPresentationChange, presentation, visibilityGeneration])
 
   if (snapshot.status === 'idle') {
     return (
@@ -490,6 +508,7 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
   const [dragCancellationVersion, setDragCancellationVersion] = useState(0)
+  const [visibilityGeneration, setVisibilityGeneration] = useState(0)
 
   useEffect(() => {
     if (preview !== null || bridge === undefined) return undefined
@@ -498,8 +517,9 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
 
   useEffect(() => {
     if (preview !== null || bridge === undefined) return undefined
-    return bridge.onWidgetVisibilityChange((visible) => {
-      if (!visible) setDragCancellationVersion((version) => version + 1)
+    return bridge.onWidgetVisibilityChange((visibility) => {
+      setVisibilityGeneration(visibility.generation)
+      if (!visibility.visible) setDragCancellationVersion((version) => version + 1)
     })
   }, [bridge, preview])
 
@@ -522,13 +542,16 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
       onPresentationChange: (presentation: WidgetPresentation) => {
-        void bridge.setPresentation(presentation).catch(() => undefined)
+        void bridge.setPresentation({
+          presentation,
+          generation: visibilityGeneration,
+        }).catch(() => undefined)
       },
       onDrag: (payload: WidgetDragPayload) => {
         void bridge.reportDrag(payload).catch(() => undefined)
       },
     }
-  }, [bridge, preview])
+  }, [bridge, preview, visibilityGeneration])
 
   return (
     <>
@@ -538,6 +561,7 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
           snapshot={snapshot}
           now={now}
           dragCancellationVersion={dragCancellationVersion}
+          visibilityGeneration={visibilityGeneration}
           {...actions}
         />
       )}

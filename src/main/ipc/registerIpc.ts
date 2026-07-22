@@ -32,7 +32,7 @@ import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
   widgetDragSchema,
-  widgetPresentationSchema,
+  widgetPresentationPayloadSchema,
   widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
@@ -45,7 +45,7 @@ import {
   type OutputResult,
   type StartupState,
   type WidgetDragPayload,
-  type WidgetPresentation,
+  type WidgetPresentationPayload,
 } from '../../shared/contracts'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
@@ -225,7 +225,7 @@ export interface RegisterIpcDependencies {
 }
 
 export interface WidgetIpcService {
-  setPresentation(presentation: WidgetPresentation): void
+  setPresentation(payload: WidgetPresentationPayload): void
   reportDrag(payload: WidgetDragPayload): void
 }
 
@@ -440,13 +440,13 @@ export function registerIpc(
     )
     register(
       WIDGET_PRESENTATION,
-      widgetPresentationSchema,
+      widgetPresentationPayloadSchema,
       1,
-      async (presentation): Promise<CommandResult> => {
+      async (payload): Promise<CommandResult> => {
         if (dependencies.widget === undefined) {
           return UNAVAILABLE
         }
-        dependencies.widget.setPresentation(presentation)
+        dependencies.widget.setPresentation(payload)
         return OK
       },
       ['widget'],

@@ -131,6 +131,18 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .strict(),
 ])
 
+/** Main-owned epoch attached to every widget visibility-bound renderer report. */
+export const widgetVisibilityGenerationSchema = z.number().int().nonnegative().safe()
+
+/** One main-to-renderer widget visibility transition. */
+export const widgetVisibilitySchema = z
+  .object({
+    visible: z.boolean(),
+    generation: widgetVisibilityGenerationSchema,
+  })
+  .strict()
+export type WidgetVisibilityPayload = z.infer<typeof widgetVisibilitySchema>
+
 /** Native widget visual states with distinct presentation footprints. */
 export const widgetPresentationSchema = z.enum([
   'idle-resting',
@@ -139,13 +151,44 @@ export const widgetPresentationSchema = z.enum([
 ])
 export type WidgetPresentation = z.infer<typeof widgetPresentationSchema>
 
-/** One renderer-reported phase of a widget drag gesture. */
-export const widgetDragSchema = z.discriminatedUnion('phase', [
+/** One generation-bound renderer presentation report. */
+export const widgetPresentationPayloadSchema = z
+  .object({
+    presentation: widgetPresentationSchema,
+    generation: widgetVisibilityGenerationSchema,
+  })
+  .strict()
+export type WidgetPresentationPayload = z.infer<typeof widgetPresentationPayloadSchema>
+
+/** One renderer-local phase before it is bound to a visibility generation. */
+export const widgetDragPhaseSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('start') }).strict(),
   z.object({ phase: z.literal('move') }).strict(),
   z.object({ phase: z.literal('end') }).strict(),
 ])
+export type WidgetDragPhase = z.infer<typeof widgetDragPhaseSchema>
 
+/** One generation-bound renderer-reported phase of a widget drag gesture. */
+export const widgetDragSchema = z.discriminatedUnion('phase', [
+  z
+    .object({
+      phase: z.literal('start'),
+      generation: widgetVisibilityGenerationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      phase: z.literal('move'),
+      generation: widgetVisibilityGenerationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      phase: z.literal('end'),
+      generation: widgetVisibilityGenerationSchema,
+    })
+    .strict(),
+])
 export type WidgetDragPayload = z.infer<typeof widgetDragSchema>
 
 export const outputDeliveryRequestSchema = z
@@ -285,11 +328,11 @@ export interface TalkTypeBridge {
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface TalkTypeWidgetBridge {
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
-  onWidgetVisibilityChange(listener: (visible: boolean) => void): Unsubscribe
+  onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe
   requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
-  setPresentation(presentation: WidgetPresentation): Promise<CommandResult>
+  setPresentation(payload: WidgetPresentationPayload): Promise<CommandResult>
   reportDrag(payload: WidgetDragPayload): Promise<CommandResult>
 }
 

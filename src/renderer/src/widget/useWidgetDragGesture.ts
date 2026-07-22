@@ -7,7 +7,7 @@ import {
   type PointerEventHandler,
 } from 'react'
 
-import type { WidgetDragPayload } from '../../../shared/contracts'
+import type { WidgetDragPhase } from '../../../shared/contracts'
 
 const DRAG_THRESHOLD_PX = 4
 
@@ -42,7 +42,7 @@ export interface WidgetDragGesture {
 
 export function useWidgetDragGesture(
   onClick: (() => void) | undefined,
-  onDrag: ((payload: WidgetDragPayload) => void) | undefined,
+  onDrag: ((payload: WidgetDragPhase) => void) | undefined,
   onDragFinished?: (() => void) | undefined,
   cancellationVersion = 0,
 ): WidgetDragGesture {

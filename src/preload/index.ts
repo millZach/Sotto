@@ -39,11 +39,14 @@ import {
   dictationCommandSchema,
   modelDisclosureCatalogSchema,
   modelStatusSchema,
+  widgetDragSchema,
+  widgetPresentationPayloadSchema,
   widgetSnapshotSchema,
+  widgetVisibilitySchema,
   type TalkTypeBridge,
   type TalkTypeWidgetBridge,
   type WidgetDragPayload,
-  type WidgetPresentation,
+  type WidgetPresentationPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
 import { settingsSchema } from '../shared/settings'
@@ -240,7 +243,7 @@ export function createTalkTypeWidgetBridge(
   const onWidgetVisibilityChange = createBufferedSubscription(
     renderer,
     WIDGET_VISIBILITY,
-    z.boolean(),
+    widgetVisibilitySchema,
     1,
   )
   return Object.freeze({
@@ -252,10 +255,20 @@ export function createTalkTypeWidgetBridge(
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
     requestCancel: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
-    setPresentation: (presentation: WidgetPresentation) =>
-      invokeParsed(renderer, WIDGET_PRESENTATION, commandResultSchema, presentation),
-    reportDrag: (payload: WidgetDragPayload) =>
-      invokeParsed(renderer, WIDGET_DRAG, commandResultSchema, payload),
+    setPresentation: async (payload: WidgetPresentationPayload) =>
+      invokeParsed(
+        renderer,
+        WIDGET_PRESENTATION,
+        commandResultSchema,
+        widgetPresentationPayloadSchema.parse(payload),
+      ),
+    reportDrag: async (payload: WidgetDragPayload) =>
+      invokeParsed(
+        renderer,
+        WIDGET_DRAG,
+        commandResultSchema,
+        widgetDragSchema.parse(payload),
+      ),
   })
 }
 
