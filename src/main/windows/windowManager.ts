@@ -263,6 +263,7 @@ export class WindowManager {
   private widgetLastAppliedBounds: Rectangle | null = null
   private widgetProgrammaticTarget: Rectangle | null = null
   private widgetVisible = false
+  private widgetVisibilityGeneration = 0
   private widgetMonitorTimer: ReturnType<typeof setInterval> | null = null
   private widgetDrag: {
     readonly windowOrigin: Point
@@ -440,8 +441,10 @@ export class WindowManager {
   }
 
   async showWidget(): Promise<void> {
+    const visibilityGeneration = ++this.widgetVisibilityGeneration
     const widget = await this.createWidgetWindow()
     this.assertRunning()
+    if (visibilityGeneration !== this.widgetVisibilityGeneration) return
     if (this.widgetDrag !== null) return
 
     this.loadWidgetPlacement()
@@ -548,6 +551,7 @@ export class WindowManager {
           activeDrag.windowOrigin.y + cursor.y - activeDrag.cursorOrigin.y,
           false,
         )
+        this.widgetLastAppliedBounds = null
         const current = widget.getBounds()
         this.widgetLastAppliedBounds = current
       } catch {
@@ -572,6 +576,7 @@ export class WindowManager {
   }
 
   hideWidget(): void {
+    this.widgetVisibilityGeneration += 1
     if (this.widgetVisible) {
       this.sendToWidget(WIDGET_VISIBILITY, false)
     }

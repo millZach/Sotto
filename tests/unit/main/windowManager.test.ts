@@ -455,6 +455,40 @@ describe('WindowManager cursor monitor following', () => {
     )
   })
 
+  it('reapplies snapped bounds after a drag move readback failure', async () => {
+    const adapter = createMutableTwoDisplayAdapter()
+    const { manager, windows } = createHarness({ display: adapter.display })
+    manager.setWidgetPresentation('idle-hovered')
+    await manager.showWidget()
+    const widget = windows[0]!
+    widget.setBounds.mockClear()
+    widget.setPosition.mockClear()
+
+    manager.reportWidgetDrag({ phase: 'start' })
+    adapter.cursor.current = { x: 200, y: 100 }
+    widget.getBounds.mockImplementationOnce(() => {
+      throw new Error('post-move bounds unavailable')
+    })
+
+    manager.reportWidgetDrag({ phase: 'move' })
+
+    expect(widget.setPosition).toHaveBeenCalledWith(476, 708, false)
+    expect(widget.bounds).toEqual({ x: 476, y: 708, width: 248, height: 76 })
+
+    widget.setBounds.mockClear()
+    adapter.getCursorScreenPoint.mockClear()
+    adapter.getDisplayNearestPoint.mockClear()
+    vi.advanceTimersByTime(100)
+
+    expect(adapter.getCursorScreenPoint).toHaveBeenCalledOnce()
+    expect(adapter.getDisplayNearestPoint).toHaveBeenCalledOnce()
+    expect(widget.setBounds).toHaveBeenCalledWith(
+      { x: 376, y: 708, width: 248, height: 76 },
+      false,
+    )
+    expect(widget.bounds).toEqual({ x: 376, y: 708, width: 248, height: 76 })
+  })
+
   it('stops checks when hidden', async () => {
     const adapter = createMutableTwoDisplayAdapter()
     const { manager, windows } = createHarness({ display: adapter.display })
@@ -471,6 +505,28 @@ describe('WindowManager cursor monitor following', () => {
     expect(adapter.getCursorScreenPoint).not.toHaveBeenCalled()
     expect(adapter.getDisplayNearestPoint).not.toHaveBeenCalled()
     expect(widget.setBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal after hide wins an in-flight widget load', async () => {
+    const rendererLoad = createDeferred<void>()
+    const { manager, windows } = createHarness({}, (window) => {
+      window.loadFile.mockImplementationOnce(() => rendererLoad.promise)
+    })
+
+    const reveal = manager.showWidget()
+    const widget = windows[0]!
+
+    manager.hideWidget()
+    rendererLoad.resolve()
+    await reveal
+
+    expect(widget.hide).toHaveBeenCalledOnce()
+    expect(widget.webContents.send).not.toHaveBeenCalledWith(WIDGET_VISIBILITY, true)
+    expect(widget.showInactive).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+
+    manager.hideWidget()
+    expect(widget.webContents.send).not.toHaveBeenCalledWith(WIDGET_VISIBILITY, false)
   })
 
   it('rejects late drag reports while hidden and resumes reveal monitoring', async () => {
