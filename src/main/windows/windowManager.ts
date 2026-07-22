@@ -477,14 +477,14 @@ export class WindowManager {
   }
 
   setWidgetPresentation(presentation: WidgetPresentation): void {
-    this.widgetPresentation = presentation
     const widget = this.widgetWindow
-    if (
-      !this.widgetVisible ||
-      widget === null ||
-      widget.isDestroyed() ||
-      this.widgetDrag !== null
-    ) {
+    if (!this.widgetVisible || widget === null || widget.isDestroyed()) {
+      return
+    }
+
+    this.widgetPresentation = presentation
+    if (this.widgetDrag !== null) {
+      this.reconcileWidgetPresentationDuringDrag(widget)
       return
     }
 
@@ -587,9 +587,7 @@ export class WindowManager {
     }
     this.widgetVisible = false
     this.widgetDrag = null
-    if (this.widgetPresentation === 'idle-hovered') {
-      this.widgetPresentation = 'idle-resting'
-    }
+    this.widgetPresentation = 'idle-resting'
     this.stopWidgetMonitor()
     this.widgetWindow?.hide()
   }
@@ -782,6 +780,40 @@ export class WindowManager {
     }
     window.on('moved', onMoved)
     this.addCleanup(window, () => window.removeListener('moved', onMoved))
+  }
+
+  private reconcileWidgetPresentationDuringDrag(widget: BrowserWindowLike): void {
+    const drag = this.widgetDrag
+    if (drag === null) return
+
+    try {
+      const current = widget.getBounds()
+      this.widgetLastAppliedBounds = current
+      const presentation =
+        this.widgetPresentation === 'idle-resting'
+          ? 'idle-hovered'
+          : this.widgetPresentation
+      const size = widgetSizeForPresentation(this.widgetPlacement.edge, presentation)
+      const desired = { ...current, ...size }
+      if (sameRectangle(current, desired)) return
+
+      this.applyWidgetBounds(widget, desired)
+      const applied = this.widgetLastAppliedBounds
+      if (applied === null) return
+
+      // Native content resizing can round the window origin at a mixed-DPI
+      // boundary. Rebase the drag origin by that native adjustment so the next
+      // cumulative cursor delta continues from the actual applied position.
+      this.widgetDrag = {
+        windowOrigin: {
+          x: drag.windowOrigin.x + applied.x - current.x,
+          y: drag.windowOrigin.y + applied.y - current.y,
+        },
+        cursorOrigin: drag.cursorOrigin,
+      }
+    } catch {
+      // Keep drag ownership valid; a later presentation or terminal snap can retry.
+    }
   }
 
   private snapWidgetToEdge(window: BrowserWindowLike): void {
