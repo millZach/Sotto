@@ -304,7 +304,7 @@ describe('native recovery after the main renderer is lost', () => {
       await windows.showWidget()
       const lostWidget = nativeWindows[1]!
       lostWidget.setBounds.mockClear()
-      windows.reportWidgetDrag({ phase: 'start', generation: 1 })
+      windows.reportWidgetDrag({ phase: 'start', generation: 1, gestureId: 0 })
       cursor.current = { x: 1_700, y: 970 }
       vi.advanceTimersByTime(100)
       expect(lostWidget.setBounds).toHaveBeenCalledOnce()
@@ -372,7 +372,7 @@ describe('native recovery after the main renderer is lost', () => {
       await windows.createWindows()
       await windows.showWidget()
       const widget = nativeWindows[1]!
-      windows.reportWidgetDrag({ phase: 'start', generation: 1 })
+      windows.reportWidgetDrag({ phase: 'start', generation: 1, gestureId: 0 })
       widget.setBounds.mockClear()
       getCursorScreenPoint.mockClear()
       getDisplayNearestPoint.mockClear()
@@ -380,8 +380,8 @@ describe('native recovery after the main renderer is lost', () => {
       windows.hideWidget()
       cursor.current = { x: 1_700, y: 970 }
       vi.advanceTimersByTime(200)
-      windows.reportWidgetDrag({ phase: 'move', generation: 1 })
-      windows.reportWidgetDrag({ phase: 'end', generation: 1 })
+      windows.reportWidgetDrag({ phase: 'move', generation: 1, gestureId: 0 })
+      windows.reportWidgetDrag({ phase: 'end', generation: 1, gestureId: 0 })
 
       expect(vi.getTimerCount()).toBe(0)
       expect(getCursorScreenPoint).not.toHaveBeenCalled()

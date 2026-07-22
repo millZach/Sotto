@@ -274,6 +274,7 @@ export class WindowManager {
   private widgetDragPresentationResizePending = false
   private widgetDrag: {
     readonly generation: number
+    readonly gestureId: number
     readonly windowOrigin: Point
     readonly cursorOrigin: Point
   } | null = null
@@ -606,6 +607,7 @@ export class WindowManager {
         const bounds = widget.getBounds()
         this.widgetDrag = {
           generation: drag.generation,
+          gestureId: drag.gestureId,
           windowOrigin: { x: bounds.x, y: bounds.y },
           cursorOrigin: this.dependencies.display.getCursorScreenPoint(),
         }
@@ -617,7 +619,11 @@ export class WindowManager {
     }
     if (drag.phase === 'move') {
       const activeDrag = this.widgetDrag
-      if (activeDrag === null || activeDrag.generation !== drag.generation) return
+      if (
+        activeDrag === null ||
+        activeDrag.generation !== drag.generation ||
+        activeDrag.gestureId !== drag.gestureId
+      ) return
       try {
         const cursor = this.dependencies.display.getCursorScreenPoint()
         widget.setPosition(
@@ -634,7 +640,10 @@ export class WindowManager {
       }
       return
     }
-    if (this.widgetDrag?.generation !== drag.generation) return
+    if (
+      this.widgetDrag?.generation !== drag.generation ||
+      this.widgetDrag.gestureId !== drag.gestureId
+    ) return
     this.widgetDrag = null
     this.widgetDragPresentationResizePending = false
     this.snapWidgetToEdge(widget)
@@ -918,6 +927,7 @@ export class WindowManager {
       // cumulative cursor delta continues from the actual applied position.
       this.widgetDrag = {
         generation: drag.generation,
+        gestureId: drag.gestureId,
         windowOrigin: {
           x: drag.windowOrigin.x + applied.x - current.x,
           y: drag.windowOrigin.y + applied.y - current.y,

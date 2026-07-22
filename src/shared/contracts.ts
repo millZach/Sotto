@@ -160,11 +160,15 @@ export const widgetPresentationPayloadSchema = z
   .strict()
 export type WidgetPresentationPayload = z.infer<typeof widgetPresentationPayloadSchema>
 
+/** Renderer-generated identity for one drag gesture within a visibility generation. */
+export const widgetDragGestureIdSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+export type WidgetDragGestureId = z.infer<typeof widgetDragGestureIdSchema>
+
 /** One renderer-local phase before it is bound to a visibility generation. */
 export const widgetDragPhaseSchema = z.discriminatedUnion('phase', [
-  z.object({ phase: z.literal('start') }).strict(),
-  z.object({ phase: z.literal('move') }).strict(),
-  z.object({ phase: z.literal('end') }).strict(),
+  z.object({ phase: z.literal('start'), gestureId: widgetDragGestureIdSchema }).strict(),
+  z.object({ phase: z.literal('move'), gestureId: widgetDragGestureIdSchema }).strict(),
+  z.object({ phase: z.literal('end'), gestureId: widgetDragGestureIdSchema }).strict(),
 ])
 export type WidgetDragPhase = z.infer<typeof widgetDragPhaseSchema>
 
@@ -174,18 +178,21 @@ export const widgetDragSchema = z.discriminatedUnion('phase', [
     .object({
       phase: z.literal('start'),
       generation: widgetVisibilityGenerationSchema,
+      gestureId: widgetDragGestureIdSchema,
     })
     .strict(),
   z
     .object({
       phase: z.literal('move'),
       generation: widgetVisibilityGenerationSchema,
+      gestureId: widgetDragGestureIdSchema,
     })
     .strict(),
   z
     .object({
       phase: z.literal('end'),
       generation: widgetVisibilityGenerationSchema,
+      gestureId: widgetDragGestureIdSchema,
     })
     .strict(),
 ])

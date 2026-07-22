@@ -10,9 +10,20 @@ import {
 import type { WidgetDragPhase } from '../../../shared/contracts'
 
 const DRAG_THRESHOLD_PX = 4
+let nextWidgetDragGestureId = 0
+
+function allocateWidgetDragGestureId(): number {
+  const gestureId = nextWidgetDragGestureId
+  nextWidgetDragGestureId =
+    nextWidgetDragGestureId === Number.MAX_SAFE_INTEGER
+      ? 0
+      : nextWidgetDragGestureId + 1
+  return gestureId
+}
 
 interface ActiveGesture {
   readonly pointerId: number
+  readonly gestureId: number
   readonly startX: number
   readonly startY: number
   readonly captureTarget: HTMLElement
@@ -76,7 +87,7 @@ export function useWidgetDragGesture(
       if (current === null || !current.movePending) return
       current.movePending = false
       current.frameId = null
-      onDragRef.current?.({ phase: 'move' })
+      onDragRef.current?.({ phase: 'move', gestureId: current.gestureId })
     })
   }
 
@@ -99,9 +110,11 @@ export function useWidgetDragGesture(
       }
     }
     try {
-      if (active.movePending) dispatch(() => onDragRef.current?.({ phase: 'move' }))
+      if (active.movePending) {
+        dispatch(() => onDragRef.current?.({ phase: 'move', gestureId: active.gestureId }))
+      }
       if (active.dragging) {
-        dispatch(() => onDragRef.current?.({ phase: 'end' }))
+        dispatch(() => onDragRef.current?.({ phase: 'end', gestureId: active.gestureId }))
         dispatch(() => onDragFinishedRef.current?.())
       }
     } finally {
@@ -133,7 +146,7 @@ export function useWidgetDragGesture(
       if (Math.hypot(movementX, movementY) <= DRAG_THRESHOLD_PX) return
       active.dragging = true
       setDragging(true)
-      onDragRef.current?.({ phase: 'start' })
+      onDragRef.current?.({ phase: 'start', gestureId: active.gestureId })
     }
     queueMove()
   }
@@ -155,6 +168,7 @@ export function useWidgetDragGesture(
     suppressClickRef.current = false
     activeRef.current = {
       pointerId: event.pointerId,
+      gestureId: allocateWidgetDragGestureId(),
       startX: event.screenX,
       startY: event.screenY,
       captureTarget: event.currentTarget,

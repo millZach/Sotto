@@ -190,12 +190,30 @@ function setWidgetPresentation(
   manager.setWidgetPresentation({ presentation, generation })
 }
 
+const dragGestureStates = new WeakMap<
+  WindowManager,
+  { activeGestureId: number | null; nextGestureId: number }
+>()
+
 function reportWidgetDrag(
   manager: WindowManager,
   phase: 'start' | 'move' | 'end',
   generation = currentWidgetVisibilityGeneration(manager),
 ): void {
-  manager.reportWidgetDrag({ phase, generation })
+  const state = dragGestureStates.get(manager) ?? {
+    activeGestureId: null,
+    nextGestureId: 0,
+  }
+  dragGestureStates.set(manager, state)
+  if (phase === 'start') {
+    state.activeGestureId = state.nextGestureId
+    state.nextGestureId += 1
+  }
+  const gestureId = state.activeGestureId ?? state.nextGestureId
+  manager.reportWidgetDrag({ phase, generation, gestureId })
+  if (phase === 'end' && state.activeGestureId === gestureId) {
+    state.activeGestureId = null
+  }
 }
 
 interface GenerationBoundWindowManager {
@@ -206,6 +224,7 @@ interface GenerationBoundWindowManager {
   reportWidgetDrag(report: {
     readonly phase: 'start' | 'move' | 'end'
     readonly generation: number
+    readonly gestureId: number
   }): void
 }
 
@@ -530,9 +549,9 @@ describe('WindowManager cursor monitor following', () => {
     adapter.getDisplayNearestPoint.mockClear()
 
     const stale = generationBound(manager)
-    stale.reportWidgetDrag({ phase: 'start', generation: 1 })
-    stale.reportWidgetDrag({ phase: 'move', generation: 1 })
-    stale.reportWidgetDrag({ phase: 'end', generation: 1 })
+    stale.reportWidgetDrag({ phase: 'start', generation: 1, gestureId: 0 })
+    stale.reportWidgetDrag({ phase: 'move', generation: 1, gestureId: 0 })
+    stale.reportWidgetDrag({ phase: 'end', generation: 1, gestureId: 0 })
 
     expect(widget.bounds).toEqual({ x: 438, y: 730, width: 124, height: 54 })
     expect(widget.setPosition).not.toHaveBeenCalled()
@@ -1596,6 +1615,35 @@ describe('WindowManager lifecycle', () => {
     reportWidgetDrag(manager, 'start')
     cursor.current = { x: 315, y: 180 }
     reportWidgetDrag(manager, 'move')
+
+    expect(widget.setPosition).toHaveBeenCalledOnce()
+    expect(widget.setPosition).toHaveBeenCalledWith(1_415, 680, false)
+  })
+
+  it('ignores a delayed end from an earlier gesture in the current visibility generation', async () => {
+    const cursor = { current: { x: 100, y: 100 } }
+    const { manager, windows } = createHarness({
+      display: {
+        getCursorScreenPoint: () => ({ ...cursor.current }),
+        getDisplayNearestPoint: () => ({
+          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
+        }),
+      },
+    })
+    await manager.showWidget()
+    setWidgetPresentation(manager, 'idle-hovered')
+    const widget = windows[0]!
+    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
+    const generation = currentWidgetVisibilityGeneration(manager)
+    const drag = generationBound(manager)
+
+    drag.reportWidgetDrag({ phase: 'start', generation, gestureId: 1 })
+    widget.bounds = { x: 1_400, y: 700, width: 248, height: 76 }
+    cursor.current = { x: 300, y: 200 }
+    drag.reportWidgetDrag({ phase: 'start', generation, gestureId: 2 })
+    drag.reportWidgetDrag({ phase: 'end', generation, gestureId: 1 })
+    cursor.current = { x: 315, y: 180 }
+    drag.reportWidgetDrag({ phase: 'move', generation, gestureId: 2 })
 
     expect(widget.setPosition).toHaveBeenCalledOnce()
     expect(widget.setPosition).toHaveBeenCalledWith(1_415, 680, false)

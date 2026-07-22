@@ -418,7 +418,7 @@ describe('typed preload bridge', () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: true })
     await bridge.setPresentation({ presentation: 'idle-hovered', generation: 7 })
-    await bridge.reportDrag({ phase: 'move', generation: 7 })
+    await bridge.reportDrag({ phase: 'move', generation: 7, gestureId: 9 })
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
       WIDGET_PRESENTATION,
@@ -427,7 +427,7 @@ describe('typed preload bridge', () => {
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       5,
       WIDGET_DRAG,
-      { phase: 'move', generation: 7 },
+      { phase: 'move', generation: 7, gestureId: 9 },
     )
   })
 
@@ -462,7 +462,11 @@ describe('typed preload bridge', () => {
       presentation: 'active',
       generation: 4,
     })).resolves.toEqual({ ok: true })
-    await expect(bridge.reportDrag({ phase: 'move', generation: 4 })).resolves.toEqual({ ok: true })
+    await expect(bridge.reportDrag({
+      phase: 'move',
+      generation: 4,
+      gestureId: 2,
+    })).resolves.toEqual({ ok: true })
 
     for (const payload of [
       { presentation: 'active' },
@@ -474,9 +478,12 @@ describe('typed preload bridge', () => {
     }
     for (const payload of [
       { phase: 'move' },
-      { phase: 'move', generation: -1 },
-      { phase: 'move', generation: 1.5 },
-      { phase: 'move', generation: 4, extra: true },
+      { phase: 'move', generation: 4 },
+      { phase: 'move', generation: -1, gestureId: 2 },
+      { phase: 'move', generation: 1.5, gestureId: 2 },
+      { phase: 'move', generation: 4, gestureId: -1 },
+      { phase: 'move', generation: 4, gestureId: 1.5 },
+      { phase: 'move', generation: 4, gestureId: 2, extra: true },
     ]) {
       await expect(bridge.reportDrag(payload)).rejects.toThrow()
     }
@@ -2849,7 +2856,7 @@ describe('widget presentation and drag channels', () => {
     })
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
     const presentation = { presentation: 'active', generation: 9 } as const
-    const drag = { phase: 'move', generation: 9 } as const
+    const drag = { phase: 'move', generation: 9, gestureId: 4 } as const
 
     await expect(
       harness.ipc.invoke(WIDGET_PRESENTATION, presentation, widgetEvent),
@@ -2872,9 +2879,12 @@ describe('widget presentation and drag channels', () => {
     }
     for (const payload of [
       { phase: 'move' },
-      { phase: 'move', generation: -1 },
-      { phase: 'move', generation: 1.5 },
-      { phase: 'move', generation: 9, extra: true },
+      { phase: 'move', generation: 9 },
+      { phase: 'move', generation: -1, gestureId: 4 },
+      { phase: 'move', generation: 1.5, gestureId: 4 },
+      { phase: 'move', generation: 9, gestureId: -1 },
+      { phase: 'move', generation: 9, gestureId: 1.5 },
+      { phase: 'move', generation: 9, gestureId: 4, extra: true },
     ]) {
       await expect(
         harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
@@ -3090,9 +3100,9 @@ describe('widget presentation and drag channels', () => {
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'start', generation: 5 },
-      { phase: 'move', generation: 5 },
-      { phase: 'end', generation: 5 },
+      { phase: 'start', generation: 5, gestureId: 8 },
+      { phase: 'move', generation: 5, gestureId: 8 },
+      { phase: 'end', generation: 5, gestureId: 8 },
     ] as const) {
       await expect(
         harness.ipc.invoke(WIDGET_DRAG, payload, widgetEvent),
@@ -3127,11 +3137,12 @@ describe('widget presentation and drag channels', () => {
     const widgetEvent = { sender: widgetContents, senderFrame: widgetFrame }
 
     for (const payload of [
-      { phase: 'hover', generation: 1 },
-      { phase: 'move', generation: 1, x: 1, y: 0 },
-      { phase: 'move', generation: 1, extra: true },
-      { phase: 'start', generation: 1, x: 1, y: 1 },
-      { phase: 'end', generation: 1, extra: true },
+      { phase: 'hover', generation: 1, gestureId: 3 },
+      { phase: 'move', generation: 1, gestureId: 3, x: 1, y: 0 },
+      { phase: 'move', generation: 1, gestureId: 3, extra: true },
+      { phase: 'start', generation: 1, gestureId: 3, x: 1, y: 1 },
+      { phase: 'end', generation: 1, gestureId: 3, extra: true },
+      { phase: 'move', generation: 1 },
       { phase: 'move' },
       'start',
       null,
@@ -3159,7 +3170,7 @@ describe('widget presentation and drag channels', () => {
     })
 
     await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 0 }, {
+      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 0, gestureId: 0 }, {
         sender: widgetContents,
         senderFrame: widgetFrame,
       }),

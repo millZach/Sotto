@@ -363,9 +363,9 @@ describe('WidgetApp', () => {
 
     expect(onToggle).not.toHaveBeenCalled()
     expect(onDrag.mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start', generation: 0 },
-      { phase: 'move', generation: 0 },
-      { phase: 'end', generation: 0 },
+      { phase: 'start', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'move', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'end', generation: 0, gestureId: expect.any(Number) },
     ])
 
     // The suppression is consumed by the drag's own click; the next plain
@@ -395,7 +395,7 @@ describe('WidgetApp', () => {
     fireEvent.pointerUp(capsule, { pointerId: 2, screenX: 40, screenY: 10 })
     fireEvent.click(capsule)
     expect(onStop).not.toHaveBeenCalled()
-    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0 })
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0, gestureId: expect.any(Number) })
 
     onDrag.mockClear()
     const stop = screen.getByRole('button', { name: 'Stop dictation' })
@@ -598,7 +598,7 @@ describe('WidgetApp', () => {
     fireEvent.pointerMove(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
     fireEvent.pointerUp(sliver, { pointerId: 9, screenX: 40, screenY: 10 })
 
-    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0 })
+    expect(onDrag).toHaveBeenLastCalledWith({ phase: 'end', generation: 0, gestureId: expect.any(Number) })
     expect(sliver).not.toHaveAttribute('data-expanded')
   })
 })
@@ -701,9 +701,9 @@ describe('WidgetEntry', () => {
     fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     fireEvent.pointerUp(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start', generation: 0 },
-      { phase: 'move', generation: 0 },
-      { phase: 'end', generation: 0 },
+      { phase: 'start', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'move', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'end', generation: 0, gestureId: expect.any(Number) },
     ])
     expect(bridge.requestToggle).not.toHaveBeenCalled()
   })
@@ -769,9 +769,9 @@ describe('WidgetEntry', () => {
     act(() => visibilityListener?.({ visible: false, generation: 8 }))
 
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start', generation: 7 },
-      { phase: 'move', generation: 7 },
-      { phase: 'end', generation: 7 },
+      { phase: 'start', generation: 7, gestureId: expect.any(Number) },
+      { phase: 'move', generation: 7, gestureId: expect.any(Number) },
+      { phase: 'end', generation: 7, gestureId: expect.any(Number) },
     ])
   })
 
@@ -859,9 +859,9 @@ describe('WidgetEntry', () => {
 
     expect(container.querySelector('.widget-shell')).not.toHaveAttribute('data-dragging')
     expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
-      { phase: 'start', generation: 0 },
-      { phase: 'move', generation: 0 },
-      { phase: 'end', generation: 0 },
+      { phase: 'start', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'move', generation: 0, gestureId: expect.any(Number) },
+      { phase: 'end', generation: 0, gestureId: expect.any(Number) },
     ])
     fireEvent.pointerUp(window, { pointerId: 3 })
     expect(vi.mocked(bridge.reportDrag).mock.calls.filter(

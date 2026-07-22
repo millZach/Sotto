@@ -93,3 +93,65 @@ Tests:
 - `tests/unit/renderer/widgetDragGesture.test.tsx`
 - `tests/integration/ipc.test.ts`
 - `tests/integration/nativeRendererRecovery.test.ts`
+
+## Follow-up: per-gesture drag ownership
+
+### Protocol repair
+
+- Every renderer drag phase now carries a renderer-generated non-negative safe-integer `gestureId` in addition to the visibility `generation`.
+- The renderer uses one `gestureId` for start, coalesced moves, terminal flushes, and end, then allocates a different ID for the next gesture.
+- Main retains the visibility generation as the outer epoch and requires both generation and gesture ID to match active ownership before applying a move or accepting an end.
+- A repeated start in the same visibility generation can replace ownership, while a delayed end from the earlier gesture can no longer clear or snap the replacement gesture.
+- Strict preload and main IPC validation now rejects missing, negative, fractional, and extra-field gesture identifiers.
+
+### RED evidence
+
+Focused main-process regression:
+
+```text
+npm test -- --run tests/unit/main/windowManager.test.ts -t "ignores a delayed end from an earlier gesture in the current visibility generation"
+```
+
+Observed before production edits: 1 failed, 101 skipped. The replacement gesture's move made 0 `setPosition` calls after the delayed earlier end cleared ownership.
+
+Focused renderer and IPC regressions:
+
+```text
+npm test -- --run tests/unit/renderer/widgetDragGesture.test.tsx tests/integration/ipc.test.ts -t "renderer-generated gesture ID|strictly validates generation-bound|creates a frozen least-privilege widget surface"
+```
+
+Observed before production edits: 3 failed, 123 skipped. Renderer phases had no gesture ID, and strict preload validation rejected the new valid gesture-ID payloads.
+
+### GREEN evidence
+
+Directly covering tests:
+
+```text
+npm test -- --run tests/unit/main/windowManager.test.ts tests/unit/renderer/widgetApp.test.tsx tests/unit/renderer/widgetDragGesture.test.tsx tests/integration/ipc.test.ts tests/integration/nativeRendererRecovery.test.ts
+```
+
+Result: 5 files passed, 291 tests passed, 0 failed.
+
+Type checking:
+
+```text
+npm run typecheck
+```
+
+Result: passed (`tsc --noEmit` for both node and web configurations).
+
+Lint:
+
+```text
+npm run lint
+```
+
+Result: passed (`eslint .`).
+
+Patch validation:
+
+```text
+git diff --check
+```
+
+Result: passed. Git emitted only the repository's existing LF-to-CRLF working-copy warnings for the drag gesture source and test.

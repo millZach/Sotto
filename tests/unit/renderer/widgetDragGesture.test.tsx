@@ -107,9 +107,36 @@ describe('useWidgetDragGesture', () => {
     beginDrag(surface)
     fireEvent.pointerMove(surface, { pointerId: 1, screenX: 130, screenY: 140 })
 
-    expect(payloads(onDrag)).toEqual([{ phase: 'start' }])
+    expect(payloads(onDrag)).toEqual([{ phase: 'start', gestureId: expect.any(Number) }])
     expect(surface).toHaveAttribute('data-dragging', 'true')
     expect(surface).toHaveAttribute('data-drag-active', 'true')
+  })
+
+  it('uses one renderer-generated gesture ID for every phase and a new ID for the next gesture', () => {
+    const onDrag = vi.fn()
+    render(<Harness onDrag={onDrag} />)
+    const surface = screen.getByTestId('surface')
+
+    beginDrag(surface, 1)
+    fireEvent.pointerUp(surface, { pointerId: 1, screenX: 105, screenY: 100 })
+    beginDrag(surface, 2)
+    fireEvent.pointerUp(surface, { pointerId: 2, screenX: 105, screenY: 100 })
+
+    const reports = payloads(onDrag) as Array<WidgetDragPhase & { readonly gestureId?: number }>
+    const firstGesture = reports.slice(0, 3)
+    const secondGesture = reports.slice(3, 6)
+    expect(firstGesture.map((report) => report.gestureId)).toEqual([
+      firstGesture[0]?.gestureId,
+      firstGesture[0]?.gestureId,
+      firstGesture[0]?.gestureId,
+    ])
+    expect(firstGesture[0]?.gestureId).toEqual(expect.any(Number))
+    expect(secondGesture.map((report) => report.gestureId)).toEqual([
+      secondGesture[0]?.gestureId,
+      secondGesture[0]?.gestureId,
+      secondGesture[0]?.gestureId,
+    ])
+    expect(secondGesture[0]?.gestureId).not.toBe(firstGesture[0]?.gestureId)
   })
 
   it('coalesces high-frequency moves into one move per animation frame', () => {
@@ -121,18 +148,18 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerMove(surface, { pointerId: 1, screenX: 120, screenY: 100 })
     fireEvent.pointerMove(surface, { pointerId: 1, screenX: 140, screenY: 100 })
     expect(frames.pendingCount()).toBe(1)
-    expect(payloads(onDrag)).toEqual([{ phase: 'start' }])
+    expect(payloads(onDrag)).toEqual([{ phase: 'start', gestureId: expect.any(Number) }])
 
     frames.flushNext()
-    expect(payloads(onDrag)).toEqual([{ phase: 'start' }, { phase: 'move' }])
+    expect(payloads(onDrag)).toEqual([{ phase: 'start', gestureId: expect.any(Number) }, { phase: 'move', gestureId: expect.any(Number) }])
 
     fireEvent.pointerMove(surface, { pointerId: 1, screenX: 160, screenY: 100 })
     expect(frames.pendingCount()).toBe(1)
     frames.flushNext()
     expect(payloads(onDrag)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'move' },
+      { phase: 'start', gestureId: expect.any(Number) },
+      { phase: 'move', gestureId: expect.any(Number) },
+      { phase: 'move', gestureId: expect.any(Number) },
     ])
   })
 
@@ -146,9 +173,9 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(surface, { pointerId: 1, screenX: 105, screenY: 100 })
 
     expect(payloads(onDrag)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', gestureId: expect.any(Number) },
+      { phase: 'move', gestureId: expect.any(Number) },
+      { phase: 'end', gestureId: expect.any(Number) },
     ])
     expect(frames.pendingCount()).toBe(0)
     frames.flushNext()
@@ -212,9 +239,9 @@ describe('useWidgetDragGesture', () => {
 
       expect(errors.map((error) => error.message)).toEqual(['queued move callback failed'])
       expect(payloads(onDrag)).toEqual([
-        { phase: 'start' },
-        { phase: 'move' },
-        { phase: 'end' },
+        { phase: 'start', gestureId: expect.any(Number) },
+        { phase: 'move', gestureId: expect.any(Number) },
+        { phase: 'end', gestureId: expect.any(Number) },
       ])
       expect(onDragFinished).toHaveBeenCalledOnce()
       expect(surface).not.toHaveAttribute('data-dragging')
@@ -242,9 +269,9 @@ describe('useWidgetDragGesture', () => {
     fireEvent.pointerUp(window, { pointerId: 7, screenX: 20, screenY: 10 })
 
     expect(payloads(onDrag)).toEqual([
-      { phase: 'start' },
-      { phase: 'move' },
-      { phase: 'end' },
+      { phase: 'start', gestureId: expect.any(Number) },
+      { phase: 'move', gestureId: expect.any(Number) },
+      { phase: 'end', gestureId: expect.any(Number) },
     ])
   })
 
