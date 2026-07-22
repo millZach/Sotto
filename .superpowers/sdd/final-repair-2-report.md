@@ -357,3 +357,226 @@ Before commit, `git diff --check` exited `0`; status showed only `src/main/windo
 ### Concerns
 
 No unresolved follow-up repair concern.
+
+---
+
+## Whole-branch follow-up repair: native reveal, capture, and moved-event recovery
+
+### Status
+
+DONE
+
+- Date: 2026-07-21
+- Branch: `fix/window-controls-pill-drag`
+- Base commit: `d72d3140f641b08be627cb8f5bc6c0af8d4d8bcb`
+- Repair commit: `9a90a0f59a5cf49d447f944cebbb9049a8b55157`
+- Repair commit subject: `fix: harden widget reveal and move recovery`
+- Amend performed: no
+- Push performed: no
+- Tracked working tree after the repair commit: clean before this report append
+
+### Findings repaired
+
+1. **A failed native reveal permanently suppressed later reveals and monitor startup**
+   - `showWidget()` continues publishing renderer visibility before the native transition, preserving the approved ordering.
+   - Logical visibility is now committed only after `showInactive()` succeeds.
+   - A thrown native reveal publishes a compensating hidden notification, leaves drag IPC rejected, and leaves the monitor stopped so a later reveal can retry cleanly.
+   - The next successful reveal calls `showInactive()` again, starts exactly one 100 ms monitor timer, and follows the cursor monitor normally.
+
+2. **Lost pointer capture allowed the completed drag press to click the widget**
+   - `lostpointercapture` now uses the completed-pointer terminal path.
+   - A gesture that already crossed the drag threshold arms the existing one-shot click suppression before idempotent cleanup.
+   - Capture loss before the threshold remains a click because suppression is still conditional on an active completed drag.
+
+3. **Hidden native moved events snapped the window and rewrote the remembered edge**
+   - The native `moved` handler no longer snaps or persists placement while logical widget visibility is false.
+   - It invalidates only the last-applied-bounds cache, allowing the next explicit reveal to reapply the remembered edge instead of trusting a hidden OS relocation.
+   - Visible external moves continue snapping and persisting through the existing coordinator path.
+
+4. **A moved-event bounds readback error left a stale cache and blocked recovery**
+   - A thrown `getBounds()` in the native `moved` handler now invalidates `widgetLastAppliedBounds` before returning.
+   - The next same-monitor 100 ms tick therefore reapplies the semantic target instead of mistaking the pre-move cache for the current native rectangle.
+
+### Files changed
+
+Production:
+
+- `D:/Talk to Text Application/src/main/windows/windowManager.ts`
+- `D:/Talk to Text Application/src/renderer/src/widget/useWidgetDragGesture.ts`
+
+Tests:
+
+- `D:/Talk to Text Application/tests/unit/main/windowManager.test.ts`
+- `D:/Talk to Text Application/tests/unit/renderer/widgetDragGesture.test.tsx`
+
+Report:
+
+- `D:/Talk to Text Application/.superpowers/sdd/final-repair-2-report.md`
+
+### Test-driven development evidence
+
+Production code was unchanged until each supplied behavior had focused regression coverage and the regression was observed failing for the reviewed symptom.
+
+#### Native reveal rollback RED
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "rolls back a failed native reveal so a later reveal retries and restarts monitoring"
+```
+
+Exit `1`: 1 failed, 86 skipped.
+
+The first `showInactive()` threw and the renderer received no compensating hidden state:
+
+```text
+expected 2nd "vi.fn()" call to have been called with
+[ 'talktype:widget:visibility', false ], but called only 1 times
+```
+
+#### Native reveal rollback GREEN
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "rolls back a failed native reveal so a later reveal retries and restarts monitoring"
+```
+
+Exit `0`: 1 passed, 87 skipped.
+
+The regression proves the failed attempt publishes `true` then `false`, leaves zero monitor timers and no drag ownership, and that the next attempt publishes `true`, calls `showInactive()` a second time, starts one timer, and follows the cursor on the next tick.
+
+#### Lost-capture click suppression RED
+
+```text
+npm test -- tests/unit/renderer/widgetDragGesture.test.tsx -t "suppresses the click that follows lost pointer capture after a completed drag"
+```
+
+Exit `1`: 1 failed, 15 skipped.
+
+After threshold movement, `lostpointercapture`, pointer-up, and click, the widget action still ran once:
+
+```text
+expected "vi.fn()" to not be called at all, but actually been called 1 times
+```
+
+#### Lost-capture click suppression GREEN
+
+```text
+npm test -- tests/unit/renderer/widgetDragGesture.test.tsx -t "suppresses the click that follows lost pointer capture after a completed drag"
+```
+
+Exit `0`: 1 passed, 15 skipped.
+
+The first synthetic click is suppressed and the following independent click is delivered once.
+
+#### Hidden moved-event RED
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "ignores native moved events while the widget is hidden"
+```
+
+Exit `1`: 1 failed, 86 skipped.
+
+The hidden moved event performed the reviewed left-edge snap:
+
+```text
+{ x: 16, y: 338, width: 54, height: 124 }
+```
+
+A second focused regression also failed before production changes:
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies the remembered edge after a hidden native move"
+```
+
+Exit `1`: 1 failed, 87 skipped. The next reveal issued no bottom-edge `setBounds()` recovery.
+
+#### Hidden moved-event GREEN
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "ignores native moved events while the widget is hidden"
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies the remembered edge after a hidden native move"
+```
+
+Each command exited `0`: 1 passed, 87 skipped.
+
+The regressions prove hidden native movement performs no snap or persistence and that the next reveal restores the centered remembered bottom edge.
+
+#### Moved-event readback RED
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies desired bounds after a moved-event readback failure"
+```
+
+Exit `1`: 1 failed, 86 skipped.
+
+After the one-time `getBounds()` failure, the next same-monitor tick made zero `setBounds()` calls.
+
+#### Moved-event readback GREEN
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts -t "reapplies desired bounds after a moved-event readback failure"
+```
+
+Exit `0`: 1 passed, 87 skipped.
+
+The next monitor tick reapplies `{ x: 438, y: 730, width: 124, height: 54 }` and restores the native fake window.
+
+### Final verification commands and results
+
+#### Complete modified unit suites
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts tests/unit/renderer/widgetDragGesture.test.tsx
+```
+
+Exit `0`: 2 files passed, 104 tests passed.
+
+#### All affected widget interaction suites
+
+```text
+npm test -- tests/unit/main/windowManager.test.ts tests/unit/renderer/widgetApp.test.tsx tests/unit/renderer/widgetDragGesture.test.tsx tests/integration/ipc.test.ts tests/integration/nativeRendererRecovery.test.ts
+```
+
+Exit `0`: 5 files passed, 272 tests passed.
+
+#### Typecheck
+
+```text
+npm run typecheck
+```
+
+Exit `0`: both Node and web TypeScript projects completed without diagnostics.
+
+#### Lint
+
+```text
+npm run lint
+```
+
+Exit `0`: ESLint completed without errors or warnings.
+
+#### Diff and branch checks
+
+```text
+git diff --check
+git status --short --branch
+git rev-parse HEAD
+```
+
+Before the repair commit, `git diff --check` exited `0`; status showed only the two production files and two regression-test files modified on `fix/window-controls-pill-drag`. Repair commit `9a90a0f59a5cf49d447f944cebbb9049a8b55157` was then created with the required co-author trailer, without amend or push, and the tracked working tree was clean before this report append.
+
+### Self-review
+
+- Re-read the approved design, implementation plan, prior repair evidence, current coordinator and gesture source, and their focused tests before editing.
+- Verified all four supplied findings against base commit `d72d3140f641b08be627cb8f5bc6c0af8d4d8bcb` and observed each new regression fail for the expected symptom.
+- Preserved renderer-before-native reveal notification ordering while adding a compensating hidden notification only when the native reveal throws.
+- Confirmed failed reveals remain logically hidden, reject drag IPC, leave no timer, and do not suppress a later explicit reveal.
+- Confirmed lost capture suppresses exactly one click only after threshold-classified dragging; pointer cancellation, blur, document hiding, unmount, and non-drag capture loss retain their existing cleanup behavior.
+- Confirmed hidden native moves neither snap nor persist an edge, while cache invalidation lets the next reveal restore the remembered placement.
+- Confirmed visible external moves still snap and persist, including the existing recursive moved-event guard.
+- Confirmed both drag-move and native moved-event readback failures now leave the cache invalidated for the next monitor recovery tick.
+- Kept the 100 ms monitor interval, centered edge geometry, presentation footprints, storage schema, IPC contracts, and dictation controls unchanged.
+- Added no dependency, channel, payload field, visual baseline, or unrelated behavior.
+- No branch or worktree was created or switched, and no amend, force update, or push was performed.
+
+### Concerns
+
+No unresolved follow-up repair concern.
