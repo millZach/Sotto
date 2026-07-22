@@ -60,6 +60,7 @@ import {
   WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
   WIDGET_STATE,
+  WIDGET_VISIBILITY,
 } from '../../src/shared/channels'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
@@ -376,6 +377,7 @@ describe('typed preload bridge', () => {
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'onWidgetState',
+        'onWidgetVisibilityChange',
         'reportDrag',
         'requestCancel',
         'requestStop',
@@ -462,10 +464,9 @@ describe('typed preload bridge', () => {
       ['electron', '--talktype-renderer-role=widget'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktypeWidget', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(1)
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
-      WIDGET_STATE,
-      expect.any(Function),
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(2)
+    expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
+      [WIDGET_STATE, WIDGET_VISIBILITY].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
@@ -517,6 +518,7 @@ describe('typed preload bridge', () => {
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
     const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
     const listener = vi.fn()
+    const visibilityListener = vi.fn()
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce({
       ...DEFAULT_SETTINGS,
       theme: 'dark',
@@ -525,12 +527,17 @@ describe('typed preload bridge', () => {
     await bridge.updateSettings({ theme: 'dark' })
     const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     const unsubscribe = widgetBridge.onWidgetState(listener)
+    const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
 
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(SETTINGS_UPDATE, {
       theme: 'dark',
     })
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
       'talktype:widget:state',
+      expect.any(Function),
+    )
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+      WIDGET_VISIBILITY,
       expect.any(Function),
     )
 
@@ -554,8 +561,19 @@ describe('typed preload bridge', () => {
     wrappedListener?.({}, idleWidgetSnapshot, { extra: true })
     expect(listener).toHaveBeenCalledTimes(1)
 
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
+    )?.[1]
+    visibilityEvent?.({}, false)
+    visibilityEvent?.({}, 'hidden')
+    visibilityEvent?.({}, true, { extra: true })
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith(false)
+
     unsubscribe()
     unsubscribe()
+    unsubscribeVisibility()
+    unsubscribeVisibility()
     expect(electronMock.ipcRenderer.removeListener).not.toHaveBeenCalled()
   })
 
@@ -564,6 +582,9 @@ describe('typed preload bridge', () => {
     const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,
+    )?.[1]
+    const visibilityEvent = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === WIDGET_VISIBILITY,
     )?.[1]
     const commandEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === DICTATION_COMMAND,
@@ -574,17 +595,24 @@ describe('typed preload bridge', () => {
     } as const
     widgetEvent?.({}, listening)
     widgetEvent?.({}, idleWidgetSnapshot)
+    visibilityEvent?.({}, false)
+    visibilityEvent?.({}, true)
     commandEvent?.({}, { type: 'start' })
     commandEvent?.({}, { type: 'stop' })
     const widgetListener = vi.fn()
+    const visibilityListener = vi.fn()
     const commandListener = vi.fn()
     const unsubscribeWidget = widgetBridge.onWidgetState(widgetListener)
+    const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
     const unsubscribeCommand = mainBridge.onDictationCommand(commandListener)
     expect(widgetListener).toHaveBeenCalledOnce()
     expect(widgetListener).toHaveBeenCalledWith(idleWidgetSnapshot)
+    expect(visibilityListener).toHaveBeenCalledOnce()
+    expect(visibilityListener).toHaveBeenCalledWith(true)
     expect(commandListener.mock.calls.map(([command]) => command.type)).toEqual(['start', 'stop'])
     unsubscribeWidget()
     unsubscribeWidget()
+    unsubscribeVisibility()
     unsubscribeCommand()
     commandEvent?.({}, { type: 'cancel' })
     mainBridge.onDictationCommand(commandListener)

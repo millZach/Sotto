@@ -11,6 +11,7 @@ import {
   default as React,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -31,6 +32,7 @@ import type {
 import { useWidgetDragGesture } from './useWidgetDragGesture'
 
 const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
+const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
@@ -127,6 +129,7 @@ export interface WidgetAppProps {
   readonly onCancel?: () => void
   readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
+  readonly dragCancellationVersion?: number
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -288,15 +291,29 @@ export function WidgetApp({
   onCancel,
   onPresentationChange,
   onDrag,
+  dragCancellationVersion,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const orientation = useWidgetOrientation()
   // Hovering the idle sliver expands it in place into a small pill carrying
-  // the click-to-dictate affordance; hover-out collapses it back.
+  // the click-to-dictate affordance. Native resize/re-centering can briefly
+  // synthesize leave/enter events, so collapse waits beyond the CSS transition.
   const [expanded, setExpanded] = useState(false)
+  const hoverInsideRef = useRef(false)
+  const hoverCollapseTimerRef = useRef<number | null>(null)
+  const clearHoverCollapse = (): void => {
+    if (hoverCollapseTimerRef.current === null) return
+    window.clearTimeout(hoverCollapseTimerRef.current)
+    hoverCollapseTimerRef.current = null
+  }
   useEffect(() => {
-    if (!isIdle) setExpanded(false)
+    if (!isIdle) {
+      hoverInsideRef.current = false
+      clearHoverCollapse()
+      setExpanded(false)
+    }
   }, [isIdle])
+  useEffect(() => () => clearHoverCollapse(), [])
   // The idle sliver click starts dictation; the active capsule click stops it.
   // Either surface becomes a drag once movement passes the threshold. When an
   // idle drag ends the window has snapped away from the pointer, so it returns
@@ -305,6 +322,7 @@ export function WidgetApp({
     isIdle ? onToggle : onStop,
     onDrag,
     isIdle ? () => setExpanded(false) : undefined,
+    dragCancellationVersion,
   )
   const presentation: WidgetPresentation = !isIdle
     ? 'active'
@@ -331,11 +349,21 @@ export function WidgetApp({
           data-testid="widget-sliver"
           data-expanded={expanded || undefined}
           tabIndex={-1}
-          onMouseEnter={() => setExpanded(true)}
+          onMouseEnter={() => {
+            hoverInsideRef.current = true
+            clearHoverCollapse()
+            setExpanded(true)
+          }}
           onMouseLeave={() => {
-            if (!surface.isDragActive()) {
-              setExpanded(false)
-            }
+            hoverInsideRef.current = false
+            if (surface.isDragActive()) return
+            clearHoverCollapse()
+            hoverCollapseTimerRef.current = window.setTimeout(() => {
+              hoverCollapseTimerRef.current = null
+              if (!hoverInsideRef.current && !surface.isDragActive()) {
+                setExpanded(false)
+              }
+            }, IDLE_HOVER_SETTLE_MS)
           }}
           onMouseDown={preventFocus}
           {...surface.surfaceProps}
@@ -455,10 +483,18 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
+  const [dragCancellationVersion, setDragCancellationVersion] = useState(0)
 
   useEffect(() => {
     if (preview !== null || bridge === undefined) return undefined
     return bridge.onWidgetState(setLiveSnapshot)
+  }, [bridge, preview])
+
+  useEffect(() => {
+    if (preview !== null || bridge === undefined) return undefined
+    return bridge.onWidgetVisibilityChange((visible) => {
+      if (!visible) setDragCancellationVersion((version) => version + 1)
+    })
   }, [bridge, preview])
 
   useEffect(() => {
@@ -491,7 +527,14 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
   return (
     <>
       <WidgetAnnouncements snapshot={snapshot} />
-      {snapshot === null ? null : <WidgetApp snapshot={snapshot} now={now} {...actions} />}
+      {snapshot === null ? null : (
+        <WidgetApp
+          snapshot={snapshot}
+          now={now}
+          dragCancellationVersion={dragCancellationVersion}
+          {...actions}
+        />
+      )}
     </>
   )
 }

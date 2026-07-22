@@ -303,10 +303,15 @@ describe('native recovery after the main renderer is lost', () => {
       await windows.createWindows()
       await windows.showWidget()
       const lostWidget = nativeWindows[1]!
+      lostWidget.setBounds.mockClear()
       windows.reportWidgetDrag({ phase: 'start' })
       cursor.current = { x: 1_700, y: 970 }
       vi.advanceTimersByTime(100)
       expect(lostWidget.setBounds).toHaveBeenCalledOnce()
+      expect(lostWidget.setBounds).toHaveBeenCalledWith(
+        { x: 376, y: 708, width: 248, height: 76 },
+        false,
+      )
 
       lostWidget.emitRendererGone()
       expect(vi.getTimerCount()).toBe(0)

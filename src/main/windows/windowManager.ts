@@ -1,3 +1,4 @@
+import { WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type { WidgetDragPayload, WidgetPresentation } from '../../shared/contracts'
 import { selectRendererSource, type RendererRole } from '../security'
@@ -104,6 +105,7 @@ export interface BrowserWindowLike {
   isMinimized(): boolean
   restore(): void
   showInactive(): void
+  /** Managed widget geometry uses the renderer content area in Electron DIPs. */
   getBounds(): Rectangle
   setBounds(bounds: Rectangle, animate?: boolean): void
   setPosition(x: number, y: number, animate?: boolean): void
@@ -451,13 +453,16 @@ export class WindowManager {
         this.widgetPresentation,
         WIDGET_EDGE_INSET,
       )
-      this.applyWidgetBounds(widget, desired)
+      if (this.applyWidgetBounds(widget, desired)) {
+        this.widgetWorkArea = workArea
+      }
     }
 
     this.assertRunning()
     const wasVisible = this.widgetVisible
     this.widgetVisible = true
     if (!wasVisible) {
+      this.sendToWidget(WIDGET_VISIBILITY, true)
       widget.showInactive()
       this.startWidgetMonitor()
     }
@@ -477,7 +482,7 @@ export class WindowManager {
 
     const workArea = this.widgetWorkArea ?? this.resolveCurrentWidgetWorkArea()
     if (workArea === null) return
-    this.applyWidgetBounds(
+    if (this.applyWidgetBounds(
       widget,
       placementToBounds(
         this.widgetPlacement,
@@ -485,7 +490,9 @@ export class WindowManager {
         this.widgetPresentation,
         WIDGET_EDGE_INSET,
       ),
-    )
+    )) {
+      this.widgetWorkArea = workArea
+    }
   }
 
   /**
@@ -500,6 +507,27 @@ export class WindowManager {
     }
     if (drag.phase === 'start') {
       try {
+        if (this.widgetVisible && this.widgetPresentation === 'idle-resting') {
+          const workArea = this.widgetWorkArea ?? this.resolveCurrentWidgetWorkArea()
+          if (workArea === null) {
+            this.widgetDrag = null
+            return
+          }
+          this.widgetPresentation = 'idle-hovered'
+          if (!this.applyWidgetBounds(
+            widget,
+            placementToBounds(
+              this.widgetPlacement,
+              workArea,
+              this.widgetPresentation,
+              WIDGET_EDGE_INSET,
+            ),
+          )) {
+            this.widgetDrag = null
+            return
+          }
+          this.widgetWorkArea = workArea
+        }
         const bounds = widget.getBounds()
         this.widgetDrag = {
           windowOrigin: { x: bounds.x, y: bounds.y },
@@ -544,8 +572,14 @@ export class WindowManager {
   }
 
   hideWidget(): void {
+    if (this.widgetVisible) {
+      this.sendToWidget(WIDGET_VISIBILITY, false)
+    }
     this.widgetVisible = false
     this.widgetDrag = null
+    if (this.widgetPresentation === 'idle-hovered') {
+      this.widgetPresentation = 'idle-resting'
+    }
     this.stopWidgetMonitor()
     this.widgetWindow?.hide()
   }
@@ -667,9 +701,7 @@ export class WindowManager {
   private resolveCurrentWidgetWorkArea(): Rectangle | null {
     try {
       const cursor = this.dependencies.display.getCursorScreenPoint()
-      const workArea = this.dependencies.display.getDisplayNearestPoint(cursor).workArea
-      this.widgetWorkArea = workArea
-      return workArea
+      return this.dependencies.display.getDisplayNearestPoint(cursor).workArea
     } catch {
       return this.widgetWorkArea
     }
@@ -703,16 +735,15 @@ export class WindowManager {
     try {
       const cursor = this.dependencies.display.getCursorScreenPoint()
       const workArea = this.dependencies.display.getDisplayNearestPoint(cursor).workArea
-      if (sameRectangle(this.widgetWorkArea, workArea)) return
-
-      this.widgetWorkArea = workArea
       const desired = placementToBounds(
         this.widgetPlacement,
         workArea,
         this.widgetPresentation,
         WIDGET_EDGE_INSET,
       )
-      this.applyWidgetBounds(widget, desired)
+      if (this.applyWidgetBounds(widget, desired)) {
+        this.widgetWorkArea = workArea
+      }
     } catch {
       // Retain last valid bounds and retry on the next tick.
     }
@@ -753,8 +784,9 @@ export class WindowManager {
         WIDGET_EDGE_INSET,
       )
       this.widgetPlacement = placement
-      this.widgetWorkArea = workArea
-      this.applyWidgetBounds(window, desired)
+      if (this.applyWidgetBounds(window, desired)) {
+        this.widgetWorkArea = workArea
+      }
       try {
         this.dependencies.onWidgetMoved(placement)
       } catch {
@@ -769,13 +801,14 @@ export class WindowManager {
     widget: BrowserWindowLike,
     desired: Rectangle,
   ): boolean {
-    if (sameRectangle(this.widgetLastAppliedBounds, desired)) return false
+    if (sameRectangle(this.widgetLastAppliedBounds, desired)) return true
 
     this.widgetProgrammaticTarget = desired
     try {
       widget.setBounds(desired, false)
-      this.widgetLastAppliedBounds = desired
-      return true
+      const applied = widget.getBounds()
+      this.widgetLastAppliedBounds = applied
+      return sameRectangle(applied, desired)
     } catch {
       return false
     } finally {
@@ -789,6 +822,7 @@ export class WindowManager {
         this.widgetWindow = null
         this.widgetVisible = false
         this.widgetDrag = null
+        this.widgetPresentation = 'idle-resting'
         this.stopWidgetMonitor()
       }
       this.runWindowCleanup(window)
@@ -829,6 +863,7 @@ export class WindowManager {
         this.widgetReady = null
         this.widgetVisible = false
         this.widgetDrag = null
+        this.widgetPresentation = 'idle-resting'
         this.stopWidgetMonitor()
       }
       this.disposeWindow(window)

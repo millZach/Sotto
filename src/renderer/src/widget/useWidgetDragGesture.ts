@@ -44,6 +44,7 @@ export function useWidgetDragGesture(
   onClick: (() => void) | undefined,
   onDrag: ((payload: WidgetDragPayload) => void) | undefined,
   onDragFinished?: (() => void) | undefined,
+  cancellationVersion = 0,
 ): WidgetDragGesture {
   const activeRef = useRef<ActiveGesture | null>(null)
   const listenersRef = useRef<TemporaryListeners | null>(null)
@@ -182,6 +183,10 @@ export function useWidgetDragGesture(
       finish()
     }
   }, [])
+
+  useEffect(() => {
+    if (cancellationVersion > 0) finish()
+  }, [cancellationVersion])
 
   return {
     dragging,

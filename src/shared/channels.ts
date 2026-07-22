@@ -20,6 +20,7 @@ export const DICTATION_COMMAND = 'talktype:dictation:command' as const
 
 export const WIDGET_PUBLISH = 'talktype:widget:publish' as const
 export const WIDGET_STATE = 'talktype:widget:state' as const
+export const WIDGET_VISIBILITY = 'talktype:widget:visibility' as const
 export const WIDGET_PRESENTATION = 'talktype:widget:presentation' as const
 export const WIDGET_DRAG = 'talktype:widget:drag' as const
 
@@ -57,6 +58,7 @@ export const IPC_CHANNELS = Object.freeze({
   dictationCommand: DICTATION_COMMAND,
   widgetPublish: WIDGET_PUBLISH,
   widgetState: WIDGET_STATE,
+  widgetVisibility: WIDGET_VISIBILITY,
   widgetPresentation: WIDGET_PRESENTATION,
   widgetDrag: WIDGET_DRAG,
   modelGetStatus: MODEL_GET_STATUS,

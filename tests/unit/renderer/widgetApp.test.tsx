@@ -474,7 +474,8 @@ describe('WidgetApp', () => {
     )
   })
 
-  it('expands the idle sliver on hover into the inline affordance and collapses on hover-out', () => {
+  it('keeps idle hover expanded through a transient leave and collapses after settled hover-out', () => {
+    vi.useFakeTimers()
     const onToggle = vi.fn()
     render(
       <WidgetApp
@@ -492,15 +493,27 @@ describe('WidgetApp', () => {
     expect(screen.getByText('Click to dictate')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
 
+    // Native resize/re-centering can briefly synthesize a leave followed by
+    // re-entry while the 180 ms expansion transition is still running.
+    fireEvent.mouseLeave(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+    act(() => vi.advanceTimersByTime(100))
+    fireEvent.mouseEnter(sliver)
+    act(() => vi.advanceTimersByTime(500))
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+
     // Clicking the expanded pill starts dictation through the same path.
     fireEvent.click(sliver)
     expect(onToggle).toHaveBeenCalledOnce()
 
     fireEvent.mouseLeave(sliver)
+    expect(sliver).toHaveAttribute('data-expanded', 'true')
+    act(() => vi.advanceTimersByTime(500))
     expect(sliver).not.toHaveAttribute('data-expanded')
   })
 
-  it('reports idle-resting at rest and idle-hovered while hovered', () => {
+  it('reports one stable idle-hovered presentation before settled hover-out', () => {
+    vi.useFakeTimers()
     const presentations: WidgetPresentation[] = []
     render(
       <WidgetApp
@@ -515,6 +528,13 @@ describe('WidgetApp', () => {
     fireEvent.mouseEnter(sliver)
     expect(presentations).toEqual(['idle-resting', 'idle-hovered'])
     fireEvent.mouseLeave(sliver)
+    act(() => vi.advanceTimersByTime(100))
+    fireEvent.mouseEnter(sliver)
+    act(() => vi.advanceTimersByTime(500))
+    expect(presentations).toEqual(['idle-resting', 'idle-hovered'])
+
+    fireEvent.mouseLeave(sliver)
+    act(() => vi.advanceTimersByTime(500))
     expect(presentations).toEqual(['idle-resting', 'idle-hovered', 'idle-resting'])
   })
 
@@ -592,6 +612,7 @@ describe('WidgetEntry', () => {
         listener = next
         return unsubscribe
       }),
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -622,6 +643,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -655,6 +677,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -674,6 +697,48 @@ describe('WidgetEntry', () => {
       { phase: 'end' },
     ])
     expect(bridge.requestToggle).not.toHaveBeenCalled()
+  })
+
+  it('terminates the renderer drag gesture when the native widget becomes hidden', () => {
+    let stateListener: ((state: WidgetSnapshot) => void) | null = null
+    let visibilityListener: ((visible: boolean) => void) | null = null
+    const bridge: TalkTypeWidgetBridge = {
+      onWidgetState: (next) => {
+        stateListener = next
+        return () => { stateListener = null }
+      },
+      onWidgetVisibilityChange: (next) => {
+        visibilityListener = next
+        return () => { visibilityListener = null }
+      },
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+
+    act(() => stateListener?.(snapshot({ status: 'idle' })))
+    const sliver = screen.getByTestId('widget-sliver')
+    fireEvent.pointerDown(sliver, {
+      pointerId: 3, button: 0, isPrimary: true, screenX: 50, screenY: 60,
+    })
+    fireEvent.pointerMove(sliver, { pointerId: 3, screenX: 80, screenY: 60 })
+    expect(container.querySelector('.widget-shell')).toHaveAttribute('data-dragging', 'true')
+
+    act(() => visibilityListener?.(false))
+
+    expect(container.querySelector('.widget-shell')).not.toHaveAttribute('data-dragging')
+    expect(vi.mocked(bridge.reportDrag).mock.calls.map(([payload]) => payload)).toEqual([
+      { phase: 'start' },
+      { phase: 'move' },
+      { phase: 'end' },
+    ])
+    fireEvent.pointerUp(window, { pointerId: 3 })
+    expect(vi.mocked(bridge.reportDrag).mock.calls.filter(
+      ([payload]) => payload.phase === 'end',
+    )).toHaveLength(1)
   })
 
   it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
@@ -702,6 +767,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -776,6 +842,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => { listener = null }
       },
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -797,6 +864,7 @@ describe('WidgetEntry', () => {
         listener = next
         return () => undefined
       },
+      onWidgetVisibilityChange: () => () => undefined,
       requestToggle: vi.fn(async () => Promise.reject(new Error('private toggle failure'))),
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),

@@ -33,6 +33,7 @@ import {
   WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
   WIDGET_STATE,
+  WIDGET_VISIBILITY,
 } from '../shared/channels'
 import {
   dictationCommandSchema,
@@ -236,8 +237,15 @@ export function createTalkTypeWidgetBridge(
     widgetSnapshotSchema,
     1,
   )
+  const onWidgetVisibilityChange = createBufferedSubscription(
+    renderer,
+    WIDGET_VISIBILITY,
+    z.boolean(),
+    1,
+  )
   return Object.freeze({
     onWidgetState,
+    onWidgetVisibilityChange,
     requestToggle: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'toggle' }),
     requestStop: () =>
