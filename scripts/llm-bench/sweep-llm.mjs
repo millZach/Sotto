@@ -19,7 +19,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
-import { buildSystemPrompt, buildUserPrompt } from './prompt.mjs'
+import { DICTIONARY, buildSystemPrompt, buildUserPrompt } from './prompt.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = join(HERE, 'fixtures')
@@ -44,7 +44,7 @@ const BASELINES = [
 const EXCLUDE = /(^~|^openrouter\/|coder|codex|-code\b|image|audio|vision|search|agent|thinking|devstral|-her\b|roleplay|guard|embed)/i
 
 function parseArgs(argv) {
-  const args = { limit: 100, survivors: 25, judge: true }
+  const args = { limit: 100, survivors: 25, judge: true, only: null, runs: 1 }
   for (let i = 2; i < argv.length; i++) {
     const [flag, inlineVal] = argv[i].split('=')
     const val = inlineVal ?? argv[i + 1]
@@ -52,6 +52,10 @@ function parseArgs(argv) {
       case '--limit': args.limit = Number(val); if (!inlineVal) i++; break
       case '--survivors': args.survivors = Number(val); if (!inlineVal) i++; break
       case '--no-judge': args.judge = false; break
+      // Head-to-head mode: skip screening, bench only these models (substring
+      // match), all fixtures x --runs, judge everything.
+      case '--only': args.only = val.split(','); if (!inlineVal) i++; break
+      case '--runs': args.runs = Number(val); if (!inlineVal) i++; break
       default: throw new Error(`unknown flag ${flag}`)
     }
   }
@@ -104,7 +108,9 @@ async function fetchCandidates(apiKey, limit) {
   return picked
 }
 
-async function runModel(apiKey, modelId, transcript, timeoutMs, retryWithoutReasoning = true) {
+// reasoningMode: 'off' -> {enabled:false}; 'minimal' -> {effort:'minimal'}
+// (for endpoints where reasoning is mandatory); 'omit' -> no param at all.
+async function runModel(apiKey, modelId, transcript, timeoutMs, reasoningMode = 'off') {
   const body = {
     model: modelId,
     messages: [
@@ -112,7 +118,11 @@ async function runModel(apiKey, modelId, transcript, timeoutMs, retryWithoutReas
       { role: 'user', content: buildUserPrompt(transcript) },
     ],
     max_tokens: 2_000,
-    reasoning: { enabled: false },
+    ...(reasoningMode === 'off'
+      ? { reasoning: { enabled: false } }
+      : reasoningMode === 'minimal'
+        ? { reasoning: { effort: 'minimal' } }
+        : {}),
   }
   const t0 = performance.now()
   try {
@@ -126,10 +136,11 @@ async function runModel(apiKey, modelId, transcript, timeoutMs, retryWithoutReas
     const ms = performance.now() - t0
     if (!res.ok || json.error) {
       const message = json.error?.message ?? `HTTP ${res.status}`
-      // Some hosts reject the unified reasoning param outright; retry bare.
-      if (retryWithoutReasoning && /reasoning/i.test(message)) {
-        delete body.reasoning
-        return runModel(apiKey, modelId, transcript, timeoutMs, false)
+      // Escalate through reasoning modes: mandatory-reasoning endpoints get
+      // minimal effort; hosts that reject the unified param get none at all.
+      if (/reasoning/i.test(message)) {
+        if (reasoningMode === 'off') return runModel(apiKey, modelId, transcript, timeoutMs, 'minimal')
+        if (reasoningMode === 'minimal') return runModel(apiKey, modelId, transcript, timeoutMs, 'omit')
       }
       return { ms, error: message }
     }
@@ -139,6 +150,7 @@ async function runModel(apiKey, modelId, transcript, timeoutMs, retryWithoutReas
       tokens: json.usage?.completion_tokens,
       cost: json.usage?.cost,
       servedBy: json.provider,
+      reasoningMode,
     }
   } catch (e) {
     return { ms: performance.now() - t0, error: e.name === 'TimeoutError' ? 'timeout' : e.message }
@@ -172,6 +184,8 @@ Score the OUTPUT against the RAW transcript from 0-10:
 - 10: flawless cleanup, fully faithful.
 - Deduct heavily (3+) for: added/invented content, dropped meaning, summarizing, unresolved or wrongly-resolved self-corrections, preamble/quotes around the text.
 - Deduct 1-2 for: missed fillers, punctuation/casing mistakes, missed dictionary-word corrections, removed words it should have kept.
+
+The personal dictionary is: ${DICTIONARY.join(', ')}. Correcting a mis-heard or mis-spelled word TOWARD one of these dictionary spellings (e.g. "zack"/"Zach" -> "Zache", "wisper flow" -> "Wispr Flow", "o n n x" -> "onnx") is REQUIRED behavior — never penalize it; penalize leaving the mis-heard spelling in place instead.
 
 Reply with ONLY a JSON object: {"score": <number>, "issue": "<main defect or 'none'>"}`
 
@@ -221,45 +235,65 @@ async function main() {
   const candidates = await fetchCandidates(apiKey, args.limit)
   console.log(`Phase 1: ${candidates.length} candidates from catalog`)
 
-  // ---- phase 2: screen ----
-  const screenFixtures = SCREEN_FIXTURES.map((n) => fixtureByName[n])
-  const screened = await pool(candidates, async (m) => {
-    const runs = []
-    for (const fx of screenFixtures) {
-      const r = await runModel(apiKey, m.id, fx.text, SCREEN_TIMEOUT_MS)
-      runs.push({ fixture: fx.name, ...r })
-      console.log(`[screen] ${m.id}  ${fx.name}  ${r.error ? 'ERR ' + r.error : Math.round(r.ms) + ' ms'}`)
-    }
-    return { model: m, runs }
-  })
+  let survivors
+  let screened = []
+  let passed = []
+  if (args.only) {
+    // Head-to-head: no screening; every listed model runs all fixtures x runs.
+    survivors = candidates
+      .filter((m) => args.only.some((q) => m.id.includes(q)))
+      .map((m) => ({ model: m, runs: [] }))
+    passed = survivors
+    console.log(`Head-to-head: ${survivors.map((s) => s.model.id).join(', ')}`)
+    await pool(
+      survivors.flatMap((s) => fixtures.flatMap((fx) => Array.from({ length: args.runs }, () => ({ s, fx })))),
+      async ({ s, fx }) => {
+        const r = await runModel(apiKey, s.model.id, fx.text, SCREEN_TIMEOUT_MS)
+        s.runs.push({ fixture: fx.name, ...r })
+        console.log(`[deep] ${s.model.id}  ${fx.name}  ${r.error ? 'ERR ' + r.error : Math.round(r.ms) + ' ms'}`)
+      },
+    )
+  } else {
+    // ---- phase 2: screen ----
+    const screenFixtures = SCREEN_FIXTURES.map((n) => fixtureByName[n])
+    screened = await pool(candidates, async (m) => {
+      const runs = []
+      for (const fx of screenFixtures) {
+        const r = await runModel(apiKey, m.id, fx.text, SCREEN_TIMEOUT_MS)
+        runs.push({ fixture: fx.name, ...r })
+        console.log(`[screen] ${m.id}  ${fx.name}  ${r.error ? 'ERR ' + r.error : Math.round(r.ms) + ' ms'}`)
+      }
+      return { model: m, runs }
+    })
 
-  const passed = screened.filter(({ runs }) =>
-    runs.every(
-      (r) =>
-        !r.error &&
-        r.ms <= LATENCY_CEILING_MS &&
-        saneOutput(fixtureByName[r.fixture].text, r.output),
-    ),
-  )
-  passed.sort((a, b) => Math.max(...a.runs.map((r) => r.ms)) - Math.max(...b.runs.map((r) => r.ms)))
-  const survivors = passed.slice(0, args.survivors)
-  for (const id of BASELINES) {
-    if (!survivors.some((s) => s.model.id === id)) {
-      const s = screened.find((x) => x.model.id === id)
-      if (s) survivors.push(s)
+    passed = screened.filter(({ runs }) =>
+      runs.every(
+        (r) =>
+          !r.error &&
+          r.ms <= LATENCY_CEILING_MS &&
+          saneOutput(fixtureByName[r.fixture].text, r.output),
+      ),
+    )
+    passed.sort((a, b) => Math.max(...a.runs.map((r) => r.ms)) - Math.max(...b.runs.map((r) => r.ms)))
+    survivors = passed.slice(0, args.survivors)
+    for (const id of BASELINES) {
+      if (!survivors.some((s) => s.model.id === id)) {
+        const s = screened.find((x) => x.model.id === id)
+        if (s) survivors.push(s)
+      }
     }
+    console.log(`\nPhase 2: ${passed.length}/${candidates.length} passed screen; deep-benching ${survivors.length}`)
+
+    // ---- phase 3: deep bench (remaining fixtures) ----
+    const deepFixtures = fixtures.filter((f) => !SCREEN_FIXTURES.includes(f.name))
+    await pool(survivors, async (s) => {
+      for (const fx of deepFixtures) {
+        const r = await runModel(apiKey, s.model.id, fx.text, SCREEN_TIMEOUT_MS)
+        s.runs.push({ fixture: fx.name, ...r })
+        console.log(`[deep] ${s.model.id}  ${fx.name}  ${r.error ? 'ERR ' + r.error : Math.round(r.ms) + ' ms'}`)
+      }
+    })
   }
-  console.log(`\nPhase 2: ${passed.length}/${candidates.length} passed screen; deep-benching ${survivors.length}`)
-
-  // ---- phase 3: deep bench (remaining fixtures) ----
-  const deepFixtures = fixtures.filter((f) => !SCREEN_FIXTURES.includes(f.name))
-  await pool(survivors, async (s) => {
-    for (const fx of deepFixtures) {
-      const r = await runModel(apiKey, s.model.id, fx.text, SCREEN_TIMEOUT_MS)
-      s.runs.push({ fixture: fx.name, ...r })
-      console.log(`[deep] ${s.model.id}  ${fx.name}  ${r.error ? 'ERR ' + r.error : Math.round(r.ms) + ' ms'}`)
-    }
-  })
 
   // ---- phase 4: judge ----
   if (args.judge) {
@@ -302,9 +336,9 @@ async function main() {
 
   let md = `# LLM formatting sweep — ${new Date().toISOString()}\n\n`
   md += `Screened ${candidates.length} models on ${SCREEN_FIXTURES.join(', ')}; ${passed.length} passed (no errors, <${LATENCY_CEILING_MS} ms, sane output). Deep-benched ${survivors.length} on all ${fixtures.length} fixtures. Judge: ${JUDGE_MODEL}.\n\n`
-  md += `| Model | Avg score | Min score | Median ms | Max ms | $/M in | $/M out | Issues |\n|---|---|---|---|---|---|---|---|\n`
+  md += `| Model | Avg score | Min score | Median ms | Max ms | Errors | $/M in | $/M out | Issues |\n|---|---|---|---|---|---|---|---|---|\n`
   for (const r of rows) {
-    md += `| ${r.baseline ? '**' + r.id + '** (baseline)' : r.id} | ${r.avgScore?.toFixed(2) ?? '—'} | ${r.minScore ?? '—'} | ${r.medianMs === null ? '—' : Math.round(r.medianMs)} | ${r.maxMs === null ? '—' : Math.round(r.maxMs)} | ${(parseFloat(r.pricing?.prompt ?? 0) * 1e6).toFixed(2)} | ${(parseFloat(r.pricing?.completion ?? 0) * 1e6).toFixed(2)} | ${r.issues.join('; ')} |\n`
+    md += `| ${r.baseline ? '**' + r.id + '** (baseline)' : r.id} | ${r.avgScore?.toFixed(2) ?? '—'} | ${r.minScore ?? '—'} | ${r.medianMs === null ? '—' : Math.round(r.medianMs)} | ${r.maxMs === null ? '—' : Math.round(r.maxMs)} | ${r.errors} | ${(parseFloat(r.pricing?.prompt ?? 0) * 1e6).toFixed(2)} | ${(parseFloat(r.pricing?.completion ?? 0) * 1e6).toFixed(2)} | ${r.issues.join('; ')} |\n`
   }
 
   md += `\n## Screen failures\n\n`
@@ -331,7 +365,7 @@ async function main() {
   console.log('\n=== TOP 15 (avg judge score, then latency) ===')
   for (const r of rows.slice(0, 15)) {
     console.log(
-      `${r.avgScore?.toFixed(2) ?? ' — '}  ${String(Math.round(r.medianMs ?? 0)).padStart(5)} ms  ${r.id}${r.baseline ? '  <- baseline' : ''}`,
+      `${r.avgScore?.toFixed(2) ?? ' — '}  ${String(Math.round(r.medianMs ?? 0)).padStart(5)} ms  ${r.errors ? `[${r.errors} ERR] ` : ''}${r.id}${r.baseline ? '  <- baseline' : ''}`,
     )
   }
 }
