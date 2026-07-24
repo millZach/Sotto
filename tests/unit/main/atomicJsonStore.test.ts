@@ -37,7 +37,7 @@ function createStore(
 }
 
 async function createRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-atomic-store-'))
+  const root = await mkdtemp(join(tmpdir(), 'sotto-atomic-store-'))
   roots.push(root)
   return root
 }

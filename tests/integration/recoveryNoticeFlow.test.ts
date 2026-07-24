@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 const roots: string[] = []
 
 async function fixtureRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-recovery-flow-'))
+  const root = await mkdtemp(join(tmpdir(), 'sotto-recovery-flow-'))
   roots.push(root)
   return root
 }

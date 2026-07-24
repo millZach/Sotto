@@ -17,10 +17,10 @@ class FakeWindow implements BrowserWindowLike {
   readonly webContents = {
     mainFrame: {
       parent: null,
-      url: 'file:///C:/TalkType/out/renderer/index.html',
+      url: 'file:///C:/Sotto/out/renderer/index.html',
     },
     send: vi.fn(),
-    getURL: vi.fn(() => 'file:///C:/TalkType/out/renderer/index.html'),
+    getURL: vi.fn(() => 'file:///C:/Sotto/out/renderer/index.html'),
     isDestroyed: vi.fn(() => false),
     setWindowOpenHandler: vi.fn(),
     on: vi.fn(),
@@ -145,9 +145,9 @@ function createHarness(
         workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
       }),
     },
-    preloadPath: 'C:/TalkType/out/preload/index.js',
-    mainHtmlPath: 'C:/TalkType/out/renderer/index.html',
-    widgetHtmlPath: 'C:/TalkType/out/renderer/widget.html',
+    preloadPath: 'C:/Sotto/out/preload/index.js',
+    mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
+    widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
     developmentSources: undefined,
     isPackaged: true,
     log,
@@ -284,13 +284,13 @@ describe('WindowManager construction', () => {
         minWidth: 820,
         minHeight: 560,
         show: false,
-        title: 'TalkType',
+        title: 'Sotto',
         backgroundColor: '#1b1917',
         autoHideMenuBar: true,
         frame: false,
         webPreferences: {
-          preload: 'C:/TalkType/out/preload/index.js',
-          additionalArguments: ['--talktype-renderer-role=main'],
+          preload: 'C:/Sotto/out/preload/index.js',
+          additionalArguments: ['--sotto-renderer-role=main'],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -321,8 +321,8 @@ describe('WindowManager construction', () => {
         hasShadow: true,
         autoHideMenuBar: true,
         webPreferences: {
-          preload: 'C:/TalkType/out/preload/index.js',
-          additionalArguments: ['--talktype-renderer-role=widget'],
+          preload: 'C:/Sotto/out/preload/index.js',
+          additionalArguments: ['--sotto-renderer-role=widget'],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -1095,25 +1095,25 @@ describe('WindowManager lifecycle', () => {
   it('reports renderer delivery success and contains missing, destroyed, or throwing sends', async () => {
     const { manager, windows } = createHarness()
 
-    expect(manager.sendToMain('talktype:test', { value: 1 })).toBe(false)
+    expect(manager.sendToMain('sotto:test', { value: 1 })).toBe(false)
     await manager.createMainWindow()
     const main = windows[0]!
 
-    expect(manager.sendToMain('talktype:test', { value: 2 })).toBe(true)
-    expect(main.webContents.send).toHaveBeenCalledWith('talktype:test', { value: 2 })
+    expect(manager.sendToMain('sotto:test', { value: 2 })).toBe(true)
+    expect(main.webContents.send).toHaveBeenCalledWith('sotto:test', { value: 2 })
 
     main.webContents.send.mockImplementationOnce(() => {
       throw new Error('renderer stopped between the guard and send')
     })
-    expect(manager.sendToMain('talktype:test', { value: 3 })).toBe(false)
+    expect(manager.sendToMain('sotto:test', { value: 3 })).toBe(false)
 
     main.webContents.isDestroyed.mockReturnValue(true)
-    expect(manager.sendToMain('talktype:test', { value: 4 })).toBe(false)
+    expect(manager.sendToMain('sotto:test', { value: 4 })).toBe(false)
 
     main.webContents.isDestroyed.mockImplementationOnce(() => {
       throw new Error('destroyed check raced with native teardown')
     })
-    expect(manager.sendToMain('talktype:test', { value: 5 })).toBe(false)
+    expect(manager.sendToMain('sotto:test', { value: 5 })).toBe(false)
   })
 
   it('does not report main send success until an in-flight renderer load completes', async () => {
@@ -2071,7 +2071,7 @@ describe('WindowManager lifecycle', () => {
     await manager.showMain()
 
     expect(createWindow).toHaveBeenCalledTimes(2)
-    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
+    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/Sotto/out/renderer/index.html')
     expect(windows[1]!.show).toHaveBeenCalledOnce()
     expect(windows[1]!.focus).toHaveBeenCalledOnce()
   })
@@ -2100,12 +2100,12 @@ describe('WindowManager lifecycle', () => {
       {
         role: 'main',
         webContents: originalMain.webContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
       {
         role: 'widget',
         webContents: originalWidget.webContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
 
@@ -2114,7 +2114,7 @@ describe('WindowManager lifecycle', () => {
       {
         role: 'widget',
         webContents: originalWidget.webContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
 
@@ -2123,12 +2123,12 @@ describe('WindowManager lifecycle', () => {
       {
         role: 'main',
         webContents: windows[2]!.webContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
       {
         role: 'widget',
         webContents: originalWidget.webContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
     expect(manager.getTrustedRenderers()).not.toContainEqual(
@@ -2152,7 +2152,7 @@ describe('WindowManager lifecycle', () => {
     await manager.showWidget()
 
     expect(createWindow).toHaveBeenCalledTimes(2)
-    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/widget.html')
+    expect(windows[1]!.loadFile).toHaveBeenCalledWith('C:/Sotto/out/renderer/widget.html')
     expect(windows[1]!.showInactive).toHaveBeenCalledOnce()
   })
 
@@ -2284,7 +2284,7 @@ describe('WindowManager renderer loading', () => {
     expect(windows[0]!.loadURL).toHaveBeenCalledWith(
       'http://127.0.0.1:5173/index.html',
     )
-    expect(windows[0]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
+    expect(windows[0]!.loadFile).toHaveBeenCalledWith('C:/Sotto/out/renderer/index.html')
     expect(log).toHaveBeenCalledWith('renderer-load-failed:main:development')
     expect(JSON.stringify(log.mock.calls)).not.toContain('secret')
     expect(JSON.stringify(log.mock.calls)).not.toContain('C:/Users')
@@ -2303,7 +2303,7 @@ describe('WindowManager renderer loading', () => {
     await creation
 
     expect(windows[0]!.loadURL).not.toHaveBeenCalled()
-    expect(windows[0]!.loadFile).toHaveBeenCalledWith('C:/TalkType/out/renderer/index.html')
+    expect(windows[0]!.loadFile).toHaveBeenCalledWith('C:/Sotto/out/renderer/index.html')
   })
 
   it('rejects a failed bundled renderer with a sanitized operational error', async () => {

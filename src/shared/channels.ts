@@ -1,46 +1,46 @@
-export const SETTINGS_GET = 'talktype:settings:get' as const
-export const SETTINGS_UPDATE = 'talktype:settings:update' as const
-export const SETTINGS_RESET = 'talktype:settings:reset' as const
-export const SETTINGS_CHANGED = 'talktype:settings:changed' as const
+export const SETTINGS_GET = 'sotto:settings:get' as const
+export const SETTINGS_UPDATE = 'sotto:settings:update' as const
+export const SETTINGS_RESET = 'sotto:settings:reset' as const
+export const SETTINGS_CHANGED = 'sotto:settings:changed' as const
 
-export const RECOVERY_NOTICE_LIST = 'talktype:recovery-notice:list' as const
-export const RECOVERY_NOTICE = 'talktype:recovery-notice:event' as const
+export const RECOVERY_NOTICE_LIST = 'sotto:recovery-notice:list' as const
+export const RECOVERY_NOTICE = 'sotto:recovery-notice:event' as const
 
-export const HISTORY_LIST = 'talktype:history:list' as const
-export const HISTORY_ADD = 'talktype:history:add' as const
-export const HISTORY_SEARCH = 'talktype:history:search' as const
-export const HISTORY_DELETE = 'talktype:history:delete' as const
-export const HISTORY_CLEAR = 'talktype:history:clear' as const
+export const HISTORY_LIST = 'sotto:history:list' as const
+export const HISTORY_ADD = 'sotto:history:add' as const
+export const HISTORY_SEARCH = 'sotto:history:search' as const
+export const HISTORY_DELETE = 'sotto:history:delete' as const
+export const HISTORY_CLEAR = 'sotto:history:clear' as const
 
-export const HOTKEY_GET = 'talktype:hotkey:get' as const
-export const HOTKEY_REPLACE = 'talktype:hotkey:replace' as const
+export const HOTKEY_GET = 'sotto:hotkey:get' as const
+export const HOTKEY_REPLACE = 'sotto:hotkey:replace' as const
 
-export const DICTATION_REQUEST = 'talktype:dictation:request' as const
-export const DICTATION_COMMAND = 'talktype:dictation:command' as const
+export const DICTATION_REQUEST = 'sotto:dictation:request' as const
+export const DICTATION_COMMAND = 'sotto:dictation:command' as const
 
-export const WIDGET_PUBLISH = 'talktype:widget:publish' as const
-export const WIDGET_STATE = 'talktype:widget:state' as const
-export const WIDGET_VISIBILITY = 'talktype:widget:visibility' as const
-export const WIDGET_PRESENTATION = 'talktype:widget:presentation' as const
-export const WIDGET_DRAG = 'talktype:widget:drag' as const
+export const WIDGET_PUBLISH = 'sotto:widget:publish' as const
+export const WIDGET_STATE = 'sotto:widget:state' as const
+export const WIDGET_VISIBILITY = 'sotto:widget:visibility' as const
+export const WIDGET_PRESENTATION = 'sotto:widget:presentation' as const
+export const WIDGET_DRAG = 'sotto:widget:drag' as const
 
-export const MODEL_GET_STATUS = 'talktype:model:get-status' as const
-export const MODEL_LIST_DISCLOSURES = 'talktype:model:list-disclosures' as const
-export const MODEL_INSTALL = 'talktype:model:install' as const
-export const MODEL_REMOVE = 'talktype:model:remove' as const
-export const MODEL_STATUS = 'talktype:model:status' as const
+export const MODEL_GET_STATUS = 'sotto:model:get-status' as const
+export const MODEL_LIST_DISCLOSURES = 'sotto:model:list-disclosures' as const
+export const MODEL_INSTALL = 'sotto:model:install' as const
+export const MODEL_REMOVE = 'sotto:model:remove' as const
+export const MODEL_STATUS = 'sotto:model:status' as const
 
-export const OUTPUT_DELIVER = 'talktype:output:deliver' as const
+export const OUTPUT_DELIVER = 'sotto:output:deliver' as const
 
-export const TRANSCRIPT_POLISH = 'talktype:transcript:polish' as const
+export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 
-export const STARTUP_GET = 'talktype:startup:get' as const
-export const STARTUP_SET = 'talktype:startup:set' as const
+export const STARTUP_GET = 'sotto:startup:get' as const
+export const STARTUP_SET = 'sotto:startup:set' as const
 
-export const APP_SHOW = 'talktype:app:show' as const
-export const APP_HIDE = 'talktype:app:hide' as const
-export const APP_MINIMIZE = 'talktype:app:minimize' as const
-export const APP_QUIT = 'talktype:app:quit' as const
+export const APP_SHOW = 'sotto:app:show' as const
+export const APP_HIDE = 'sotto:app:hide' as const
+export const APP_MINIMIZE = 'sotto:app:minimize' as const
+export const APP_QUIT = 'sotto:app:quit' as const
 
 export const IPC_CHANNELS = Object.freeze({
   settingsGet: SETTINGS_GET,

@@ -46,7 +46,7 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
 
   let body: ReactNode
   if (status === 'loading') body = <div className="management-empty" aria-busy="true"><h2>Loading transcript history...</h2><p>Your local data is being prepared.</p></div>
-  else if (status === 'degraded') body = <div className="management-empty"><h2>History could not be loaded</h2><p>Dictation still works. Reopen TalkType to try loading local history again.</p></div>
+  else if (status === 'degraded') body = <div className="management-empty"><h2>History could not be loaded</h2><p>Dictation still works. Reopen Sotto to try loading local history again.</p></div>
   else if (entries.length === 0) body = <div className="management-empty"><h2>{enabled ? 'No saved transcripts yet' : 'History is turned off'}</h2><p>{enabled ? 'Your newest dictations will appear here when history is enabled.' : 'New transcripts are not stored. You can turn local history back on in Settings.'}</p></div>
   else if (filtered.length === 0) body = <div className="management-empty"><h2>No transcripts match that search</h2><p>Try a different word or clear the search.</p></div>
   else body = (

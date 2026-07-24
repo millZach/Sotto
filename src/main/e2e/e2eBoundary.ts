@@ -23,18 +23,18 @@ export interface E2EConfiguration {
 }
 
 export interface E2EEnvironment {
-  readonly TALKTYPE_E2E?: string | undefined
-  readonly TALKTYPE_E2E_SCENARIO?: string | undefined
-  readonly TALKTYPE_E2E_USER_DATA?: string | undefined
+  readonly SOTTO_E2E?: string | undefined
+  readonly SOTTO_E2E_SCENARIO?: string | undefined
+  readonly SOTTO_E2E_USER_DATA?: string | undefined
 }
 
 export function resolveE2EConfiguration(
   isPackaged: boolean,
   environment: E2EEnvironment,
 ): E2EConfiguration | null {
-  if (isPackaged || environment.TALKTYPE_E2E !== '1') return null
-  const scenario = e2eScenarioSchema.safeParse(environment.TALKTYPE_E2E_SCENARIO ?? 'success')
-  const userDataPath = environment.TALKTYPE_E2E_USER_DATA
+  if (isPackaged || environment.SOTTO_E2E !== '1') return null
+  const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
+  const userDataPath = environment.SOTTO_E2E_USER_DATA
   if (!scenario.success || userDataPath === undefined || !isAbsolute(userDataPath)) return null
   return Object.freeze({ scenario: scenario.data, userDataPath })
 }

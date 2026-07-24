@@ -209,7 +209,7 @@ function securePreferences(
 ): WindowWebPreferences {
   return {
     preload: preloadPath,
-    additionalArguments: [`--talktype-renderer-role=${role}`],
+    additionalArguments: [`--sotto-renderer-role=${role}`],
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,

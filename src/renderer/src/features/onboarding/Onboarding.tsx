@@ -171,9 +171,9 @@ export function Onboarding({
         <div className="onboarding-step-icon"><StepIcon step={step} /></div>
         {step === 1 ? (
           <section>
-            <p className="onboarding-eyebrow">Welcome to TalkType</p>
+            <p className="onboarding-eyebrow">Welcome to Sotto</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Private dictation, ready when you are</h1>
-            <p className="onboarding-lead">Speech stays on this computer during transcription. TalkType is free, needs no account, and includes no telemetry.</p>
+            <p className="onboarding-lead">Speech stays on this computer during transcription. Sotto is free, needs no account, and includes no telemetry.</p>
             <div className="onboarding-assurances">
               <p><Check aria-hidden="true" size={18} /> Balanced speech model included</p>
               <p><Check aria-hidden="true" size={18} /> No cloud transcription or API key</p>
@@ -186,7 +186,7 @@ export function Onboarding({
           <section>
             <p className="onboarding-eyebrow">Microphone</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Check your microphone</h1>
-            <p className="onboarding-lead">TalkType needs microphone access only while you record or run this test.</p>
+            <p className="onboarding-lead">Sotto needs microphone access only while you record or run this test.</p>
             <div className="onboarding-microphone-test" data-state={microphoneState}>
               <LevelMeter value={microphoneLevel} label="Microphone level" />
               <p role="status">
@@ -270,7 +270,7 @@ export function Onboarding({
           <section>
             <p className="onboarding-eyebrow">Shortcut &amp; paste</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>One shortcut from speech to text</h1>
-            <p className="onboarding-lead">Press this shortcut to start. Press it again to finish. Your text is always copied before TalkType attempts to paste.</p>
+            <p className="onboarding-lead">Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.</p>
             <div className="onboarding-shortcut"><span>Active shortcut</span><ShortcutKey accelerator={shortcut} /></div>
             <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
               <textarea

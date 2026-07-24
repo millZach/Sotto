@@ -56,7 +56,7 @@ const bundledManifest = {
 }
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-models-')); roots.push(root)
+  const root = await mkdtemp(join(tmpdir(), 'sotto-models-')); roots.push(root)
   const packagedRoot = join(root, 'packaged'); const userRoot = join(root, 'user')
   await mkdir(join(packagedRoot, 'Xenova', 'whisper-base'), { recursive: true })
   for (const file of lock.presets.balanced.files) { const path = join(packagedRoot, 'Xenova', 'whisper-base', ...file.path.split('/')); await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, bytes) }
@@ -150,7 +150,7 @@ describe('ModelManager', () => {
   it('retains an immutable validated snapshot of the caller catalog', async () => {
     const mutable = structuredClone(lock)
     const downloader = vi.fn(async (_url: string, destination: string) => { await writeFile(destination, bytes) })
-    const root = await mkdtemp(join(tmpdir(), 'talktype-model-snapshot-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-model-snapshot-')); roots.push(root)
     const manager = new ModelManager({
       catalog: mutable,
       bundledManifest,
@@ -279,7 +279,7 @@ describe('ModelManager', () => {
 
     const response = await handlers.get(MODEL_SCHEME)!({
       method: 'GET',
-      url: 'talktype-model://model/Xenova/whisper-base/config.json',
+      url: 'sotto-model://model/Xenova/whisper-base/config.json',
     })
 
     expect(response.status).toBe(404)
@@ -403,7 +403,7 @@ describe('ModelManager', () => {
 
 describe('bundled model manifest loader', () => {
   it('caps an opened lock file even when it grows after the initial stat', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-bounded-lock-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-bounded-lock-')); roots.push(root)
     const path = join(root, 'growing.lock.json')
     await writeFile(path, '{}')
 
@@ -414,7 +414,7 @@ describe('bundled model manifest loader', () => {
   })
 
   it('bounded-loads and freezes the exact Balanced manifest', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-bundled-manifest-')); roots.push(root)
     const path = join(root, 'manifest.lock.json')
     await writeFile(path, JSON.stringify(bundledManifest))
 
@@ -435,7 +435,7 @@ describe('bundled model manifest loader', () => {
     ['duplicate files', (value: Record<string, unknown>) => { const files = value.files as unknown[]; files[1] = structuredClone(files[0]) }],
     ['altered file', (value: Record<string, unknown>) => { const files = value.files as Record<string, unknown>[]; files[0]!.bytes = Number(files[0]!.bytes) + 1 }],
   ] as const)('rejects bundled manifest drift: %s', async (_name, mutate) => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-bundled-manifest-')); roots.push(root)
     const path = join(root, 'manifest.lock.json')
     const hostile = structuredClone(bundledManifest) as unknown as Record<string, unknown>
     mutate(hostile)
@@ -445,7 +445,7 @@ describe('bundled model manifest loader', () => {
   })
 
   it.each(['missing', 'malformed', 'oversized'] as const)('fails closed for a %s bundled manifest', async (kind) => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-bundled-manifest-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-bundled-manifest-')); roots.push(root)
     const path = join(root, 'manifest.lock.json')
     if (kind === 'malformed') await writeFile(path, '{')
     if (kind === 'oversized') await writeFile(path, ' '.repeat(1_000_001))
@@ -456,7 +456,7 @@ describe('bundled model manifest loader', () => {
 
 describe('atomic model promotion', () => {
   it('restores the prior directory when promotion fails after backup', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-promotion-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-promotion-')); roots.push(root)
     const destination = join(root, 'model')
     const temporary = join(root, 'partial')
     await mkdir(destination); await mkdir(temporary)
@@ -479,7 +479,7 @@ describe('atomic model promotion', () => {
   })
 
   it('treats backup cleanup failure as best effort after successful promotion', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-promotion-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-promotion-')); roots.push(root)
     const destination = join(root, 'model')
     const temporary = join(root, 'partial')
     await mkdir(destination); await mkdir(temporary)
@@ -509,7 +509,7 @@ describe('download redirect policy', () => {
   })
 
   it('streams an approved bounded redirect response to a private destination', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial', 'model.bin')
     const get = fakeHttpsGet(new Map([
       ['https://huggingface.co/model', { status: 302, location: 'https://cdn-lfs.huggingface.co/signed' }],
@@ -523,7 +523,7 @@ describe('download redirect policy', () => {
   })
 
   it('destroys a redirect body before issuing the next request', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'redirect.bin')
     const redirectResponse = idleResponse(302, { location: 'https://cdn-lfs.huggingface.co/signed' })
     const redirectDestroy = vi.spyOn(redirectResponse, 'destroy')
@@ -549,7 +549,7 @@ describe('download redirect policy', () => {
   })
 
   it('destroys a rejected slow response before later chunks can arrive', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'mismatch.bin')
     const response = idleResponse(200, { 'content-length': '11' })
     const destroy = vi.spyOn(response, 'destroy')
@@ -574,7 +574,7 @@ describe('download redirect policy', () => {
     ['redirect without a location', idleResponse(302)],
     ['non-success status', idleResponse(503)],
   ] as const)('destroys the response and request for a %s', async (_name, response) => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'rejected.bin')
     const request = fakeRequest()
     const responseDestroy = vi.spyOn(response, 'destroy')
@@ -592,7 +592,7 @@ describe('download redirect policy', () => {
   })
 
   it('bounds a synchronous request creation failure and removes the destination', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'request-throw.bin')
     const get = vi.fn((): ReturnType<HttpsGet> => { throw new Error('request denied') })
 
@@ -603,7 +603,7 @@ describe('download redirect policy', () => {
   })
 
   it('destroys the request when timeout setup throws synchronously', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'timeout-throw.bin')
     const request = fakeRequest()
     const response = idleResponse(200)
@@ -623,7 +623,7 @@ describe('download redirect policy', () => {
   })
 
   it('supports a response callback that runs synchronously during request creation', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'synchronous.bin')
     const get = vi.fn((_url: URL, callback: Parameters<HttpsGet>[1]): ReturnType<HttpsGet> => {
       const request = fakeRequest()
@@ -637,7 +637,7 @@ describe('download redirect policy', () => {
   })
 
   it('rejects redirect loops and removes the partial file', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const get = fakeHttpsGet(new Map([
       ['https://huggingface.co/a', { status: 302, location: 'https://cdn-lfs.huggingface.co/b' }],
@@ -651,7 +651,7 @@ describe('download redirect policy', () => {
   })
 
   it('enforces the locked byte maximum while streaming and removes partial output', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const get = fakeHttpsGet(new Map([
       ['https://huggingface.co/model', { status: 200, chunks: [Buffer.alloc(5), Buffer.alloc(6)] }],
@@ -663,7 +663,7 @@ describe('download redirect policy', () => {
   })
 
   it('rejects a response shorter than the exact locked byte count', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const get = fakeHttpsGet(new Map([
       ['https://huggingface.co/model', { status: 200, chunks: [Buffer.alloc(9)] }],
@@ -675,7 +675,7 @@ describe('download redirect policy', () => {
   })
 
   it('enforces an overall wall-clock deadline even while the request is not idle', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const get = vi.fn((...args: Parameters<HttpsGet>): ReturnType<HttpsGet> => {
       expect(args).toHaveLength(2)
@@ -704,7 +704,7 @@ describe('download redirect policy', () => {
   })
 
   it('destroys an accepted in-flight response when the overall deadline expires', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'deadline-body.bin')
     const response = idleResponse(200)
     const destroy = vi.spyOn(response, 'destroy')
@@ -731,7 +731,7 @@ describe('download redirect policy', () => {
   })
 
   it('destroys a response delivered after the overall deadline has settled', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'late-body.bin')
     const response = idleResponse(200)
     const destroy = vi.spyOn(response, 'destroy')
@@ -758,7 +758,7 @@ describe('download redirect policy', () => {
   })
 
   it('times out stalled requests and removes partial output', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const get = vi.fn((...args: Parameters<HttpsGet>): ReturnType<HttpsGet> => {
       expect(args).toHaveLength(2)

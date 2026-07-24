@@ -26,7 +26,7 @@ describe('buildPasteInvocation', () => {
     expect(script).toContain('CreateKeyboardInput(VK_V, KEYEVENTF_KEYUP)')
     expect(script).toContain('CreateKeyboardInput(VK_CONTROL, KEYEVENTF_KEYUP)')
     expect(script).toContain('return accepted == (uint)inputs.Length;')
-    expect(script).toContain('if (-not [TalkTypePaste]::SendCtrlV()) { exit 1 }')
+    expect(script).toContain('if (-not [SottoPaste]::SendCtrlV()) { exit 1 }')
     expect(script).not.toContain('System.Windows.Forms')
     expect(script).not.toContain('SendKeys')
   })

@@ -44,7 +44,7 @@ afterEach(async () => {
 
 describe('release build provenance', () => {
   it('keeps the build-input revision stable across docs, tests, and release-output changes', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-provenance-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
     await Promise.all([
       mkdir(join(root, 'src'), { recursive: true }),
@@ -53,25 +53,25 @@ describe('release build provenance', () => {
       mkdir(join(root, 'release'), { recursive: true }),
     ])
     await Promise.all([
-      writeFile(join(root, 'package.json'), '{"name":"talktype"}\n'),
+      writeFile(join(root, 'package.json'), '{"name":"sotto"}\n'),
       writeFile(join(root, 'src', 'index.ts'), 'export const app = true\n'),
       writeFile(join(root, 'docs', 'qa', 'audit.md'), 'before\n'),
       writeFile(join(root, 'tests', 'app.test.ts'), 'before\n'),
-      writeFile(join(root, 'release', 'TalkType.exe'), 'before\n'),
+      writeFile(join(root, 'release', 'Sotto.exe'), 'before\n'),
     ])
     const before = await readBuildInputsRevision(root)
 
     await Promise.all([
       writeFile(join(root, 'docs', 'qa', 'audit.md'), 'after\n'),
       writeFile(join(root, 'tests', 'app.test.ts'), 'after\n'),
-      writeFile(join(root, 'release', 'TalkType.exe'), 'after\n'),
+      writeFile(join(root, 'release', 'Sotto.exe'), 'after\n'),
     ])
 
     await expect(readBuildInputsRevision(root)).resolves.toBe(before)
   })
 
   it('rejects an internally valid stale package that differs from the just-built output', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-provenance-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
     const currentOut = await createOut(join(root, 'current'), 'fresh renderer')
     const staleOut = await createOut(join(root, 'stale'), 'stale renderer')
@@ -87,7 +87,7 @@ describe('release build provenance', () => {
   })
 
   it('accepts an exact package and binds its build hash to the source commit', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-provenance-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
     const out = await createOut(root, 'current renderer')
     const written = await writeBuildProvenance({ outRoot: out, sourceCommit: 'def456', buildInputsRevision: '1'.repeat(64) })
@@ -102,7 +102,7 @@ describe('release build provenance', () => {
   })
 
   it('accepts an exact package after a docs-only source revision change', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-provenance-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
     const out = await createOut(root, 'current renderer')
     const written = await writeBuildProvenance({
@@ -120,7 +120,7 @@ describe('release build provenance', () => {
   })
 
   it('rejects an exact output package after a release input changes', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-provenance-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
     const out = await createOut(root, 'current renderer')
     await mkdir(join(root, 'src'), { recursive: true })

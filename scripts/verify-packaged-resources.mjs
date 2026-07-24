@@ -65,8 +65,8 @@ async function findFile(root, name) {
 }
 
 async function resolveSevenZip() {
-  if (process.env.TALKTYPE_7ZA_PATH && existsSync(process.env.TALKTYPE_7ZA_PATH)) {
-    return process.env.TALKTYPE_7ZA_PATH
+  if (process.env.SOTTO_7ZA_PATH && existsSync(process.env.SOTTO_7ZA_PATH)) {
+    return process.env.SOTTO_7ZA_PATH
   }
   const cache = join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache')
   const sevenZip = await findFile(cache, '7za.exe')
@@ -76,7 +76,7 @@ async function resolveSevenZip() {
 
 export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
   const installerPath = requireReleaseFile(installerInput)
-  const extractionRoot = await mkdtemp(join(tmpdir(), 'talktype-installer-asar-'))
+  const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-installer-asar-'))
   try {
     const sevenZip = await resolveSevenZip()
     await execFileAsync(sevenZip, [
@@ -112,13 +112,13 @@ function productionModuleRoots(entries) {
 }
 
 async function verifyNormalPackagedLaunch(target, asarPath, entries) {
-  const executable = join(target, 'TalkType.exe')
+  const executable = join(target, 'Sotto.exe')
   const workerEntry = entries.find((entry) =>
     /^\\out\\renderer\\assets\\worker-[^\\]+\.js$/.test(entry),
   )
   if (workerEntry === undefined) fail('transcription worker is missing from app.asar')
   const workerUrl = pathToFileURL(join(asarPath, workerEntry.slice(1))).href
-  const profile = await mkdtemp(join(tmpdir(), 'talktype-packaged-smoke-'))
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
   const forbiddenE2EProfile = join(profile, 'forbidden-e2e-profile')
   const appData = join(profile, 'AppData', 'Roaming')
   const localAppData = join(profile, 'AppData', 'Local')
@@ -134,9 +134,9 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
         ...process.env,
         APPDATA: appData,
         LOCALAPPDATA: localAppData,
-        TALKTYPE_E2E: '1',
-        TALKTYPE_E2E_SCENARIO: 'success',
-        TALKTYPE_E2E_USER_DATA: forbiddenE2EProfile,
+        SOTTO_E2E: '1',
+        SOTTO_E2E_SCENARIO: 'success',
+        SOTTO_E2E_USER_DATA: forbiddenE2EProfile,
       },
       timeout: 45_000,
     })
@@ -147,10 +147,10 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
     const protocolLog = []
     const consoleLog = []
     page.on('response', (response) => {
-      if (response.url().startsWith('talktype-')) protocolLog.push(`${response.status()} ${response.url()}`)
+      if (response.url().startsWith('sotto-')) protocolLog.push(`${response.status()} ${response.url()}`)
     })
     page.on('requestfailed', (request) => {
-      if (request.url().startsWith('talktype-')) protocolLog.push(`FAILED ${request.url()} ${request.failure()?.errorText ?? ''}`)
+      if (request.url().startsWith('sotto-')) protocolLog.push(`FAILED ${request.url()} ${request.failure()?.errorText ?? ''}`)
     })
     page.on('console', (message) => {
       if (message.type() === 'warning' || message.type() === 'error') consoleLog.push(message.text())
@@ -159,15 +159,15 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
     let result
     try {
       result = await page.evaluate(async ({ packagedWorkerUrl }) => {
-      if (globalThis.talktype === undefined) throw new Error('normal preload bridge is unavailable')
-      if (globalThis.talktypeE2E !== undefined) throw new Error('packaged build admitted the E2E bridge')
+      if (globalThis.sotto === undefined) throw new Error('normal preload bridge is unavailable')
+      if (globalThis.sottoE2E !== undefined) throw new Error('packaged build admitted the E2E bridge')
 
       const [settings, modelStatus, disclosures, modelResponse, runtimeResponse] = await Promise.all([
-        globalThis.talktype.getSettings(),
-        globalThis.talktype.getModelStatus('balanced'),
-        globalThis.talktype.listModelDisclosures(),
-        globalThis.fetch('talktype-model://model/Xenova/whisper-base/config.json'),
-        globalThis.fetch('talktype-runtime://runtime/ort-wasm-simd-threaded.wasm'),
+        globalThis.sotto.getSettings(),
+        globalThis.sotto.getModelStatus('balanced'),
+        globalThis.sotto.listModelDisclosures(),
+        globalThis.fetch('sotto-model://model/Xenova/whisper-base/config.json'),
+        globalThis.fetch('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm'),
       ])
       if ('reason' in modelStatus || modelStatus.preset !== 'balanced' || modelStatus.state !== 'bundled') {
         throw new Error('bundled model is not available through the normal bridge')
@@ -245,7 +245,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = join(target, 'resources')
   const asarPath = join(resources, 'app.asar')
   for (const required of [
-    join(target, 'TalkType.exe'),
+    join(target, 'Sotto.exe'),
     asarPath,
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
@@ -301,7 +301,7 @@ export async function verifyPackagedResources(input, options = {}) {
   }
 
   const worklet = asarText(asarPath, 'out/renderer/audio-capture-worklet.js')
-  if (!worklet.includes('talktype-audio-capture')) fail('packaged audio worklet is invalid')
+  if (!worklet.includes('sotto-audio-capture')) fail('packaged audio worklet is invalid')
   const rendererScripts = entries
     .filter((entry) => /^\\out\\renderer\\assets\\main-[^\\]+\.js$/.test(entry))
     .map((entry) => asarText(asarPath, entry.slice(1)))
@@ -320,7 +320,7 @@ export async function verifyPackagedResources(input, options = {}) {
     : await verifyInstallerAppAsar(options.installer, asarPath)
   const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
   const asarInfo = await stat(asarPath)
-  const executableInfo = await stat(join(target, 'TalkType.exe'))
+  const executableInfo = await stat(join(target, 'Sotto.exe'))
   return {
     target: basename(target),
     asarBytes: asarInfo.size,

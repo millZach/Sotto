@@ -19,7 +19,7 @@ import {
 } from 'react'
 
 import type {
-  TalkTypeWidgetBridge,
+  SottoWidgetBridge,
   WidgetDragPayload,
   WidgetDragPhase,
   WidgetPresentation,
@@ -70,11 +70,11 @@ const errorCopy: Record<WidgetErrorCode, { readonly title: string; readonly deta
   },
   OUTPUT_UNAVAILABLE: {
     title: 'Output unavailable',
-    detail: 'Open TalkType and try again.',
+    detail: 'Open Sotto and try again.',
   },
   OUTPUT_FAILED: {
     title: 'Couldn’t copy text',
-    detail: 'Try again from the TalkType app.',
+    detail: 'Try again from the Sotto app.',
   },
   HISTORY_FAILED: {
     title: 'Saved to clipboard',
@@ -82,7 +82,7 @@ const errorCopy: Record<WidgetErrorCode, { readonly title: string; readonly deta
   },
   SETTINGS_UNAVAILABLE: {
     title: 'Settings unavailable',
-    detail: 'Open TalkType to restore settings.',
+    detail: 'Open Sotto to restore settings.',
   },
 }
 
@@ -362,7 +362,7 @@ export function WidgetApp({
     return (
       <aside
         className="widget-shell"
-        aria-label="TalkType dictation status"
+        aria-label="Sotto dictation status"
         data-status="idle"
         data-tone="idle"
         data-orientation={orientation}
@@ -411,7 +411,7 @@ export function WidgetApp({
   return (
     <aside
       className="widget-shell"
-      aria-label="TalkType dictation status"
+      aria-label="Sotto dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
       data-orientation={orientation}
@@ -499,7 +499,7 @@ function applyRootPresentation(snapshot: WidgetSnapshot): () => void {
 }
 
 export interface WidgetEntryProps {
-  readonly bridge: TalkTypeWidgetBridge | undefined
+  readonly bridge: SottoWidgetBridge | undefined
   readonly preview: WidgetSnapshot | null
 }
 
@@ -629,6 +629,6 @@ export function isVisualPreviewEnabled(
   environmentValue: string | undefined,
 ): boolean {
   if (environmentValue !== '1') return false
-  const descriptor = Object.getOwnPropertyDescriptor(target, '__TALKTYPE_VISUAL_PREVIEW__')
+  const descriptor = Object.getOwnPropertyDescriptor(target, '__SOTTO_VISUAL_PREVIEW__')
   return descriptor?.value === true && descriptor.writable === false && descriptor.configurable === false
 }

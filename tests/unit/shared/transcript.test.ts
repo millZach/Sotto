@@ -18,7 +18,7 @@ describe('formatTranscript', () => {
   })
 
   it('leaves already-clean text exactly unchanged', () => {
-    const text = "TalkType keeps CASE, commas, apostrophes, and punctuation—exactly!"
+    const text = "Sotto keeps CASE, commas, apostrophes, and punctuation—exactly!"
 
     expect(formatTranscript(text)).toBe(text)
   })

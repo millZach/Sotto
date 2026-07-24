@@ -7,14 +7,14 @@ import { buildPasteInvocation } from '../../src/main/output/pasteCommand'
 import { createSpawnProcessAdapter } from '../../src/main/output/outputService'
 import { createWarmPasteAdapter } from '../../src/main/output/pasteHelper'
 
-const SMOKE_TEXT = 'talktype-sendinput-smoke'
-const EDGE_TITLE = 'TalkType Edge native paste smoke'
+const SMOKE_TEXT = 'sotto-sendinput-smoke'
+const EDGE_TITLE = 'Sotto Edge native paste smoke'
 const TARGET_SCRIPT = `Add-Type -AssemblyName System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
-public static class TalkTypeSmokeForeground
+public static class SottoSmokeForeground
 {
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
@@ -60,7 +60,7 @@ public static class TalkTypeSmokeForeground
 
 $originalClipboard = [System.Windows.Forms.Clipboard]::GetDataObject()
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'TalkType native paste smoke'
+$form.Text = 'Sotto native paste smoke'
 $form.Width = 440
 $form.Height = 140
 $form.StartPosition = 'CenterScreen'
@@ -88,10 +88,10 @@ $timer.Add_Tick({
 
 $form.Add_Shown({
     $form.Activate()
-    [void][TalkTypeSmokeForeground]::EstablishForeground($form.Handle)
+    [void][SottoSmokeForeground]::EstablishForeground($form.Handle)
     [void]$textBox.Focus()
     [System.Windows.Forms.Application]::DoEvents()
-    if ([TalkTypeSmokeForeground]::GetForegroundWindow() -ne $form.Handle -or -not $textBox.Focused) {
+    if ([SottoSmokeForeground]::GetForegroundWindow() -ne $form.Handle -or -not $textBox.Focused) {
         $script:result = 'HARNESS_FOCUS_FAILED'
         [Console]::Out.WriteLine('HARNESS_FOCUS_FAILED')
         [Console]::Out.Flush()
@@ -136,7 +136,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class TalkTypeSmokeWindow
+public static class SottoSmokeWindow
 {
     private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
 
@@ -197,9 +197,9 @@ public static class TalkTypeSmokeWindow
 }
 '@
 
-$window = [TalkTypeSmokeWindow]::FindVisibleWindow('${EDGE_TITLE}')
+$window = [SottoSmokeWindow]::FindVisibleWindow('${EDGE_TITLE}')
 if ($window -eq [IntPtr]::Zero) { [Console]::Out.WriteLine('HARNESS_WINDOW_NOT_FOUND'); exit 2 }
-if (-not [TalkTypeSmokeWindow]::EstablishForeground($window)) { [Console]::Out.WriteLine('HARNESS_FOCUS_FAILED'); exit 3 }
+if (-not [SottoSmokeWindow]::EstablishForeground($window)) { [Console]::Out.WriteLine('HARNESS_FOCUS_FAILED'); exit 3 }
 [Console]::Out.WriteLine('READY')`
 
 function encodePowerShell(script: string): string {
@@ -295,7 +295,7 @@ function runPowerShell(script: string): Promise<string> {
 }
 
 const shouldRun =
-  process.platform === 'win32' && process.env.TALKTYPE_NATIVE_PASTE_SMOKE === '1'
+  process.platform === 'win32' && process.env.SOTTO_NATIVE_PASTE_SMOKE === '1'
 
 describe.runIf(shouldRun)('Windows native paste integration', () => {
   it('pastes the clipboard into an established ordinary foreground text field', async () => {
@@ -383,7 +383,7 @@ describe.runIf(shouldRun)('Windows native paste integration', () => {
 })
 
 const shouldRunEdge =
-  process.platform === 'win32' && process.env.TALKTYPE_BROWSER_PASTE_SMOKE === '1'
+  process.platform === 'win32' && process.env.SOTTO_BROWSER_PASTE_SMOKE === '1'
 
 describe.runIf(shouldRunEdge)('Windows Edge paste integration', () => {
   it('pastes the clipboard into a natively focused Edge textarea', async () => {

@@ -26,4 +26,4 @@ for (const entry of await readdir(temporaryRoot, { withFileTypes: true })) {
   removed += 1
 }
 
-process.stdout.write(`Removed ${removed} stale TalkType E2E profile director${removed === 1 ? 'y' : 'ies'}.\n`)
+process.stdout.write(`Removed ${removed} stale Sotto E2E profile director${removed === 1 ? 'y' : 'ies'}.\n`)

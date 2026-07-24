@@ -1,6 +1,6 @@
-appId: com.talktype.desktop
-productName: TalkType
-copyright: Copyright (c) 2026 TalkType
+appId: com.sotto.desktop
+productName: Sotto
+copyright: Copyright (c) 2026 Sotto
 
 directories:
   output: release
@@ -23,7 +23,7 @@ extraResources:
     to: README.md
 
 win:
-  executableName: TalkType
+  executableName: Sotto
   icon: build/icon.ico
   target:
     - target: nsis
@@ -38,7 +38,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createStartMenuShortcut: true
   createDesktopShortcut: false
-  shortcutName: TalkType
+  shortcutName: Sotto
   deleteAppDataOnUninstall: false
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico

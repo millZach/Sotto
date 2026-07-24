@@ -6,7 +6,7 @@ import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSetting
 import type {
   CommandResult,
   DictationCommand,
-  TalkTypeBridge,
+  SottoBridge,
 } from '../../src/shared/contracts'
 import type { DictationState, WidgetSnapshot } from '../../src/shared/dictation'
 import type { HistoryEntry } from '../../src/shared/history'
@@ -32,7 +32,7 @@ function deferred<Value>() {
 
 const OK = Object.freeze({ ok: true as const })
 
-function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
+function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
     listRecoveryNotices: vi.fn(async () => []),
     onRecoveryNotice: vi.fn(() => () => undefined),
@@ -111,7 +111,7 @@ function Probe(): ReactNode {
   return null
 }
 
-function mountProvider(bridge: TalkTypeBridge, createController: AppControllerFactory) {
+function mountProvider(bridge: SottoBridge, createController: AppControllerFactory) {
   currentContext = undefined
   return render(
     createElement(
@@ -124,8 +124,8 @@ function mountProvider(bridge: TalkTypeBridge, createController: AppControllerFa
 
 describe('AppProvider dictation integration', () => {
   it('does not let an older explicit model-status response overwrite a newer event', async () => {
-    const requested = deferred<Awaited<ReturnType<TalkTypeBridge['getModelStatus']>>>()
-    const listeners: Array<Parameters<TalkTypeBridge['onModelStatus']>[0]> = []
+    const requested = deferred<Awaited<ReturnType<SottoBridge['getModelStatus']>>>()
+    const listeners: Array<Parameters<SottoBridge['onModelStatus']>[0]> = []
     const bridge = createBridge({
       getModelStatus: vi.fn(() => requested.promise),
       onModelStatus: vi.fn((listener) => {

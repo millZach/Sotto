@@ -1,25 +1,25 @@
 !include "nsDialogs.nsh"
 
 !ifndef BUILD_UNINSTALLER
-Var TalkTypeDesktopShortcutCheckbox
-Var TalkTypeCreateDesktopShortcut
+Var SottoDesktopShortcutCheckbox
+Var SottoCreateDesktopShortcut
 
 !macro customInit
   ClearErrors
-  ReadRegDWORD $TalkTypeCreateDesktopShortcut SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" DesktopShortcut
+  ReadRegDWORD $SottoCreateDesktopShortcut SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" DesktopShortcut
   ${If} ${Errors}
-  StrCpy $TalkTypeCreateDesktopShortcut ${BST_UNCHECKED}
+  StrCpy $SottoCreateDesktopShortcut ${BST_UNCHECKED}
     ${If} ${FileExists} "$DESKTOP\${SHORTCUT_NAME}.lnk"
-      StrCpy $TalkTypeCreateDesktopShortcut ${BST_CHECKED}
+      StrCpy $SottoCreateDesktopShortcut ${BST_CHECKED}
     ${EndIf}
   ${EndIf}
 !macroend
 
 !macro customPageAfterChangeDir
-  Page custom TalkTypeShortcutPageCreate TalkTypeShortcutPageLeave
+  Page custom SottoShortcutPageCreate SottoShortcutPageLeave
 !macroend
 
-Function TalkTypeShortcutPageCreate
+Function SottoShortcutPageCreate
   ${If} ${Silent}
     Abort
   ${EndIf}
@@ -30,20 +30,20 @@ Function TalkTypeShortcutPageCreate
     Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 24u "The Start Menu shortcut is always installed. You can optionally add TalkType to the desktop."
+  ${NSD_CreateLabel} 0 0 100% 24u "The Start Menu shortcut is always installed. You can optionally add Sotto to the desktop."
   Pop $0
   ${NSD_CreateCheckbox} 0 38u 100% 14u "Create a desktop shortcut"
-  Pop $TalkTypeDesktopShortcutCheckbox
-  ${NSD_SetState} $TalkTypeDesktopShortcutCheckbox $TalkTypeCreateDesktopShortcut
+  Pop $SottoDesktopShortcutCheckbox
+  ${NSD_SetState} $SottoDesktopShortcutCheckbox $SottoCreateDesktopShortcut
   nsDialogs::Show
 FunctionEnd
 
-Function TalkTypeShortcutPageLeave
-  ${NSD_GetState} $TalkTypeDesktopShortcutCheckbox $TalkTypeCreateDesktopShortcut
+Function SottoShortcutPageLeave
+  ${NSD_GetState} $SottoDesktopShortcutCheckbox $SottoCreateDesktopShortcut
 FunctionEnd
 
 !macro customInstall
-  ${If} $TalkTypeCreateDesktopShortcut == ${BST_CHECKED}
+  ${If} $SottoCreateDesktopShortcut == ${BST_CHECKED}
     ${If} $oldDesktopLink != $newDesktopLink
       WinShell::UninstShortcut "$oldDesktopLink"
       Delete "$oldDesktopLink"
@@ -59,7 +59,7 @@ FunctionEnd
       Delete "$newDesktopLink"
     ${EndIf}
   ${EndIf}
-  WriteRegDWORD SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" DesktopShortcut $TalkTypeCreateDesktopShortcut
+  WriteRegDWORD SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" DesktopShortcut $SottoCreateDesktopShortcut
 !macroend
 !else
 !macro customUnInstall

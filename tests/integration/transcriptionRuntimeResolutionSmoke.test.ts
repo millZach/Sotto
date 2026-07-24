@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe('installed ONNX runtime resolution smoke', () => {
-  it('consumes the production-configured TalkType runtime root', async () => {
+  it('consumes the production-configured Sotto runtime root', async () => {
     const ortEnvironment = {
       allowRemoteModels: true,
       allowLocalModels: false,

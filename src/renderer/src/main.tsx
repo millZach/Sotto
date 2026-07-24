@@ -12,7 +12,7 @@ if (!rootElement) {
   throw new Error('Renderer root element is missing')
 }
 
-const e2e = window.talktypeE2E
+const e2e = window.sottoE2E
 const controllerFactory = e2e === undefined ? undefined : createE2EControllerFactory(e2e.scenario)
 
 createRoot(rootElement).render(

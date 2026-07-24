@@ -4,7 +4,7 @@
 // resolution, minimal spoken commands, personal dictionary.
 
 export const DICTIONARY = [
-  'TalkType',
+  'Sotto',
   'Moonshine',
   'Whisper',
   'Wispr Flow',

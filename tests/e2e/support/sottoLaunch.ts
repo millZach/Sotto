@@ -7,7 +7,7 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 import { requireOwnedE2EProfile } from '../../../scripts/e2e-profile-policy.mjs'
 import type { E2EScenario } from '../../../src/shared/e2e'
 
-export interface LaunchedTalkType {
+export interface LaunchedSotto {
   readonly app: ElectronApplication
   readonly page: Page
   readonly userData: string
@@ -26,9 +26,9 @@ export interface LaunchDependencies {
 export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<string, string> {
   return Object.fromEntries(Object.entries({
     ...process.env,
-    TALKTYPE_E2E: '1',
-    TALKTYPE_E2E_SCENARIO: scenario,
-    TALKTYPE_E2E_USER_DATA: userData,
+    SOTTO_E2E: '1',
+    SOTTO_E2E_SCENARIO: scenario,
+    SOTTO_E2E_USER_DATA: userData,
   }).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
@@ -37,17 +37,17 @@ async function removeOwnedProfile(path: string): Promise<void> {
 }
 
 const defaultDependencies: LaunchDependencies = {
-  createProfile: () => mkdtemp(join(tmpdir(), 'talktype-e2e-')),
+  createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
   launch: (options) => electron.launch(options),
   firstWindow: (application) => application.firstWindow(),
   removeProfile: removeOwnedProfile,
 }
 
-export async function launchTalkType(
+export async function launchSotto(
   scenario: E2EScenario = 'success',
   userData?: string,
   dependencies: LaunchDependencies = defaultDependencies,
-): Promise<LaunchedTalkType> {
+): Promise<LaunchedSotto> {
   const ownsUserData = userData === undefined
   const profile = userData ?? await dependencies.createProfile()
   let application: ElectronApplication | undefined
@@ -66,7 +66,7 @@ export async function launchTalkType(
   }
 }
 
-export async function closeTalkType(launched: LaunchedTalkType): Promise<void> {
+export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
   if (launched.ownsUserData) await removeOwnedProfile(launched.userData)
 }

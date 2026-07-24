@@ -162,9 +162,9 @@ const sections = licenseSections.map(([heading, text]) =>
 
 const output = `# Third-Party Notices
 
-TalkType performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
+Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
 
-Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`TalkType.exe\`. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
+Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\`. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
 | Component | Version / revision | License | Copyright / attribution |
 |---|---|---|---|
@@ -172,13 +172,13 @@ ${table}
 
 Optional models are not part of the installer. If the user explicitly downloads them, \`Xenova/whisper-tiny\` revision \`5332fcc35e32a33b86612b9a57a89be7906102b1\` and \`Xenova/whisper-small\` revision \`2d67713f236afa48a18992566e7647f6ca848e13\` are Apache-2.0 works from Hugging Face and OpenAI Whisper contributors, and \`onnx-community/moonshine-base-ONNX\` revision \`b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad\` is an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community.
 
-## TalkType brand asset provenance
+## Sotto brand asset provenance
 
-The TalkType icon is original project artwork generated on 2026-07-15 with OpenAI's built-in image generation tool. No source image, third-party logo, trademark, wordmark, or font was supplied. The selected source was locally chroma-keyed, resized, and exported into the Windows PNG, multi-resolution ICO, and installer sidebar derivatives.
+The Sotto icon is original project artwork generated on 2026-07-15 with OpenAI's built-in image generation tool. No source image, third-party logo, trademark, wordmark, or font was supplied. The selected source was locally chroma-keyed, resized, and exported into the Windows PNG, multi-resolution ICO, and installer sidebar derivatives.
 
 Final generation prompt:
 
-> Use case: logo-brand. Asset type: Windows desktop application icon source, 1024 x 1024 square. Create an original TalkType symbol: an indigo rounded-square tile containing a symmetric microphone capsule whose central negative-space stem transitions cleanly into a text insertion caret, with exactly two small cyan audio ticks, one on each side. Crisp flat vector-like bitmap, minimal geometric construction, strong silhouette, professional desktop utility branding. Centered with generous padding and optimized for 16 pixels. Deep indigo tile, near-white microphone/caret, restrained bright cyan ticks. Perfectly flat solid \`#00ff00\` chroma-key background. No text, letters, wordmark, watermark, mockup, 3D, bevel, gloss, photographic detail, or cast shadow.
+> Use case: logo-brand. Asset type: Windows desktop application icon source, 1024 x 1024 square. Create an original Sotto symbol: an indigo rounded-square tile containing a symmetric microphone capsule whose central negative-space stem transitions cleanly into a text insertion caret, with exactly two small cyan audio ticks, one on each side. Crisp flat vector-like bitmap, minimal geometric construction, strong silhouette, professional desktop utility branding. Centered with generous padding and optimized for 16 pixels. Deep indigo tile, near-white microphone/caret, restrained bright cyan ticks. Perfectly flat solid \`#00ff00\` chroma-key background. No text, letters, wordmark, watermark, mockup, 3D, bevel, gloss, photographic detail, or cast shadow.
 
 Source and legibility proof are retained in \`artifacts/design/brand/\` in the source repository. Packaged users receive only the final application artwork.
 

@@ -166,8 +166,8 @@ describe('TranscriptPolishService', () => {
 
 describe('polish prompt', () => {
   it('parses one dictionary word per line, dropping blanks and duplicates', () => {
-    expect(parseDictionary('TalkType\n\n  Moonshine \nTalkType\n')).toEqual([
-      'TalkType',
+    expect(parseDictionary('Sotto\n\n  Moonshine \nSotto\n')).toEqual([
+      'Sotto',
       'Moonshine',
     ])
   })

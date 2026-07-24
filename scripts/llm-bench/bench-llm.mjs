@@ -1,4 +1,4 @@
-// LLM formatting-pass benchmark for TalkType.
+// LLM formatting-pass benchmark for Sotto.
 //
 // Compares wall-clock latency and output quality of candidate backends for
 // the dictation cleanup pass:

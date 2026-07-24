@@ -5,7 +5,7 @@ import { historyEntrySchema, parseHistoryEntry, type HistoryEntry } from '../../
 
 const validEntry = {
   id: 'entry-1',
-  text: 'Hello from TalkType.',
+  text: 'Hello from Sotto.',
   createdAt: 1_725_000_000_000,
   durationMs: 2_450,
   language: 'en',

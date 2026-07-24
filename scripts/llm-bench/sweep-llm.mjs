@@ -1,4 +1,4 @@
-// Wide OpenRouter sweep for the TalkType formatting pass.
+// Wide OpenRouter sweep for the Sotto formatting pass.
 //
 // Phases:
 //   1. Catalog — fetch /models, filter to plausible fast text-cleanup models.

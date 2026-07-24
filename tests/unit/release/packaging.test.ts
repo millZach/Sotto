@@ -28,7 +28,7 @@ describe('Windows release contract', () => {
       )
     }
     expect(packageJson.scripts['package:win']).toContain(
-      `--installer "release/TalkType Setup ${packageJson.version}.exe"`,
+      `--installer "release/Sotto Setup ${packageJson.version}.exe"`,
     )
 
     const viteConfig = read('electron.vite.config.ts')
@@ -46,9 +46,9 @@ describe('Windows release contract', () => {
 
     expect(builder).toContain('include: build/installer.nsh')
     expect(builder).toContain('createDesktopShortcut: false')
-    expect(installer).toContain('Page custom TalkTypeShortcutPageCreate TalkTypeShortcutPageLeave')
+    expect(installer).toContain('Page custom SottoShortcutPageCreate SottoShortcutPageLeave')
     expect(installer).toContain('Create a desktop shortcut')
-    expect(installer).toContain('StrCpy $TalkTypeCreateDesktopShortcut ${BST_UNCHECKED}')
+    expect(installer).toContain('StrCpy $SottoCreateDesktopShortcut ${BST_UNCHECKED}')
     expect(installer).toContain('CreateShortCut "$newDesktopLink" "$appExe"')
     expect(installer).toContain('WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"')
     expect(installer).toContain('WinShell::UninstShortcut "$oldDesktopLink"')

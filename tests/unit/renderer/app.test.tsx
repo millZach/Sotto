@@ -12,7 +12,7 @@ import {
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type ModelDisclosureCatalog,
-  type TalkTypeBridge,
+  type SottoBridge,
 } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
@@ -60,7 +60,7 @@ function deferred<Value>() {
   return { promise, reject, resolve }
 }
 
-function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
+function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
     listRecoveryNotices: vi.fn(async () => []),
     onRecoveryNotice: vi.fn(() => () => undefined),
@@ -104,7 +104,7 @@ const createController: AppControllerFactory = () => ({
 })
 
 function renderApp(
-  bridge: TalkTypeBridge,
+  bridge: SottoBridge,
   createMicrophoneTest: () => MicrophoneTestController = () => ({
     start: vi.fn(async () => 'ready' as const),
     stop: vi.fn(async () => undefined),
@@ -147,7 +147,7 @@ describe('shared main-window frame', () => {
       createStateBridge: () => createBridge({
         getSettings: vi.fn(() => new Promise<AppSettings>(() => undefined)),
       }),
-      stateText: /preparing talktype/i,
+      stateText: /preparing sotto/i,
     },
     {
       name: 'unavailable',
@@ -177,12 +177,12 @@ describe('shared main-window frame', () => {
     await waitFor(() => expect(document.body).toHaveTextContent(stateText))
 
     expect(container.querySelectorAll('.app-titlebar')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Minimize TalkType' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Close TalkType to tray' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
   })
 })
 
-describe('TalkType application onboarding integration', () => {
+describe('Sotto application onboarding integration', () => {
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
     let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined
     const bridge = createBridge({
@@ -213,7 +213,7 @@ describe('TalkType application onboarding integration', () => {
     const settings = deferred<AppSettings>()
     const bridge = createBridge({ getSettings: vi.fn(() => settings.promise) })
     renderApp(bridge)
-    expect(screen.getByRole('status')).toHaveTextContent(/preparing talktype/i)
+    expect(screen.getByRole('status')).toHaveTextContent(/preparing sotto/i)
 
     settings.reject(new Error('private storage detail'))
     await waitFor(() => expect(screen.getByRole('heading', { name: /could not finish starting/i })).toBeVisible())
@@ -279,8 +279,8 @@ describe('TalkType application onboarding integration', () => {
       quitApp,
     }))
     await screen.findByRole('heading', { level: 1, name: 'Home' })
-    await user.click(screen.getByRole('button', { name: /minimize talktype/i }))
-    await user.click(screen.getByRole('button', { name: /close talktype to tray/i }))
+    await user.click(screen.getByRole('button', { name: /minimize sotto/i }))
+    await user.click(screen.getByRole('button', { name: /close sotto to tray/i }))
     expect(minimizeApp).toHaveBeenCalledOnce()
     expect(hideApp).toHaveBeenCalledOnce()
     expect(quitApp).not.toHaveBeenCalled()
@@ -485,8 +485,8 @@ describe('TalkType application onboarding integration', () => {
 
   it('keeps a newer model-status event when an older explicit check resolves later', async () => {
     const user = userEvent.setup()
-    const check = deferred<Awaited<ReturnType<TalkTypeBridge['getModelStatus']>>>()
-    const listeners: Array<Parameters<TalkTypeBridge['onModelStatus']>[0]> = []
+    const check = deferred<Awaited<ReturnType<SottoBridge['getModelStatus']>>>()
+    const listeners: Array<Parameters<SottoBridge['onModelStatus']>[0]> = []
     const bridge = createBridge({
       getModelStatus: vi.fn(() => check.promise),
       onModelStatus: vi.fn((listener) => {
@@ -511,7 +511,7 @@ describe('TalkType application onboarding integration', () => {
 })
 
 describe('transcription pipeline prewarm', () => {
-  function createPrewarmHarness(bridge: TalkTypeBridge) {
+  function createPrewarmHarness(bridge: SottoBridge) {
     const prewarm = vi.fn(async () => undefined)
     const factory: AppControllerFactory = () => ({
       getState: () => ({ status: 'idle' }),

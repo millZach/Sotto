@@ -1,5 +1,5 @@
-export const LOCAL_MODEL_ROOT = 'talktype-model://model/' as const
-export const LOCAL_RUNTIME_ROOT = 'talktype-runtime://runtime/' as const
+export const LOCAL_MODEL_ROOT = 'sotto-model://model/' as const
+export const LOCAL_RUNTIME_ROOT = 'sotto-runtime://runtime/' as const
 
 interface WasmEnvironment {
   wasmPaths?: unknown

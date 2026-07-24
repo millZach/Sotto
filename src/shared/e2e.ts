@@ -3,8 +3,8 @@ import { z } from 'zod'
 export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence.'
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
-export const E2E_SNAPSHOT_CHANNEL = 'talktype:e2e:snapshot'
-export const E2E_TRIGGER_SHORTCUT_CHANNEL = 'talktype:e2e:trigger-shortcut'
+export const E2E_SNAPSHOT_CHANNEL = 'sotto:e2e:snapshot'
+export const E2E_TRIGGER_SHORTCUT_CHANNEL = 'sotto:e2e:trigger-shortcut'
 
 export const e2eScenarioSchema = z.enum([
   'success',
@@ -27,7 +27,7 @@ export const e2eSnapshotSchema = z.object({
 export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
-export interface TalkTypeE2EBridge {
+export interface SottoE2EBridge {
   readonly scenario: E2EScenario
   snapshot(): Promise<E2ESnapshot>
   triggerShortcut(): Promise<void>

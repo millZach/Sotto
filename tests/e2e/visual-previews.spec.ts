@@ -13,7 +13,7 @@ const actualRoot = resolve(process.cwd(), 'test-results/visual-previews/actual')
 const buildRoot = resolve(process.cwd(), 'test-results/visual-previews/builds')
 const previews = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error'] as const
 const themes = ['light', 'dark'] as const
-const updateWidgetBaselines = process.env.TALKTYPE_UPDATE_WIDGET_BASELINES === '1'
+const updateWidgetBaselines = process.env.SOTTO_UPDATE_WIDGET_BASELINES === '1'
 const buildVariants = [
   ['unset', undefined],
   ['zero', '0'],
@@ -49,8 +49,8 @@ let origin = ''
 
 function buildRenderer(visualPreviewEnvironment: string | undefined): void {
   const environment = { ...process.env }
-  if (visualPreviewEnvironment === undefined) delete environment.TALKTYPE_VISUAL_PREVIEW
-  else environment.TALKTYPE_VISUAL_PREVIEW = visualPreviewEnvironment
+  if (visualPreviewEnvironment === undefined) delete environment.SOTTO_VISUAL_PREVIEW
+  else environment.SOTTO_VISUAL_PREVIEW = visualPreviewEnvironment
 
   if (process.platform === 'win32') {
     execFileSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd run build'], {
@@ -158,7 +158,7 @@ test('an unset production environment gate stays inert despite the immutable des
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.setViewportSize({ width: 248, height: 88 })
-  await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
+  await page.addInitScript(`Object.defineProperty(window, '__SOTTO_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
     configurable: false,
@@ -174,7 +174,7 @@ test('an unset production environment gate stays inert despite the immutable des
 
 test('compiled zero and other environment values remain inert', async ({ page }) => {
   await page.setViewportSize({ width: 248, height: 88 })
-  await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
+  await page.addInitScript(`Object.defineProperty(window, '__SOTTO_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
     configurable: false,
@@ -189,9 +189,9 @@ test('compiled zero and other environment values remain inert', async ({ page })
   }
 })
 
-test('the exact TALKTYPE_VISUAL_PREVIEW=1 build gate enables immutable test previews', async ({ page }) => {
+test('the exact SOTTO_VISUAL_PREVIEW=1 build gate enables immutable test previews', async ({ page }) => {
   await page.setViewportSize({ width: 248, height: 88 })
-  await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
+  await page.addInitScript(`Object.defineProperty(window, '__SOTTO_VISUAL_PREVIEW__', {
     value: true,
     writable: false,
     configurable: false,
@@ -216,7 +216,7 @@ for (const theme of themes) {
       const pageErrors: string[] = []
       page.on('pageerror', (error) => pageErrors.push(error.message))
       await page.setViewportSize({ width: 248, height: 88 })
-      await page.addInitScript(`Object.defineProperty(window, '__TALKTYPE_VISUAL_PREVIEW__', {
+      await page.addInitScript(`Object.defineProperty(window, '__SOTTO_VISUAL_PREVIEW__', {
         value: true,
         writable: false,
         configurable: false,
@@ -255,7 +255,7 @@ for (const theme of themes) {
         return {
           background: bodyStyle.backgroundColor,
           animated,
-          descriptor: Object.getOwnPropertyDescriptor(window, '__TALKTYPE_VISUAL_PREVIEW__'),
+          descriptor: Object.getOwnPropertyDescriptor(window, '__SOTTO_VISUAL_PREVIEW__'),
           overflows,
           detailFits: (() => {
             const detail = document.querySelector('.widget-copy')

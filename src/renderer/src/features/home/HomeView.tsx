@@ -35,7 +35,7 @@ function finiteError(code: string): string {
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your text could not be delivered. Try again, then paste from the clipboard manually.'
-    default: return 'TalkType could not transcribe that recording. Try again or choose a smaller model in Settings.'
+    default: return 'Sotto could not transcribe that recording. Try again or choose a smaller model in Settings.'
   }
 }
 

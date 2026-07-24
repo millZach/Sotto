@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
 import {
-  bootstrapTalkType,
+  bootstrapSotto,
   installSessionPermissionPolicy,
   NativeRuntimeController,
   type BootstrapDiagnostic,
@@ -38,6 +38,7 @@ import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
+import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
 import {
   WidgetPlacementRepository,
   type StoredWidgetPlacement,
@@ -96,9 +97,10 @@ import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL } from '../shared/e2
 
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
 if (e2eConfiguration === null) {
-  delete process.env.TALKTYPE_E2E
-  delete process.env.TALKTYPE_E2E_SCENARIO
-  delete process.env.TALKTYPE_E2E_USER_DATA
+  delete process.env.SOTTO_E2E
+  delete process.env.SOTTO_E2E_SCENARIO
+  delete process.env.SOTTO_E2E_USER_DATA
+  migrateLegacyUserData(app.getPath('userData'))
 } else if (e2eConfiguration !== null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
 }
@@ -114,7 +116,7 @@ type NativeDiagnostic =
   | 'settings-update-failed'
 
 function logOperational(code: NativeDiagnostic): void {
-  console.error(`[TalkType] ${code}`)
+  console.error(`[Sotto] ${code}`)
 }
 
 function toMenuTemplate(item: TrayMenuItem): MenuItemConstructorOptions {
@@ -660,7 +662,7 @@ registerModelSchemesAsPrivileged(protocol)
 enableWasmThreadSupport(app.commandLine)
 app.setAppUserModelId(APP_ID)
 
-void bootstrapTalkType({ app, initialize: createRuntime, log: logOperational }).catch(() => {
+void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
   logOperational('bootstrap-terminal-failed')
   app.quit()
 })

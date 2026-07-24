@@ -16,7 +16,7 @@ import type {
   ModelInstallRequest,
   ModelStatus,
   StartupState,
-  TalkTypeBridge,
+  SottoBridge,
   UnavailableResult,
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
@@ -59,10 +59,10 @@ export interface AppController {
 
 export interface AppControllerFactoryBindings {
   readonly getSettings: () => AppSettings
-  readonly deliverOutput: TalkTypeBridge['deliverOutput']
-  readonly addHistory: TalkTypeBridge['addHistory']
-  readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<TalkTypeBridge['publishWidgetState']>
-  readonly polishTranscript?: TalkTypeBridge['polishTranscript']
+  readonly deliverOutput: SottoBridge['deliverOutput']
+  readonly addHistory: SottoBridge['addHistory']
+  readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
+  readonly polishTranscript?: SottoBridge['polishTranscript']
 }
 
 export type AppControllerFactory = (
@@ -118,8 +118,8 @@ export interface AppActions {
   copyHistory(text: string): Promise<boolean>
   getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
   listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
-  installModel(request: ModelInstallRequest): ReturnType<TalkTypeBridge['installModel']>
-  removeModel(preset: ModelPreset): ReturnType<TalkTypeBridge['removeModel']>
+  installModel(request: ModelInstallRequest): ReturnType<SottoBridge['installModel']>
+  removeModel(preset: ModelPreset): ReturnType<SottoBridge['removeModel']>
   showApp(): Promise<void>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
@@ -144,7 +144,7 @@ const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as
 
 export interface AppProviderProps {
   readonly children?: ReactNode
-  readonly bridge?: TalkTypeBridge | undefined
+  readonly bridge?: SottoBridge | undefined
   readonly createController?: AppControllerFactory | undefined
 }
 
@@ -162,7 +162,7 @@ function invokeController(
 
 export function AppProvider({
   children,
-  bridge = window.talktype,
+  bridge = window.sotto,
   createController = createProductionDictationController,
 }: AppProviderProps): ReactNode {
   const [status, setStatus] = useState<AppStatus>('loading')

@@ -32,7 +32,7 @@ const customSettings = {
   onboardingComplete: true,
   llmFormatting: true,
   llmApiKey: 'sk-or-v1-test',
-  llmDictionary: 'TalkType\nMoonshine',
+  llmDictionary: 'Sotto\nMoonshine',
   llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,

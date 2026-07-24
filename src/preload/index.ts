@@ -45,8 +45,8 @@ import {
   transcriptPolishResultSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
-  type TalkTypeBridge,
-  type TalkTypeWidgetBridge,
+  type SottoBridge,
+  type SottoWidgetBridge,
   type WidgetDragPayload,
   type WidgetPresentationPayload,
 } from '../shared/contracts'
@@ -58,7 +58,7 @@ import {
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
   e2eSnapshotSchema,
-  type TalkTypeE2EBridge,
+  type SottoE2EBridge,
 } from '../shared/e2e'
 
 type RendererListener = (event: unknown, ...args: unknown[]) => void
@@ -164,7 +164,7 @@ function createBufferedSubscription<Output>(
   }
 }
 
-export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBridge {
+export function createSottoBridge(renderer: IpcRendererAdapter): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
     DICTATION_COMMAND,
@@ -183,7 +183,7 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
     recoveryNoticeSchema,
     2,
   )
-  const bridge: TalkTypeBridge = {
+  const bridge: SottoBridge = {
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
     onRecoveryNotice,
@@ -236,9 +236,9 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
   return Object.freeze(bridge)
 }
 
-export function createTalkTypeWidgetBridge(
+export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
-): TalkTypeWidgetBridge {
+): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
     WIDGET_STATE,
@@ -277,7 +277,7 @@ export function createTalkTypeWidgetBridge(
   })
 }
 
-const RENDERER_ROLE_PREFIX = '--talktype-renderer-role='
+const RENDERER_ROLE_PREFIX = '--sotto-renderer-role='
 
 export function parseRendererRoleArgument(
   arguments_: readonly string[],
@@ -295,11 +295,11 @@ export function exposeRendererBridge(
 ): boolean {
   const rendererRole = parseRendererRoleArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('talktype', createTalkTypeBridge(renderer))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer))
     return true
   }
   if (rendererRole === 'widget') {
-    context.exposeInMainWorld('talktypeWidget', createTalkTypeWidgetBridge(renderer))
+    context.exposeInMainWorld('sottoWidget', createSottoWidgetBridge(renderer))
     return true
   }
   return false
@@ -311,15 +311,15 @@ export function exposeE2EBridge(
   environment: NodeJS.ProcessEnv,
   arguments_: readonly string[],
 ): void {
-  if (environment.TALKTYPE_E2E !== '1' || parseRendererRoleArgument(arguments_) !== 'main') return
-  const scenario = e2eScenarioSchema.safeParse(environment.TALKTYPE_E2E_SCENARIO ?? 'success')
+  if (environment.SOTTO_E2E !== '1' || parseRendererRoleArgument(arguments_) !== 'main') return
+  const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
   if (!scenario.success) return
-  const bridge: TalkTypeE2EBridge = Object.freeze({
+  const bridge: SottoE2EBridge = Object.freeze({
     scenario: scenario.data,
     snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
     triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),
   })
-  context.exposeInMainWorld('talktypeE2E', bridge)
+  context.exposeInMainWorld('sottoE2E', bridge)
 }
 
 exposeRendererBridge(contextBridge, ipcRenderer, process.argv)

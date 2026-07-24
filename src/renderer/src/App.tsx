@@ -19,8 +19,8 @@ import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 
 const recoveryMessages = {
-  SETTINGS_RECOVERED: 'TalkType restored default settings after a local settings file could not be read. The original file was preserved.',
-  HISTORY_RECOVERED: 'TalkType started with an empty history after its local history file could not be read. The original file was preserved.',
+  SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
+  HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
 } as const
 
 export interface AppProps {
@@ -192,13 +192,13 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   let content: ReactNode
   if (app.status === 'loading') {
-    content = <main className="app-loading" aria-busy="true"><p role="status">Preparing TalkType...</p></main>
+    content = <main className="app-loading" aria-busy="true"><p role="status">Preparing Sotto...</p></main>
   } else if (app.status === 'unavailable' || app.settings === null) {
     content = (
       <main className="app-unavailable">
         <Card>
-          <h1>TalkType could not finish starting</h1>
-          <p>Your data was not changed. Close and reopen TalkType, then try again.</p>
+          <h1>Sotto could not finish starting</h1>
+          <p>Your data was not changed. Close and reopen Sotto, then try again.</p>
         </Card>
       </main>
     )

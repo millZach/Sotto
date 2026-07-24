@@ -24,7 +24,7 @@ function createEntry(id: string, createdAt: number, text = `Transcript ${id}`): 
 async function createRepository(
   now: () => number = Date.now,
 ): Promise<{ filePath: string; repository: HistoryRepository }> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-history-repository-'))
+  const root = await mkdtemp(join(tmpdir(), 'sotto-history-repository-'))
   roots.push(root)
   const filePath = join(root, 'history.json')
   return { filePath, repository: new HistoryRepository(filePath, { now }) }
@@ -131,7 +131,7 @@ describe('HistoryRepository', () => {
   })
 
   it('does not report or recover corrupt history while disabled', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-history-repository-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-history-repository-'))
     roots.push(root)
     const filePath = join(root, 'history.json')
     const corruptBytes = Buffer.from('[{"text":"private disabled transcript"}', 'utf8')
@@ -364,7 +364,7 @@ describe('HistoryRepository', () => {
   })
 
   it('reports one sanitized history recovery after preserving syntax-corrupt transcript bytes', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-history-repository-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-history-repository-'))
     roots.push(root)
     const filePath = join(root, 'history.json')
     const corruptBytes = Buffer.from('[{"text":"private transcript content"}', 'utf8')

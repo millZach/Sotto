@@ -19,9 +19,9 @@ type WindowEvent = 'close' | 'closed'
 
 class LifecycleWindow implements BrowserWindowLike {
   readonly webContents = {
-    mainFrame: { parent: null, url: 'file:///TalkType/index.html' },
+    mainFrame: { parent: null, url: 'file:///Sotto/index.html' },
     send: vi.fn(),
-    getURL: vi.fn(() => 'file:///TalkType/index.html'),
+    getURL: vi.fn(() => 'file:///Sotto/index.html'),
     isDestroyed: vi.fn(() => false),
     setWindowOpenHandler: vi.fn(),
   }

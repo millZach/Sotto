@@ -17,14 +17,14 @@ import type { E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import {
-  closeTalkType,
-  launchTalkType,
-  type LaunchedTalkType,
+  closeSotto,
+  launchSotto,
+  type LaunchedSotto,
   type LaunchDependencies,
-} from './support/talktypeLaunch'
+} from './support/sottoLaunch'
 
-const captureEnabled = process.env.TALKTYPE_DESIGN_CAPTURE === '1'
-const updateBaselines = process.env.TALKTYPE_UPDATE_DESIGN_BASELINES === '1'
+const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
+const updateBaselines = process.env.SOTTO_UPDATE_DESIGN_BASELINES === '1'
 const repositoryRoot = process.cwd()
 const baselineRoot = resolve(repositoryRoot, 'artifacts/design/app-review/baseline')
 const manifestPath = resolve(repositoryRoot, 'artifacts/design/app-review/manifest.json')
@@ -109,7 +109,7 @@ async function createProfile(
     readonly motion?: CaptureMotion
   },
 ): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), 'talktype-e2e-design-'))
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
   const settings = {
     ...DEFAULT_SETTINGS,
     theme,
@@ -122,7 +122,7 @@ async function createProfile(
   return profile
 }
 
-async function withTalkType(
+async function withSotto(
   theme: CaptureTheme,
   options: {
     readonly onboardingComplete: boolean
@@ -131,10 +131,10 @@ async function withTalkType(
     readonly scenario?: E2EScenario
     readonly scalePercent?: CaptureScale
   },
-  run: (launched: LaunchedTalkType) => Promise<void>,
+  run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
   const profile = await createProfile(theme, options)
-  let launched: LaunchedTalkType | undefined
+  let launched: LaunchedSotto | undefined
   try {
     const scaleFactor = (options.scalePercent ?? 100) / 100
     const dependencies: LaunchDependencies = {
@@ -146,7 +146,7 @@ async function withTalkType(
       firstWindow: (application) => application.firstWindow(),
       removeProfile: async () => undefined,
     }
-    launched = await launchTalkType(options.scenario ?? 'success', profile, dependencies)
+    launched = await launchSotto(options.scenario ?? 'success', profile, dependencies)
     const motion = options.motion ?? 'normal'
     await launched.page.emulateMedia({ colorScheme: theme, reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
     await expect(launched.page.locator('html')).toHaveAttribute('data-theme', theme)
@@ -156,7 +156,7 @@ async function withTalkType(
     await expect.poll(() => launched!.page.evaluate<number>('devicePixelRatio')).toBeCloseTo(scaleFactor, 2)
     await run(launched)
   } finally {
-    if (launched !== undefined) await closeTalkType(launched)
+    if (launched !== undefined) await closeSotto(launched)
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }
 }
@@ -532,7 +532,7 @@ async function captureWidget(page: Page, fileName: string, metadata: CaptureHint
   await recordCapture(image, fileName, metadata)
 }
 
-async function widgetPage(launched: LaunchedTalkType): Promise<Page> {
+async function widgetPage(launched: LaunchedSotto): Promise<Page> {
   await expect.poll(() => launched.app.windows().some((candidate) => candidate.url().endsWith('/widget.html'))).toBe(true)
   const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
   if (widget === undefined) throw new Error('Widget renderer was not created')
@@ -568,7 +568,7 @@ test.describe('authoritative design-review captures', () => {
 
   for (const theme of themes) {
     test(`${theme} onboarding, management, focus, and feedback matrix`, async () => {
-      await withTalkType(theme, { onboardingComplete: false }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: false }, async ({ page }) => {
         const onboarding = page.locator('.onboarding-shell')
         const onboardingHeading = page.getByRole('heading', { name: /private dictation/i })
         await expect(onboardingHeading).toBeVisible()
@@ -592,7 +592,7 @@ test.describe('authoritative design-review captures', () => {
         await captureSection(page, onboarding, `onboarding-step-4-shortcut-${theme}.png`, { category: 'onboarding', state: 'shortcut-paste', theme })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
         await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
         await capturePage(page, `home-ready-${theme}.png`, { category: 'home', state: 'ready', theme })
 
@@ -610,14 +610,14 @@ test.describe('authoritative design-review captures', () => {
         await capturePage(page, `home-success-${theme}.png`, { category: 'home', state: 'success-pasted', theme })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {
         await page.getByRole('button', { name: 'Start dictation' }).click()
         await page.getByRole('button', { name: 'Stop and transcribe' }).click()
         await expect(page.getByRole('heading', { name: 'Turning speech into text' })).toBeVisible()
         await capturePage(page, `home-processing-${theme}.png`, { category: 'home', state: 'processing', theme })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, scenario: 'transcription-failure' }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: true, scenario: 'transcription-failure' }, async ({ page }) => {
         await page.getByRole('button', { name: 'Start dictation' }).click()
         await page.getByRole('button', { name: 'Stop and transcribe' }).click()
         await expect(page.getByRole('heading', { name: 'Dictation needs attention' })).toBeVisible()
@@ -625,13 +625,13 @@ test.describe('authoritative design-review captures', () => {
         await capturePage(page, `home-error-${theme}.png`, { category: 'home', state: 'error', theme })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, motion: 'reduced' }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async ({ page }) => {
         await page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
         await capturePage(page, `home-reduced-motion-${theme}.png`, { category: 'home', state: 'listening-reduced-motion', theme, reducedMotion: true })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await withSotto(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
         await page.getByRole('link', { name: 'History' }).click()
         await expect(page.getByText(populatedHistory[0]!.text)).toBeVisible()
         const historySearch = page.getByRole('searchbox', { name: 'Search transcripts' })
@@ -685,7 +685,7 @@ test.describe('authoritative design-review captures', () => {
 
     test(`${theme} dense scaling matrix remains bounded`, async () => {
       for (const scalePercent of scales) {
-        await withTalkType(theme, { onboardingComplete: false, scalePercent }, async ({ page }) => {
+        await withSotto(theme, { onboardingComplete: false, scalePercent }, async ({ page }) => {
           await page.getByRole('button', { name: 'Continue' }).click()
           await page.getByRole('button', { name: /test microphone/i }).click()
           await expect(page.getByText(/microphone ready/i)).toBeVisible()
@@ -694,7 +694,7 @@ test.describe('authoritative design-review captures', () => {
           await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding-${theme}.png`)
         })
 
-        await withTalkType(theme, { onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {
+        await withSotto(theme, { onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {
           const { page } = launched
           await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
           await capturePage(page, `scale-${scalePercent}-home-${theme}.png`)
@@ -719,7 +719,7 @@ test.describe('authoritative design-review captures', () => {
     })
 
     test(`${theme} widget states missing from the established widget baseline are captured`, async () => {
-      await withTalkType(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
         // The renderer publishes its first widget snapshot from a dictation
         // session, so cancel one and wait for the automatic reset back to the
         // resting idle sliver before capturing it.
@@ -732,14 +732,14 @@ test.describe('authoritative design-review captures', () => {
         await captureWidget(widget, `widget-idle-${theme}.png`, { category: 'widget', state: 'idle-sliver', theme, reducedMotion: true })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
+      await withSotto(theme, { onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched)
         await expect(widget.getByText('Waiting for microphone', { exact: true })).toBeVisible()
         await captureWidget(widget, `widget-permission-${theme}.png`, { category: 'widget', state: 'requesting-permission', theme, reducedMotion: true })
       })
 
-      await withTalkType(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched)
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
@@ -762,10 +762,10 @@ test.describe('authoritative design-review captures', () => {
       version: 2,
       captureBoundary: {
         mode: 'non-packaged-only',
-        environmentGate: 'TALKTYPE_E2E=1',
+        environmentGate: 'SOTTO_E2E=1',
         packagedRejectionProof: 'tests/unit/main/e2eBoundary.test.ts and scripts/verify-packaged-resources.mjs',
       },
-      viewport: 'TalkType main BrowserWindow (1080x720 logical window); widget 248x88.',
+      viewport: 'Sotto main BrowserWindow (1080x720 logical window); widget 248x88.',
       scalingMethod: 'Electron --force-device-scale-factor driven by Playwright at 100/125/150/200 percent; devicePixelRatio is asserted.',
       notes: [
         'The idle widget renders the resting click-to-dictate sliver; idle captures are recorded after a completed session returns to idle.',

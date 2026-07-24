@@ -4,11 +4,11 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import type { Plugin } from 'vite'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
-const visualPreviewEnvironment = process.env.TALKTYPE_VISUAL_PREVIEW === '1' ? '1' : '0'
+const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
 
 function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
   return {
-    name: `talktype-${scope}-external-dependency-inventory`,
+    name: `sotto-${scope}-external-dependency-inventory`,
     generateBundle(_options, bundle) {
       const outputFiles = new Set(Object.keys(bundle))
       const imports = new Set<string>()
@@ -38,7 +38,7 @@ function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
 
 function bundledDependencyInventory(): Plugin {
   return {
-    name: 'talktype-bundled-dependency-inventory',
+    name: 'sotto-bundled-dependency-inventory',
     generateBundle(_options, bundle) {
       const packages = new Set<string>()
       for (const output of Object.values(bundle)) {
@@ -78,7 +78,7 @@ export default defineConfig({
   renderer: {
     plugins: [bundledDependencyInventory()],
     define: {
-      'import.meta.env.TALKTYPE_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
+      'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },
     build: {
       rollupOptions: {

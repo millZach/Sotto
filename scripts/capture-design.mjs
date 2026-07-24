@@ -8,8 +8,8 @@ const child = spawn(process.execPath, [cli, 'test', 'tests/e2e/design-capture.sp
   cwd: process.cwd(),
   env: {
     ...process.env,
-    TALKTYPE_DESIGN_CAPTURE: '1',
-    TALKTYPE_UPDATE_DESIGN_BASELINES: update ? '1' : '0',
+    SOTTO_DESIGN_CAPTURE: '1',
+    SOTTO_UPDATE_DESIGN_BASELINES: update ? '1' : '0',
   },
   stdio: 'inherit',
   windowsHide: true,

@@ -41,7 +41,7 @@ export class TrayController {
         label: state.dictating ? 'Stop Dictation' : 'Start Dictation',
         click: this.actions.toggleDictation,
       },
-      { type: 'normal', label: 'Show TalkType', click: this.actions.show },
+      { type: 'normal', label: 'Show Sotto', click: this.actions.show },
       { type: 'separator' },
       {
         type: 'checkbox',

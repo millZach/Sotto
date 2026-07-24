@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
-  bootstrapTalkType,
+  bootstrapSotto,
   installSessionPermissionPolicy,
   NativeRuntimeController,
   NativeRuntimeStoppedError,
@@ -66,7 +66,7 @@ import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type ModelDisclosureCatalog,
   type OutputDeliveryRequest,
-  type TalkTypeBridge,
+  type SottoBridge,
 } from '../../src/shared/contracts'
 import type { WidgetSnapshot } from '../../src/shared/dictation'
 import {
@@ -99,8 +99,8 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  createTalkTypeBridge,
-  createTalkTypeWidgetBridge,
+  createSottoBridge,
+  createSottoWidgetBridge,
   exposeRendererBridge,
   exposeE2EBridge,
   parseRendererRoleArgument,
@@ -176,7 +176,7 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   readonly loadFile = vi.fn(async () => undefined)
 
   constructor(readonly role: 'main' | 'widget', options: WindowConstructorOptions) {
-    const url = `file:///C:/TalkType/out/renderer/${role === 'main' ? 'index' : 'widget'}.html`
+    const url = `file:///C:/Sotto/out/renderer/${role === 'main' ? 'index' : 'widget'}.html`
     const mainFrame = { parent: null, url }
     this.webContents = {
       mainFrame,
@@ -225,7 +225,7 @@ class IpcLifecycleWindow implements BrowserWindowLike {
 }
 
 function createIpcHarness() {
-  const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+  const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
   const trustedFrame = { parent: null, url: trustedUrl }
   const trustedContents = {
     getURL: (): string => trustedUrl,
@@ -331,7 +331,7 @@ describe('typed preload bridge', () => {
   })
 
   it('creates a frozen main-only surface without widget subscriptions or generic IPC', () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
 
     expect(Object.keys(bridge).sort()).toEqual(
       [
@@ -374,7 +374,7 @@ describe('typed preload bridge', () => {
   })
 
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
-    const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
+    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer)
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'onWidgetState',
@@ -433,7 +433,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly validates generation-bound widget visibility presentation and drag payloads', async () => {
-    const bridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer) as unknown as {
+    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer) as unknown as {
       onWidgetVisibilityChange(
         listener: (visibility: { visible: boolean; generation: number }) => void,
       ): () => void
@@ -492,14 +492,14 @@ describe('typed preload bridge', () => {
   })
 
   it('accepts only one immutable main-created renderer role argument', () => {
-    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=main'])).toBe('main')
-    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=widget'])).toBe('widget')
+    expect(parseRendererRoleArgument(['electron', '--sotto-renderer-role=main'])).toBe('main')
+    expect(parseRendererRoleArgument(['electron', '--sotto-renderer-role=widget'])).toBe('widget')
     expect(parseRendererRoleArgument(['electron'])).toBeNull()
-    expect(parseRendererRoleArgument(['electron', '--talktype-renderer-role=admin'])).toBeNull()
+    expect(parseRendererRoleArgument(['electron', '--sotto-renderer-role=admin'])).toBeNull()
     expect(parseRendererRoleArgument([
       'electron',
-      '--talktype-renderer-role=main',
-      '--talktype-renderer-role=widget',
+      '--sotto-renderer-role=main',
+      '--sotto-renderer-role=widget',
     ])).toBeNull()
   })
 
@@ -508,9 +508,9 @@ describe('typed preload bridge', () => {
     expect(exposeRendererBridge(
       context,
       electronMock.ipcRenderer,
-      ['electron', '--talktype-renderer-role=main'],
+      ['electron', '--sotto-renderer-role=main'],
     )).toBe(true)
-    expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktype', expect.any(Object))
+    expect(context.exposeInMainWorld).toHaveBeenCalledWith('sotto', expect.any(Object))
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(3)
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
       [DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED].sort(),
@@ -521,9 +521,9 @@ describe('typed preload bridge', () => {
     expect(exposeRendererBridge(
       context,
       electronMock.ipcRenderer,
-      ['electron', '--talktype-renderer-role=widget'],
+      ['electron', '--sotto-renderer-role=widget'],
     )).toBe(true)
-    expect(context.exposeInMainWorld).toHaveBeenCalledWith('talktypeWidget', expect.any(Object))
+    expect(context.exposeInMainWorld).toHaveBeenCalledWith('sottoWidget', expect.any(Object))
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(2)
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
       [WIDGET_STATE, WIDGET_VISIBILITY].sort(),
@@ -539,44 +539,44 @@ describe('typed preload bridge', () => {
   it('exposes the E2E bridge only for an admitted main renderer environment and role', () => {
     const context = { exposeInMainWorld: vi.fn() }
     const admitted = {
-      TALKTYPE_E2E: '1',
-      TALKTYPE_E2E_SCENARIO: 'success',
+      SOTTO_E2E: '1',
+      SOTTO_E2E_SCENARIO: 'success',
     }
 
     exposeE2EBridge(context, electronMock.ipcRenderer, admitted, [
       'electron',
-      '--talktype-renderer-role=widget',
+      '--sotto-renderer-role=widget',
     ])
     exposeE2EBridge(context, electronMock.ipcRenderer, admitted, ['electron'])
     exposeE2EBridge(context, electronMock.ipcRenderer, {}, [
       'electron',
-      '--talktype-renderer-role=main',
+      '--sotto-renderer-role=main',
     ])
     exposeE2EBridge(context, electronMock.ipcRenderer, {
       ...admitted,
-      TALKTYPE_E2E_SCENARIO: 'unknown',
-    }, ['electron', '--talktype-renderer-role=main'])
+      SOTTO_E2E_SCENARIO: 'unknown',
+    }, ['electron', '--sotto-renderer-role=main'])
     expect(context.exposeInMainWorld).not.toHaveBeenCalled()
 
     exposeE2EBridge(context, electronMock.ipcRenderer, admitted, [
       'electron',
-      '--talktype-renderer-role=main',
+      '--sotto-renderer-role=main',
     ])
     expect(context.exposeInMainWorld).toHaveBeenCalledTimes(1)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith(
-      'talktypeE2E',
+      'sottoE2E',
       expect.objectContaining({ scenario: 'success' }),
     )
   })
 
   it('types generic settings updates without native-managed fields', () => {
-    expectTypeOf<Parameters<TalkTypeBridge['updateSettings']>[0]>().toEqualTypeOf<SettingsPatch>()
-    expectTypeOf<Parameters<TalkTypeBridge['deliverOutput']>[0]>().toEqualTypeOf<OutputDeliveryRequest>()
-    expectTypeOf<Parameters<TalkTypeBridge['publishWidgetState']>[0]>().toEqualTypeOf<WidgetSnapshot>()
+    expectTypeOf<Parameters<SottoBridge['updateSettings']>[0]>().toEqualTypeOf<SettingsPatch>()
+    expectTypeOf<Parameters<SottoBridge['deliverOutput']>[0]>().toEqualTypeOf<OutputDeliveryRequest>()
+    expectTypeOf<Parameters<SottoBridge['publishWidgetState']>[0]>().toEqualTypeOf<WidgetSnapshot>()
   })
 
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
     const listener = vi.fn()
     const visibilityListener = vi.fn()
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce({
@@ -585,7 +585,7 @@ describe('typed preload bridge', () => {
     })
 
     await bridge.updateSettings({ theme: 'dark' })
-    const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
+    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer)
     const unsubscribe = widgetBridge.onWidgetState(listener)
     const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
 
@@ -593,7 +593,7 @@ describe('typed preload bridge', () => {
       theme: 'dark',
     })
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
-      'talktype:widget:state',
+      'sotto:widget:state',
       expect.any(Function),
     )
     expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
@@ -639,8 +639,8 @@ describe('typed preload bridge', () => {
   })
 
   it('preload retains post-ready command edges until AppContext subscribes', () => {
-    const mainBridge = createTalkTypeBridge(electronMock.ipcRenderer)
-    const widgetBridge = createTalkTypeWidgetBridge(electronMock.ipcRenderer)
+    const mainBridge = createSottoBridge(electronMock.ipcRenderer)
+    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer)
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,
     )?.[1]
@@ -682,7 +682,7 @@ describe('typed preload bridge', () => {
   })
 
   it('retains only the latest strict authoritative settings event for the main renderer', () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
     const settingsEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === SETTINGS_CHANGED,
     )?.[1]
@@ -700,7 +700,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly buffers safe recovery codes and lists sanitized retained notices', async () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
     const recoveryEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === RECOVERY_NOTICE,
     )?.[1]
@@ -725,7 +725,7 @@ describe('typed preload bridge', () => {
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
     const request = {
       text: 'session words',
       autoPaste: false,
@@ -751,7 +751,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly parses and freezes the no-payload model disclosure response', async () => {
-    const bridge = createTalkTypeBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer)
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce(disclosureCatalog)
 
     const result = await bridge.listModelDisclosures()
@@ -783,7 +783,7 @@ describe('IPC validation and lifecycle', () => {
     async (channel) => {
       const harness = createIpcHarness()
       harness.cleanup()
-      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
       const widgetFrame = { parent: null, url: widgetUrl }
       const widgetContents = {
         getURL: (): string => widgetUrl,
@@ -849,7 +849,7 @@ describe('IPC validation and lifecycle', () => {
     async (type) => {
       const harness = createIpcHarness()
       harness.cleanup()
-      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
       const widgetFrame = { parent: null, url: widgetUrl }
       const widgetContents = {
         getURL: (): string => widgetUrl,
@@ -885,7 +885,7 @@ describe('IPC validation and lifecycle', () => {
     async (type) => {
       const harness = createIpcHarness()
       harness.cleanup()
-      const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+      const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
       const widgetFrame = { parent: null, url: widgetUrl }
       const widgetContents = {
         getURL: (): string => widgetUrl,
@@ -1578,13 +1578,13 @@ describe('permission policy', () => {
 
   it('allows only trusted renderer microphone requests', () => {
     const harness = createSession()
-    const packagedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
+    const packagedContents = { getURL: () => 'file:///C:/Sotto/out/renderer/index.html' }
     const developmentContents = { getURL: () => 'http://127.0.0.1:5173/' }
     installSessionPermissionPolicy(harness.session, () => [
       {
         role: 'main',
         webContents: packagedContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
       {
         role: 'main',
@@ -1600,7 +1600,7 @@ describe('permission policy', () => {
       trustedAudio,
       {
         isMainFrame: true,
-        requestingUrl: 'file:///C:/TalkType/out/renderer/index.html',
+        requestingUrl: 'file:///C:/Sotto/out/renderer/index.html',
         mediaTypes: ['audio'],
       },
     )
@@ -1616,7 +1616,7 @@ describe('permission policy', () => {
 
   it('resolves trusted renderer identity at request time after renderer replacement', () => {
     const harness = createSession()
-    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
     const originalContents = { getURL: () => trustedUrl }
     const replacementContents = { getURL: () => trustedUrl }
     let trustedRenderers = [
@@ -1654,7 +1654,7 @@ describe('permission policy', () => {
 
   it('denies microphone permission to a trusted widget identity', () => {
     const harness = createSession()
-    const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+    const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
     const widgetContents = { getURL: () => widgetUrl }
     installSessionPermissionPolicy(harness.session, () => [
       { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
@@ -1671,7 +1671,7 @@ describe('permission policy', () => {
 
   it('fails closed when renderer liveness inspection throws', () => {
     const harness = createSession()
-    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
     const trustedContents = {
       getURL: () => trustedUrl,
       isDestroyed: (): boolean => {
@@ -1700,7 +1700,7 @@ describe('permission policy', () => {
 
   it('rolls back a partial first installation and permits a clean retry', () => {
     const harness = createAtomicSession()
-    const trustedUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
     const trustedContents = { getURL: () => trustedUrl }
     vi.mocked(harness.session.setPermissionRequestHandler).mockImplementationOnce(() => {
       throw new Error('secret native setter detail')
@@ -1730,9 +1730,9 @@ describe('permission policy', () => {
 
   it('restores the prior policy when replacement installation fails', () => {
     const harness = createAtomicSession()
-    const originalUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const originalUrl = 'file:///C:/Sotto/out/renderer/index.html'
     const originalContents = { getURL: () => originalUrl }
-    const replacementUrl = 'file:///C:/TalkType/out/renderer/replacement.html'
+    const replacementUrl = 'file:///C:/Sotto/out/renderer/replacement.html'
     const replacementContents = { getURL: () => replacementUrl }
     const originalCleanup = installSessionPermissionPolicy(harness.session, () => [
       { role: 'main', webContents: originalContents, url: originalUrl },
@@ -1763,9 +1763,9 @@ describe('permission policy', () => {
 
   it('restores nested ownership in order and stale cleanup never clears a newer policy', () => {
     const harness = createAtomicSession()
-    const originalUrl = 'file:///C:/TalkType/out/renderer/index.html'
+    const originalUrl = 'file:///C:/Sotto/out/renderer/index.html'
     const originalContents = { getURL: () => originalUrl }
-    const replacementUrl = 'file:///C:/TalkType/out/renderer/replacement.html'
+    const replacementUrl = 'file:///C:/Sotto/out/renderer/replacement.html'
     const replacementContents = { getURL: () => replacementUrl }
     const originalCleanup = installSessionPermissionPolicy(harness.session, () => [
       { role: 'main', webContents: originalContents, url: originalUrl },
@@ -1799,12 +1799,12 @@ describe('permission policy', () => {
 
   it('resets only its two permission handlers during idempotent cleanup', () => {
     const harness = createSession()
-    const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
+    const trustedContents = { getURL: () => 'file:///C:/Sotto/out/renderer/index.html' }
     const cleanup = installSessionPermissionPolicy(harness.session, () => [
       {
         role: 'main',
         webContents: trustedContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
 
@@ -1817,19 +1817,19 @@ describe('permission policy', () => {
 
   it.each([
     ['untrusted audio', 'media', 'https://attacker.invalid/', ['audio']],
-    ['trusted video', 'media', 'file:///C:/TalkType/out/renderer/index.html', ['video']],
-    ['trusted display capture', 'display-capture', 'file:///C:/TalkType/out/renderer/index.html', []],
-    ['trusted notifications', 'notifications', 'file:///C:/TalkType/out/renderer/index.html', []],
-    ['trusted clipboard read', 'clipboard-read', 'file:///C:/TalkType/out/renderer/index.html', []],
+    ['trusted video', 'media', 'file:///C:/Sotto/out/renderer/index.html', ['video']],
+    ['trusted display capture', 'display-capture', 'file:///C:/Sotto/out/renderer/index.html', []],
+    ['trusted notifications', 'notifications', 'file:///C:/Sotto/out/renderer/index.html', []],
+    ['trusted clipboard read', 'clipboard-read', 'file:///C:/Sotto/out/renderer/index.html', []],
   ])('denies %s', (_name, permission, requestingUrl, mediaTypes) => {
     const harness = createSession()
-    const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
+    const trustedContents = { getURL: () => 'file:///C:/Sotto/out/renderer/index.html' }
     const untrustedContents = { getURL: () => 'https://attacker.invalid/' }
     installSessionPermissionPolicy(harness.session, () => [
       {
         role: 'main',
         webContents: trustedContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
     const callback = vi.fn()
@@ -1851,18 +1851,18 @@ describe('permission policy', () => {
     ['mixed audio and video', { isMainFrame: true, mediaTypes: ['audio', 'video'] }],
   ])('denies trusted media from %s', (_name, detailOverrides) => {
     const harness = createSession()
-    const trustedContents = { getURL: () => 'file:///C:/TalkType/out/renderer/index.html' }
+    const trustedContents = { getURL: () => 'file:///C:/Sotto/out/renderer/index.html' }
     installSessionPermissionPolicy(harness.session, () => [
       {
         role: 'main',
         webContents: trustedContents,
-        url: 'file:///C:/TalkType/out/renderer/index.html',
+        url: 'file:///C:/Sotto/out/renderer/index.html',
       },
     ])
     const callback = vi.fn()
 
     harness.permissionRequest(trustedContents, 'media', callback, {
-      requestingUrl: 'file:///C:/TalkType/out/renderer/index.html',
+      requestingUrl: 'file:///C:/Sotto/out/renderer/index.html',
       ...detailOverrides,
     })
 
@@ -1911,7 +1911,7 @@ describe('TrayController', () => {
     const idleMenu = setMenu.mock.calls.at(-1)?.[0]
     expect(idleMenu?.map((item) => item.label ?? item.type)).toEqual([
       'Start Dictation',
-      'Show TalkType',
+      'Show Sotto',
       'separator',
       'Auto-paste',
       'separator',
@@ -1984,7 +1984,7 @@ describe('bootstrap failure containment', () => {
       throw new Error('Invalid bundled model manifest: private path')
     })
 
-    const result = await bootstrapTalkType({ app, initialize, log })
+    const result = await bootstrapSotto({ app, initialize, log })
 
     expect(result.started).toBe(false)
     expect(initialize).toHaveBeenCalledOnce()
@@ -1998,7 +1998,7 @@ describe('bootstrap failure containment', () => {
     const log = vi.fn()
     const initialize = vi.fn(async () => createRuntime())
 
-    const result = await bootstrapTalkType({ app, initialize, log })
+    const result = await bootstrapSotto({ app, initialize, log })
 
     expect(result.started).toBe(false)
     expect(initialize).not.toHaveBeenCalled()
@@ -2014,7 +2014,7 @@ describe('bootstrap failure containment', () => {
       throw new Error('renderer secret C:/Users/private')
     })
 
-    const result = await bootstrapTalkType({
+    const result = await bootstrapSotto({
       app,
       initialize: async () => runtime,
       log,
@@ -2030,7 +2030,7 @@ describe('bootstrap failure containment', () => {
   it('raises the existing main window for a second instance and cleans up once on quit', async () => {
     const app = createApp(Promise.resolve())
     const runtime = createRuntime()
-    const result = await bootstrapTalkType({
+    const result = await bootstrapSotto({
       app,
       initialize: async () => runtime,
       log: vi.fn(),
@@ -2052,7 +2052,7 @@ describe('bootstrap failure containment', () => {
     vi.mocked(app.requestSingleInstanceLock).mockReturnValue(false)
     const initialize = vi.fn(async () => createRuntime())
 
-    const result = await bootstrapTalkType({ app, initialize, log: vi.fn() })
+    const result = await bootstrapSotto({ app, initialize, log: vi.fn() })
 
     expect(result.started).toBe(false)
     expect(app.quit).toHaveBeenCalledOnce()
@@ -2064,7 +2064,7 @@ describe('bootstrap failure containment', () => {
     const app = createApp(readiness.promise)
     const initialize = vi.fn(async () => createRuntime())
     const log = vi.fn()
-    const bootstrap = bootstrapTalkType({ app, initialize, log })
+    const bootstrap = bootstrapSotto({ app, initialize, log })
 
     app.emit('before-quit')
     readiness.resolve()
@@ -2080,7 +2080,7 @@ describe('bootstrap failure containment', () => {
     const app = createApp(Promise.resolve())
     const initialize = vi.fn(() => initialization.promise)
     const log = vi.fn()
-    const bootstrap = bootstrapTalkType({ app, initialize, log })
+    const bootstrap = bootstrapSotto({ app, initialize, log })
     await vi.waitFor(() => expect(initialize).toHaveBeenCalledOnce())
 
     app.emit('before-quit')
@@ -2100,7 +2100,7 @@ describe('bootstrap failure containment', () => {
     const app = createApp(Promise.resolve())
     const runtime = createRuntime(() => startup.promise)
     const log = vi.fn()
-    const bootstrap = bootstrapTalkType({
+    const bootstrap = bootstrapSotto({
       app,
       initialize: async () => runtime,
       log,
@@ -2124,7 +2124,7 @@ describe('bootstrap failure containment', () => {
     const startup = createDeferred<void>()
     const app = createApp(readiness.promise)
     const runtime = createRuntime(() => startup.promise)
-    const bootstrap = bootstrapTalkType({
+    const bootstrap = bootstrapSotto({
       app,
       initialize: async () => runtime,
       log: vi.fn(),
@@ -2151,7 +2151,7 @@ describe('bootstrap failure containment', () => {
     const initialization = createDeferred<RuntimeController>()
     const app = createApp(Promise.resolve())
     const initialize = vi.fn(() => initialization.promise)
-    const bootstrap = bootstrapTalkType({ app, initialize, log: vi.fn() })
+    const bootstrap = bootstrapSotto({ app, initialize, log: vi.fn() })
     await vi.waitFor(() => expect(initialize).toHaveBeenCalledOnce())
 
     app.emit('second-instance')
@@ -2169,7 +2169,7 @@ describe('bootstrap failure containment', () => {
     const app = createApp(Promise.resolve())
     const runtime = createRuntime(() => startup.promise)
     const log = vi.fn()
-    const bootstrap = bootstrapTalkType({
+    const bootstrap = bootstrapSotto({
       app,
       initialize: async () => runtime,
       log,
@@ -2198,7 +2198,7 @@ describe('bootstrap failure containment', () => {
       candidate[failingMethod].mockImplementation(() => {
         throw new Error('secret native teardown detail')
       })
-      const result = await bootstrapTalkType({
+      const result = await bootstrapSotto({
         app,
         initialize: async () => candidate,
         log,
@@ -2828,7 +2828,7 @@ describe('NativeRuntimeController', () => {
 
 describe('widget presentation and drag channels', () => {
   function widgetSender() {
-    const widgetUrl = 'file:///C:/TalkType/out/renderer/widget.html'
+    const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
     const widgetFrame = { parent: null, url: widgetUrl }
     const widgetContents = {
       getURL: (): string => widgetUrl,
@@ -2974,9 +2974,9 @@ describe('widget presentation and drag channels', () => {
           workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
         }),
       },
-      preloadPath: 'C:/TalkType/out/preload/index.js',
-      mainHtmlPath: 'C:/TalkType/out/renderer/index.html',
-      widgetHtmlPath: 'C:/TalkType/out/renderer/widget.html',
+      preloadPath: 'C:/Sotto/out/preload/index.js',
+      mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
+      widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
       developmentSources: undefined,
       isPackaged: true,
       log: vi.fn(),

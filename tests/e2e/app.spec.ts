@@ -7,10 +7,10 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import {
   E2E_CONFLICTING_HOTKEY,
   type E2ESnapshot,
-  type TalkTypeE2EBridge,
+  type SottoE2EBridge,
 } from '../../src/shared/e2e'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
-import { closeTalkType, e2eEnvironment, launchTalkType } from './support/talktypeLaunch'
+import { closeSotto, e2eEnvironment, launchSotto } from './support/sottoLaunch'
 
 async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -38,7 +38,7 @@ async function dictateWithButton(page: Page): Promise<void> {
 
 async function snapshot(page: Page): Promise<E2ESnapshot> {
   const value = await page.evaluate(() =>
-    (globalThis as unknown as { talktypeE2E?: TalkTypeE2EBridge }).talktypeE2E?.snapshot(),
+    (globalThis as unknown as { sottoE2E?: SottoE2EBridge }).sottoE2E?.snapshot(),
   )
   if (value === undefined) throw new Error('E2E bridge unavailable')
   return value
@@ -101,12 +101,12 @@ async function nativeWidgetVisible(app: ElectronApplication): Promise<boolean | 
 
 async function triggerShortcut(page: Page): Promise<void> {
   await page.evaluate(() =>
-    (globalThis as unknown as { talktypeE2E?: TalkTypeE2EBridge }).talktypeE2E?.triggerShortcut(),
+    (globalThis as unknown as { sottoE2E?: SottoE2EBridge }).sottoE2E?.triggerShortcut(),
   )
 }
 
 test('onboards, dictates through the registered shortcut, pastes, and records local history', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await reachFinalOnboardingStep(launched.page)
     const pasteTarget = launched.page.getByLabel('Paste test')
@@ -129,12 +129,12 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByText(DETERMINISTIC_TRANSCRIPT)).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('keeps history disabled without blocking private dictation', async () => {
-  const launched = await launchTalkType('history-disabled')
+  const launched = await launchSotto('history-disabled')
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
@@ -146,12 +146,12 @@ test('keeps history disabled without blocking private dictation', async () => {
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByRole('heading', { name: 'History is turned off' })).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('persists the dark theme across a renderer reload', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
@@ -161,12 +161,12 @@ test('persists the dark theme across a renderer reload', async () => {
     await expect(launched.page.getByRole('heading', { name: 'Home' })).toBeVisible()
     await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('reports a hotkey conflict and preserves the previous shortcut', async () => {
-  const launched = await launchTalkType('hotkey-conflict')
+  const launched = await launchSotto('hotkey-conflict')
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
@@ -184,12 +184,12 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
     await triggerShortcut(launched.page)
     await expect(widget.getByText('Pasted', { exact: true })).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('recovers after microphone permission is denied once', async () => {
-  const launched = await launchTalkType('microphone-denied-once')
+  const launched = await launchSotto('microphone-denied-once')
   try {
     await launched.page.getByRole('button', { name: 'Continue' }).click()
     await launched.page.getByRole('button', { name: /test microphone/i }).click()
@@ -198,12 +198,12 @@ test('recovers after microphone permission is denied once', async () => {
     await launched.page.getByRole('button', { name: /try microphone again/i }).click()
     await expect(launched.page.getByText(/microphone ready/i)).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('silence preserves the clipboard and creates no history', async () => {
-  const launched = await launchTalkType('silence')
+  const launched = await launchSotto('silence')
   try {
     await completeOnboarding(launched.page)
     expect(await snapshot(launched.page)).toMatchObject({
@@ -219,12 +219,12 @@ test('silence preserves the clipboard and creates no history', async () => {
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('paste rejection falls back to a durable copied result', async () => {
-  const launched = await launchTalkType('paste-failure')
+  const launched = await launchSotto('paste-failure')
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
@@ -234,12 +234,12 @@ test('paste rejection falls back to a durable copied result', async () => {
       pasteAttempts: 1,
     })
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('persists settings through reload', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'Settings' }).click()
@@ -251,12 +251,12 @@ test('persists settings through reload', async () => {
     await launched.page.getByRole('link', { name: 'Settings' }).click()
     await expect(launched.page.getByLabel('Paste delay')).toHaveValue('275')
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('keeps the real main window frameless with one title bar before and after onboarding', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
       const main = BrowserWindow.getAllWindows().find((candidate) =>
@@ -277,12 +277,12 @@ test('keeps the real main window frameless with one title bar before and after o
 
     expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('keeps onboarding Continue reachable and clickable at the supported 820x560 minimum', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await expect(
       launched.page.getByRole('heading', { name: /private dictation/i }),
@@ -340,12 +340,12 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
       launched.page.getByRole('heading', { name: /check your microphone/i }),
     ).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('uses stable content-sized native widget bounds for bottom-edge presentations', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   const expectedGeometry = async (width: number) => {
     const geometry = await nativeWidgetGeometry(launched.app)
     if (geometry === null) return null
@@ -397,12 +397,12 @@ test('uses stable content-sized native widget bounds for bottom-edge presentatio
       bottomInset: 16,
     })
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('hiding the idle widget terminates its renderer drag before the next reveal', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
     const widget = launched.app.windows().find((candidate) =>
@@ -432,27 +432,27 @@ test('hiding the idle widget terminates its renderer drag before the next reveal
     await expect.poll(() => nativeWidgetVisible(launched.app)).toBe(true)
     await expect(widget.locator('.widget-shell')).not.toHaveAttribute('data-dragging', 'true')
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('closing the main window hides it to the tray without quitting', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close TalkType to tray' }).click()
+    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
     expect(launched.app.process().exitCode).toBeNull()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('a second instance reveals the existing hidden window', async () => {
-  const launched = await launchTalkType()
+  const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close TalkType to tray' }).click()
+    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
 
     const electronExecutable = createRequire(join(process.cwd(), 'package.json'))('electron') as string
@@ -469,12 +469,12 @@ test('a second instance reveals the existing hidden window', async () => {
     })
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(true)
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })
 
 test('transcription failure is finite and leaves clipboard and history untouched', async () => {
-  const launched = await launchTalkType('transcription-failure')
+  const launched = await launchSotto('transcription-failure')
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
@@ -486,6 +486,6 @@ test('transcription failure is finite and leaves clipboard and history untouched
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
   } finally {
-    await closeTalkType(launched)
+    await closeSotto(launched)
   }
 })

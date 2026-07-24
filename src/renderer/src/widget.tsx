@@ -18,9 +18,9 @@ const parameters = new URLSearchParams(window.location.search)
 const previewRequested = parameters.has('preview') || parameters.has('theme')
 const preview = parseVisualPreview(
   parameters,
-  isVisualPreviewEnabled(window, import.meta.env.TALKTYPE_VISUAL_PREVIEW),
+  isVisualPreviewEnabled(window, import.meta.env.SOTTO_VISUAL_PREVIEW),
 )
-const bridge = preview === null && previewRequested ? undefined : window.talktypeWidget
+const bridge = preview === null && previewRequested ? undefined : window.sottoWidget
 
 createRoot(rootElement).render(
   <StrictMode>

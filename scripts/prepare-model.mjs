@@ -190,7 +190,7 @@ async function main() {
       { temporary, destination: modelRoot },
       { temporary: runtimeTemporary, destination: runtimeRoot },
     ])
-  } catch (error) { if (process.env.TALKTYPE_PREPARE_DEBUG === '1') process.stderr.write(`${String(error)}\n`); await rm(temporary, { recursive: true, force: true }); await rm(runtimeTemporary, { recursive: true, force: true }); throw finiteError(error?.message?.startsWith('Model preparation failed:') ? error.message.slice(26) : 'unexpected failure') }
+  } catch (error) { if (process.env.SOTTO_PREPARE_DEBUG === '1') process.stderr.write(`${String(error)}\n`); await rm(temporary, { recursive: true, force: true }); await rm(runtimeTemporary, { recursive: true, force: true }); throw finiteError(error?.message?.startsWith('Model preparation failed:') ? error.message.slice(26) : 'unexpected failure') }
   finally { await rm(scratch, { recursive: true, force: true }) }
 }
 

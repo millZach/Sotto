@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
-import type { TalkTypeE2EBridge } from './e2e'
+import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
 
 export type Unsubscribe = () => void
@@ -308,7 +308,7 @@ export type OutputOutcome = 'pasted' | 'copied' | 'empty'
 export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
-export interface TalkTypeBridge {
+export interface SottoBridge {
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
   onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
 
@@ -351,7 +351,7 @@ export interface TalkTypeBridge {
 }
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
-export interface TalkTypeWidgetBridge {
+export interface SottoWidgetBridge {
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe
   requestToggle(): Promise<CommandResult>
@@ -363,14 +363,14 @@ export interface TalkTypeWidgetBridge {
 
 declare global {
   interface Window {
-    talktype?: TalkTypeBridge
-    talktypeWidget?: TalkTypeWidgetBridge
-    /** Present only when the non-packaged main process admits TALKTYPE_E2E. */
-    talktypeE2E?: TalkTypeE2EBridge
+    sotto?: SottoBridge
+    sottoWidget?: SottoWidgetBridge
+    /** Present only when the non-packaged main process admits SOTTO_E2E. */
+    sottoE2E?: SottoE2EBridge
     /**
      * Immutable second gate for visual tests. It is recognized only in a renderer compiled
-     * with the exact test-only environment value TALKTYPE_VISUAL_PREVIEW=1.
+     * with the exact test-only environment value SOTTO_VISUAL_PREVIEW=1.
      */
-    readonly __TALKTYPE_VISUAL_PREVIEW__?: true
+    readonly __SOTTO_VISUAL_PREVIEW__?: true
   }
 }

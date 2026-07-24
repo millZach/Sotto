@@ -12,7 +12,7 @@ const manifestPath = resolve(root, 'artifacts/design/app-review/manifest.json')
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
 const expectedBoundary = {
   mode: 'non-packaged-only',
-  environmentGate: 'TALKTYPE_E2E=1',
+  environmentGate: 'SOTTO_E2E=1',
   packagedRejectionProof: 'tests/unit/main/e2eBoundary.test.ts and scripts/verify-packaged-resources.mjs',
 }
 

@@ -380,7 +380,7 @@ export function SettingsView({
       {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
 
       <Card className="settings-section">
-        <div className="settings-section__heading"><MonitorCog aria-hidden="true" /><div><h2>Appearance</h2><p>Choose how TalkType looks and moves.</p></div></div>
+        <div className="settings-section__heading"><MonitorCog aria-hidden="true" /><div><h2>Appearance</h2><p>Choose how Sotto looks and moves.</p></div></div>
         <div className="settings-fields-grid">
           <Field label="Theme" description="Follow Windows or force a complete light or dark theme."><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
           <Field label="Reduced motion" description="Follow Windows or minimize non-essential motion."><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
@@ -437,7 +437,7 @@ export function SettingsView({
               }
             }}>Apply shortcut</Button>
           </div>
-          <Field label="Maximum recording time" description="TalkType stops automatically at this limit."><Select value={String(settings.maxRecordingSeconds)} onChange={(event) => void save({ maxRecordingSeconds: Number(event.currentTarget.value) as AppSettings['maxRecordingSeconds'] })}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></Select></Field>
+          <Field label="Maximum recording time" description="Sotto stops automatically at this limit."><Select value={String(settings.maxRecordingSeconds)} onChange={(event) => void save({ maxRecordingSeconds: Number(event.currentTarget.value) as AppSettings['maxRecordingSeconds'] })}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></Select></Field>
           <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="Play a short local sound when recording starts and stops." />
         </div>
       </Card>
@@ -491,7 +491,7 @@ export function SettingsView({
             const result = await onSetStartup(checked).catch(() => null)
             setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: 'Windows startup could not be updated.', error: true })
           }} />
-          <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description="Open directly in the tray when TalkType launches." />
+          <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description="Open directly in the tray when Sotto launches." />
           <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse." />
           <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
         </div>

@@ -1,6 +1,6 @@
 import { calculateRms, resampleMono } from './audioMath'
 
-export const AUDIO_CAPTURE_PROCESSOR_NAME = 'talktype-audio-capture'
+export const AUDIO_CAPTURE_PROCESSOR_NAME = 'sotto-audio-capture'
 
 /**
  * Worklet frames arrive at audio-block rate (hundreds per second). Level

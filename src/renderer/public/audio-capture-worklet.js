@@ -1,6 +1,6 @@
 /* global AudioWorkletProcessor, registerProcessor */
 
-class TalkTypeAudioCaptureProcessor extends AudioWorkletProcessor {
+class SottoAudioCaptureProcessor extends AudioWorkletProcessor {
   process(inputs) {
     const channels = inputs[0]
     if (channels?.length) {
@@ -26,4 +26,4 @@ class TalkTypeAudioCaptureProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('talktype-audio-capture', TalkTypeAudioCaptureProcessor)
+registerProcessor('sotto-audio-capture', SottoAudioCaptureProcessor)

@@ -12,7 +12,7 @@ async function createRepository(): Promise<{
   filePath: string
   repository: WidgetPlacementRepository
 }> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-widget-placement-'))
+  const root = await mkdtemp(join(tmpdir(), 'sotto-widget-placement-'))
   roots.push(root)
   const filePath = join(root, 'widget-placement.json')
   return { filePath, repository: new WidgetPlacementRepository(filePath) }

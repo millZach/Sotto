@@ -4,8 +4,8 @@ import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 
-export const MODEL_SCHEME = 'talktype-model'
-export const RUNTIME_SCHEME = 'talktype-runtime'
+export const MODEL_SCHEME = 'sotto-model'
+export const RUNTIME_SCHEME = 'sotto-runtime'
 
 export interface SchemeRegistrar {
   registerSchemesAsPrivileged(schemes: readonly unknown[]): void

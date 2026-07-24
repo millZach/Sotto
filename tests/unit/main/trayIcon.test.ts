@@ -11,18 +11,18 @@ describe('createTrayResource', () => {
 
     await expect(
       createTrayResource({
-        executablePath: 'C:/TalkType/TalkType.exe',
+        executablePath: 'C:/Sotto/Sotto.exe',
         getFileIcon,
         createTray,
-        configure: (created) => created.setToolTip('TalkType'),
+        configure: (created) => created.setToolTip('Sotto'),
       }),
     ).resolves.toBe(tray)
 
-    expect(getFileIcon).toHaveBeenCalledWith('C:/TalkType/TalkType.exe', {
+    expect(getFileIcon).toHaveBeenCalledWith('C:/Sotto/Sotto.exe', {
       size: 'small',
     })
     expect(createTray).toHaveBeenCalledWith(icon)
-    expect(tray.setToolTip).toHaveBeenCalledWith('TalkType')
+    expect(tray.setToolTip).toHaveBeenCalledWith('Sotto')
   })
 
   it.each(['empty', 'load', 'create', 'configure'] as const)(
@@ -46,14 +46,14 @@ describe('createTrayResource', () => {
       let creationError: unknown
       try {
         await createTrayResource({
-          executablePath: 'C:/TalkType/TalkType.exe',
+          executablePath: 'C:/Sotto/Sotto.exe',
           getFileIcon,
           createTray,
           configure: (created) => {
             if (failure === 'configure') {
               throw new Error('secret tooltip detail')
             }
-            created.setToolTip('TalkType')
+            created.setToolTip('Sotto')
           },
         })
       } catch (error) {
@@ -78,7 +78,7 @@ describe('createTrayResource', () => {
 
     await expect(
       createTrayResource({
-        executablePath: 'C:/TalkType/TalkType.exe',
+        executablePath: 'C:/Sotto/Sotto.exe',
         getFileIcon: vi.fn(async () => ({ isEmpty: () => false })),
         createTray: () => tray,
         configure: () => {

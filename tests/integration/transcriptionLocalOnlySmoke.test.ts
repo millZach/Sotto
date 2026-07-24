@@ -40,7 +40,7 @@ describe('Transformers.js local-only resolution smoke', () => {
     configureLocalInferenceEnvironment(env)
     env.fetch = fetchSpy
 
-    expect(env.backends.onnx.wasm?.wasmPaths).toBe('talktype-runtime://runtime/')
+    expect(env.backends.onnx.wasm?.wasmPaths).toBe('sotto-runtime://runtime/')
 
     await expect(
       pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
@@ -51,7 +51,7 @@ describe('Transformers.js local-only resolution smoke', () => {
     ).rejects.toThrow()
 
     expect(observedUrls.length).toBeGreaterThan(0)
-    expect(observedUrls.every((url) => url.startsWith('talktype-model://model/'))).toBe(
+    expect(observedUrls.every((url) => url.startsWith('sotto-model://model/'))).toBe(
       true,
     )
     expect(fetchSpy).toHaveBeenCalled()

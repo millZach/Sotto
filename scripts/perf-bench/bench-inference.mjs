@@ -1,4 +1,4 @@
-// Inference timing harness for TalkType dictation latency.
+// Inference timing harness for Sotto dictation latency.
 // Replicates the app's transcription worker stack (transformers.js web build,
 // ORT WASM runtime, bundled q8 whisper models, 4 threads) inside Playwright
 // Chromium with COOP/COEP headers so SharedArrayBuffer threading matches the app.

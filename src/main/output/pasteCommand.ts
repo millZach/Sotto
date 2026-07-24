@@ -1,7 +1,7 @@
 const PASTE_TYPE_DEFINITION = `using System;
 using System.Runtime.InteropServices;
 
-public static class TalkTypePaste
+public static class SottoPaste
 {
     private const uint INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
@@ -86,7 +86,7 @@ const PASTE_SCRIPT = `Add-Type -TypeDefinition @'
 ${PASTE_TYPE_DEFINITION}
 '@
 
-if (-not [TalkTypePaste]::SendCtrlV()) { exit 1 }
+if (-not [SottoPaste]::SendCtrlV()) { exit 1 }
 exit 0`
 
 // Long-lived helper: pays the Add-Type compile (~750 ms) once at spawn, then
@@ -103,7 +103,7 @@ while ($true) {
   if ($null -eq $line -or $line -eq 'exit') { break }
   if ($line -ne 'paste') { continue }
   $accepted = $false
-  try { $accepted = [TalkTypePaste]::SendCtrlV() } catch { $accepted = $false }
+  try { $accepted = [SottoPaste]::SendCtrlV() } catch { $accepted = $false }
   if ($accepted) { $writer.WriteLine('ok') } else { $writer.WriteLine('fail') }
   $writer.Flush()
 }

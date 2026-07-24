@@ -12,7 +12,7 @@ const roots: string[] = []
 async function createRepository(
   now: () => number = Date.now,
 ): Promise<{ filePath: string; repository: SettingsRepository }> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-settings-repository-'))
+  const root = await mkdtemp(join(tmpdir(), 'sotto-settings-repository-'))
   roots.push(root)
   const filePath = join(root, 'settings.json')
   return { filePath, repository: new SettingsRepository(filePath, { now }) }
@@ -179,7 +179,7 @@ describe('SettingsRepository', () => {
   })
 
   it('reports one sanitized settings recovery after preserving syntax-corrupt bytes', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-settings-repository-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-settings-repository-'))
     roots.push(root)
     const filePath = join(root, 'settings.json')
     const corruptBytes = Buffer.from('{"microphoneId":"private-device",', 'utf8')

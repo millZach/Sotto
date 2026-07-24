@@ -461,7 +461,7 @@ export type BootstrapResult =
   | Readonly<{ started: false; dispose: () => void }>
   | Readonly<{ started: true; dispose: () => void }>
 
-export async function bootstrapTalkType(
+export async function bootstrapSotto(
   dependencies: BootstrapDependencies,
 ): Promise<BootstrapResult> {
   const { app } = dependencies

@@ -333,7 +333,7 @@ export function registerIpc(
   if (activeOwnership !== undefined && activeOwnership.size > 0) {
     throw new IpcRegistrationActiveError()
   }
-  const owner = Symbol('talktype-ipc-owner')
+  const owner = Symbol('sotto-ipc-owner')
   const ownership = activeOwnership ?? new Map<string, symbol>()
   handlerOwners.set(ipcMain, ownership)
   const ownedChannels: string[] = []

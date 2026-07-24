@@ -30,43 +30,43 @@ describe('model protocols', () => {
   })
 
   it('resolves only exact manifest-listed canonical model paths under the selected root', async () => {
-    const boundaryRoot = await mkdtemp(join(tmpdir(), 'talktype-protocol-')); roots.push(boundaryRoot)
+    const boundaryRoot = await mkdtemp(join(tmpdir(), 'sotto-protocol-')); roots.push(boundaryRoot)
     const root = join(boundaryRoot, 'Xenova', 'whisper-base')
     await mkdir(root, { recursive: true }); await writeFile(join(root, 'config.json'), '{}')
-    await expect(resolveModelRequest('talktype-model://model/Xenova/whisper-base/config.json', { 'Xenova/whisper-base': { root, boundaryRoot, files } }))
+    await expect(resolveModelRequest('sotto-model://model/Xenova/whisper-base/config.json', { 'Xenova/whisper-base': { root, boundaryRoot, files } }))
       .resolves.toBe(join(root, 'config.json'))
   })
 
   it.each([
-    'https://model/Xenova/whisper-base/config.json', 'talktype-model://other/Xenova/whisper-base/config.json',
-    'talktype-model://model/Xenova/whisper-base/config.json?x=1', 'talktype-model://model/Xenova/whisper-base/config.json#x',
-    'talktype-model://user:pass@model/Xenova/whisper-base/config.json', 'talktype-model://model:42/Xenova/whisper-base/config.json',
-    'talktype-model://model/Xenova/whisper-base/../config.json', 'talktype-model://model/Xenova/whisper-base/%2e%2e/config.json',
-    'talktype-model://model/Xenova/whisper-base/%252e%252e/config.json', 'talktype-model://model/Xenova/whisper-base/onnx%2fencoder_model_quantized.onnx',
-    'talktype-model://model/Xenova/whisper-base/onnx%252fencoder_model_quantized.onnx',
-    'talktype-model://model/Xenova/whisper-base/config%2ejson',
-    'talktype-model://model/Xenova/whisper-base/onnx%5cencoder_model_quantized.onnx', 'talktype-model://model/Xenova/whisper-base/missing.json',
-    'talktype-model:/model/Xenova/whisper-base/config.json', 'talktype-model:///Xenova/whisper-base/config.json',
-    'talktype-model://model//Xenova/whisper-base/config.json', 'TALKTYPE-MODEL://model/Xenova/whisper-base/config.json',
-    'talktype-model://MODEL/Xenova/whisper-base/config.json', 'talktype-model://model/Xenova/whisper-base/config.json\0',
-    'talktype-model://model/Xenova/whisper-base/config.json%00', String.raw`talktype-model://model/Xenova\whisper-base\config.json`,
+    'https://model/Xenova/whisper-base/config.json', 'sotto-model://other/Xenova/whisper-base/config.json',
+    'sotto-model://model/Xenova/whisper-base/config.json?x=1', 'sotto-model://model/Xenova/whisper-base/config.json#x',
+    'sotto-model://user:pass@model/Xenova/whisper-base/config.json', 'sotto-model://model:42/Xenova/whisper-base/config.json',
+    'sotto-model://model/Xenova/whisper-base/../config.json', 'sotto-model://model/Xenova/whisper-base/%2e%2e/config.json',
+    'sotto-model://model/Xenova/whisper-base/%252e%252e/config.json', 'sotto-model://model/Xenova/whisper-base/onnx%2fencoder_model_quantized.onnx',
+    'sotto-model://model/Xenova/whisper-base/onnx%252fencoder_model_quantized.onnx',
+    'sotto-model://model/Xenova/whisper-base/config%2ejson',
+    'sotto-model://model/Xenova/whisper-base/onnx%5cencoder_model_quantized.onnx', 'sotto-model://model/Xenova/whisper-base/missing.json',
+    'sotto-model:/model/Xenova/whisper-base/config.json', 'sotto-model:///Xenova/whisper-base/config.json',
+    'sotto-model://model//Xenova/whisper-base/config.json', 'SOTTO-MODEL://model/Xenova/whisper-base/config.json',
+    'sotto-model://MODEL/Xenova/whisper-base/config.json', 'sotto-model://model/Xenova/whisper-base/config.json\0',
+    'sotto-model://model/Xenova/whisper-base/config.json%00', String.raw`sotto-model://model/Xenova\whisper-base\config.json`,
   ])('rejects unsafe or unlisted model URL %s', async (url) => {
     await expect(resolveModelRequest(url, { 'Xenova/whisper-base': { root: 'C:/models/Xenova/whisper-base', boundaryRoot: 'C:/models', files } })).rejects.toThrow()
   })
 
   it('resolves runtime files only from the exact host and allowlist', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-runtime-protocol-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-runtime-protocol-')); roots.push(root)
     await writeFile(join(root, 'ort-wasm-simd-threaded.wasm'), 'runtime')
-    await expect(resolveRuntimeRequest('talktype-runtime://runtime/ort-wasm-simd-threaded.wasm', {
+    await expect(resolveRuntimeRequest('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm', {
       root, boundaryRoot: root, files: new Set(['ort-wasm-simd-threaded.wasm']),
     })).resolves.toBe(join(root, 'ort-wasm-simd-threaded.wasm'))
-    await expect(resolveRuntimeRequest('talktype-runtime://other/ort-wasm-simd-threaded.wasm', {
+    await expect(resolveRuntimeRequest('sotto-runtime://other/ort-wasm-simd-threaded.wasm', {
       root, boundaryRoot: root, files: new Set(['ort-wasm-simd-threaded.wasm']),
     })).rejects.toThrow()
   })
 
   it('rejects model files reached through a parent junction outside the trusted boundary', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-protocol-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-protocol-')); roots.push(root)
     const boundaryRoot = join(root, 'models')
     const outside = join(root, 'outside')
     await mkdir(outside)
@@ -74,7 +74,7 @@ describe('model protocols', () => {
     await mkdir(boundaryRoot)
     await symlink(outside, join(boundaryRoot, 'repository'), 'junction')
 
-    await expect(resolveModelRequest('talktype-model://model/Xenova/whisper-base/config.json', {
+    await expect(resolveModelRequest('sotto-model://model/Xenova/whisper-base/config.json', {
       'Xenova/whisper-base': {
         root: join(boundaryRoot, 'repository'),
         boundaryRoot,
@@ -129,7 +129,7 @@ describe('model protocols', () => {
 
   it('rejects a runtime root reached through a directory junction', async () => {
     const actualRoot = await runtimeFixture()
-    const parent = await mkdtemp(join(tmpdir(), 'talktype-runtime-junction-')); roots.push(parent)
+    const parent = await mkdtemp(join(tmpdir(), 'sotto-runtime-junction-')); roots.push(parent)
     const linkedRoot = join(parent, 'runtime')
     await symlink(actualRoot, linkedRoot, 'junction')
 
@@ -137,7 +137,7 @@ describe('model protocols', () => {
   })
 
   it('installs GET-only file-backed handlers and cleanly owns them', async () => {
-    const assetRoot = await mkdtemp(join(tmpdir(), 'talktype-handlers-')); roots.push(assetRoot)
+    const assetRoot = await mkdtemp(join(tmpdir(), 'sotto-handlers-')); roots.push(assetRoot)
     const modelRoot = join(assetRoot, 'models', 'Xenova', 'whisper-base')
     const runtimeRoot = join(assetRoot, 'runtime')
     await mkdir(modelRoot, { recursive: true }); await mkdir(runtimeRoot)
@@ -148,9 +148,9 @@ describe('model protocols', () => {
     const cleanup = await registerLocalAssetProtocols({ protocol, net: { fetch },
       modelSources: async () => ({ 'Xenova/whisper-base': { root: modelRoot, boundaryRoot: join(assetRoot, 'models'), files: new Set(['config.json']) } }),
       runtimeSource: { root: runtimeRoot, boundaryRoot: runtimeRoot, files: new Set(['ort.wasm']) } })
-    await handlers.get(MODEL_SCHEME)!({ method: 'GET', url: 'talktype-model://model/Xenova/whisper-base/config.json' })
+    await handlers.get(MODEL_SCHEME)!({ method: 'GET', url: 'sotto-model://model/Xenova/whisper-base/config.json' })
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^file:\/\/\//))
-    await expect(handlers.get(MODEL_SCHEME)!({ method: 'POST', url: 'talktype-model://model/Xenova/whisper-base/config.json' })).resolves.toMatchObject({ status: 405 })
+    await expect(handlers.get(MODEL_SCHEME)!({ method: 'POST', url: 'sotto-model://model/Xenova/whisper-base/config.json' })).resolves.toMatchObject({ status: 405 })
     await cleanup(); await cleanup()
     expect(protocol.unhandle).toHaveBeenCalledTimes(2)
   })
@@ -187,7 +187,7 @@ describe('model protocols', () => {
 })
 
 async function runtimeFixture(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'talktype-runtime-source-')); roots.push(root)
+  const root = await mkdtemp(join(tmpdir(), 'sotto-runtime-source-')); roots.push(root)
   const paths = [
     'ort-wasm-simd-threaded.mjs',
     'ort-wasm-simd-threaded.wasm',

@@ -5,7 +5,7 @@ import React, { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
-  TalkTypeWidgetBridge,
+  SottoWidgetBridge,
   WidgetPresentation,
 } from '../../../src/shared/contracts'
 import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
@@ -136,10 +136,10 @@ describe('WidgetApp', () => {
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
     ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Try again or choose the Balanced model.'],
-    ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open TalkType and try again.'],
-    ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the TalkType app.'],
+    ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
+    ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
-    ['SETTINGS_UNAVAILABLE', 'Settings unavailable', 'Open TalkType to restore settings.'],
+    ['SETTINGS_UNAVAILABLE', 'Settings unavailable', 'Open Sotto to restore settings.'],
   ])('maps %s to finite safe recovery copy', (code, title, recovery) => {
     const { container } = render(
       <WidgetApp
@@ -607,7 +607,7 @@ describe('WidgetEntry', () => {
   it('subscribes once per StrictMode mount lifecycle, routes commands, and cleans up', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const unsubscribe = vi.fn()
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: vi.fn((next) => {
         listener = next
         return unsubscribe
@@ -638,7 +638,7 @@ describe('WidgetEntry', () => {
 
   it('routes idle sliver clicks to toggle and capsule surface clicks to stop', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -681,7 +681,7 @@ describe('WidgetEntry', () => {
 
   it('reports drag phases through the widget bridge', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -711,7 +711,7 @@ describe('WidgetEntry', () => {
   it('republishes an unchanged presentation for every visibility generation', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -719,7 +719,7 @@ describe('WidgetEntry', () => {
       onWidgetVisibilityChange: ((next: typeof visibilityListener) => {
         visibilityListener = next
         return () => { visibilityListener = null }
-      }) as unknown as TalkTypeWidgetBridge['onWidgetVisibilityChange'],
+      }) as unknown as SottoWidgetBridge['onWidgetVisibilityChange'],
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -742,7 +742,7 @@ describe('WidgetEntry', () => {
   it('binds every renderer drag phase to the generation where the gesture started', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -750,7 +750,7 @@ describe('WidgetEntry', () => {
       onWidgetVisibilityChange: ((next: typeof visibilityListener) => {
         visibilityListener = next
         return () => { visibilityListener = null }
-      }) as unknown as TalkTypeWidgetBridge['onWidgetVisibilityChange'],
+      }) as unknown as SottoWidgetBridge['onWidgetVisibilityChange'],
       requestToggle: vi.fn(async () => ({ ok: true })),
       requestStop: vi.fn(async () => ({ ok: true })),
       requestCancel: vi.fn(async () => ({ ok: true })),
@@ -779,7 +779,7 @@ describe('WidgetEntry', () => {
     vi.useFakeTimers()
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -830,7 +830,7 @@ describe('WidgetEntry', () => {
   it('terminates the renderer drag gesture when the native widget becomes hidden', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -890,7 +890,7 @@ describe('WidgetEntry', () => {
 
   it('keeps persistent announcement channels across null, idle, normal, success, and error states', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -965,7 +965,7 @@ describe('WidgetEntry', () => {
     vi.setSystemTime(1_000)
     const state = snapshot({ status: 'listening', sessionId: 'timer', startedAt: 0, level: 0.2 })
     let listener: ((state: WidgetSnapshot) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -987,7 +987,7 @@ describe('WidgetEntry', () => {
 
   it('contains rejected widget command promises without exposing an error', async () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
-    const bridge: TalkTypeWidgetBridge = {
+    const bridge: SottoWidgetBridge = {
       onWidgetState: (next) => {
         listener = next
         return () => undefined
@@ -1039,7 +1039,7 @@ describe('visual preview parser', () => {
 
   it('requires both the exact environment gate and a truly immutable injected descriptor', () => {
     const immutable = {} as Window
-    Object.defineProperty(immutable, '__TALKTYPE_VISUAL_PREVIEW__', {
+    Object.defineProperty(immutable, '__SOTTO_VISUAL_PREVIEW__', {
       value: true, writable: false, configurable: false,
     })
     expect(isVisualPreviewEnabled(immutable, '1')).toBe(true)
@@ -1048,13 +1048,13 @@ describe('visual preview parser', () => {
     }
 
     const writable = {} as Window
-    Object.defineProperty(writable, '__TALKTYPE_VISUAL_PREVIEW__', {
+    Object.defineProperty(writable, '__SOTTO_VISUAL_PREVIEW__', {
       value: true, writable: true, configurable: false,
     })
     expect(isVisualPreviewEnabled(writable, '1')).toBe(false)
 
     const configurable = {} as Window
-    Object.defineProperty(configurable, '__TALKTYPE_VISUAL_PREVIEW__', {
+    Object.defineProperty(configurable, '__SOTTO_VISUAL_PREVIEW__', {
       value: true, writable: false, configurable: true,
     })
     expect(isVisualPreviewEnabled(configurable, '1')).toBe(false)

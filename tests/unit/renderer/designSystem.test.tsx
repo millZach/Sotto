@@ -53,7 +53,7 @@ function colorPalettes(): Array<Record<'canvas' | 'surface' | 'surface-elevated'
 
 afterEach(cleanup)
 
-describe('TalkType design-system primitives', () => {
+describe('Sotto design-system primitives', () => {
   it('provides a 44px control and an explicit keyboard-focus treatment', () => {
     render(<Button>Continue</Button>)
 

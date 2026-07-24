@@ -114,7 +114,7 @@ describe('build-time model catalog', () => {
     ['non-OK response', () => rejectedResponse(503)],
     ['declared-size mismatch', () => rejectedResponse(200, { contentLength: '11' })],
   ] as const)('cancels each %s before retrying a model download', async (_name, responseFactory) => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const responses = [responseFactory(), responseFactory()]
     const fetchImpl = vi.fn(async () => {
@@ -135,7 +135,7 @@ describe('build-time model catalog', () => {
   })
 
   it('rejects a missing download body, retries finitely, and removes the destination', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-download-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-download-')); roots.push(root)
     const destination = join(root, 'partial.bin')
     const fetchImpl = vi.fn(async () => rejectedResponse(200, { body: false }).response)
 
@@ -176,7 +176,7 @@ describe('build-time model catalog', () => {
   })
 
   it('promotes a whole prepared directory and removes stale destination files', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-')); roots.push(root)
     const destination = join(root, 'runtime')
     const temporary = join(root, 'runtime.partial')
     await mkdir(destination); await mkdir(temporary)
@@ -189,7 +189,7 @@ describe('build-time model catalog', () => {
   })
 
   it('restores the prior prepared directory when promotion fails', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-')); roots.push(root)
     const destination = join(root, 'runtime')
     await mkdir(destination)
     await writeFile(join(destination, 'prior.wasm'), 'preserved')
@@ -200,7 +200,7 @@ describe('build-time model catalog', () => {
   })
 
   it('preflights every staged root before changing either prior asset directory', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-set-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-set-')); roots.push(root)
     const model = join(root, 'models'); const runtime = join(root, 'runtime')
     const stagedModel = join(root, 'models.partial'); const missingRuntime = join(root, 'runtime.partial')
     await mkdir(model); await mkdir(runtime); await mkdir(stagedModel)
@@ -217,7 +217,7 @@ describe('build-time model catalog', () => {
   })
 
   it('rolls back both prior roots when the second asset promotion fails', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'talktype-prepare-set-')); roots.push(root)
+    const root = await mkdtemp(join(tmpdir(), 'sotto-prepare-set-')); roots.push(root)
     const model = join(root, 'models'); const runtime = join(root, 'runtime')
     const stagedModel = join(root, 'models.partial'); const stagedRuntime = join(root, 'runtime.partial')
     for (const directory of [model, runtime, stagedModel, stagedRuntime]) await mkdir(directory)

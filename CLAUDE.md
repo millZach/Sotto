@@ -1,4 +1,4 @@
-# TalkType
+# Sotto
 
 ## Agent skills
 
