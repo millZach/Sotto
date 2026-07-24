@@ -29,6 +29,21 @@ export default tseslint.config(
     },
   },
   {
+    // The LLM bench is a plain Node script.
+    files: ['scripts/llm-bench/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortSignal: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+  {
     // The perf bench runs in Node but injects callbacks into a Playwright page.
     files: ['scripts/perf-bench/**/*.mjs'],
     languageOptions: {

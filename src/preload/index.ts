@@ -28,6 +28,7 @@ import {
   SETTINGS_RESET,
   SETTINGS_UPDATE,
   STARTUP_GET,
+  TRANSCRIPT_POLISH,
   STARTUP_SET,
   WIDGET_DRAG,
   WIDGET_PRESENTATION,
@@ -41,6 +42,7 @@ import {
   modelStatusSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
+  transcriptPolishResultSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
   type TalkTypeBridge,
@@ -219,6 +221,9 @@ export function createTalkTypeBridge(renderer: IpcRendererAdapter): TalkTypeBrid
 
     deliverOutput: (request) =>
       invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, request),
+
+    polishTranscript: (request) =>
+      invokeParsed(renderer, TRANSCRIPT_POLISH, transcriptPolishResultSchema, request),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),

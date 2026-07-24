@@ -20,3 +20,7 @@ resources/models/**
 !resources/models/manifest.lock.json
 resources/runtime/*.wasm
 !resources/runtime/manifest.lock.json
+
+# LLM formatting benchmark — never commit the key or raw results
+scripts/llm-bench/.openrouter-key
+scripts/llm-bench/results/

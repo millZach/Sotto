@@ -56,6 +56,10 @@ function createBridge(overrides: Partial<TalkTypeBridge> = {}): TalkTypeBridge {
     removeModel: vi.fn(async () => OK),
     onModelStatus: vi.fn(() => () => undefined),
     deliverOutput: vi.fn(async () => 'copied' as const),
+    polishTranscript: vi.fn(async (request: { text: string }) => ({
+      text: request.text,
+      applied: false,
+    })),
     getStartup: vi.fn(async () => ({ enabled: false })),
     setStartup: vi.fn(async (enabled) => ({ enabled })),
     showApp: vi.fn(async () => undefined),

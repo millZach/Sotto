@@ -9,6 +9,17 @@ export const AUDIO_CAPTURE_PROCESSOR_NAME = 'talktype-audio-capture'
  */
 export const LEVEL_EMIT_INTERVAL_MS = 33
 
+/**
+ * Streaming segmentation: once a segment has at least SEGMENT_MIN_SECONDS of
+ * audio, the next sustained silence (SEGMENT_SILENCE_SECONDS below
+ * SEGMENT_SILENCE_RMS) closes it so transcription can start while the speaker
+ * continues. SEGMENT_MAX_SECONDS bounds segments when no silence appears.
+ */
+export const SEGMENT_MIN_SECONDS = 6
+export const SEGMENT_MAX_SECONDS = 15
+export const SEGMENT_SILENCE_RMS = 0.01
+export const SEGMENT_SILENCE_SECONDS = 0.3
+
 export type AudioRecorderErrorCode =
   | 'ALREADY_RECORDING'
   | 'INVALID_DURATION'
@@ -89,6 +100,13 @@ export interface AudioRecorderOptions {
   onLevel?: (level: number) => void
   onDurationLimit?: (result: AudioRecordingResult) => void
   onDeviceUnavailable?: () => void
+  /**
+   * Enables streaming segmentation: silence-bounded spans of audio are
+   * resampled and emitted while recording continues. The final stop() result
+   * then contains only the tail recorded after the last emitted segment,
+   * while durationMs still reports the full recording length.
+   */
+  onSegment?: (segment: AudioRecordingResult) => void
 }
 
 export interface MicrophoneConstraints {
@@ -104,6 +122,9 @@ export interface MicrophoneConstraints {
 interface RecordingSession {
   chunks: Float32Array[]
   sourceFrames: number
+  totalFrames: number
+  silentFrames: number
+  segmentationDisabled: boolean
   lastLevelEmitAt: number
   starting: boolean
   terminated: boolean
@@ -184,6 +205,9 @@ export class AudioRecorder {
     const session: RecordingSession = {
       chunks: [],
       sourceFrames: 0,
+      totalFrames: 0,
+      silentFrames: 0,
+      segmentationDisabled: false,
       lastLevelEmitAt: Number.NEGATIVE_INFINITY,
       starting: true,
       terminated: false,
@@ -287,6 +311,8 @@ export class AudioRecorder {
     const chunk = new Float32Array(data)
     session.chunks.push(chunk)
     session.sourceFrames += chunk.length
+    session.totalFrames += chunk.length
+    this.maybeEmitSegment(session, chunk)
     const now = Date.now()
     if (now - session.lastLevelEmitAt < LEVEL_EMIT_INTERVAL_MS) return
     session.lastLevelEmitAt = now
@@ -299,6 +325,44 @@ export class AudioRecorder {
       )
       void this.finalize(session, false).catch(() => undefined)
     }
+  }
+
+  private maybeEmitSegment(session: RecordingSession, chunk: Float32Array): void {
+    const onSegment = this.options.onSegment
+    if (onSegment === undefined || session.segmentationDisabled) return
+    const sampleRate = session.context?.sampleRate
+    if (sampleRate === undefined || sampleRate <= 0) return
+
+    session.silentFrames =
+      calculateRms(chunk) < SEGMENT_SILENCE_RMS ? session.silentFrames + chunk.length : 0
+
+    const segmentSeconds = session.sourceFrames / sampleRate
+    const silenceSeconds = session.silentFrames / sampleRate
+    const silenceCut =
+      segmentSeconds >= SEGMENT_MIN_SECONDS && silenceSeconds >= SEGMENT_SILENCE_SECONDS
+    if (!silenceCut && segmentSeconds < SEGMENT_MAX_SECONDS) return
+
+    const joined = new Float32Array(session.sourceFrames)
+    let offset = 0
+    for (const pending of session.chunks) {
+      joined.set(pending, offset)
+      offset += pending.length
+    }
+    try {
+      onSegment({
+        samples: resampleMono(joined, sampleRate),
+        sourceSampleRate: sampleRate,
+        durationMs: (session.sourceFrames / sampleRate) * 1_000,
+      })
+    } catch {
+      // Keep the un-emitted audio in the session so nothing is lost; the
+      // whole remainder is transcribed as one batch at stop instead.
+      session.segmentationDisabled = true
+      return
+    }
+    session.chunks.length = 0
+    session.sourceFrames = 0
+    session.silentFrames = 0
   }
 
   private async finishAtDurationLimit(session: RecordingSession): Promise<void> {
@@ -376,7 +440,7 @@ export class AudioRecorder {
           result = {
             samples: resampleMono(joined, sampleRate),
             sourceSampleRate: sampleRate,
-            durationMs: (session.sourceFrames / sampleRate) * 1_000,
+            durationMs: (session.totalFrames / sampleRate) * 1_000,
           }
         }
       } catch {

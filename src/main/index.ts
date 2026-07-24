@@ -35,6 +35,7 @@ import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyMana
 import { registerIpc } from './ipc/registerIpc'
 import { createSpawnProcessAdapter, OutputService } from './output/outputService'
 import { createWarmPasteAdapter } from './output/pasteHelper'
+import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import {
@@ -416,6 +417,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }),
   })
 
+  // Formatting-pass HTTP calls stay deterministic and offline in E2E runs.
+  const transcriptPolish = new TranscriptPolishService({
+    getSettings: () => settings.get(),
+    ...(e2eConfiguration === null
+      ? {}
+      : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+  })
+
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
   const dispatchDictation = (command: DictationCommand): void => {
@@ -587,6 +596,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           publishWidgetState,
         },
         output,
+        transcriptPolish: {
+          polish: (text) => transcriptPolish.polish(text),
+        },
         widget: {
           setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),

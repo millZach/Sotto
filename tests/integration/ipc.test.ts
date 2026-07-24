@@ -353,6 +353,7 @@ describe('typed preload bridge', () => {
         'onModelStatus',
         'onRecoveryNotice',
         'onSettingsChanged',
+        'polishTranscript',
         'publishWidgetState',
         'quitApp',
         'removeModel',

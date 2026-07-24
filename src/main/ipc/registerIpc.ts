@@ -19,6 +19,7 @@ import {
   MODEL_REMOVE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
+  TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -31,6 +32,7 @@ import {
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
+  transcriptPolishRequestSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
   widgetSnapshotSchema,
@@ -44,6 +46,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type StartupState,
+  type TranscriptPolishResult,
   type WidgetDragPayload,
   type WidgetPresentationPayload,
 } from '../../shared/contracts'
@@ -78,6 +81,14 @@ const settingKeys = [
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
+  'llmFormatting',
+  'llmApiKey',
+  'llmDictionary',
+  'llmModel',
+  'llmFallbackModel',
+  'llmTimeoutMs',
+  'llmMinWords',
+  'streamingAsr',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema
@@ -206,6 +217,10 @@ export interface OutputIpcService {
   ): OutputOutcome | Promise<OutputOutcome>
 }
 
+export interface TranscriptPolishIpcService {
+  polish(text: string): TranscriptPolishResult | Promise<TranscriptPolishResult>
+}
+
 export interface RecoveryNoticeIpcService {
   list(): readonly RecoveryNotice[] | Promise<readonly RecoveryNotice[]>
 }
@@ -220,6 +235,7 @@ export interface RegisterIpcDependencies {
   readonly dictation?: DictationIpcService
   readonly models?: ModelIpcService
   readonly output?: OutputIpcService
+  readonly transcriptPolish?: TranscriptPolishIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
 }
@@ -511,6 +527,17 @@ export function registerIpc(
         }
         await dependencies.models.remove(preset)
         return OK
+      },
+    )
+    register(
+      TRANSCRIPT_POLISH,
+      transcriptPolishRequestSchema,
+      1,
+      async (request): Promise<TranscriptPolishResult> => {
+        if (dependencies.transcriptPolish === undefined) {
+          return { text: request.text, applied: false }
+        }
+        return dependencies.transcriptPolish.polish(request.text)
       },
     )
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {

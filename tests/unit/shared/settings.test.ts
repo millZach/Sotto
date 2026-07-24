@@ -30,6 +30,14 @@ const customSettings = {
   historyEnabled: false,
   historyRetention: 'unlimited',
   onboardingComplete: true,
+  llmFormatting: true,
+  llmApiKey: 'sk-or-v1-test',
+  llmDictionary: 'TalkType\nMoonshine',
+  llmModel: 'meta-llama/llama-3.3-70b-instruct',
+  llmFallbackModel: 'google/gemini-3.5-flash-lite',
+  llmTimeoutMs: 3_000,
+  llmMinWords: 4,
+  streamingAsr: false,
 } satisfies AppSettings
 
 describe('settings', () => {
@@ -57,7 +65,22 @@ describe('settings', () => {
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
+      llmFormatting: false,
+      llmApiKey: '',
+      llmDictionary: '',
+      llmModel: 'meta-llama/llama-3.3-70b-instruct',
+      llmFallbackModel: 'google/gemini-3.5-flash-lite',
+      llmTimeoutMs: 2_500,
+      llmMinWords: 5,
+      streamingAsr: true,
     })
+  })
+
+  it('defaults the AI formatting pass off and recovers invalid values', () => {
+    expect(parseSettings({}).llmFormatting).toBe(false)
+    expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
+    expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
+    expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
   it('accepts the instant preset and recovers unknown presets to balanced', () => {

@@ -1,0 +1,1 @@
+so talk type currently uses the moon shine model for transcription which is way faster than whisper because whisper pads everything to a thirty second window um the plan is to add an llm formatting pass kind of like whisper flow does so that zack can dictate long emails and get properly formatted text the models run through o n n x runtime in the electron main process

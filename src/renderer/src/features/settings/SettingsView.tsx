@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, CircleAlert, Gauge, HardDrive, Keyboard, MonitorCog, Trash2 } from 'lucide-react'
+import { Check, CircleAlert, Gauge, HardDrive, Keyboard, MonitorCog, Sparkles, Trash2 } from 'lucide-react'
 
 import type {
   CommandResult,
@@ -128,6 +128,8 @@ export function SettingsView({
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const [llmApiKeyDraft, setLlmApiKeyDraft] = useState(settings.llmApiKey)
+  const [llmDictionaryDraft, setLlmDictionaryDraft] = useState(settings.llmDictionary)
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
   const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
@@ -206,6 +208,13 @@ export function SettingsView({
       if (submission !== null) successDurationSubmissionRef.current = null
     }
   }, [settings.successDisplayMs])
+
+  useEffect(() => {
+    setLlmApiKeyDraft(settings.llmApiKey)
+  }, [settings.llmApiKey])
+  useEffect(() => {
+    setLlmDictionaryDraft(settings.llmDictionary)
+  }, [settings.llmDictionary])
 
   useEffect(() => {
     if (mediaDevices === undefined) {
@@ -440,6 +449,26 @@ export function SettingsView({
           <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{knownLanguages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
           <Field label="Inference" description="Auto chooses the best available local backend."><Select value={settings.inferencePreference} onChange={(event) => void save({ inferencePreference: event.currentTarget.value as InferencePreference })}><option value="auto">Auto</option><option value="webgpu">Prefer WebGPU</option><option value="wasm">CPU / WASM</option></Select></Field>
           <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
+        </div>
+      </Card>
+
+      <Card className="settings-section">
+        <div className="settings-section__heading"><Sparkles aria-hidden="true" /><div><h2>Formatting</h2><p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p></div></div>
+        <div className="settings-fields-grid">
+          <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text (never audio) to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
+          <div className="settings-input-action">
+            <Field label="OpenRouter API key" description="Required for AI formatting. Stored locally in settings.">
+              <input className="tt-input" type="password" autoComplete="off" value={llmApiKeyDraft} onChange={(event) => setLlmApiKeyDraft(event.currentTarget.value)} />
+            </Field>
+            <Button variant="secondary" onClick={() => void save({ llmApiKey: llmApiKeyDraft.trim() }, 'API key saved.')}>Save API key</Button>
+          </div>
+          <div className="settings-input-action">
+            <Field label="Personal dictionary" description="One word or name per line. The AI corrects mis-heard words toward these.">
+              <textarea className="tt-input" rows={5} value={llmDictionaryDraft} onChange={(event) => setLlmDictionaryDraft(event.currentTarget.value)} />
+            </Field>
+            <Button variant="secondary" onClick={() => void save({ llmDictionary: llmDictionaryDraft }, 'Dictionary saved.')}>Save dictionary</Button>
+          </div>
+          <Toggle label="Streaming transcription" checked={settings.streamingAsr} onCheckedChange={(checked) => void save({ streamingAsr: checked })} description="Transcribe while you speak so long dictations finish almost immediately after you stop." />
         </div>
       </Card>
 

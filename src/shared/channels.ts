@@ -32,6 +32,8 @@ export const MODEL_STATUS = 'talktype:model:status' as const
 
 export const OUTPUT_DELIVER = 'talktype:output:deliver' as const
 
+export const TRANSCRIPT_POLISH = 'talktype:transcript:polish' as const
+
 export const STARTUP_GET = 'talktype:startup:get' as const
 export const STARTUP_SET = 'talktype:startup:set' as const
 
@@ -67,6 +69,7 @@ export const IPC_CHANNELS = Object.freeze({
   modelRemove: MODEL_REMOVE,
   modelStatus: MODEL_STATUS,
   outputDeliver: OUTPUT_DELIVER,
+  transcriptPolish: TRANSCRIPT_POLISH,
   startupGet: STARTUP_GET,
   startupSet: STARTUP_SET,
   appShow: APP_SHOW,

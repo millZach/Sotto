@@ -44,6 +44,7 @@ type HarnessOptions = {
   readonly now?: () => number
   readonly ids?: string[]
   readonly getSettings?: () => AppSettings
+  readonly polishTranscript?: NonNullable<DictationControllerDependencies['polishTranscript']>
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -87,6 +88,8 @@ function createHarness(options: HarnessOptions = {}) {
   })
   const clearTimer = vi.fn((handle: unknown) => timers.delete(handle as number))
   const ids = [...(options.ids ?? ['session'])]
+  const polishTranscript =
+    options.polishTranscript === undefined ? undefined : vi.fn(options.polishTranscript)
   const dependencies: DictationControllerDependencies = {
     createRecorder,
     transcriber,
@@ -94,6 +97,7 @@ function createHarness(options: HarnessOptions = {}) {
     deliverOutput,
     addHistory,
     publishWidgetState,
+    ...(polishTranscript === undefined ? {} : { polishTranscript }),
     ...(options.cuePlayer === undefined ? {} : { cuePlayer: options.cuePlayer }),
     now: options.now ?? (() => 1_000),
     createId: () => ids.shift() ?? 'later-session',
@@ -112,6 +116,7 @@ function createHarness(options: HarnessOptions = {}) {
       timers.clear()
       for (const callback of pending) callback()
     },
+    polishTranscript,
     publishWidgetState,
     recorder,
     recorders,
@@ -849,5 +854,123 @@ describe('pipeline prewarm', () => {
     await expect(harness.controller.prewarm()).resolves.toBeUndefined()
 
     expect(harness.controller.getState().status).toBe('idle')
+  })
+
+  it('applies the LLM polish pass when enabled and delivers the polished text', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => ({ text: 'um hello world', language: 'en' }),
+      polishTranscript: async () => ({ text: 'Hello, world.', applied: true }),
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+
+    expect(harness.polishTranscript).toHaveBeenCalledWith('um hello world')
+    expect(harness.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello, world.' }),
+    )
+  })
+
+  it('delivers the raw transcript when the polish pass fails or is skipped', async () => {
+    const failing = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => ({ text: 'hello world', language: 'en' }),
+      polishTranscript: async () => {
+        throw new Error('offline')
+      },
+    })
+    await failing.controller.start()
+    await failing.controller.stop()
+    expect(failing.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'hello world' }),
+    )
+
+    const disabled = createHarness({
+      currentSettings: settings({ llmFormatting: false }),
+      polishTranscript: async () => ({ text: 'never used', applied: true }),
+    })
+    await disabled.controller.start()
+    await disabled.controller.stop()
+    expect(disabled.polishTranscript).not.toHaveBeenCalled()
+  })
+
+  it('ignores a polish result that was not applied', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => ({ text: 'hello world', language: 'en' }),
+      polishTranscript: async (text) => ({ text, applied: false }),
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'hello world' }),
+    )
+  })
+
+  it('transcribes streamed segments in order and joins them with the tail', async () => {
+    let call = 0
+    const harness = createHarness({
+      currentSettings: settings({ streamingAsr: true }),
+      transcribe: async (options) => {
+        const index = call++
+        return { text: options.audio.length === 1 ? 'tail' : `segment-${index}`, language: 'en' }
+      },
+    })
+    await harness.controller.start()
+
+    const options = recorderOptions(harness)
+    expect(options.onSegment).toBeDefined()
+    options.onSegment?.({
+      samples: new Float32Array([0.1, 0.2]),
+      sourceSampleRate: 16_000,
+      durationMs: 6_000,
+    })
+    options.onSegment?.({
+      samples: new Float32Array([0.3, 0.4]),
+      sourceSampleRate: 16_000,
+      durationMs: 6_000,
+    })
+    await harness.controller.stop()
+
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(3)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'segment-0 segment-1 tail' }),
+    )
+  })
+
+  it('does not request segment transcription when streaming is disabled', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ streamingAsr: false }),
+    })
+    await harness.controller.start()
+    expect(recorderOptions(harness).onSegment).toBeUndefined()
+    await harness.controller.stop()
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('succeeds when segments exist but the tail recording is empty', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ streamingAsr: true }),
+      recorder: {
+        stop: vi.fn(async () => ({
+          samples: new Float32Array(0),
+          sourceSampleRate: 16_000,
+          durationMs: 7_000,
+        })),
+      },
+      transcribe: async () => ({ text: 'streamed words only', language: 'en' }),
+    })
+    await harness.controller.start()
+    recorderOptions(harness).onSegment?.({
+      samples: new Float32Array([0.5, 0.6]),
+      sourceSampleRate: 16_000,
+      durationMs: 6_500,
+    })
+    await harness.controller.stop()
+
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(1)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'streamed words only' }),
+    )
   })
 })

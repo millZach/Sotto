@@ -206,6 +206,22 @@ export const outputDeliveryRequestSchema = z
   })
   .strict()
 
+export const transcriptPolishRequestSchema = z
+  .object({
+    text: z.string().min(1).max(200_000),
+  })
+  .strict()
+
+export const transcriptPolishResultSchema = z
+  .object({
+    text: z.string().max(200_000),
+    applied: z.boolean(),
+  })
+  .strict()
+
+export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
+export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
+
 export const modelStatusSchema = z
   .object({
     preset: modelPresetSchema,
@@ -322,6 +338,8 @@ export interface TalkTypeBridge {
   onModelStatus(listener: (status: ModelStatus) => void): Unsubscribe
 
   deliverOutput(request: OutputDeliveryRequest): Promise<OutputResult>
+
+  polishTranscript(request: TranscriptPolishRequest): Promise<TranscriptPolishResult>
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

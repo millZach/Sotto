@@ -8,7 +8,10 @@ import {
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
-import type { OutputDeliveryRequest } from '../../../../shared/contracts'
+import type {
+  OutputDeliveryRequest,
+  TranscriptPolishResult,
+} from '../../../../shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/settings'
 import { formatTranscript } from '../../../../shared/transcript'
 import {
@@ -56,6 +59,8 @@ export interface DictationControllerDependencies {
   ) => DictationOutputResult | Promise<DictationOutputResult>
   readonly addHistory: (entry: HistoryEntry) => unknown | Promise<unknown>
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
+  /** Optional LLM cleanup pass; any failure falls back to the raw transcript. */
+  readonly polishTranscript?: (text: string) => Promise<TranscriptPolishResult>
   readonly cuePlayer?: DictationCuePlayer
   readonly now?: () => number
   readonly createId?: () => string
@@ -75,6 +80,8 @@ interface ActiveSession {
   acceptProgress: boolean
   processing?: Promise<void>
   errorCode?: WidgetErrorCode
+  /** In-order transcription results for segments emitted while listening. */
+  readonly segmentResults: Promise<TranscriptionResult>[]
 }
 
 const ERROR_MESSAGES = Object.freeze({
@@ -205,6 +212,7 @@ export class DictationController {
       processingStage: 'preparing-audio',
       progress: 0,
       acceptProgress: true,
+      segmentResults: [],
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
@@ -220,6 +228,9 @@ export class DictationController {
         onLevel: (level) => this.handleLevel(session, level),
         onDurationLimit: (result) => this.handleDurationLimit(session, result),
         onDeviceUnavailable: () => this.handleDeviceUnavailable(session),
+        ...(settings.streamingAsr
+          ? { onSegment: (segment: AudioRecordingResult) => this.handleSegment(session, segment) }
+          : {}),
       })
     } catch (error: unknown) {
       this.fail(session, classifyStartFailure(error))
@@ -371,26 +382,58 @@ export class DictationController {
     void cancellation?.catch(() => undefined)
   }
 
+  private handleSegment(session: ActiveSession, segment: AudioRecordingResult): void {
+    if (!this.isCurrent(session) || session.stopClaimed || segment.samples.length === 0) return
+    const result = this.dependencies.transcriber.transcribe({
+      sessionId: session.id,
+      audio: segment.samples,
+      preset: session.settings.modelPreset,
+      language: session.settings.language,
+      inferencePreference: session.settings.inferencePreference,
+    })
+    session.segmentResults.push(result)
+    // Rejections are re-observed when processRecording awaits the batch.
+    void result.catch(() => undefined)
+  }
+
   private async processRecording(
     session: ActiveSession,
     recording: AudioRecordingResult,
   ): Promise<void> {
     if (!this.isCurrent(session)) return
-    if (recording.samples.length === 0) {
+    if (recording.samples.length === 0 && session.segmentResults.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
 
+    const pending = [...session.segmentResults]
+    if (recording.samples.length > 0) {
+      pending.push(
+        this.dependencies.transcriber.transcribe({
+          sessionId: session.id,
+          audio: recording.samples,
+          preset: session.settings.modelPreset,
+          language: session.settings.language,
+          inferencePreference: session.settings.inferencePreference,
+          onProgress: (progress) => this.handleProgress(session, progress),
+        }),
+      )
+    }
+
     let result: TranscriptionResult
     try {
-      result = await this.dependencies.transcriber.transcribe({
-        sessionId: session.id,
-        audio: recording.samples,
-        preset: session.settings.modelPreset,
-        language: session.settings.language,
-        inferencePreference: session.settings.inferencePreference,
-        onProgress: (progress) => this.handleProgress(session, progress),
-      })
+      const results = await Promise.all(pending)
+      const single = results.length === 1 ? results[0] : undefined
+      result =
+        single !== undefined
+          ? single
+          : {
+              text: results
+                .map((partial) => partial.text.trim())
+                .filter((partial) => partial.length > 0)
+                .join(' '),
+              language: results.at(-1)?.language ?? session.settings.language,
+            }
     } catch {
       if (this.isCurrent(session)) this.fail(session, 'TRANSCRIPTION_FAILED')
       return
@@ -398,12 +441,26 @@ export class DictationController {
     if (!this.isCurrent(session)) return
     session.acceptProgress = false
 
-    const normalized = formatTranscript(result.text)
+    let normalized = formatTranscript(result.text)
     if (normalized.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
-    const text = session.settings.formatWhitespace ? normalized : result.text
+
+    let rawText = result.text
+    if (session.settings.llmFormatting && this.dependencies.polishTranscript !== undefined) {
+      try {
+        const polished = await this.dependencies.polishTranscript(rawText)
+        if (polished.applied && polished.text.trim().length > 0) {
+          rawText = polished.text
+          normalized = formatTranscript(polished.text)
+        }
+      } catch {
+        // The raw transcript is always deliverable without the cleanup pass.
+      }
+      if (!this.isCurrent(session)) return
+    }
+    const text = session.settings.formatWhitespace ? normalized : rawText
 
     session.cancellable = false
     session.processingStage = 'delivering-output'

@@ -62,6 +62,7 @@ export interface AppControllerFactoryBindings {
   readonly deliverOutput: TalkTypeBridge['deliverOutput']
   readonly addHistory: TalkTypeBridge['addHistory']
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<TalkTypeBridge['publishWidgetState']>
+  readonly polishTranscript?: TalkTypeBridge['polishTranscript']
 }
 
 export type AppControllerFactory = (
@@ -84,6 +85,7 @@ export function createProductionDictationController(
   bindings: AppControllerFactoryBindings,
   factories: ProductionControllerFactories = productionFactories,
 ): AppController {
+  const polish = bindings.polishTranscript
   const dependencies: DictationControllerDependencies = {
     createRecorder: factories.createRecorder,
     transcriber: factories.createTranscriber(),
@@ -92,6 +94,9 @@ export function createProductionDictationController(
     deliverOutput: bindings.deliverOutput,
     addHistory: bindings.addHistory,
     publishWidgetState: bindings.publishWidgetState,
+    ...(polish === undefined
+      ? {}
+      : { polishTranscript: (text: string) => polish({ text }) }),
   }
   return new DictationController(dependencies)
 }
@@ -365,6 +370,7 @@ export function AppProvider({
             return current
           },
           deliverOutput: (request) => bridge.deliverOutput(request),
+          polishTranscript: (request) => bridge.polishTranscript(request),
           addHistory: async (entry) => {
             const version = ++historyVersionRef.current
             const request = historyTailRef.current.then(() => bridge.addHistory(entry))

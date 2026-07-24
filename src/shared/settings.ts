@@ -34,6 +34,14 @@ export interface AppSettings {
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
+  llmFormatting: boolean
+  llmApiKey: string
+  llmDictionary: string
+  llmModel: string
+  llmFallbackModel: string
+  llmTimeoutMs: number
+  llmMinWords: number
+  streamingAsr: boolean
 }
 
 export type SettingsPatch = Partial<
@@ -67,6 +75,14 @@ const fieldSchemas = {
     z.literal('unlimited'),
   ]),
   onboardingComplete: z.boolean(),
+  llmFormatting: z.boolean(),
+  llmApiKey: z.string().max(256),
+  llmDictionary: z.string().max(4_000),
+  llmModel: z.string().min(1).max(128),
+  llmFallbackModel: z.string().max(128),
+  llmTimeoutMs: z.number().int().min(500).max(10_000),
+  llmMinWords: z.number().int().min(0).max(50),
+  streamingAsr: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
 export const settingsSchema = z.object(fieldSchemas)
@@ -93,6 +109,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
+  llmFormatting: false,
+  llmApiKey: '',
+  llmDictionary: '',
+  llmModel: 'meta-llama/llama-3.3-70b-instruct',
+  llmFallbackModel: 'google/gemini-3.5-flash-lite',
+  llmTimeoutMs: 2_500,
+  llmMinWords: 5,
+  streamingAsr: true,
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -132,5 +156,13 @@ export function parseSettings(input: unknown): AppSettings {
     historyEnabled: parseField(persisted, 'historyEnabled'),
     historyRetention: parseField(persisted, 'historyRetention'),
     onboardingComplete: parseField(persisted, 'onboardingComplete'),
+    llmFormatting: parseField(persisted, 'llmFormatting'),
+    llmApiKey: parseField(persisted, 'llmApiKey'),
+    llmDictionary: parseField(persisted, 'llmDictionary'),
+    llmModel: parseField(persisted, 'llmModel'),
+    llmFallbackModel: parseField(persisted, 'llmFallbackModel'),
+    llmTimeoutMs: parseField(persisted, 'llmTimeoutMs'),
+    llmMinWords: parseField(persisted, 'llmMinWords'),
+    streamingAsr: parseField(persisted, 'streamingAsr'),
   }
 }
