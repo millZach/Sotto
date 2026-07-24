@@ -7,6 +7,7 @@ export type ReducedMotion = 'system' | 'on'
 export type ModelPreset = 'fast' | 'balanced' | 'accurate' | 'instant'
 export type InferencePreference = 'auto' | 'webgpu' | 'wasm'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
+export type LlmQuality = 'low' | 'medium' | 'high'
 
 export const SETTINGS_VERSION = 1 as const
 
@@ -37,8 +38,7 @@ export interface AppSettings {
   llmFormatting: boolean
   llmApiKey: string
   llmDictionary: string
-  llmModel: string
-  llmFallbackModel: string
+  llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
   streamingAsr: boolean
@@ -78,8 +78,7 @@ const fieldSchemas = {
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
-  llmModel: z.string().min(1).max(128),
-  llmFallbackModel: z.string().max(128),
+  llmQuality: z.enum(['low', 'medium', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   streamingAsr: z.boolean(),
@@ -112,8 +111,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
-  llmModel: 'meta-llama/llama-3.3-70b-instruct',
-  llmFallbackModel: 'google/gemini-3.5-flash-lite',
+  llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   streamingAsr: true,
@@ -159,8 +157,7 @@ export function parseSettings(input: unknown): AppSettings {
     llmFormatting: parseField(persisted, 'llmFormatting'),
     llmApiKey: parseField(persisted, 'llmApiKey'),
     llmDictionary: parseField(persisted, 'llmDictionary'),
-    llmModel: parseField(persisted, 'llmModel'),
-    llmFallbackModel: parseField(persisted, 'llmFallbackModel'),
+    llmQuality: parseField(persisted, 'llmQuality'),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs'),
     llmMinWords: parseField(persisted, 'llmMinWords'),
     streamingAsr: parseField(persisted, 'streamingAsr'),

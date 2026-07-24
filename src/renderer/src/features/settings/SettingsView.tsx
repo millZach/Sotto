@@ -17,6 +17,7 @@ import type {
   AppSettings,
   HistoryRetention,
   InferencePreference,
+  LlmQuality,
   ModelPreset,
   ReducedMotion,
   SettingsPatch,
@@ -456,6 +457,7 @@ export function SettingsView({
         <div className="settings-section__heading"><Sparkles aria-hidden="true" /><div><h2>Formatting</h2><p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p></div></div>
         <div className="settings-fields-grid">
           <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text (never audio) to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
+          <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Llama 3.3 70B)</option><option value="medium">Medium (Gemini 3.5 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
           <div className="settings-input-action">
             <Field label="OpenRouter API key" description="Required for AI formatting. Stored locally in settings.">
               <input className="tt-input" type="password" autoComplete="off" value={llmApiKeyDraft} onChange={(event) => setLlmApiKeyDraft(event.currentTarget.value)} />

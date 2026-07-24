@@ -33,8 +33,7 @@ const customSettings = {
   llmFormatting: true,
   llmApiKey: 'sk-or-v1-test',
   llmDictionary: 'TalkType\nMoonshine',
-  llmModel: 'meta-llama/llama-3.3-70b-instruct',
-  llmFallbackModel: 'google/gemini-3.5-flash-lite',
+  llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   streamingAsr: false,
@@ -68,8 +67,7 @@ describe('settings', () => {
       llmFormatting: false,
       llmApiKey: '',
       llmDictionary: '',
-      llmModel: 'meta-llama/llama-3.3-70b-instruct',
-      llmFallbackModel: 'google/gemini-3.5-flash-lite',
+      llmQuality: 'low',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       streamingAsr: true,
@@ -80,6 +78,8 @@ describe('settings', () => {
     expect(parseSettings({}).llmFormatting).toBe(false)
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
+    expect(parseSettings({ llmQuality: 'high' }).llmQuality).toBe('high')
+    expect(parseSettings({ llmQuality: 'ultra' }).llmQuality).toBe('low')
     expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 

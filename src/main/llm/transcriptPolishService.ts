@@ -1,8 +1,45 @@
 import type { TranscriptPolishResult } from '../../shared/contracts'
-import type { AppSettings } from '../../shared/settings'
+import type { AppSettings, LlmQuality } from '../../shared/settings'
 import { buildPolishSystemPrompt, buildPolishUserPrompt } from './prompt'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+
+interface ModelSpec {
+  readonly id: string
+  /** OpenRouter unified reasoning param: false disables, a string sets effort. */
+  readonly reasoning?: false | 'minimal'
+  /** Preferred provider order for models served by multiple hosts. */
+  readonly provider?: readonly string[]
+}
+
+interface QualityTier {
+  readonly primary: ModelSpec
+  readonly fallback: ModelSpec
+  /**
+   * Slower tiers need more headroom than the default deadline: Haiku's
+   * first-token latency alone can eat most of 2.5 s. The user's llmTimeoutMs
+   * still wins when it is larger.
+   */
+  readonly minTimeoutMs: number
+}
+
+export const QUALITY_TIERS: Record<LlmQuality, QualityTier> = {
+  low: {
+    primary: { id: 'meta-llama/llama-3.3-70b-instruct', provider: ['groq', 'cerebras'] },
+    fallback: { id: 'google/gemini-3.5-flash-lite', reasoning: 'minimal' },
+    minTimeoutMs: 2_500,
+  },
+  medium: {
+    primary: { id: 'google/gemini-3.5-flash', reasoning: 'minimal' },
+    fallback: { id: 'google/gemini-3.5-flash-lite', reasoning: 'minimal' },
+    minTimeoutMs: 3_500,
+  },
+  high: {
+    primary: { id: 'anthropic/claude-haiku-4.5', reasoning: false },
+    fallback: { id: 'google/gemini-3.5-flash', reasoning: 'minimal' },
+    minTimeoutMs: 4_500,
+  },
+}
 
 /**
  * Every failure path returns the raw transcript unchanged: dictation must
@@ -64,20 +101,19 @@ export class TranscriptPolishService {
     if (!settings.llmFormatting || settings.llmApiKey.length === 0) return raw
     if (countWords(text) < settings.llmMinWords) return raw
 
-    const deadline = this.now() + settings.llmTimeoutMs
-    const primary = await this.attempt(settings, settings.llmModel, text, deadline)
+    const tier = QUALITY_TIERS[settings.llmQuality]
+    const deadline = this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs)
+    const primary = await this.attempt(settings, tier.primary, text, deadline)
     if (primary.text !== null) return { text: primary.text, applied: true }
 
-    const fallbackModel = settings.llmFallbackModel
-    if (fallbackModel.length === 0 || fallbackModel === settings.llmModel) return raw
     if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) return raw
-    const fallback = await this.attempt(settings, fallbackModel, text, deadline)
+    const fallback = await this.attempt(settings, tier.fallback, text, deadline)
     return fallback.text === null ? raw : { text: fallback.text, applied: true }
   }
 
   private async attempt(
     settings: AppSettings,
-    model: string,
+    model: ModelSpec,
     text: string,
     deadline: number,
   ): Promise<AttemptOutcome> {
@@ -92,13 +128,20 @@ export class TranscriptPolishService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
+          model: model.id,
           messages: [
             { role: 'system', content: buildPolishSystemPrompt(settings.llmDictionary) },
             { role: 'user', content: buildPolishUserPrompt(text) },
           ],
           max_tokens: 4_000,
-          provider: { order: ['groq', 'cerebras'], allow_fallbacks: true },
+          ...(model.reasoning === false
+            ? { reasoning: { enabled: false } }
+            : model.reasoning === undefined
+              ? {}
+              : { reasoning: { effort: model.reasoning } }),
+          ...(model.provider === undefined
+            ? {}
+            : { provider: { order: model.provider, allow_fallbacks: true } }),
         }),
         signal: AbortSignal.timeout(budget),
       })

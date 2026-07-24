@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
+import { QUALITY_TIERS, TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
 import { buildPolishSystemPrompt, parseDictionary } from '../../../src/main/llm/prompt'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
@@ -69,7 +69,7 @@ describe('TranscriptPolishService', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
     const [, init] = fetchFn.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(init.body as string) as { model: string }
-    expect(body.model).toBe(DEFAULT_SETTINGS.llmModel)
+    expect(body.model).toBe(QUALITY_TIERS.low.primary.id)
     expect((init.headers as Record<string, string>).Authorization).toBe(
       'Bearer sk-or-v1-test',
     )
@@ -88,8 +88,44 @@ describe('TranscriptPolishService', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2)
     const [, init] = fetchFn.mock.calls[1] as [string, RequestInit]
     expect((JSON.parse(init.body as string) as { model: string }).model).toBe(
-      DEFAULT_SETTINGS.llmFallbackModel,
+      QUALITY_TIERS.low.fallback.id,
     )
+  })
+
+  it('routes each quality tier to its benchmark-selected primary model', async () => {
+    for (const [quality, expected] of [
+      ['low', 'meta-llama/llama-3.3-70b-instruct'],
+      ['medium', 'google/gemini-3.5-flash'],
+      ['high', 'anthropic/claude-haiku-4.5'],
+    ] as const) {
+      const { fetchFn, service } = createService({
+        settings: { ...ENABLED, llmQuality: quality },
+      })
+      await expect(service.polish('um hello there my good friend')).resolves.toEqual({
+        text: 'Polished text.',
+        applied: true,
+      })
+      const [, init] = fetchFn.mock.calls[0] as [string, RequestInit]
+      expect((JSON.parse(init.body as string) as { model: string }).model).toBe(expected)
+    }
+  })
+
+  it('extends the deadline floor for the slower high tier', async () => {
+    let clock = 0
+    const { fetchFn, service } = createService({
+      settings: { ...ENABLED, llmQuality: 'high' },
+      now: () => clock,
+      fetchFn: async () => {
+        // Slower than the user deadline, but within the high tier's floor:
+        // the fallback attempt must still be allowed to run.
+        clock += DEFAULT_SETTINGS.llmTimeoutMs + 500
+        return new Response('overloaded', { status: 500 })
+      },
+    })
+    await expect(service.polish('um hello there my good friend')).resolves.toMatchObject({
+      applied: false,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 
   it('returns the raw transcript when the deadline leaves no fallback budget', async () => {
@@ -109,7 +145,6 @@ describe('TranscriptPolishService', () => {
 
   it('rejects unusable model output and keeps the raw transcript', async () => {
     const { service } = createService({
-      settings: { ...ENABLED, llmFallbackModel: '' },
       fetchFn: async () => okResponse(''),
     })
     await expect(service.polish('um hello there my good friend')).resolves.toEqual({
