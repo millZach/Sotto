@@ -25,18 +25,18 @@ interface QualityTier {
 
 export const QUALITY_TIERS: Record<LlmQuality, QualityTier> = {
   low: {
-    primary: { id: 'meta-llama/llama-3.3-70b-instruct', provider: ['groq', 'cerebras'] },
-    fallback: { id: 'google/gemini-3.5-flash-lite', reasoning: 'minimal' },
+    primary: { id: 'inception/mercury-2', reasoning: false },
+    fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
     minTimeoutMs: 2_500,
   },
   medium: {
-    primary: { id: 'google/gemini-3.5-flash', reasoning: 'minimal' },
-    fallback: { id: 'google/gemini-3.5-flash-lite', reasoning: 'minimal' },
+    primary: { id: 'amazon/nova-2-lite-v1', reasoning: false },
+    fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
     minTimeoutMs: 3_500,
   },
   high: {
     primary: { id: 'anthropic/claude-haiku-4.5', reasoning: false },
-    fallback: { id: 'google/gemini-3.5-flash', reasoning: 'minimal' },
+    fallback: { id: 'amazon/nova-2-lite-v1', reasoning: false },
     minTimeoutMs: 4_500,
   },
 }

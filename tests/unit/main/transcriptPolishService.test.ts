@@ -94,8 +94,8 @@ describe('TranscriptPolishService', () => {
 
   it('routes each quality tier to its benchmark-selected primary model', async () => {
     for (const [quality, expected] of [
-      ['low', 'meta-llama/llama-3.3-70b-instruct'],
-      ['medium', 'google/gemini-3.5-flash'],
+      ['low', 'inception/mercury-2'],
+      ['medium', 'amazon/nova-2-lite-v1'],
       ['high', 'anthropic/claude-haiku-4.5'],
     ] as const) {
       const { fetchFn, service } = createService({
