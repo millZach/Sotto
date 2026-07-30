@@ -30,6 +30,9 @@ const RESULTS_DIR = join(HERE, 'results')
 // Sweep field. `reasoning: false` asks OpenRouter to disable/minimize reasoning
 // where the model supports the unified `reasoning` param.
 const API_MODELS = [
+  // Shipping tier primaries (see src/main/llm/transcriptPolishService.ts)
+  { id: 'inception/mercury-2', reasoning: false },
+  { id: 'amazon/nova-2-lite-v1', reasoning: false },
   { id: 'anthropic/claude-haiku-4.5', reasoning: false },
   { id: 'openai/gpt-5.4-mini', reasoning: false },
   { id: 'openai/gpt-5.4-nano', reasoning: false },

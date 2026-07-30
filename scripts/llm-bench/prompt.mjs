@@ -18,8 +18,10 @@ export function buildSystemPrompt(dictionary = DICTIONARY) {
 
 Rules:
 - Add punctuation, capitalization, and sentence and paragraph breaks.
-- Remove verbal fillers: "um", "uh", "like", "you know", "I mean", "sort of", "kind of", "basically", "right", and sentence-starting "so"/"okay so"/"well" — but only when they carry no meaning. Keep them when they do ("I like this plan", "kind of a big deal", "so we can ship on time").
-- Remove stutters and immediate word repetitions: "the the report" becomes "the report".
+- Always remove: "um", "uh", stutters, and immediate word repetitions ("the the report" becomes "the report").
+- Remove "like", "you know", "I mean", and thought-starting "so"/"okay so"/"well"/"anyway" ONLY when they are pure verbal tics the sentence reads identically without. Keep "like" in comparisons ("looks like"), approximations ("like eighty percent"), and as a verb ("I like it").
+- NEVER remove hedges, qualifiers, or emphasis — "kind of", "sort of", "maybe", "probably", "actually", "honestly", "basically", "really" express the speaker's degree of confidence and must survive. "kind of cluttered" stays "kind of cluttered", never just "cluttered".
+- When unsure whether a word is filler, keep it.
 - Fix obvious speech-recognition errors using context.
 - Resolve self-corrections: "meet at 3 no wait make that 4" becomes "meet at 4".
 - When the speaker enumerates parallel items ("first... second...", "we need X, we need Y, we need Z"), format them as a list: one item per line, each starting with "- ".
@@ -45,19 +47,22 @@ Cleaned:
 Tell Dave I'll have the draft done by end of day.
 
 Transcript:
-so um i was thinking we could you know maybe push the the release to friday because honestly the tests are like not done yet
+so um i was thinking we could you know maybe push the the release to friday because honestly the tests are like not done yet and the docs are kind of rough
 Cleaned:
-I was thinking we could maybe push the release to Friday because honestly the tests are not done yet.
+I was thinking we could maybe push the release to Friday because honestly the tests are not done yet and the docs are kind of rough.
 
 Transcript:
-okay so before we launch there's three things we still need to do first we need to finish the onboarding flow second fix the mic permissions bug and then third update the readme
+okay so before we launch there's three things we still need to do first we need to finish the onboarding flow second fix the mic permissions bug and then third update the readme oh and one more thing we should double check the installer
 Cleaned:
 Before we launch there are three things we still need to do:
 - Finish the onboarding flow
 - Fix the mic permissions bug
 - Update the README
+- Double check the installer
 
-Notice: when the speaker corrects themselves ("no wait", "no scratch that", "actually"), keep ONLY the corrected version. The correction phrase itself never appears in the output. Fillers vanish, but meaningful words ("maybe", "honestly") stay. Enumerations become "- " lists.`
+Notice: late additions ("oh and one more thing", "also") join the list as items; the connector phrase itself never appears.
+
+Notice: when the speaker corrects themselves ("no wait", "no scratch that"), keep ONLY the corrected version; the correction phrase itself never appears in the output. Verbal tics (um, uh, stray "you know") vanish, but hedges and emphasis ("maybe", "honestly", "kind of") always stay. Enumerations become "- " lists.`
 
 export function buildFewshotSystemPrompt(dictionary = DICTIONARY) {
   return buildSystemPrompt(dictionary) + '\n' + FEWSHOT_EXAMPLES

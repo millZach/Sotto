@@ -1,0 +1,1 @@
+okay before we ship there's a few things left first i need to finish the settings migration then um somebody has to update the screenshots in the readme and the third thing is we should probably bump the version and tag the release oh and one more thing we need to test on a clean windows install

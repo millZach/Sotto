@@ -1,0 +1,1 @@
+hey um quick heads up the migration is like eighty percent done but i'm not totally sure about the last batch it looks like some records didn't sync right so we should probably hold off on flipping the flag until i can verify basically everything after row two thousand needs a second pass well at least the ones with attachments
