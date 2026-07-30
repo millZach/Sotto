@@ -12,7 +12,24 @@ export function AppTitlebar({ onMinimize, onClose }: AppTitlebarProps): ReactNod
   return (
     <header className="app-titlebar">
       <div className="app-titlebar__brand" aria-label="Sotto application">
-        <span className="app-titlebar__mark" aria-hidden="true">S</span>
+        {/* Inline copy of build/icon.svg so the mark matches the packaged app icon. */}
+        <svg className="app-titlebar__mark" aria-hidden="true" viewBox="0 0 96 96">
+          <defs>
+            <linearGradient id="app-titlebar-mark-bg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#8b5cf6" />
+              <stop offset="1" stopColor="#5b21b6" />
+            </linearGradient>
+          </defs>
+          <rect width="96" height="96" rx="22" fill="url(#app-titlebar-mark-bg)" />
+          <rect x="26" y="20" width="9" height="56" rx="4.5" fill="#ffffff" />
+          <path
+            d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0"
+            stroke="#ffffff"
+            strokeWidth="7.5"
+            strokeLinecap="round"
+            fill="none"
+          />
+        </svg>
         <span>Sotto</span>
       </div>
       <div className="app-titlebar__controls">

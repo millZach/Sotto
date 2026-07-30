@@ -648,14 +648,9 @@ h1[tabindex='-1']:focus {
 }
 
 .app-titlebar__mark {
-  display: grid;
+  display: block;
   width: 28px;
   height: 28px;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--tt-primary);
-  color: var(--tt-primary-contrast);
-  font-size: 13px;
 }
 
 .app-titlebar__controls {
