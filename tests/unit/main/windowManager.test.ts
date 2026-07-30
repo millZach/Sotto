@@ -34,6 +34,7 @@ class FakeWindow implements BrowserWindowLike {
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
+  readonly setAlwaysOnTop = vi.fn()
   bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
   readonly setBoundsCalls: Rectangle[] = []
   readonly setPositionCalls: Array<readonly [number, number]> = []
@@ -330,6 +331,16 @@ describe('WindowManager construction', () => {
         },
       },
     ])
+  })
+
+  it('reasserts widget always-on-top at the explicit normal level after creation', async () => {
+    // Windows 11 silently drops the constructor's alwaysOnTop (and the
+    // implicit 'floating' level); only an explicit post-create level sticks.
+    const { manager, windows } = createHarness()
+
+    await manager.createWidgetWindow()
+
+    expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'normal')
   })
 
   it('retains one instance of each window', async () => {

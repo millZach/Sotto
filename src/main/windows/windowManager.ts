@@ -110,6 +110,7 @@ export interface BrowserWindowLike {
   isMinimized(): boolean
   restore(): void
   showInactive(): void
+  setAlwaysOnTop(flag: boolean, level?: 'normal'): void
   /** Managed widget geometry uses the renderer content area in Electron DIPs. */
   getBounds(): Rectangle
   setBounds(bounds: Rectangle, animate?: boolean): void
@@ -381,6 +382,10 @@ export class WindowManager {
       },
     })
     this.widgetWindow = window
+    // The constructor's alwaysOnTop (and setAlwaysOnTop's default 'floating'
+    // level) silently fails to apply WS_EX_TOPMOST on current Windows 11
+    // builds; the explicit 'normal' level sticks and survives hide/show.
+    window.setAlwaysOnTop(true, 'normal')
     this.installClosedLifecycle(window, 'widget')
     this.installRendererProcessLifecycle(window, 'widget')
     this.installNavigationPolicy(window)

@@ -295,6 +295,10 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.showInactive()
   }
 
+  setAlwaysOnTop(flag: boolean, level?: 'normal'): void {
+    this.window.setAlwaysOnTop(flag, level)
+  }
+
   getBounds(): Rectangle {
     return this.window.getContentBounds()
   }

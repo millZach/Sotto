@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+﻿import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
   bootstrapSotto,
@@ -157,6 +157,7 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
+  readonly setAlwaysOnTop = vi.fn()
   bounds: Rectangle
   readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
   readonly setBounds = vi.fn((bounds: Rectangle): void => {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi } from 'vitest'
 
 import { NativeDictationLifecycle } from '../../src/main/app/nativeDictationLifecycle'
 import { NativeMessageDelivery } from '../../src/main/app/nativeMessageDelivery'
@@ -32,6 +32,7 @@ class LifecycleWindow implements BrowserWindowLike {
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
+  readonly setAlwaysOnTop = vi.fn()
   bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
   readonly getBounds = vi.fn((): Rectangle => ({ ...this.bounds }))
   readonly setBounds = vi.fn((bounds: Rectangle): void => {
