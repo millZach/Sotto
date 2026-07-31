@@ -10,10 +10,12 @@ import {
 import type { HistoryEntry } from '../../../../shared/history'
 import type {
   OutputDeliveryRequest,
+  TranscriptPolishAsrContext,
   TranscriptPolishResult,
 } from '../../../../shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/settings'
 import { formatTranscript } from '../../../../shared/transcript'
+import { collapseRepeatedPhrases, countWords } from '../../../../shared/textRepair'
 import {
   AudioRecorderError,
   type AudioRecorderOptions,
@@ -60,7 +62,10 @@ export interface DictationControllerDependencies {
   readonly addHistory: (entry: HistoryEntry) => unknown | Promise<unknown>
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
   /** Optional LLM cleanup pass; any failure falls back to the raw transcript. */
-  readonly polishTranscript?: (text: string) => Promise<TranscriptPolishResult>
+  readonly polishTranscript?: (
+    text: string,
+    asr?: TranscriptPolishAsrContext,
+  ) => Promise<TranscriptPolishResult>
   readonly cuePlayer?: DictationCuePlayer
   readonly now?: () => number
   readonly createId?: () => string
@@ -421,8 +426,10 @@ export class DictationController {
     }
 
     let result: TranscriptionResult
+    let segmentWords: number[]
     try {
       const results = await Promise.all(pending)
+      segmentWords = results.map((partial) => countWords(partial.text))
       const single = results.length === 1 ? results[0] : undefined
       result =
         single !== undefined
@@ -441,16 +448,25 @@ export class DictationController {
     if (!this.isCurrent(session)) return
     session.acceptProgress = false
 
-    let normalized = formatTranscript(result.text)
+    // Local ASR decoders occasionally loop on one word/phrase; collapse those
+    // runs before the text reaches formatting, cleanup, history, or paste.
+    const repairedText = collapseRepeatedPhrases(result.text)
+
+    let normalized = formatTranscript(repairedText)
     if (normalized.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
 
-    let rawText = result.text
+    let rawText = repairedText
     if (session.settings.llmFormatting && this.dependencies.polishTranscript !== undefined) {
       try {
-        const polished = await this.dependencies.polishTranscript(rawText)
+        const polished = await this.dependencies.polishTranscript(rawText, {
+          segmentWords,
+          durationMs: Number.isFinite(recording.durationMs)
+            ? Math.max(0, Math.round(recording.durationMs))
+            : 0,
+        })
         if (polished.applied && polished.text.trim().length > 0) {
           rawText = polished.text
           normalized = formatTranscript(polished.text)

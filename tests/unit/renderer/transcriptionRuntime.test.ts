@@ -107,9 +107,11 @@ describe('local transcription worker runtime', () => {
     )
   })
 
-  it('maps instant to the pinned Moonshine repository and calls it without Whisper options', async () => {
+  it('maps instant to the pinned Moonshine repository with an explicit token budget', async () => {
     // Moonshine models take no task/language generation options and are
-    // English-only, so the result language is always 'en'.
+    // English-only, so the result language is always 'en'. The token budget is
+    // explicit: the library's floor(seconds) * 6 default is 0 for sub-second
+    // audio, which guarantees an empty transcription.
     const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
       async () => ({ text: 'moonshine text' }),
     )
@@ -129,7 +131,7 @@ describe('local transcription worker runtime', () => {
       expect.objectContaining({ dtype: 'q8', device: 'wasm', local_files_only: true }),
     )
     expect(recognize).toHaveBeenCalledTimes(1)
-    expect(recognize.mock.calls[0]).toHaveLength(1)
+    expect(recognize).toHaveBeenCalledWith(expect.any(Float32Array), { max_new_tokens: 24 })
     expect(responses.at(-1)).toEqual({
       type: 'result',
       requestId: 'request-1',
@@ -137,6 +139,24 @@ describe('local transcription worker runtime', () => {
       text: 'moonshine text',
       language: 'en',
     })
+  })
+
+  it('scales the Moonshine token budget with audio length', async () => {
+    const recognize = vi.fn<(audio: Float32Array, options?: unknown) => Promise<{ text: string }>>(
+      async () => ({ text: 'long dictation' }),
+    )
+    const runtime = createTranscriptionRuntime({
+      createPipeline: vi.fn(async () => recognize) as unknown as PipelineFactory,
+      postMessage: vi.fn(),
+      probeWebGpu: async () => false,
+    })
+
+    // 10 seconds of 16 kHz audio: ceil(10 * 6) + 8 = 68 tokens.
+    await runtime.handleMessage(
+      transcribeRequest({ preset: 'instant', audio: new Float32Array(160_000) }),
+    )
+
+    expect(recognize).toHaveBeenCalledWith(expect.any(Float32Array), { max_new_tokens: 68 })
   })
 
   it('warms up an instant pipeline without Whisper options', async () => {

@@ -865,9 +865,33 @@ describe('pipeline prewarm', () => {
     await harness.controller.start()
     await harness.controller.stop()
 
-    expect(harness.polishTranscript).toHaveBeenCalledWith('um hello world')
+    expect(harness.polishTranscript).toHaveBeenCalledWith('um hello world', {
+      segmentWords: [3],
+      durationMs: 500,
+    })
     expect(harness.deliverOutput).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Hello, world.' }),
+    )
+  })
+
+  it('collapses hallucinated repetition loops before polish and delivery', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => ({
+        text: 'wait, no, no, no, no, no, no, no, no groceries',
+        language: 'en',
+      }),
+      polishTranscript: async (text) => ({ text, applied: false }),
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+
+    expect(harness.polishTranscript).toHaveBeenCalledWith('wait, no, groceries', {
+      segmentWords: [10],
+      durationMs: 500,
+    })
+    expect(harness.deliverOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'wait, no, groceries' }),
     )
   })
 

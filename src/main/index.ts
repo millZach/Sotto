@@ -617,7 +617,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         output,
         transcriptPolish: {
-          polish: (text) => transcriptPolish.polish(text),
+          polish: (text, asr) => transcriptPolish.polish(text, asr),
         },
         widget: {
           setPresentation: (presentation) => windows.setWidgetPresentation(presentation),

@@ -206,9 +206,20 @@ export const outputDeliveryRequestSchema = z
   })
   .strict()
 
+export const transcriptPolishAsrContextSchema = z
+  .object({
+    /** Word count of each streaming ASR segment, in emit order. */
+    segmentWords: z.array(z.number().int().min(0).max(100_000)).max(500),
+    /** Full recording duration in milliseconds. */
+    durationMs: z.number().finite().min(0),
+  })
+  .strict()
+
 export const transcriptPolishRequestSchema = z
   .object({
     text: z.string().min(1).max(200_000),
+    /** Optional word-count-only ASR metadata for loss diagnostics. */
+    asr: transcriptPolishAsrContextSchema.optional(),
   })
   .strict()
 
@@ -219,6 +230,7 @@ export const transcriptPolishResultSchema = z
   })
   .strict()
 
+export type TranscriptPolishAsrContext = z.infer<typeof transcriptPolishAsrContextSchema>
 export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
 export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
 

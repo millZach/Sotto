@@ -19,7 +19,7 @@ export interface SpeechRecognitionOutput {
 export interface SpeechRecognitionPipeline {
   (
     audio: Float32Array,
-    options?: Readonly<{ task: 'transcribe'; language?: string }>,
+    options?: Readonly<{ task?: 'transcribe'; language?: string; max_new_tokens?: number }>,
   ): Promise<SpeechRecognitionOutput | string>
   dispose?: () => Promise<void> | void
 }
@@ -96,6 +96,19 @@ function normalizedOutput(
   // omitted, and Moonshine models only transcribe English.
   const language = englishOnly || requestedLanguage === 'auto' ? 'en' : requestedLanguage
   return { text, language }
+}
+
+/** Transcription audio is always 16 kHz mono by the time it reaches the worker. */
+const AUDIO_SAMPLE_RATE = 16_000
+
+/**
+ * Moonshine's paper recommends ~6 decoded tokens per second of audio to bound
+ * repetition loops. Rounding up plus a fixed slack keeps short tails and fast
+ * speech from being truncated at the budget.
+ */
+export function moonshineTokenBudget(sampleCount: number): number {
+  const seconds = Math.max(0, sampleCount) / AUDIO_SAMPLE_RATE
+  return Math.max(24, Math.ceil(seconds * 6) + 8)
 }
 
 function errorResponse(
@@ -272,19 +285,20 @@ export function createTranscriptionRuntime(
 
     reportProgress(request, 'transcribing', 0)
     const family = MODEL_CATALOG[request.preset].family
-    // Moonshine generation takes no task/language options.
+    // Moonshine takes no task/language options, but needs an explicit token
+    // budget: the library default is floor(seconds) * 6, which is 0 for a
+    // sub-second segment tail (guaranteed-empty output) and leaves no headroom
+    // for fast speech. ceil + slack keeps every segment decodable while still
+    // bounding hallucinated repetition loops.
     const inferenceOptions =
       family === 'moonshine'
-        ? undefined
+        ? ({ max_new_tokens: moonshineTokenBudget(request.audio.length) } as const)
         : request.language === 'auto'
           ? ({ task: 'transcribe' } as const)
           : ({ task: 'transcribe', language: request.language } as const)
     let output: SpeechRecognitionOutput
     try {
-      const raw =
-        inferenceOptions === undefined
-          ? await pipeline(request.audio)
-          : await pipeline(request.audio, inferenceOptions)
+      const raw = await pipeline(request.audio, inferenceOptions)
       output = normalizedOutput(raw, request.language, family === 'moonshine')
     } catch (error) {
       await invalidatePipeline(pipeline)

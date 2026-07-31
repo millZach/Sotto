@@ -46,6 +46,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type StartupState,
+  type TranscriptPolishAsrContext,
   type TranscriptPolishResult,
   type WidgetDragPayload,
   type WidgetPresentationPayload,
@@ -217,7 +218,10 @@ export interface OutputIpcService {
 }
 
 export interface TranscriptPolishIpcService {
-  polish(text: string): TranscriptPolishResult | Promise<TranscriptPolishResult>
+  polish(
+    text: string,
+    asr?: TranscriptPolishAsrContext,
+  ): TranscriptPolishResult | Promise<TranscriptPolishResult>
 }
 
 export interface RecoveryNoticeIpcService {
@@ -536,7 +540,7 @@ export function registerIpc(
         if (dependencies.transcriptPolish === undefined) {
           return { text: request.text, applied: false }
         }
-        return dependencies.transcriptPolish.polish(request.text)
+        return dependencies.transcriptPolish.polish(request.text, request.asr)
       },
     )
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {

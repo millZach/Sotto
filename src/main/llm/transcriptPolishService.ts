@@ -1,5 +1,6 @@
-import type { TranscriptPolishResult } from '../../shared/contracts'
+import type { TranscriptPolishAsrContext, TranscriptPolishResult } from '../../shared/contracts'
 import type { AppSettings, LlmQuality } from '../../shared/settings'
+import { collapseRepeatedPhrases, countWords } from '../../shared/textRepair'
 import { buildPolishSystemPrompt, buildPolishUserPrompt } from './prompt'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -63,11 +64,17 @@ const MAX_SHRINK_FACTOR = 0.5
 export interface PolishDiagnostic {
   readonly at: number
   readonly inputWords: number
+  /** Input words after collapsing ASR repetition loops; the shrink-guard baseline. */
+  readonly collapsedInputWords: number
   /** Words in the applied output, or null when the raw transcript was returned. */
   readonly outputWords: number | null
   readonly applied: boolean
   /** An attempt produced output rejected for excessive shrinkage. */
   readonly rejectedShrink: boolean
+  /** Per-segment ASR word counts, when the renderer supplied them. */
+  readonly asrSegmentWords?: readonly number[]
+  /** Full recording duration in milliseconds, when the renderer supplied it. */
+  readonly asrDurationMs?: number
 }
 
 export interface TranscriptPolishServiceDependencies {
@@ -83,16 +90,15 @@ interface AttemptOutcome {
   readonly rejectedShrink?: boolean
 }
 
-function countWords(text: string): number {
-  return text.split(/\s+/u).filter((word) => word.length > 0).length
-}
-
 type OutputVerdict = 'ok' | 'rejected' | 'rejected-shrink'
 
 function assessOutput(input: string, output: string): OutputVerdict {
   if (output.length === 0) return 'rejected'
   if (output.length > input.length * MAX_GROWTH_FACTOR + 200) return 'rejected'
-  const inputWords = countWords(input)
+  // Hallucinated repetition loops inflate the raw word count; measuring
+  // shrinkage against the collapsed count keeps legitimate cleanups of such
+  // input from being rejected as truncation.
+  const inputWords = countWords(collapseRepeatedPhrases(input))
   if (
     inputWords >= MIN_WORDS_FOR_SHRINK_GUARD &&
     countWords(output) < inputWords * MAX_SHRINK_FACTOR
@@ -120,7 +126,10 @@ export class TranscriptPolishService {
     this.now = dependencies.now ?? Date.now
   }
 
-  async polish(text: string): Promise<TranscriptPolishResult> {
+  async polish(
+    text: string,
+    asr?: TranscriptPolishAsrContext,
+  ): Promise<TranscriptPolishResult> {
     const raw: TranscriptPolishResult = { text, applied: false }
 
     let settings: AppSettings
@@ -136,13 +145,16 @@ export class TranscriptPolishService {
     const deadline = this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs)
     const primary = await this.attempt(settings, tier.primary, text, deadline)
     if (primary.text !== null) {
-      return this.report(text, { text: primary.text, applied: true }, primary)
+      return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }
 
-    if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) return this.report(text, raw, primary)
+    if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) {
+      return this.report(text, asr, raw, primary)
+    }
     const fallback = await this.attempt(settings, tier.fallback, text, deadline)
     return this.report(
       text,
+      asr,
       fallback.text === null ? raw : { text: fallback.text, applied: true },
       primary,
       fallback,
@@ -151,6 +163,7 @@ export class TranscriptPolishService {
 
   private report(
     input: string,
+    asr: TranscriptPolishAsrContext | undefined,
     result: TranscriptPolishResult,
     ...attempts: readonly AttemptOutcome[]
   ): TranscriptPolishResult {
@@ -158,9 +171,13 @@ export class TranscriptPolishService {
       this.dependencies.onDiagnostic?.({
         at: this.now(),
         inputWords: countWords(input),
+        collapsedInputWords: countWords(collapseRepeatedPhrases(input)),
         outputWords: result.applied ? countWords(result.text) : null,
         applied: result.applied,
         rejectedShrink: attempts.some((attempt) => attempt.rejectedShrink === true),
+        ...(asr === undefined
+          ? {}
+          : { asrSegmentWords: asr.segmentWords, asrDurationMs: asr.durationMs }),
       })
     } catch {
       // Observability must never affect the polish result.

@@ -17,6 +17,7 @@ import type {
   ModelStatus,
   StartupState,
   SottoBridge,
+  TranscriptPolishAsrContext,
   UnavailableResult,
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
@@ -96,7 +97,10 @@ export function createProductionDictationController(
     publishWidgetState: bindings.publishWidgetState,
     ...(polish === undefined
       ? {}
-      : { polishTranscript: (text: string) => polish({ text }) }),
+      : {
+          polishTranscript: (text: string, asr?: TranscriptPolishAsrContext) =>
+            polish({ text, ...(asr === undefined ? {} : { asr }) }),
+        }),
   }
   return new DictationController(dependencies)
 }

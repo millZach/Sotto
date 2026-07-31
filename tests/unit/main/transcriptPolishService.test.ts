@@ -176,6 +176,19 @@ describe('TranscriptPolishService', () => {
     })
   })
 
+  it('measures shrinkage against the collapsed input when ASR repeated itself', async () => {
+    // 21 real words + a hallucinated repetition loop: the raw count (51) would
+    // reject a legitimate cleanup, the collapsed count (22) must not.
+    const realWords = Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ')
+    const longInput = `${realWords} wait ${'no, '.repeat(29)}no`
+    const polished = Array.from({ length: 15 }, (_, i) => `word${i}`).join(' ')
+    const { service } = createService({ fetchFn: async () => okResponse(polished) })
+    await expect(service.polish(longInput)).resolves.toEqual({
+      text: polished,
+      applied: true,
+    })
+  })
+
   it('allows aggressive shrinkage on short transcripts', async () => {
     const { service } = createService({ fetchFn: async () => okResponse('Meet at 4.') })
     await expect(service.polish('meet at 3 no wait make that 4 instead okay')).resolves.toEqual({
@@ -193,14 +206,17 @@ describe('TranscriptPolishService', () => {
       fetchFn,
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     })
-    await service.polish(longInput)
+    await service.polish(longInput, { segmentWords: [25, 15], durationMs: 42_000 })
     expect(diagnostics).toEqual([
       {
         at: expect.any(Number),
         inputWords: 40,
+        collapsedInputWords: 40,
         outputWords: null,
         applied: false,
         rejectedShrink: true,
+        asrSegmentWords: [25, 15],
+        asrDurationMs: 42_000,
       },
     ])
     const serialized = JSON.stringify(diagnostics)
