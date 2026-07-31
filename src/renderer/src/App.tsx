@@ -154,7 +154,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const checkModel = useCallback(async (): Promise<void> => {
     const generation = ++modelGenerationRef.current
     setModelState('checking')
-    const result = await app.actions.getModelStatus('balanced')
+    const result = await app.actions.getModelStatus('instant')
     if (modelGenerationRef.current !== generation) return
     if (!('preset' in result)) setModelState('unavailable')
   }, [app.actions])
@@ -173,12 +173,12 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   }, [app.actions, app.settings?.onboardingComplete, app.status, checkModel])
 
   useEffect(() => {
-    const balanced = app.modelStatuses.balanced
-    if (balanced !== undefined) {
+    const bundled = app.modelStatuses.instant
+    if (bundled !== undefined) {
       ++modelGenerationRef.current
-      setModelState(toModelState(balanced))
+      setModelState(toModelState(bundled))
     }
-  }, [app.modelStatuses.balanced])
+  }, [app.modelStatuses.instant])
 
   useEffect(() => {
     if (
@@ -218,7 +218,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
           onRetryModel={checkModel}
-          onInstallModel={async (preset: Exclude<ModelPreset, 'balanced'>) => {
+          onInstallModel={async (preset: Exclude<ModelPreset, 'instant'>) => {
             const result = await app.actions.installModel({ preset, consent: true })
             if (!result.ok) throw new Error('MODEL_INSTALL_UNAVAILABLE')
           }}

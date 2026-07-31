@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -76,7 +76,7 @@ describe('TranscriptionClient', () => {
     const resultPromise = client.transcribe({
       sessionId: 'session-1',
       audio,
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
       inferencePreference: 'wasm',
     })
@@ -112,7 +112,7 @@ describe('TranscriptionClient', () => {
       audio,
       preset: 'fast',
       language: 'en',
-      inferencePreference: 'auto',
+      inferencePreference: 'wasm',
     })
 
     const posted = worker.posts[0]?.message as { audio: Float32Array }
@@ -140,7 +140,7 @@ describe('TranscriptionClient', () => {
       onProgress: firstProgress,
     })
     const second = client.load({
-      preset: 'balanced',
+      preset: 'instant',
       inferencePreference: 'wasm',
       onProgress: secondProgress,
     })
@@ -163,7 +163,7 @@ describe('TranscriptionClient', () => {
     worker.emitMessage({
       type: 'ready',
       requestId: 'request-2',
-      preset: 'balanced',
+      preset: 'instant',
       device: 'wasm',
     })
     await Promise.all([first, second])
@@ -174,7 +174,7 @@ describe('TranscriptionClient', () => {
     const first = client.transcribe({
       sessionId: 'session-1',
       audio: new Float32Array([0.1]),
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
       inferencePreference: 'wasm',
     })
@@ -199,7 +199,7 @@ describe('TranscriptionClient', () => {
     const second = client.transcribe({
       sessionId: 'session-2',
       audio: new Float32Array([0.2]),
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
       inferencePreference: 'wasm',
     })
@@ -231,9 +231,9 @@ describe('TranscriptionClient', () => {
     const result = client.transcribe({
       sessionId: 'session-1',
       audio: new Float32Array([0.1, 0.2]),
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
-      inferencePreference: 'auto',
+      inferencePreference: 'webgpu',
     })
     const unrelated = client.load({ preset: 'fast', inferencePreference: 'wasm' })
 
@@ -254,7 +254,7 @@ describe('TranscriptionClient', () => {
         type: 'transcribe',
         requestId: 'wasm-retry',
         sessionId: 'session-1',
-        preset: 'balanced',
+        preset: 'instant',
         inferencePreference: 'wasm',
         audio: expect.any(Float32Array),
       }),
@@ -301,7 +301,7 @@ describe('TranscriptionClient', () => {
       workerFactory,
       createRequestId: () => ids.shift() ?? 'extra',
     })
-    const result = client.load({ preset: 'balanced', inferencePreference: 'webgpu' })
+    const result = client.load({ preset: 'instant', inferencePreference: 'webgpu' })
 
     firstWorker.emitMessage({
       type: 'error',
@@ -314,13 +314,13 @@ describe('TranscriptionClient', () => {
     expect(replacementWorker.posts[0]?.message).toEqual({
       type: 'load',
       requestId: 'wasm',
-      preset: 'balanced',
+      preset: 'instant',
       inferencePreference: 'wasm',
     })
     replacementWorker.emitMessage({
       type: 'ready',
       requestId: 'wasm',
-      preset: 'balanced',
+      preset: 'instant',
       device: 'wasm',
     })
     await expect(result).resolves.toMatchObject({ device: 'wasm' })
@@ -339,7 +339,7 @@ describe('TranscriptionClient', () => {
       workerFactory,
       createRequestId: () => ids.shift() ?? 'extra',
     })
-    const recovery = client.load({ preset: 'balanced', inferencePreference: 'auto' })
+    const recovery = client.load({ preset: 'instant', inferencePreference: 'webgpu' })
     firstWorker.emitMessage({
       type: 'error',
       requestId: 'gpu',
@@ -349,7 +349,7 @@ describe('TranscriptionClient', () => {
     replacementWorker.emitMessage({
       type: 'ready',
       requestId: 'wasm-recovery',
-      preset: 'balanced',
+      preset: 'instant',
       device: 'wasm',
     })
     await recovery
@@ -386,9 +386,9 @@ describe('TranscriptionClient', () => {
     const result = client.transcribe({
       sessionId: 'session-1',
       audio: new Float32Array([0.1]),
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
-      inferencePreference: 'auto',
+      inferencePreference: 'webgpu',
     })
 
     firstWorker.emitMessage({
@@ -429,7 +429,7 @@ describe('TranscriptionClient', () => {
       workerFactory,
       createRequestId: () => ids.shift() ?? 'extra',
     })
-    const result = client.load({ preset: 'balanced', inferencePreference: 'auto' })
+    const result = client.load({ preset: 'instant', inferencePreference: 'webgpu' })
 
     firstWorker.emitMessage({
       type: 'error',
@@ -459,7 +459,7 @@ describe('TranscriptionClient', () => {
       createRequestId: () => 'request-1',
     })
 
-    const result = client.load({ preset: 'balanced', inferencePreference: 'wasm' })
+    const result = client.load({ preset: 'instant', inferencePreference: 'wasm' })
 
     await expect(result).rejects.toMatchObject({ code: 'WORKER_TERMINATED' })
     expect(worker.terminate).toHaveBeenCalledOnce()
@@ -470,7 +470,7 @@ describe('TranscriptionClient', () => {
     const wrongSession = client.transcribe({
       sessionId: 'session-1',
       audio: new Float32Array([0.1]),
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
       inferencePreference: 'wasm',
     })
@@ -483,8 +483,8 @@ describe('TranscriptionClient', () => {
     })
     await expect(wrongSession).rejects.toMatchObject({ code: 'SESSION_MISMATCH' })
 
-    const malformed = client.load({ preset: 'balanced', inferencePreference: 'wasm' })
-    worker.emitMessage({ type: 'ready', requestId: 'request-2', preset: 'balanced' })
+    const malformed = client.load({ preset: 'instant', inferencePreference: 'wasm' })
+    worker.emitMessage({ type: 'ready', requestId: 'request-2', preset: 'instant' })
     await expect(malformed).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' })
   })
 
@@ -492,13 +492,13 @@ describe('TranscriptionClient', () => {
     'rejects all work and terminates after a worker %s event',
     async (eventType) => {
       const { client, worker } = makeClient()
-      const load = client.load({ preset: 'balanced', inferencePreference: 'auto' })
+      const load = client.load({ preset: 'instant', inferencePreference: 'wasm' })
       const transcribe = client.transcribe({
         sessionId: 'session-1',
         audio: new Float32Array([0.1]),
-        preset: 'balanced',
+        preset: 'instant',
         language: 'auto',
-        inferencePreference: 'auto',
+        inferencePreference: 'wasm',
       })
 
       worker.emit(eventType)
@@ -511,7 +511,7 @@ describe('TranscriptionClient', () => {
 
   it('disposes idempotently, rejects outstanding work, and rejects later use', async () => {
     const { client, worker } = makeClient()
-    const pending = client.load({ preset: 'balanced', inferencePreference: 'wasm' })
+    const pending = client.load({ preset: 'instant', inferencePreference: 'wasm' })
 
     client.dispose()
     client.dispose()
@@ -521,7 +521,7 @@ describe('TranscriptionClient', () => {
     expect(worker.listenerCount()).toBe(0)
 
     await expect(
-      client.load({ preset: 'balanced', inferencePreference: 'wasm' }),
+      client.load({ preset: 'instant', inferencePreference: 'wasm' }),
     ).rejects.toMatchObject({ code: 'WORKER_TERMINATED' })
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import {
   MAX_TRANSCRIPTION_SAMPLES,
@@ -17,9 +17,9 @@ describe('transcription worker messages', () => {
         sessionId: 'session-1',
         audio,
         sampleRate: 16_000,
-        preset: 'balanced',
+        preset: 'instant',
         language: 'auto',
-        inferencePreference: 'auto',
+        inferencePreference: 'wasm',
       }),
     ).toEqual(expect.objectContaining({ audio, sampleRate: 16_000 }))
 
@@ -42,7 +42,7 @@ describe('transcription worker messages', () => {
 
   it.each([
     { type: 'result', text: 4 },
-    { type: 'ready', requestId: 'r1', preset: 'balanced', device: 'wasm', extra: true },
+    { type: 'ready', requestId: 'r1', preset: 'instant', device: 'wasm', extra: true },
     { type: 'progress', requestId: 'r1', stage: 'loading-model', progress: Infinity },
     {
       type: 'error',
@@ -61,7 +61,7 @@ describe('transcription worker messages', () => {
       sessionId: 's1',
       audio: new Float32Array([0.1]),
       sampleRate: 16_000,
-      preset: 'balanced',
+      preset: 'instant',
       language: 'auto',
       inferencePreference: 'wasm',
     }

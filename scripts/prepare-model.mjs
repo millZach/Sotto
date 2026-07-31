@@ -175,8 +175,8 @@ async function main() {
       presets[preset] = { repository: model.repository, revision: model.revision, license: model.license, bundled: model.bundled, files }
     }
     const catalog = { version: 1, presets }
-    const balanced = presets.balanced
-    const manifest = { version: 1, preset: 'balanced', repository: balanced.repository, revision: balanced.revision, files: balanced.files }
+    const bundled = presets.instant
+    const manifest = { version: 1, preset: 'instant', repository: bundled.repository, revision: bundled.revision, files: bundled.files }
     await writeFile(join(temporary, 'catalog.lock.json'), `${JSON.stringify(catalog, null, 2)}\n`, { flag: 'wx' })
     await writeFile(join(temporary, 'manifest.lock.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' })
     await mkdir(runtimeTemporary, { recursive: true }); const runtimeFiles = []

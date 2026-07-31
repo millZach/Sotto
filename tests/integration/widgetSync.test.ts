@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react'
+﻿import { act, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -138,12 +138,12 @@ describe('AppProvider dictation integration', () => {
     await waitFor(() => expect(currentContext?.status).toBe('ready'))
 
     let request!: ReturnType<AppContextValue['actions']['getModelStatus']>
-    act(() => { request = currentContext!.actions.getModelStatus('balanced') })
-    act(() => listeners[0]?.({ preset: 'balanced', state: 'ready' }))
-    requested.resolve({ preset: 'balanced', state: 'missing' })
+    act(() => { request = currentContext!.actions.getModelStatus('instant') })
+    act(() => listeners[0]?.({ preset: 'instant', state: 'ready' }))
+    requested.resolve({ preset: 'instant', state: 'missing' })
     await act(async () => { await request })
 
-    expect(currentContext?.modelStatuses.balanced).toEqual({ preset: 'balanced', state: 'ready' })
+    expect(currentContext?.modelStatuses.instant).toEqual({ preset: 'instant', state: 'ready' })
     view.unmount()
   })
 
@@ -387,7 +387,7 @@ describe('AppProvider dictation integration', () => {
     const initial = deferred<HistoryEntry[]>()
     const added: HistoryEntry = {
       id: 'new', text: 'new local words', createdAt: 2, durationMs: 20,
-      language: 'en', modelPreset: 'balanced',
+      language: 'en', modelPreset: 'instant',
     }
     const bridge = createBridge({
       listHistory: vi.fn(() => initial.promise),
@@ -408,7 +408,7 @@ describe('AppProvider dictation integration', () => {
     const add = deferred<HistoryEntry[]>()
     const added: HistoryEntry = {
       id: 'pending', text: 'pending words', createdAt: 3, durationMs: 30,
-      language: 'en', modelPreset: 'balanced',
+      language: 'en', modelPreset: 'instant',
     }
     const bridge = createBridge({
       addHistory: vi.fn(() => add.promise),

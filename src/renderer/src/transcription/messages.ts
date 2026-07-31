@@ -10,8 +10,10 @@ const boundedIdSchema = z
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9._:-]+$/)
-const presetSchema = z.enum(['fast', 'balanced', 'accurate', 'instant'])
-const inferencePreferenceSchema = z.enum(['auto', 'webgpu', 'wasm'])
+const presetSchema = z.enum(['fast', 'instant'])
+// The app always requests WASM; the worker protocol retains the WebGPU device
+// value for its internal probe/reporting paths.
+const inferencePreferenceSchema = z.enum(['webgpu', 'wasm'])
 const inferenceDeviceSchema = z.enum(['webgpu', 'wasm'])
 const languageSchema = z
   .string()

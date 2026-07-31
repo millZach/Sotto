@@ -17,10 +17,8 @@ describe('model disclosure contract', () => {
     bundled: false,
   }
   const validModels = () => [
+    { ...entry, preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT' as const, bundled: true },
     entry,
-    { ...entry, preset: 'balanced' as const, repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', bundled: true },
-    { ...entry, preset: 'accurate' as const, repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13' },
-    { ...entry, preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT' as const },
   ]
 
   it('accepts exact finite metadata and returns a deeply immutable catalog', () => {

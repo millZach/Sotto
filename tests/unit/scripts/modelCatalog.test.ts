@@ -22,7 +22,7 @@ afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recur
 
 describe('build-time model catalog', () => {
   it('matches the immutable renderer disclosure catalog', () => {
-    expect(Object.keys(MODEL_CATALOG)).toEqual(['fast', 'balanced', 'accurate', 'instant'])
+    expect(Object.keys(MODEL_CATALOG)).toEqual(['instant', 'fast'])
     for (const preset of Object.keys(SHARED_CATALOG) as (keyof typeof SHARED_CATALOG)[]) {
       expect(MODEL_CATALOG[preset]).toMatchObject(SHARED_CATALOG[preset])
       expect(Object.isFrozen(MODEL_CATALOG[preset])).toBe(true)
@@ -56,8 +56,6 @@ describe('build-time model catalog', () => {
     expect(Object.isFrozen(MODEL_FILE_ALLOWLIST)).toBe(true)
     expect(Object.isFrozen(MOONSHINE_MODEL_FILES)).toBe(true)
     expect(MODEL_CATALOG.fast.files).toBe(MODEL_FILE_ALLOWLIST)
-    expect(MODEL_CATALOG.balanced.files).toBe(MODEL_FILE_ALLOWLIST)
-    expect(MODEL_CATALOG.accurate.files).toBe(MODEL_FILE_ALLOWLIST)
     expect(MODEL_CATALOG.instant.files).toBe(MOONSHINE_MODEL_FILES)
   })
 

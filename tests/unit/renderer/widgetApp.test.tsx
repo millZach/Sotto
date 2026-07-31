@@ -135,7 +135,7 @@ describe('WidgetApp', () => {
     ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Try again or choose the Balanced model.'],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Try again or choose the Standard model.'],
     ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
     ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
@@ -951,7 +951,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
     expect(polite).toBeEmptyDOMElement()
-    expect(assertive).toHaveTextContent('Couldn’t transcribe. Try again or choose the Balanced model.')
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. Try again or choose the Standard model.')
     expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
 
     emit(snapshot({ status: 'idle' }))

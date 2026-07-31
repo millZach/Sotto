@@ -36,7 +36,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@protobufjs/path', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
   packageComponent('@protobufjs/pool', '1.1.0', 'BSD-3-Clause', 'Daniel Wirtz'),
   packageComponent('@protobufjs/utf8', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  Object.freeze({ name: 'Xenova/whisper-base', version: '64da57285918e20ea79ea5c88eed7197933abaa8', license: 'Apache-2.0', attribution: 'Hugging Face and OpenAI Whisper contributors' }),
+  Object.freeze({ name: 'onnx-community/moonshine-base-ONNX', version: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', attribution: 'Useful Sensors (Moonshine), converted by the Hugging Face ONNX community' }),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
 ])
 
@@ -127,7 +127,7 @@ export async function verifyThirdPartyNotices(options = {}) {
   }
 
   const modelManifest = JSON.parse(await readFile(join(root, 'resources', 'models', 'manifest.lock.json'), 'utf8'))
-  if (!notices.includes(modelManifest.revision) || modelManifest.repository !== 'Xenova/whisper-base') {
+  if (!notices.includes(modelManifest.revision) || modelManifest.repository !== 'onnx-community/moonshine-base-ONNX') {
     fail('bundled model notice drift')
   }
 
@@ -141,8 +141,11 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## ONNX Runtime MIT license',
     'Copyright (c) Microsoft Corporation. All rights reserved.',
     '## Manrope SIL Open Font License 1.1',
+    '## Moonshine MIT license',
+    'Copyright (c) 2024 Useful Sensors',
     'onnx-community/moonshine-base-ONNX',
     'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
+    'Xenova/whisper-tiny',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 
   if (options.packagedResources) {

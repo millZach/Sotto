@@ -164,15 +164,15 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
 
       const [settings, modelStatus, disclosures, modelResponse, runtimeResponse] = await Promise.all([
         globalThis.sotto.getSettings(),
-        globalThis.sotto.getModelStatus('balanced'),
+        globalThis.sotto.getModelStatus('instant'),
         globalThis.sotto.listModelDisclosures(),
-        globalThis.fetch('sotto-model://model/Xenova/whisper-base/config.json'),
+        globalThis.fetch('sotto-model://model/onnx-community/moonshine-base-ONNX/config.json'),
         globalThis.fetch('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm'),
       ])
-      if ('reason' in modelStatus || modelStatus.preset !== 'balanced' || modelStatus.state !== 'bundled') {
+      if ('reason' in modelStatus || modelStatus.preset !== 'instant' || modelStatus.state !== 'bundled') {
         throw new Error('bundled model is not available through the normal bridge')
       }
-      if ('reason' in disclosures || disclosures.models.length !== 4) {
+      if ('reason' in disclosures || disclosures.models.length !== 2) {
         throw new Error('model disclosure bridge failed')
       }
       if (!modelResponse.ok || !runtimeResponse.ok) {
@@ -212,7 +212,7 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
         worker.postMessage({
           type: 'load',
           requestId: 'packaged-smoke',
-          preset: 'balanced',
+          preset: 'instant',
           inferencePreference: 'wasm',
         })
       })

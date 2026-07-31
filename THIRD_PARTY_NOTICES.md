@@ -32,10 +32,10 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `@protobufjs/path` | `1.1.2` | BSD-3-Clause | Daniel Wirtz |
 | `@protobufjs/pool` | `1.1.0` | BSD-3-Clause | Daniel Wirtz |
 | `@protobufjs/utf8` | `1.1.2` | BSD-3-Clause | Daniel Wirtz |
-| `Xenova/whisper-base` | `64da57285918e20ea79ea5c88eed7197933abaa8` | Apache-2.0 | Hugging Face and OpenAI Whisper contributors |
+| `onnx-community/moonshine-base-ONNX` | `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad` | MIT | Useful Sensors (Moonshine), converted by the Hugging Face ONNX community |
 | `Manrope` (font, latin + latin-ext woff2 subsets) | `v20 (Google Fonts static serving)` | OFL-1.1 | The Manrope Project Authors |
 
-Optional models are not part of the installer. If the user explicitly downloads them, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` and `Xenova/whisper-small` revision `2d67713f236afa48a18992566e7647f6ca848e13` are Apache-2.0 works from Hugging Face and OpenAI Whisper contributors, and `onnx-community/moonshine-base-ONNX` revision `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad` is an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community.
+The bundled Standard model is `onnx-community/moonshine-base-ONNX` revision `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 
 ## Sotto brand asset provenance
 
@@ -519,6 +519,32 @@ Apache License
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+## Moonshine MIT license
+
+```text
+MIT License
+
+Copyright (c) 2024 Useful Sensors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## Manrope SIL Open Font License 1.1

@@ -77,7 +77,7 @@ const populatedHistory: readonly HistoryEntry[] = [
     createdAt: Date.UTC(2026, 6, 11, 16, 30),
     durationMs: 8_400,
     language: 'en',
-    modelPreset: 'balanced',
+    modelPreset: 'instant',
   },
   {
     id: 'review-2',
@@ -85,7 +85,7 @@ const populatedHistory: readonly HistoryEntry[] = [
     createdAt: Date.UTC(2026, 6, 10, 22, 15),
     durationMs: 6_200,
     language: 'en',
-    modelPreset: 'balanced',
+    modelPreset: 'instant',
   },
   {
     id: 'review-3',
@@ -93,7 +93,7 @@ const populatedHistory: readonly HistoryEntry[] = [
     createdAt: Date.UTC(2026, 6, 9, 18, 5),
     durationMs: 10_700,
     language: 'en',
-    modelPreset: 'balanced',
+    modelPreset: 'instant',
   },
 ]
 
@@ -584,7 +584,7 @@ test.describe('authoritative design-review captures', () => {
         await captureSection(page, onboarding, `onboarding-step-2-microphone-ready-${theme}.png`, { category: 'onboarding', state: 'microphone-ready', theme })
 
         await page.getByRole('button', { name: 'Continue' }).click()
-        await expect(page.getByText(/balanced model is included and ready/i)).toBeVisible()
+        await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
         await captureSection(page, onboarding, `onboarding-step-3-model-${theme}.png`, { category: 'onboarding', state: 'model-ready', theme })
 
         await page.getByRole('button', { name: 'Continue' }).click()
@@ -690,7 +690,7 @@ test.describe('authoritative design-review captures', () => {
           await page.getByRole('button', { name: /test microphone/i }).click()
           await expect(page.getByText(/microphone ready/i)).toBeVisible()
           await page.getByRole('button', { name: 'Continue' }).click()
-          await expect(page.getByText(/balanced model is included and ready/i)).toBeVisible()
+          await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
           await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding-${theme}.png`)
         })
 

@@ -4,8 +4,15 @@ import { DEFAULT_HOTKEY } from './constants'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type ReducedMotion = 'system' | 'on'
-export type ModelPreset = 'fast' | 'balanced' | 'accurate' | 'instant'
-export type InferencePreference = 'auto' | 'webgpu' | 'wasm'
+/**
+ * 'instant' is the bundled default ("Standard" in the UI); 'fast' is the
+ * downloadable multilingual Whisper option ("Multi-lingual"). Legacy stored
+ * values ('balanced', 'accurate') fail schema parsing and fall back to the
+ * default, which migrates old installs automatically.
+ */
+export type ModelPreset = 'fast' | 'instant'
+/** Inference always runs on CPU/WASM; the WebGPU/auto options were removed. */
+export type InferencePreference = 'wasm'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'high'
 
@@ -56,9 +63,9 @@ const fieldSchemas = {
   hotkey: z.string().min(1),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant']),
+  modelPreset: z.enum(['fast', 'instant']),
   language: z.string().min(1),
-  inferencePreference: z.enum(['auto', 'webgpu', 'wasm']),
+  inferencePreference: z.literal('wasm'),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -94,9 +101,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hotkey: DEFAULT_HOTKEY,
   maxRecordingSeconds: 60,
   soundCues: true,
-  modelPreset: 'balanced',
+  modelPreset: 'instant',
   language: 'auto',
-  inferencePreference: 'auto',
+  inferencePreference: 'wasm',
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,

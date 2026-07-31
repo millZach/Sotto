@@ -15,7 +15,7 @@ async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: /test microphone/i }).click()
   await expect(page.getByText(/microphone ready/i)).toBeVisible()
   await page.getByRole('button', { name: 'Continue' }).click()
-  await expect(page.getByText(/balanced model is included and ready/i)).toBeVisible()
+  await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
   await page.getByRole('button', { name: 'Continue' }).click()
 }
 

@@ -16,7 +16,6 @@ import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
 import type {
   AppSettings,
   HistoryRetention,
-  InferencePreference,
   LlmQuality,
   ModelPreset,
   ReducedMotion,
@@ -133,9 +132,9 @@ export function SettingsView({
   const [llmDictionaryDraft, setLlmDictionaryDraft] = useState(settings.llmDictionary)
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
   const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
+  const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
   const [installConsent, setInstallConsent] = useState(false)
-  const [removePreset, setRemovePreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
+  const [removePreset, setRemovePreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
   const [installFailure, setInstallFailure] = useState<string | null>(null)
   const [removeFailure, setRemoveFailure] = useState<string | null>(null)
   const [clearFailure, setClearFailure] = useState<string | null>(null)
@@ -263,7 +262,7 @@ export function SettingsView({
       },
       () => { if (current) setDisclosureState('error') },
     )
-    for (const preset of ['instant', 'fast', 'balanced', 'accurate'] as const) void onGetModelStatus(preset)
+    for (const preset of ['instant', 'fast'] as const) void onGetModelStatus(preset)
     return () => { current = false }
   }, [onGetModelStatus, onListModelDisclosures])
 
@@ -326,7 +325,7 @@ export function SettingsView({
     }
   }
 
-  const optionalDisclosure = useCallback((preset: Exclude<ModelPreset, 'balanced'>): ModelDisclosure | undefined => (
+  const optionalDisclosure = useCallback((preset: Exclude<ModelPreset, 'instant'>): ModelDisclosure | undefined => (
     disclosures?.models.find((model) => model.preset === preset && !model.bundled)
   ), [disclosures])
 
@@ -351,16 +350,16 @@ export function SettingsView({
     }
   }
 
-  const modelCards = useMemo(() => (['instant', 'fast', 'balanced', 'accurate'] as const).map((preset) => {
+  const modelCards = useMemo(() => (['instant', 'fast'] as const).map((preset) => {
     const status = modelStatuses[preset]
-    const optional = preset !== 'balanced'
+    const optional = preset !== 'instant'
     const disclosure = optional ? optionalDisclosure(preset) : undefined
     const selected = settings.modelPreset === preset
     const canInstall = status?.state === 'missing' || status?.state === 'error'
     return (
       <article className="settings-model-card" key={preset} data-selected={selected}>
         <div className="settings-model-card__heading">
-          <div><h3>{MODEL_CATALOG[preset].label}</h3><p>{preset === 'instant' ? 'Near-instant, English only' : preset === 'fast' ? 'Quickest response' : preset === 'balanced' ? 'Best everyday balance' : 'Highest accuracy'}</p></div>
+          <div><h3>{MODEL_CATALOG[preset].label}</h3><p>{preset === 'instant' ? 'Included, near-instant, English only' : 'Whisper model for non-English speech'}</p></div>
           {selected ? <span className="settings-selected-badge"><Check size={14} />Selected</span> : null}
         </div>
         <p className="settings-model-card__status" aria-live="polite">{modelStateCopy(status)}</p>
@@ -445,10 +444,9 @@ export function SettingsView({
       <Card className="settings-section">
         <div className="settings-section__heading"><Gauge aria-hidden="true" /><div><h2>Transcription</h2><p>Balance speed, accuracy, and local hardware use.</p></div></div>
         <div className="settings-model-grid">{modelCards}</div>
-        {disclosureState === 'error' ? <p className="settings-inline-warning"><CircleAlert size={16} />{modelReady(modelStatuses.balanced) ? 'Optional model details are unavailable. Balanced remains ready and no download can start.' : 'Optional model details are unavailable, so no model download can start.'}</p> : null}
+        {disclosureState === 'error' ? <p className="settings-inline-warning"><CircleAlert size={16} />{modelReady(modelStatuses.instant) ? 'Optional model details are unavailable. Standard remains ready and no download can start.' : 'Optional model details are unavailable, so no model download can start.'}</p> : null}
         <div className="settings-fields-grid">
           <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{knownLanguages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
-          <Field label="Inference" description="Auto chooses the best available local backend."><Select value={settings.inferencePreference} onChange={(event) => void save({ inferencePreference: event.currentTarget.value as InferencePreference })}><option value="auto">Auto</option><option value="webgpu">Prefer WebGPU</option><option value="wasm">CPU / WASM</option></Select></Field>
           <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
         </div>
       </Card>
@@ -521,7 +519,7 @@ export function SettingsView({
           danger={false}
           confirmDisabled={!installConsent}
           pendingStatus={pendingStatus}
-          failureMessage={installFailure ?? `${label} could not be downloaded. Balanced is unchanged.`}
+          failureMessage={installFailure ?? `${label} could not be downloaded. Standard is unchanged.`}
           fallbackFocusRef={headingRef}
           onCancel={() => { setInstallConsent(false); setInstallPreset(null) }}
           onConfirm={async () => {
@@ -529,7 +527,7 @@ export function SettingsView({
             setInstallFailure(null)
             const result = await onInstallModel({ preset: installPreset, consent: true }).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
             setInstallConsent(false)
-            if (!result.ok) { setInstallFailure(`${label} could not be downloaded. Balanced is unchanged.`); return false }
+            if (!result.ok) { setInstallFailure(`${label} could not be downloaded. Standard is unchanged.`); return false }
             setNotice({ text: `${label} is installed and ready offline.`, error: false })
             void onGetModelStatus(installPreset)
             return true
@@ -538,7 +536,7 @@ export function SettingsView({
       })()}
       {removePreset === null ? null : <ConfirmationDialog
         title={`Remove ${MODEL_CATALOG[removePreset].label} model?`}
-        description="The downloaded files will be removed. Balanced always remains installed and ready."
+        description="The downloaded files will be removed. Standard always remains installed and ready."
         cancelLabel="Keep model"
         confirmLabel="Remove downloaded model"
         failureMessage={removeFailure ?? 'The downloaded model could not be removed.'}
@@ -547,16 +545,16 @@ export function SettingsView({
         onConfirm={async () => {
           setRemoveFailure(null)
           if (settings.modelPreset === removePreset) {
-            if (!modelReady(modelStatuses.balanced)) {
-              setRemoveFailure('Balanced is not ready, so the selected model was not removed.')
+            if (!modelReady(modelStatuses.instant)) {
+              setRemoveFailure('Standard is not ready, so the selected model was not removed.')
               return false
             }
-            const switched = await onUpdateSettings({ modelPreset: 'balanced' }).catch(() => false)
-            if (!switched) { setRemoveFailure('Could not switch to Balanced, so the selected model was not removed.'); return false }
+            const switched = await onUpdateSettings({ modelPreset: 'instant' }).catch(() => false)
+            if (!switched) { setRemoveFailure('Could not switch to Standard, so the selected model was not removed.'); return false }
           }
           const result = await onRemoveModel(removePreset).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
           if (!result.ok) { setRemoveFailure('The downloaded model could not be removed.'); return false }
-          setNotice({ text: 'Downloaded model removed. Balanced remains ready.', error: false })
+          setNotice({ text: 'Downloaded model removed. Standard remains ready.', error: false })
           void onGetModelStatus(removePreset)
           return true
         }}

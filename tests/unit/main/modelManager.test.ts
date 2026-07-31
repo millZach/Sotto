@@ -42,24 +42,23 @@ const lock: CatalogLock = {
   version: 1,
   presets: {
     fast: { repository: repositories.fast, revision: revisions.fast, license: 'Apache-2.0', bundled: false, files: files('fast') },
-    balanced: { repository: repositories.balanced, revision: revisions.balanced, license: 'Apache-2.0', bundled: true, files: files('balanced') },
-    accurate: { repository: repositories.accurate, revision: revisions.accurate, license: 'Apache-2.0', bundled: false, files: files('accurate') },
-    instant: { repository: repositories.instant, revision: revisions.instant, license: 'MIT', bundled: false, files: files('instant') },
+    instant: { repository: repositories.instant, revision: revisions.instant, license: 'MIT', bundled: true, files: files('instant') },
   },
 }
 const bundledManifest = {
   version: 1 as const,
-  preset: 'balanced' as const,
-  repository: lock.presets.balanced.repository,
-  revision: lock.presets.balanced.revision,
-  files: lock.presets.balanced.files,
+  preset: 'instant' as const,
+  repository: lock.presets.instant.repository,
+  revision: lock.presets.instant.revision,
+  files: lock.presets.instant.files,
 }
+const bundledRepositoryPath = ['onnx-community', 'moonshine-base-ONNX'] as const
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-models-')); roots.push(root)
   const packagedRoot = join(root, 'packaged'); const userRoot = join(root, 'user')
-  await mkdir(join(packagedRoot, 'Xenova', 'whisper-base'), { recursive: true })
-  for (const file of lock.presets.balanced.files) { const path = join(packagedRoot, 'Xenova', 'whisper-base', ...file.path.split('/')); await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, bytes) }
+  await mkdir(join(packagedRoot, ...bundledRepositoryPath), { recursive: true })
+  for (const file of lock.presets.instant.files) { const path = join(packagedRoot, ...bundledRepositoryPath, ...file.path.split('/')); await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, bytes) }
   const downloader = vi.fn(async (_url: string, destination: string) => { await writeFile(destination, bytes) })
   const progress = vi.fn()
   return { root, packagedRoot, userRoot, downloader, progress,
@@ -73,7 +72,7 @@ describe('ModelManager', () => {
     const disclosure = manager.disclosures()
 
     expect(disclosure.optionalDownloadNotice).toBe(MODEL_DOWNLOAD_PRIVACY_NOTICE)
-    expect(disclosure.models).toEqual((['fast', 'balanced', 'accurate', 'instant'] as const).map((preset) => ({
+    expect(disclosure.models).toEqual((['instant', 'fast'] as const).map((preset) => ({
       preset,
       repository: lock.presets[preset].repository,
       sourceProvider: 'Hugging Face',
@@ -81,7 +80,7 @@ describe('ModelManager', () => {
       revision: lock.presets[preset].revision,
       totalBytes: lock.presets[preset].files.reduce((total, file) => total + file.bytes, 0),
       license: licenses[preset],
-      bundled: preset === 'balanced',
+      bundled: preset === 'instant',
     })))
     expect(Object.isFrozen(disclosure)).toBe(true)
     expect(Object.isFrozen(disclosure.models)).toBe(true)
@@ -131,12 +130,12 @@ describe('ModelManager', () => {
     })).toThrow('Invalid bundled model manifest')
   })
 
-  it('reports local status without network and protects bundled Balanced', async () => {
+  it('reports local status without network and protects bundled Standard', async () => {
     const { manager, downloader } = await fixture()
-    await expect(manager.status('balanced')).resolves.toEqual({ preset: 'balanced', state: 'bundled' })
+    await expect(manager.status('instant')).resolves.toEqual({ preset: 'instant', state: 'bundled' })
     await expect(manager.status('fast')).resolves.toEqual({ preset: 'fast', state: 'missing' })
-    await expect(manager.install('balanced', { consent: true })).rejects.toThrow()
-    await expect(manager.remove('balanced')).rejects.toThrow()
+    await expect(manager.install('instant', { consent: true })).rejects.toThrow()
+    await expect(manager.remove('instant')).rejects.toThrow()
     expect(downloader).not.toHaveBeenCalled()
   })
 
@@ -162,7 +161,7 @@ describe('ModelManager', () => {
     Reflect.set(mutable.presets.fast, 'repository', 'Xenova/whisper-base')
     Reflect.set(mutable.presets.fast.files[0]!, 'url', 'https://evil.invalid/model')
 
-    expect(manager.disclosures().models[0]).toMatchObject({
+    expect(manager.disclosures().models[1]).toMatchObject({
       preset: 'fast',
       repository: 'Xenova/whisper-tiny',
       sourceHost: 'huggingface.co',
@@ -176,7 +175,7 @@ describe('ModelManager', () => {
   it('reports bundled assets as error when shipped files are unavailable without network', async () => {
     const { root, userRoot, downloader } = await fixture()
     const manager = new ModelManager({ catalog: lock, bundledManifest, packagedRoot: join(root, 'missing'), userRoot, downloader })
-    await expect(manager.status('balanced')).resolves.toEqual({ preset: 'balanced', state: 'error' })
+    await expect(manager.status('instant')).resolves.toEqual({ preset: 'instant', state: 'error' })
     expect(downloader).not.toHaveBeenCalled()
   })
 
@@ -219,9 +218,9 @@ describe('ModelManager', () => {
 
   it('exposes only complete repositories to the read-only protocol', async () => {
     const { manager } = await fixture()
-    expect(Object.keys(await manager.protocolSources())).toEqual(['Xenova/whisper-base'])
+    expect(Object.keys(await manager.protocolSources())).toEqual(['onnx-community/moonshine-base-ONNX'])
     await manager.install('fast', { consent: true })
-    expect(Object.keys(await manager.protocolSources()).sort()).toEqual(['Xenova/whisper-base', 'Xenova/whisper-tiny'])
+    expect(Object.keys(await manager.protocolSources()).sort()).toEqual(['Xenova/whisper-tiny', 'onnx-community/moonshine-base-ONNX'])
   })
 
   it('atomically replaces an incomplete optional installation after verification', async () => {
@@ -250,9 +249,9 @@ describe('ModelManager', () => {
 
     await manager.protocolSources()
     await manager.protocolSources()
-    await manager.status('balanced')
+    await manager.status('instant')
 
-    expect(verifyFile).toHaveBeenCalledTimes(12)
+    expect(verifyFile).toHaveBeenCalledTimes(7)
   })
 
   it('rejects same-size model tampering after cached readiness before protocol bytes are served', async () => {
@@ -271,20 +270,20 @@ describe('ModelManager', () => {
       runtimeSource: { root: packagedRoot, boundaryRoot: packagedRoot, files: new Set() },
     })
 
-    expect(await manager.protocolSources()).toHaveProperty('Xenova/whisper-base')
-    expect(verifyFile).toHaveBeenCalledTimes(12)
+    expect(await manager.protocolSources()).toHaveProperty('onnx-community/moonshine-base-ONNX')
+    expect(verifyFile).toHaveBeenCalledTimes(7)
     const hostile = Buffer.from('hostile model bytes')
     expect(hostile).toHaveLength(bytes.length)
-    await writeFile(join(packagedRoot, 'Xenova', 'whisper-base', 'config.json'), hostile)
+    await writeFile(join(packagedRoot, ...bundledRepositoryPath, 'config.json'), hostile)
 
     const response = await handlers.get(MODEL_SCHEME)!({
       method: 'GET',
-      url: 'sotto-model://model/Xenova/whisper-base/config.json',
+      url: 'sotto-model://model/onnx-community/moonshine-base-ONNX/config.json',
     })
 
     expect(response.status).toBe(404)
     expect(fetch).not.toHaveBeenCalled()
-    expect(await manager.protocolSources()).not.toHaveProperty('Xenova/whisper-base')
+    expect(await manager.protocolSources()).not.toHaveProperty('onnx-community/moonshine-base-ONNX')
     cleanup()
   })
 
@@ -413,7 +412,7 @@ describe('bundled model manifest loader', () => {
     })).rejects.toThrow('Invalid model manifest')
   })
 
-  it('bounded-loads and freezes the exact Balanced manifest', async () => {
+  it('bounded-loads and freezes the exact bundled Standard manifest', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-bundled-manifest-')); roots.push(root)
     const path = join(root, 'manifest.lock.json')
     await writeFile(path, JSON.stringify(bundledManifest))

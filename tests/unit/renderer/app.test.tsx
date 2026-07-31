@@ -30,24 +30,14 @@ const DISCLOSURES: ModelDisclosureCatalog = Object.freeze({
       bundled: false,
     }),
     Object.freeze({
-      preset: 'balanced' as const,
-      repository: 'Xenova/whisper-base',
+      preset: 'instant' as const,
+      repository: 'onnx-community/moonshine-base-ONNX',
       sourceProvider: 'Hugging Face' as const,
       sourceHost: 'huggingface.co' as const,
-      revision: '64da57285918e20ea79ea5c88eed7197933abaa8',
-      totalBytes: 82_000_000,
-      license: 'Apache-2.0' as const,
+      revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
+      totalBytes: 67_000_000,
+      license: 'MIT' as const,
       bundled: true,
-    }),
-    Object.freeze({
-      preset: 'accurate' as const,
-      repository: 'Xenova/whisper-small',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: '2d67713f236afa48a18992566e7647f6ca848e13',
-      totalBytes: 125_000_000,
-      license: 'Apache-2.0' as const,
-      bundled: false,
     }),
   ]),
   optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
@@ -129,7 +119,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
   await waitFor(() => expect(screen.getByText(/microphone ready/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByText(/balanced model is included and ready/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByText(/standard model is included and ready/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }
@@ -308,10 +298,10 @@ describe('Sotto application onboarding integration', () => {
 
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /continue/i }))
-    const installFast = await screen.findByRole('button', { name: /install fast/i })
+    const installFast = await screen.findByRole('button', { name: /install multi-lingual/i })
     expect(installFast).toBeDisabled()
     expect(installModel).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow the fast model download/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
     await user.click(installFast)
     await waitFor(() => expect(installModel).toHaveBeenCalledWith({ preset: 'fast', consent: true }))
   })
@@ -327,11 +317,11 @@ describe('Sotto application onboarding integration', () => {
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /continue/i }))
     await screen.findByText(/ip address and request time/i)
-    await user.click(screen.getByRole('checkbox', { name: /allow the fast model download/i }))
-    await user.click(screen.getByRole('button', { name: /install fast/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
+    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/download could not start/i))
-    expect(screen.getByText(/balanced model is unchanged/i)).toBeVisible()
+    expect(screen.getByText(/standard model is unchanged/i)).toBeVisible()
     expect(document.body).not.toHaveTextContent('MODEL_INSTALL_UNAVAILABLE')
   })
 
@@ -496,17 +486,17 @@ describe('Sotto application onboarding integration', () => {
     })
     renderApp(bridge)
     await waitFor(() => expect(listeners).toHaveLength(1))
-    await waitFor(() => expect(bridge.getModelStatus).toHaveBeenCalledWith('balanced'))
+    await waitFor(() => expect(bridge.getModelStatus).toHaveBeenCalledWith('instant'))
 
-    act(() => listeners[0]?.({ preset: 'balanced', state: 'ready' }))
+    act(() => listeners[0]?.({ preset: 'instant', state: 'ready' }))
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /continue/i }))
-    await screen.findByText(/balanced model is included and ready/i)
+    await screen.findByText(/standard model is included and ready/i)
 
-    check.resolve({ preset: 'balanced', state: 'missing' })
+    check.resolve({ preset: 'instant', state: 'missing' })
     await act(async () => undefined)
-    expect(screen.getByText(/balanced model is included and ready/i)).toBeVisible()
-    expect(screen.queryByText(/balanced model is not ready/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/standard model is included and ready/i)).toBeVisible()
+    expect(screen.queryByText(/standard model is not ready/i)).not.toBeInTheDocument()
   })
 })
 
@@ -545,7 +535,7 @@ describe('transcription pipeline prewarm', () => {
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
   })
 
-  it('prewarms again only when the model preset or inference preference changes', async () => {
+  it('prewarms again only when the model preset changes', async () => {
     let emitSettings: ((next: AppSettings) => void) | undefined
     const bridge = createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
@@ -568,20 +558,9 @@ describe('transcription pipeline prewarm', () => {
         ...DEFAULT_SETTINGS,
         onboardingComplete: true,
         theme: 'dark',
-        modelPreset: 'accurate',
+        modelPreset: 'fast',
       })
     })
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(2))
-
-    act(() => {
-      emitSettings?.({
-        ...DEFAULT_SETTINGS,
-        onboardingComplete: true,
-        theme: 'dark',
-        modelPreset: 'accurate',
-        inferencePreference: 'wasm',
-      })
-    })
-    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(3))
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi } from 'vitest'
 
 import { createModelIpcService } from '../../../src/main/models/modelIpcService'
 
@@ -69,14 +69,14 @@ describe('model IPC service', () => {
     const publish = vi.fn(async () => { throw new Error('renderer gone') })
     const models = {
       disclosures: vi.fn(() => disclosures),
-      status: vi.fn(async () => ({ preset: 'accurate' as const, state: 'ready' as const })),
+      status: vi.fn(async () => ({ preset: 'fast' as const, state: 'ready' as const })),
       install: vi.fn(async () => undefined),
       remove: vi.fn(async () => { throw failure }),
     }
     const service = createModelIpcService(models, publish)
 
-    await expect(service.remove('accurate')).rejects.toBe(failure)
+    await expect(service.remove('fast')).rejects.toBe(failure)
 
-    expect(publish).toHaveBeenCalledWith({ preset: 'accurate', state: 'error' })
+    expect(publish).toHaveBeenCalledWith({ preset: 'fast', state: 'error' })
   })
 })

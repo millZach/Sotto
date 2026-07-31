@@ -29,10 +29,10 @@ export async function verifyPreparedAssets(options = {}) {
   await checkRoot(selectedModelRoot); await checkRoot(selectedRuntimeRoot)
   const catalog = await json(join(selectedModelRoot, 'catalog.lock.json')); const manifest = await json(join(selectedModelRoot, 'manifest.lock.json'))
   try { validateCatalogLock(catalog); validateBundledManifest(manifest, catalog) } catch { fail('catalog or manifest drift') }
-  const balanced = catalog.presets.balanced
-  const expectedModelFiles = ['catalog.lock.json', 'manifest.lock.json', ...balanced.files.map((file) => `${balanced.repository}/${file.path}`)].sort()
+  const bundled = catalog.presets.instant
+  const expectedModelFiles = ['catalog.lock.json', 'manifest.lock.json', ...bundled.files.map((file) => `${bundled.repository}/${file.path}`)].sort()
   if (JSON.stringify(await allFiles(selectedModelRoot)) !== JSON.stringify(expectedModelFiles)) fail('unexpected model files')
-  for (const file of manifest.files) await checkFile(join(selectedModelRoot, balanced.repository), file)
+  for (const file of manifest.files) await checkFile(join(selectedModelRoot, bundled.repository), file)
 
   const runtime = await json(join(selectedRuntimeRoot, 'manifest.lock.json'))
   try { validateRuntimeManifest(runtime) } catch { fail('runtime manifest drift') }

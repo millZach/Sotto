@@ -1,4 +1,4 @@
-import { Check, Download, HardDrive, Keyboard, Mic2, ShieldCheck } from 'lucide-react'
+﻿import { Check, Download, HardDrive, Keyboard, Mic2, ShieldCheck } from 'lucide-react'
 import React, {
   useEffect,
   useRef,
@@ -27,7 +27,7 @@ export interface OnboardingProps {
   readonly onRequestMicrophone: () => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
   readonly onRetryModel?: () => void | Promise<void>
-  readonly onInstallModel?: (preset: Exclude<ModelPreset, 'balanced'>) => void | Promise<void>
+  readonly onInstallModel?: (preset: Exclude<ModelPreset, 'instant'>) => void | Promise<void>
   readonly onComplete: () => boolean | void | Promise<boolean | void>
 }
 
@@ -101,9 +101,9 @@ export function Onboarding({
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
   const [pasteTest, setPasteTest] = useState('')
-  const [consent, setConsent] = useState({ instant: false, fast: false, accurate: false })
-  const [installingPreset, setInstallingPreset] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
-  const [installationError, setInstallationError] = useState<Exclude<ModelPreset, 'balanced'> | null>(null)
+  const [consent, setConsent] = useState({ fast: false })
+  const [installingPreset, setInstallingPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
+  const [installationError, setInstallationError] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -136,7 +136,7 @@ export function Onboarding({
     }
   }
 
-  const installOptionalModel = async (preset: Exclude<ModelPreset, 'balanced'>): Promise<void> => {
+  const installOptionalModel = async (preset: Exclude<ModelPreset, 'instant'>): Promise<void> => {
     if (!consent[preset] || installingPreset !== null || onInstallModel === undefined) return
     setInstallingPreset(preset)
     setInstallationError(null)
@@ -150,8 +150,8 @@ export function Onboarding({
   }
 
   const optionalModels = disclosures?.models.filter(
-    (model): model is ModelDisclosure & { preset: Exclude<ModelPreset, 'balanced'> } =>
-      model.preset !== 'balanced',
+    (model): model is ModelDisclosure & { preset: Exclude<ModelPreset, 'instant'> } =>
+      model.preset !== 'instant',
   ) ?? []
 
   return (
@@ -175,7 +175,7 @@ export function Onboarding({
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Private dictation, ready when you are</h1>
             <p className="onboarding-lead">Speech stays on this computer during transcription. Sotto is free, needs no account, and includes no telemetry.</p>
             <div className="onboarding-assurances">
-              <p><Check aria-hidden="true" size={18} /> Balanced speech model included</p>
+              <p><Check aria-hidden="true" size={18} /> Standard speech model included</p>
               <p><Check aria-hidden="true" size={18} /> No cloud transcription or API key</p>
               <p><Check aria-hidden="true" size={18} /> Optional model downloads are always disclosed first</p>
             </div>
@@ -222,21 +222,21 @@ export function Onboarding({
             <p className="onboarding-eyebrow">Speech model</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Your local model</h1>
             {modelState === 'ready' ? (
-              <div className="onboarding-ready"><Check aria-hidden="true" size={20} /><strong>The Balanced model is included and ready.</strong></div>
+              <div className="onboarding-ready"><Check aria-hidden="true" size={20} /><strong>The Standard model is included and ready.</strong></div>
             ) : (
               <div className="onboarding-model-problem" role="status">
-                <strong>{modelState === 'checking' ? 'Checking the bundled Balanced model...' : 'The bundled Balanced model is not ready.'}</strong>
+                <strong>{modelState === 'checking' ? 'Checking the bundled Standard model...' : 'The bundled Standard model is not ready.'}</strong>
                 {modelState === 'checking' ? null : <Button variant="secondary" onClick={() => void onRetryModel?.()}>Retry model check</Button>}
               </div>
             )}
-            <p className="onboarding-lead">Balanced is the dependable default. You can add the English-only Instant model, a smaller Fast model, or a larger Accurate model later.</p>
+            <p className="onboarding-lead">Standard is the fast English default. You can add the Multi-lingual model for non-English speech later.</p>
             {disclosures === undefined ? (
               <p className="onboarding-muted">
                 Optional download details are unavailable. {modelState === 'ready'
-                  ? 'Balanced remains local and usable.'
+                  ? 'Standard remains local and usable.'
                   : modelState === 'checking'
-                    ? 'Balanced availability is still being checked.'
-                    : 'Balanced must pass the model check before it can be used.'}
+                    ? 'Standard availability is still being checked.'
+                    : 'Standard must pass the model check before it can be used.'}
               </p>
             ) : (
               <div className="onboarding-download-disclosure">
@@ -258,7 +258,7 @@ export function Onboarding({
                 </div>
                 {installationError === null ? null : (
                   <p className="onboarding-completion-error" role="alert">
-                    The {MODEL_CATALOG[installationError].label} download could not start. The included Balanced model is unchanged.
+                    The {MODEL_CATALOG[installationError].label} download could not start. The included Standard model is unchanged.
                   </p>
                 )}
               </div>

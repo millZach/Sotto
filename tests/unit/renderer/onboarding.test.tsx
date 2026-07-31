@@ -24,24 +24,14 @@ const disclosures: ModelDisclosureCatalog = Object.freeze({
       bundled: false,
     }),
     Object.freeze({
-      preset: 'balanced' as const,
-      repository: 'Xenova/whisper-base',
+      preset: 'instant' as const,
+      repository: 'onnx-community/moonshine-base-ONNX',
       sourceProvider: 'Hugging Face' as const,
       sourceHost: 'huggingface.co' as const,
-      revision: '64da57285918e20ea79ea5c88eed7197933abaa8',
-      totalBytes: 82_000_000,
-      license: 'Apache-2.0' as const,
+      revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
+      totalBytes: 67_000_000,
+      license: 'MIT' as const,
       bundled: true,
-    }),
-    Object.freeze({
-      preset: 'accurate' as const,
-      repository: 'Xenova/whisper-small',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: '2d67713f236afa48a18992566e7647f6ca848e13',
-      totalBytes: 125_000_000,
-      license: 'Apache-2.0' as const,
-      bundled: false,
     }),
   ]),
   optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
@@ -118,11 +108,11 @@ describe('first-run onboarding', () => {
     )
     await goToStep(user, 3)
 
-    expect(screen.getByText(/balanced model is included and ready/i)).toBeVisible()
+    expect(screen.getByText(/standard model is included and ready/i)).toBeVisible()
     expect(screen.getByText(/ip address and request time/i)).toBeVisible()
-    const installFast = screen.getByRole('button', { name: /install fast/i })
+    const installFast = screen.getByRole('button', { name: /install multi-lingual/i })
     expect(installFast).toBeDisabled()
-    await user.click(screen.getByRole('checkbox', { name: /allow the fast model download/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
     await user.click(installFast)
     expect(install).toHaveBeenCalledWith('fast')
   })
@@ -143,10 +133,10 @@ describe('first-run onboarding', () => {
       />,
     )
     await goToStep(user, 3)
-    await user.click(screen.getByRole('checkbox', { name: /allow the fast model download/i }))
-    await user.click(screen.getByRole('button', { name: /install fast/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
+    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
 
-    expect(screen.getByRole('button', { name: /starting fast/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /starting multi-lingual/i })).toBeDisabled()
     expect(install).toHaveBeenCalledOnce()
 
     start.reject(new Error('private network detail'))
@@ -223,7 +213,7 @@ describe('first-run onboarding', () => {
   })
 
   it.each(['missing', 'error', 'unavailable'] as const)(
-    'blocks completion and offers a model retry when Balanced is %s',
+    'blocks completion and offers a model retry when Standard is %s',
     async (modelState) => {
       const user = userEvent.setup()
       const retry = vi.fn()
@@ -258,13 +248,13 @@ describe('first-run onboarding', () => {
       />,
     )
     await goToStep(user, 3)
-    await user.click(screen.getByRole('checkbox', { name: /allow the fast model download/i }))
-    expect(screen.getByRole('button', { name: /install fast/i })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
+    expect(screen.getByRole('button', { name: /install multi-lingual/i })).toBeDisabled()
     expect(screen.getByText('Xenova/whisper-tiny')).toBeVisible()
   })
 
   it.each(['checking', 'missing', 'error', 'unavailable'] as const)(
-    'does not claim Balanced is usable when disclosures are unavailable and the model is %s',
+    'does not claim Standard is usable when disclosures are unavailable and the model is %s',
     async (modelState) => {
       const user = userEvent.setup()
       render(
@@ -278,7 +268,7 @@ describe('first-run onboarding', () => {
       )
       await goToStep(user, 3)
 
-      expect(screen.queryByText(/balanced remains local and usable/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/standard remains local and usable/i)).not.toBeInTheDocument()
       expect(screen.getByText(/optional download details are unavailable/i)).toBeVisible()
     },
   )

@@ -20,7 +20,7 @@ export interface LockedPreset { readonly repository: string; readonly revision: 
 export interface CatalogLock { readonly version: 1; readonly presets: Readonly<Record<ModelPreset, LockedPreset>> }
 export interface BundledModelManifest {
   readonly version: 1
-  readonly preset: 'balanced'
+  readonly preset: 'instant'
   readonly repository: string
   readonly revision: string
   readonly files: readonly LockedFile[]
@@ -38,16 +38,15 @@ export interface ModelManagerOptions {
   readonly verifyFile?: (path: string, expected: LockedFile) => Promise<boolean>
 }
 
-const PRESETS = ['fast', 'balanced', 'accurate', 'instant'] as const
+// Order matters: disclosures are published in this order (bundled first).
+const PRESETS = ['instant', 'fast'] as const
 const SHA = /^[a-f0-9]{64}$/
 const REV = /^[a-f0-9]{40}$/
 const WHISPER_FILES = ['added_tokens.json', 'config.json', 'generation_config.json', 'merges.txt', 'normalizer.json', 'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'] as const
 const MOONSHINE_FILES = ['config.json', 'generation_config.json', 'onnx/decoder_model_merged_quantized.onnx', 'onnx/encoder_model_quantized.onnx', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json'] as const
 const EXPECTED = {
   fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', license: 'Apache-2.0', bundled: false, encoder: 10_124_910, decoder: 30_727_765, files: WHISPER_FILES },
-  balanced: { repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', license: 'Apache-2.0', bundled: true, encoder: 23_200_850, decoder: 53_707_539, files: WHISPER_FILES },
-  accurate: { repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', license: 'Apache-2.0', bundled: false, encoder: 92_324_809, decoder: 156_780_950, files: WHISPER_FILES },
-  instant: { repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', bundled: false, encoder: 20_513_063, decoder: 42_498_870, files: MOONSHINE_FILES },
+  instant: { repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', bundled: true, encoder: 20_513_063, decoder: 42_498_870, files: MOONSHINE_FILES },
 } as const
 
 function validateCatalog(value: CatalogLock): CatalogLock {
@@ -70,20 +69,20 @@ function validateCatalog(value: CatalogLock): CatalogLock {
     const decoder = model.files.find((file) => file.path.includes('decoder_model'))
     if (encoder?.bytes !== expectedModel.encoder || decoder?.bytes !== expectedModel.decoder) throw new Error('Invalid model catalog')
   }
-  if (!value.presets.balanced.bundled || value.presets.fast.bundled || value.presets.accurate.bundled || value.presets.instant.bundled) throw new Error('Invalid model catalog')
+  if (!value.presets.instant.bundled || value.presets.fast.bundled) throw new Error('Invalid model catalog')
   return value
 }
 
 function validateBundledModelManifest(value: BundledModelManifest, catalog: CatalogLock): BundledModelManifest {
-  const balanced = catalog.presets.balanced
+  const bundled = catalog.presets.instant
   if (!value
     || Object.keys(value).sort().join() !== ['files', 'preset', 'repository', 'revision', 'version'].join()
     || value.version !== 1
-    || value.preset !== 'balanced'
-    || value.repository !== balanced.repository
-    || value.revision !== balanced.revision
+    || value.preset !== 'instant'
+    || value.repository !== bundled.repository
+    || value.revision !== bundled.revision
     || !Array.isArray(value.files)
-    || JSON.stringify(value.files) !== JSON.stringify(balanced.files)) throw new Error('Invalid bundled model manifest')
+    || JSON.stringify(value.files) !== JSON.stringify(bundled.files)) throw new Error('Invalid bundled model manifest')
   return value
 }
 
@@ -501,7 +500,7 @@ export class ModelManager {
   }
 
   private contained(root: string, relative: string): string { const base = resolve(root); const target = resolve(base, ...relative.split('/')); if (target !== base && !target.startsWith(`${base}${sep}`)) throw new Error('Unsafe model path'); return target }
-  private filesFor(preset: ModelPreset): readonly LockedFile[] { return preset === 'balanced' ? this.bundledManifest.files : this.catalog.presets[preset].files }
+  private filesFor(preset: ModelPreset): readonly LockedFile[] { return preset === 'instant' ? this.bundledManifest.files : this.catalog.presets[preset].files }
   private async assertRealContained(boundaryRoot: string, target: string): Promise<void> { const boundary = await realpath(boundaryRoot); const actual = await realpath(target); if (actual !== boundary && !actual.startsWith(`${boundary}${sep}`)) throw new Error('Unsafe model path') }
   private async repositoryFingerprint(boundaryRoot: string, root: string): Promise<string> {
     await this.assertRealContained(boundaryRoot, root)

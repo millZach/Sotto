@@ -120,24 +120,20 @@ export function createE2EModelOperations(): {
   remove(preset: ModelPreset): Promise<void>
 } {
   const states = new Map<ModelPreset, ModelStatus['state']>([
+    ['instant', 'bundled'],
     ['fast', 'missing'],
-    ['balanced', 'bundled'],
-    ['accurate', 'missing'],
-    ['instant', 'missing'],
   ])
   const disclosures = Object.freeze({
     models: Object.freeze([
+      Object.freeze({ preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', totalBytes: 67_000_000, license: 'MIT' as const, bundled: true }),
       Object.freeze({ preset: 'fast' as const, repository: 'Xenova/whisper-tiny', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', totalBytes: 40_000_000, license: 'Apache-2.0' as const, bundled: false }),
-      Object.freeze({ preset: 'balanced' as const, repository: 'Xenova/whisper-base', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '64da57285918e20ea79ea5c88eed7197933abaa8', totalBytes: 77_000_000, license: 'Apache-2.0' as const, bundled: true }),
-      Object.freeze({ preset: 'accurate' as const, repository: 'Xenova/whisper-small', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '2d67713f236afa48a18992566e7647f6ca848e13', totalBytes: 250_000_000, license: 'Apache-2.0' as const, bundled: false }),
-      Object.freeze({ preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', totalBytes: 67_000_000, license: 'MIT' as const, bundled: false }),
     ]),
     optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
   })
   return {
     disclosures: () => disclosures,
     async status(preset) { return { preset, state: states.get(preset) ?? 'missing' } },
-    async install(preset) { if (preset !== 'balanced') states.set(preset, 'ready') },
-    async remove(preset) { if (preset !== 'balanced') states.set(preset, 'missing') },
+    async install(preset) { if (preset !== 'instant') states.set(preset, 'ready') },
+    async remove(preset) { if (preset !== 'instant') states.set(preset, 'missing') },
   }
 }

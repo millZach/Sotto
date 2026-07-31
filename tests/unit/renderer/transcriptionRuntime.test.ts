@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -16,7 +16,7 @@ function transcribeRequest(overrides: Record<string, unknown> = {}): Record<stri
     sessionId: 'session-1',
     audio: new Float32Array([0.1, -0.2]),
     sampleRate: 16_000,
-    preset: 'balanced',
+    preset: 'fast',
     language: 'auto',
     inferencePreference: 'wasm',
     ...overrides,
@@ -60,7 +60,7 @@ describe('local transcription worker runtime', () => {
 
     expect(createPipeline).toHaveBeenCalledWith(
       'automatic-speech-recognition',
-      'Xenova/whisper-base',
+      'Xenova/whisper-tiny',
       expect.objectContaining({
         dtype: 'q8',
         device: 'wasm',
@@ -88,8 +88,6 @@ describe('local transcription worker runtime', () => {
 
   it.each([
     ['fast', 'Xenova/whisper-tiny'],
-    ['balanced', 'Xenova/whisper-base'],
-    ['accurate', 'Xenova/whisper-small'],
   ] as const)('maps %s only to its pinned local catalog repository', async (preset, repository) => {
     const createPipeline = vi.fn(async () => vi.fn(async () => ({ text: 'ok' }))) as PipelineFactory
     const runtime = createTranscriptionRuntime({
@@ -232,7 +230,7 @@ describe('local transcription worker runtime', () => {
     expect(createPipeline).toHaveBeenCalledTimes(1)
     expect(createPipeline).toHaveBeenCalledWith(
       'automatic-speech-recognition',
-      'Xenova/whisper-base',
+      'Xenova/whisper-tiny',
       expect.objectContaining({ device: 'webgpu', local_files_only: true }),
     )
     expect(wasmPipeline).not.toHaveBeenCalled()
@@ -262,7 +260,7 @@ describe('local transcription worker runtime', () => {
     await runtime.handleMessage({
       type: 'load',
       requestId: 'load-1',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
 
@@ -277,7 +275,7 @@ describe('local transcription worker runtime', () => {
     await runtime.handleMessage({
       type: 'load',
       requestId: 'load-2',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
 
@@ -298,7 +296,7 @@ describe('local transcription worker runtime', () => {
     await runtime.handleMessage({
       type: 'load',
       requestId: 'load-1',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
 
@@ -308,10 +306,10 @@ describe('local transcription worker runtime', () => {
     expect(JSON.stringify(responses)).not.toContain('private path')
   })
 
-  it('uses WASM directly for auto even when a WebGPU adapter is present', async () => {
+  it('never probes WebGPU for a WASM request even when an adapter is present', async () => {
     // The packaged runtime cannot initialize ORT WebGPU (no jsep build), and
     // measured WebGPU inference is slower than WASM on integrated GPUs, so
-    // 'auto' must not pay a doomed WebGPU load + worker restart.
+    // a WASM request must not pay a doomed WebGPU load + worker restart.
     const createPipelineMock = vi.fn<PipelineFactory>(async () =>
       vi.fn(async () => ({ text: 'wasm result' })),
     )
@@ -323,12 +321,12 @@ describe('local transcription worker runtime', () => {
       probeWebGpu,
     })
 
-    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'auto' }))
+    await runtime.handleMessage(transcribeRequest({ inferencePreference: 'wasm' }))
     await runtime.handleMessage({
       type: 'load',
-      requestId: 'load-auto',
-      preset: 'balanced',
-      inferencePreference: 'auto',
+      requestId: 'load-wasm',
+      preset: 'fast',
+      inferencePreference: 'wasm',
     })
 
     expect(createPipelineMock).toHaveBeenCalledTimes(1)
@@ -337,11 +335,11 @@ describe('local transcription worker runtime', () => {
       expect.objectContaining({ type: 'result', requestId: 'request-1', text: 'wasm result' }),
     )
     expect(responses).toContainEqual(
-      expect.objectContaining({ type: 'ready', requestId: 'load-auto', device: 'wasm' }),
+      expect.objectContaining({ type: 'ready', requestId: 'load-wasm', device: 'wasm' }),
     )
   })
 
-  it('uses WASM directly for auto without navigator.gpu and rejects explicit WebGPU safely', async () => {
+  it('uses WASM without navigator.gpu and rejects explicit WebGPU safely', async () => {
     const createPipelineMock = vi.fn<PipelineFactory>(async () =>
       vi.fn(async () => ({ text: 'wasm' })),
     )
@@ -353,7 +351,7 @@ describe('local transcription worker runtime', () => {
       probeWebGpu: async () => false,
     })
 
-    await runtime.handleMessage(transcribeRequest({ requestId: 'auto', inferencePreference: 'auto' }))
+    await runtime.handleMessage(transcribeRequest({ requestId: 'cpu', inferencePreference: 'wasm' }))
     await runtime.handleMessage(
       transcribeRequest({ requestId: 'gpu', sessionId: 'gpu-session', inferencePreference: 'webgpu' }),
     )
@@ -381,7 +379,7 @@ describe('local transcription worker runtime', () => {
     await missingRuntime.handleMessage({
       type: 'load',
       requestId: 'load',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
 
@@ -576,7 +574,7 @@ describe('local transcription worker runtime', () => {
     const load = runtime.handleMessage({
       type: 'load',
       requestId: 'load-request',
-      preset: 'accurate',
+      preset: 'instant',
       inferencePreference: 'wasm',
     })
     await vi.waitFor(() => {
@@ -645,13 +643,13 @@ describe('local transcription worker runtime', () => {
     const first = runtime.handleMessage({
       type: 'load',
       requestId: 'load-1',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
     const second = runtime.handleMessage({
       type: 'load',
       requestId: 'load-2',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     })
     pipelineResult.resolve(vi.fn(async () => ({ text: 'unused' })))
@@ -665,11 +663,11 @@ describe('local transcription worker runtime', () => {
     const fastPipeline = Object.assign(vi.fn(async () => ({ text: 'fast' })), {
       dispose: disposeFast,
     })
-    const balancedPipeline = vi.fn(async () => ({ text: 'balanced' }))
+    const instantPipeline = vi.fn(async () => ({ text: 'instant' }))
     const createPipeline = vi
       .fn<PipelineFactory>()
       .mockResolvedValueOnce(fastPipeline)
-      .mockResolvedValueOnce(balancedPipeline)
+      .mockResolvedValueOnce(instantPipeline)
     const runtime = createTranscriptionRuntime({
       createPipeline,
       postMessage: vi.fn(),
@@ -684,8 +682,8 @@ describe('local transcription worker runtime', () => {
     })
     await runtime.handleMessage({
       type: 'load',
-      requestId: 'balanced',
-      preset: 'balanced',
+      requestId: 'instant',
+      preset: 'instant',
       inferencePreference: 'wasm',
     })
 
@@ -707,7 +705,7 @@ describe('local transcription worker runtime', () => {
     const request = {
       type: 'load',
       requestId: 'first',
-      preset: 'balanced',
+      preset: 'fast',
       inferencePreference: 'wasm',
     }
 

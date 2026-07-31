@@ -1,4 +1,4 @@
-import type { InferencePreference, ModelPreset } from '../../../shared/settings'
+import type { ModelPreset } from '../../../shared/settings'
 import {
   TRANSCRIPTION_SAMPLE_RATE,
   parseWorkerRequest,
@@ -50,9 +50,16 @@ export interface TranscriptionProgress {
   readonly progress: number
 }
 
+/**
+ * Worker-protocol inference preference. The app's settings only ever request
+ * 'wasm'; 'webgpu' remains part of the worker protocol so the client's
+ * explicit-failure recovery path stays exercised.
+ */
+export type WorkerInferencePreference = 'webgpu' | 'wasm'
+
 export interface LoadOptions {
   readonly preset: ModelPreset
-  readonly inferencePreference: InferencePreference
+  readonly inferencePreference: WorkerInferencePreference
   readonly onProgress?: (progress: TranscriptionProgress) => void
 }
 

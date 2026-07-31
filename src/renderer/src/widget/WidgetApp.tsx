@@ -66,7 +66,7 @@ const errorCopy: Record<WidgetErrorCode, { readonly title: string; readonly deta
   },
   TRANSCRIPTION_FAILED: {
     title: 'Couldn’t transcribe',
-    detail: 'Try again or choose the Balanced model.',
+    detail: 'Try again or choose the Standard model.',
   },
   OUTPUT_UNAVAILABLE: {
     title: 'Output unavailable',

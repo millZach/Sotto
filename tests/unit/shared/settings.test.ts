@@ -16,7 +16,7 @@ const customSettings = {
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
-  modelPreset: 'accurate',
+  modelPreset: 'fast',
   language: 'fr',
   inferencePreference: 'wasm',
   formatWhitespace: false,
@@ -50,9 +50,9 @@ describe('settings', () => {
       hotkey: 'CommandOrControl+Shift+Space',
       maxRecordingSeconds: 60,
       soundCues: true,
-      modelPreset: 'balanced',
+      modelPreset: 'instant',
       language: 'auto',
-      inferencePreference: 'auto',
+      inferencePreference: 'wasm',
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -83,9 +83,18 @@ describe('settings', () => {
     expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
-  it('accepts the instant preset and recovers unknown presets to balanced', () => {
+  it('accepts the surviving presets and migrates removed or unknown presets to instant', () => {
     expect(parseSettings({ modelPreset: 'instant' }).modelPreset).toBe('instant')
-    expect(parseSettings({ modelPreset: 'turbo' }).modelPreset).toBe('balanced')
+    expect(parseSettings({ modelPreset: 'fast' }).modelPreset).toBe('fast')
+    expect(parseSettings({ modelPreset: 'balanced' }).modelPreset).toBe('instant')
+    expect(parseSettings({ modelPreset: 'accurate' }).modelPreset).toBe('instant')
+    expect(parseSettings({ modelPreset: 'turbo' }).modelPreset).toBe('instant')
+  })
+
+  it('migrates legacy inference preferences to wasm', () => {
+    expect(parseSettings({ inferencePreference: 'wasm' }).inferencePreference).toBe('wasm')
+    expect(parseSettings({ inferencePreference: 'auto' }).inferencePreference).toBe('wasm')
+    expect(parseSettings({ inferencePreference: 'webgpu' }).inferencePreference).toBe('wasm')
   })
 
   it('defaults the widget idle visibility on and recovers invalid values to on', () => {

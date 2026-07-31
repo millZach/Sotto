@@ -38,10 +38,8 @@ export const RUNTIME_FILE_ALLOWLIST = Object.freeze([
 const entry = (value) => Object.freeze(value)
 
 export const MODEL_CATALOG = Object.freeze({
-  fast: entry({ label: 'Fast', repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 10_124_910, decoderBytes: 30_727_765, files: MODEL_FILE_ALLOWLIST }),
-  balanced: entry({ label: 'Balanced', repository: 'Xenova/whisper-base', revision: '64da57285918e20ea79ea5c88eed7197933abaa8', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: true, encoderBytes: 23_200_850, decoderBytes: 53_707_539, files: MODEL_FILE_ALLOWLIST }),
-  accurate: entry({ label: 'Accurate', repository: 'Xenova/whisper-small', revision: '2d67713f236afa48a18992566e7647f6ca848e13', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 92_324_809, decoderBytes: 156_780_950, files: MODEL_FILE_ALLOWLIST }),
-  instant: entry({ label: 'Instant', repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', family: 'moonshine', dtype: 'q8', multilingual: false, license: 'MIT', bundled: false, encoderBytes: 20_513_063, decoderBytes: 42_498_870, files: MOONSHINE_MODEL_FILES }),
+  instant: entry({ label: 'Standard', repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', family: 'moonshine', dtype: 'q8', multilingual: false, license: 'MIT', bundled: true, encoderBytes: 20_513_063, decoderBytes: 42_498_870, files: MOONSHINE_MODEL_FILES }),
+  fast: entry({ label: 'Multi-lingual', repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', family: 'whisper', dtype: 'q8', multilingual: true, license: 'Apache-2.0', bundled: false, encoderBytes: 10_124_910, decoderBytes: 30_727_765, files: MODEL_FILE_ALLOWLIST }),
 })
 
 export function modelFileUrl(model, path) {
@@ -81,13 +79,13 @@ export function validateCatalogLock(value) {
 }
 
 export function validateBundledManifest(value, catalog) {
-  const balanced = validateCatalogLock(catalog).presets.balanced
+  const bundled = validateCatalogLock(catalog).presets.instant
   if (!exactKeys(value, ['version', 'preset', 'repository', 'revision', 'files'])
     || value.version !== 1
-    || value.preset !== 'balanced'
-    || value.repository !== balanced.repository
-    || value.revision !== balanced.revision
-    || JSON.stringify(value.files) !== JSON.stringify(balanced.files)) throw new Error('Invalid model manifest')
+    || value.preset !== 'instant'
+    || value.repository !== bundled.repository
+    || value.revision !== bundled.revision
+    || JSON.stringify(value.files) !== JSON.stringify(bundled.files)) throw new Error('Invalid model manifest')
   return value
 }
 

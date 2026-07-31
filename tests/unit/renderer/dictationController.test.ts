@@ -173,7 +173,7 @@ describe('DictationController', () => {
       createdAt: 1_000,
       durationMs: 500,
       language: 'en',
-      modelPreset: 'balanced',
+      modelPreset: 'instant',
     })
     expect(harness.controller.getState()).toEqual({
       status: 'success',
@@ -795,14 +795,14 @@ describe('DictationController', () => {
 describe('pipeline prewarm', () => {
   it('warms the configured model and device without starting a dictation session', async () => {
     const harness = createHarness({
-      currentSettings: settings({ modelPreset: 'accurate', inferencePreference: 'webgpu' }),
+      currentSettings: settings({ modelPreset: 'fast', inferencePreference: 'wasm' }),
     })
 
     await harness.controller.prewarm()
 
     expect(harness.transcriber.load).toHaveBeenCalledWith({
-      preset: 'accurate',
-      inferencePreference: 'webgpu',
+      preset: 'fast',
+      inferencePreference: 'wasm',
     })
     expect(harness.controller.getState().status).toBe('idle')
     expect(harness.createRecorder).not.toHaveBeenCalled()

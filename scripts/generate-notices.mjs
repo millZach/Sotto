@@ -28,6 +28,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.`
 
+const moonshineMit = `MIT License
+
+Copyright (c) 2024 Useful Sensors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+
 const guidIsc = `ISC License
 
 Copyright (c) NicolasDeveloper contributors
@@ -149,6 +171,7 @@ const licenseSections = [
   ['GUID TypeScript ISC license', guidIsc],
   ['Protocol Buffers BSD 3-Clause license', await read('node_modules/protobufjs/LICENSE')],
   ['Apache License 2.0', await read('node_modules/@huggingface/transformers/LICENSE')],
+  ['Moonshine MIT license', moonshineMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
 ]
 
@@ -170,7 +193,7 @@ Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comp
 |---|---|---|---|
 ${table}
 
-Optional models are not part of the installer. If the user explicitly downloads them, \`Xenova/whisper-tiny\` revision \`5332fcc35e32a33b86612b9a57a89be7906102b1\` and \`Xenova/whisper-small\` revision \`2d67713f236afa48a18992566e7647f6ca848e13\` are Apache-2.0 works from Hugging Face and OpenAI Whisper contributors, and \`onnx-community/moonshine-base-ONNX\` revision \`b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad\` is an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community.
+The bundled Standard model is \`onnx-community/moonshine-base-ONNX\` revision \`b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad\`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, \`Xenova/whisper-tiny\` revision \`5332fcc35e32a33b86612b9a57a89be7906102b1\` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 
 ## Sotto brand asset provenance
 

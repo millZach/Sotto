@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,9 +20,8 @@ afterEach(() => {
 
 const disclosures: ModelDisclosureCatalog = Object.freeze({
   models: Object.freeze([
+    Object.freeze({ preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', totalBytes: 67_000_000, license: 'MIT' as const, bundled: true }),
     Object.freeze({ preset: 'fast' as const, repository: 'Xenova/whisper-tiny', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', totalBytes: 42_000_000, license: 'Apache-2.0' as const, bundled: false }),
-    Object.freeze({ preset: 'balanced' as const, repository: 'Xenova/whisper-base', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '64da57285918e20ea79ea5c88eed7197933abaa8', totalBytes: 82_000_000, license: 'Apache-2.0' as const, bundled: true }),
-    Object.freeze({ preset: 'accurate' as const, repository: 'Xenova/whisper-small', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '2d67713f236afa48a18992566e7647f6ca848e13', totalBytes: 125_000_000, license: 'Apache-2.0' as const, bundled: false }),
   ]),
   optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
 })
@@ -48,9 +47,8 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
   return {
     settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
     modelStatuses: {
-      balanced: { preset: 'balanced', state: 'bundled' },
+      instant: { preset: 'instant', state: 'bundled' },
       fast: { preset: 'fast', state: 'missing' },
-      accurate: { preset: 'accurate', state: 'missing' },
     },
     mediaDevices: createMediaDevices([device('default', 'Studio microphone')]),
     onUpdateSettings: vi.fn(async () => true),
@@ -58,7 +56,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     onSetStartup: vi.fn(async (enabled) => ({ enabled })),
     onResetSettings: vi.fn(async () => true),
     onClearHistory: vi.fn(async () => true),
-    onGetModelStatus: vi.fn(async (preset) => ({ preset, state: preset === 'balanced' ? 'bundled' : 'missing' } as ModelStatus)),
+    onGetModelStatus: vi.fn(async (preset) => ({ preset, state: preset === 'instant' ? 'bundled' : 'missing' } as ModelStatus)),
     onListModelDisclosures: vi.fn(async () => disclosures),
     onInstallModel: vi.fn(async () => ({ ok: true } as const)),
     onRemoveModel: vi.fn(async () => ({ ok: true } as const)),
@@ -72,7 +70,7 @@ describe('SettingsView', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     for (const name of [
       'Theme', 'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
-      'Maximum recording time', 'Sound cues', 'Language', 'Inference', 'Whitespace formatting',
+      'Maximum recording time', 'Sound cues', 'Language', 'Whitespace formatting',
       'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
       'Launch when Windows starts', 'Start minimized', 'Keep local history', 'History retention',
     ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === 'Launch when Windows starts' || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
@@ -305,10 +303,10 @@ describe('SettingsView', () => {
 
   it('requests a status for every preset so each model card leaves the checking state', async () => {
     const getStatus = vi.fn(async (preset: ModelStatus['preset']) =>
-      ({ preset, state: preset === 'balanced' ? 'bundled' : 'missing' } as ModelStatus))
+      ({ preset, state: preset === 'instant' ? 'bundled' : 'missing' } as ModelStatus))
     render(<SettingsView {...baseProps({ onGetModelStatus: getStatus })} />)
 
-    for (const preset of ['instant', 'fast', 'balanced', 'accurate']) {
+    for (const preset of ['instant', 'fast']) {
       expect(getStatus).toHaveBeenCalledWith(preset)
     }
   })
@@ -317,17 +315,17 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const install = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({ onInstallModel: install })} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /install fast/i })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: /install fast/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /install multi-lingual/i })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
     expect(screen.getByText(/ip address and request time/i)).toBeVisible()
-    const confirm = screen.getByRole('button', { name: /download fast model/i })
+    const confirm = screen.getByRole('button', { name: /download multi-lingual model/i })
     expect(confirm).toBeDisabled()
     expect(install).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this fast model download/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
     await user.click(confirm)
     await waitFor(() => expect(install).toHaveBeenCalledWith({ preset: 'fast', consent: true }))
-    await user.click(screen.getByRole('button', { name: /install fast/i }))
-    expect(screen.getByRole('checkbox', { name: /allow this fast model download/i })).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
+    expect(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i })).not.toBeChecked()
   })
 
   it('keeps install progress and errors live inside the busy consent dialog and reports ready only after completion', async () => {
@@ -339,81 +337,79 @@ describe('SettingsView', () => {
       .mockImplementationOnce(() => second.promise)
     const props = baseProps({ onInstallModel: install })
     const rendered = render(<SettingsView {...props} />)
-    await user.click(await screen.findByRole('button', { name: /install fast/i }))
+    await user.click(await screen.findByRole('button', { name: /install multi-lingual/i }))
     expect(install).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this fast model download/i }))
-    await user.click(screen.getByRole('button', { name: /download fast model/i }))
+    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
+    await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-busy', 'true')
     rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'downloading', progress: 0.42 } }} />)
     expect(within(dialog).getByText(/42%/i)).toBeVisible()
     first.resolve({ ok: false, reason: 'unavailable' })
-    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(/fast could not be downloaded/i))
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(/multi-lingual could not be downloaded/i))
 
-    expect(screen.getByRole('button', { name: /download fast model/i })).toBeDisabled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this fast model download/i }))
-    await user.click(screen.getByRole('button', { name: /download fast model/i }))
+    expect(screen.getByRole('button', { name: /download multi-lingual model/i })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
+    await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
     second.resolve({ ok: true })
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/fast is installed and ready/i))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/multi-lingual is installed and ready/i))
     expect(screen.queryByText(/download started/i)).not.toBeInTheDocument()
   })
 
-  it('does not claim Balanced is ready when disclosure lookup and Balanced status both fail', async () => {
+  it('does not claim Standard is ready when disclosure lookup and Standard status both fail', async () => {
     render(<SettingsView {...baseProps({
-      modelStatuses: { balanced: { preset: 'balanced', state: 'error' } },
+      modelStatuses: { instant: { preset: 'instant', state: 'error' } },
       onListModelDisclosures: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     })} />)
     expect(await screen.findByText(/no model download can start/i)).toBeVisible()
-    expect(screen.queryByText(/balanced remains ready/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/standard remains ready/i)).not.toBeInTheDocument()
   })
 
   it('shows finite model progress and errors and permits selection only when ready', async () => {
     const user = userEvent.setup()
     const statuses = {
-      balanced: { preset: 'balanced', state: 'bundled' as const },
+      instant: { preset: 'instant', state: 'bundled' as const },
       fast: { preset: 'fast', state: 'downloading' as const, progress: 0.42 },
-      accurate: { preset: 'accurate', state: 'error' as const },
     }
     const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, modelPreset: 'accurate' }, modelStatuses: statuses, onUpdateSettings: update })} />)
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' }, modelStatuses: statuses, onUpdateSettings: update })} />)
     expect(screen.getByText(/42%/i)).toBeVisible()
-    expect(screen.getByText(/accurate model could not be prepared/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: /use fast/i })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: /use balanced/i }))
-    expect(update).toHaveBeenCalledWith({ modelPreset: 'balanced' })
+    expect(screen.getByRole('button', { name: /use multi-lingual/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /use standard/i }))
+    expect(update).toHaveBeenCalledWith({ modelPreset: 'instant' })
   })
 
-  it('selects Balanced successfully before removing the selected optional model and never removes Balanced', async () => {
+  it('selects Standard successfully before removing the selected optional model and never removes Standard', async () => {
     const user = userEvent.setup()
     const order: string[] = []
     const update = vi.fn(async (patch: Partial<AppSettings>) => { order.push(`select:${String(patch.modelPreset)}`); return true })
     const remove = vi.fn(async (preset) => { order.push(`remove:${String(preset)}`); return { ok: true as const } })
     const props = baseProps({
       settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' },
-      modelStatuses: { balanced: { preset: 'balanced', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' }, accurate: { preset: 'accurate', state: 'missing' } },
+      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
       onUpdateSettings: update as SettingsViewProps['onUpdateSettings'],
       onRemoveModel: remove,
     })
     render(<SettingsView {...props} />)
-    expect(screen.queryByRole('button', { name: /remove balanced/i })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /remove fast/i }))
+    expect(screen.queryByRole('button', { name: /remove standard/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
     await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
     await waitFor(() => expect(remove).toHaveBeenCalledWith('fast'))
-    expect(order).toEqual(['select:balanced', 'remove:fast'])
+    expect(order).toEqual(['select:instant', 'remove:fast'])
   })
 
-  it('does not remove the current optional model when selecting Balanced fails', async () => {
+  it('does not remove the current optional model when selecting Standard fails', async () => {
     const user = userEvent.setup()
     const remove = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({
       settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' },
-      modelStatuses: { balanced: { preset: 'balanced', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
+      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
       onUpdateSettings: vi.fn(async () => false),
       onRemoveModel: remove,
     })} />)
-    await user.click(screen.getByRole('button', { name: /remove fast/i }))
+    await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
     await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not switch to balanced/i))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not switch to standard/i))
     expect(remove).not.toHaveBeenCalled()
   })
 
@@ -424,13 +420,13 @@ describe('SettingsView', () => {
   ] as const)('shows a finite %s failure inside the active dialog', async (operation, message) => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps({
-      modelStatuses: { balanced: { preset: 'balanced', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
+      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
       onRemoveModel: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
       onClearHistory: vi.fn(async () => false),
       onResetSettings: vi.fn(async () => false),
     })} />)
     if (operation === 'remove') {
-      await user.click(screen.getByRole('button', { name: /remove fast/i }))
+      await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
       await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
     } else if (operation === 'clear') {
       await user.click(screen.getByRole('button', { name: /clear history/i }))
@@ -446,18 +442,18 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const pending = deferred<{ ok: true }>()
     const props = baseProps({
-      modelStatuses: { balanced: { preset: 'balanced', state: 'bundled' }, fast: { preset: 'fast', state: operation === 'install' ? 'missing' : 'ready' } },
+      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: operation === 'install' ? 'missing' : 'ready' } },
       onInstallModel: vi.fn(() => pending.promise),
       onRemoveModel: vi.fn(() => pending.promise),
     })
     const rendered = render(<SettingsView {...props} />)
     if (operation === 'install') {
-      await user.click(await screen.findByRole('button', { name: /install fast/i }))
-      await user.click(screen.getByRole('checkbox', { name: /allow this fast model download/i }))
-      await user.click(screen.getByRole('button', { name: /download fast model/i }))
+      await user.click(await screen.findByRole('button', { name: /install multi-lingual/i }))
+      await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
+      await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
       rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'ready' } }} />)
     } else {
-      await user.click(screen.getByRole('button', { name: /remove fast/i }))
+      await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
       await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
       rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'missing' } }} />)
     }
@@ -494,14 +490,12 @@ describe('SettingsView', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Maximum recording time' }), '120')
     await user.click(screen.getByRole('switch', { name: 'Sound cues' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Inference' }), 'wasm')
     await user.click(screen.getByRole('switch', { name: 'Whitespace formatting' }))
     await user.click(screen.getByRole('switch', { name: 'Start minimized' }))
     await user.click(screen.getByRole('switch', { name: 'Keep local history' }))
     expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
     expect(update).toHaveBeenCalledWith({ maxRecordingSeconds: 120 })
     expect(update).toHaveBeenCalledWith({ soundCues: false })
-    expect(update).toHaveBeenCalledWith({ inferencePreference: 'wasm' })
     expect(update).toHaveBeenCalledWith({ formatWhitespace: false })
     expect(update).toHaveBeenCalledWith({ startMinimized: true })
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
