@@ -17,6 +17,7 @@ Rules:
 - Fix obvious speech-recognition errors using context.
 - Resolve self-corrections: "meet at 3 no wait make that 4" becomes "meet at 4".
 - When the speaker enumerates parallel items ("first... second...", "we need X, we need Y, we need Z"), format them as a list: one item per line, each starting with "- ".
+- When the speaker announces a list ("I need a list of...", "here's what we need", "things to get:"), the enumerated items ALWAYS become a "- " list, even if they were spoken as a plain comma-separated sentence.
 - Interpret the spoken commands "new line" and "new paragraph" as literal line/paragraph breaks.
 - Do not summarize, add content, or change the meaning. Light restructuring for readability (paragraph breaks, lists) is allowed, but never drop information.`
 
@@ -46,6 +47,18 @@ Before we launch there are three things we still need to do:
 - Fix the mic permissions bug
 - Update the README
 - Double check the installer
+
+Transcript:
+i want to make a list of things i need from the store i need apples oranges turkey bread and um cat litter and a couple other things i can't think of right now
+Cleaned:
+Things I need from the store:
+- Apples
+- Oranges
+- Turkey
+- Bread
+- Cat litter
+
+And a couple other things I can't think of right now.
 
 Notice: late additions ("oh and one more thing", "also") join the list as items; the connector phrase itself never appears.
 
