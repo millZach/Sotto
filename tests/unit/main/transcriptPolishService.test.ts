@@ -153,6 +153,60 @@ describe('TranscriptPolishService', () => {
     })
   })
 
+  it('rejects an output that lost more than half the words of a long transcript', async () => {
+    const longInput = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ')
+    const { fetchFn, service } = createService({
+      fetchFn: async () => okResponse('Only a few words survived here.'),
+    })
+    await expect(service.polish(longInput)).resolves.toEqual({
+      text: longInput,
+      applied: false,
+    })
+    // The truncated primary output is rejected and the fallback still runs.
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts normal cleanup shrinkage on long transcripts', async () => {
+    const longInput = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ')
+    const polished = Array.from({ length: 24 }, (_, i) => `word${i}`).join(' ')
+    const { service } = createService({ fetchFn: async () => okResponse(polished) })
+    await expect(service.polish(longInput)).resolves.toEqual({
+      text: polished,
+      applied: true,
+    })
+  })
+
+  it('allows aggressive shrinkage on short transcripts', async () => {
+    const { service } = createService({ fetchFn: async () => okResponse('Meet at 4.') })
+    await expect(service.polish('meet at 3 no wait make that 4 instead okay')).resolves.toEqual({
+      text: 'Meet at 4.',
+      applied: true,
+    })
+  })
+
+  it('reports word-count diagnostics without transcript content', async () => {
+    const diagnostics: unknown[] = []
+    const longInput = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ')
+    const fetchFn = vi.fn(async () => okResponse('Only a few words survived here.'))
+    const service = new TranscriptPolishService({
+      getSettings: () => ENABLED,
+      fetchFn,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    })
+    await service.polish(longInput)
+    expect(diagnostics).toEqual([
+      {
+        at: expect.any(Number),
+        inputWords: 40,
+        outputWords: null,
+        applied: false,
+        rejectedShrink: true,
+      },
+    ])
+    const serialized = JSON.stringify(diagnostics)
+    expect(serialized).not.toContain('word0')
+  })
+
   it('returns the raw transcript when settings are unavailable', async () => {
     const service = new TranscriptPolishService({
       getSettings: () => Promise.reject(new Error('store gone')),

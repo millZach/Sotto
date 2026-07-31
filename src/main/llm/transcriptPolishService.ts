@@ -52,23 +52,54 @@ const MIN_FALLBACK_BUDGET_MS = 500
 /** A wildly longer or empty response is a misbehaving model, not a cleanup. */
 const MAX_GROWTH_FACTOR = 4
 
+/**
+ * Cleanup legitimately shrinks text (fillers, self-corrections), but a long
+ * transcript losing more than half its words is a truncating model, not a
+ * cleanup. Short inputs are exempt: one resolved correction can halve them.
+ */
+const MIN_WORDS_FOR_SHRINK_GUARD = 20
+const MAX_SHRINK_FACTOR = 0.5
+
+export interface PolishDiagnostic {
+  readonly at: number
+  readonly inputWords: number
+  /** Words in the applied output, or null when the raw transcript was returned. */
+  readonly outputWords: number | null
+  readonly applied: boolean
+  /** An attempt produced output rejected for excessive shrinkage. */
+  readonly rejectedShrink: boolean
+}
+
 export interface TranscriptPolishServiceDependencies {
   readonly getSettings: () => AppSettings | Promise<AppSettings>
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
+  /** Local observability for silent formatting failures; must never throw into polish. */
+  readonly onDiagnostic?: (diagnostic: PolishDiagnostic) => void
 }
 
 interface AttemptOutcome {
   readonly text: string | null
+  readonly rejectedShrink?: boolean
 }
 
 function countWords(text: string): number {
   return text.split(/\s+/u).filter((word) => word.length > 0).length
 }
 
-function acceptableOutput(input: string, output: string): boolean {
-  if (output.length === 0) return false
-  return output.length <= input.length * MAX_GROWTH_FACTOR + 200
+type OutputVerdict = 'ok' | 'rejected' | 'rejected-shrink'
+
+function assessOutput(input: string, output: string): OutputVerdict {
+  if (output.length === 0) return 'rejected'
+  if (output.length > input.length * MAX_GROWTH_FACTOR + 200) return 'rejected'
+  const inputWords = countWords(input)
+  if (
+    inputWords >= MIN_WORDS_FOR_SHRINK_GUARD &&
+    countWords(output) < inputWords * MAX_SHRINK_FACTOR
+  ) {
+    return 'rejected-shrink'
+  }
+  return 'ok'
 }
 
 function extractContent(payload: unknown): string | null {
@@ -104,11 +135,37 @@ export class TranscriptPolishService {
     const tier = QUALITY_TIERS[settings.llmQuality]
     const deadline = this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs)
     const primary = await this.attempt(settings, tier.primary, text, deadline)
-    if (primary.text !== null) return { text: primary.text, applied: true }
+    if (primary.text !== null) {
+      return this.report(text, { text: primary.text, applied: true }, primary)
+    }
 
-    if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) return raw
+    if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) return this.report(text, raw, primary)
     const fallback = await this.attempt(settings, tier.fallback, text, deadline)
-    return fallback.text === null ? raw : { text: fallback.text, applied: true }
+    return this.report(
+      text,
+      fallback.text === null ? raw : { text: fallback.text, applied: true },
+      primary,
+      fallback,
+    )
+  }
+
+  private report(
+    input: string,
+    result: TranscriptPolishResult,
+    ...attempts: readonly AttemptOutcome[]
+  ): TranscriptPolishResult {
+    try {
+      this.dependencies.onDiagnostic?.({
+        at: this.now(),
+        inputWords: countWords(input),
+        outputWords: result.applied ? countWords(result.text) : null,
+        applied: result.applied,
+        rejectedShrink: attempts.some((attempt) => attempt.rejectedShrink === true),
+      })
+    } catch {
+      // Observability must never affect the polish result.
+    }
+    return result
   }
 
   private async attempt(
@@ -147,7 +204,9 @@ export class TranscriptPolishService {
       })
       if (!response.ok) return { text: null }
       const content = extractContent(await response.json())
-      if (content === null || !acceptableOutput(text, content)) return { text: null }
+      if (content === null) return { text: null }
+      const verdict = assessOutput(text, content)
+      if (verdict !== 'ok') return { text: null, rejectedShrink: verdict === 'rejected-shrink' }
       return { text: content }
     } catch {
       return { text: null }

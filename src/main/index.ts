@@ -17,6 +17,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
+import { appendFile, rename, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
@@ -424,8 +425,21 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
 
   // Formatting-pass HTTP calls stay deterministic and offline in E2E runs.
+  // Word-count-only diagnostics (no transcript content) distinguish "raw text
+  // was already short" from "polish truncated it" when users report loss.
+  const polishDiagnosticsPath = join(app.getPath('userData'), 'polish-diagnostics.jsonl')
+  const appendPolishDiagnostic = (line: string): void => {
+    void (async () => {
+      const info = await stat(polishDiagnosticsPath).catch(() => null)
+      if (info !== null && info.size > 256 * 1024) {
+        await rename(polishDiagnosticsPath, `${polishDiagnosticsPath}.1`).catch(() => undefined)
+      }
+      await appendFile(polishDiagnosticsPath, line)
+    })().catch(() => undefined)
+  }
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.get(),
+    onDiagnostic: (diagnostic) => appendPolishDiagnostic(`${JSON.stringify(diagnostic)}\n`),
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
