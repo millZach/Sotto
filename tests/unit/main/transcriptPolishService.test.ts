@@ -192,7 +192,8 @@ describe('TranscriptPolishService', () => {
     const { fetchFn, service } = createService({
       now: () => clock,
       fetchFn: async () => {
-        clock += DEFAULT_SETTINGS.llmTimeoutMs
+        // Overrun the entire tier deadline (floor plus length budget).
+        clock += 20_000
         throw new Error('timed out')
       },
     })

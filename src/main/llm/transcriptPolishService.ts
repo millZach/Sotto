@@ -24,21 +24,28 @@ interface QualityTier {
   readonly minTimeoutMs: number
 }
 
+/**
+ * Deadline floors are deliberately generous: measured provider latency spikes
+ * (cold starts, evening congestion) exceeded the old 2.5-4.5 s floors even on
+ * short transcripts, and a discarded late response means unformatted output.
+ * A healthy model still returns in well under a second - the floor only costs
+ * time when the alternative was delivering raw text anyway.
+ */
 export const QUALITY_TIERS: Record<LlmQuality, QualityTier> = {
   low: {
     primary: { id: 'inception/mercury-2', reasoning: false },
     fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
-    minTimeoutMs: 2_500,
+    minTimeoutMs: 6_000,
   },
   medium: {
     primary: { id: 'amazon/nova-2-lite-v1', reasoning: false },
     fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
-    minTimeoutMs: 3_500,
+    minTimeoutMs: 7_000,
   },
   high: {
     primary: { id: 'anthropic/claude-haiku-4.5', reasoning: false },
     fallback: { id: 'amazon/nova-2-lite-v1', reasoning: false },
-    minTimeoutMs: 4_500,
+    minTimeoutMs: 8_000,
   },
 }
 
@@ -95,6 +102,8 @@ export interface PolishDiagnostic {
   readonly attempts?: readonly string[]
   /** Per-segment ASR word counts, when the renderer supplied them. */
   readonly asrSegmentWords?: readonly number[]
+  /** Per-segment audio RMS aligned with asrSegmentWords (silence vs lost speech). */
+  readonly asrSegmentRms?: readonly number[]
   /** Full recording duration in milliseconds, when the renderer supplied it. */
   readonly asrDurationMs?: number
 }
@@ -208,7 +217,11 @@ export class TranscriptPolishService {
         attempts: attempts.map((attempt) => attempt.reason),
         ...(asr === undefined
           ? {}
-          : { asrSegmentWords: asr.segmentWords, asrDurationMs: asr.durationMs }),
+          : {
+              asrSegmentWords: asr.segmentWords,
+              ...(asr.segmentRms === undefined ? {} : { asrSegmentRms: asr.segmentRms }),
+              asrDurationMs: asr.durationMs,
+            }),
       })
     } catch {
       // Observability must never affect the polish result.

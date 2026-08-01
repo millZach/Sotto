@@ -867,6 +867,7 @@ describe('pipeline prewarm', () => {
 
     expect(harness.polishTranscript).toHaveBeenCalledWith('um hello world', {
       segmentWords: [3],
+      segmentRms: [expect.any(Number)],
       durationMs: 500,
     })
     expect(harness.deliverOutput).toHaveBeenCalledWith(
@@ -888,6 +889,7 @@ describe('pipeline prewarm', () => {
 
     expect(harness.polishTranscript).toHaveBeenCalledWith('wait, no, groceries', {
       segmentWords: [10],
+      segmentRms: [expect.any(Number)],
       durationMs: 500,
     })
     expect(harness.deliverOutput).toHaveBeenCalledWith(

@@ -21,6 +21,7 @@ import {
   type AudioRecorderOptions,
   type AudioRecordingResult,
 } from '../../audio/audioRecorder'
+import { calculateRms } from '../../audio/audioMath'
 import type {
   LoadOptions,
   TranscribeOptions,
@@ -87,6 +88,13 @@ interface ActiveSession {
   errorCode?: WidgetErrorCode
   /** In-order transcription results for segments emitted while listening. */
   readonly segmentResults: Promise<TranscriptionResult>[]
+  /** Audio RMS of each emitted segment, aligned with segmentResults. */
+  readonly segmentRms: number[]
+}
+
+/** Diagnostics-only precision: three decimals distinguish silence from speech. */
+function roundRms(rms: number): number {
+  return Number.isFinite(rms) ? Math.round(rms * 1_000) / 1_000 : 0
 }
 
 const ERROR_MESSAGES = Object.freeze({
@@ -218,6 +226,7 @@ export class DictationController {
       progress: 0,
       acceptProgress: true,
       segmentResults: [],
+      segmentRms: [],
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
@@ -389,6 +398,7 @@ export class DictationController {
 
   private handleSegment(session: ActiveSession, segment: AudioRecordingResult): void {
     if (!this.isCurrent(session) || session.stopClaimed || segment.samples.length === 0) return
+    session.segmentRms.push(roundRms(calculateRms(segment.samples)))
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
       audio: segment.samples,
@@ -412,7 +422,9 @@ export class DictationController {
     }
 
     const pending = [...session.segmentResults]
+    const segmentRms = [...session.segmentRms]
     if (recording.samples.length > 0) {
+      segmentRms.push(roundRms(calculateRms(recording.samples)))
       pending.push(
         this.dependencies.transcriber.transcribe({
           sessionId: session.id,
@@ -463,6 +475,7 @@ export class DictationController {
       try {
         const polished = await this.dependencies.polishTranscript(rawText, {
           segmentWords,
+          segmentRms,
           durationMs: Number.isFinite(recording.durationMs)
             ? Math.max(0, Math.round(recording.durationMs))
             : 0,

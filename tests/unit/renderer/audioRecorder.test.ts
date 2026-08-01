@@ -299,6 +299,9 @@ describe('AudioRecorder', () => {
     const harness = createHarness({ mediaDevices: { getUserMedia } })
     const recorder = harness.recorder()
     const starting = recorder.start()
+    // The audio graph now builds before the microphone opens; wait until the
+    // permission request is actually in flight.
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce())
 
     await recorder.cancel()
     const repeatedStart = recorder.start()
@@ -320,9 +323,11 @@ describe('AudioRecorder', () => {
 
   it('does not let a later stop replace cancel semantics during initialization', async () => {
     const media = deferred<MediaStreamAdapter>()
-    const harness = createHarness({ mediaDevices: { getUserMedia: () => media.promise } })
+    const getUserMedia = vi.fn(() => media.promise)
+    const harness = createHarness({ mediaDevices: { getUserMedia } })
     const recorder = harness.recorder()
     const starting = recorder.start()
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce())
 
     await recorder.cancel()
     await expect(recorder.stop()).resolves.toBeNull()
@@ -336,11 +341,13 @@ describe('AudioRecorder', () => {
     'treats stop during getUserMedia as clean cancellation after late %s',
     async (outcome) => {
       const media = deferred<MediaStreamAdapter>()
-      const harness = createHarness({ mediaDevices: { getUserMedia: () => media.promise } })
+      const getUserMedia = vi.fn(() => media.promise)
+      const harness = createHarness({ mediaDevices: { getUserMedia } })
       const onDurationLimit = vi.fn()
       const onLevel = vi.fn()
       const recorder = harness.recorder({ maxRecordingSeconds: 1, onDurationLimit, onLevel })
       const starting = recorder.start()
+      await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce())
 
       await expect(recorder.stop()).resolves.toBeNull()
       if (outcome === 'resolve') media.resolve(harness.stream)
@@ -350,7 +357,9 @@ describe('AudioRecorder', () => {
       expect(recorder.getLastResult()).toBeNull()
       expect(recorder.getLastError()).toBeNull()
       expect(harness.track.stop).toHaveBeenCalledTimes(outcome === 'resolve' ? 1 : 0)
-      expect(harness.dependencies.createAudioContext).not.toHaveBeenCalled()
+      // The pre-built audio graph is torn down with the cancelled session.
+      expect(harness.context.close).toHaveBeenCalledOnce()
+      expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
       expect(harness.dependencies.setTimer).not.toHaveBeenCalled()
       expect(onDurationLimit).not.toHaveBeenCalled()
       expect(onLevel).not.toHaveBeenCalled()
@@ -374,7 +383,10 @@ describe('AudioRecorder', () => {
 
       expect(recorder.getLastResult()).toBeNull()
       expect(recorder.getLastError()).toBeNull()
-      expect(harness.track.stop).toHaveBeenCalledOnce()
+      // Worklet loading now precedes the permission request: the microphone
+      // was never opened, so there is no track to stop.
+      expect(harness.getUserMedia).not.toHaveBeenCalled()
+      expect(harness.track.stop).not.toHaveBeenCalled()
       expect(harness.context.close).toHaveBeenCalledOnce()
       expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
       expect(harness.dependencies.createAudioWorkletNode).not.toHaveBeenCalled()
@@ -512,8 +524,11 @@ describe('AudioRecorder', () => {
         new AudioRecorderError('START_FAILED', 'Unable to start microphone capture.'),
       )
 
-      expect(harness.track.stop).toHaveBeenCalledTimes(failurePoint === 'media' ? 0 : 1)
-      expect(harness.context.close).toHaveBeenCalledTimes(failurePoint === 'media' ? 0 : 1)
+      // The graph is built before the microphone opens, so the context always
+      // needs rollback, and only the post-stream connect failure leaves a
+      // live track to stop.
+      expect(harness.track.stop).toHaveBeenCalledTimes(failurePoint === 'connect' ? 1 : 0)
+      expect(harness.context.close).toHaveBeenCalledOnce()
     },
   )
 

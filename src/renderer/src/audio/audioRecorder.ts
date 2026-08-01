@@ -217,6 +217,24 @@ export class AudioRecorder {
     this.lastError = null
 
     try {
+      // The audio graph is built BEFORE the microphone opens: every await
+      // after the stream goes live discards real speech (worklet compilation
+      // alone can cost seconds on a cold start, silently dropping the
+      // speaker's first words). None of this setup needs the stream.
+      session.context = this.dependencies.createAudioContext()
+      await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
+      this.assertSessionLive(session)
+
+      session.worklet = this.dependencies.createAudioWorkletNode(
+        session.context,
+        AUDIO_CAPTURE_PROCESSOR_NAME,
+      )
+      session.gain = session.context.createGain()
+      session.gain.gain.value = 0
+      session.worklet.connect(session.gain)
+      session.gain.connect(session.context.destination)
+      session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
+
       const selected = this.options.selectedDeviceId
       session.stream = await this.dependencies.mediaDevices.getUserMedia({
         audio: {
@@ -230,21 +248,10 @@ export class AudioRecorder {
       this.assertSessionLive(session)
       this.monitorTrackEnd(session)
 
-      session.context = this.dependencies.createAudioContext()
-      await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
-      this.assertSessionLive(session)
-
+      // Synchronous connects only from here: capture is live the moment the
+      // microphone is.
       session.source = session.context.createMediaStreamSource(session.stream)
-      session.worklet = this.dependencies.createAudioWorkletNode(
-        session.context,
-        AUDIO_CAPTURE_PROCESSOR_NAME,
-      )
-      session.gain = session.context.createGain()
-      session.gain.gain.value = 0
       session.source.connect(session.worklet)
-      session.worklet.connect(session.gain)
-      session.gain.connect(session.context.destination)
-      session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
 
       if (this.options.maxRecordingSeconds !== undefined) {
         session.timer = this.dependencies.setTimer(() => {

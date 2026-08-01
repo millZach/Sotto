@@ -211,6 +211,12 @@ export const transcriptPolishAsrContextSchema = z
   .object({
     /** Word count of each streaming ASR segment, in emit order. */
     segmentWords: z.array(z.number().int().min(0).max(100_000)).max(500),
+    /**
+     * Audio RMS of each segment, aligned with segmentWords. Discriminates a
+     * silent microphone (low RMS, empty text is correct) from ASR losing real
+     * speech (speech-level RMS, empty text is a transcription failure).
+     */
+    segmentRms: z.array(z.number().finite().min(0).max(10)).max(500).optional(),
     /** Full recording duration in milliseconds. */
     durationMs: z.number().finite().min(0),
   })
