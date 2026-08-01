@@ -493,18 +493,25 @@ async function captureFullSurface(
   }
 }
 
-async function captureWidget(page: Page, fileName: string, metadata: CaptureHint = {}): Promise<void> {
+async function captureWidget(
+  page: Page,
+  fileName: string,
+  metadata: CaptureHint = {},
+  // The resting idle widget renders in its own smaller native footprint; all
+  // other states use the active 248x88 window.
+  footprint: { readonly width: number; readonly height: number } = { width: 248, height: 88 },
+): Promise<void> {
   await waitForStableFrame(page)
   const logicalViewport = await page.evaluate<readonly [number, number]>('[innerWidth, innerHeight]')
-  expect(logicalViewport[0]).toBeGreaterThanOrEqual(248)
-  expect(logicalViewport[0]).toBeLessThanOrEqual(252)
-  expect(logicalViewport[1]).toBeGreaterThanOrEqual(88)
-  expect(logicalViewport[1]).toBeLessThanOrEqual(92)
+  expect(logicalViewport[0]).toBeGreaterThanOrEqual(footprint.width)
+  expect(logicalViewport[0]).toBeLessThanOrEqual(footprint.width + 4)
+  expect(logicalViewport[1]).toBeGreaterThanOrEqual(footprint.height)
+  expect(logicalViewport[1]).toBeLessThanOrEqual(footprint.height + 4)
   const widgetProblems = await page.evaluate<string[]>(`(() => {
     const problems = []
     for (const element of document.querySelectorAll('.widget-capsule, .widget-capsule *, .widget-sliver')) {
       const bounds = element.getBoundingClientRect()
-      if (bounds.left < 0 || bounds.top < 0 || bounds.right > 248 || bounds.bottom > 88) problems.push(element.className || element.tagName)
+      if (bounds.left < 0 || bounds.top < 0 || bounds.right > ${footprint.width} || bounds.bottom > ${footprint.height}) problems.push(element.className || element.tagName)
     }
     const detail = document.querySelector('.widget-copy')
     if (detail !== null && (detail.scrollWidth > detail.clientWidth || detail.scrollHeight > detail.clientHeight)) problems.push('widget-detail-clipped:' + detail.textContent + ':' + detail.scrollWidth + 'x' + detail.scrollHeight + '>' + detail.clientWidth + 'x' + detail.clientHeight)
@@ -517,8 +524,8 @@ async function captureWidget(page: Page, fileName: string, metadata: CaptureHint
     () => waitForStableFrame(page),
   )
   const dimensions = await sharp(image).metadata()
-  expect(dimensions.width).toBeGreaterThanOrEqual(248)
-  expect(dimensions.height).toBeGreaterThanOrEqual(88)
+  expect(dimensions.width).toBeGreaterThanOrEqual(footprint.width)
+  expect(dimensions.height).toBeGreaterThanOrEqual(footprint.height)
   const rgba = await sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const alphaAt = (x: number, y: number): number => rgba.data[(y * rgba.info.width + x) * 4 + 3] ?? 255
   for (let x = 0; x < rgba.info.width; x += 1) {
@@ -729,7 +736,12 @@ test.describe('authoritative design-review captures', () => {
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
         await expect(widget.locator('.widget-sliver')).toBeVisible()
-        await captureWidget(widget, `widget-idle-${theme}.png`, { category: 'widget', state: 'idle-sliver', theme, reducedMotion: true })
+        await captureWidget(
+          widget,
+          `widget-idle-${theme}.png`,
+          { category: 'widget', state: 'idle-sliver', theme, reducedMotion: true },
+          { width: 124, height: 54 },
+        )
       })
 
       await withSotto(theme, { onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {

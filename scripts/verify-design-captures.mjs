@@ -79,7 +79,10 @@ for (const entry of manifest.entries) {
 
   if (entry.category === 'widget' || entry.state === 'widget-listening') {
     if (entry.source === 'widget-baseline' && (decoded.info.width !== 248 || decoded.info.height !== 88)) throw new Error(`Widget geometry mismatch: ${entry.id}`)
-    if (entry.source === 'app-review' && (decoded.info.width < 248 || decoded.info.height < 88)) throw new Error(`Live widget raster is smaller than its 248x88 logical window: ${entry.id}`)
+    // The resting idle widget has its own smaller native footprint (124x54);
+    // every other live widget state renders in the 248x88 active window.
+    const minimum = entry.state === 'idle-sliver' ? { width: 124, height: 54 } : { width: 248, height: 88 }
+    if (entry.source === 'app-review' && (decoded.info.width < minimum.width || decoded.info.height < minimum.height)) throw new Error(`Live widget raster is smaller than its ${minimum.width}x${minimum.height} logical window: ${entry.id}`)
     const alphaAt = (x, y) => decoded.data[(y * decoded.info.width + x) * 4 + 3] ?? 255
     for (let x = 0; x < decoded.info.width; x += 1) {
       if (alphaAt(x, 0) !== 0 || alphaAt(x, decoded.info.height - 1) !== 0) throw new Error(`Widget edge is not transparent: ${entry.id}`)

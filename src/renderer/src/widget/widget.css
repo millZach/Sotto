@@ -1,8 +1,9 @@
 @import '../styles/tokens.css';
 @import '../styles/fonts.css';
 
-/* Widget-local presentation tokens: a light contrast rim plus a soft shadow
-   separate the floating pill from any desktop background in both themes. */
+/* Widget-local presentation tokens. The orb's blues are deliberately fixed
+   across themes (it is a committed visual object over the desktop); only the
+   readout panel and shadows adapt to theme. */
 :root,
 :root[data-theme='light'] {
   --widget-surface-top: var(--tt-surface-elevated);
@@ -11,6 +12,9 @@
   --widget-edge: rgb(38 34 32 / 22%);
   --widget-shadow: 0 4px 11px rgb(38 34 32 / 28%);
   --widget-shadow-soft: 0 2px 6px rgb(38 34 32 / 24%);
+  --orb-fill: rgb(24 40 88 / 42%);
+  --orb-rim: rgb(160 200 255 / 50%);
+  --orb-icon: rgb(240 247 255 / 90%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +25,9 @@
     --widget-edge: rgb(0 0 0 / 55%);
     --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
     --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
+    --orb-fill: rgb(18 30 66 / 46%);
+    --orb-rim: rgb(150 190 255 / 40%);
+    --orb-icon: rgb(240 247 255 / 88%);
   }
 }
 
@@ -31,6 +38,9 @@
   --widget-edge: rgb(0 0 0 / 55%);
   --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
   --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
+  --orb-fill: rgb(18 30 66 / 46%);
+  --orb-rim: rgb(150 190 255 / 40%);
+  --orb-icon: rgb(240 247 255 / 88%);
 }
 
 *,
@@ -87,19 +97,218 @@ button {
   justify-content: center;
 }
 
-/* ---- resting sliver ---- */
+/* ---- the orb ---- */
 
-/* Both the idle sliver and the active capsule are pointer-driven click and
-   drag targets; a movement threshold in the renderer decides which. OS-level
+/* Aurora x Frost: a translucent blue sphere over the desktop. The aurora core
+   sleeps while idle; recording wakes it into a slow swirl whose brightness and
+   outer halo track the live voice level (--widget-level). */
+.widget-orb {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 60px;
+  height: 60px;
+}
+
+.widget-orb[data-size='mini'] {
+  width: 30px;
+  height: 30px;
+}
+
+.widget-orb__sphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid var(--orb-rim);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 26%, rgb(255 255 255 / 30%), rgb(255 255 255 / 3%) 46%),
+    radial-gradient(circle at 50% 118%, rgb(76 141 255 / 42%), rgb(34 63 168 / 20%) 62%),
+    var(--orb-fill);
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 35%),
+    var(--widget-shadow-soft);
+}
+
+.widget-orb__core {
+  position: absolute;
+  inset: 14%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #2242a8,
+    #4c8dff,
+    #7fd0ff,
+    #35e0c8,
+    #4c8dff,
+    #2242a8
+  );
+  filter: blur(9px);
+  opacity: 0.32;
+  transition: opacity 0.4s ease;
+}
+
+.widget-orb[data-size='mini'] .widget-orb__core {
+  filter: blur(5px);
+}
+
+.widget-orb__halo {
+  /* The halo must stay inside the native footprint: the active canvas leaves
+     the 60px orb 14px of headroom, so the glow box stops 2px short of it. */
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(96 168 255 / 55%) 0%, transparent 58%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.widget-orb[data-size='mini'] .widget-orb__halo {
+  inset: -8px;
+}
+
+.widget-orb__icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--orb-icon);
+  filter: drop-shadow(0 1px 2px rgb(10 20 50 / 55%));
+  transition: color 0.3s ease, filter 0.3s ease;
+}
+
+.widget-orb__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.widget-orb[data-size='mini'] .widget-orb__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* recording: the core wakes and both core and halo follow the voice */
+.widget-shell[data-status='listening'] .widget-orb__core {
+  opacity: calc(0.55 + var(--widget-level, 0) * 0.45);
+  animation: widget-core-spin 6s linear infinite;
+}
+
+.widget-shell[data-status='listening'] .widget-orb__halo {
+  opacity: calc(0.35 + var(--widget-level, 0) * 0.65);
+}
+
+.widget-shell[data-status='listening'] .widget-orb__sphere {
+  animation: widget-orb-breathe 2.4s ease-in-out infinite;
+}
+
+.widget-shell[data-status='listening'] .widget-orb__icon {
+  color: #eef8ff;
+  filter:
+    drop-shadow(0 0 6px rgb(127 208 255 / 90%))
+    drop-shadow(0 0 16px rgb(76 141 255 / 70%));
+}
+
+/* thinking: the core spins fast and the mic dims */
+.widget-shell[data-status='processing'] .widget-orb__core {
+  opacity: 0.55;
+  animation: widget-core-spin 1.3s linear infinite;
+}
+
+/* resolved states recolor the core */
+.widget-shell[data-tone='success'] .widget-orb__core {
+  background: radial-gradient(circle, #3bd598 0%, #1d7f5c 70%);
+  opacity: 0.55;
+  animation: none;
+}
+
+.widget-shell[data-tone='success'] .widget-orb__icon {
+  color: #d9ffe9;
+  filter: drop-shadow(0 0 8px rgb(59 213 152 / 70%));
+}
+
+.widget-shell[data-tone='cancelled'] .widget-orb__core {
+  opacity: 0.18;
+}
+
+.widget-shell[data-tone='error'] .widget-orb__sphere,
+.widget-shell[data-tone='permission'] .widget-orb__sphere {
+  border-color: rgb(255 122 107 / 70%);
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 35%),
+    0 0 0 3px rgb(255 122 107 / 25%),
+    var(--widget-shadow-soft);
+}
+
+.widget-shell[data-tone='error'] .widget-orb__icon,
+.widget-shell[data-tone='permission'] .widget-orb__icon {
+  color: #ffb0a5;
+  filter: drop-shadow(0 0 8px rgb(255 122 107 / 60%));
+}
+
+@keyframes widget-core-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes widget-orb-breathe {
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+/* ---- resting orb ---- */
+
+/* Both the idle orb and the active row are pointer-driven click and drag
+   targets; a movement threshold in the renderer decides which. OS-level
    app-region dragging is deliberately not used because it swallows clicks. */
 .widget-sliver {
   touch-action: none;
   position: relative;
   display: flex;
-  width: 88px;
-  height: 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 0.78;
+  cursor: pointer;
+  transition: opacity 0.18s ease;
+}
+
+.widget-sliver:hover {
+  opacity: 1;
+}
+
+.widget-sliver[data-expanded],
+.widget-shell[data-dragging='true'] .widget-sliver {
+  opacity: 1;
+}
+
+.widget-shell[data-orientation='vertical'] .widget-sliver {
+  flex-direction: column;
+}
+
+/* The hover prompt is a small readout chip beside the orb inside the larger
+   idle-hovered native footprint. */
+.widget-sliver__prompt {
+  display: flex;
+  max-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, max-width 0.18s ease, padding 0.18s ease;
+}
+
+.widget-sliver[data-expanded] .widget-sliver__prompt,
+.widget-shell[data-dragging='true'] .widget-sliver__prompt {
+  max-width: 190px;
+  padding: 5px 11px;
   border: 1px solid var(--widget-edge);
-  border-radius: 3px;
   background: linear-gradient(
     180deg,
     var(--widget-surface-top),
@@ -108,81 +317,23 @@ button {
   box-shadow:
     0 0 0 1px var(--widget-rim),
     var(--widget-shadow-soft);
-  opacity: 0.72;
-  cursor: pointer;
-  transition:
-    width 0.18s ease,
-    height 0.18s ease,
-    border-radius 0.18s ease,
-    opacity 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.widget-sliver:hover {
-  opacity: 1;
-  box-shadow:
-    0 0 0 1px var(--widget-rim),
-    var(--widget-shadow-soft),
-    0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
-}
-
-/* Hovering or dragging expands the sliver into the 212x28 pill while the
-   native idle-hovered footprint supplies only its shadow envelope. */
-.widget-sliver[data-expanded],
-.widget-shell[data-dragging='true'] .widget-sliver {
-  width: 212px;
-  height: 28px;
-  border-radius: 14px;
-  opacity: 1;
-}
-
-/* Vertically the resting sliver is a 6x88 bar; hovering or dragging grows it
-   into the unchanged 76x88 pill inside its presentation-sized shadow root. */
-.widget-shell[data-orientation='vertical'] .widget-sliver {
-  width: 6px;
-  height: 88px;
-  background: linear-gradient(
-    90deg,
-    var(--widget-surface-top),
-    var(--widget-surface-bottom)
-  );
-}
-
-.widget-shell[data-orientation='vertical'] .widget-sliver[data-expanded],
-.widget-shell[data-orientation='vertical'][data-dragging='true'] .widget-sliver {
-  width: 76px;
-  height: 88px;
-  border-radius: 12px;
-}
-
-.widget-sliver__prompt {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  overflow: hidden;
-  font-size: 11px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-
-.widget-sliver[data-expanded] .widget-sliver__prompt,
-.widget-shell[data-dragging='true'] .widget-sliver__prompt {
   opacity: 1;
 }
 
 .widget-shell[data-orientation='vertical'] .widget-sliver__prompt {
   flex-direction: column;
   gap: 3px;
-  padding: 6px;
+  max-width: none;
+  max-height: 0;
   font-size: 10px;
   text-align: center;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  transition: opacity 0.15s ease, max-height 0.18s ease, padding 0.18s ease;
+}
+
+.widget-shell[data-orientation='vertical'] .widget-sliver[data-expanded] .widget-sliver__prompt,
+.widget-shell[data-orientation='vertical'][data-dragging='true'] .widget-sliver__prompt {
+  max-height: 80px;
+  padding: 6px 8px;
 }
 
 .widget-sliver__prompt-action {
@@ -194,40 +345,23 @@ button {
   color: var(--tt-text-muted);
 }
 
-/* ---- active capsule ---- */
+/* ---- active orb row ---- */
 
 .widget-capsule {
   position: relative;
   display: flex;
-  width: 212px;
-  height: 40px;
   align-items: center;
-  gap: 8px;
-  padding: 0 13px;
-  border: 1px solid var(--widget-edge);
-  border-radius: 20px;
-  background: linear-gradient(
-    180deg,
-    var(--widget-surface-top) 0%,
-    var(--widget-surface-bottom) 100%
-  );
-  box-shadow:
-    0 0 0 1px var(--widget-rim),
-    var(--widget-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 20%);
-  overflow: hidden;
+  justify-content: center;
+  gap: 10px;
   cursor: pointer;
   touch-action: none;
   animation: widget-pop 0.2s cubic-bezier(0.25, 1, 0.4, 1);
 }
 
-/* Vertical canvas: the capsule turns into a 40x212 column and its contents
-   stack top to bottom. */
+/* Vertical canvas: the orb sits above its readout chip. */
 .widget-shell[data-orientation='vertical'] .widget-capsule {
-  width: 40px;
-  height: 212px;
   flex-direction: column;
-  padding: 10px 0;
+  gap: 8px;
 }
 
 .widget-shell[data-dragging='true'] .widget-sliver,
@@ -242,63 +376,43 @@ button {
   }
 }
 
-.widget-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--tt-primary);
-  animation: widget-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes widget-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tt-primary) 45%, transparent);
-  }
-  55% {
-    box-shadow: 0 0 0 6px transparent;
-  }
-}
-
-.widget-levels {
+/* The readout chip carries the timer, status copy, progress, and actions on a
+   readable translucent surface beside the orb. */
+/* The row (12px halo margin + 60px orb + 10px gap + panel) must center inside
+   the 248px active canvas with the halo box fully inside: panel <= 154px. */
+.widget-panel {
+  position: relative;
   display: flex;
-  flex: 1;
-  height: 100%;
   min-width: 0;
+  max-width: 154px;
   align-items: center;
-  justify-content: center;
-  gap: 2.5px;
-}
-
-/* Vertically the visualizer rotates 90 degrees. The pre-rotation box is
-   80x38; the margins swap its layout footprint to 38x80 so the rotated bars
-   occupy the right amount of the column without overlapping neighbours. */
-.widget-shell[data-orientation='vertical'] .widget-levels {
-  flex: none;
-  width: 80px;
-  height: 38px;
-  margin: 21px -21px;
-  transform: rotate(90deg);
-}
-
-.widget-levels__bar {
-  width: 2.5px;
-  flex: none;
-  border-radius: 2px;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--widget-edge);
+  border-radius: 14px;
   background: linear-gradient(
     180deg,
-    var(--tt-primary),
-    color-mix(in srgb, var(--tt-primary) 55%, var(--widget-surface-bottom))
+    var(--widget-surface-top),
+    var(--widget-surface-bottom)
   );
-  transition: height 90ms ease-out;
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft);
+}
+
+.widget-shell[data-orientation='vertical'] .widget-panel {
+  max-width: 72px;
+  max-height: 150px;
+  flex-direction: column;
+  padding: 10px 6px;
 }
 
 .widget-time {
   flex: none;
-  color: var(--tt-text-muted);
-  font-size: 10.5px;
+  color: var(--tt-text);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 /* The vertical timer reads top-to-bottom like a vertical toolbar. */
@@ -306,49 +420,14 @@ button {
   writing-mode: vertical-rl;
 }
 
-.widget-spinner {
-  width: 12px;
-  height: 12px;
-  flex: none;
-  border: 2px solid color-mix(in srgb, var(--tt-primary) 22%, transparent);
-  border-top-color: var(--tt-primary);
-  border-radius: 50%;
-  animation: widget-orbit 0.9s linear infinite;
-}
-
-@keyframes widget-orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.widget-state-icon {
-  display: inline-flex;
-  flex: none;
-  color: var(--tt-text-muted);
-}
-
-.widget-state-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.widget-shell[data-tone='success'] .widget-state-icon {
-  color: var(--tt-primary);
-}
-
-.widget-shell[data-tone='error'] .widget-state-icon {
-  color: var(--tt-error);
-}
-
+/* Status copy wraps instead of truncating: the chip is narrow beside the orb
+   but has vertical room, and every title fits within two lines. */
 .widget-copy {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   color: var(--tt-text);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .widget-shell[data-orientation='vertical'] .widget-copy {
@@ -367,9 +446,9 @@ button {
 
 .widget-progress {
   position: absolute;
-  right: 15px;
-  bottom: 5px;
-  left: 15px;
+  right: 11px;
+  bottom: 3px;
+  left: 11px;
   display: block;
   height: 2px;
   overflow: hidden;
@@ -390,12 +469,12 @@ button {
   transition: width 0.2s ease, height 0.2s ease;
 }
 
-/* The vertical capsule carries its progress as a thin strip along the side,
+/* The vertical panel carries its progress as a thin strip along the side,
    filling top to bottom. */
 .widget-shell[data-orientation='vertical'] .widget-progress {
-  top: 15px;
-  right: 4px;
-  bottom: 15px;
+  top: 11px;
+  right: 2px;
+  bottom: 11px;
   left: auto;
   width: 2px;
   height: auto;
@@ -462,17 +541,21 @@ button {
     animation: none;
   }
 
-  .widget-dot {
+  .widget-orb__sphere,
+  .widget-orb__core {
     animation: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-primary) 25%, transparent);
   }
 
-  .widget-spinner {
-    animation: none;
-    border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+  .widget-shell[data-status='listening'] .widget-orb__core {
+    opacity: 0.78;
   }
 
-  .widget-levels__bar,
+  .widget-shell[data-status='listening'] .widget-orb__halo {
+    opacity: 0.6;
+  }
+
+  .widget-orb__core,
+  .widget-orb__halo,
   .widget-progress > span,
   .widget-sliver,
   .widget-sliver__prompt {
@@ -484,17 +567,21 @@ button {
   animation: none;
 }
 
-:root[data-reduced-motion='on'] .widget-dot {
+:root[data-reduced-motion='on'] .widget-orb__sphere,
+:root[data-reduced-motion='on'] .widget-orb__core {
   animation: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-primary) 25%, transparent);
 }
 
-:root[data-reduced-motion='on'] .widget-spinner {
-  animation: none;
-  border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+:root[data-reduced-motion='on'] .widget-shell[data-status='listening'] .widget-orb__core {
+  opacity: 0.78;
 }
 
-:root[data-reduced-motion='on'] .widget-levels__bar,
+:root[data-reduced-motion='on'] .widget-shell[data-status='listening'] .widget-orb__halo {
+  opacity: 0.6;
+}
+
+:root[data-reduced-motion='on'] .widget-orb__core,
+:root[data-reduced-motion='on'] .widget-orb__halo,
 :root[data-reduced-motion='on'] .widget-progress > span,
 :root[data-reduced-motion='on'] .widget-sliver,
 :root[data-reduced-motion='on'] .widget-sliver__prompt {

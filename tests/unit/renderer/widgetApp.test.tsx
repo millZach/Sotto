@@ -77,7 +77,6 @@ describe('WidgetApp', () => {
       />,
     )
     expect(screen.getByText('00:12')).toBeVisible()
-    expect(screen.getAllByTestId('level-bar')).toHaveLength(12)
     expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '65')
 
     rerender(
@@ -237,23 +236,25 @@ describe('WidgetApp', () => {
     expect(formatElapsedTime(0, 6_600_000)).toBe('99:59')
   })
 
-  it('derives all twelve listening bars from the one bounded scalar level', () => {
+  it('drives the orb glow from the one bounded scalar level', () => {
     const { rerender } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 })}
         now={0}
       />,
     )
-    const quiet = screen.getAllByTestId('level-bar').map((bar) => bar.getAttribute('style'))
+    const orb = screen.getByTestId('widget-orb')
+    expect(orb.getAttribute('style')).toContain('--widget-level: 0')
+    expect(orb).toHaveAttribute('aria-valuenow', '0')
     rerender(
       <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 1 })}
+        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 2 })}
         now={0}
       />,
     )
-    const loud = screen.getAllByTestId('level-bar').map((bar) => bar.getAttribute('style'))
-    expect(new Set(quiet).size).toBeGreaterThan(2)
-    expect(quiet).not.toEqual(loud)
+    // Levels are clamped into [0, 1] before they reach the style layer.
+    expect(orb.getAttribute('style')).toContain('--widget-level: 1')
+    expect(orb).toHaveAttribute('aria-valuenow', '100')
   })
 
   it('keeps visible copy readable but non-live', () => {
@@ -1068,8 +1069,9 @@ describe('visual preview parser', () => {
     expect(css).toMatch(/html,\s*\nbody,\s*\n#root[\s\S]*background: transparent/)
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).toContain(":root[data-reduced-motion='on']")
-    expect(css).toContain('@keyframes widget-orbit')
-    expect(css).not.toMatch(/widget-levels[^}]*animation:/)
+    expect(css).toContain('@keyframes widget-core-spin')
+    // Reduced motion pins the listening orb to a static glow.
+    expect(css).toMatch(/prefers-reduced-motion[\s\S]*widget-orb__core \{\s*\n\s*animation: none;/)
     // The hover-expand affordance fully replaced the old floating tooltip.
     expect(`${source}\n${css}`).not.toContain('widget-sliver__hint')
     // Both orientations are styled off the shell orientation attribute.
