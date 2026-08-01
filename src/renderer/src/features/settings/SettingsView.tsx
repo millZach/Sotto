@@ -384,7 +384,7 @@ export function SettingsView({
         <div className="settings-fields-grid">
           <Field label="Theme" description="Follow Windows or force a complete light or dark theme."><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
           <Field label="Reduced motion" description="Follow Windows or minimize non-essential motion."><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
-          <Field label="Widget style" description="How the floating dictation widget looks on screen."><Select value={settings.widgetStyle} onChange={(event) => void save({ widgetStyle: event.currentTarget.value as WidgetStyle })}><option value="orb">Orb</option><option value="pill">Classic pill</option></Select></Field>
+          <Field label="Widget style" description="How the floating dictation widget looks on screen."><Select value={settings.widgetStyle} onChange={(event) => void save({ widgetStyle: event.currentTarget.value as WidgetStyle })}><option value="orb">Orb</option><option value="pill">Pill</option></Select></Field>
           <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
         </div>
       </Card>

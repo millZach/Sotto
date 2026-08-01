@@ -79,6 +79,7 @@ const settingKeys = [
   'successDisplayMs',
   'startMinimized',
   'showWidgetWhenIdle',
+  'widgetStyle',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',

@@ -1063,7 +1063,7 @@ describe('visual preview parser', () => {
     expect(isVisualPreviewEnabled({} as Window, '1')).toBe(false)
   })
 
-  it('shows a red recording beacon beside the timer while the orb is listening', () => {
+  it('shows a pulsing recording beacon beside the timer while the orb is listening', () => {
     render(
       <WidgetApp
         snapshot={snapshot({

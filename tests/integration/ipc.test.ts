@@ -987,13 +987,22 @@ describe('IPC validation and lifecycle', () => {
     })
     expect(settings.update).toHaveBeenCalledWith({ theme: 'dark', autoPaste: false })
 
+    // Every patchable settings field must survive the allow-list transform:
+    // a field missing from the IPC key list would be dropped silently and its
+    // Settings control would snap back on save.
+    const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete fullPatch['hotkey']
+    delete fullPatch['launchAtStartup']
+    await ipc.invoke(SETTINGS_UPDATE, fullPatch)
+    expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
+
     await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
       'Invalid IPC payload',
     )
     await expect(
       ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', injectedChannel: 'app:quit' }),
     ).rejects.toThrow('Invalid IPC payload')
-    expect(settings.update).toHaveBeenCalledTimes(1)
+    expect(settings.update).toHaveBeenCalledTimes(2)
   })
 
   it.each([

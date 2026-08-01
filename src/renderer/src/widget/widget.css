@@ -188,9 +188,9 @@ button {
   height: 14px;
 }
 
-/* recording: the core wakes and both core and halo follow the voice. A red
+/* recording: the core wakes and both core and halo follow the voice. A blue
    sonar ring ripples off the glass so recording is unmistakable even when the
-   room is quiet and the level sits near zero. */
+   room is quiet and the level sits near zero; red stays reserved for errors. */
 .widget-shell[data-status='listening'] .widget-orb__core {
   opacity: calc(0.62 + var(--widget-level, 0) * 0.38);
   animation: widget-core-spin 6s linear infinite;
@@ -201,7 +201,7 @@ button {
      1.16, peaking ~8px past the glass — inside the 14px canvas margin. */
   position: absolute;
   inset: -3px;
-  border: 2px solid rgb(255 96 84 / 85%);
+  border: 2px solid rgb(96 168 255 / 85%);
   border-radius: 50%;
   content: '';
   pointer-events: none;
@@ -290,14 +290,14 @@ button {
   height: 8px;
   flex: none;
   border-radius: 50%;
-  background: rgb(255 84 74);
+  background: rgb(76 141 255);
   animation: widget-rec-pulse 1.6s ease-in-out infinite;
 }
 
 @keyframes widget-rec-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(255 84 74 / 55%);
+    box-shadow: 0 0 0 0 rgb(76 141 255 / 55%);
   }
   55% {
     box-shadow: 0 0 0 6px transparent;
@@ -835,7 +835,7 @@ button {
     opacity: 0.6;
   }
 
-  /* The recording ring and beacon hold as a steady red glow. */
+  /* The recording ring and beacon hold as a steady blue glow. */
   .widget-shell[data-status='listening'] .widget-orb::after {
     animation: none;
     opacity: 0.8;
@@ -843,7 +843,7 @@ button {
 
   .widget-rec {
     animation: none;
-    box-shadow: 0 0 0 3px rgb(255 84 74 / 30%);
+    box-shadow: 0 0 0 3px rgb(76 141 255 / 30%);
   }
 
   .widget-dot {
@@ -890,7 +890,7 @@ button {
 
 :root[data-reduced-motion='on'] .widget-rec {
   animation: none;
-  box-shadow: 0 0 0 3px rgb(255 84 74 / 30%);
+  box-shadow: 0 0 0 3px rgb(76 141 255 / 30%);
 }
 
 :root[data-reduced-motion='on'] .widget-dot {
