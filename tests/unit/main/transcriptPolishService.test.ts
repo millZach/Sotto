@@ -128,6 +128,34 @@ describe('TranscriptPolishService', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 
+  it('reserves fallback budget so a hung primary cannot starve the fallback', async () => {
+    let clock = 0
+    const diagnostics: unknown[] = []
+    const fetchFn = vi.fn(async (): Promise<Response> => {
+      if (fetchFn.mock.calls.length === 1) {
+        // The primary consumes its entire reserved-slice budget and times out.
+        clock += DEFAULT_SETTINGS.llmTimeoutMs - 1_200
+        const timeout = new Error('The operation was aborted due to timeout')
+        timeout.name = 'TimeoutError'
+        throw timeout
+      }
+      clock += 400
+      return okResponse('Backup cleaned text.')
+    })
+    const service = new TranscriptPolishService({
+      getSettings: () => ENABLED,
+      fetchFn,
+      now: () => clock,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    })
+    await expect(service.polish('um hello there my good friend')).resolves.toEqual({
+      text: 'Backup cleaned text.',
+      applied: true,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(diagnostics[0]).toMatchObject({ applied: true, attempts: ['timeout', 'ok'] })
+  })
+
   it('returns the raw transcript when the deadline leaves no fallback budget', async () => {
     let clock = 0
     const { fetchFn, service } = createService({
@@ -215,6 +243,7 @@ describe('TranscriptPolishService', () => {
         outputWords: null,
         applied: false,
         rejectedShrink: true,
+        attempts: ['rejected-shrink', 'rejected-shrink'],
         asrSegmentWords: [25, 15],
         asrDurationMs: 42_000,
       },

@@ -50,6 +50,14 @@ export const QUALITY_TIERS: Record<LlmQuality, QualityTier> = {
  */
 const MIN_FALLBACK_BUDGET_MS = 500
 
+/**
+ * The primary attempt never gets the whole deadline: a cold-started or
+ * overloaded primary that eats the full budget would starve the (reliably
+ * fast) fallback and silently deliver the raw transcript. Every tier floor is
+ * at least 2.5 s, so the primary always keeps 1.3 s or more for itself.
+ */
+const FALLBACK_RESERVE_MS = 1_200
+
 /** A wildly longer or empty response is a misbehaving model, not a cleanup. */
 const MAX_GROWTH_FACTOR = 4
 
@@ -71,6 +79,8 @@ export interface PolishDiagnostic {
   readonly applied: boolean
   /** An attempt produced output rejected for excessive shrinkage. */
   readonly rejectedShrink: boolean
+  /** Per-attempt outcome (primary first): 'ok', 'timeout', 'http-<status>', … */
+  readonly attempts?: readonly string[]
   /** Per-segment ASR word counts, when the renderer supplied them. */
   readonly asrSegmentWords?: readonly number[]
   /** Full recording duration in milliseconds, when the renderer supplied it. */
@@ -87,6 +97,7 @@ export interface TranscriptPolishServiceDependencies {
 
 interface AttemptOutcome {
   readonly text: string | null
+  readonly reason: string
   readonly rejectedShrink?: boolean
 }
 
@@ -143,7 +154,12 @@ export class TranscriptPolishService {
 
     const tier = QUALITY_TIERS[settings.llmQuality]
     const deadline = this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs)
-    const primary = await this.attempt(settings, tier.primary, text, deadline)
+    const primary = await this.attempt(
+      settings,
+      tier.primary,
+      text,
+      deadline - FALLBACK_RESERVE_MS,
+    )
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }
@@ -175,6 +191,7 @@ export class TranscriptPolishService {
         outputWords: result.applied ? countWords(result.text) : null,
         applied: result.applied,
         rejectedShrink: attempts.some((attempt) => attempt.rejectedShrink === true),
+        attempts: attempts.map((attempt) => attempt.reason),
         ...(asr === undefined
           ? {}
           : { asrSegmentWords: asr.segmentWords, asrDurationMs: asr.durationMs }),
@@ -192,7 +209,7 @@ export class TranscriptPolishService {
     deadline: number,
   ): Promise<AttemptOutcome> {
     const budget = deadline - this.now()
-    if (budget <= 0) return { text: null }
+    if (budget <= 0) return { text: null, reason: 'skipped' }
 
     try {
       const response = await this.fetchFn(OPENROUTER_URL, {
@@ -219,14 +236,18 @@ export class TranscriptPolishService {
         }),
         signal: AbortSignal.timeout(budget),
       })
-      if (!response.ok) return { text: null }
+      if (!response.ok) return { text: null, reason: `http-${response.status}` }
       const content = extractContent(await response.json())
-      if (content === null) return { text: null }
+      if (content === null) return { text: null, reason: 'empty' }
       const verdict = assessOutput(text, content)
-      if (verdict !== 'ok') return { text: null, rejectedShrink: verdict === 'rejected-shrink' }
-      return { text: content }
-    } catch {
-      return { text: null }
+      if (verdict !== 'ok') {
+        return { text: null, reason: verdict, rejectedShrink: verdict === 'rejected-shrink' }
+      }
+      return { text: content, reason: 'ok' }
+    } catch (error) {
+      const timedOut = error instanceof Error &&
+        (error.name === 'TimeoutError' || error.name === 'AbortError')
+      return { text: null, reason: timedOut ? 'timeout' : 'network' }
     }
   }
 }
