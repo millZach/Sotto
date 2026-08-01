@@ -58,6 +58,18 @@ const MIN_FALLBACK_BUDGET_MS = 500
  */
 const FALLBACK_RESERVE_MS = 1_200
 
+/**
+ * Cleanup must regenerate the whole transcript, so generation time grows with
+ * its length and a fixed deadline silently abandons long dictations (measured:
+ * ~190 words needs 3-6 s primary, ~2 s fallback). Both the total deadline and
+ * the fallback's reserved slice scale with the word count; the waits stay
+ * proportionally small next to the recording itself.
+ */
+const PER_WORD_BUDGET_MS = 30
+const MAX_LENGTH_BUDGET_MS = 9_000
+const PER_WORD_RESERVE_MS = 15
+const MAX_FALLBACK_RESERVE_MS = 6_000
+
 /** A wildly longer or empty response is a misbehaving model, not a cleanup. */
 const MAX_GROWTH_FACTOR = 4
 
@@ -153,13 +165,15 @@ export class TranscriptPolishService {
     if (countWords(text) < settings.llmMinWords) return raw
 
     const tier = QUALITY_TIERS[settings.llmQuality]
-    const deadline = this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs)
-    const primary = await this.attempt(
-      settings,
-      tier.primary,
-      text,
-      deadline - FALLBACK_RESERVE_MS,
+    const words = countWords(text)
+    const lengthBudget = Math.min(MAX_LENGTH_BUDGET_MS, words * PER_WORD_BUDGET_MS)
+    const reserve = Math.min(
+      MAX_FALLBACK_RESERVE_MS,
+      FALLBACK_RESERVE_MS + words * PER_WORD_RESERVE_MS,
     )
+    const deadline =
+      this.now() + Math.max(settings.llmTimeoutMs, tier.minTimeoutMs) + lengthBudget
+    const primary = await this.attempt(settings, tier.primary, text, deadline - reserve)
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }

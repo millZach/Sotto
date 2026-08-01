@@ -156,6 +156,37 @@ describe('TranscriptPolishService', () => {
     expect(diagnostics[0]).toMatchObject({ applied: true, attempts: ['timeout', 'ok'] })
   })
 
+  it('scales the deadline with transcript length so long dictations still get cleaned', async () => {
+    // 190 words at ~30 ms/word: the measured 5-6 s primary latency on long
+    // transcripts must not exhaust the deadline before the fallback runs.
+    const longInput = Array.from({ length: 190 }, (_, i) => `word${i}`).join(' ')
+    const polished = Array.from({ length: 150 }, (_, i) => `word${i}`).join(' ')
+    let clock = 0
+    const diagnostics: unknown[] = []
+    const fetchFn = vi.fn(async (): Promise<Response> => {
+      if (fetchFn.mock.calls.length === 1) {
+        clock += 6_000
+        const timeout = new Error('aborted due to timeout')
+        timeout.name = 'TimeoutError'
+        throw timeout
+      }
+      clock += 2_000
+      return okResponse(polished)
+    })
+    const service = new TranscriptPolishService({
+      getSettings: () => ENABLED,
+      fetchFn,
+      now: () => clock,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    })
+    await expect(service.polish(longInput)).resolves.toEqual({
+      text: polished,
+      applied: true,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(diagnostics[0]).toMatchObject({ attempts: ['timeout', 'ok'] })
+  })
+
   it('returns the raw transcript when the deadline leaves no fallback budget', async () => {
     let clock = 0
     const { fetchFn, service } = createService({
