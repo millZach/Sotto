@@ -556,6 +556,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       status: 'idle',
       theme: current.theme,
       reducedMotion: current.reducedMotion,
+      widgetStyle: current.widgetStyle,
       shortcut: current.hotkey,
       cancellable: false,
     })

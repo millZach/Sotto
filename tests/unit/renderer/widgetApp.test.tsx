@@ -20,6 +20,7 @@ import {
 const metadata = {
   theme: 'dark',
   reducedMotion: 'system',
+  widgetStyle: 'orb',
   shortcut: 'Ctrl+Shift+Space',
   cancellable: false,
 } as const
@@ -1060,6 +1061,67 @@ describe('visual preview parser', () => {
     })
     expect(isVisualPreviewEnabled(configurable, '1')).toBe(false)
     expect(isVisualPreviewEnabled({} as Window, '1')).toBe(false)
+  })
+
+  it('shows a red recording beacon beside the timer while the orb is listening', () => {
+    render(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.3, cancellable: true,
+        })}
+        now={5_000}
+      />,
+    )
+    const beacon = screen.getByTestId('recording-dot')
+    expect(beacon).toHaveClass('widget-rec')
+    expect(screen.getByTestId('widget-orb')).toBeInTheDocument()
+  })
+
+  it('renders the classic pill style with its bar sliver, pulse dot, and visualizer', () => {
+    const { rerender, container } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle', widgetStyle: 'pill' })} now={5_000} />,
+    )
+    expect(container.querySelector('.widget-shell')).toHaveAttribute('data-widget-style', 'pill')
+    // The pill's resting sliver is a bare bar without the miniature orb.
+    expect(screen.queryByTestId('widget-orb')).not.toBeInTheDocument()
+    expect(screen.getByText('Click to dictate')).toBeInTheDocument()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.5,
+          widgetStyle: 'pill', cancellable: true,
+        })}
+        now={5_000}
+      />,
+    )
+    expect(screen.queryByTestId('widget-orb')).not.toBeInTheDocument()
+    expect(screen.getByTestId('recording-dot')).toHaveClass('widget-dot')
+    expect(screen.getAllByTestId('level-bar')).toHaveLength(12)
+    expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '50')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'processing', sessionId: 'processing', startedAt: 0, stage: 'transcribing',
+          progress: 0.4, widgetStyle: 'pill', cancellable: true,
+        })}
+        now={5_000}
+      />,
+    )
+    expect(screen.getByTestId('processing-orbit')).toHaveClass('widget-spinner')
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({
+          status: 'success', sessionId: 'success', output: 'pasted', widgetStyle: 'pill',
+        })}
+        now={5_000}
+      />,
+    )
+    expect(screen.getByText('Pasted')).toBeVisible()
+    expect(container.querySelector('.widget-state-icon')).toBeInTheDocument()
   })
 
   it('keeps widget source clean and the canvas transparent with complete motion overrides', () => {

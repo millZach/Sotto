@@ -69,6 +69,7 @@ export const dictationStateSchema = z.discriminatedUnion('status', [
 const widgetMetadataSchema = {
   theme: z.enum(['system', 'light', 'dark']),
   reducedMotion: z.enum(['system', 'on']),
+  widgetStyle: z.enum(['orb', 'pill']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
 } as const

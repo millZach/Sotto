@@ -32,6 +32,7 @@ import type {
 } from '../../../shared/dictation'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
 
+const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
 const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
@@ -269,6 +270,38 @@ function WidgetOrb({
   )
 }
 
+/** The classic pill's twelve-column voice visualizer. */
+function LevelBars({ level, active }: { readonly level: number; readonly active: boolean }): ReactNode {
+  const boundedLevel = safeLevel(level)
+  return (
+    <div
+      className="widget-levels"
+      role={active ? 'meter' : undefined}
+      aria-label={active ? 'Microphone level' : undefined}
+      aria-valuemin={active ? 0 : undefined}
+      aria-valuemax={active ? 100 : undefined}
+      aria-valuenow={active ? Math.round(boundedLevel * 100) : undefined}
+      aria-live="off"
+      aria-hidden={active ? undefined : true}
+      data-active={active}
+    >
+      {BAR_SHAPE.map((shape, index) => {
+        const height = Math.round(7 + shape * (7 + boundedLevel * 24))
+        return (
+          <span
+            // The stable index represents one fixed visualizer column.
+            key={index}
+            className="widget-levels__bar"
+            data-testid="level-bar"
+            aria-hidden="true"
+            style={{ height: `${height}px` }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 function WidgetAction({
   children,
   label,
@@ -373,6 +406,8 @@ export function WidgetApp({
     onPresentationChange?.(presentation)
   }, [onPresentationChange, presentation, visibilityGeneration])
 
+  const widgetStyle = snapshot.widgetStyle
+
   if (snapshot.status === 'idle') {
     return (
       <aside
@@ -380,6 +415,7 @@ export function WidgetApp({
         aria-label="Sotto dictation status"
         data-status="idle"
         data-tone="idle"
+        data-widget-style={widgetStyle}
         data-orientation={orientation}
         data-dragging={surface.dragging || undefined}
       >
@@ -407,11 +443,15 @@ export function WidgetApp({
           onMouseDown={preventFocus}
           {...surface.surfaceProps}
         >
-          <WidgetOrb
-            size="mini"
-            level={null}
-            icon={<Mic aria-hidden="true" strokeWidth={2.1} />}
-          />
+          {/* The pill's resting sliver is a bare bar; only the orb style
+              carries a miniature sphere beside the hover prompt. */}
+          {widgetStyle === 'orb' && (
+            <WidgetOrb
+              size="mini"
+              level={null}
+              icon={<Mic aria-hidden="true" strokeWidth={2.1} />}
+            />
+          )}
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
             <span className="widget-sliver__prompt-keys">
@@ -428,12 +468,58 @@ export function WidgetApp({
   const isProcessing = snapshot.status === 'processing'
   const progress = isProcessing ? Math.round(Math.max(0, Math.min(1, snapshot.progress)) * 100) : 0
 
+  const progressBar = isProcessing && (
+    <span
+      className="widget-progress"
+      role="progressbar"
+      aria-label={`${copy.title} progress`}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={progress}
+    >
+      {/* The custom property lets CSS map progress onto width in the
+          horizontal panel and height in the vertical one. */}
+      <span style={{ '--widget-progress': `${progress}%` } as React.CSSProperties} />
+    </span>
+  )
+  const stopAction = isListening && (
+    <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
+      <Square aria-hidden="true" size={10} fill="currentColor" />
+    </WidgetAction>
+  )
+  const escAction = snapshot.cancellable && (
+    <button
+      type="button"
+      className="widget-esc"
+      aria-label="Cancel dictation"
+      tabIndex={-1}
+      onMouseDown={preventFocus}
+      onPointerDown={stopPointerPropagation}
+      onClick={(event) => {
+        event.stopPropagation()
+        onCancel?.()
+      }}
+    >
+      esc
+    </button>
+  )
+  const elapsed = isListening && (
+    <time
+      className="widget-time"
+      dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}
+      aria-live="off"
+    >
+      {formatElapsedTime(snapshot.startedAt, now)}
+    </time>
+  )
+
   return (
     <aside
       className="widget-shell"
       aria-label="Sotto dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
+      data-widget-style={widgetStyle}
       data-orientation={orientation}
       data-dragging={surface.dragging || undefined}
     >
@@ -443,63 +529,50 @@ export function WidgetApp({
         onMouseDown={preventFocus}
         {...surface.surfaceProps}
       >
-        <WidgetOrb
-          size="full"
-          level={isListening ? snapshot.level : null}
-          processing={isProcessing}
-          icon={isProcessing ? null : copy.icon}
-        />
-        <div className="widget-panel">
-          {isListening && (
-            <time
-              className="widget-time"
-              dateTime={`PT${Math.max(0, Math.floor((now - snapshot.startedAt) / 1_000))}S`}
-              aria-live="off"
-            >
-              {formatElapsedTime(snapshot.startedAt, now)}
-            </time>
-          )}
-          {!isListening && (
-            <span className="widget-copy" title={copy.detail}>
-              {copy.title}
-            </span>
-          )}
-          {isProcessing && (
-            <span
-              className="widget-progress"
-              role="progressbar"
-              aria-label={`${copy.title} progress`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress}
-            >
-              {/* The custom property lets CSS map progress onto width in the
-                  horizontal panel and height in the vertical one. */}
-              <span style={{ '--widget-progress': `${progress}%` } as React.CSSProperties} />
-            </span>
-          )}
-          {isListening && (
-            <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
-              <Square aria-hidden="true" size={10} fill="currentColor" />
-            </WidgetAction>
-          )}
-          {snapshot.cancellable && (
-            <button
-              type="button"
-              className="widget-esc"
-              aria-label="Cancel dictation"
-              tabIndex={-1}
-              onMouseDown={preventFocus}
-              onPointerDown={stopPointerPropagation}
-              onClick={(event) => {
-                event.stopPropagation()
-                onCancel?.()
-              }}
-            >
-              esc
-            </button>
-          )}
-        </div>
+        {widgetStyle === 'pill' ? (
+          <>
+            {isListening && <span className="widget-dot" data-testid="recording-dot" aria-hidden="true" />}
+            {isListening && <LevelBars level={snapshot.level} active />}
+            {elapsed}
+            {isProcessing && (
+              <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />
+            )}
+            {!isListening && !isProcessing && (
+              <span className="widget-state-icon">{copy.icon}</span>
+            )}
+            {!isListening && (
+              <span className="widget-copy" title={copy.detail}>
+                {copy.title}
+              </span>
+            )}
+            {progressBar}
+            {stopAction}
+            {escAction}
+          </>
+        ) : (
+          <>
+            <WidgetOrb
+              size="full"
+              level={isListening ? snapshot.level : null}
+              processing={isProcessing}
+              icon={isProcessing ? null : copy.icon}
+            />
+            <div className="widget-panel">
+              {isListening && (
+                <span className="widget-rec" data-testid="recording-dot" aria-hidden="true" />
+              )}
+              {elapsed}
+              {!isListening && (
+                <span className="widget-copy" title={copy.detail}>
+                  {copy.title}
+                </span>
+              )}
+              {progressBar}
+              {stopAction}
+              {escAction}
+            </div>
+          </>
+        )}
       </div>
     </aside>
   )
@@ -616,6 +689,7 @@ export function parseVisualPreview(
   const common = {
     theme,
     reducedMotion: 'on' as const,
+    widgetStyle: 'orb' as const,
     shortcut: 'Ctrl+Shift+Space',
     sessionId: 'visual-preview',
   } as const
@@ -625,6 +699,7 @@ export function parseVisualPreview(
         status: 'idle',
         theme,
         reducedMotion: 'on',
+        widgetStyle: 'orb',
         shortcut: 'Ctrl+Shift+Space',
         cancellable: false,
       }

@@ -316,6 +316,7 @@ const idleWidgetSnapshot = {
   status: 'idle',
   theme: 'system',
   reducedMotion: 'system',
+  widgetStyle: 'orb',
   shortcut: 'Control+Shift+Space',
   cancellable: false,
 } as const satisfies WidgetSnapshot

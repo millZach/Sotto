@@ -580,6 +580,7 @@ export class DictationController {
     const metadata = {
       theme: session.settings.theme,
       reducedMotion: session.settings.reducedMotion,
+      widgetStyle: session.settings.widgetStyle,
       shortcut: session.settings.hotkey,
       cancellable: session.cancellable && this.isCancellableState(),
     } as const

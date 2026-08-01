@@ -188,10 +188,24 @@ button {
   height: 14px;
 }
 
-/* recording: the core wakes and both core and halo follow the voice */
+/* recording: the core wakes and both core and halo follow the voice. A red
+   sonar ring ripples off the glass so recording is unmistakable even when the
+   room is quiet and the level sits near zero. */
 .widget-shell[data-status='listening'] .widget-orb__core {
-  opacity: calc(0.55 + var(--widget-level, 0) * 0.45);
+  opacity: calc(0.62 + var(--widget-level, 0) * 0.38);
   animation: widget-core-spin 6s linear infinite;
+}
+
+.widget-shell[data-status='listening'] .widget-orb::after {
+  /* Ripple headroom: the ring starts 3px outside the 60px orb and scales to
+     1.16, peaking ~8px past the glass — inside the 14px canvas margin. */
+  position: absolute;
+  inset: -3px;
+  border: 2px solid rgb(255 96 84 / 85%);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+  animation: widget-rec-ripple 1.8s ease-out infinite;
 }
 
 .widget-shell[data-status='listening'] .widget-orb__halo {
@@ -255,6 +269,38 @@ button {
 @keyframes widget-orb-breathe {
   50% {
     transform: scale(1.04);
+  }
+}
+
+@keyframes widget-rec-ripple {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+}
+
+/* The readout chip's recording beacon beside the timer. */
+.widget-rec {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: rgb(255 84 74);
+  animation: widget-rec-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes widget-rec-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(255 84 74 / 55%);
+  }
+  55% {
+    box-shadow: 0 0 0 6px transparent;
   }
 }
 
@@ -534,6 +580,241 @@ button {
   color: var(--tt-text);
 }
 
+/* ---- classic pill style ---- */
+
+/* The pre-orb widget, kept as a selectable style. Its resting sliver is a
+   bare bar, and the active capsule is a solid pill that carries the dot,
+   visualizer, and status inline on its own surface. */
+.widget-shell[data-widget-style='pill'] .widget-sliver {
+  width: 88px;
+  height: 6px;
+  gap: 0;
+  border: 1px solid var(--widget-edge);
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    var(--widget-surface-top),
+    var(--widget-surface-bottom)
+  );
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft);
+  opacity: 0.72;
+  transition:
+    width 0.18s ease,
+    height 0.18s ease,
+    border-radius 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.widget-shell[data-widget-style='pill'] .widget-sliver:hover {
+  opacity: 1;
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow-soft),
+    0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
+}
+
+.widget-shell[data-widget-style='pill'] .widget-sliver[data-expanded],
+.widget-shell[data-widget-style='pill'][data-dragging='true'] .widget-sliver {
+  width: 212px;
+  height: 28px;
+  border-radius: 14px;
+  opacity: 1;
+}
+
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'] .widget-sliver {
+  width: 6px;
+  height: 88px;
+  background: linear-gradient(
+    90deg,
+    var(--widget-surface-top),
+    var(--widget-surface-bottom)
+  );
+}
+
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'] .widget-sliver[data-expanded],
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'][data-dragging='true'] .widget-sliver {
+  width: 76px;
+  height: 88px;
+  border-radius: 12px;
+}
+
+/* The pill prompt overlays the sliver itself instead of a separate chip. */
+.widget-shell[data-widget-style='pill'] .widget-sliver__prompt {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  transition: opacity 0.15s ease;
+}
+
+.widget-shell[data-widget-style='pill'] .widget-sliver[data-expanded] .widget-sliver__prompt,
+.widget-shell[data-widget-style='pill'][data-dragging='true'] .widget-sliver__prompt {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'] .widget-sliver__prompt {
+  flex-direction: column;
+  gap: 3px;
+  max-height: none;
+  padding: 6px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  transition: opacity 0.15s ease;
+}
+
+.widget-shell[data-widget-style='pill'] .widget-capsule {
+  width: 212px;
+  height: 40px;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--widget-edge);
+  border-radius: 20px;
+  background: linear-gradient(
+    180deg,
+    var(--widget-surface-top) 0%,
+    var(--widget-surface-bottom) 100%
+  );
+  box-shadow:
+    0 0 0 1px var(--widget-rim),
+    var(--widget-shadow),
+    inset 0 1px 0 rgb(255 255 255 / 20%);
+  overflow: hidden;
+  justify-content: flex-start;
+}
+
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'] .widget-capsule {
+  width: 40px;
+  height: 212px;
+  flex-direction: column;
+  padding: 10px 0;
+}
+
+.widget-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tt-primary);
+  animation: widget-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes widget-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tt-primary) 45%, transparent);
+  }
+  55% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.widget-levels {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5px;
+}
+
+/* Vertically the visualizer rotates 90 degrees. The pre-rotation box is
+   80x38; the margins swap its layout footprint to 38x80 so the rotated bars
+   occupy the right amount of the column without overlapping neighbours. */
+.widget-shell[data-orientation='vertical'] .widget-levels {
+  flex: none;
+  width: 80px;
+  height: 38px;
+  margin: 21px -21px;
+  transform: rotate(90deg);
+}
+
+.widget-levels__bar {
+  width: 2.5px;
+  flex: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    var(--tt-primary),
+    color-mix(in srgb, var(--tt-primary) 55%, var(--widget-surface-bottom))
+  );
+  transition: height 90ms ease-out;
+}
+
+.widget-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid color-mix(in srgb, var(--tt-primary) 22%, transparent);
+  border-top-color: var(--tt-primary);
+  border-radius: 50%;
+  animation: widget-orbit 0.9s linear infinite;
+}
+
+@keyframes widget-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.widget-state-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--tt-text-muted);
+}
+
+.widget-state-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.widget-shell[data-tone='success'] .widget-state-icon {
+  color: var(--tt-primary);
+}
+
+.widget-shell[data-tone='error'] .widget-state-icon {
+  color: var(--tt-error);
+}
+
+.widget-shell[data-widget-style='pill'] .widget-time {
+  color: var(--tt-text-muted);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.widget-shell[data-widget-style='pill'] .widget-copy {
+  flex: 1;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-shell[data-widget-style='pill'] .widget-progress {
+  right: 15px;
+  bottom: 5px;
+  left: 15px;
+}
+
+.widget-shell[data-widget-style='pill'][data-orientation='vertical'] .widget-progress {
+  top: 15px;
+  right: 4px;
+  bottom: 15px;
+  left: auto;
+}
+
 /* ---- motion overrides ---- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -554,8 +835,30 @@ button {
     opacity: 0.6;
   }
 
+  /* The recording ring and beacon hold as a steady red glow. */
+  .widget-shell[data-status='listening'] .widget-orb::after {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .widget-rec {
+    animation: none;
+    box-shadow: 0 0 0 3px rgb(255 84 74 / 30%);
+  }
+
+  .widget-dot {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-primary) 25%, transparent);
+  }
+
+  .widget-spinner {
+    animation: none;
+    border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+  }
+
   .widget-orb__core,
   .widget-orb__halo,
+  .widget-levels__bar,
   .widget-progress > span,
   .widget-sliver,
   .widget-sliver__prompt {
@@ -580,8 +883,29 @@ button {
   opacity: 0.6;
 }
 
+:root[data-reduced-motion='on'] .widget-shell[data-status='listening'] .widget-orb::after {
+  animation: none;
+  opacity: 0.8;
+}
+
+:root[data-reduced-motion='on'] .widget-rec {
+  animation: none;
+  box-shadow: 0 0 0 3px rgb(255 84 74 / 30%);
+}
+
+:root[data-reduced-motion='on'] .widget-dot {
+  animation: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-primary) 25%, transparent);
+}
+
+:root[data-reduced-motion='on'] .widget-spinner {
+  animation: none;
+  border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+}
+
 :root[data-reduced-motion='on'] .widget-orb__core,
 :root[data-reduced-motion='on'] .widget-orb__halo,
+:root[data-reduced-motion='on'] .widget-levels__bar,
 :root[data-reduced-motion='on'] .widget-progress > span,
 :root[data-reduced-motion='on'] .widget-sliver,
 :root[data-reduced-motion='on'] .widget-sliver__prompt {

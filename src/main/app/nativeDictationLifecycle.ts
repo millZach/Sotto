@@ -50,6 +50,7 @@ export class NativeDictationLifecycle {
       status: 'idle',
       theme: previous.theme,
       reducedMotion: previous.reducedMotion,
+      widgetStyle: previous.widgetStyle,
       shortcut: previous.shortcut,
       cancellable: false,
     }
