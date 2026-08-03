@@ -51,6 +51,11 @@ import {
   type WidgetPresentationPayload,
 } from '../shared/contracts'
 import { historyEntrySchema } from '../shared/history'
+import {
+  PLATFORM_ARGUMENT_PREFIX,
+  resolvePlatform,
+  type SottoPlatform,
+} from '../shared/platform'
 import { settingsSchema } from '../shared/settings'
 import { recoveryNoticeSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
@@ -164,7 +169,10 @@ function createBufferedSubscription<Output>(
   }
 }
 
-export function createSottoBridge(renderer: IpcRendererAdapter): SottoBridge {
+export function createSottoBridge(
+  renderer: IpcRendererAdapter,
+  platform: SottoPlatform,
+): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
     DICTATION_COMMAND,
@@ -184,6 +192,8 @@ export function createSottoBridge(renderer: IpcRendererAdapter): SottoBridge {
     2,
   )
   const bridge: SottoBridge = {
+    platform,
+
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
     onRecoveryNotice,
@@ -238,6 +248,7 @@ export function createSottoBridge(renderer: IpcRendererAdapter): SottoBridge {
 
 export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
+  platform: SottoPlatform,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -252,6 +263,8 @@ export function createSottoWidgetBridge(
     1,
   )
   return Object.freeze({
+    platform,
+
     onWidgetState,
     onWidgetVisibilityChange,
     requestToggle: () =>
@@ -288,18 +301,32 @@ export function parseRendererRoleArgument(
   return role === 'main' || role === 'widget' ? role : null
 }
 
+export function parsePlatformArgument(
+  arguments_: readonly string[],
+): SottoPlatform {
+  const matches = arguments_.filter((argument) =>
+    argument.startsWith(PLATFORM_ARGUMENT_PREFIX),
+  )
+  if (matches.length !== 1) return 'win32'
+  return resolvePlatform(matches[0]?.slice(PLATFORM_ARGUMENT_PREFIX.length) ?? '')
+}
+
 export function exposeRendererBridge(
   context: ContextBridgeAdapter,
   renderer: IpcRendererAdapter,
   arguments_: readonly string[],
 ): boolean {
   const rendererRole = parseRendererRoleArgument(arguments_)
+  const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('sotto', createSottoBridge(renderer))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform))
     return true
   }
   if (rendererRole === 'widget') {
-    context.exposeInMainWorld('sottoWidget', createSottoWidgetBridge(renderer))
+    context.exposeInMainWorld(
+      'sottoWidget',
+      createSottoWidgetBridge(renderer, platform),
+    )
     return true
   }
   return false

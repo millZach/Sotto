@@ -98,9 +98,40 @@ function findTrustedRenderer(
   }
 }
 
+export type MediaAccessGate = () => Promise<boolean>
+
+async function grantWhenMediaAccessible(
+  webContents: PermissionWebContents,
+  requestedUrl: string | undefined,
+  trustedRenderers: TrustedRendererProvider,
+  mediaAccess: MediaAccessGate,
+  callback: (granted: boolean) => void,
+): Promise<void> {
+  let accessible: boolean
+  try {
+    accessible = await mediaAccess()
+  } catch {
+    accessible = false
+  }
+  // An OS consent dialog can outlive the renderer that asked, so the identity
+  // that earned this grant has to be re-proven before the grant is delivered.
+  const granted =
+    accessible &&
+    findTrustedRenderer(webContents, requestedUrl, trustedRenderers) !== undefined
+  try {
+    callback(granted)
+  } catch {
+    // The caller owns the callback; a throwing consumer must not escape into
+    // an unhandled rejection.
+  }
+}
+
 export function installSessionPermissionPolicy(
   session: SessionPermissionAdapter,
   trustedRenderers: TrustedRendererProvider,
+  // Omitted means no OS-level microphone gate exists on this platform, and the
+  // grant stays synchronous exactly as it was before the gate was introduced.
+  mediaAccess?: MediaAccessGate,
 ): () => void {
   const previous = permissionOwners.get(session) ?? null
 
@@ -118,7 +149,17 @@ export function installSessionPermissionPolicy(
       mediaTypes.length > 0 &&
       mediaTypes.every((mediaType) => mediaType === 'audio') &&
       findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
-    callback(allowed)
+    if (!allowed || mediaAccess === undefined) {
+      callback(allowed)
+      return
+    }
+    void grantWhenMediaAccessible(
+      webContents,
+      details.requestingUrl,
+      trustedRenderers,
+      mediaAccess,
+      callback,
+    )
   }
 
   const checkHandler: PermissionCheckHandler = (
@@ -202,7 +243,7 @@ function trySetPermissionHandlers(
   }
 }
 
-type BootstrapEvent = 'second-instance' | 'before-quit'
+type BootstrapEvent = 'second-instance' | 'activate' | 'before-quit'
 type BootstrapListener = () => void
 
 export interface BootstrapApplication {
@@ -473,7 +514,7 @@ export async function bootstrapSotto(
   let runtime: RuntimeController | null = null
   let disposed = false
   let runtimeStarted = false
-  let pendingSecondInstance = false
+  let pendingShowRequest = false
   const stopRuntime = (candidate: RuntimeController): void => {
     try {
       candidate.beginQuit()
@@ -494,7 +535,7 @@ export async function bootstrapSotto(
       }
     }
   }
-  const onSecondInstance = (): void => {
+  const onShowRequest = (): void => {
     if (disposed) {
       return
     }
@@ -502,11 +543,11 @@ export async function bootstrapSotto(
       runtime.showMain()
       return
     }
-    pendingSecondInstance = true
+    pendingShowRequest = true
   }
-  const consumePendingSecondInstance = (): boolean => {
-    const pending = pendingSecondInstance
-    pendingSecondInstance = false
+  const consumePendingShowRequest = (): boolean => {
+    const pending = pendingShowRequest
+    pendingShowRequest = false
     return pending
   }
   const dispose = (): void => {
@@ -514,9 +555,10 @@ export async function bootstrapSotto(
       return
     }
     disposed = true
-    pendingSecondInstance = false
+    pendingShowRequest = false
     runtimeStarted = false
-    app.removeListener('second-instance', onSecondInstance)
+    app.removeListener('second-instance', onShowRequest)
+    app.removeListener('activate', onShowRequest)
     app.removeListener('before-quit', onBeforeQuit)
     const activeRuntime = runtime
     runtime = null
@@ -526,7 +568,10 @@ export async function bootstrapSotto(
   }
   const onBeforeQuit = (): void => dispose()
 
-  app.on('second-instance', onSecondInstance)
+  // 'activate' (macOS Dock/menu-bar reopen) and 'second-instance' (Windows
+  // relaunch) are the same intent: the user asked for the main window.
+  app.on('second-instance', onShowRequest)
+  app.on('activate', onShowRequest)
   app.on('before-quit', onBeforeQuit)
 
   try {
@@ -581,7 +626,7 @@ export async function bootstrapSotto(
   }
 
   runtimeStarted = true
-  if (consumePendingSecondInstance()) {
+  if (consumePendingShowRequest()) {
     candidate.showMain()
   }
 

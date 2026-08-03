@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
+import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type ModelDisclosureCatalog,
@@ -57,6 +58,7 @@ describe('first-run onboarding', () => {
         microphoneState="idle"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={vi.fn()}
       />,
@@ -77,6 +79,7 @@ describe('first-run onboarding', () => {
         microphoneLevel={0.42}
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={request}
         onComplete={vi.fn()}
       />,
@@ -89,7 +92,7 @@ describe('first-run onboarding', () => {
       'aria-valuenow',
       '0.42',
     )
-    expect(screen.getByText(/windows settings/i)).toBeVisible()
+    expect(screen.getByText(platformCopy('win32').onboardingMicrophoneDenied)).toBeVisible()
   })
 
   it('discloses optional download metadata and requires explicit consent', async () => {
@@ -100,6 +103,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         disclosures={disclosures}
         onRequestMicrophone={vi.fn()}
         onInstallModel={install}
@@ -126,6 +130,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         disclosures={disclosures}
         onRequestMicrophone={vi.fn()}
         onInstallModel={install}
@@ -151,6 +156,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={vi.fn()}
       />,
@@ -173,6 +179,7 @@ describe('first-run onboarding', () => {
         microphoneState="denied"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={complete}
       />,
@@ -185,6 +192,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={complete}
       />,
@@ -200,6 +208,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={vi.fn()}
       />,
@@ -222,6 +231,7 @@ describe('first-run onboarding', () => {
           microphoneState="ready"
           modelState={modelState}
           shortcut="Ctrl+Shift+Space"
+        platform="win32"
           onRequestMicrophone={vi.fn()}
           onRetryModel={retry}
           onComplete={vi.fn()}
@@ -242,6 +252,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         disclosures={disclosures}
         onRequestMicrophone={vi.fn()}
         onComplete={vi.fn()}
@@ -262,6 +273,7 @@ describe('first-run onboarding', () => {
           microphoneState="ready"
           modelState={modelState}
           shortcut="Ctrl+Shift+Space"
+        platform="win32"
           onRequestMicrophone={vi.fn()}
           onComplete={vi.fn()}
         />,
@@ -282,6 +294,7 @@ describe('first-run onboarding', () => {
         microphoneState="ready"
         modelState="ready"
         shortcut="Ctrl+Shift+Space"
+        platform="win32"
         onRequestMicrophone={vi.fn()}
         onComplete={complete}
       />,
@@ -292,5 +305,28 @@ describe('first-run onboarding', () => {
     save.resolve(false)
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i))
     expect(screen.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
+  })
+
+  it.each(['denied', 'missing'] as const)('gives macOS %s recovery guidance and the darwin shortcut form', async (microphoneState) => {
+    const user = userEvent.setup()
+    const copy = platformCopy('darwin')
+    render(
+      <Onboarding
+        microphoneState={microphoneState}
+        modelState="ready"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+    expect(screen.getByText(
+      microphoneState === 'denied' ? copy.onboardingMicrophoneDenied : copy.onboardingMicrophoneMissing,
+    )).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    expect(screen.getByLabelText('Control+Shift+Space')).toBeVisible()
   })
 })

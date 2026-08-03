@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HomeView } from '../../../src/renderer/src/features/home/HomeView'
+import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -25,6 +26,7 @@ const entries: HistoryEntry[] = Array.from({ length: 7 }, (_, index) => ({
 
 const baseProps = {
   settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
+  platform: 'win32' as const,
   dictation: { status: 'idle' as const },
   modelStatus: { preset: 'balanced' as const, state: 'bundled' as const },
   entries,
@@ -121,6 +123,16 @@ describe('HomeView', () => {
     render(<HomeView {...baseProps} dictation={{ status: 'error', code: 'TRANSCRIPTION_FAILED', message: 'private stack detail' }} />)
     expect(screen.getByRole('alert')).toHaveTextContent(/could not transcribe/i)
     expect(document.body).not.toHaveTextContent('private stack detail')
+  })
+
+  it.each(['win32', 'darwin'] as const)('draws microphone and shortcut copy from the %s row', (platform) => {
+    const copy = platformCopy(platform)
+    const rendered = render(<HomeView {...baseProps} platform={platform} dictation={{ status: 'error', code: 'MIC_PERMISSION_DENIED' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(copy.homeMicrophonePermissionDenied)
+
+    rendered.rerender(<HomeView {...baseProps} platform={platform} dictation={{ status: 'requesting-permission', sessionId: 'one' }} />)
+    expect(screen.getByRole('status')).toHaveTextContent(copy.homeRequestingPermissionDetail)
+    expect(screen.getByLabelText(platform === 'darwin' ? 'Command+Shift+Space' : 'Ctrl+Shift+Space')).toBeVisible()
   })
 
   it('gives success and error dictation bars distinct semantic visual tones', () => {

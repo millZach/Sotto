@@ -6,6 +6,12 @@ import type {
   WidgetPresentationPayload,
   WidgetVisibilityPayload,
 } from '../../shared/contracts'
+import { PLATFORM_ARGUMENT_PREFIX, type SottoPlatform } from '../../shared/platform'
+import type {
+  MainWindowChrome,
+  TrafficLightPosition,
+  WidgetAlwaysOnTopLevel,
+} from '../platformProfile'
 import { selectRendererSource, type RendererRole } from '../security'
 import {
   DEFAULT_WIDGET_PLACEMENT,
@@ -41,7 +47,9 @@ export interface DisplayAdapter {
 
 export interface WindowWebPreferences {
   readonly preload: string
-  readonly additionalArguments: [string]
+  // A mutable tuple: Electron's BrowserWindowConstructorOptions declares
+  // additionalArguments as string[], which a readonly array cannot satisfy.
+  readonly additionalArguments: [string, string]
   readonly contextIsolation: true
   readonly nodeIntegration: false
   readonly sandbox: true
@@ -63,11 +71,35 @@ export interface WindowConstructorOptions {
   readonly fullscreenable?: false
   readonly transparent?: true
   readonly frame?: false
+  readonly titleBarStyle?: 'hiddenInset'
+  readonly trafficLightPosition?: TrafficLightPosition
   readonly alwaysOnTop?: true
   readonly skipTaskbar?: true
-  readonly focusable?: false
+  readonly focusable?: boolean
   readonly hasShadow?: true
   readonly webPreferences: WindowWebPreferences
+}
+
+/** Native chrome differs per platform; the values come from the platform profile. */
+interface MainWindowChromeOptions {
+  readonly frame?: false
+  readonly titleBarStyle?: 'hiddenInset'
+  readonly trafficLightPosition?: TrafficLightPosition
+}
+
+function mainWindowChromeOptions(
+  chrome: WindowChromeProfile,
+): MainWindowChromeOptions {
+  if (chrome.mainWindowChrome === 'frameless') {
+    return { frame: false }
+  }
+  if (chrome.trafficLightPosition === null) {
+    return { titleBarStyle: 'hiddenInset' }
+  }
+  return {
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: chrome.trafficLightPosition,
+  }
 }
 
 interface CloseEventLike {
@@ -110,7 +142,12 @@ export interface BrowserWindowLike {
   isMinimized(): boolean
   restore(): void
   showInactive(): void
-  setAlwaysOnTop(flag: boolean, level?: 'normal'): void
+  setAlwaysOnTop(flag: boolean, level?: WidgetAlwaysOnTopLevel): void
+  /** Absent on window backends that cannot span workspaces. */
+  setVisibleOnAllWorkspaces?(
+    visible: boolean,
+    options?: { readonly visibleOnFullScreen: boolean },
+  ): void
   /** Managed widget geometry uses the renderer content area in Electron DIPs. */
   getBounds(): Rectangle
   setBounds(bounds: Rectangle, animate?: boolean): void
@@ -134,9 +171,27 @@ export interface BrowserWindowLike {
   removeRenderProcessGoneListener(listener: () => void): void
 }
 
+/** Structural subset of the platform profile; the profile satisfies it as-is. */
+export interface WindowChromeProfile {
+  readonly mainWindowChrome: MainWindowChrome
+  readonly trafficLightPosition: TrafficLightPosition | null
+  readonly widgetAlwaysOnTopLevel: WidgetAlwaysOnTopLevel
+  readonly widgetFocusable: boolean
+  readonly widgetVisibleOnAllWorkspaces: boolean
+}
+
+/** Runtime Dock presence; null where the platform has no runtime-controlled Dock. */
+export interface DockAdapter {
+  show(): void
+  hide(): void
+}
+
 export interface WindowManagerDependencies {
   readonly createWindow: (options: WindowConstructorOptions) => BrowserWindowLike
   readonly display: DisplayAdapter
+  readonly platform: SottoPlatform
+  readonly chrome: WindowChromeProfile
+  readonly dock: DockAdapter | null
   readonly preloadPath: string
   readonly mainHtmlPath: string
   readonly widgetHtmlPath: string
@@ -207,10 +262,14 @@ function sameRectangle(left: Rectangle | null, right: Rectangle): boolean {
 function securePreferences(
   preloadPath: string,
   role: RendererRole,
+  platform: SottoPlatform,
 ): WindowWebPreferences {
   return {
     preload: preloadPath,
-    additionalArguments: [`--sotto-renderer-role=${role}`],
+    additionalArguments: [
+      `--sotto-renderer-role=${role}`,
+      `${PLATFORM_ARGUMENT_PREFIX}${platform}`,
+    ],
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
@@ -304,8 +363,12 @@ export class WindowManager {
       title: APP_NAME,
       backgroundColor: '#1b1917',
       autoHideMenuBar: true,
-      frame: false,
-      webPreferences: securePreferences(this.dependencies.preloadPath, 'main'),
+      ...mainWindowChromeOptions(this.dependencies.chrome),
+      webPreferences: securePreferences(
+        this.dependencies.preloadPath,
+        'main',
+        this.dependencies.platform,
+      ),
     })
     this.mainWindow = window
     this.installMainLifecycle(window)
@@ -373,11 +436,15 @@ export class WindowManager {
       frame: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      focusable: false,
+      focusable: this.dependencies.chrome.widgetFocusable,
       hasShadow: true,
       autoHideMenuBar: true,
       webPreferences: {
-        ...securePreferences(this.dependencies.preloadPath, 'widget'),
+        ...securePreferences(
+          this.dependencies.preloadPath,
+          'widget',
+          this.dependencies.platform,
+        ),
         backgroundThrottling: false,
       },
     })
@@ -385,7 +452,17 @@ export class WindowManager {
     // The constructor's alwaysOnTop (and setAlwaysOnTop's default 'floating'
     // level) silently fails to apply WS_EX_TOPMOST on current Windows 11
     // builds; the explicit 'normal' level sticks and survives hide/show.
-    window.setAlwaysOnTop(true, 'normal')
+    // The level is per-platform because 'normal' is kCGNormalWindowLevel on
+    // macOS, which would leave the widget behind other applications.
+    window.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+    if (this.dependencies.chrome.widgetVisibleOnAllWorkspaces) {
+      try {
+        window.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true })
+      } catch {
+        // Spanning workspaces is best effort; the widget stays usable on the
+        // active one.
+      }
+    }
     this.installClosedLifecycle(window, 'widget')
     this.installRendererProcessLifecycle(window, 'widget')
     this.installNavigationPolicy(window)
@@ -442,12 +519,16 @@ export class WindowManager {
     if (window.isMinimized()) {
       window.restore()
     }
+    this.showDock()
     window.show()
     window.focus()
   }
 
   hideMain(): void {
-    this.mainWindow?.hide()
+    const main = this.mainWindow
+    if (main === null) return
+    main.hide()
+    this.hideDock()
   }
 
   minimizeMain(): void {
@@ -745,11 +826,32 @@ export class WindowManager {
     }
   }
 
+  private showDock(): void {
+    const dock = this.dependencies.dock
+    if (dock === null) return
+    try {
+      dock.show()
+    } catch {
+      // Dock presence is cosmetic; the window still opens without it.
+    }
+  }
+
+  private hideDock(): void {
+    const dock = this.dependencies.dock
+    if (dock === null) return
+    try {
+      dock.hide()
+    } catch {
+      // Dock presence is cosmetic; the window still hides without it.
+    }
+  }
+
   private installMainLifecycle(window: BrowserWindowLike): void {
     const onClose = (event: CloseEventLike): void => {
       if (!this.quitting) {
         event.preventDefault()
         window.hide()
+        this.hideDock()
       }
     }
     const onClosed = (): void => {

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { relative, resolve, sep } from 'node:path'
 
-import { extractFile, listPackage, statFile } from '@electron/asar'
+import { isAsarDirectory, listAsarEntries, readAsarFile, readAsarText } from './asar-entries.mjs'
 
 export const BUILD_PROVENANCE_FILE = 'build-provenance.json'
 
@@ -21,8 +21,10 @@ const BUILD_INPUT_PATHS = Object.freeze([
   'src',
   'resources/models',
   'resources/runtime',
+  'scripts/asar-entries.mjs',
   'scripts/model-catalog.mjs',
   'scripts/release-external-dependencies.mjs',
+  'scripts/release-platform-profile.mjs',
   'scripts/release-provenance.mjs',
   'scripts/verify-model.mjs',
   'scripts/verify-notices.mjs',
@@ -80,13 +82,13 @@ async function localArtifacts(outRoot) {
 }
 
 function packagedArtifacts(asarPath) {
-  return listPackage(asarPath)
-    .filter((entry) => entry.startsWith('\\out\\') && entry !== `\\out\\${BUILD_PROVENANCE_FILE}`)
-    .filter((entry) => !('files' in statFile(asarPath, entry.slice(1), false)))
-    .map((entry) => entry.slice('\\out\\'.length).replaceAll('\\', '/'))
+  return listAsarEntries(asarPath)
+    .filter((entry) => entry.startsWith('out/') && entry !== `out/${BUILD_PROVENANCE_FILE}`)
+    .filter((entry) => !isAsarDirectory(asarPath, entry))
+    .map((entry) => entry.slice('out/'.length))
     .sort()
     .map((path) => {
-      const value = extractFile(asarPath, `out${sep}${path.replaceAll('/', sep)}`)
+      const value = readAsarFile(asarPath, `out/${path}`)
       return { path, bytes: value.byteLength, sha256: sha256(value) }
     })
 }
@@ -135,9 +137,7 @@ export async function verifyBuildProvenance({ outRoot, asarPath, repositoryRoot,
     throw new Error('packaged build artifacts differ from just-built out')
   }
 
-  const packagedProvenance = JSON.parse(
-    extractFile(asarPath, `out${sep}${BUILD_PROVENANCE_FILE}`).toString('utf8'),
-  )
+  const packagedProvenance = JSON.parse(readAsarText(asarPath, `out/${BUILD_PROVENANCE_FILE}`))
   if (typeof packagedProvenance?.sourceCommit !== 'string' || packagedProvenance.sourceCommit.length === 0) {
     throw new Error('packaged build provenance does not match the current source and output')
   }

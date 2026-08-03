@@ -21,6 +21,7 @@ import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
+  ACCESSIBILITY_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation.',
 } as const
 
 export interface AppProps {
@@ -214,6 +215,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           microphoneLevel={microphoneLevel}
           modelState={modelState}
           shortcut={app.settings.hotkey}
+          platform={app.platform}
           {...(disclosures === undefined ? {} : { disclosures })}
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
@@ -263,6 +265,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       case 'settings':
         view = <SettingsView
           settings={app.settings}
+          platform={app.platform}
           modelStatuses={app.modelStatuses}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
@@ -276,11 +279,12 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} />
+        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} />
         break
       default:
         view = <HomeView
           settings={app.settings}
+          platform={app.platform}
           dictation={app.dictation}
           modelStatus={app.modelStatuses[app.settings.modelPreset]}
           entries={app.history}

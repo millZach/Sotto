@@ -24,12 +24,14 @@ import type {
   WidgetDragPhase,
   WidgetPresentation,
 } from '../../../shared/contracts'
-import { formatWindowsAccelerator } from '../../../shared/accelerator'
+import { formatAccelerator } from '../../../shared/accelerator'
 import type {
   WidgetErrorCode,
   WidgetProcessingStage,
   WidgetSnapshot,
 } from '../../../shared/dictation'
+import type { SottoPlatform } from '../../../shared/platform'
+import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
 
 const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
@@ -43,47 +45,51 @@ const processingLabels: Record<WidgetProcessingStage, string> = {
   'delivering-output': 'Delivering text',
 }
 
-const errorCopy: Record<WidgetErrorCode, { readonly title: string; readonly detail: string }> = {
-  MIC_PERMISSION_DENIED: {
-    title: 'Microphone blocked',
-    detail: 'Allow microphone access in Windows Settings.',
-  },
-  MIC_DEVICE_NOT_FOUND: {
-    title: 'No microphone found',
-    detail: 'Connect a microphone and try again.',
-  },
-  MIC_START_FAILED: {
-    title: 'Microphone unavailable',
-    detail: 'Check the selected microphone and try again.',
-  },
-  RECORDING_FAILED: {
-    title: 'Recording stopped',
-    detail: 'Check your microphone and try again.',
-  },
-  NO_SPEECH: {
-    title: 'No speech detected',
-    detail: 'Speak closer to the microphone and try again.',
-  },
-  TRANSCRIPTION_FAILED: {
-    title: 'Couldn’t transcribe',
-    detail: 'Try again or choose the Standard model.',
-  },
-  OUTPUT_UNAVAILABLE: {
-    title: 'Output unavailable',
-    detail: 'Open Sotto and try again.',
-  },
-  OUTPUT_FAILED: {
-    title: 'Couldn’t copy text',
-    detail: 'Try again from the Sotto app.',
-  },
-  HISTORY_FAILED: {
-    title: 'Saved to clipboard',
-    detail: 'Local history was not updated.',
-  },
-  SETTINGS_UNAVAILABLE: {
-    title: 'Settings unavailable',
-    detail: 'Open Sotto to restore settings.',
-  },
+function errorCopyFor(
+  copy: PlatformCopy,
+): Record<WidgetErrorCode, { readonly title: string; readonly detail: string }> {
+  return {
+    MIC_PERMISSION_DENIED: {
+      title: 'Microphone blocked',
+      detail: copy.widgetMicrophoneBlockedDetail,
+    },
+    MIC_DEVICE_NOT_FOUND: {
+      title: 'No microphone found',
+      detail: 'Connect a microphone and try again.',
+    },
+    MIC_START_FAILED: {
+      title: 'Microphone unavailable',
+      detail: 'Check the selected microphone and try again.',
+    },
+    RECORDING_FAILED: {
+      title: 'Recording stopped',
+      detail: 'Check your microphone and try again.',
+    },
+    NO_SPEECH: {
+      title: 'No speech detected',
+      detail: 'Speak closer to the microphone and try again.',
+    },
+    TRANSCRIPTION_FAILED: {
+      title: 'Couldn’t transcribe',
+      detail: 'Try again or choose the Standard model.',
+    },
+    OUTPUT_UNAVAILABLE: {
+      title: 'Output unavailable',
+      detail: 'Open Sotto and try again.',
+    },
+    OUTPUT_FAILED: {
+      title: 'Couldn’t copy text',
+      detail: 'Try again from the Sotto app.',
+    },
+    HISTORY_FAILED: {
+      title: 'Saved to clipboard',
+      detail: 'Local history was not updated.',
+    },
+    SETTINGS_UNAVAILABLE: {
+      title: 'Settings unavailable',
+      detail: 'Open Sotto to restore settings.',
+    },
+  }
 }
 
 interface WidgetCopy {
@@ -93,8 +99,14 @@ interface WidgetCopy {
   readonly icon: ReactNode
 }
 
-function WidgetAnnouncements({ snapshot }: { readonly snapshot: WidgetSnapshot | null }): ReactNode {
-  const copy = snapshot === null || snapshot.status === 'idle' ? null : getCopy(snapshot)
+function WidgetAnnouncements({
+  snapshot,
+  platform,
+}: {
+  readonly snapshot: WidgetSnapshot | null
+  readonly platform: SottoPlatform
+}): ReactNode {
+  const copy = snapshot === null || snapshot.status === 'idle' ? null : getCopy(snapshot, platform)
   const assertiveCopy = snapshot?.status === 'error' ? copy : null
   const politeCopy = snapshot?.status === 'error' ? null : copy
 
@@ -124,6 +136,7 @@ function WidgetAnnouncements({ snapshot }: { readonly snapshot: WidgetSnapshot |
 
 export interface WidgetAppProps {
   readonly snapshot: WidgetSnapshot
+  readonly platform: SottoPlatform
   readonly now: number
   readonly onToggle?: () => void
   readonly onStop?: () => void
@@ -146,26 +159,27 @@ function safeLevel(level: number): number {
   return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
 }
 
-function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
+function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy {
+  const copy = platformCopy(platform)
   switch (snapshot.status) {
     case 'idle':
       return {
-        tone: 'idle', title: 'Ready', detail: formatWindowsAccelerator(snapshot.shortcut),
+        tone: 'idle', title: 'Ready', detail: formatAccelerator(snapshot.shortcut, platform, 'display'),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
       return {
-        tone: 'permission', title: 'Waiting for microphone', detail: 'Approve access in Windows',
+        tone: 'permission', title: 'Waiting for microphone', detail: copy.widgetPermissionPromptDetail,
         icon: <ShieldAlert aria-hidden="true" size={22} strokeWidth={2.1} />,
       }
     case 'listening':
       return {
-        tone: 'listening', title: 'Listening', detail: `${formatWindowsAccelerator(snapshot.shortcut)} to finish`,
+        tone: 'listening', title: 'Listening', detail: `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'processing':
       return {
-        tone: 'processing', title: processingLabels[snapshot.stage], detail: 'Audio stays on this PC',
+        tone: 'processing', title: processingLabels[snapshot.stage], detail: copy.widgetProcessingDetail,
         icon: <CircleEllipsis aria-hidden="true" size={23} strokeWidth={2.1} />,
       }
     case 'success':
@@ -181,9 +195,9 @@ function getCopy(snapshot: WidgetSnapshot): WidgetCopy {
         icon: <X aria-hidden="true" size={23} strokeWidth={2.2} />,
       }
     case 'error': {
-      const copy = errorCopy[snapshot.code]
+      const entry = errorCopyFor(copy)[snapshot.code]
       return {
-        tone: 'error', title: copy.title, detail: copy.detail,
+        tone: 'error', title: entry.title, detail: entry.detail,
         icon: <AlertCircle aria-hidden="true" size={23} strokeWidth={2.2} />,
       }
     }
@@ -335,6 +349,7 @@ function WidgetAction({
 
 export function WidgetApp({
   snapshot,
+  platform,
   now,
   onToggle,
   onStop,
@@ -455,7 +470,7 @@ export function WidgetApp({
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
             <span className="widget-sliver__prompt-keys">
-              {formatWindowsAccelerator(snapshot.shortcut)}
+              {formatAccelerator(snapshot.shortcut, platform, 'display')}
             </span>
           </span>
         </div>
@@ -463,7 +478,7 @@ export function WidgetApp({
     )
   }
 
-  const copy = getCopy(snapshot)
+  const copy = getCopy(snapshot, platform)
   const isListening = snapshot.status === 'listening'
   const isProcessing = snapshot.status === 'processing'
   const progress = isProcessing ? Math.round(Math.max(0, Math.min(1, snapshot.progress)) * 100) : 0
@@ -594,9 +609,10 @@ function applyRootPresentation(snapshot: WidgetSnapshot): () => void {
 export interface WidgetEntryProps {
   readonly bridge: SottoWidgetBridge | undefined
   readonly preview: WidgetSnapshot | null
+  readonly platform: SottoPlatform
 }
 
-export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
+export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): ReactNode {
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
@@ -648,10 +664,11 @@ export function WidgetEntry({ bridge, preview }: WidgetEntryProps): ReactNode {
 
   return (
     <>
-      <WidgetAnnouncements snapshot={snapshot} />
+      <WidgetAnnouncements snapshot={snapshot} platform={platform} />
       {snapshot === null ? null : (
         <WidgetApp
           snapshot={snapshot}
+          platform={platform}
           now={now}
           dragCancellationVersion={dragCancellationVersion}
           visibilityGeneration={visibilityGeneration}

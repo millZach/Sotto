@@ -9,6 +9,7 @@ import type {
   WidgetPresentation,
 } from '../../../src/shared/contracts'
 import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
+import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
   WidgetApp,
   WidgetEntry,
@@ -16,6 +17,8 @@ import {
   isVisualPreviewEnabled,
   parseVisualPreview,
 } from '../../../src/renderer/src/widget/WidgetApp'
+
+const win32Copy = platformCopy('win32')
 
 const metadata = {
   theme: 'dark',
@@ -45,10 +48,49 @@ afterEach(() => {
 })
 
 describe('WidgetApp', () => {
+  it('renders the macOS copy row and glyph shortcut on darwin', () => {
+    const macCopy = platformCopy('darwin')
+    const { rerender } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'idle', shortcut: 'Control+Shift+Space' })}
+        platform="darwin"
+        now={0}
+      />,
+    )
+    expect(screen.getByText('⌃+⇧+Space')).toBeInTheDocument()
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
+        platform="darwin"
+        now={0}
+      />,
+    )
+    expect(screen.getByText('Waiting for microphone')).toHaveAttribute('title', macCopy.widgetPermissionPromptDetail)
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'processing', sessionId: 'work', startedAt: 0, stage: 'transcribing', progress: 0.5, cancellable: true })}
+        platform="darwin"
+        now={0}
+      />,
+    )
+    expect(screen.getByText('Transcribing locally')).toHaveAttribute('title', macCopy.widgetProcessingDetail)
+
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'error', sessionId: 'failed', code: 'MIC_PERMISSION_DENIED' })}
+        platform="darwin"
+        now={0}
+      />,
+    )
+    expect(screen.getByText('Microphone blocked')).toHaveAttribute('title', macCopy.widgetMicrophoneBlockedDetail)
+  })
+
   it('renders idle, permission, listening, success, and cancelled without private content', () => {
     const privateFields = { text: 'private transcript', audio: [0.25], message: 'raw failure' }
     const { rerender, container } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle', ...privateFields })} now={15_340} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle', ...privateFields })} platform="win32" now={15_340} />,
     )
     expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
@@ -59,13 +101,13 @@ describe('WidgetApp', () => {
         snapshot={snapshot({
           status: 'requesting-permission', sessionId: 'permission', cancellable: true, ...privateFields,
         })}
-        now={15_340}
+        platform="win32" now={15_340}
       />,
     )
     expect(screen.getByText('Waiting for microphone')).toBeVisible()
     expect(screen.getByText('Waiting for microphone')).toHaveAttribute(
       'title',
-      'Approve access in Windows',
+      win32Copy.widgetPermissionPromptDetail,
     )
 
     rerender(
@@ -74,7 +116,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'listening', startedAt: 3_000, level: 0.65,
           cancellable: true, ...privateFields,
         })}
-        now={15_340}
+        platform="win32" now={15_340}
       />,
     )
     expect(screen.getByText('00:12')).toBeVisible()
@@ -83,7 +125,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'pasted', ...privateFields })}
-        now={15_340}
+        platform="win32" now={15_340}
       />,
     )
     expect(screen.getByText('Pasted')).toBeVisible()
@@ -91,7 +133,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'copied', ...privateFields })}
-        now={15_340}
+        platform="win32" now={15_340}
       />,
     )
     expect(screen.getByText('Copied — paste manually')).toBeVisible()
@@ -99,7 +141,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'cancelled', sessionId: 'cancelled', ...privateFields })}
-        now={15_340}
+        platform="win32" now={15_340}
       />,
     )
     expect(screen.getByText('Cancelled')).toBeVisible()
@@ -120,7 +162,7 @@ describe('WidgetApp', () => {
           status: 'processing', sessionId: 'processing', startedAt: 1_000,
           stage, progress: 0.428, cancellable: true,
         })}
-        now={4_000}
+        platform="win32" now={4_000}
       />,
     )
     expect(screen.getByText(label)).toBeVisible()
@@ -130,7 +172,7 @@ describe('WidgetApp', () => {
   })
 
   it.each<[WidgetErrorCode, string, string]>([
-    ['MIC_PERMISSION_DENIED', 'Microphone blocked', 'Allow microphone access in Windows Settings.'],
+    ['MIC_PERMISSION_DENIED', 'Microphone blocked', win32Copy.widgetMicrophoneBlockedDetail],
     ['MIC_DEVICE_NOT_FOUND', 'No microphone found', 'Connect a microphone and try again.'],
     ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
@@ -147,7 +189,7 @@ describe('WidgetApp', () => {
           status: 'error', sessionId: 'error', code,
           message: 'C:\\Users\\private\\raw-model-error',
         })}
-        now={0}
+        platform="win32" now={0}
       />,
     )
     expect(screen.getByText(title)).toBeVisible()
@@ -165,7 +207,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4,
           cancellable: true,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
         onStop={onStop}
         onCancel={onCancel}
       />,
@@ -187,7 +229,7 @@ describe('WidgetApp', () => {
           status: 'processing', sessionId: 'processing', startedAt: 0,
           stage: 'transcribing', progress: 0.5, cancellable: false,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
         onStop={onStop}
         onCancel={onCancel}
       />,
@@ -200,7 +242,7 @@ describe('WidgetApp', () => {
     const { rerender } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: false })}
-        now={0}
+        platform="win32" now={0}
         onCancel={onCancel}
       />,
     )
@@ -208,7 +250,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
-        now={0}
+        platform="win32" now={0}
         onCancel={onCancel}
       />,
     )
@@ -222,7 +264,7 @@ describe('WidgetApp', () => {
           status: 'processing', sessionId: 'processing', startedAt: 0,
           stage: 'loading-model', progress: 0.2, cancellable: true,
         })}
-        now={0}
+        platform="win32" now={0}
         onCancel={onCancel}
       />,
     )
@@ -241,7 +283,7 @@ describe('WidgetApp', () => {
     const { rerender } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 })}
-        now={0}
+        platform="win32" now={0}
       />,
     )
     const orb = screen.getByTestId('widget-orb')
@@ -250,7 +292,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 2 })}
-        now={0}
+        platform="win32" now={0}
       />,
     )
     // Levels are clamped into [0, 1] before they reach the style layer.
@@ -265,7 +307,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.2,
           cancellable: true,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
       />,
     )
     const listeningTime = container.querySelector('.widget-time')
@@ -279,7 +321,7 @@ describe('WidgetApp', () => {
           status: 'processing', sessionId: 'announced', startedAt: 0,
           stage: 'transcribing', progress: 0.58, cancellable: true,
         })}
-        now={2_000}
+        platform="win32" now={2_000}
       />,
     )
     const processingCopy = container.querySelector('.widget-copy')
@@ -291,7 +333,7 @@ describe('WidgetApp', () => {
   it('starts dictation from a non-focusing click on the idle sliver', () => {
     const onToggle = vi.fn()
     render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} onToggle={onToggle} />,
     )
 
     const sliver = screen.getByTestId('widget-sliver')
@@ -311,7 +353,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'click', startedAt: 0, level: 0.4,
           cancellable: true,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
         onToggle={onToggle}
         onStop={onStop}
         onCancel={onCancel}
@@ -336,7 +378,7 @@ describe('WidgetApp', () => {
     const onToggle = vi.fn()
     const onDrag = vi.fn()
     render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} onDrag={onDrag} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} onToggle={onToggle} onDrag={onDrag} />,
     )
 
     const sliver = screen.getByTestId('widget-sliver')
@@ -353,7 +395,7 @@ describe('WidgetApp', () => {
     const onToggle = vi.fn()
     const onDrag = vi.fn()
     render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onToggle={onToggle} onDrag={onDrag} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} onToggle={onToggle} onDrag={onDrag} />,
     )
 
     const sliver = screen.getByTestId('widget-sliver')
@@ -385,7 +427,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'drag', startedAt: 0, level: 0.4,
           cancellable: true,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
         onStop={onStop}
         onDrag={onDrag}
       />,
@@ -416,7 +458,7 @@ describe('WidgetApp', () => {
           status: 'idle',
           shortcut: 'CommandOrControl+Shift+Space',
         })}
-        now={1_000}
+        platform="win32" now={1_000}
       />,
     )
     expect(screen.getByText('Ctrl+Shift+Space')).toBeInTheDocument()
@@ -425,7 +467,7 @@ describe('WidgetApp', () => {
 
   it('reflects the window proportions as a shell orientation attribute', () => {
     const { container, rerender } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} />,
     )
     expect(container.querySelector('.widget-shell')).toHaveAttribute(
       'data-orientation',
@@ -447,7 +489,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'vertical', startedAt: 0, level: 0.4,
           cancellable: true,
         })}
-        now={1_000}
+        platform="win32" now={1_000}
       />,
     )
     setWindowSize(88, 248)
@@ -468,7 +510,7 @@ describe('WidgetApp', () => {
   it('starts vertical when mounted inside a portrait presentation root', () => {
     setWindowSize(54, 124)
     const { container } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} />,
     )
     expect(container.querySelector('.widget-shell')).toHaveAttribute(
       'data-orientation',
@@ -482,7 +524,7 @@ describe('WidgetApp', () => {
     render(
       <WidgetApp
         snapshot={snapshot({ status: 'idle' })}
-        now={0}
+        platform="win32" now={0}
         onToggle={onToggle}
       />,
     )
@@ -520,7 +562,7 @@ describe('WidgetApp', () => {
     render(
       <WidgetApp
         snapshot={snapshot({ status: 'idle' })}
-        now={0}
+        platform="win32" now={0}
         onPresentationChange={(presentation) => presentations.push(presentation)}
       />,
     )
@@ -555,7 +597,7 @@ describe('WidgetApp', () => {
     render(
       <WidgetApp
         snapshot={activeSnapshot}
-        now={0}
+        platform="win32" now={0}
         onPresentationChange={onPresentationChange}
       />,
     )
@@ -569,7 +611,7 @@ describe('WidgetApp', () => {
     render(
       <WidgetApp
         snapshot={snapshot({ status: 'idle' })}
-        now={0}
+        platform="win32" now={0}
         onPresentationChange={onPresentationChange}
       />,
     )
@@ -589,7 +631,7 @@ describe('WidgetApp', () => {
   it('collapses the expanded sliver when a drag finishes and snaps the window away', () => {
     const onDrag = vi.fn()
     render(
-      <WidgetApp snapshot={snapshot({ status: 'idle' })} now={0} onDrag={onDrag} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} onDrag={onDrag} />,
     )
 
     const sliver = screen.getByTestId('widget-sliver')
@@ -610,6 +652,7 @@ describe('WidgetEntry', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const unsubscribe = vi.fn()
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: vi.fn((next) => {
         listener = next
         return unsubscribe
@@ -622,7 +665,7 @@ describe('WidgetEntry', () => {
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
     const view = render(
-      <StrictMode><WidgetEntry bridge={bridge} preview={null} /></StrictMode>,
+      <StrictMode><WidgetEntry bridge={bridge} platform="win32" preview={null} /></StrictMode>,
     )
     expect(bridge.onWidgetState).toHaveBeenCalledTimes(2)
     expect(unsubscribe).toHaveBeenCalledTimes(1)
@@ -641,6 +684,7 @@ describe('WidgetEntry', () => {
   it('routes idle sliver clicks to toggle and capsule surface clicks to stop', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -652,7 +696,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
 
     act(() => listener?.(snapshot({ status: 'idle' })))
     expect(bridge.setPresentation).toHaveBeenLastCalledWith({
@@ -684,6 +728,7 @@ describe('WidgetEntry', () => {
   it('reports drag phases through the widget bridge', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -695,7 +740,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    render(<WidgetEntry bridge={bridge} preview={null} />)
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
 
     act(() => listener?.(snapshot({ status: 'idle' })))
     const sliver = screen.getByTestId('widget-sliver')
@@ -714,6 +759,7 @@ describe('WidgetEntry', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -728,7 +774,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    render(<WidgetEntry bridge={bridge} preview={null} />)
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     act(() => stateListener?.(snapshot({ status: 'idle' })))
     vi.mocked(bridge.setPresentation).mockClear()
 
@@ -745,6 +791,7 @@ describe('WidgetEntry', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -759,7 +806,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    render(<WidgetEntry bridge={bridge} preview={null} />)
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     act(() => visibilityListener?.({ visible: true, generation: 7 }))
     act(() => stateListener?.(snapshot({ status: 'idle' })))
 
@@ -782,6 +829,7 @@ describe('WidgetEntry', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -796,7 +844,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    render(<WidgetEntry bridge={bridge} preview={null} />)
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
 
     act(() => stateListener?.(snapshot({ status: 'idle' })))
     const sliver = screen.getByTestId('widget-sliver')
@@ -833,6 +881,7 @@ describe('WidgetEntry', () => {
     let stateListener: ((state: WidgetSnapshot) => void) | null = null
     let visibilityListener: ((visibility: { visible: boolean; generation: number }) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         stateListener = next
         return () => { stateListener = null }
@@ -847,7 +896,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
 
     act(() => stateListener?.(snapshot({ status: 'idle' })))
     const sliver = screen.getByTestId('widget-sliver')
@@ -872,17 +921,17 @@ describe('WidgetEntry', () => {
   })
 
   it('fails closed without a bridge and applies/removes root theme and motion attributes', () => {
-    const { rerender, container, unmount } = render(<WidgetEntry bridge={undefined} preview={null} />)
+    const { rerender, container, unmount } = render(<WidgetEntry bridge={undefined} platform="win32" preview={null} />)
     const polite = screen.getByRole('status')
     const assertive = screen.getByRole('alert')
     expect(polite).toBeEmptyDOMElement()
     expect(assertive).toBeEmptyDOMElement()
     expect(container.querySelector('.widget-shell')).not.toBeInTheDocument()
 
-    rerender(<WidgetEntry bridge={undefined} preview={snapshot({ status: 'idle', theme: 'light', reducedMotion: 'on' })} />)
+    rerender(<WidgetEntry bridge={undefined} platform="win32" preview={snapshot({ status: 'idle', theme: 'light', reducedMotion: 'on' })} />)
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
     expect(document.documentElement).toHaveAttribute('data-reduced-motion', 'on')
-    rerender(<WidgetEntry bridge={undefined} preview={snapshot({ status: 'idle', theme: 'system', reducedMotion: 'system' })} />)
+    rerender(<WidgetEntry bridge={undefined} platform="win32" preview={snapshot({ status: 'idle', theme: 'system', reducedMotion: 'system' })} />)
     expect(document.documentElement).not.toHaveAttribute('data-theme')
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
     unmount()
@@ -893,6 +942,7 @@ describe('WidgetEntry', () => {
   it('keeps persistent announcement channels across null, idle, normal, success, and error states', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -904,7 +954,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     const polite = screen.getByRole('status')
     const assertive = screen.getByRole('alert')
     expect(polite).toHaveAttribute('aria-live', 'polite')
@@ -926,7 +976,7 @@ describe('WidgetEntry', () => {
     expect(assertive).toBeEmptyDOMElement()
 
     emit(snapshot({ status: 'requesting-permission', sessionId: 'announce', cancellable: true }))
-    expect(polite).toHaveTextContent('Waiting for microphone. Approve access in Windows')
+    expect(polite).toHaveTextContent(`Waiting for microphone. ${win32Copy.widgetPermissionPromptDetail}`)
     expect(assertive).toBeEmptyDOMElement()
 
     emit(snapshot({
@@ -942,7 +992,7 @@ describe('WidgetEntry', () => {
       status: 'processing', sessionId: 'announce', startedAt: Date.now() - 1_000,
       stage: 'transcribing', progress: 0.58, cancellable: true,
     }))
-    expect(polite).toHaveTextContent('Transcribing locally. Audio stays on this PC')
+    expect(polite).toHaveTextContent(`Transcribing locally. ${win32Copy.widgetProcessingDetail}`)
     expect(assertive).toBeEmptyDOMElement()
     expect(polite.contains(screen.getByRole('progressbar'))).toBe(false)
     expect(polite).not.toHaveTextContent('58%')
@@ -968,6 +1018,7 @@ describe('WidgetEntry', () => {
     const state = snapshot({ status: 'listening', sessionId: 'timer', startedAt: 0, level: 0.2 })
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         listener = next
         return () => { listener = null }
@@ -979,7 +1030,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    render(<WidgetEntry bridge={bridge} preview={null} />)
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     act(() => listener?.(state))
     expect(screen.getByText('00:01')).toBeVisible()
     act(() => vi.advanceTimersByTime(1_000))
@@ -990,6 +1041,7 @@ describe('WidgetEntry', () => {
   it('contains rejected widget command promises without exposing an error', async () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
+      platform: 'win32',
       onWidgetState: (next) => {
         listener = next
         return () => undefined
@@ -1001,7 +1053,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(async () => ({ ok: true })),
       reportDrag: vi.fn(async () => ({ ok: true })),
     }
-    const { container } = render(<WidgetEntry bridge={bridge} preview={null} />)
+    const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     act(() => listener?.(snapshot({
       status: 'listening', sessionId: 'rejected', startedAt: Date.now(), level: 0.2,
       cancellable: true,
@@ -1069,7 +1121,7 @@ describe('visual preview parser', () => {
         snapshot={snapshot({
           status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.3, cancellable: true,
         })}
-        now={5_000}
+        platform="win32" now={5_000}
       />,
     )
     const beacon = screen.getByTestId('recording-dot')
@@ -1079,7 +1131,7 @@ describe('visual preview parser', () => {
 
   it('renders the classic pill style with its bar sliver, pulse dot, and visualizer', () => {
     const { rerender, container } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle', widgetStyle: 'pill' })} now={5_000} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle', widgetStyle: 'pill' })} platform="win32" now={5_000} />,
     )
     expect(container.querySelector('.widget-shell')).toHaveAttribute('data-widget-style', 'pill')
     // The pill's resting sliver is a bare bar without the miniature orb.
@@ -1092,7 +1144,7 @@ describe('visual preview parser', () => {
           status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.5,
           widgetStyle: 'pill', cancellable: true,
         })}
-        now={5_000}
+        platform="win32" now={5_000}
       />,
     )
     expect(screen.queryByTestId('widget-orb')).not.toBeInTheDocument()
@@ -1106,7 +1158,7 @@ describe('visual preview parser', () => {
           status: 'processing', sessionId: 'processing', startedAt: 0, stage: 'transcribing',
           progress: 0.4, widgetStyle: 'pill', cancellable: true,
         })}
-        now={5_000}
+        platform="win32" now={5_000}
       />,
     )
     expect(screen.getByTestId('processing-orbit')).toHaveClass('widget-spinner')
@@ -1117,7 +1169,7 @@ describe('visual preview parser', () => {
         snapshot={snapshot({
           status: 'success', sessionId: 'success', output: 'pasted', widgetStyle: 'pill',
         })}
-        now={5_000}
+        platform="win32" now={5_000}
       />,
     )
     expect(screen.getByText('Pasted')).toBeVisible()

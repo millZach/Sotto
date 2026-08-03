@@ -1,26 +1,25 @@
 import { createHash } from 'node:crypto'
-import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
-import { promisify } from 'node:util'
 
-import { extractFile, listPackage } from '@electron/asar'
 import { _electron as electron } from '@playwright/test'
 
+import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyPreparedAssets } from './verify-model.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
+import { releasePlatformProfile } from './release-platform-profile.mjs'
 import {
   fileSha256,
   verifyBuildProvenance,
 } from './release-provenance.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
-const execFileAsync = promisify(execFile)
+const profile = releasePlatformProfile()
 
 function fail(message) {
   throw new Error(`Packaged release verification failed: ${message}`)
@@ -45,95 +44,58 @@ function requireReleaseFile(input) {
   const releaseRoot = resolve(repositoryRoot, 'release')
   const child = relative(releaseRoot, target)
   if (!child || child.startsWith(`..${sep}`) || child === '..' || isAbsolute(child)) {
-    fail('installer must be a file inside release')
+    fail(`${profile.distributableLabel} must be a file inside release`)
   }
-  if (!existsSync(target)) fail(`missing installer ${child}`)
+  if (!existsSync(target)) fail(`missing ${profile.distributableLabel} ${child}`)
   return target
 }
 
-async function findFile(root, name) {
-  if (!root || !existsSync(root)) return null
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name)
-    if (entry.isFile() && entry.name.toLowerCase() === name.toLowerCase()) return path
-    if (entry.isDirectory()) {
-      const nested = await findFile(path, name)
-      if (nested !== null) return nested
-    }
-  }
-  return null
-}
-
-async function resolveSevenZip() {
-  if (process.env.SOTTO_7ZA_PATH && existsSync(process.env.SOTTO_7ZA_PATH)) {
-    return process.env.SOTTO_7ZA_PATH
-  }
-  const cache = join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache')
-  const sevenZip = await findFile(cache, '7za.exe')
-  if (sevenZip === null) fail('electron-builder 7-Zip tool is unavailable for installer verification')
-  return sevenZip
-}
-
 export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
-  const installerPath = requireReleaseFile(installerInput)
-  const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-installer-asar-'))
+  const distributablePath = requireReleaseFile(installerInput)
+  let embedded
   try {
-    const sevenZip = await resolveSevenZip()
-    await execFileAsync(sevenZip, [
-      'x', '-y', `-o${extractionRoot}`, installerPath, 'resources\\app.asar',
-    ], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 })
-    const embeddedAsarPath = join(extractionRoot, 'resources', 'app.asar')
-    if (!existsSync(embeddedAsarPath)) fail('installer does not contain resources/app.asar')
-    const [embedded, unpacked] = await Promise.all([
-      fileSha256(embeddedAsarPath),
-      fileSha256(unpackedAsarPath),
-    ])
-    if (JSON.stringify(embedded) !== JSON.stringify(unpacked)) {
-      fail('installer embedded app.asar differs from verified win-unpacked app.asar')
-    }
-    return { name: basename(installerPath), ...embedded }
-  } finally {
-    await rm(extractionRoot, { recursive: true, force: true })
+    embedded = await profile.openDistributable(distributablePath, async (embeddedAsarPath) =>
+      existsSync(embeddedAsarPath) ? await fileSha256(embeddedAsarPath) : null,
+    )
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
   }
-}
-
-function asarText(asarPath, path) {
-  const archivePath = path.replace(/^[/\\]/, '').replaceAll('/', sep).replaceAll('\\', sep)
-  return extractFile(asarPath, archivePath).toString('utf8')
+  if (embedded === null) fail(`${profile.distributableLabel} does not contain resources/app.asar`)
+  const unpacked = await fileSha256(unpackedAsarPath)
+  if (JSON.stringify(embedded) !== JSON.stringify(unpacked)) {
+    fail(`${profile.distributableLabel} embedded app.asar differs from verified ${profile.packagedDirName} app.asar`)
+  }
+  return { name: basename(distributablePath), ...embedded }
 }
 
 function productionModuleRoots(entries) {
   const roots = new Set()
   for (const entry of entries) {
-    const match = /^\\node_modules\\((?:@[^\\]+\\)?[^\\]+)/.exec(entry)
-    if (match?.[1]) roots.add(match[1].replaceAll('\\', '/'))
+    const match = /^node_modules\/((?:@[^/]+\/)?[^/]+)/.exec(entry)
+    if (match?.[1]) roots.add(match[1])
   }
   return [...roots].sort()
 }
 
 async function verifyNormalPackagedLaunch(target, asarPath, entries) {
-  const executable = join(target, 'Sotto.exe')
+  const executable = profile.executablePath(target)
   const workerEntry = entries.find((entry) =>
-    /^\\out\\renderer\\assets\\worker-[^\\]+\.js$/.test(entry),
+    /^out\/renderer\/assets\/worker-[^/]+\.js$/.test(entry),
   )
   if (workerEntry === undefined) fail('transcription worker is missing from app.asar')
-  const workerUrl = pathToFileURL(join(asarPath, workerEntry.slice(1))).href
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
-  const forbiddenE2EProfile = join(profile, 'forbidden-e2e-profile')
-  const appData = join(profile, 'AppData', 'Roaming')
-  const localAppData = join(profile, 'AppData', 'Local')
-  await mkdir(appData, { recursive: true })
-  await mkdir(localAppData, { recursive: true })
+  const workerUrl = pathToFileURL(join(asarPath, workerEntry)).href
+  const smokeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
+  const forbiddenE2EProfile = join(smokeRoot, 'forbidden-e2e-profile')
+  const smokeEnvironment = await profile.smokeEnvironment(smokeRoot)
 
   let application
   try {
     application = await electron.launch({
       executablePath: executable,
-      args: [`--user-data-dir=${join(profile, 'Chromium')}`],
+      args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`],
       env: {
         ...process.env,
-        APPDATA: appData,
-        LOCALAPPDATA: localAppData,
+        ...smokeEnvironment,
         SOTTO_E2E: '1',
         SOTTO_E2E_SCENARIO: 'success',
         SOTTO_E2E_USER_DATA: forbiddenE2EProfile,
@@ -236,19 +198,23 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
     return result
   } finally {
     await application?.close().catch(() => undefined)
-    await rm(profile, { recursive: true, force: true })
+    await rm(smokeRoot, { recursive: true, force: true })
   }
 }
 
 export async function verifyPackagedResources(input, options = {}) {
   const target = requireInsideRepositoryRelease(input)
-  const resources = join(target, 'resources')
+  const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   for (const required of [
-    join(target, 'Sotto.exe'),
+    profile.executablePath(target),
     asarPath,
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
+    // The menu-bar template icons are macOS-only extraResources.
+    ...(profile.key === 'darwin'
+      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png')]
+      : []),
   ]) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
@@ -258,16 +224,16 @@ export async function verifyPackagedResources(input, options = {}) {
     runtimeRoot: join(resources, 'runtime'),
   })
 
-  const entries = listPackage(asarPath)
+  const entries = listAsarEntries(asarPath)
   for (const required of [
-    '\\out\\main\\index.js',
-    '\\out\\main\\external-dependencies.json',
-    '\\out\\preload\\index.js',
-    '\\out\\preload\\external-dependencies.json',
-    '\\out\\build-provenance.json',
-    '\\out\\renderer\\index.html',
-    '\\out\\renderer\\audio-capture-worklet.js',
-    '\\package.json',
+    'out/main/index.js',
+    'out/main/external-dependencies.json',
+    'out/preload/index.js',
+    'out/preload/external-dependencies.json',
+    'out/build-provenance.json',
+    'out/renderer/index.html',
+    'out/renderer/audio-capture-worklet.js',
+    'package.json',
   ]) {
     if (!entries.includes(required)) fail(`app.asar is missing ${required}`)
   }
@@ -286,13 +252,13 @@ export async function verifyPackagedResources(input, options = {}) {
     fail(`unexpected production modules: ${roots.join(', ') || '(none)'}`)
   }
 
-  const packagedJson = JSON.parse(asarText(asarPath, 'package.json'))
+  const packagedJson = JSON.parse(readAsarText(asarPath, 'package.json'))
   if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['zod'])) {
     fail('packaged dependency manifest is not minimal')
   }
   const externalInventories = {
-    main: JSON.parse(asarText(asarPath, 'out/main/external-dependencies.json')),
-    preload: JSON.parse(asarText(asarPath, 'out/preload/external-dependencies.json')),
+    main: JSON.parse(readAsarText(asarPath, 'out/main/external-dependencies.json')),
+    preload: JSON.parse(readAsarText(asarPath, 'out/preload/external-dependencies.json')),
   }
   try {
     verifyExternalDependencyInventories(externalInventories, roots)
@@ -300,17 +266,17 @@ export async function verifyPackagedResources(input, options = {}) {
     fail(error instanceof Error ? error.message : String(error))
   }
 
-  const worklet = asarText(asarPath, 'out/renderer/audio-capture-worklet.js')
+  const worklet = readAsarText(asarPath, 'out/renderer/audio-capture-worklet.js')
   if (!worklet.includes('sotto-audio-capture')) fail('packaged audio worklet is invalid')
   const rendererScripts = entries
-    .filter((entry) => /^\\out\\renderer\\assets\\main-[^\\]+\.js$/.test(entry))
-    .map((entry) => asarText(asarPath, entry.slice(1)))
+    .filter((entry) => /^out\/renderer\/assets\/main-[^/]+\.js$/.test(entry))
+    .map((entry) => readAsarText(asarPath, entry))
     .join('\n')
   if (!rendererScripts.includes('audio-capture-worklet.js') || rendererScripts.includes('addModule("/audio-capture-worklet.js")')) {
     fail('renderer contains an unsafe root-relative worklet URL')
   }
 
-  await verifyThirdPartyNotices({ packagedResources: resources, asarPath })
+  await verifyThirdPartyNotices({ licenseRoot: profile.licenseRoot(target), asarPath })
   const sourceNotices = await readFile(join(repositoryRoot, 'THIRD_PARTY_NOTICES.md'))
   const packagedNotices = await readFile(join(resources, 'THIRD_PARTY_NOTICES.md'))
   if (sha256(sourceNotices) !== sha256(packagedNotices)) fail('packaged notices differ from source')
@@ -320,8 +286,9 @@ export async function verifyPackagedResources(input, options = {}) {
     : await verifyInstallerAppAsar(options.installer, asarPath)
   const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
   const asarInfo = await stat(asarPath)
-  const executableInfo = await stat(join(target, 'Sotto.exe'))
+  const executableInfo = await stat(profile.executablePath(target))
   return {
+    platform: profile.key,
     target: basename(target),
     asarBytes: asarInfo.size,
     asarSha256: sha256(readFileSync(asarPath)),
@@ -344,7 +311,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const installer = process.argv[4]
   if ((installerFlag === undefined) !== (installer === undefined) ||
       (installerFlag !== undefined && installerFlag !== '--installer')) {
-    fail('expected optional --installer <release installer>')
+    fail(`expected optional --installer <release ${profile.distributableLabel}>`)
   }
   const result = await verifyPackagedResources(input, {
     ...(installer === undefined ? {} : { installer }),

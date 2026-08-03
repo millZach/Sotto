@@ -11,18 +11,22 @@ describe('RecoveryNoticeCenter', () => {
     center.publish({ code: 'SETTINGS_RECOVERED' })
     center.publish({ code: 'SETTINGS_RECOVERED' })
     center.publish({ code: 'HISTORY_RECOVERED' })
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
 
     expect(center.list()).toEqual([
       { code: 'SETTINGS_RECOVERED' },
       { code: 'HISTORY_RECOVERED' },
+      { code: 'ACCESSIBILITY_PERMISSION_REQUIRED' },
     ])
     expect(listener.mock.calls).toEqual([
       [{ code: 'SETTINGS_RECOVERED' }],
       [{ code: 'HISTORY_RECOVERED' }],
+      [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }],
     ])
     unsubscribe()
     center.publish({ code: 'SETTINGS_RECOVERED' })
-    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledTimes(3)
   })
 
   it('returns immutable copies that cannot alter retained notices', () => {

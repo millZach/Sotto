@@ -13,7 +13,8 @@ import type {
   TranscriptPolishAsrContext,
   TranscriptPolishResult,
 } from '../../../../shared/contracts'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/settings'
+import { defaultHotkey, type SottoPlatform } from '../../../../shared/platform'
+import { defaultSettings, type AppSettings } from '../../../../shared/settings'
 import { formatTranscript } from '../../../../shared/transcript'
 import { collapseRepeatedPhrases, countWords } from '../../../../shared/textRepair'
 import {
@@ -68,6 +69,8 @@ export interface DictationControllerDependencies {
     asr?: TranscriptPolishAsrContext,
   ) => Promise<TranscriptPolishResult>
   readonly cuePlayer?: DictationCuePlayer
+  /** Chooses the default hotkey used when settings cannot be read; win32 when unset. */
+  readonly platform?: SottoPlatform
   readonly now?: () => number
   readonly createId?: () => string
   readonly setTimer?: (callback: () => void, delayMs: number) => unknown
@@ -157,12 +160,14 @@ export class DictationController {
   private resetTimer: unknown
   private disposed = false
 
+  private readonly platform: SottoPlatform
   private readonly now: () => number
   private readonly createId: () => string
   private readonly setTimer: (callback: () => void, delayMs: number) => unknown
   private readonly clearTimer: (handle: unknown) => void
 
   constructor(private readonly dependencies: DictationControllerDependencies) {
+    this.platform = dependencies.platform ?? 'win32'
     this.now = dependencies.now ?? Date.now
     this.createId = dependencies.createId ?? (() => crypto.randomUUID())
     this.setTimer = dependencies.setTimer ?? defaultSetTimer
@@ -212,7 +217,7 @@ export class DictationController {
     try {
       settings = snapshotSettings(this.dependencies.getSettings())
     } catch {
-      settings = snapshotSettings(DEFAULT_SETTINGS)
+      settings = snapshotSettings(defaultSettings(defaultHotkey(this.platform)))
       settingsAvailable = false
     }
 

@@ -142,10 +142,20 @@ describe('Sotto design-system primitives', () => {
   })
 
   it('renders a shortcut as readable keyboard keys with one accessible name', () => {
-    render(<ShortcutKey accelerator="Ctrl+Shift+Space" />)
+    render(<ShortcutKey accelerator="Ctrl+Shift+Space" platform="win32" />)
 
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
     expect(document.querySelectorAll('kbd')).toHaveLength(3)
+    expect(screen.getAllByText('+', { ignore: false })).toHaveLength(2)
+  })
+
+  it('renders macOS glyph chips without separators under a spelled-out label', () => {
+    render(<ShortcutKey accelerator="Control+Shift+Space" platform="darwin" />)
+
+    expect(screen.getByLabelText('Control+Shift+Space')).toBeVisible()
+    expect([...document.querySelectorAll('kbd')].map((key) => key.textContent))
+      .toEqual(['⌃', '⇧', 'Space'])
+    expect(screen.queryByText('+')).not.toBeInTheDocument()
   })
 
   it('announces informational and error toast messages with appropriate urgency', () => {
@@ -194,7 +204,7 @@ describe('Sotto design-system primitives', () => {
   })
 
   it('normalizes the production Electron shortcut for Windows display', () => {
-    render(<ShortcutKey accelerator={DEFAULT_SETTINGS.hotkey} />)
+    render(<ShortcutKey accelerator={DEFAULT_SETTINGS.hotkey} platform="win32" />)
 
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
     expect(screen.queryByText('CommandOrControl')).not.toBeInTheDocument()

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
+import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type HotkeyChangeResult,
@@ -46,6 +47,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProps {
   return {
     settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
+    platform: 'win32',
     modelStatuses: {
       instant: { preset: 'instant', state: 'bundled' },
       fast: { preset: 'fast', state: 'missing' },
@@ -64,6 +66,8 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
   }
 }
 
+const copy = platformCopy('win32')
+
 describe('SettingsView', () => {
   it.each(['light', 'dark'] as const)('renders the complete field matrix in a %s container', async (theme) => {
     render(<div data-theme={theme}><SettingsView {...baseProps()} /></div>)
@@ -72,8 +76,8 @@ describe('SettingsView', () => {
       'Theme', 'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
       'Maximum recording time', 'Sound cues', 'Language', 'Whitespace formatting',
       'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
-      'Launch when Windows starts', 'Start minimized', 'Keep local history', 'History retention',
-    ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === 'Launch when Windows starts' || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
+      copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history', 'History retention',
+    ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === copy.settingsLaunchAtStartupLabel || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeDisabled()
@@ -470,7 +474,7 @@ describe('SettingsView', () => {
     render(<SettingsView {...baseProps({ onUpdateSettings: update, onSetStartup: startup, onResetSettings: reset, onClearHistory: clear })} />)
     await user.click(screen.getByRole('switch', { name: 'Automatic paste' }))
     await user.selectOptions(screen.getByRole('combobox', { name: 'History retention' }), '500')
-    await user.click(screen.getByRole('switch', { name: 'Launch when Windows starts' }))
+    await user.click(screen.getByRole('switch', { name: copy.settingsLaunchAtStartupLabel }))
     expect(update).toHaveBeenCalledWith({ autoPaste: false })
     expect(update).toHaveBeenCalledWith({ historyRetention: 500 })
     expect(startup).toHaveBeenCalledWith(true)
@@ -499,5 +503,27 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ formatWhitespace: false })
     expect(update).toHaveBeenCalledWith({ startMinimized: true })
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
+  })
+
+  it('renders the macOS copy row and canonicalizes shortcuts through the darwin aliases', async () => {
+    const user = userEvent.setup()
+    const macCopy = platformCopy('darwin')
+    const replace = vi.fn(async () => ({ ok: true as const }))
+    render(<SettingsView {...baseProps({ platform: 'darwin', onReplaceHotkey: replace })} />)
+
+    expect(screen.getByRole('switch', { name: macCopy.settingsLaunchAtStartupLabel })).toBeVisible()
+    expect(screen.getByRole('option', { name: macCopy.settingsMicrophoneDefaultOption })).toBeVisible()
+    expect(screen.getByText(macCopy.settingsGlobalShortcutDescription)).toBeVisible()
+    expect(screen.getByText(macCopy.settingsAutoPasteDescription)).toBeVisible()
+    expect(screen.getByText(macCopy.settingsThemeDescription)).toBeVisible()
+    expect(screen.queryByRole('switch', { name: copy.settingsLaunchAtStartupLabel })).not.toBeInTheDocument()
+
+    const input = screen.getByRole('textbox', { name: 'Global shortcut' })
+    expect(input).toHaveValue('Command+Shift+Space')
+    await user.clear(input)
+    await user.type(input, 'Control+Shift+Space')
+    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+
+    expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
   })
 })

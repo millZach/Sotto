@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildPasteHelperInvocation } from '../../../src/main/output/pasteCommand'
+import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 import {
   createWarmPasteAdapter,
   type HelperProcessLike,
 } from '../../../src/main/output/pasteHelper'
 import type { PasteProcessAdapter } from '../../../src/main/output/outputService'
-import { buildPasteInvocation } from '../../../src/main/output/pasteCommand'
+
+const windowsCommands = createPasteCommands('win32')
+const buildPasteInvocation = windowsCommands.oneShot
+const buildPasteHelperInvocation = windowsCommands.helper!
 
 class FakeHelperProcess implements HelperProcessLike {
   writes: string[] = []
@@ -65,7 +68,12 @@ function fallbackAdapter(result = true): PasteProcessAdapter & { calls: number }
   return adapter
 }
 
-describe('buildPasteHelperInvocation', () => {
+describe('warm helper invocation', () => {
+  it('exists only on Windows', () => {
+    expect(createPasteCommands('win32').helper).not.toBeNull()
+    expect(createPasteCommands('darwin').helper).toBeNull()
+  })
+
   it('builds a hidden PowerShell invocation that compiles once and loops on stdin', () => {
     const invocation = buildPasteHelperInvocation()
 

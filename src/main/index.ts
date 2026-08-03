@@ -5,10 +5,12 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  nativeImage,
   net,
   protocol,
   screen,
   session,
+  systemPreferences,
   Tray,
   type Event as ElectronEvent,
   type MenuItemConstructorOptions,
@@ -30,13 +32,27 @@ import {
   type PermissionRequestHandler,
   type SessionPermissionAdapter,
 } from './app/bootstrap'
+import { buildApplicationMenuTemplate } from './app/applicationMenu'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { registerIpc } from './ipc/registerIpc'
-import { createSpawnProcessAdapter, OutputService } from './output/outputService'
+import { createMicrophoneAccessGate } from './media/microphoneAccess'
+import {
+  createSpawnProcessAdapter,
+  OutputService,
+  type PasteProcessAdapter,
+} from './output/outputService'
+import {
+  ALWAYS_TRUSTED_ACCESSIBILITY,
+  createAccessibilityGate,
+  createAccessibilityGatedPasteAdapter,
+  type AccessibilityTrustAdapter,
+} from './output/pasteAccessibility'
+import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
+import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -60,6 +76,7 @@ import {
   parseDevelopmentRendererSources,
   WindowManager,
   type BrowserWindowLike,
+  type DockAdapter,
   type NavigationEventName,
   type Rectangle,
   type RendererDiagnostic,
@@ -75,7 +92,8 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
-import type { AppSettings } from '../shared/settings'
+import { resolvePlatform } from '../shared/platform'
+import { defaultSettings, type AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
 import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
 import { createModelIpcService } from './models/modelIpcService'
@@ -105,6 +123,12 @@ if (e2eConfiguration === null) {
 } else if (e2eConfiguration !== null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
 }
+
+// The only read of process.platform in the application; every platform-varying
+// decision resolves through this profile.
+const platform = resolvePlatform(process.platform)
+const profile = platformProfile(platform)
+const platformDefaults = defaultSettings(profile.defaultHotkey)
 
 type NativeDiagnostic =
   | BootstrapDiagnostic
@@ -296,8 +320,15 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.showInactive()
   }
 
-  setAlwaysOnTop(flag: boolean, level?: 'normal'): void {
+  setAlwaysOnTop(flag: boolean, level?: WidgetAlwaysOnTopLevel): void {
     this.window.setAlwaysOnTop(flag, level)
+  }
+
+  setVisibleOnAllWorkspaces(
+    visible: boolean,
+    options?: { readonly visibleOnFullScreen: boolean },
+  ): void {
+    this.window.setVisibleOnAllWorkspaces(visible, options)
   }
 
   getBounds(): Rectangle {
@@ -340,8 +371,14 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
+  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
   const recoveryNotices = new RecoveryNoticeCenter()
-  const { settings, history } = createStorageRepositories(userDataPath, recoveryNotices)
+  const { settings, history } = createStorageRepositories(
+    userDataPath,
+    recoveryNotices,
+    Date.now,
+    platformDefaults,
+  )
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -353,9 +390,33 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let widgetPlacement: StoredWidgetPlacement | null = await widgetPlacementStore.get()
   let showWidgetWhenIdle = (await settings.get()).showWidgetWhenIdle
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  const nativeDock = app.dock
+  const dock: DockAdapter | null =
+    e2eConfiguration === null && profile.dockPresence === 'dynamic' && nativeDock !== undefined
+      ? {
+          show: () => {
+            void nativeDock.show()
+          },
+          hide: () => {
+            nativeDock.hide()
+          },
+        }
+      : null
+  if (dock !== null) {
+    // The Dock icon is owned by main-window visibility, so it starts hidden and
+    // WindowManager reveals it with the first window.
+    try {
+      dock.hide()
+    } catch {
+      // A Dock that refuses to hide is cosmetic and must not fail startup.
+    }
+  }
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
     display: screen,
+    platform: profile.platform,
+    chrome: profile,
+    dock,
     preloadPath: join(__dirname, '../preload/index.js'),
     mainHtmlPath: join(__dirname, '../renderer/index.html'),
     widgetHtmlPath: join(__dirname, '../renderer/widget.html'),
@@ -371,8 +432,20 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
     },
   })
+  const applicationMenuTemplate = buildApplicationMenuTemplate({
+    platform,
+    appName: APP_NAME,
+    includeDeveloperTools: !app.isPackaged,
+    onShowSettings: () => {
+      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+    },
+  })
+  if (applicationMenuTemplate !== null) {
+    // Windows keeps Electron's default menu: installing null would also drop the
+    // reload/devtools accelerators the app ships with today.
+    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+  }
   const productionModels = e2eConfiguration === null ? await (async () => {
-    const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
     const modelRoot = join(resourceRoot, 'models')
     const runtimeRoot = join(resourceRoot, 'runtime')
     const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
@@ -391,7 +464,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })() : null
   const models = productionModels?.manager ?? createE2EModelOperations()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
-  const warmPaste = e2eConfiguration === null
+  const pasteCommands = createPasteCommands(platform)
+  const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
         spawnHelper: (invocation) =>
           spawn(invocation.executable, [...invocation.args], {
@@ -408,6 +482,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // first dictation.
   warmPaste?.start()
   app.on('will-quit', () => warmPaste?.dispose())
+  const basePaste: PasteProcessAdapter = e2eConfiguration === null
+    ? warmPaste
+      ?? createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options))
+    : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
+        const mainWindow = BrowserWindow.getAllWindows().find(
+          (candidate) => candidate.getTitle() === APP_NAME,
+        )
+        mainWindow?.webContents.insertText(text)
+      })
+  const accessibilityTrust: AccessibilityTrustAdapter =
+    e2eConfiguration === null && profile.pasteRequiresAccessibilityTrust
+      ? { isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt) }
+      : ALWAYS_TRUSTED_ACCESSIBILITY
   const output = new OutputService({
     clipboard: e2eState === null ? clipboard : createE2EClipboard(e2eState),
     widget: windows,
@@ -415,13 +502,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds)
       }),
-    process: warmPaste
-      ?? createE2EPasteProcess(e2eState!, e2eConfiguration!.scenario, (text) => {
-        const mainWindow = BrowserWindow.getAllWindows().find(
-          (candidate) => candidate.getTitle() === APP_NAME,
-        )
-        mainWindow?.webContents.insertText(text)
-      }),
+    process: createAccessibilityGatedPasteAdapter({
+      gate: createAccessibilityGate(accessibilityTrust),
+      inner: basePaste,
+      onUntrusted: () => recoveryNotices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }),
+    }),
+    buildPasteInvocation: pasteCommands.oneShot,
   })
 
   // Formatting-pass HTTP calls stay deterministic and offline in E2E runs.
@@ -476,8 +562,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   const nativeTray = e2eConfiguration === null
     ? await createTrayResource({
+        source: profile.trayIcon,
         executablePath: process.execPath,
         getFileIcon: (path, options) => app.getFileIcon(path, options),
+        resolveResourcePath: (relativePath) => join(resourceRoot, relativePath),
+        loadImageIcon: (path) => nativeImage.createFromPath(path),
+        markTemplate: (icon) => icon.setTemplateImage(true),
         createTray: (icon) => new Tray(icon),
         configure: (tray) => tray.setToolTip(APP_NAME),
       })
@@ -495,6 +585,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     repository: settings,
     hotkeys,
     startup,
+    defaults: platformDefaults,
     onAutoPasteChanged(enabled): void {
       currentTrayState = { ...currentTrayState, autoPaste: enabled }
       trayController.update(currentTrayState)
@@ -563,6 +654,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 
   const permissionAdapter = createPermissionAdapter()
+  const microphoneAccess =
+    e2eConfiguration === null && profile.requiresMediaAccessGate
+      ? createMicrophoneAccessGate({
+          status: () => systemPreferences.getMediaAccessStatus('microphone'),
+          request: () => systemPreferences.askForMediaAccess('microphone'),
+        })
+      : null
   return new NativeRuntimeController({
     windows,
     hotkeys,
@@ -571,10 +669,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     settings,
     publishIdleWidgetState,
     installPermissions: () =>
-      installSessionPermissionPolicy(permissionAdapter, () =>
-        windows
-          .getTrustedRenderers()
-          .filter((renderer) => renderer.role === 'main'),
+      installSessionPermissionPolicy(
+        permissionAdapter,
+        () =>
+          windows
+            .getTrustedRenderers()
+            .filter((renderer) => renderer.role === 'main'),
+        // Omitted where no OS microphone gate exists, which keeps the grant
+        // synchronous exactly as it is today.
+        microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
       ),
     installProtocols: productionModels === null
       ? () => () => undefined
@@ -680,6 +783,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 registerModelSchemesAsPrivileged(protocol)
 enableWasmThreadSupport(app.commandLine)
 app.setAppUserModelId(APP_ID)
+// Sotto lives in the tray/menu bar, so losing every window must not quit it —
+// Electron's unhandled default does exactly that.
+app.on('window-all-closed', () => undefined)
 
 void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
   logOperational('bootstrap-terminal-failed')

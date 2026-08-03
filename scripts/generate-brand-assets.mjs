@@ -1,14 +1,17 @@
-// Renders build/icon.svg and build/installer-sidebar.svg into the binary
-// brand assets electron-builder consumes: icon.png, icon.ico, installer-sidebar.bmp.
-// Run after editing either SVG: node scripts/generate-brand-assets.mjs
+// Renders build/icon.svg, build/installer-sidebar.svg and build/tray-template.svg
+// into the binary brand assets electron-builder consumes: icon.png, icon.ico,
+// installer-sidebar.bmp and the macOS menu-bar template PNGs.
+// Run after editing any SVG: node scripts/generate-brand-assets.mjs
 import { Buffer } from 'node:buffer'
-import { readFile, writeFile } from 'node:fs/promises'
-import { console } from 'node:console'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { log } from 'node:console'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import sharp from 'sharp'
 
-const buildDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'build')
+const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const buildDir = path.join(repoRoot, 'build')
+const trayDir = path.join(repoRoot, 'resources', 'tray')
 
 // Windows renders BMP-encoded entries most reliably below 256px, so only the
 // 256px entry uses PNG compression.
@@ -105,6 +108,27 @@ function bmp24(rgba, width, height) {
   return file
 }
 
+// macOS template images carry the glyph in the alpha channel only; the SVG is
+// authored at 16px so the 1x render lands on whole pixels.
+const TRAY_TEMPLATE_SOURCE_SIZE = 16
+
+async function trayTemplate() {
+  const svg = await readFile(path.join(buildDir, 'tray-template.svg'))
+  await mkdir(trayDir, { recursive: true })
+  for (const [size, name] of [
+    [16, 'sottoTemplate.png'],
+    [32, 'sottoTemplate@2x.png'],
+  ]) {
+    const png = await sharp(svg, {
+      density: (72 * size) / TRAY_TEMPLATE_SOURCE_SIZE,
+    })
+      .resize(size, size)
+      .png()
+      .toBuffer()
+    await writeFile(path.join(trayDir, name), png)
+  }
+}
+
 const iconSvg = await readFile(path.join(buildDir, 'icon.svg'))
 await sharp(iconSvg, { density: 768 }).resize(1024, 1024).png().toFile(path.join(buildDir, 'icon.png'))
 await writeFile(path.join(buildDir, 'icon.ico'), await buildIco(iconSvg))
@@ -118,4 +142,8 @@ const sidebar = await sharp(sidebarSvg, { density: 288 })
   .toBuffer()
 await writeFile(path.join(buildDir, 'installer-sidebar.bmp'), bmp24(sidebar, 164, 314))
 
-console.log('Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp')
+await trayTemplate()
+
+log(
+  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png',
+)

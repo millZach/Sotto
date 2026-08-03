@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import { defaultHotkey } from '../../../src/shared/platform'
 import {
   DEFAULT_SETTINGS,
   SETTINGS_VERSION,
+  defaultSettings,
   parseSettings,
   settingsSchema,
   type AppSettings,
@@ -73,6 +75,14 @@ describe('settings', () => {
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       streamingAsr: true,
+    })
+  })
+
+  it('builds per-platform defaults that differ only in the hotkey', () => {
+    expect(defaultSettings(defaultHotkey('win32'))).toEqual(DEFAULT_SETTINGS)
+    expect(defaultSettings(defaultHotkey('darwin'))).toEqual({
+      ...DEFAULT_SETTINGS,
+      hotkey: 'Control+Shift+Space',
     })
   })
 

@@ -34,6 +34,7 @@ const OK = Object.freeze({ ok: true as const })
 
 function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
+    platform: 'win32',
     listRecoveryNotices: vi.fn(async () => []),
     onRecoveryNotice: vi.fn(() => () => undefined),
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),

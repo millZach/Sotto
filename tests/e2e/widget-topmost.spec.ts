@@ -10,6 +10,8 @@ import { expect, test, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
 
+test.skip(process.platform !== 'win32', 'WS_EX_TOPMOST probe is Windows-only')
+
 async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /test microphone/i }).click()

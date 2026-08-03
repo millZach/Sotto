@@ -5,6 +5,7 @@ import type { HistoryEntry } from './history'
 import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
+import type { SottoPlatform } from './platform'
 
 export type Unsubscribe = () => void
 
@@ -326,6 +327,8 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
+  readonly platform: SottoPlatform
+
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
   onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
 
@@ -369,6 +372,8 @@ export interface SottoBridge {
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
+  readonly platform: SottoPlatform
+
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe
   requestToggle(): Promise<CommandResult>

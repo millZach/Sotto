@@ -1,5 +1,6 @@
 import type { PasteProcessAdapter } from './outputService'
-import { buildPasteHelperInvocation, type PasteInvocation } from './pasteCommand'
+import type { PasteInvocation } from './pasteCommand'
+import { buildPasteHelperInvocation } from './pasteCommand.win32'
 
 export interface HelperProcessLike {
   readonly stdin: { write(chunk: string): boolean } | null

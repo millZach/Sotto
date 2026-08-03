@@ -187,7 +187,7 @@ const output = `# Third-Party Notices
 
 Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
 
-Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\`. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
+Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
 | Component | Version / revision | License | Copyright / attribution |
 |---|---|---|---|
@@ -202,6 +202,8 @@ The Sotto icon is original project artwork generated on 2026-07-15 with OpenAI's
 Final generation prompt:
 
 > Use case: logo-brand. Asset type: Windows desktop application icon source, 1024 x 1024 square. Create an original Sotto symbol: an indigo rounded-square tile containing a symmetric microphone capsule whose central negative-space stem transitions cleanly into a text insertion caret, with exactly two small cyan audio ticks, one on each side. Crisp flat vector-like bitmap, minimal geometric construction, strong silhouette, professional desktop utility branding. Centered with generous padding and optimized for 16 pixels. Deep indigo tile, near-white microphone/caret, restrained bright cyan ticks. Perfectly flat solid \`#00ff00\` chroma-key background. No text, letters, wordmark, watermark, mockup, 3D, bevel, gloss, photographic detail, or cast shadow.
+
+Every platform derivative descends from that same original artwork: the macOS \`.icns\` is derived by electron-builder from \`build/icon.png\` at package time and is not committed, and the macOS menu-bar template images \`resources/tray/sottoTemplate.png\` and \`sottoTemplate@2x.png\` are rendered from \`build/tray-template.svg\`.
 
 Source and legibility proof are retained in \`artifacts/design/brand/\` in the source repository. Packaged users receive only the final application artwork.
 

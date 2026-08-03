@@ -45,6 +45,7 @@ type HarnessOptions = {
   readonly ids?: string[]
   readonly getSettings?: () => AppSettings
   readonly polishTranscript?: NonNullable<DictationControllerDependencies['polishTranscript']>
+  readonly platform?: NonNullable<DictationControllerDependencies['platform']>
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -99,6 +100,7 @@ function createHarness(options: HarnessOptions = {}) {
     publishWidgetState,
     ...(polishTranscript === undefined ? {} : { polishTranscript }),
     ...(options.cuePlayer === undefined ? {} : { cuePlayer: options.cuePlayer }),
+    ...(options.platform === undefined ? {} : { platform: options.platform }),
     now: options.now ?? (() => 1_000),
     createId: () => ids.shift() ?? 'later-session',
     setTimer,
@@ -156,6 +158,27 @@ describe('DictationController', () => {
     }))
     expect(snapshots(harness).at(-1)).not.toHaveProperty('message')
   })
+
+  it.each([
+    [undefined, 'CommandOrControl+Shift+Space'],
+    ['win32', 'CommandOrControl+Shift+Space'],
+    ['darwin', 'Control+Shift+Space'],
+  ] as const)(
+    'falls back to the %s default shortcut when settings are unavailable',
+    async (platform, shortcut) => {
+      const harness = createHarness({
+        ...(platform === undefined ? {} : { platform }),
+        getSettings: () => { throw new Error('private settings path') },
+      })
+
+      await harness.controller.start()
+
+      expect(snapshots(harness).at(-1)).toMatchObject({
+        code: 'SETTINGS_UNAVAILABLE',
+        shortcut,
+      })
+    },
+  )
   it('copies a successful result and records returned metadata', async () => {
     const harness = createHarness()
 

@@ -1,6 +1,6 @@
 import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { createPackage } from '@electron/asar'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -46,28 +46,51 @@ describe('release build provenance', () => {
   it('keeps the build-input revision stable across docs, tests, and release-output changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
     temporaryRoots.push(root)
+    const macExecutable = join(root, 'release', 'mac-arm64', 'Sotto.app', 'Contents', 'MacOS', 'Sotto')
     await Promise.all([
       mkdir(join(root, 'src'), { recursive: true }),
       mkdir(join(root, 'docs', 'qa'), { recursive: true }),
       mkdir(join(root, 'tests'), { recursive: true }),
-      mkdir(join(root, 'release'), { recursive: true }),
+      mkdir(join(root, 'release', 'win-unpacked'), { recursive: true }),
+      mkdir(dirname(macExecutable), { recursive: true }),
     ])
     await Promise.all([
       writeFile(join(root, 'package.json'), '{"name":"sotto"}\n'),
       writeFile(join(root, 'src', 'index.ts'), 'export const app = true\n'),
       writeFile(join(root, 'docs', 'qa', 'audit.md'), 'before\n'),
       writeFile(join(root, 'tests', 'app.test.ts'), 'before\n'),
-      writeFile(join(root, 'release', 'Sotto.exe'), 'before\n'),
+      writeFile(join(root, 'release', 'win-unpacked', 'Sotto.exe'), 'before\n'),
+      writeFile(macExecutable, 'before\n'),
     ])
     const before = await readBuildInputsRevision(root)
 
     await Promise.all([
       writeFile(join(root, 'docs', 'qa', 'audit.md'), 'after\n'),
       writeFile(join(root, 'tests', 'app.test.ts'), 'after\n'),
-      writeFile(join(root, 'release', 'Sotto.exe'), 'after\n'),
+      writeFile(join(root, 'release', 'win-unpacked', 'Sotto.exe'), 'after\n'),
+      writeFile(macExecutable, 'after\n'),
     ])
 
     await expect(readBuildInputsRevision(root)).resolves.toBe(before)
+  })
+
+  it('binds the release seam scripts into the build-input revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
+    temporaryRoots.push(root)
+    await mkdir(join(root, 'scripts'), { recursive: true })
+    await Promise.all([
+      writeFile(join(root, 'package.json'), '{"name":"sotto"}\n'),
+      writeFile(join(root, 'scripts', 'asar-entries.mjs'), 'export const before = true\n'),
+      writeFile(join(root, 'scripts', 'release-platform-profile.mjs'), 'export const before = true\n'),
+    ])
+    const before = await readBuildInputsRevision(root)
+
+    await writeFile(join(root, 'scripts', 'asar-entries.mjs'), 'export const after = true\n')
+    const afterEntries = await readBuildInputsRevision(root)
+    await writeFile(join(root, 'scripts', 'release-platform-profile.mjs'), 'export const after = true\n')
+    const afterProfile = await readBuildInputsRevision(root)
+
+    expect(new Set([before, afterEntries, afterProfile]).size).toBe(3)
   })
 
   it('rejects an internally valid stale package that differs from the just-built output', async () => {

@@ -638,6 +638,12 @@ h1[tabindex='-1']:focus {
   user-select: none;
 }
 
+/* Reserves the strip macOS paints its traffic lights into (16px inset + the
+   three 20px buttons and their gaps), which no element of ours can occupy. */
+.app-titlebar--mac {
+  padding-left: 78px;
+}
+
 .app-titlebar__brand {
   display: flex;
   align-items: center;

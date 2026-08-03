@@ -5,7 +5,7 @@ import {
   isTrustedMainE2ESender,
   resolveE2EConfiguration,
 } from '../../../src/main/e2e/e2eBoundary'
-import { parseWindowsAccelerator } from '../../../src/shared/accelerator'
+import { parseAccelerator } from '../../../src/shared/accelerator'
 import { E2E_CONFLICTING_HOTKEY, e2eScenarioSchema } from '../../../src/shared/e2e'
 
 describe('development-only E2E admission', () => {
@@ -63,7 +63,7 @@ describe('development-only E2E admission', () => {
     const shortcuts = createE2EGlobalShortcuts('hotkey-conflict')
     const previous = 'CommandOrControl+Shift+Space'
     const callback = () => undefined
-    const candidate = parseWindowsAccelerator(E2E_CONFLICTING_HOTKEY)
+    const candidate = parseAccelerator(E2E_CONFLICTING_HOTKEY, 'win32')
 
     expect(shortcuts.register(previous, callback)).toBe(true)
     expect(candidate).toBe('CommandOrControl+Alt+9')

@@ -20,10 +20,14 @@ const preview = parseVisualPreview(
   parameters,
   isVisualPreviewEnabled(window, import.meta.env.SOTTO_VISUAL_PREVIEW),
 )
-const bridge = preview === null && previewRequested ? undefined : window.sottoWidget
+const widgetBridge = window.sottoWidget
+const bridge = preview === null && previewRequested ? undefined : widgetBridge
+// The widget has no AppContext; the bridge carries the platform the main
+// process resolved. Without a bridge (visual preview) the Windows row applies.
+const platform = widgetBridge?.platform ?? 'win32'
 
 createRoot(rootElement).render(
   <StrictMode>
-    <WidgetEntry bridge={bridge} preview={preview} />
+    <WidgetEntry bridge={bridge} preview={preview} platform={platform} />
   </StrictMode>,
 )

@@ -129,6 +129,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   streamingAsr: true,
 }
 
+/**
+ * The defaults for one platform. Only the hotkey differs today, and the caller
+ * supplies it from the platform profile so this module stays platform-free.
+ */
+export function defaultSettings(defaultHotkey: string): AppSettings {
+  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey }
+}
+
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input)
 }
@@ -136,43 +144,44 @@ function isRecord(input: unknown): input is Record<string, unknown> {
 function parseField<Key extends keyof AppSettings>(
   input: Record<string, unknown>,
   key: Key,
+  defaults: AppSettings,
 ): AppSettings[Key] {
   const result = fieldSchemas[key].safeParse(input[key])
-  return result.success ? (result.data as AppSettings[Key]) : DEFAULT_SETTINGS[key]
+  return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
-export function parseSettings(input: unknown): AppSettings {
+export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS): AppSettings {
   const persisted = isRecord(input) ? input : {}
 
   return {
-    version: parseField(persisted, 'version'),
-    theme: parseField(persisted, 'theme'),
-    reducedMotion: parseField(persisted, 'reducedMotion'),
-    microphoneId: parseField(persisted, 'microphoneId'),
-    hotkey: parseField(persisted, 'hotkey'),
-    maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds'),
-    soundCues: parseField(persisted, 'soundCues'),
-    modelPreset: parseField(persisted, 'modelPreset'),
-    language: parseField(persisted, 'language'),
-    inferencePreference: parseField(persisted, 'inferencePreference'),
-    formatWhitespace: parseField(persisted, 'formatWhitespace'),
-    autoCopy: parseField(persisted, 'autoCopy'),
-    autoPaste: parseField(persisted, 'autoPaste'),
-    pasteDelayMs: parseField(persisted, 'pasteDelayMs'),
-    successDisplayMs: parseField(persisted, 'successDisplayMs'),
-    launchAtStartup: parseField(persisted, 'launchAtStartup'),
-    startMinimized: parseField(persisted, 'startMinimized'),
-    showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle'),
-    widgetStyle: parseField(persisted, 'widgetStyle'),
-    historyEnabled: parseField(persisted, 'historyEnabled'),
-    historyRetention: parseField(persisted, 'historyRetention'),
-    onboardingComplete: parseField(persisted, 'onboardingComplete'),
-    llmFormatting: parseField(persisted, 'llmFormatting'),
-    llmApiKey: parseField(persisted, 'llmApiKey'),
-    llmDictionary: parseField(persisted, 'llmDictionary'),
-    llmQuality: parseField(persisted, 'llmQuality'),
-    llmTimeoutMs: parseField(persisted, 'llmTimeoutMs'),
-    llmMinWords: parseField(persisted, 'llmMinWords'),
-    streamingAsr: parseField(persisted, 'streamingAsr'),
+    version: parseField(persisted, 'version', defaults),
+    theme: parseField(persisted, 'theme', defaults),
+    reducedMotion: parseField(persisted, 'reducedMotion', defaults),
+    microphoneId: parseField(persisted, 'microphoneId', defaults),
+    hotkey: parseField(persisted, 'hotkey', defaults),
+    maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
+    soundCues: parseField(persisted, 'soundCues', defaults),
+    modelPreset: parseField(persisted, 'modelPreset', defaults),
+    language: parseField(persisted, 'language', defaults),
+    inferencePreference: parseField(persisted, 'inferencePreference', defaults),
+    formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
+    autoCopy: parseField(persisted, 'autoCopy', defaults),
+    autoPaste: parseField(persisted, 'autoPaste', defaults),
+    pasteDelayMs: parseField(persisted, 'pasteDelayMs', defaults),
+    successDisplayMs: parseField(persisted, 'successDisplayMs', defaults),
+    launchAtStartup: parseField(persisted, 'launchAtStartup', defaults),
+    startMinimized: parseField(persisted, 'startMinimized', defaults),
+    showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
+    widgetStyle: parseField(persisted, 'widgetStyle', defaults),
+    historyEnabled: parseField(persisted, 'historyEnabled', defaults),
+    historyRetention: parseField(persisted, 'historyRetention', defaults),
+    onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),
+    llmFormatting: parseField(persisted, 'llmFormatting', defaults),
+    llmApiKey: parseField(persisted, 'llmApiKey', defaults),
+    llmDictionary: parseField(persisted, 'llmDictionary', defaults),
+    llmQuality: parseField(persisted, 'llmQuality', defaults),
+    llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
+    llmMinWords: parseField(persisted, 'llmMinWords', defaults),
+    streamingAsr: parseField(persisted, 'streamingAsr', defaults),
   }
 }

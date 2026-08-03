@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
@@ -148,10 +148,9 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Xenova/whisper-tiny',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 
-  if (options.packagedResources) {
-    const applicationRoot = dirname(options.packagedResources)
+  if (options.licenseRoot) {
     for (const file of ['LICENSE.electron.txt', 'LICENSES.chromium.html']) {
-      const path = join(applicationRoot, file)
+      const path = join(options.licenseRoot, file)
       if (!existsSync(path) || readFileSync(path).length < 100) fail(`missing packaged ${file}`)
     }
   }

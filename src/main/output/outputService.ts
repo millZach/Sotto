@@ -1,5 +1,5 @@
 import type { OutputOutcome } from '../../shared/contracts'
-import { buildPasteInvocation, type PasteInvocation } from './pasteCommand'
+import type { PasteInvocation } from './pasteCommand'
 
 export interface ClipboardAdapter {
   writeText(text: string): void
@@ -18,6 +18,7 @@ export interface OutputServiceDependencies {
   readonly widget: WidgetAdapter
   readonly delay: (milliseconds: number) => void | Promise<void>
   readonly process: PasteProcessAdapter
+  readonly buildPasteInvocation: () => PasteInvocation
 }
 
 export interface SpawnedProcessLike {
@@ -116,7 +117,9 @@ export class OutputService {
     try {
       await this.dependencies.widget.hideWidget()
       await this.dependencies.delay(options.pasteDelayMs)
-      const pasted = await this.dependencies.process.run(buildPasteInvocation())
+      const pasted = await this.dependencies.process.run(
+        this.dependencies.buildPasteInvocation(),
+      )
       return pasted ? 'pasted' : 'copied'
     } catch {
       return 'copied'

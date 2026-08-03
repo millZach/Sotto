@@ -5,8 +5,10 @@ import {
   NativeSettingsCoordinator,
 } from '../../../src/main/settings/nativeSettingsCoordinator'
 import type { HotkeyChangeResult } from '../../../src/shared/contracts'
+import { platformProfile } from '../../../src/main/platformProfile'
 import {
   DEFAULT_SETTINGS,
+  defaultSettings,
   type AppSettings,
   type SettingsPatch,
 } from '../../../src/shared/settings'
@@ -271,5 +273,44 @@ describe('NativeSettingsCoordinator', () => {
       settings.hotkey === 'Alt+Space')).toBe(true)
     expect(harness.settingsChanged.mock.calls.some(([settings]) =>
       settings.launchAtStartup === true)).toBe(true)
+  })
+  it('resets to the injected platform defaults instead of the Windows row', async () => {
+    const defaults = defaultSettings(platformProfile('darwin').defaultHotkey)
+    let persisted: AppSettings = { ...defaults, hotkey: 'Control+Alt+M' }
+    let activeHotkey = persisted.hotkey
+    const coordinator = new NativeSettingsCoordinator({
+      repository: {
+        get: vi.fn(async () => ({ ...persisted })),
+        update: vi.fn(async (patch: Partial<AppSettings>) => {
+          persisted = { ...persisted, ...patch }
+          return { ...persisted }
+        }),
+        save: vi.fn(async (settings: AppSettings) => {
+          persisted = { ...settings }
+          return { ...persisted }
+        }),
+        reset: vi.fn(async () => {
+          persisted = { ...defaults }
+          return { ...persisted }
+        }),
+      },
+      hotkeys: {
+        current: vi.fn(() => activeHotkey),
+        replace: vi.fn((accelerator: string): HotkeyChangeResult => {
+          activeHotkey = accelerator.trim()
+          return { ok: true as const }
+        }),
+      },
+      startup: {
+        get: vi.fn(() => ({ enabled: false })),
+        set: vi.fn((enabled: boolean) => ({ enabled })),
+      },
+      onAutoPasteChanged: vi.fn(),
+      onSettingsChanged: vi.fn(),
+      defaults,
+    })
+
+    await expect(coordinator.resetSettings()).resolves.toEqual(defaults)
+    expect(activeHotkey).toBe('Control+Shift+Space')
   })
 })

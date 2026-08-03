@@ -3,9 +3,11 @@ import { spawn } from 'node:child_process'
 import { chromium } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
 
-import { buildPasteInvocation } from '../../src/main/output/pasteCommand'
+import { createPasteCommands } from '../../src/main/output/pasteCommand'
 import { createSpawnProcessAdapter } from '../../src/main/output/outputService'
 import { createWarmPasteAdapter } from '../../src/main/output/pasteHelper'
+
+const buildPasteInvocation = createPasteCommands('win32').oneShot
 
 const SMOKE_TEXT = 'sotto-sendinput-smoke'
 const EDGE_TITLE = 'Sotto Edge native paste smoke'

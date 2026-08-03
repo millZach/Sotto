@@ -22,6 +22,7 @@ import type {
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import type { HistoryEntry } from '../../../shared/history'
+import type { SottoPlatform } from '../../../shared/platform'
 import type { AppSettings, ModelPreset, SettingsPatch } from '../../../shared/settings'
 import type { RecoveryNotice } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
@@ -33,6 +34,7 @@ import {
   type DictationRecorder,
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
+import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { TranscriptionClient } from '../transcription/client'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
@@ -64,6 +66,7 @@ export interface AppControllerFactoryBindings {
   readonly addHistory: SottoBridge['addHistory']
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
   readonly polishTranscript?: SottoBridge['polishTranscript']
+  readonly platform?: SottoPlatform
 }
 
 export type AppControllerFactory = (
@@ -87,6 +90,7 @@ export function createProductionDictationController(
   factories: ProductionControllerFactories = productionFactories,
 ): AppController {
   const polish = bindings.polishTranscript
+  const platform = bindings.platform
   const dependencies: DictationControllerDependencies = {
     createRecorder: factories.createRecorder,
     transcriber: factories.createTranscriber(),
@@ -95,6 +99,7 @@ export function createProductionDictationController(
     deliverOutput: bindings.deliverOutput,
     addHistory: bindings.addHistory,
     publishWidgetState: bindings.publishWidgetState,
+    ...(platform === undefined ? {} : { platform }),
     ...(polish === undefined
       ? {}
       : {
@@ -131,6 +136,8 @@ export interface AppActions {
 }
 
 export interface AppContextValue {
+  readonly platform: SottoPlatform
+  readonly copy: PlatformCopy
   readonly status: AppStatus
   readonly historyStatus: HistoryStatus
   readonly failure: AppFailureCode | null
@@ -178,6 +185,12 @@ export function AppProvider({
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
+
+  // The main process resolved the platform once and carried it across the
+  // bridge; an absent bridge is already the unavailable path, so it reads as
+  // the Windows row rather than blocking the view.
+  const platform: SottoPlatform = bridge?.platform ?? 'win32'
+  const copy = platformCopy(platform)
 
   const settingsRef = useRef<AppSettings | null>(null)
   const controllerRef = useRef<AppController | null>(null)
@@ -368,6 +381,7 @@ export function AppProvider({
 
         let controller!: AppController
         const bindings: AppControllerFactoryBindings = {
+          platform,
           getSettings: () => {
             const current = settingsRef.current
             if (current === null) throw new Error('SETTINGS_UNAVAILABLE')
@@ -608,6 +622,8 @@ export function AppProvider({
   }), [bridge, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
 
   const value = useMemo<AppContextValue>(() => ({
+    platform,
+    copy,
     status,
     historyStatus,
     failure,
@@ -618,7 +634,7 @@ export function AppProvider({
     navigation,
     recoveryNotices,
     actions,
-  }), [actions, dictation, failure, history, historyStatus, modelStatuses, navigation, recoveryNotices, settings, status])
+  }), [actions, copy, dictation, failure, history, historyStatus, modelStatuses, navigation, platform, recoveryNotices, settings, status])
 
   return createElement(AppContext.Provider, { value }, children)
 }

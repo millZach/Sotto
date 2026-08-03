@@ -10,6 +10,7 @@ import {
   type WindowConstructorOptions,
 } from '../../../src/main/windows/windowManager'
 import type { StoredWidgetPlacement } from '../../../src/main/storage/widgetPlacementRepository'
+import { platformProfile } from '../../../src/main/platformProfile'
 
 type WindowEvent = 'close' | 'closed' | 'moved'
 
@@ -35,6 +36,7 @@ class FakeWindow implements BrowserWindowLike {
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setAlwaysOnTop = vi.fn()
+  readonly setVisibleOnAllWorkspaces = vi.fn()
   bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
   readonly setBoundsCalls: Rectangle[] = []
   readonly setPositionCalls: Array<readonly [number, number]> = []
@@ -123,6 +125,10 @@ function createDeferred<Value>() {
   return { promise, reject, resolve }
 }
 
+function darwinOverrides(): Partial<ConstructorParameters<typeof WindowManager>[0]> {
+  return { platform: 'darwin', chrome: platformProfile('darwin') }
+}
+
 function createHarness(
   overrides: Partial<ConstructorParameters<typeof WindowManager>[0]> = {},
   configureWindow: (window: FakeWindow) => void = () => undefined,
@@ -146,6 +152,9 @@ function createHarness(
         workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
       }),
     },
+    platform: 'win32',
+    chrome: platformProfile('win32'),
+    dock: null,
     preloadPath: 'C:/Sotto/out/preload/index.js',
     mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
     widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
@@ -291,7 +300,10 @@ describe('WindowManager construction', () => {
         frame: false,
         webPreferences: {
           preload: 'C:/Sotto/out/preload/index.js',
-          additionalArguments: ['--sotto-renderer-role=main'],
+          additionalArguments: [
+            '--sotto-renderer-role=main',
+            '--sotto-platform=win32',
+          ],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -323,7 +335,10 @@ describe('WindowManager construction', () => {
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/Sotto/out/preload/index.js',
-          additionalArguments: ['--sotto-renderer-role=widget'],
+          additionalArguments: [
+            '--sotto-renderer-role=widget',
+            '--sotto-platform=win32',
+          ],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -341,6 +356,75 @@ describe('WindowManager construction', () => {
     await manager.createWidgetWindow()
 
     expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'normal')
+  })
+
+  it('gives the macOS main window inset traffic lights instead of a removed frame', async () => {
+    const { manager, options } = createHarness(darwinOverrides())
+
+    await manager.createMainWindow()
+
+    expect(options[0]).toStrictEqual({
+      width: 1_080,
+      height: 720,
+      minWidth: 820,
+      minHeight: 560,
+      show: false,
+      title: 'Sotto',
+      backgroundColor: '#1b1917',
+      autoHideMenuBar: true,
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: platformProfile('darwin').trafficLightPosition,
+      webPreferences: {
+        preload: 'C:/Sotto/out/preload/index.js',
+        additionalArguments: [
+          '--sotto-renderer-role=main',
+          '--sotto-platform=darwin',
+        ],
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+    expect(options[0]).not.toHaveProperty('frame')
+  })
+
+  it('raises the macOS widget to the floating level and spans workspaces', async () => {
+    const { manager, options, windows } = createHarness(darwinOverrides())
+
+    await manager.createWidgetWindow()
+
+    expect(options[0]?.focusable).toBe(false)
+    expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+    expect(windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
+      visibleOnFullScreen: true,
+    })
+  })
+
+  it('leaves workspace spanning alone where the profile does not ask for it', async () => {
+    const { manager, windows } = createHarness()
+
+    await manager.createWidgetWindow()
+
+    expect(windows[0]!.setVisibleOnAllWorkspaces).not.toHaveBeenCalled()
+  })
+
+  it('contains an unsupported or failing workspace-spanning request', async () => {
+    const failing = createHarness(darwinOverrides(), (window) => {
+      window.setVisibleOnAllWorkspaces.mockImplementation(() => {
+        throw new Error('unsupported')
+      })
+    })
+    const absent = createHarness(darwinOverrides(), (window) => {
+      Reflect.deleteProperty(window, 'setVisibleOnAllWorkspaces')
+    })
+
+    await expect(failing.manager.createWidgetWindow()).resolves.toBe(
+      failing.windows[0],
+    )
+    await expect(absent.manager.createWidgetWindow()).resolves.toBe(
+      absent.windows[0],
+    )
+    expect(failing.windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
   })
 
   it('retains one instance of each window', async () => {
@@ -1101,6 +1185,70 @@ describe('WindowManager lifecycle', () => {
     expect(main.show.mock.invocationCallOrder[0]).toBeLessThan(
       main.focus.mock.invocationCallOrder[0]!,
     )
+  })
+
+  it('brackets main-window visibility with dock presence', async () => {
+    const events: string[] = []
+    const dock = {
+      show: vi.fn(() => {
+        events.push('dock:show')
+      }),
+      hide: vi.fn(() => {
+        events.push('dock:hide')
+      }),
+    }
+    const { manager, windows } = createHarness({ dock }, (window) => {
+      window.show.mockImplementation(() => {
+        events.push('window:show')
+      })
+      window.hide.mockImplementation(() => {
+        events.push('window:hide')
+      })
+    })
+
+    await manager.showMain()
+    manager.hideMain()
+    await manager.showMain()
+    windows[0]!.emit('close')
+
+    expect(events).toEqual([
+      'dock:show',
+      'window:show',
+      'window:hide',
+      'dock:hide',
+      'dock:show',
+      'window:show',
+      'window:hide',
+      'dock:hide',
+    ])
+  })
+
+  it('keeps showing and hiding the main window where there is no runtime dock', async () => {
+    const { manager, windows } = createHarness({ dock: null })
+
+    await manager.showMain()
+    manager.hideMain()
+
+    expect(windows[0]!.show).toHaveBeenCalledOnce()
+    expect(windows[0]!.hide).toHaveBeenCalledOnce()
+  })
+
+  it('contains a failing dock so window visibility still changes', async () => {
+    const dock = {
+      show: vi.fn(() => {
+        throw new Error('dock unavailable')
+      }),
+      hide: vi.fn(() => {
+        throw new Error('dock unavailable')
+      }),
+    }
+    const { manager, windows } = createHarness({ dock })
+
+    await manager.showMain()
+    manager.hideMain()
+
+    expect(windows[0]!.show).toHaveBeenCalledOnce()
+    expect(windows[0]!.hide).toHaveBeenCalledOnce()
   })
 
   it('reports renderer delivery success and contains missing, destroyed, or throwing sends', async () => {

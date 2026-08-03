@@ -28,6 +28,11 @@ export interface NativeSettingsCoordinatorDependencies {
   readonly startup: NativeSettingsStartupService
   readonly onAutoPasteChanged: (enabled: boolean) => void | Promise<void>
   readonly onSettingsChanged: (settings: AppSettings) => void | Promise<void>
+  /**
+   * Platform defaults; must be the same row the repository resets to, or the
+   * reset transaction fails its own verification. Omitting them keeps Windows.
+   */
+  readonly defaults?: AppSettings
 }
 
 export class NativeManagedSettingMutationError extends Error {
@@ -154,34 +159,35 @@ export class NativeSettingsCoordinator {
 
   resetSettings(): Promise<AppSettings> {
     return this.enqueue(async () => {
+      const defaults = this.dependencies.defaults ?? DEFAULT_SETTINGS
       const previousSettings = await this.dependencies.repository.get()
       const previousHotkey =
         (await this.dependencies.hotkeys.current()) ?? previousSettings.hotkey
       const previousStartup = await this.dependencies.startup.get()
 
       try {
-        const hotkeyResult = await this.dependencies.hotkeys.replace(DEFAULT_SETTINGS.hotkey)
+        const hotkeyResult = await this.dependencies.hotkeys.replace(defaults.hotkey)
         if (!hotkeyResult.ok) {
           throw new NativeSettingsTransactionError()
         }
-        if ((await this.dependencies.hotkeys.current()) !== DEFAULT_SETTINGS.hotkey) {
+        if ((await this.dependencies.hotkeys.current()) !== defaults.hotkey) {
           throw new NativeSettingsTransactionError()
         }
         const startupResult = await this.dependencies.startup.set(
-          DEFAULT_SETTINGS.launchAtStartup,
+          defaults.launchAtStartup,
         )
-        if (startupResult.enabled !== DEFAULT_SETTINGS.launchAtStartup) {
+        if (startupResult.enabled !== defaults.launchAtStartup) {
           throw new NativeSettingsTransactionError()
         }
-        if (previousSettings.autoPaste !== DEFAULT_SETTINGS.autoPaste) {
-          await this.dependencies.onAutoPasteChanged(DEFAULT_SETTINGS.autoPaste)
+        if (previousSettings.autoPaste !== defaults.autoPaste) {
+          await this.dependencies.onAutoPasteChanged(defaults.autoPaste)
         }
 
         const reset = await this.dependencies.repository.reset()
         if (
-          reset.hotkey !== DEFAULT_SETTINGS.hotkey ||
-          reset.launchAtStartup !== DEFAULT_SETTINGS.launchAtStartup ||
-          reset.autoPaste !== DEFAULT_SETTINGS.autoPaste
+          reset.hotkey !== defaults.hotkey ||
+          reset.launchAtStartup !== defaults.launchAtStartup ||
+          reset.autoPaste !== defaults.autoPaste
         ) {
           throw new NativeSettingsTransactionError()
         }

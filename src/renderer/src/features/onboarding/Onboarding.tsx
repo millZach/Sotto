@@ -8,12 +8,14 @@ import React, {
 
 import type { ModelDisclosure, ModelDisclosureCatalog } from '../../../../shared/contracts'
 import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
+import type { SottoPlatform } from '../../../../shared/platform'
 import type { ModelPreset } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
 import { LevelMeter } from '../../components/LevelMeter'
 import { ShortcutKey } from '../../components/ShortcutKey'
+import { platformCopy } from '../../platformCopy'
 import type { MicrophoneTestState } from './microphoneTest'
 
 export type OnboardingModelState = 'checking' | 'ready' | 'missing' | 'error' | 'unavailable'
@@ -23,6 +25,7 @@ export interface OnboardingProps {
   readonly microphoneLevel?: number
   readonly modelState: OnboardingModelState
   readonly shortcut: string
+  readonly platform: SottoPlatform
   readonly disclosures?: ModelDisclosureCatalog
   readonly onRequestMicrophone: () => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
@@ -92,6 +95,7 @@ export function Onboarding({
   microphoneLevel = 0,
   modelState,
   shortcut,
+  platform,
   disclosures,
   onRequestMicrophone,
   onStopMicrophone,
@@ -107,6 +111,7 @@ export function Onboarding({
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const copy = platformCopy(platform)
 
   useEffect(() => {
     headingRef.current?.focus()
@@ -209,10 +214,10 @@ export function Onboarding({
               </Button>
             </div>
             {microphoneState === 'denied' ? (
-              <p className="onboarding-recovery">Open Windows Settings &gt; Privacy &amp; security &gt; Microphone, allow desktop apps, then try again.</p>
+              <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
             ) : null}
             {microphoneState === 'missing' ? (
-              <p className="onboarding-recovery">Connect or enable an input device in Windows Settings &gt; System &gt; Sound, then try again.</p>
+              <p className="onboarding-recovery">{copy.onboardingMicrophoneMissing}</p>
             ) : null}
           </section>
         ) : null}
@@ -271,7 +276,7 @@ export function Onboarding({
             <p className="onboarding-eyebrow">Shortcut &amp; paste</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>One shortcut from speech to text</h1>
             <p className="onboarding-lead">Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.</p>
-            <div className="onboarding-shortcut"><span>Active shortcut</span><ShortcutKey accelerator={shortcut} /></div>
+            <div className="onboarding-shortcut"><span>Active shortcut</span><ShortcutKey accelerator={shortcut} platform={platform} /></div>
             <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
               <textarea
                 className="tt-input onboarding-paste-field"

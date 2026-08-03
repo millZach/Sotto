@@ -10,6 +10,6 @@ export interface NoticeComponent {
 export const NOTICE_COMPONENTS: readonly NoticeComponent[]
 export const EMBEDDED_BROWSER_DEPENDENCIES: readonly string[]
 export function verifyThirdPartyNotices(options?: {
-  readonly packagedResources?: string
+  readonly licenseRoot?: string
   readonly asarPath?: string
 }): Promise<{ componentCount: number }>

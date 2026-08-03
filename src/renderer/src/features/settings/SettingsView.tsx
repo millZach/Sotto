@@ -11,8 +11,9 @@ import type {
   StartupState,
   UnavailableResult,
 } from '../../../../shared/contracts'
-import { formatWindowsAccelerator, parseWindowsAccelerator } from '../../../../shared/accelerator'
+import { formatAccelerator, parseAccelerator } from '../../../../shared/accelerator'
 import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
+import type { SottoPlatform } from '../../../../shared/platform'
 import type {
   AppSettings,
   HistoryRetention,
@@ -29,6 +30,7 @@ import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
+import { platformCopy } from '../../platformCopy'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -41,6 +43,7 @@ interface DraftSubmission<T> {
 
 export interface SettingsViewProps {
   readonly settings: AppSettings
+  readonly platform: SottoPlatform
   readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
   readonly mediaDevices?: MediaDevicesAdapter | undefined
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
@@ -103,12 +106,15 @@ function applyMotionPreference(reducedMotion: ReducedMotion): void {
   else document.documentElement.dataset.reducedMotion = 'on'
 }
 
-function canonicalAccelerator(value: string): string {
-  return parseWindowsAccelerator(formatWindowsAccelerator(value)) ?? value.trim()
+// The editing form is the one the shortcut input holds, so canonicalization
+// round-trips exactly what the user can type.
+function canonicalAccelerator(value: string, platform: SottoPlatform): string {
+  return parseAccelerator(formatAccelerator(value, platform, 'editing'), platform) ?? value.trim()
 }
 
 export function SettingsView({
   settings,
+  platform,
   modelStatuses,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   onUpdateSettings,
@@ -123,7 +129,7 @@ export function SettingsView({
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [hotkeyDraft, setHotkeyDraft] = useState(() => formatWindowsAccelerator(settings.hotkey))
+  const [hotkeyDraft, setHotkeyDraft] = useState(() => formatAccelerator(settings.hotkey, platform, 'editing'))
   const [pasteDelayDraft, setPasteDelayDraft] = useState(String(settings.pasteDelayMs))
   const [successDurationDraft, setSuccessDurationDraft] = useState(String(settings.successDisplayMs))
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
@@ -165,26 +171,26 @@ export function SettingsView({
   useEffect(() => {
     const submission = hotkeySubmissionRef.current
     if (submission === null) {
-      const display = formatWindowsAccelerator(settings.hotkey)
+      const display = formatAccelerator(settings.hotkey, platform, 'editing')
       hotkeyDraftRef.current = display
       setHotkeyDraft(display)
       return
     }
-    const authoritative = canonicalAccelerator(settings.hotkey)
+    const authoritative = canonicalAccelerator(settings.hotkey, platform)
     if (authoritative === submission.submitted) {
       if (hotkeyEditVersionRef.current === submission.editVersion) {
-        const display = formatWindowsAccelerator(settings.hotkey)
+        const display = formatAccelerator(settings.hotkey, platform, 'editing')
         hotkeyDraftRef.current = display
         setHotkeyDraft(display)
       }
       hotkeySubmissionRef.current = null
     } else if (authoritative !== submission.authoritativeAtSubmit) {
       hotkeySubmissionRef.current = null
-      const display = formatWindowsAccelerator(settings.hotkey)
+      const display = formatAccelerator(settings.hotkey, platform, 'editing')
       hotkeyDraftRef.current = display
       setHotkeyDraft(display)
     }
-  }, [settings.hotkey])
+  }, [platform, settings.hotkey])
   useEffect(() => {
     const submission = pasteDelaySubmissionRef.current
     if (submission === null || settings.pasteDelayMs !== submission.authoritativeAtSubmit) {
@@ -330,6 +336,7 @@ export function SettingsView({
     disclosures?.models.find((model) => model.preset === preset && !model.bundled)
   ), [disclosures])
 
+  const copy = platformCopy(platform)
   const languageKnown = knownLanguages.some(({ value }) => value === settings.language)
   const microphoneKnown = settings.microphoneId === null || microphones.some(({ deviceId }) => deviceId === settings.microphoneId)
 
@@ -382,8 +389,8 @@ export function SettingsView({
       <Card className="settings-section">
         <div className="settings-section__heading"><MonitorCog aria-hidden="true" /><div><h2>Appearance</h2><p>Choose how Sotto looks and moves.</p></div></div>
         <div className="settings-fields-grid">
-          <Field label="Theme" description="Follow Windows or force a complete light or dark theme."><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
-          <Field label="Reduced motion" description="Follow Windows or minimize non-essential motion."><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+          <Field label="Theme" description={copy.settingsThemeDescription}><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
+          <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
           <Field label="Widget style" description="How the floating dictation widget looks on screen."><Select value={settings.widgetStyle} onChange={(event) => void save({ widgetStyle: event.currentTarget.value as WidgetStyle })}><option value="orb">Orb</option><option value="pill">Pill</option></Select></Field>
           <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
         </div>
@@ -392,15 +399,15 @@ export function SettingsView({
       <Card className="settings-section">
         <div className="settings-section__heading"><Keyboard aria-hidden="true" /><div><h2>Capture</h2><p>Control the microphone, shortcut, and recording length.</p></div></div>
         <div className="settings-fields-grid">
-          <Field label="Microphone" description={deviceState === 'error' ? 'Microphones are unavailable. Check Windows privacy settings.' : 'Input used for future recordings.'}>
+          <Field label="Microphone" description={deviceState === 'error' ? copy.settingsMicrophoneUnavailable : 'Input used for future recordings.'}>
             <Select value={settings.microphoneId ?? ''} onChange={(event) => void save({ microphoneId: event.currentTarget.value || null })}>
-              <option value="">Windows default</option>
+              <option value="">{copy.settingsMicrophoneDefaultOption}</option>
               {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
               {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
             </Select>
           </Field>
           <div className="settings-input-action">
-            <Field label="Global shortcut" description="Used anywhere in Windows to start and stop dictation.">
+            <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
               <input className="tt-input" value={hotkeyDraft} onChange={(event) => {
                 const value = event.currentTarget.value
                 hotkeyDraftRef.current = value
@@ -409,9 +416,9 @@ export function SettingsView({
               }} />
             </Field>
             <Button variant="secondary" onClick={async () => {
-              const candidate = parseWindowsAccelerator(hotkeyDraftRef.current)
+              const candidate = parseAccelerator(hotkeyDraftRef.current, platform)
               if (candidate === null) {
-                const display = formatWindowsAccelerator(settingsRef.current.hotkey)
+                const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
                 hotkeyDraftRef.current = display
                 setHotkeyDraft(display)
                 setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
@@ -420,7 +427,7 @@ export function SettingsView({
               const submission: DraftSubmission<string> = {
                 token: ++hotkeyTokenRef.current,
                 submitted: candidate,
-                authoritativeAtSubmit: canonicalAccelerator(settingsRef.current.hotkey),
+                authoritativeAtSubmit: canonicalAccelerator(settingsRef.current.hotkey, platform),
                 editVersion: hotkeyEditVersionRef.current,
               }
               hotkeySubmissionRef.current = submission
@@ -430,7 +437,7 @@ export function SettingsView({
               else {
                 hotkeySubmissionRef.current = null
                 if (hotkeyEditVersionRef.current === submission.editVersion) {
-                  const display = formatWindowsAccelerator(settingsRef.current.hotkey)
+                  const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
                   hotkeyDraftRef.current = display
                   setHotkeyDraft(display)
                 }
@@ -478,7 +485,7 @@ export function SettingsView({
         <div className="settings-section__heading"><HardDrive aria-hidden="true" /><div><h2>Output</h2><p>Clipboard copy always protects the result when paste is unavailable.</p></div></div>
         <div className="settings-fields-grid">
           <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always enabled for every successful non-empty transcript." />
-          <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description="Best-effort Ctrl+V into the previously focused application." />
+          <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
           <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => { const value = event.currentTarget.value; pasteDelayDraftRef.current = value; pasteDelayEditVersionRef.current += 1; setPasteDelayDraft(value) }} /></Field><Button variant="secondary" onClick={() => void savePasteDelay()}>Save paste delay</Button></div>
           <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field><Button variant="secondary" onClick={() => void saveSuccessDuration()}>Save success duration</Button></div>
         </div>
@@ -487,11 +494,11 @@ export function SettingsView({
       <Card className="settings-section">
         <div className="settings-section__heading"><HardDrive aria-hidden="true" /><div><h2>Application and privacy</h2><p>Choose startup behavior and what is retained locally.</p></div></div>
         <div className="settings-fields-grid">
-          <Toggle label="Launch when Windows starts" checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
+          <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
             const result = await onSetStartup(checked).catch(() => null)
-            setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: 'Windows startup could not be updated.', error: true })
+            setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: copy.settingsStartupFailureNotice, error: true })
           }} />
-          <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description="Open directly in the tray when Sotto launches." />
+          <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
           <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse." />
           <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
         </div>

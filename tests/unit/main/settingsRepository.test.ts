@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { platformProfile } from '../../../src/main/platformProfile'
+import { DEFAULT_SETTINGS, defaultSettings, type AppSettings } from '../../../src/shared/settings'
 
 const roots: string[] = []
 
@@ -200,5 +201,25 @@ describe('SettingsRepository', () => {
     expect(recoveries).toEqual([{ code: 'SETTINGS_RECOVERED' }])
     expect(JSON.stringify(recoveries)).not.toContain(root)
     expect(JSON.stringify(recoveries)).not.toContain('private-device')
+  })
+  it('resolves and repairs the hotkey from the injected platform defaults', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-settings-repository-'))
+    roots.push(root)
+    const defaults = defaultSettings(platformProfile('darwin').defaultHotkey)
+    const repository = new SettingsRepository(join(root, 'settings.json'), { defaults })
+
+    await expect(repository.get()).resolves.toEqual(defaults)
+    expect(defaults.hotkey).toBe('Control+Shift+Space')
+
+    await repository.save({ ...defaults, hotkey: '' })
+    await expect(repository.get()).resolves.toMatchObject({ hotkey: 'Control+Shift+Space' })
+    await expect(repository.reset()).resolves.toEqual(defaults)
+  })
+
+  it('keeps the Windows defaults when none are injected', async () => {
+    const { repository } = await createRepository()
+
+    await expect(repository.get()).resolves.toEqual(DEFAULT_SETTINGS)
+    expect(defaultSettings(platformProfile('win32').defaultHotkey)).toEqual(DEFAULT_SETTINGS)
   })
 })

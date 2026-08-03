@@ -14,6 +14,7 @@ import {
   type ModelDisclosureCatalog,
   type SottoBridge,
 } from '../../../src/shared/contracts'
+import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const OK = Object.freeze({ ok: true as const })
@@ -52,6 +53,7 @@ function deferred<Value>() {
 
 function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
+    platform: 'win32',
     listRecoveryNotices: vi.fn(async () => []),
     onRecoveryNotice: vi.fn(() => () => undefined),
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),
@@ -199,6 +201,20 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
   })
 
+  it('explains both macOS permission panes when auto-paste is refused', async () => {
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' as const }]),
+    })
+    renderApp(bridge)
+
+    const toast = await screen.findByText(/copied the transcript instead of pasting it/i)
+    expect(toast).toBeVisible()
+    expect(toast).toHaveTextContent(/Privacy & Security > Accessibility/i)
+    expect(toast).toHaveTextContent(/Privacy & Security > Automation/i)
+  })
+
   it('renders loading and a finite recovery state when settings cannot load', async () => {
     const settings = deferred<AppSettings>()
     const bridge = createBridge({ getSettings: vi.fn(() => settings.promise) })
@@ -221,7 +237,9 @@ describe('Sotto application onboarding integration', () => {
     renderApp(bridge)
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /private dictation/i })).toBeVisible())
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    // The heading commits with the settings render, but the preferences land in
+    // a passive effect, so the attributes need their own wait.
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'))
     expect(document.documentElement.dataset.reducedMotion).toBe('on')
   })
 
@@ -562,5 +580,23 @@ describe('transcription pipeline prewarm', () => {
       })
     })
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(2))
+  })
+  it('carries the bridge platform into every main-window view', async () => {
+    const user = userEvent.setup()
+    const copy = platformCopy('darwin')
+    renderApp(createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeInTheDocument())
+    expect(screen.getByLabelText('Command+Shift+Space')).toBeVisible()
+
+    await user.click(screen.getByRole('link', { name: /help/i }))
+    expect(screen.getByText(copy.helpMicrophoneAccess)).toBeVisible()
+    expect(screen.getByText(copy.accessibilityHelp ?? '')).toBeVisible()
+
+    await user.click(screen.getByRole('link', { name: /settings/i }))
+    expect(await screen.findByRole('switch', { name: copy.settingsLaunchAtStartupLabel })).toBeVisible()
   })
 })

@@ -16,6 +16,7 @@ import {
   type IpcInvocationEvent,
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
+import { platformProfile } from '../../src/main/platformProfile'
 import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
@@ -103,6 +104,7 @@ import {
   createSottoWidgetBridge,
   exposeRendererBridge,
   exposeE2EBridge,
+  parsePlatformArgument,
   parseRendererRoleArgument,
 } from '../../src/preload'
 
@@ -329,7 +331,7 @@ describe('typed preload bridge', () => {
   })
 
   it('creates a frozen main-only surface without widget subscriptions or generic IPC', () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
 
     expect(Object.keys(bridge).sort()).toEqual(
       [
@@ -351,6 +353,7 @@ describe('typed preload bridge', () => {
         'onModelStatus',
         'onRecoveryNotice',
         'onSettingsChanged',
+        'platform',
         'polishTranscript',
         'publishWidgetState',
         'quitApp',
@@ -372,11 +375,12 @@ describe('typed preload bridge', () => {
   })
 
   it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
-    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer)
+    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'onWidgetState',
         'onWidgetVisibilityChange',
+        'platform',
         'reportDrag',
         'requestCancel',
         'requestStop',
@@ -431,7 +435,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly validates generation-bound widget visibility presentation and drag payloads', async () => {
-    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer) as unknown as {
+    const bridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32') as unknown as {
       onWidgetVisibilityChange(
         listener: (visibility: { visible: boolean; generation: number }) => void,
       ): () => void
@@ -499,6 +503,43 @@ describe('typed preload bridge', () => {
       '--sotto-renderer-role=main',
       '--sotto-renderer-role=widget',
     ])).toBeNull()
+  })
+
+  it('accepts only one immutable main-created platform argument and otherwise reports win32', () => {
+    expect(parsePlatformArgument(['electron', '--sotto-platform=darwin'])).toBe('darwin')
+    expect(parsePlatformArgument(['electron', '--sotto-platform=win32'])).toBe('win32')
+    expect(parsePlatformArgument(['electron'])).toBe('win32')
+    expect(parsePlatformArgument(['electron', '--sotto-platform=linux'])).toBe('win32')
+    expect(parsePlatformArgument([
+      'electron',
+      '--sotto-platform=darwin',
+      '--sotto-platform=win32',
+    ])).toBe('win32')
+  })
+
+  it('carries the main-declared platform onto both renderer bridges', () => {
+    const context = { exposeInMainWorld: vi.fn<(name: string, value: unknown) => void>() }
+    exposeRendererBridge(context, electronMock.ipcRenderer, [
+      'electron',
+      '--sotto-renderer-role=main',
+      '--sotto-platform=darwin',
+    ])
+    exposeRendererBridge(context, electronMock.ipcRenderer, [
+      'electron',
+      '--sotto-renderer-role=widget',
+      '--sotto-platform=darwin',
+    ])
+
+    expect(context.exposeInMainWorld).toHaveBeenNthCalledWith(
+      1,
+      'sotto',
+      expect.objectContaining({ platform: 'darwin' }),
+    )
+    expect(context.exposeInMainWorld).toHaveBeenNthCalledWith(
+      2,
+      'sottoWidget',
+      expect.objectContaining({ platform: 'darwin' }),
+    )
   })
 
   it('exposes exactly the role-appropriate bridge name and attaches only its relevant early buffer', () => {
@@ -574,7 +615,7 @@ describe('typed preload bridge', () => {
   })
 
   it('uses fixed channels and event subscriptions return exact cleanup functions', async () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
     const listener = vi.fn()
     const visibilityListener = vi.fn()
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce({
@@ -583,7 +624,7 @@ describe('typed preload bridge', () => {
     })
 
     await bridge.updateSettings({ theme: 'dark' })
-    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer)
+    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     const unsubscribe = widgetBridge.onWidgetState(listener)
     const unsubscribeVisibility = widgetBridge.onWidgetVisibilityChange(visibilityListener)
 
@@ -637,8 +678,8 @@ describe('typed preload bridge', () => {
   })
 
   it('preload retains post-ready command edges until AppContext subscribes', () => {
-    const mainBridge = createSottoBridge(electronMock.ipcRenderer)
-    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer)
+    const mainBridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
+    const widgetBridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     const widgetEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === WIDGET_STATE,
     )?.[1]
@@ -680,7 +721,7 @@ describe('typed preload bridge', () => {
   })
 
   it('retains only the latest strict authoritative settings event for the main renderer', () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
     const settingsEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === SETTINGS_CHANGED,
     )?.[1]
@@ -698,7 +739,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly buffers safe recovery codes and lists sanitized retained notices', async () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
     const recoveryEvent = electronMock.ipcRenderer.on.mock.calls.find(
       ([channel]) => channel === RECOVERY_NOTICE,
     )?.[1]
@@ -723,7 +764,7 @@ describe('typed preload bridge', () => {
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
     const request = {
       text: 'session words',
       autoPaste: false,
@@ -749,7 +790,7 @@ describe('typed preload bridge', () => {
   })
 
   it('strictly parses and freezes the no-payload model disclosure response', async () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer)
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce(disclosureCatalog)
 
     const result = await bridge.listModelDisclosures()
@@ -1130,6 +1171,7 @@ describe('IPC validation and lifecycle', () => {
       widget: { hideWidget: vi.fn() },
       delay: vi.fn(),
       process: pasteProcess,
+      buildPasteInvocation: () => ({ executable: 'static-paste', args: [] }),
     })
     const deliver = vi.spyOn(output, 'deliver')
     harness.cleanup()
@@ -1875,6 +1917,147 @@ describe('permission policy', () => {
 
     expect(callback).toHaveBeenCalledWith(false)
   })
+
+  const gatedUrl = 'file:///C:/Sotto/out/renderer/index.html'
+  const gatedRequest = {
+    isMainFrame: true,
+    requestingUrl: gatedUrl,
+    mediaTypes: ['audio'],
+  }
+
+  it('grants synchronously when no media gate is configured', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      undefined,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(trustedContents, 'media', callback, gatedRequest)
+
+    expect(callback).toHaveBeenCalledWith(true)
+  })
+
+  it('grants a trusted microphone request only after the media gate allows it', async () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    const gate = createDeferred<boolean>()
+    const mediaAccess = vi.fn(() => gate.promise)
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      mediaAccess,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(trustedContents, 'media', callback, gatedRequest)
+    expect(callback).not.toHaveBeenCalled()
+    gate.resolve(true)
+
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(true))
+    expect(mediaAccess).toHaveBeenCalledOnce()
+  })
+
+  it('denies an otherwise valid microphone request the media gate refuses', async () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => false,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(trustedContents, 'media', callback, gatedRequest)
+
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
+  })
+
+  it('never consults the media gate for an untrusted request', async () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    const untrustedContents = { getURL: () => 'https://attacker.invalid/' }
+    const mediaAccess = vi.fn(async () => true)
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      mediaAccess,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(untrustedContents, 'media', callback, {
+      isMainFrame: true,
+      requestingUrl: 'https://attacker.invalid/',
+      mediaTypes: ['audio'],
+    })
+
+    expect(callback).toHaveBeenCalledWith(false)
+    expect(mediaAccess).not.toHaveBeenCalled()
+  })
+
+  it('denies when the requesting renderer is destroyed while the gate prompts', async () => {
+    const harness = createSession()
+    let destroyed = false
+    const trustedContents = { getURL: () => gatedUrl, isDestroyed: () => destroyed }
+    const gate = createDeferred<boolean>()
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      () => gate.promise,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(trustedContents, 'media', callback, gatedRequest)
+    destroyed = true
+    gate.resolve(true)
+
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
+  })
+
+  it('denies when the trusted renderer is replaced while the gate prompts', async () => {
+    const harness = createSession()
+    const originalContents = { getURL: () => gatedUrl }
+    const replacementContents = { getURL: () => gatedUrl }
+    let trustedRenderers = [
+      { role: 'main' as const, webContents: originalContents, url: gatedUrl },
+    ]
+    const gate = createDeferred<boolean>()
+    installSessionPermissionPolicy(
+      harness.session,
+      () => trustedRenderers,
+      () => gate.promise,
+    )
+    const callback = vi.fn()
+
+    harness.permissionRequest(originalContents, 'media', callback, gatedRequest)
+    trustedRenderers = [
+      { role: 'main' as const, webContents: replacementContents, url: gatedUrl },
+    ]
+    gate.resolve(true)
+
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
+  })
+
+  it('denies without leaking a rejected media gate', async () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => {
+        throw new Error('secret TCC failure C:/Users/private')
+      },
+    )
+    const callback = vi.fn()
+
+    expect(() =>
+      harness.permissionRequest(trustedContents, 'media', callback, gatedRequest),
+    ).not.toThrow()
+
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
+  })
 })
 
 describe('StartupService', () => {
@@ -1941,7 +2124,7 @@ describe('TrayController', () => {
 })
 
 function createApp(ready: Promise<void>): BootstrapApplication & {
-  emit(event: 'second-instance' | 'before-quit'): void
+  emit(event: 'second-instance' | 'activate' | 'before-quit'): void
   quit: ReturnType<typeof vi.fn>
 } {
   const listeners = new Map<string, Set<() => void>>()
@@ -2222,6 +2405,80 @@ describe('bootstrap failure containment', () => {
       expect(candidate.dispose).toHaveBeenCalledOnce()
     },
   )
+
+  it('raises the existing main window when the app is reactivated', async () => {
+    const app = createApp(Promise.resolve())
+    const runtime = createRuntime()
+    const result = await bootstrapSotto({
+      app,
+      initialize: async () => runtime,
+      log: vi.fn(),
+    })
+
+    expect(result.started).toBe(true)
+    app.emit('activate')
+    expect(runtime.showMain).toHaveBeenCalledOnce()
+    app.emit('activate')
+    expect(runtime.showMain).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces activation intent raised before startup completes into one show', async () => {
+    const readiness = createDeferred<void>()
+    const startup = createDeferred<void>()
+    const app = createApp(readiness.promise)
+    const runtime = createRuntime(() => startup.promise)
+    const bootstrap = bootstrapSotto({
+      app,
+      initialize: async () => runtime,
+      log: vi.fn(),
+    })
+
+    app.emit('activate')
+    app.emit('activate')
+    readiness.resolve()
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce())
+    app.emit('activate')
+    app.emit('second-instance')
+    const callsBeforeStartupCompleted = runtime.showMain.mock.calls.length
+    startup.resolve()
+
+    await expect(bootstrap).resolves.toMatchObject({ started: true })
+    expect(callsBeforeStartupCompleted).toBe(0)
+    expect(runtime.showMain).toHaveBeenCalledOnce()
+  })
+
+  it('ignores activation after disposal', async () => {
+    const app = createApp(Promise.resolve())
+    const runtime = createRuntime()
+    const result = await bootstrapSotto({
+      app,
+      initialize: async () => runtime,
+      log: vi.fn(),
+    })
+
+    result.dispose()
+    app.emit('activate')
+
+    expect(runtime.showMain).not.toHaveBeenCalled()
+  })
+
+  it('drops pending activation intent when startup fails', async () => {
+    const startup = createDeferred<void>()
+    const app = createApp(Promise.resolve())
+    const runtime = createRuntime(() => startup.promise)
+    const bootstrap = bootstrapSotto({
+      app,
+      initialize: async () => runtime,
+      log: vi.fn(),
+    })
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce())
+
+    app.emit('activate')
+    startup.reject(new Error('real startup failure'))
+
+    await expect(bootstrap).resolves.toMatchObject({ started: false })
+    expect(runtime.showMain).not.toHaveBeenCalled()
+  })
 })
 
 describe('NativeRuntimeController', () => {
@@ -2981,6 +3238,9 @@ describe('widget presentation and drag channels', () => {
           workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
         }),
       },
+      platform: 'win32',
+      chrome: platformProfile('win32'),
+      dock: null,
       preloadPath: 'C:/Sotto/out/preload/index.js',
       mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
       widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',

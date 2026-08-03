@@ -8,7 +8,9 @@ import {
   type SpawnedProcessLike,
   type OutputServiceDependencies,
 } from '../../../src/main/output/outputService'
-import type { PasteInvocation } from '../../../src/main/output/pasteCommand'
+import { createPasteCommands, type PasteInvocation } from '../../../src/main/output/pasteCommand'
+
+const buildWindowsPasteInvocation = createPasteCommands('win32').oneShot
 
 function createHarness(
   overrides: Partial<OutputServiceDependencies> = {},
@@ -44,6 +46,7 @@ function createHarness(
         return Promise.resolve(true)
       },
     },
+    buildPasteInvocation: buildWindowsPasteInvocation,
     ...overrides,
   }
 
@@ -86,6 +89,7 @@ describe('OutputService', () => {
       widget: { hideWidget },
       delay,
       process: { run },
+      buildPasteInvocation: buildWindowsPasteInvocation,
     })
 
     await expect(
@@ -103,6 +107,32 @@ describe('OutputService', () => {
       harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 275 }),
     ).resolves.toBe('pasted')
     expect(harness.events).toEqual(['clipboard', 'hide', 'delay:275', 'process'])
+  })
+
+  it('hands the injected platform invocation to the paste process unchanged', async () => {
+    const darwinInvocation = createPasteCommands('darwin').oneShot()
+    const harness = createHarness({ buildPasteInvocation: () => darwinInvocation })
+
+    await expect(
+      harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 0 }),
+    ).resolves.toBe('pasted')
+    expect(harness.processInput()).toBe(darwinInvocation)
+  })
+
+  it('returns copied when the injected invocation builder throws', async () => {
+    const run = vi.fn()
+    const harness = createHarness({
+      buildPasteInvocation: () => {
+        throw new Error('private platform detail')
+      },
+      process: { run },
+    })
+
+    await expect(
+      harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 0 }),
+    ).resolves.toBe('copied')
+    expect(run).not.toHaveBeenCalled()
+    expect(harness.clipboardText()).toBe('dictation')
   })
 
   it('never exposes transcript text to the paste process invocation', async () => {
@@ -164,6 +194,7 @@ describe('OutputService', () => {
             return Promise.resolve(true)
           },
         },
+        buildPasteInvocation: buildWindowsPasteInvocation,
         ...createOverride(events),
       })
 

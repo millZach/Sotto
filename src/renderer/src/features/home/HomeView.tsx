@@ -4,16 +4,19 @@ import { ArrowRight, Mic, Square } from 'lucide-react'
 import type { ModelStatus } from '../../../../shared/contracts'
 import type { DictationState } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
+import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { LevelMeter } from '../../components/LevelMeter'
 import { ShortcutKey } from '../../components/ShortcutKey'
+import { platformCopy, type PlatformCopy } from '../../platformCopy'
 import type { HistoryStatus } from '../../state/AppContext'
 import { computeWeeklyStats } from './weeklyStats'
 
 export interface HomeViewProps {
   readonly settings: AppSettings
+  readonly platform: SottoPlatform
   readonly dictation: DictationState
   readonly modelStatus?: ModelStatus | undefined
   readonly entries: readonly HistoryEntry[]
@@ -28,9 +31,9 @@ function isModelReady(status: ModelStatus | undefined): boolean {
   return status?.state === 'bundled' || status?.state === 'ready'
 }
 
-function finiteError(code: string): string {
+function finiteError(code: string, copy: PlatformCopy): string {
   switch (code) {
-    case 'MIC_PERMISSION_DENIED': return 'Microphone access is off. Check Windows privacy settings, then try again.'
+    case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
     case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
@@ -39,14 +42,14 @@ function finiteError(code: string): string {
   }
 }
 
-function statusCopy(state: DictationState): { label: string; detail: string; tone: 'normal' | 'error' | 'success' } {
+function statusCopy(state: DictationState, copy: PlatformCopy): { label: string; detail: string; tone: 'normal' | 'error' | 'success' } {
   switch (state.status) {
-    case 'requesting-permission': return { label: 'Connecting to your microphone', detail: 'Windows may ask for access.', tone: 'normal' }
+    case 'requesting-permission': return { label: 'Connecting to your microphone', detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
     case 'listening': return { label: 'Listening', detail: 'Speak naturally, then stop when you are finished.', tone: 'normal' }
     case 'processing': return { label: 'Turning speech into text', detail: 'Everything is processing locally.', tone: 'normal' }
     case 'success': return { label: state.output === 'pasted' ? 'Text pasted' : 'Text copied', detail: 'Your recording is complete.', tone: 'success' }
     case 'cancelled': return { label: 'Recording cancelled', detail: 'Nothing was copied or saved.', tone: 'normal' }
-    case 'error': return { label: 'Dictation needs attention', detail: finiteError(state.code), tone: 'error' }
+    case 'error': return { label: 'Dictation needs attention', detail: finiteError(state.code, copy), tone: 'error' }
     default: return { label: 'Ready when you are', detail: 'Start here or use your shortcut in any application.', tone: 'normal' }
   }
 }
@@ -109,6 +112,7 @@ function StatTile({ label, value, sparkline }: StatTileProps): ReactNode {
 
 export function HomeView({
   settings,
+  platform,
   dictation,
   modelStatus,
   entries,
@@ -120,7 +124,7 @@ export function HomeView({
 }: HomeViewProps): ReactNode {
   const [submitting, setSubmitting] = useState(false)
   const modelReady = isModelReady(modelStatus)
-  const copy = statusCopy(dictation)
+  const copy = statusCopy(dictation, platformCopy(platform))
   const stats = useMemo(() => computeWeeklyStats(entries, Date.now()), [entries])
   const recent = useMemo(
     () => [...entries].sort((first, second) => second.createdAt - first.createdAt).slice(0, 3),
@@ -174,7 +178,7 @@ export function HomeView({
             <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
             {modelReady ? null : <Button variant="secondary" onClick={onOpenSettings}>Open Settings <ArrowRight size={16} /></Button>}
           </div>
-          <div className="home-dictation-bar__shortcut"><span>Global shortcut</span><ShortcutKey accelerator={settings.hotkey} /></div>
+          <div className="home-dictation-bar__shortcut"><span>Global shortcut</span><ShortcutKey accelerator={settings.hotkey} platform={platform} /></div>
         </div>
       </Card>
 

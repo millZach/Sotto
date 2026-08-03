@@ -44,3 +44,47 @@ nsis:
   uninstallerIcon: build/icon.ico
   installerSidebar: build/installer-sidebar.bmp
   artifactName: '${productName} Setup ${version}.${ext}'
+
+mac:
+  category: public.app-category.productivity
+  # electron-builder derives the .icns from this PNG during packaging, so no .icns is committed.
+  icon: build/icon.png
+  # dmg only: Sotto has no auto-updater, so the zip target and latest-mac.yml would ship unused.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  # Ad-hoc signature, required even without an Apple Developer account: the arm64 kernel
+  # refuses to launch an unsigned Mach-O, and electron-builder invalidates the ad-hoc
+  # signature Electron ships with as soon as it rewrites the bundle. `identity: null` means
+  # "skip signing entirely", which would ship an app that cannot start.
+  identity: '-'
+  # Flip to true together with notarization; the entitlements below are already the set a
+  # hardened runtime needs.
+  hardenedRuntime: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Without NSAppleEventsUsageDescription macOS kills the process instead of prompting when
+  # the paste path drives System Events. LSUIElement is deliberately absent: Dock presence is
+  # driven at runtime by app.dock.show()/hide().
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      Sotto records your microphone only while you are dictating. Audio is transcribed on this
+      Mac and discarded straight afterwards.
+    NSAppleEventsUsageDescription: >-
+      Sotto asks System Events to press Command-V so your dictation lands in the app you were
+      typing in. Declining leaves the text on your clipboard to paste yourself.
+  # electron-builder deletes Electron's license files from the mac output; re-add them for
+  # license compliance. Merged with the top-level extraResources, not a replacement.
+  extraResources:
+    - from: node_modules/electron/dist/LICENSE
+      to: LICENSE.electron.txt
+    - from: node_modules/electron/dist/LICENSES.chromium.html
+      to: LICENSES.chromium.html
+    - from: resources/tray
+      to: tray
+
+# Default layout already gives the app plus an /Applications link.
+dmg:
+  artifactName: '${productName}-${version}-${arch}.${ext}'
+  title: '${productName} ${version}'
