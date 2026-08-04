@@ -24,7 +24,7 @@
     "package:dir:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 && node scripts/verify-packaged-resources.mjs release/mac-arm64",
     "package:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-3.3.2-arm64.dmg\""
   },
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
   "dependencies": {
     "zod": "4.4.3"

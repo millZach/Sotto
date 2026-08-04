@@ -17,6 +17,8 @@ extraResources:
     to: models
   - from: resources/runtime
     to: runtime
+  - from: LICENSE.md
+    to: LICENSE.md
   - from: THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
   - from: README.md
