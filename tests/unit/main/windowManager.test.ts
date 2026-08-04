@@ -159,6 +159,7 @@ function createHarness(
     mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
     widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
     developmentSources: undefined,
+    brandIconPath: null,
     isPackaged: true,
     log,
     getWidgetPlacement: () => null,
@@ -346,6 +347,56 @@ describe('WindowManager construction', () => {
         },
       },
     ])
+  })
+
+  it('names the brand icon on both unpackaged Windows windows', async () => {
+    // Unpackaged runs launch through the Electron binary, so without an
+    // explicit icon the taskbar and alt-tab show Electron's own logo.
+    const { manager, options } = createHarness({
+      isPackaged: false,
+      brandIconPath: 'C:/Sotto/build/icon.ico',
+    })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]?.icon).toBe('C:/Sotto/build/icon.ico')
+    expect(options[1]?.icon).toBe('C:/Sotto/build/icon.ico')
+  })
+
+  it('leaves the window icon to the stamped executable in packaged builds', async () => {
+    const { manager, options } = createHarness({
+      isPackaged: true,
+      brandIconPath: 'C:/Sotto/build/icon.ico',
+    })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).not.toHaveProperty('icon')
+    expect(options[1]).not.toHaveProperty('icon')
+  })
+
+  it('omits the window icon on macOS, which reads it from the bundle', async () => {
+    const { manager, options } = createHarness({
+      ...darwinOverrides(),
+      isPackaged: false,
+      brandIconPath: 'C:/Sotto/build/icon.ico',
+    })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).not.toHaveProperty('icon')
+    expect(options[1]).not.toHaveProperty('icon')
+  })
+
+  it('omits the window icon when the unpackaged brand icon path is unknown', async () => {
+    const { manager, options } = createHarness({ isPackaged: false })
+
+    await manager.createMainWindow()
+
+    expect(options[0]).not.toHaveProperty('icon')
   })
 
   it('reasserts widget always-on-top at the explicit normal level after creation', async () => {

@@ -57,10 +57,12 @@ function createOptions(
   source: TrayIconSource,
   configure: (tray: Harness['tray']) => void = (created) =>
     created.setToolTip('Sotto'),
+  unpackagedIconPath: string | null = null,
 ) {
   return {
     source,
     executablePath: 'C:/Sotto/Sotto.exe',
+    unpackagedIconPath,
     getFileIcon: harness.getFileIcon,
     resolveResourcePath: (relativePath: string) =>
       `/Applications/Sotto.app/Contents/Resources/${relativePath}`,
@@ -86,6 +88,65 @@ describe('createTrayResource', () => {
     expect(harness.markTemplate).not.toHaveBeenCalled()
     expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
     expect(harness.tray.setToolTip).toHaveBeenCalledWith('Sotto')
+  })
+
+  it('loads the brand icon file instead of the unpackaged executable icon', async () => {
+    // An unpackaged run's executable is the Electron launcher, whose own icon
+    // getFileIcon would return.
+    const harness = createHarness()
+
+    await expect(
+      createTrayResource(
+        createOptions(
+          harness,
+          EXECUTABLE_SOURCE,
+          (created) => created.setToolTip('Sotto'),
+          'C:/Sotto/build/icon.ico',
+        ),
+      ),
+    ).resolves.toBe(harness.tray)
+
+    expect(harness.loadImageIcon).toHaveBeenCalledWith('C:/Sotto/build/icon.ico')
+    expect(harness.getFileIcon).not.toHaveBeenCalled()
+    expect(harness.markTemplate).not.toHaveBeenCalled()
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+  })
+
+  it('fails with a finite error when the unpackaged brand icon is missing', async () => {
+    const harness = createHarness({ empty: true })
+
+    await expect(
+      createTrayResource(
+        createOptions(
+          harness,
+          EXECUTABLE_SOURCE,
+          (created) => created.setToolTip('Sotto'),
+          'C:/Sotto/build/icon.ico',
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'NATIVE_TRAY_CREATION_FAILED' })
+
+    expect(harness.createTray).not.toHaveBeenCalled()
+  })
+
+  it('keeps the macOS template icon when running unpackaged', async () => {
+    const harness = createHarness()
+
+    await expect(
+      createTrayResource(
+        createOptions(
+          harness,
+          TEMPLATE_SOURCE,
+          (created) => created.setToolTip('Sotto'),
+          'C:/Sotto/build/icon.ico',
+        ),
+      ),
+    ).resolves.toBe(harness.tray)
+
+    expect(harness.loadImageIcon).toHaveBeenCalledWith(
+      '/Applications/Sotto.app/Contents/Resources/tray/sottoTemplate.png',
+    )
+    expect(harness.markTemplate).toHaveBeenCalledWith(harness.icon)
   })
 
   it('loads the template image from the resolved resource path and marks it', async () => {

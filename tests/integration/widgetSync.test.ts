@@ -197,7 +197,7 @@ describe('AppProvider dictation integration', () => {
     }
     const copied: WidgetSnapshot = {
       status: 'success', sessionId: 'one', output: 'copied', theme: 'dark',
-      reducedMotion: 'system', widgetStyle: 'orb', shortcut: 'Primary', cancellable: false,
+      reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
     }
     controller.setState({ status: 'success', sessionId: 'one', text: 'private words', output: 'copied' })
     await act(async () => bindings.publishWidgetState(copied))

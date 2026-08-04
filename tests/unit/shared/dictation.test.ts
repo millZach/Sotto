@@ -303,7 +303,6 @@ describe('widget snapshot contract', () => {
   const metadata = {
     theme: 'dark',
     reducedMotion: 'on',
-    widgetStyle: 'orb',
     shortcut: 'Control+Shift+Space',
     cancellable: false,
   } as const

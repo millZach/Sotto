@@ -372,6 +372,11 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  // Packaged builds get the brand icon stamped onto the executable by
+  // electron-builder; an unpackaged run has to name the repository icon itself.
+  const unpackagedIconPath = app.isPackaged
+    ? null
+    : join(__dirname, '../../build/icon.ico')
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings, history } = createStorageRepositories(
     userDataPath,
@@ -423,6 +428,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     developmentSources: app.isPackaged
       ? undefined
       : parseDevelopmentRendererSources(process.env.ELECTRON_RENDERER_URL),
+    brandIconPath: unpackagedIconPath,
     isPackaged: app.isPackaged,
     log: logOperational,
     onRendererProcessGone: (kind) => handleRendererProcessGone(kind),
@@ -564,6 +570,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ? await createTrayResource({
         source: profile.trayIcon,
         executablePath: process.execPath,
+        unpackagedIconPath,
         getFileIcon: (path, options) => app.getFileIcon(path, options),
         resolveResourcePath: (relativePath) => join(resourceRoot, relativePath),
         loadImageIcon: (path) => nativeImage.createFromPath(path),
@@ -647,7 +654,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       status: 'idle',
       theme: current.theme,
       reducedMotion: current.reducedMotion,
-      widgetStyle: current.widgetStyle,
       shortcut: current.hotkey,
       cancellable: false,
     })

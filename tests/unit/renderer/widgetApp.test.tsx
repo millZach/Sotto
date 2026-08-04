@@ -23,7 +23,6 @@ const win32Copy = platformCopy('win32')
 const metadata = {
   theme: 'dark',
   reducedMotion: 'system',
-  widgetStyle: 'orb',
   shortcut: 'Ctrl+Shift+Space',
   cancellable: false,
 } as const
@@ -120,7 +119,7 @@ describe('WidgetApp', () => {
       />,
     )
     expect(screen.getByText('00:12')).toBeVisible()
-    expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '65')
+    expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
 
     rerender(
       <WidgetApp
@@ -168,7 +167,7 @@ describe('WidgetApp', () => {
     expect(screen.getByText(label)).toBeVisible()
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '43')
     expect(screen.getByTestId('processing-orbit')).toBeInTheDocument()
-    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('listening-bars')).not.toBeInTheDocument()
   })
 
   it.each<[WidgetErrorCode, string, string]>([
@@ -279,25 +278,59 @@ describe('WidgetApp', () => {
     expect(formatElapsedTime(0, 6_600_000)).toBe('99:59')
   })
 
-  it('drives the orb glow from the one bounded scalar level', () => {
-    const { rerender } = render(
+  it('animates the recording bars from CSS alone, never from the microphone level', () => {
+    const { container, rerender } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 })}
         platform="win32" now={0}
       />,
     )
-    const orb = screen.getByTestId('widget-orb')
-    expect(orb.getAttribute('style')).toContain('--widget-level: 0')
-    expect(orb).toHaveAttribute('aria-valuenow', '0')
+    const bars = screen.getByTestId('listening-bars')
+    expect(bars).toHaveAttribute('aria-hidden', 'true')
+    expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
+    const markup = container.innerHTML
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 2 })}
         platform="win32" now={0}
       />,
     )
-    // Levels are clamped into [0, 1] before they reach the style layer.
-    expect(orb.getAttribute('style')).toContain('--widget-level: 1')
-    expect(orb).toHaveAttribute('aria-valuenow', '100')
+    // The level never reaches the style layer: no inline heights, no meter.
+    expect(container.innerHTML).toBe(markup)
+    expect(container.querySelector('[style]')).toBeNull()
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'mark', cancellable: true })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'mark', startedAt: 0, level: 0.4, cancellable: true })],
+    ['processing', snapshot({
+      status: 'processing', sessionId: 'mark', startedAt: 0, stage: 'transcribing',
+      progress: 0.5, cancellable: true,
+    })],
+    ['pasted', snapshot({ status: 'success', sessionId: 'mark', output: 'pasted' })],
+    ['copied', snapshot({ status: 'success', sessionId: 'mark', output: 'copied' })],
+    ['cancelled', snapshot({ status: 'cancelled', sessionId: 'mark' })],
+    ['error', snapshot({ status: 'error', sessionId: 'mark', code: 'NO_SPEECH' })],
+  ] as const)('leads the %s capsule with the decorative app mark', (_name, activeSnapshot) => {
+    const { container } = render(
+      <WidgetApp snapshot={activeSnapshot} platform="win32" now={1_000} />,
+    )
+
+    const glyph = screen.getByTestId('widget-glyph')
+    // Purely decorative: the live regions already carry the spoken status.
+    expect(glyph).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
+    // The mark must stay the packaged icon's burnt amber, never the retired purple.
+    expect([...glyph.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
+      .toEqual(['#cf6c0d', '#8f4404'])
+  })
+
+  it('leaves the resting sliver free of the app mark', () => {
+    render(<WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} />)
+
+    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
+    expect(screen.queryByTestId('widget-glyph')).not.toBeInTheDocument()
   })
 
   it('keeps visible copy readable but non-live', () => {
@@ -985,7 +1018,7 @@ describe('WidgetEntry', () => {
     }))
     expect(polite).toHaveTextContent('Listening. Ctrl+Shift+Space to finish')
     expect(assertive).toBeEmptyDOMElement()
-    expect(polite.contains(screen.getByRole('meter'))).toBe(false)
+    expect(polite.contains(screen.getByTestId('listening-bars'))).toBe(false)
     expect(polite.contains(container.querySelector('time'))).toBe(false)
 
     emit(snapshot({
@@ -1115,60 +1148,43 @@ describe('visual preview parser', () => {
     expect(isVisualPreviewEnabled({} as Window, '1')).toBe(false)
   })
 
-  it('shows a pulsing recording beacon beside the timer while the orb is listening', () => {
-    render(
-      <WidgetApp
-        snapshot={snapshot({
-          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.3, cancellable: true,
-        })}
-        platform="win32" now={5_000}
-      />,
-    )
-    const beacon = screen.getByTestId('recording-dot')
-    expect(beacon).toHaveClass('widget-rec')
-    expect(screen.getByTestId('widget-orb')).toBeInTheDocument()
-  })
-
-  it('renders the classic pill style with its bar sliver, pulse dot, and visualizer', () => {
+  it('renders the one pill widget across its resting, listening, and resolved states', () => {
     const { rerender, container } = render(
-      <WidgetApp snapshot={snapshot({ status: 'idle', widgetStyle: 'pill' })} platform="win32" now={5_000} />,
+      <WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={5_000} />,
     )
-    expect(container.querySelector('.widget-shell')).toHaveAttribute('data-widget-style', 'pill')
-    // The pill's resting sliver is a bare bar without the miniature orb.
-    expect(screen.queryByTestId('widget-orb')).not.toBeInTheDocument()
+    // The resting sliver is a bare bar carrying only the hover prompt.
+    expect(container.querySelector('.widget-sliver')).toBeInTheDocument()
     expect(screen.getByText('Click to dictate')).toBeInTheDocument()
 
     rerender(
       <WidgetApp
         snapshot={snapshot({
           status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.5,
-          widgetStyle: 'pill', cancellable: true,
+          cancellable: true,
         })}
         platform="win32" now={5_000}
       />,
     )
-    expect(screen.queryByTestId('widget-orb')).not.toBeInTheDocument()
-    expect(screen.getByTestId('recording-dot')).toHaveClass('widget-dot')
-    expect(screen.getAllByTestId('level-bar')).toHaveLength(12)
-    expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByTestId('listening-bars')).toHaveClass('widget-bars')
+    expect(container.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
+    expect(screen.getByText('00:05')).toBeVisible()
 
     rerender(
       <WidgetApp
         snapshot={snapshot({
           status: 'processing', sessionId: 'processing', startedAt: 0, stage: 'transcribing',
-          progress: 0.4, widgetStyle: 'pill', cancellable: true,
+          progress: 0.4, cancellable: true,
         })}
         platform="win32" now={5_000}
       />,
     )
+    expect(screen.queryByTestId('listening-bars')).not.toBeInTheDocument()
     expect(screen.getByTestId('processing-orbit')).toHaveClass('widget-spinner')
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
 
     rerender(
       <WidgetApp
-        snapshot={snapshot({
-          status: 'success', sessionId: 'success', output: 'pasted', widgetStyle: 'pill',
-        })}
+        snapshot={snapshot({ status: 'success', sessionId: 'success', output: 'pasted' })}
         platform="win32" now={5_000}
       />,
     )
@@ -1183,11 +1199,21 @@ describe('visual preview parser', () => {
     expect(css).toMatch(/html,\s*\nbody,\s*\n#root[\s\S]*background: transparent/)
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).toContain(":root[data-reduced-motion='on']")
-    expect(css).toContain('@keyframes widget-core-spin')
-    // Reduced motion pins the listening orb to a static glow.
-    expect(css).toMatch(/prefers-reduced-motion[\s\S]*widget-orb__core \{\s*\n\s*animation: none;/)
+    expect(css).toContain('@keyframes widget-bar')
+    // Reduced motion pins the recording bars to a static mid-height row.
+    expect(css).toMatch(
+      /prefers-reduced-motion[\s\S]*\.widget-bars__bar \{\s*\n\s*animation: none;\s*\n\s*height: 11px;/,
+    )
+    // The retired orb style left nothing behind.
+    expect(`${source}\n${css}`).not.toMatch(/orb(?!it)/i)
+    expect(`${source}\n${css}`).not.toContain('widget-dot')
+    expect(`${source}\n${css}`).not.toContain('data-widget-style')
     // The hover-expand affordance fully replaced the old floating tooltip.
     expect(`${source}\n${css}`).not.toContain('widget-sliver__hint')
+    // The leading app mark is sized from the stylesheet, never inline.
+    expect(source).toContain('data-testid="widget-glyph"')
+    expect(css).toMatch(/\.widget-glyph__mark \{[\s\S]*?width: 22px;/)
+    expect(source).not.toMatch(/<svg/)
     // Both orientations are styled off the shell orientation attribute.
     expect(css).toContain("[data-orientation='vertical']")
     // Reduced motion silences the sliver expansion and prompt transitions.

@@ -31,10 +31,12 @@ import type {
   WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
+import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
 
-const BAR_SHAPE = [0.28, 0.48, 0.72, 0.92, 0.62, 0.42, 0.78, 1, 0.68, 0.5, 0.82, 0.34]
+/** The listening visualizer's fixed column count; CSS staggers their motion. */
+const LISTENING_BAR_COUNT = 7
 const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
@@ -155,10 +157,6 @@ export function formatElapsedTime(startedAt: number, now: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-function safeLevel(level: number): number {
-  return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
-}
-
 function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy {
   const copy = platformCopy(platform)
   switch (snapshot.status) {
@@ -238,81 +236,19 @@ function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
 }
 
 /**
- * The Aurora x Frost orb: a translucent blue sphere with a slowly swirling
- * aurora core and a mic at its center. While listening it is the live level
- * meter — the core's brightness and the outer halo follow the voice level via
- * the --widget-level custom property; other states restyle the same sphere.
+ * The recording visualizer: seven bars that rise and fall on a staggered CSS
+ * loop. It signals "recording" rather than metering the voice, so it carries no
+ * microphone level and stays out of the accessibility tree — the live regions
+ * already announce the listening state.
  */
-function WidgetOrb({
-  size,
-  level,
-  processing,
-  icon,
-}: {
-  readonly size: 'mini' | 'full'
-  readonly level: number | null
-  readonly processing?: boolean
-  readonly icon: ReactNode
-}): ReactNode {
-  const live = level !== null
-  const boundedLevel = live ? safeLevel(level) : 0
+function ListeningBars(): ReactNode {
   return (
-    <span
-      className="widget-orb"
-      data-testid="widget-orb"
-      data-size={size}
-      role={live ? 'meter' : undefined}
-      aria-label={live ? 'Microphone level' : undefined}
-      aria-valuemin={live ? 0 : undefined}
-      aria-valuemax={live ? 100 : undefined}
-      aria-valuenow={live ? Math.round(boundedLevel * 100) : undefined}
-      aria-live="off"
-      aria-hidden={live ? undefined : true}
-      style={{ '--widget-level': boundedLevel } as React.CSSProperties}
-    >
-      <span className="widget-orb__halo" aria-hidden="true" />
-      {/* The icon lives inside the sphere so its glow clips at the glass edge
-          and can never bleed outside the transparent native canvas. */}
-      <span className="widget-orb__sphere" aria-hidden="true">
-        <span
-          className="widget-orb__core"
-          {...(processing === true ? { 'data-testid': 'processing-orbit' } : {})}
-        />
-        <span className="widget-orb__icon">{icon}</span>
-      </span>
+    <span className="widget-bars" data-testid="listening-bars" aria-hidden="true">
+      {Array.from({ length: LISTENING_BAR_COUNT }, (_unused, index) => (
+        // The stable index represents one fixed visualizer column.
+        <span key={index} className="widget-bars__bar" />
+      ))}
     </span>
-  )
-}
-
-/** The classic pill's twelve-column voice visualizer. */
-function LevelBars({ level, active }: { readonly level: number; readonly active: boolean }): ReactNode {
-  const boundedLevel = safeLevel(level)
-  return (
-    <div
-      className="widget-levels"
-      role={active ? 'meter' : undefined}
-      aria-label={active ? 'Microphone level' : undefined}
-      aria-valuemin={active ? 0 : undefined}
-      aria-valuemax={active ? 100 : undefined}
-      aria-valuenow={active ? Math.round(boundedLevel * 100) : undefined}
-      aria-live="off"
-      aria-hidden={active ? undefined : true}
-      data-active={active}
-    >
-      {BAR_SHAPE.map((shape, index) => {
-        const height = Math.round(7 + shape * (7 + boundedLevel * 24))
-        return (
-          <span
-            // The stable index represents one fixed visualizer column.
-            key={index}
-            className="widget-levels__bar"
-            data-testid="level-bar"
-            aria-hidden="true"
-            style={{ height: `${height}px` }}
-          />
-        )
-      })}
-    </div>
   )
 }
 
@@ -421,8 +357,6 @@ export function WidgetApp({
     onPresentationChange?.(presentation)
   }, [onPresentationChange, presentation, visibilityGeneration])
 
-  const widgetStyle = snapshot.widgetStyle
-
   if (snapshot.status === 'idle') {
     return (
       <aside
@@ -430,7 +364,6 @@ export function WidgetApp({
         aria-label="Sotto dictation status"
         data-status="idle"
         data-tone="idle"
-        data-widget-style={widgetStyle}
         data-orientation={orientation}
         data-dragging={surface.dragging || undefined}
       >
@@ -458,15 +391,8 @@ export function WidgetApp({
           onMouseDown={preventFocus}
           {...surface.surfaceProps}
         >
-          {/* The pill's resting sliver is a bare bar; only the orb style
-              carries a miniature sphere beside the hover prompt. */}
-          {widgetStyle === 'orb' && (
-            <WidgetOrb
-              size="mini"
-              level={null}
-              icon={<Mic aria-hidden="true" strokeWidth={2.1} />}
-            />
-          )}
+          {/* The resting sliver is a bare bar; hovering expands it in place
+              and reveals the click-to-dictate prompt overlaid on it. */}
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
             <span className="widget-sliver__prompt-keys">
@@ -534,7 +460,6 @@ export function WidgetApp({
       aria-label="Sotto dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
-      data-widget-style={widgetStyle}
       data-orientation={orientation}
       data-dragging={surface.dragging || undefined}
     >
@@ -544,50 +469,27 @@ export function WidgetApp({
         onMouseDown={preventFocus}
         {...surface.surfaceProps}
       >
-        {widgetStyle === 'pill' ? (
-          <>
-            {isListening && <span className="widget-dot" data-testid="recording-dot" aria-hidden="true" />}
-            {isListening && <LevelBars level={snapshot.level} active />}
-            {elapsed}
-            {isProcessing && (
-              <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />
-            )}
-            {!isListening && !isProcessing && (
-              <span className="widget-state-icon">{copy.icon}</span>
-            )}
-            {!isListening && (
-              <span className="widget-copy" title={copy.detail}>
-                {copy.title}
-              </span>
-            )}
-            {progressBar}
-            {stopAction}
-            {escAction}
-          </>
-        ) : (
-          <>
-            <WidgetOrb
-              size="full"
-              level={isListening ? snapshot.level : null}
-              processing={isProcessing}
-              icon={isProcessing ? null : copy.icon}
-            />
-            <div className="widget-panel">
-              {isListening && (
-                <span className="widget-rec" data-testid="recording-dot" aria-hidden="true" />
-              )}
-              {elapsed}
-              {!isListening && (
-                <span className="widget-copy" title={copy.detail}>
-                  {copy.title}
-                </span>
-              )}
-              {progressBar}
-              {stopAction}
-              {escAction}
-            </div>
-          </>
+        {/* Every active state leads with the app mark, so the capsule is
+            recognisably Sotto before any status content is read. */}
+        <span className="widget-glyph" data-testid="widget-glyph" aria-hidden="true">
+          <SottoMark className="widget-glyph__mark" />
+        </span>
+        {isListening && <ListeningBars />}
+        {elapsed}
+        {isProcessing && (
+          <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />
         )}
+        {!isListening && !isProcessing && (
+          <span className="widget-state-icon">{copy.icon}</span>
+        )}
+        {!isListening && (
+          <span className="widget-copy" title={copy.detail}>
+            {copy.title}
+          </span>
+        )}
+        {progressBar}
+        {stopAction}
+        {escAction}
       </div>
     </aside>
   )
@@ -706,7 +608,6 @@ export function parseVisualPreview(
   const common = {
     theme,
     reducedMotion: 'on' as const,
-    widgetStyle: 'orb' as const,
     shortcut: 'Ctrl+Shift+Space',
     sessionId: 'visual-preview',
   } as const
@@ -716,7 +617,6 @@ export function parseVisualPreview(
         status: 'idle',
         theme,
         reducedMotion: 'on',
-        widgetStyle: 'orb',
         shortcut: 'Ctrl+Shift+Space',
         cancellable: false,
       }

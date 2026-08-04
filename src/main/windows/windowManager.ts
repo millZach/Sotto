@@ -77,6 +77,8 @@ export interface WindowConstructorOptions {
   readonly skipTaskbar?: true
   readonly focusable?: boolean
   readonly hasShadow?: true
+  /** Absolute path to a window icon file; omitted where the platform ignores it. */
+  readonly icon?: string
   readonly webPreferences: WindowWebPreferences
 }
 
@@ -100,6 +102,30 @@ function mainWindowChromeOptions(
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: chrome.trafficLightPosition,
   }
+}
+
+/** The window icon is absent wherever the platform or the build supplies it. */
+interface WindowIconOptions {
+  readonly icon?: string
+}
+
+/**
+ * Windows reads the taskbar and alt-tab icon off the window, and an unpackaged
+ * run launches through the Electron binary, so the brand icon has to be named
+ * explicitly there. Packaged executables already carry the stamped icon, and
+ * macOS ignores the BrowserWindow icon in favour of the bundle's own.
+ */
+function windowIconOptions(
+  dependencies: WindowManagerDependencies,
+): WindowIconOptions {
+  if (
+    dependencies.isPackaged ||
+    dependencies.platform === 'darwin' ||
+    dependencies.brandIconPath === null
+  ) {
+    return {}
+  }
+  return { icon: dependencies.brandIconPath }
 }
 
 interface CloseEventLike {
@@ -196,6 +222,13 @@ export interface WindowManagerDependencies {
   readonly mainHtmlPath: string
   readonly widgetHtmlPath: string
   readonly developmentSources: DevelopmentRendererSources | undefined
+  /**
+   * Absolute path to the brand icon file on disk, or null when it is unknown.
+   * Only unpackaged runs consult it: a packaged executable already carries the
+   * stamped icon, while an unpackaged run would otherwise show the Electron
+   * launcher's own icon in the taskbar.
+   */
+  readonly brandIconPath: string | null
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
   readonly onRendererProcessGone?: (kind: RendererRole) => void
@@ -363,6 +396,7 @@ export class WindowManager {
       title: APP_NAME,
       backgroundColor: '#1b1917',
       autoHideMenuBar: true,
+      ...windowIconOptions(this.dependencies),
       ...mainWindowChromeOptions(this.dependencies.chrome),
       webPreferences: securePreferences(
         this.dependencies.preloadPath,
@@ -439,6 +473,7 @@ export class WindowManager {
       focusable: this.dependencies.chrome.widgetFocusable,
       hasShadow: true,
       autoHideMenuBar: true,
+      ...windowIconOptions(this.dependencies),
       webPreferences: {
         ...securePreferences(
           this.dependencies.preloadPath,

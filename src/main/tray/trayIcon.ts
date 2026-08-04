@@ -14,6 +14,12 @@ export interface CreateTrayResourceOptions<
 > {
   readonly source: TrayIconSource
   readonly executablePath: string
+  /**
+   * Absolute path to the brand icon file, supplied only when the running
+   * executable is not the packaged app. An executable-sourced tray icon would
+   * otherwise be the Electron launcher's own icon in an unpackaged run.
+   */
+  readonly unpackagedIconPath: string | null
   readonly getFileIcon: (
     path: string,
     options: { readonly size: 'small' },
@@ -40,6 +46,11 @@ async function loadTrayIcon<
   TrayResource extends DestroyableTray,
 >(options: CreateTrayResourceOptions<Icon, TrayResource>): Promise<Icon> {
   if (options.source.kind === 'executable') {
+    if (options.unpackagedIconPath !== null) {
+      // Same emptiness contract as the template branch: a missing file yields an
+      // empty image, which the shared check turns into the finite failure.
+      return options.loadImageIcon(options.unpackagedIconPath)
+    }
     return await options.getFileIcon(options.executablePath, { size: 'small' })
   }
   // A missing template asset yields an empty image rather than throwing, which

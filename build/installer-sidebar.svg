@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 314">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1b1723"/>
+      <stop offset="0" stop-color="#1b1917"/>
       <stop offset="1" stop-color="#121016"/>
     </linearGradient>
     <linearGradient id="glyph" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#a78bfa"/>
-      <stop offset="1" stop-color="#7c3aed"/>
+      <stop offset="0" stop-color="#f0a03c"/>
+      <stop offset="1" stop-color="#cf6c0d"/>
     </linearGradient>
   </defs>
   <rect width="164" height="314" fill="url(#bg)"/>
@@ -15,6 +15,6 @@
     <rect x="19.5" y="15" width="6.75" height="42" rx="3.4" fill="#ffffff"/>
     <path d="M33 36c3.4-11.3 6.75-11.3 10.1 0s6.75 11.3 10.1 0" stroke="#ffffff" stroke-width="5.6" stroke-linecap="round" fill="none"/>
   </g>
-  <text x="82" y="205" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" fill="#ece9f4">Sotto</text>
-  <text x="82" y="228" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10.5" fill="#9a92ad">Private, local dictation</text>
+  <text x="82" y="205" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" fill="#f4f1ed">Sotto</text>
+  <text x="82" y="228" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="10.5" fill="#aba29a">Private, local dictation</text>
 </svg>

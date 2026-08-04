@@ -92,7 +92,6 @@ function activeSnapshot(
   const metadata = {
     theme: 'dark' as const,
     reducedMotion: 'on' as const,
-    widgetStyle: 'orb' as const,
     shortcut: 'Control+Shift+Space',
     cancellable: true,
   }
@@ -139,6 +138,7 @@ describe('native recovery after the main renderer is lost', () => {
         mainHtmlPath: 'index.html',
         widgetHtmlPath: 'widget.html',
         developmentSources: undefined,
+        brandIconPath: null,
         isPackaged: true,
         log: vi.fn(),
         onRendererProcessGone: (kind) => rendererLoss(kind),
@@ -187,7 +187,6 @@ describe('native recovery after the main renderer is lost', () => {
             status: 'idle',
             theme: 'dark',
             reducedMotion: 'on',
-            widgetStyle: 'orb',
             shortcut: 'Control+Shift+Space',
             cancellable: false,
           },
@@ -210,7 +209,6 @@ describe('native recovery after the main renderer is lost', () => {
         level: 0.2,
         theme: 'dark',
         reducedMotion: 'on',
-        widgetStyle: 'orb',
         shortcut: 'Control+Shift+Space',
         cancellable: true,
       })
@@ -247,6 +245,7 @@ describe('native recovery after the main renderer is lost', () => {
       mainHtmlPath: 'index.html',
       widgetHtmlPath: 'widget.html',
       developmentSources: undefined,
+      brandIconPath: null,
       isPackaged: true,
       log: vi.fn(),
       onRendererProcessGone: (kind) => rendererLoss(kind),
@@ -309,6 +308,7 @@ describe('native recovery after the main renderer is lost', () => {
       mainHtmlPath: 'index.html',
       widgetHtmlPath: 'widget.html',
       developmentSources: undefined,
+      brandIconPath: null,
       isPackaged: true,
       log: vi.fn(),
     })
@@ -381,6 +381,7 @@ describe('native recovery after the main renderer is lost', () => {
       mainHtmlPath: 'index.html',
       widgetHtmlPath: 'widget.html',
       developmentSources: undefined,
+      brandIconPath: null,
       isPackaged: true,
       log: vi.fn(),
     })

@@ -39,7 +39,6 @@ const customSettings = {
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   streamingAsr: false,
-  widgetStyle: 'pill',
 } satisfies AppSettings
 
 describe('settings', () => {
@@ -64,7 +63,6 @@ describe('settings', () => {
       launchAtStartup: false,
       startMinimized: false,
       showWidgetWhenIdle: true,
-      widgetStyle: 'orb',
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
@@ -86,10 +84,10 @@ describe('settings', () => {
     })
   })
 
-  it('defaults the widget style to the orb and recovers invalid values', () => {
-    expect(parseSettings({}).widgetStyle).toBe('orb')
-    expect(parseSettings({ widgetStyle: 'pill' }).widgetStyle).toBe('pill')
-    expect(parseSettings({ widgetStyle: 'cube' }).widgetStyle).toBe('orb')
+  it('drops the retired widget style key from persisted settings', () => {
+    const parsed = parseSettings({ widgetStyle: 'orb' })
+    expect(parsed).not.toHaveProperty('widgetStyle')
+    expect(parsed).toEqual(DEFAULT_SETTINGS)
   })
 
   it('defaults the AI formatting pass off and recovers invalid values', () => {

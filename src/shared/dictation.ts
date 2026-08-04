@@ -1,4 +1,4 @@
-import type { ReducedMotion, Theme, WidgetStyle } from './settings'
+import type { ReducedMotion, Theme } from './settings'
 
 export type DictationState =
   | { status: 'idle' }
@@ -30,7 +30,6 @@ export type WidgetErrorCode =
 interface WidgetSnapshotMetadata {
   readonly theme: Theme
   readonly reducedMotion: ReducedMotion
-  readonly widgetStyle: WidgetStyle
   readonly shortcut: string
   readonly cancellable: boolean
 }

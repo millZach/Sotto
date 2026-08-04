@@ -95,6 +95,20 @@ it('renders Sotto branding and invokes tray-safe controls', async () => {
   expect(container.querySelector('.app-titlebar')?.className).toBe('app-titlebar')
 })
 
+it('draws the shared mark in the packaged icon’s burnt amber', async () => {
+  const { container } = await renderTitlebar('win32')
+
+  const mark = container.querySelector('.app-titlebar__mark')
+  expect(mark).toBeInTheDocument()
+  expect(mark).toHaveAttribute('aria-hidden', 'true')
+  expect([...mark!.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
+    .toEqual(['#cf6c0d', '#8f4404'])
+  // The gradient reference must resolve to this instance's own definition.
+  const gradientId = mark!.querySelector('linearGradient')?.getAttribute('id')
+  expect(gradientId).toMatch(/^sotto-mark-[\w-]+$/)
+  expect(mark!.querySelector('rect')?.getAttribute('fill')).toBe(`url(#${gradientId!})`)
+})
+
 it('leaves window controls to the native traffic lights on macOS', async () => {
   const { container } = await renderTitlebar('darwin')
 

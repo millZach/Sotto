@@ -13,8 +13,6 @@ export type ReducedMotion = 'system' | 'on'
 export type ModelPreset = 'fast' | 'instant'
 /** Inference always runs on CPU/WASM; the WebGPU/auto options were removed. */
 export type InferencePreference = 'wasm'
-/** The floating dictation widget's look: the aurora orb or the classic pill. */
-export type WidgetStyle = 'orb' | 'pill'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'high'
 
@@ -41,7 +39,6 @@ export interface AppSettings {
   launchAtStartup: boolean
   startMinimized: boolean
   showWidgetWhenIdle: boolean
-  widgetStyle: WidgetStyle
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
@@ -77,7 +74,6 @@ const fieldSchemas = {
   launchAtStartup: z.boolean(),
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
-  widgetStyle: z.enum(['orb', 'pill']),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
     z.literal(25),
@@ -116,7 +112,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtStartup: false,
   startMinimized: false,
   showWidgetWhenIdle: true,
-  widgetStyle: 'orb',
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
@@ -172,7 +167,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     launchAtStartup: parseField(persisted, 'launchAtStartup', defaults),
     startMinimized: parseField(persisted, 'startMinimized', defaults),
     showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
-    widgetStyle: parseField(persisted, 'widgetStyle', defaults),
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),

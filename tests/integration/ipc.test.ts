@@ -318,7 +318,6 @@ const idleWidgetSnapshot = {
   status: 'idle',
   theme: 'system',
   reducedMotion: 'system',
-  widgetStyle: 'orb',
   shortcut: 'Control+Shift+Space',
   cancellable: false,
 } as const satisfies WidgetSnapshot
@@ -3245,6 +3244,7 @@ describe('widget presentation and drag channels', () => {
       mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
       widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
       developmentSources: undefined,
+      brandIconPath: null,
       isPackaged: true,
       log: vi.fn(),
       getWidgetPlacement: () => null,
