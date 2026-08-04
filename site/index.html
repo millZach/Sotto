@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — Dictation, kept to yourself</title>
+<meta name="description" content="Sotto is free, offline dictation for Windows and Mac. Press a shortcut, speak, and it types at your cursor in any app — no account, no cloud, audio never saved.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f4f0">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1917">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sotto — Dictation, kept to yourself">
+<meta property="og:description" content="Sotto is free, offline dictation for Windows and Mac. Press a shortcut, speak, and it types at your cursor in any app — no account, no cloud, audio never saved.">
+<meta name="twitter:card" content="summary">
+<link rel="canonical" href="https://saysotto.com/">
+<meta property="og:url" content="https://saysotto.com/">
+<!-- TODO before launch polish: og:image social card -->
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  /* ---------- Tokens ---------- */
+  :root {
+    color-scheme: light;
+    --bg: #f6f4f0;
+    --bg-deep: #f0ede8;
+    --surface: #fcfaf7;
+    --surface-2: #f0ede8;
+    --text: #262220;
+    --muted: #6e6660;
+    --line: #ddd7cf;
+    --line-strong: #c8bfb2;
+    --accent: #b25605;
+    --accent-ink: #ffffff;
+    --accent-wash: rgba(178 86 5 / 8%);
+    --activity: #2c7a72;
+    --ok: #45702d;
+    --keycap-bg: #fffefc;
+    --keycap-edge: #c8bfb2;
+    --win-bar: #f0ede8;
+    --win-bg: #fffefc;
+    --shadow-demo: 0 24px 60px rgb(46 40 35 / 15%);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #1b1917;
+      --bg-deep: #161412;
+      --surface: #262321;
+      --surface-2: #2c2926;
+      --text: #f4f1ed;
+      --muted: #aba29a;
+      --line: #37332f;
+      --line-strong: #4c453d;
+      --accent: #f0a03c;
+      --accent-ink: #2a1b04;
+      --accent-wash: rgba(240 160 60 / 10%);
+      --activity: #5fbdb2;
+      --ok: #a3c585;
+      --keycap-bg: #2c2926;
+      --keycap-edge: #4c453d;
+      --win-bar: #221f1d;
+      --win-bg: #201d1b;
+      --shadow-demo: 0 24px 60px rgb(0 0 0 / 42%);
+    }
+  }
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --bg: #f6f4f0;
+    --bg-deep: #f0ede8;
+    --surface: #fcfaf7;
+    --surface-2: #f0ede8;
+    --text: #262220;
+    --muted: #6e6660;
+    --line: #ddd7cf;
+    --line-strong: #c8bfb2;
+    --accent: #b25605;
+    --accent-ink: #ffffff;
+    --accent-wash: rgba(178 86 5 / 8%);
+    --activity: #2c7a72;
+    --ok: #45702d;
+    --keycap-bg: #fffefc;
+    --keycap-edge: #c8bfb2;
+    --win-bar: #f0ede8;
+    --win-bg: #fffefc;
+    --shadow-demo: 0 24px 60px rgb(46 40 35 / 15%);
+  }
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --bg: #1b1917;
+    --bg-deep: #161412;
+    --surface: #262321;
+    --surface-2: #2c2926;
+    --text: #f4f1ed;
+    --muted: #aba29a;
+    --line: #37332f;
+    --line-strong: #4c453d;
+    --accent: #f0a03c;
+    --accent-ink: #2a1b04;
+    --accent-wash: rgba(240 160 60 / 10%);
+    --activity: #5fbdb2;
+    --ok: #a3c585;
+    --keycap-bg: #2c2926;
+    --keycap-edge: #4c453d;
+    --win-bar: #221f1d;
+    --win-bg: #201d1b;
+    --shadow-demo: 0 24px 60px rgb(0 0 0 / 42%);
+  }
+
+  /* ---------- Base ---------- */
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, 'Segoe UI', -apple-system, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .serif {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', Georgia, serif;
+  }
+  .mono {
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, Menlo, monospace;
+  }
+  a { color: var(--accent); }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- Header ---------- */
+  .site-head {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .site-head .wrap {
+    display: flex; align-items: center; gap: 28px;
+    height: 64px;
+  }
+  .wordmark {
+    display: flex; align-items: center; gap: 11px;
+    text-decoration: none; color: var(--text);
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    font-size: 1.35rem; letter-spacing: 0.01em;
+  }
+  .wordmark svg { display: block; }
+  .site-nav { display: flex; gap: 26px; margin-left: auto; }
+  .site-nav a {
+    color: var(--muted); text-decoration: none; font-size: 0.95rem;
+  }
+  .site-nav a:hover { color: var(--text); }
+  .head-cta {
+    display: inline-block;
+    padding: 8px 16px; border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink); text-decoration: none; font-size: 0.9rem; font-weight: 600;
+    white-space: nowrap;
+  }
+  .head-cta:hover { filter: brightness(1.08); }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 84px 0 30px; }
+  .hero .wrap {
+    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 56px; align-items: center;
+  }
+  .eyebrow {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    font-style: italic; font-size: 1.02rem;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+  .eyebrow .tr { color: var(--muted); font-style: italic; }
+  .hero h1 {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(2.5rem, 5.4vw, 3.7rem);
+    line-height: 1.08;
+    letter-spacing: -0.012em;
+    margin: 0 0 20px;
+  }
+  .hero .lede {
+    color: var(--muted); font-size: 1.1rem; max-width: 30em;
+    margin: 0 0 30px;
+  }
+  .hero .lede strong { color: var(--text); font-weight: 600; }
+  .dl-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 22px; border-radius: 12px;
+    font-size: 1rem; font-weight: 600; text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .btn svg { flex: none; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-quiet {
+    background: var(--surface); color: var(--text);
+    border-color: var(--line-strong);
+  }
+  .btn-quiet:hover { border-color: var(--accent); }
+  .btn small { display: block; font-weight: 400; font-size: 0.78rem; opacity: 0.82; }
+  .btn span { line-height: 1.25; text-align: left; }
+  .fineprint { color: var(--muted); font-size: 0.86rem; margin: 0; }
+  .fineprint a { color: var(--muted); }
+
+  /* ---------- Demo window ---------- */
+  .demo-col { min-width: 0; }
+  .demo-window {
+    background: var(--win-bg);
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-demo);
+    overflow: hidden;
+  }
+  .demo-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--win-bar);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 14px;
+  }
+  .tl-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
+  .demo-titlebar .title {
+    margin: 0 auto; transform: translateX(-16px);
+    font-size: 0.82rem; color: var(--muted);
+  }
+  .demo-editor {
+    padding: 22px 24px 8px;
+    min-height: 172px;
+    font-size: 1.02rem; line-height: 1.7;
+  }
+  .demo-editor .to-line { color: var(--muted); font-size: 0.92rem; margin: 0 0 12px; }
+  .demo-text { margin: 0; min-height: 4.6em; }
+  .caret {
+    display: inline-block; width: 2px; height: 1.15em;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    animation: blink 1.06s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Sotto widget pill */
+  .demo-dock { display: flex; justify-content: center; padding: 6px 0 22px; }
+  .widget {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 9px 18px 9px 10px;
+    min-width: 250px;
+    transition: border-color 0.35s ease;
+  }
+  .widget.live { border-color: var(--activity); }
+  .widget-glyph { flex: none; display: grid; place-items: center; }
+  .widget-state { font-size: 0.92rem; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .widget-state .st { transition: color 0.3s ease; }
+  .widget.live .st { color: var(--text); }
+  .widget .ok-dot { color: var(--ok); font-weight: 700; display: none; }
+  .widget.done .ok-dot { display: inline; }
+
+  .bars { display: none; align-items: center; gap: 3px; height: 18px; }
+  .widget.listening .bars { display: inline-flex; }
+  .bars i {
+    width: 3px; border-radius: 2px; background: var(--activity);
+    height: 6px;
+    animation: bar 0.9s ease-in-out infinite;
+  }
+  .bars i:nth-child(2) { animation-delay: 0.12s; }
+  .bars i:nth-child(3) { animation-delay: 0.24s; }
+  .bars i:nth-child(4) { animation-delay: 0.36s; }
+  .bars i:nth-child(5) { animation-delay: 0.48s; }
+  .bars i:nth-child(6) { animation-delay: 0.60s; }
+  .bars i:nth-child(7) { animation-delay: 0.72s; }
+  @keyframes bar {
+    0%, 100% { height: 5px; }
+    50% { height: 17px; }
+  }
+
+  /* Keycaps under the demo */
+  .demo-keys {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 20px; color: var(--muted); font-size: 0.88rem;
+  }
+  .keycap {
+    display: inline-block;
+    padding: 4px 10px;
+    background: var(--keycap-bg);
+    border: 1px solid var(--keycap-edge);
+    border-bottom-width: 3px;
+    border-radius: 7px;
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+    font-size: 0.84rem; color: var(--text);
+    transition: transform 0.12s ease, border-bottom-width 0.12s ease, background 0.12s ease;
+  }
+  .demo-keys.pressed .keycap {
+    transform: translateY(2px);
+    border-bottom-width: 1px;
+    background: var(--accent-wash);
+  }
+
+  /* ---------- Sections ---------- */
+  .sec { padding: 88px 0 0; }
+  .sec-inner { border-top: 1px solid var(--line); padding-top: 56px; }
+  .sec h2 {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(1.7rem, 3.2vw, 2.25rem);
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+  }
+  .sec .sec-lede { color: var(--muted); max-width: 44em; margin: 0 0 44px; }
+
+  /* Steps */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px 24px 24px;
+  }
+  .step .step-key { margin-bottom: 18px; min-height: 34px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .step h3 { font-size: 1.12rem; font-weight: 650; margin: 0 0 8px; }
+  .step p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  .step .speak-wave { color: var(--activity); }
+
+  /* Privacy ledger */
+  .ledger {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    font-size: 0.97rem;
+  }
+  .ledger-scroll { overflow-x: auto; border-radius: 14px; }
+  .ledger th, .ledger td {
+    text-align: left; padding: 15px 20px;
+    border-top: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .ledger thead th {
+    border-top: none;
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--muted); font-weight: 600;
+    background: var(--surface-2);
+  }
+  .ledger td:first-child { font-weight: 600; white-space: nowrap; }
+  .ledger td:nth-child(2) { white-space: nowrap; }
+  .ledger .never { color: var(--ok); font-weight: 650; }
+  .ledger .cond { color: var(--accent); font-weight: 650; }
+  .ledger td.detail { color: var(--muted); }
+
+  /* Features */
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .feat { padding: 4px 0; }
+  .feat h3 { font-size: 1.03rem; font-weight: 650; margin: 0 0 6px; }
+  .feat h3::before {
+    content: ''; display: block; width: 26px; height: 2px;
+    background: var(--accent); margin-bottom: 14px; border-radius: 2px;
+  }
+  .feat p { margin: 0; color: var(--muted); font-size: 0.93rem; }
+
+  /* Download */
+  .dl-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 26px; }
+  .dl-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 30px 28px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .dl-card .os { display: flex; align-items: center; gap: 12px; }
+  .dl-card .os h3 { font-size: 1.25rem; font-weight: 650; }
+  .dl-card .req { color: var(--muted); font-size: 0.92rem; margin: 0; }
+  .dl-card .file {
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+    font-size: 0.86rem; color: var(--muted);
+  }
+  .dl-card .btn { align-self: flex-start; }
+  .dl-note {
+    margin: 4px 0 0; padding: 12px 16px;
+    background: var(--accent-wash);
+    border-radius: 10px;
+    color: var(--muted); font-size: 0.86rem;
+  }
+  .dl-note b { color: var(--text); font-weight: 600; }
+  .dl-verify { color: var(--muted); font-size: 0.9rem; margin: 0; }
+
+  /* Footer */
+  .site-foot { margin-top: 96px; border-top: 1px solid var(--line); background: var(--bg-deep); }
+  .site-foot .wrap {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px;
+    padding-top: 30px; padding-bottom: 38px;
+    color: var(--muted); font-size: 0.88rem;
+  }
+  .site-foot .spacer { flex: 1; }
+  .site-foot a { color: var(--muted); }
+
+  /* Slur divider */
+  .slur { display: block; margin: 0 0 20px; color: var(--activity); }
+
+  /* Reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 900px) {
+    .hero .wrap { grid-template-columns: 1fr; gap: 44px; }
+    .steps, .feat-grid { grid-template-columns: 1fr 1fr; }
+    .site-nav { display: none; }
+  }
+  @media (max-width: 620px) {
+    .steps, .feat-grid, .dl-cards { grid-template-columns: 1fr; }
+    .hero { padding-top: 56px; }
+    .sec { padding-top: 64px; }
+  }
+
+  /* ---------- Reduced motion ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .bars i { animation: none; height: 11px; }
+    .caret { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="wordmark" href="#top" aria-label="Sotto home">
+      <svg width="30" height="30" viewBox="0 0 96 96" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#cf6c0d"/><stop offset="1" stop-color="#8f4404"/>
+          </linearGradient>
+        </defs>
+        <rect width="96" height="96" rx="22" fill="url(#lg)"/>
+        <rect x="26" y="20" width="9" height="56" rx="4.5" fill="#fff"/>
+        <path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      Sotto
+    </a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="#how">How it works</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#features">Features</a>
+    </nav>
+    <a class="head-cta" href="#download">Download</a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- ================= Hero ================= -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">sotto voce <span class="tr">&nbsp;·&nbsp; in an undertone</span></p>
+        <h1>Dictation, kept to&nbsp;yourself.</h1>
+        <p class="lede">
+          Press a shortcut, speak, and Sotto types it at your cursor — in any app.
+          Transcription runs <strong>on your computer</strong>: no account, no cloud,
+          and audio is never saved.
+        </p>
+        <!-- TODO: no mac dmg has ever been uploaded to GitHub; mac buttons point at the releases page for now. Once the 3.3.4 dmg is uploaded, switch BOTH platforms to releases/latest/download/... and update the mac .file line/version copy. -->
+        <div class="dl-row">
+          <a class="btn btn-primary" id="dl-win" href="https://github.com/millZach/Sotto/releases/download/v3.3.4/Sotto-Setup-3.3.4.exe">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3zM3 12.5h7.5v7.1L3 18.5zM11.5 4.2 21 3v8.5h-9.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>
+            <span>Download for Windows<small>Windows 10 &amp; 11 · x64 · free</small></span>
+          </a>
+          <a class="btn btn-quiet" id="dl-mac" href="https://github.com/millZach/Sotto/releases/latest">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.7 12.9c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-2-.9-3.2-.9-1.7 0-3.2 1-4 2.5-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.1-1.2 2.9-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.4-1-2.4-3.9zM14.4 5.6c.7-.8 1.1-1.9 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>
+            <span>Download for Mac<small>macOS 11+ · Apple silicon · free</small></span>
+          </a>
+        </div>
+        <p class="fineprint">
+          Free · no account, no subscription ·
+          <a href="https://github.com/millZach/Sotto/releases/latest">all releases &amp; checksums</a>
+        </p>
+      </div>
+
+      <!-- Signature: looping dictation demo -->
+      <div class="demo-col">
+        <figure class="demo-window" style="margin:0" aria-label="Animated demo: dictating a message with Sotto">
+          <div class="demo-titlebar">
+            <span class="tl-dot"></span><span class="tl-dot"></span><span class="tl-dot"></span>
+            <p class="title">Any app — Notes</p>
+          </div>
+          <div class="demo-editor">
+            <p class="to-line">To: Elena</p>
+            <p class="demo-text"><span id="typed"></span><span class="caret" id="caret"></span></p>
+          </div>
+          <div class="demo-dock">
+            <div class="widget" id="widget">
+              <span class="widget-glyph">
+                <svg width="26" height="26" viewBox="0 0 96 96" aria-hidden="true">
+                  <rect width="96" height="96" rx="22" fill="url(#lg)"/>
+                  <rect x="26" y="20" width="9" height="56" rx="4.5" fill="#fff"/>
+                  <path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+                </svg>
+              </span>
+              <span class="widget-state">
+                <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                <span class="ok-dot" aria-hidden="true">✓</span>
+                <span class="st" id="widget-state">Ready</span>
+              </span>
+            </div>
+          </div>
+        </figure>
+        <p class="demo-keys" id="demo-keys">
+          <span class="keycap" id="key-mod1">Ctrl</span><span class="keycap" id="key-mod2">Shift</span><span class="keycap">Space</span>
+          <span>&nbsp;starts and stops — from any app</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= How it works ================= -->
+  <section class="sec" id="how">
+    <div class="wrap sec-inner reveal">
+      <svg class="slur" width="72" height="26" viewBox="0 0 72 26" aria-hidden="true">
+        <path d="M2 16C14 4 26 4 38 16s22 8 32 -2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      <p class="eyebrow">legato <span class="tr">&nbsp;·&nbsp; one smooth motion</span></p>
+      <h2>Press. Speak. It's typed.</h2>
+      <p class="sec-lede">No window to find, no button to click. Sotto waits in the menu bar or system tray and works wherever your cursor already is.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-key">
+            <span class="keycap key-alt" data-win="Ctrl" data-mac="⌃">Ctrl</span>
+            <span class="keycap key-alt" data-win="Shift" data-mac="⇧">Shift</span>
+            <span class="keycap">Space</span>
+          </div>
+          <h3>Press the shortcut</h3>
+          <p>One global shortcut starts listening from any app. Change it any time in Settings; Escape cancels.</p>
+        </div>
+        <div class="step">
+          <div class="step-key">
+            <svg class="speak-wave" width="64" height="26" viewBox="0 0 64 30" aria-hidden="true">
+              <path d="M3 15c5-13 10-13 15 0s10 13 15 0 10-13 15 0 8 10 13 4" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+            </svg>
+          </div>
+          <h3>Say it how you'd say it</h3>
+          <p>Speak naturally, then press the shortcut again. The speech model runs locally — it works on a plane.</p>
+        </div>
+        <div class="step">
+          <div class="step-key">
+            <span class="keycap" style="font-style:italic">|</span>
+          </div>
+          <h3>It's typed at your cursor</h3>
+          <p>Sotto copies the transcript, then pastes it where you were typing. If an app blocks pasting, the text is already in your clipboard.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Privacy ================= -->
+  <section class="sec" id="privacy">
+    <div class="wrap sec-inner reveal">
+      <svg class="slur" width="72" height="26" viewBox="0 0 72 26" aria-hidden="true">
+        <path d="M2 16C14 4 26 4 38 16s22 8 32 -2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      <p class="eyebrow">pianissimo <span class="tr">&nbsp;·&nbsp; as quiet as software gets</span></p>
+      <h2>What leaves this computer</h2>
+      <p class="sec-lede">Nothing, by default. Sotto has no analytics, no crash upload, no update telemetry, and no account. Here is the complete list — including the two honest exceptions, both opt-in.</p>
+      <div class="ledger-scroll">
+        <table class="ledger">
+          <thead>
+            <tr><th scope="col">Your data</th><th scope="col">Leaves?</th><th scope="col">Details</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Audio</td><td class="never">Never</td>
+              <td class="detail">Held in memory only and discarded the moment transcription finishes. Never written to disk.</td>
+            </tr>
+            <tr>
+              <td>Transcripts</td><td class="never">Never*</td>
+              <td class="detail">*Unless you turn on optional AI cleanup with your own OpenRouter key — off by default. Text only, never audio; offline, you get the raw local transcript.</td>
+            </tr>
+            <tr>
+              <td>History</td><td class="never">Never</td>
+              <td class="detail">Optional, stored locally, searchable, bounded, and clearable in one click.</td>
+            </tr>
+            <tr>
+              <td>Usage &amp; telemetry</td><td class="never">Never</td>
+              <td class="detail">None exists to send. No analytics, no crash reports, no phoning home.</td>
+            </tr>
+            <tr>
+              <td>Model downloads</td><td class="cond">Opt-in</td>
+              <td class="detail">The Standard model ships in the installer — nothing downloads on first run. The optional Multi-lingual model downloads from Hugging Face after you review its size and license; that request carries ordinary metadata like your IP, nothing more.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Features ================= -->
+  <section class="sec" id="features">
+    <div class="wrap sec-inner reveal">
+      <svg class="slur" width="72" height="26" viewBox="0 0 72 26" aria-hidden="true">
+        <path d="M2 16C14 4 26 4 38 16s22 8 32 -2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      <p class="eyebrow">tutti <span class="tr">&nbsp;·&nbsp; everything included</span></p>
+      <h2>Small app, complete instrument</h2>
+      <p class="sec-lede">About 500 MB installed, with a ready-to-use speech model in the box. No Python, no setup, no model download on first run.</p>
+      <div class="feat-grid">
+        <div class="feat">
+          <h3>Two modes, both local</h3>
+          <p>Standard ships in the installer — instant English dictation. Add the optional Multi-lingual mode to dictate in other languages; it downloads only with your consent.</p>
+        </div>
+        <div class="feat">
+          <h3>Streaming transcription</h3>
+          <p>Sotto transcribes while you talk, so even long dictations finish almost immediately after you stop.</p>
+        </div>
+        <div class="feat">
+          <h3>Personal dictionary</h3>
+          <p>Teach Sotto the names, products, and jargon it should always get right.</p>
+        </div>
+        <div class="feat">
+          <h3>Clipboard first, always</h3>
+          <p>Every transcript is copied before pasting. A blocked paste never loses a word.</p>
+        </div>
+        <div class="feat">
+          <h3>Local history</h3>
+          <p>Optional and searchable, with retention you control and a clear-all that means it.</p>
+        </div>
+        <div class="feat">
+          <h3>Quiet by design</h3>
+          <p>Lives in the menu bar or tray, follows your light or dark theme, respects reduced motion, and can launch at login.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Download ================= -->
+  <section class="sec" id="download">
+    <div class="wrap sec-inner reveal">
+      <svg class="slur" width="72" height="26" viewBox="0 0 72 26" aria-hidden="true">
+        <path d="M2 16C14 4 26 4 38 16s22 8 32 -2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      <p class="eyebrow">coda <span class="tr">&nbsp;·&nbsp; take it home</span></p>
+      <h2>Download Sotto</h2>
+      <p class="sec-lede">Free, no account. Formerly TalkType — your settings, history, and models migrate automatically on first launch.</p>
+      <div class="dl-cards">
+        <div class="dl-card">
+          <div class="os">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="var(--accent)" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3zM3 12.5h7.5v7.1L3 18.5zM11.5 4.2 21 3v8.5h-9.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>
+            <h3>Windows</h3>
+          </div>
+          <p class="req">Windows 10 or 11, 64-bit · about 500 MB installed · 1.5 GB free during install</p>
+          <p class="file">Sotto-Setup-3.3.4.exe</p>
+          <a class="btn btn-primary" href="https://github.com/millZach/Sotto/releases/download/v3.3.4/Sotto-Setup-3.3.4.exe"><span>Download installer</span></a>
+          <p class="dl-note"><b>Unsigned build:</b> Windows may show a SmartScreen prompt. Choose <b>More info → Run anyway</b>. Installs per-user; no admin rights needed.</p>
+        </div>
+        <div class="dl-card">
+          <div class="os">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="var(--accent)" aria-hidden="true"><path d="M16.7 12.9c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-2-.9-3.2-.9-1.7 0-3.2 1-4 2.5-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.1-1.2 2.9-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.4-1-2.4-3.9zM14.4 5.6c.7-.8 1.1-1.9 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>
+            <h3>macOS</h3>
+          </div>
+          <p class="req">macOS 11 (Big Sur) or newer · Apple silicon only · about 500 MB installed</p>
+          <p class="file">Sotto-3.3.2-arm64.dmg</p>
+          <a class="btn btn-quiet" href="https://github.com/millZach/Sotto/releases/latest"><span>Download disk image</span></a>
+          <p class="dl-note"><b>Unsigned build:</b> if the first launch is blocked, open <b>System Settings → Privacy &amp; Security → Open Anyway</b>. Intel Macs are not supported.</p>
+        </div>
+      </div>
+      <p class="dl-verify">
+        Verify your download against <a href="https://github.com/millZach/Sotto/releases/latest">SHA256SUMS.txt</a> on the release page ·
+        <a href="https://github.com/millZach/Sotto/releases">all versions</a>
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>Sotto · private, local dictation</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/millZach/Sotto">GitHub</a>
+    <a href="https://github.com/millZach/Sotto/releases/latest">Releases</a>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    'use strict';
+
+    // Platform-aware keycaps
+    var isMac = /Mac|iPhone|iPad/.test(navigator.platform || '');
+    if (isMac) {
+      var m1 = document.getElementById('key-mod1');
+      var m2 = document.getElementById('key-mod2');
+      if (m1) m1.textContent = '⌃';
+      if (m2) m2.textContent = '⇧';
+      document.querySelectorAll('.key-alt').forEach(function (k) {
+        k.textContent = k.getAttribute('data-mac');
+      });
+    }
+
+    // Scroll reveal
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.12 });
+      document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+    } else {
+      document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
+    }
+
+    // ---------------- Hero dictation demo ----------------
+    var typed = document.getElementById('typed');
+    var widget = document.getElementById('widget');
+    var stateEl = document.getElementById('widget-state');
+    var keys = document.getElementById('demo-keys');
+    var SENTENCE = 'Morning Elena — the draft is ready. I’ll send it over tomorrow so you can review the numbers before the call.';
+
+    function setState(cls, label) {
+      widget.className = 'widget' + (cls ? ' live ' + cls : '');
+      stateEl.textContent = label;
+    }
+
+    if (reduced) {
+      typed.textContent = SENTENCE;
+      setState('done', 'Copied — pasted at cursor');
+      return;
+    }
+
+    var timers = [];
+    function after(ms, fn) { timers.push(setTimeout(fn, ms)); }
+
+    function pressKeys() {
+      keys.classList.add('pressed');
+      after(220, function () { keys.classList.remove('pressed'); });
+    }
+
+    function typeOut(text, done) {
+      var i = 0;
+      (function tick() {
+        if (i <= text.length) {
+          typed.textContent = text.slice(0, i);
+          i += 1 + (Math.floor(i / 7) % 2); // slightly uneven cadence
+          timers.push(setTimeout(tick, 24));
+        } else {
+          typed.textContent = text;
+          done();
+        }
+      })();
+    }
+
+    function runLoop() {
+      typed.textContent = '';
+      setState('', 'Ready');
+      after(900, function () {
+        pressKeys();
+        after(260, function () { setState('listening', 'Listening…'); });
+      });
+      after(3600, function () {
+        pressKeys();
+        after(260, function () { setState('transcribing', 'Transcribing…'); });
+      });
+      after(4700, function () {
+        typeOut(SENTENCE, function () {
+          setState('done', 'Copied — pasted at cursor');
+          after(2600, runLoop);
+        });
+      });
+    }
+
+    var demoVisible = true;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && demoVisible) {
+        demoVisible = false;
+        timers.forEach(clearTimeout); timers = [];
+      } else if (!document.hidden && !demoVisible) {
+        demoVisible = true;
+        runLoop();
+      }
+    });
+
+    runLoop();
+  })();
+</script>
+
+</body>
+</html>
