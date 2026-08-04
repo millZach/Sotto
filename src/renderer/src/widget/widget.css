@@ -278,8 +278,9 @@ button {
 
 /* ---- recording visualizer ---- */
 
-/* Seven bars on one staggered loop. They signal recording rather than meter
-   the voice, so nothing here reads the microphone level. */
+/* Seven bars on one staggered loop. The renderer gates the loop on the
+   microphone level: the wave runs only while data-speaking is set, and the
+   bars rest at their floor height the moment the speaker goes quiet. */
 .widget-bars {
   display: inline-flex;
   flex: 1;
@@ -302,13 +303,23 @@ button {
   transform: rotate(90deg);
 }
 
+/* The loop and its per-bar stagger live together on the base rule so the
+   nth-child delays below keep overriding the shorthand's delay and the wave
+   ripples across the row. Quiet is the resting state: the gate below suppresses
+   the loop, leaving the keyframe floor height, held still, with a brief settle
+   so the wave lands rather than snapping. */
 .widget-bars__bar {
   width: 3px;
-  height: 6px;
+  height: 5px;
   flex: none;
   border-radius: 2px;
   background: var(--widget-activity);
   animation: widget-bar 0.9s ease-in-out infinite;
+  transition: height 0.18s ease;
+}
+
+.widget-bars:not([data-speaking]) .widget-bars__bar {
+  animation: none;
 }
 
 .widget-bars__bar:nth-child(2) {
@@ -517,8 +528,14 @@ button {
     animation: none;
   }
 
-  /* The visualizer holds as a steady row of mid-height bars. */
+  /* The visualizer never runs its loop here. It still answers the voice, as a
+     step between a resting row and a steady row of mid-height bars. */
   .widget-bars__bar {
+    animation: none;
+    height: 5px;
+  }
+
+  .widget-bars[data-speaking] .widget-bars__bar {
     animation: none;
     height: 11px;
   }
@@ -528,6 +545,7 @@ button {
     border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
   }
 
+  .widget-bars__bar,
   .widget-capsule,
   .widget-progress > span,
   .widget-sliver,
@@ -542,6 +560,11 @@ button {
 
 :root[data-reduced-motion='on'] .widget-bars__bar {
   animation: none;
+  height: 5px;
+}
+
+:root[data-reduced-motion='on'] .widget-bars[data-speaking] .widget-bars__bar {
+  animation: none;
   height: 11px;
 }
 
@@ -550,6 +573,7 @@ button {
   border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
 }
 
+:root[data-reduced-motion='on'] .widget-bars__bar,
 :root[data-reduced-motion='on'] .widget-capsule,
 :root[data-reduced-motion='on'] .widget-progress > span,
 :root[data-reduced-motion='on'] .widget-sliver,

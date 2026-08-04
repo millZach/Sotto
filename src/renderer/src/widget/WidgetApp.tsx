@@ -37,6 +37,16 @@ import { useWidgetDragGesture } from './useWidgetDragGesture'
 
 /** The listening visualizer's fixed column count; CSS staggers their motion. */
 const LISTENING_BAR_COUNT = 7
+/**
+ * Voice gating for the visualizer. Levels arrive as the raw RMS of each
+ * captured chunk, the same scale `SEGMENT_SILENCE_RMS` (0.01) uses to call a
+ * span of audio silent, so that floor is the release threshold and twice it is
+ * the attack threshold. The hold sits just past `SEGMENT_SILENCE_SECONDS`
+ * (0.3s), the gap the recorder itself treats as a real pause.
+ */
+const SPEAKING_ON_LEVEL = 0.02
+const SPEAKING_OFF_LEVEL = 0.01
+const SPEAKING_HOLD_MS = 320
 const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
@@ -235,15 +245,62 @@ function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
   event.stopPropagation()
 }
 
+function safeLevel(level: number): number {
+  return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
+}
+
 /**
  * The recording visualizer: seven bars that rise and fall on a staggered CSS
- * loop. It signals "recording" rather than metering the voice, so it carries no
- * microphone level and stays out of the accessibility tree — the live regions
- * already announce the listening state.
+ * loop while the microphone is actually registering the voice, so the motion
+ * reads as "I hear you" rather than merely "a session is open". Silence settles
+ * the bars to their resting height.
+ *
+ * The gate is hysteretic — it opens above SPEAKING_ON_LEVEL and only closes
+ * below the lower SPEAKING_OFF_LEVEL, then only after SPEAKING_HOLD_MS of quiet
+ * — so a voice wavering at the boundary and the ordinary gaps between words
+ * both leave the wave running. Only the container carries the decision, as one
+ * data attribute; the bars themselves stay purely CSS-driven.
+ *
+ * The visualizer stays out of the accessibility tree: the live regions already
+ * announce the listening state.
  */
-function ListeningBars(): ReactNode {
+function ListeningBars({ level }: { readonly level: number }): ReactNode {
+  const bounded = safeLevel(level)
+  const [speaking, setSpeaking] = useState(() => bounded >= SPEAKING_ON_LEVEL)
+  const settleTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (bounded >= SPEAKING_ON_LEVEL) {
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current)
+        settleTimerRef.current = null
+      }
+      setSpeaking(true)
+      return
+    }
+    // Inside the hysteresis band the current state simply holds, and one
+    // pending settle is never restarted: the hold measures from the last
+    // voiced frame, not from the latest quiet one.
+    if (bounded > SPEAKING_OFF_LEVEL || !speaking || settleTimerRef.current !== null) return
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = null
+      setSpeaking(false)
+    }, SPEAKING_HOLD_MS)
+  }, [bounded, speaking])
+
+  useEffect(() => () => {
+    if (settleTimerRef.current === null) return
+    window.clearTimeout(settleTimerRef.current)
+    settleTimerRef.current = null
+  }, [])
+
   return (
-    <span className="widget-bars" data-testid="listening-bars" aria-hidden="true">
+    <span
+      className="widget-bars"
+      data-testid="listening-bars"
+      data-speaking={speaking || undefined}
+      aria-hidden="true"
+    >
       {Array.from({ length: LISTENING_BAR_COUNT }, (_unused, index) => (
         // The stable index represents one fixed visualizer column.
         <span key={index} className="widget-bars__bar" />
@@ -474,7 +531,7 @@ export function WidgetApp({
         <span className="widget-glyph" data-testid="widget-glyph" aria-hidden="true">
           <SottoMark className="widget-glyph__mark" />
         </span>
-        {isListening && <ListeningBars />}
+        {isListening && <ListeningBars level={snapshot.level} />}
         {elapsed}
         {isProcessing && (
           <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />

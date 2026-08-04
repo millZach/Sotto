@@ -278,27 +278,82 @@ describe('WidgetApp', () => {
     expect(formatElapsedTime(0, 6_600_000)).toBe('99:59')
   })
 
-  it('animates the recording bars from CSS alone, never from the microphone level', () => {
+  it('waves the recording bars only while the voice registers, and settles them on silence', () => {
+    vi.useFakeTimers()
+    const listening = (level: number): WidgetSnapshot =>
+      snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level })
     const { container, rerender } = render(
-      <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 })}
-        platform="win32" now={0}
-      />,
+      <WidgetApp snapshot={listening(0.004)} platform="win32" now={0} />,
     )
+    const show = (level: number): void => {
+      rerender(<WidgetApp snapshot={listening(level)} platform="win32" now={0} />)
+    }
     const bars = screen.getByTestId('listening-bars')
     expect(bars).toHaveAttribute('aria-hidden', 'true')
     expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
-    const markup = container.innerHTML
-    rerender(
+    // A silence-floor level never starts the wave.
+    expect(bars).not.toHaveAttribute('data-speaking')
+
+    // Speech opens the gate immediately.
+    show(0.06)
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+
+    // Inside the hysteresis band the wave simply holds; nothing is scheduled.
+    show(0.015)
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+
+    // Below the release threshold the wave still rides out the hold, so a gap
+    // between words keeps it running, and a real pause settles it.
+    show(0.004)
+    act(() => vi.advanceTimersByTime(300))
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+    act(() => vi.advanceTimersByTime(25))
+    expect(bars).not.toHaveAttribute('data-speaking')
+
+    // A voiced frame inside the hold cancels the settle outright.
+    show(0.05)
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+    show(0)
+    act(() => vi.advanceTimersByTime(200))
+    show(0.05)
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+
+    // Out-of-range and non-finite levels are clamped, never trusted raw.
+    show(Number.NaN)
+    act(() => vi.advanceTimersByTime(400))
+    expect(bars).not.toHaveAttribute('data-speaking')
+    show(2)
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+
+    // The level reaches CSS only through that one attribute: no inline
+    // heights, no meter, no per-bar state.
+    expect(container.querySelector('[style]')).toBeNull()
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+    expect([...bars.querySelectorAll('.widget-bars__bar')].every(
+      (bar) => bar.attributes.length === 1 && bar.className === 'widget-bars__bar',
+    )).toBe(true)
+  })
+
+  it('drops a pending bar settle when the widget unmounts mid-hold', () => {
+    vi.useFakeTimers()
+    const { rerender, unmount } = render(
       <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level: 2 })}
+        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0.4 })}
         platform="win32" now={0}
       />,
     )
-    // The level never reaches the style layer: no inline heights, no meter.
-    expect(container.innerHTML).toBe(markup)
-    expect(container.querySelector('[style]')).toBeNull()
-    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+    expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
+    rerender(
+      <WidgetApp
+        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0 })}
+        platform="win32" now={0}
+      />,
+    )
+    expect(vi.getTimerCount()).toBe(1)
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it.each([
@@ -1200,10 +1255,46 @@ describe('visual preview parser', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).toContain(":root[data-reduced-motion='on']")
     expect(css).toContain('@keyframes widget-bar')
-    // Reduced motion pins the recording bars to a static mid-height row.
+    // The wave is gated on the voice: the bars rest at the keyframe floor and
+    // only loop while the renderer marks the container as speaking. The loop
+    // shorthand must stay on the base rule — the per-bar stagger below is a
+    // lower-specificity animation-delay, so hoisting the shorthand into the
+    // [data-speaking] rule would reset every delay to 0s and the seven bars
+    // would rise in phase instead of rippling.
     expect(css).toMatch(
-      /prefers-reduced-motion[\s\S]*\.widget-bars__bar \{\s*\n\s*animation: none;\s*\n\s*height: 11px;/,
+      /\.widget-bars__bar \{[\s\S]*?height: 5px;[\s\S]*?animation: widget-bar 0\.9s ease-in-out infinite;\r?\n {2}transition: height/,
     )
+    expect(css).toMatch(
+      /\.widget-bars:not\(\[data-speaking\]\) \.widget-bars__bar \{\r?\n {2}animation: none;\r?\n\}/,
+    )
+    // Outside the reduced-motion overrides nothing may re-declare the
+    // animation shorthand on the speaking variant.
+    const motionOverrides = css.indexOf('/* ---- motion overrides ---- */')
+    expect(motionOverrides).toBeGreaterThan(0)
+    expect(css.slice(0, motionOverrides)).not.toMatch(
+      /\.widget-bars\[data-speaking\] \.widget-bars__bar \{[^}]*animation:/,
+    )
+    // The stagger stays intact and lower-specificity, one delay per bar.
+    expect([...css.matchAll(/\.widget-bars__bar:nth-child\((\d)\) \{\r?\n {2}animation-delay: ([\d.]+s);/g)]
+      .map(([, index, delay]) => [index, delay])).toEqual([
+      ['2', '0.12s'], ['3', '0.24s'], ['4', '0.36s'],
+      ['5', '0.48s'], ['6', '0.6s'], ['7', '0.72s'],
+    ])
+    // Reduced motion never loops; it answers the voice by height alone, with
+    // no transition of its own.
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\n {2}\.widget-bars__bar \{\r?\n {4}animation: none;\r?\n {4}height: 5px;/,
+    )
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\n {2}\.widget-bars\[data-speaking\] \.widget-bars__bar \{\r?\n {4}animation: none;\r?\n {4}height: 11px;/,
+    )
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.widget-bars__bar,\s*\n\s*\.widget-capsule,[\s\S]*?transition: none;/,
+    )
+    expect(css).toContain(
+      ":root[data-reduced-motion='on'] .widget-bars[data-speaking] .widget-bars__bar",
+    )
+    expect(css).toContain(":root[data-reduced-motion='on'] .widget-bars__bar,")
     // The retired orb style left nothing behind.
     expect(`${source}\n${css}`).not.toMatch(/orb(?!it)/i)
     expect(`${source}\n${css}`).not.toContain('widget-dot')
