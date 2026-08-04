@@ -1,8 +1,34 @@
+<div align="center">
+
+<img src="build/icon.png" alt="Sotto icon" width="96" />
+
 # Sotto
+
+**Press a shortcut. Speak. Your words appear — and never leave your computer.**
 
 Sotto is a private, offline-first dictation app for Windows and Apple silicon Macs. Press the global shortcut, speak, press it again, and Sotto copies the local transcript and optionally pastes it at the active cursor. Raw audio stays in memory and is discarded after transcription.
 
-Download the latest installer or disk image from [Releases](https://github.com/millZach/Sotto/releases/latest).
+[![Latest release](https://img.shields.io/github/v/release/millZach/Sotto?label=release&color=e8833a)](https://github.com/millZach/Sotto/releases/latest)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%C2%B7%20macOS%20arm64-2f6f6a)](https://github.com/millZach/Sotto/releases/latest)
+[![Transcription](https://img.shields.io/badge/transcription-100%25%20on--device-2f6f6a)](#privacy-and-cost)
+[![License](https://img.shields.io/badge/license-freeware-555)](LICENSE.md)
+
+<img src="artifacts/design/baseline/listening-dark.png" alt="Sotto recording widget while listening" width="260" />
+
+**[⬇ Download the latest installer or disk image](https://github.com/millZach/Sotto/releases/latest)**
+
+</div>
+
+---
+
+## Why Sotto
+
+- 🔒 **Private by design** — the Whisper model and inference runtime run entirely on your machine. No cloud transcription, no analytics, no account, no telemetry. Audio is never written to disk.
+- ⚡ **One shortcut, anywhere** — a global hotkey works in any app. Sotto always copies the transcript to the clipboard and can paste it at your cursor automatically.
+- 🧠 **Three model presets** — the Balanced model ships in the installer; Fast and Accurate presets are optional, consent-gated downloads.
+- 🖥️ **GPU-accelerated when possible** — WebGPU inference with an automatic CPU/WASM fallback.
+- ✨ **Optional AI polish** — off by default: bring your own OpenRouter key for punctuation and self-correction cleanup of the finished text (never the audio), with a silent fallback to the raw local transcript.
+- 💸 **Free** — no subscription, no per-use fee.
 
 Sotto was formerly named TalkType; version 3.0.0 renamed the app and its visual identity. On first launch, Sotto automatically migrates settings, history, and downloaded models from an existing TalkType installation.
 
