@@ -1,0 +1,240 @@
+{
+  "rows": [
+    {
+      "tier": "low",
+      "model": "inception/mercury-2",
+      "rawWer": 0.0598684126558691,
+      "polishedWer": 0.0543739071613636,
+      "polishMs": 2981.3717000000033,
+      "totalMs": 4238.4779,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 13678.484199999999,
+          "asrMs": 222,
+          "text": "Send the email now.",
+          "cost": 0.000078425
+        },
+        {
+          "clip": "short",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 3658.4779,
+          "asrMs": 580,
+          "text": "The quick brown fox jumps over the lazy dog near the river bank.",
+          "cost": 0.000083075
+        },
+        {
+          "clip": "long",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 3157.926900000002,
+          "asrMs": 2554,
+          "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+          "cost": 0.00011565
+        },
+        {
+          "clip": "technical",
+          "rawWer": 0.024390243902439025,
+          "wer": 0.024390243902439025,
+          "ms": 2981.3717000000033,
+          "asrMs": 2435,
+          "text": "Sato runs the Moonshine encoder through ONNX Runtime inside the Electron main process, so transcription never leaves the device. Whisper pads every clip to a 30‑second window, which is why latency stays flat regardless of how short the utterance is.",
+          "cost": 0.000116225
+        },
+        {
+          "clip": "numbers",
+          "rawWer": 0.16666666666666666,
+          "wer": 0.16666666666666666,
+          "ms": 861.3467000000019,
+          "asrMs": 1824,
+          "text": "Transfer $4,217 on March 3, 2026. The invoice number is A‑V47‑902, and the meeting moved from 2:15 to 4:45 pm.",
+          "cost": 0.000042625
+        },
+        {
+          "clip": "propernoun",
+          "rawWer": 0.19230769230769232,
+          "wer": 0.15384615384615385,
+          "ms": 852.0147999999972,
+          "asrMs": 1591,
+          "text": "Zach asked whether Whisper Flow or Super Whisper handles punctuation better than Otter and Descript. Ping Priya and Sovam Yat on the Anthropic Thread before the Kubernetes migration starts.",
+          "cost": 0.000042525
+        },
+        {
+          "clip": "homophone",
+          "rawWer": 0.03571428571428571,
+          "wer": 0.03571428571428571,
+          "ms": 1114.2095000000008,
+          "asrMs": 1091,
+          "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more.",
+          "cost": 0.000103675
+        }
+      ]
+    },
+    {
+      "tier": "medium",
+      "model": "amazon/nova-2-lite-v1",
+      "rawWer": 0.0598684126558691,
+      "polishedWer": 0.04338489617235262,
+      "polishMs": 1874.8413999999975,
+      "totalMs": 4020.4488000000056,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 4084.5799000000006,
+          "asrMs": 222,
+          "text": "Send the email now.",
+          "cost": 0.0000915
+        },
+        {
+          "clip": "short",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 1520.7524999999987,
+          "asrMs": 580,
+          "text": "The quick brown fox jumps over the lazy dog near the river bank.",
+          "cost": 0.0001217
+        },
+        {
+          "clip": "long",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 1876.1072000000058,
+          "asrMs": 2554,
+          "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+          "cost": 0.0002116
+        },
+        {
+          "clip": "technical",
+          "rawWer": 0.024390243902439025,
+          "wer": 0.024390243902439025,
+          "ms": 1585.4488000000056,
+          "asrMs": 2435,
+          "text": "Sato runs the Moonshine encoder through ONNX runtime inside the Electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is.",
+          "cost": 0.00022
+        },
+        {
+          "clip": "numbers",
+          "rawWer": 0.16666666666666666,
+          "wer": 0.16666666666666666,
+          "ms": 1496.112000000001,
+          "asrMs": 1824,
+          "text": "Transfer $4,217 on March 3, 2026. The invoice number is A-V47-902, and the meeting moved from 2:15 to 4:45 pm.",
+          "cost": 0.0001948
+        },
+        {
+          "clip": "propernoun",
+          "rawWer": 0.19230769230769232,
+          "wer": 0.07692307692307693,
+          "ms": 4783.300000000003,
+          "asrMs": 1591,
+          "text": "Zach asked whether Whisper Flow or Super Whisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+          "cost": 0.0001764
+        },
+        {
+          "clip": "homophone",
+          "rawWer": 0.03571428571428571,
+          "wer": 0.03571428571428571,
+          "ms": 1874.8413999999975,
+          "asrMs": 1091,
+          "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more.",
+          "cost": 0.0001752
+        }
+      ]
+    },
+    {
+      "tier": "high",
+      "model": "anthropic/claude-haiku-4.5",
+      "rawWer": 0.0598684126558691,
+      "polishedWer": 0.040340136054421764,
+      "polishMs": 3844.5966000000044,
+      "totalMs": 4221.923899999994,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 3917.3444000000018,
+          "asrMs": 222,
+          "text": "Send the email now.",
+          "cost": 0.000305
+        },
+        {
+          "clip": "short",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 2027.633799999996,
+          "asrMs": 580,
+          "text": "The quick brown fox jumps over the lazy dog near the river bank.",
+          "cost": 0.000365
+        },
+        {
+          "clip": "long",
+          "rawWer": 0,
+          "wer": 0,
+          "ms": 3943.5913999999975,
+          "asrMs": 2554,
+          "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+          "cost": 0.00057
+        },
+        {
+          "clip": "technical",
+          "rawWer": 0.024390243902439025,
+          "wer": 0,
+          "ms": 1786.9238999999943,
+          "asrMs": 2435,
+          "text": "Sotto runs the Moonshine encoder through ONNX runtime inside the Electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is.",
+          "cost": 0.000637
+        },
+        {
+          "clip": "numbers",
+          "rawWer": 0.16666666666666666,
+          "wer": 0.16666666666666666,
+          "ms": 2126.143100000001,
+          "asrMs": 1824,
+          "text": "Transfer $4,217 on March 3, 2026. The invoice number is A-V47-902, and the meeting moved from 2:15 to 4:45 pm.",
+          "cost": 0.00054
+        },
+        {
+          "clip": "propernoun",
+          "rawWer": 0.19230769230769232,
+          "wer": 0.08,
+          "ms": 3844.5966000000044,
+          "asrMs": 1591,
+          "text": "Zach asked whether Whisper Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+          "cost": 0.000585
+        },
+        {
+          "clip": "homophone",
+          "rawWer": 0.03571428571428571,
+          "wer": 0.03571428571428571,
+          "ms": 8268.9496,
+          "asrMs": 1091,
+          "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more.",
+          "cost": 0.000474
+        }
+      ]
+    }
+  ],
+  "dictionary": [
+    "Sotto",
+    "Moonshine",
+    "Whisper",
+    "Wispr Flow",
+    "Superwhisper",
+    "Zache",
+    "Electron",
+    "ONNX",
+    "Kubernetes",
+    "Anthropic",
+    "Priya",
+    "Sowmya",
+    "Otter",
+    "Descript"
+  ],
+  "source": "local-2026-07-29T03-10-01.json"
+}

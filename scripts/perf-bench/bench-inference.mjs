@@ -10,7 +10,9 @@
 //   --device wasm|webgpu   inference device (default wasm)
 //   --runtime app|full     app = resources/runtime (what the package ships),
 //                          full = onnxruntime-web/dist incl. jsep/webgpu builds
-//   --clip tiny|short|long|both   which fixture(s) to transcribe (default both)
+//   --clip tiny|short|long|both   which fixture(s) to transcribe (default both);
+//                          comma-separated names also work, e.g. --clip tiny,technical
+//   --fixtures-dir <path>  directory holding speech-<clip>.wav (default ./fixtures)
 //   --runs N               transcribe repetitions per clip (default 3)
 //   --threads N            override the app's min(4, cores-1) thread count
 //   --model <repo>         model repository (default Xenova/whisper-base)
@@ -65,7 +67,7 @@ const routes = [
   { prefix: '/ort/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-web', 'dist') },
   { prefix: '/ortcommon/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-common', 'dist', 'esm') },
   { prefix: '/models/', dir: path.resolve(argValue('models-dir', path.join(ROOT, 'resources', 'models'))) },
-  { prefix: '/bench/', dir: path.join(BENCH_DIR, 'fixtures') },
+  { prefix: '/bench/', dir: path.resolve(argValue('fixtures-dir', path.join(BENCH_DIR, 'fixtures'))) },
 ]
 
 const server = http.createServer(async (req, res) => {
@@ -123,7 +125,7 @@ if (args.includes('--log-requests')) {
 await page.goto(base + '/')
 await page.waitForFunction(() => typeof window.runBench === 'function', null, { timeout: 30000 })
 
-const clips = clipArg === 'both' ? ['short', 'long'] : [clipArg]
+const clips = clipArg === 'both' ? ['short', 'long'] : clipArg.split(',')
 const result = await page.evaluate(
   async ({ device, clips, runs, threadsOverride, model, remote }) => {
     return await window.runBench({ device, clips, runs, threadsOverride, model, remote })

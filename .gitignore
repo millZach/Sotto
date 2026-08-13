@@ -13,6 +13,7 @@ test-results/
 .DS_Store
 Thumbs.db
 .worktrees/
+handoff/
 
 # Generated local inference payloads (locks remain versioned).
 resources/models/**

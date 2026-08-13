@@ -44,6 +44,20 @@ export default tseslint.config(
     },
   },
   {
+    // The ASR bench is a plain Node script.
+    files: ['scripts/asr-bench/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
+  {
     // The perf bench runs in Node but injects callbacks into a Playwright page.
     files: ['scripts/perf-bench/**/*.mjs'],
     languageOptions: {
