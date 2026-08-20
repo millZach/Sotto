@@ -213,7 +213,9 @@ export interface ModelIpcService {
 export interface OutputIpcService {
   deliver(
     text: string,
-    options: Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'>,
+    options: Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'> & {
+      readonly restoreWidget?: boolean
+    },
   ): OutputOutcome | Promise<OutputOutcome>
 }
 
@@ -554,6 +556,7 @@ export function registerIpc(
           1_000,
           Math.max(50, request.pasteDelayMs, settings.pasteDelayMs),
         ),
+        restoreWidget: settings.showWidgetWhenIdle,
       })
     })
   } catch (registrationError) {

@@ -409,6 +409,21 @@ describe('WindowManager construction', () => {
     expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'normal')
   })
 
+  it('reasserts widget always-on-top on every showWidget reveal', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWidgetWindow()
+    windows[0]!.setAlwaysOnTop.mockClear()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'normal')
+    windows[0]!.setAlwaysOnTop.mockClear()
+
+    await manager.showWidget()
+
+    expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'normal')
+  })
+
   it('gives the macOS main window inset traffic lights instead of a removed frame', async () => {
     const { manager, options } = createHarness(darwinOverrides())
 

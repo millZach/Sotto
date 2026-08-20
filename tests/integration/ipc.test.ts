@@ -1167,7 +1167,7 @@ describe('IPC validation and lifecycle', () => {
     const clipboard = { writeText: vi.fn() }
     const output = new OutputService({
       clipboard,
-      widget: { hideWidget: vi.fn() },
+      widget: { hideWidget: vi.fn(), showWidget: vi.fn() },
       delay: vi.fn(),
       process: pasteProcess,
       buildPasteInvocation: () => ({ executable: 'static-paste', args: [] }),
@@ -1199,6 +1199,7 @@ describe('IPC validation and lifecycle', () => {
     expect(deliver).toHaveBeenCalledWith('hello world', {
       autoPaste: false,
       pasteDelayMs: 480,
+      restoreWidget: DEFAULT_SETTINGS.showWidgetWhenIdle,
     })
     expect(pasteProcess.run).not.toHaveBeenCalled()
     expect(clipboard.writeText).toHaveBeenCalledWith('hello world')
@@ -1208,6 +1209,7 @@ describe('IPC validation and lifecycle', () => {
       ...DEFAULT_SETTINGS,
       autoPaste: true,
       pasteDelayMs: 80,
+      showWidgetWhenIdle: false,
     })
     await harness.ipc.invoke(OUTPUT_DELIVER, {
       text: 'session disabled',
@@ -1217,6 +1219,7 @@ describe('IPC validation and lifecycle', () => {
     expect(deliver).toHaveBeenLastCalledWith('session disabled', {
       autoPaste: false,
       pasteDelayMs: 700,
+      restoreWidget: false,
     })
     expect(pasteProcess.run).not.toHaveBeenCalled()
 
@@ -1270,6 +1273,7 @@ describe('IPC validation and lifecycle', () => {
     expect(deliver).toHaveBeenCalledWith('', {
       autoPaste: true,
       pasteDelayMs: 410,
+      restoreWidget: DEFAULT_SETTINGS.showWidgetWhenIdle,
     })
   })
 

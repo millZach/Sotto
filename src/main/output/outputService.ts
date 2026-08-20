@@ -7,6 +7,7 @@ export interface ClipboardAdapter {
 
 export interface WidgetAdapter {
   hideWidget(): void | Promise<void>
+  showWidget(): void | Promise<void>
 }
 
 export interface PasteProcessAdapter {
@@ -98,7 +99,11 @@ export class OutputService {
 
   async deliver(
     text: string,
-    options: { readonly autoPaste: boolean; readonly pasteDelayMs: number },
+    options: {
+      readonly autoPaste: boolean
+      readonly pasteDelayMs: number
+      readonly restoreWidget?: boolean
+    },
   ): Promise<OutputOutcome> {
     if (text.trim().length === 0) {
       return 'empty'
@@ -114,8 +119,13 @@ export class OutputService {
       return 'copied'
     }
 
+    // Hide only for the paste keystroke so the previously focused app stays
+    // the paste target. When the idle sliver should remain on screen, restore
+    // it afterward — otherwise auto-paste permanently conceals the widget.
+    let hidForPaste = false
     try {
       await this.dependencies.widget.hideWidget()
+      hidForPaste = true
       await this.dependencies.delay(options.pasteDelayMs)
       const pasted = await this.dependencies.process.run(
         this.dependencies.buildPasteInvocation(),
@@ -123,6 +133,14 @@ export class OutputService {
       return pasted ? 'pasted' : 'copied'
     } catch {
       return 'copied'
+    } finally {
+      if (hidForPaste && options.restoreWidget === true) {
+        try {
+          await this.dependencies.widget.showWidget()
+        } catch {
+          // Paste already finished; a restore failure must not change the outcome.
+        }
+      }
     }
   }
 }

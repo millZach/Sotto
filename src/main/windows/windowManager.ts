@@ -584,6 +584,11 @@ export class WindowManager {
       if (visibilityGeneration !== this.widgetVisibilityGeneration) return
       if (this.widgetDrag !== null) return
 
+      // Reassert on every reveal (and every no-op show while already visible).
+      // Windows 11 can drop WS_EX_TOPMOST after competing foreground windows or
+      // showInactive races; create-time setAlwaysOnTop alone is not enough.
+      widget.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+
       this.loadWidgetPlacement()
       const workArea = this.resolveCurrentWidgetWorkArea()
       if (workArea !== null) {

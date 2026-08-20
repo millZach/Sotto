@@ -34,6 +34,9 @@ function createHarness(
       hideWidget(): void {
         events.push('hide')
       },
+      showWidget(): void {
+        events.push('show')
+      },
     },
     delay(milliseconds): Promise<void> {
       events.push(`delay:${milliseconds}`)
@@ -86,7 +89,7 @@ describe('OutputService', () => {
     const run = vi.fn()
     const service = new OutputService({
       clipboard: { writeText: () => { throw new Error('secret OS clipboard detail') } },
-      widget: { hideWidget },
+      widget: { hideWidget, showWidget: vi.fn() },
       delay,
       process: { run },
       buildPasteInvocation: buildWindowsPasteInvocation,
@@ -107,6 +110,59 @@ describe('OutputService', () => {
       harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 275 }),
     ).resolves.toBe('pasted')
     expect(harness.events).toEqual(['clipboard', 'hide', 'delay:275', 'process'])
+  })
+
+  it('restores the idle widget after paste when restoreWidget is requested', async () => {
+    const harness = createHarness()
+
+    await expect(
+      harness.service.deliver('dictation', {
+        autoPaste: true,
+        pasteDelayMs: 50,
+        restoreWidget: true,
+      }),
+    ).resolves.toBe('pasted')
+    expect(harness.events).toEqual(['clipboard', 'hide', 'delay:50', 'process', 'show'])
+  })
+
+  it('still restores the idle widget after paste failure when restoreWidget is requested', async () => {
+    const harness = createHarness({
+      process: {
+        run(): Promise<boolean> {
+          return Promise.reject(new Error('private paste failure'))
+        },
+      },
+    })
+
+    await expect(
+      harness.service.deliver('dictation', {
+        autoPaste: true,
+        pasteDelayMs: 0,
+        restoreWidget: true,
+      }),
+    ).resolves.toBe('copied')
+    expect(harness.events).toEqual(['clipboard', 'hide', 'delay:0', 'show'])
+  })
+
+  it('does not restore when hide never succeeded', async () => {
+    const harness = createHarness({
+      widget: {
+        hideWidget(): void {
+          throw new Error('private hide failure')
+        },
+        showWidget(): void {
+          throw new Error('should not restore')
+        },
+      },
+    })
+
+    await expect(
+      harness.service.deliver('dictation', {
+        autoPaste: true,
+        pasteDelayMs: 0,
+        restoreWidget: true,
+      }),
+    ).resolves.toBe('copied')
   })
 
   it('hands the injected platform invocation to the paste process unchanged', async () => {
@@ -152,10 +208,16 @@ describe('OutputService', () => {
 
   it.each([
     ['widget synchronous throw', ['clipboard', 'hide'], (events: string[]) => ({
-      widget: { hideWidget: () => { events.push('hide'); throw new Error('private') } },
+      widget: {
+        hideWidget: () => { events.push('hide'); throw new Error('private') },
+        showWidget: () => { events.push('show') },
+      },
     })],
     ['widget rejection', ['clipboard', 'hide'], (events: string[]) => ({
-      widget: { hideWidget: () => { events.push('hide'); return Promise.reject(new Error('private')) } },
+      widget: {
+        hideWidget: () => { events.push('hide'); return Promise.reject(new Error('private')) },
+        showWidget: () => { events.push('show') },
+      },
     })],
     ['delay synchronous throw', ['clipboard', 'hide', 'delay:40'], (events: string[]) => ({
       delay: () => { events.push('delay:40'); throw new Error('private') },
@@ -183,7 +245,10 @@ describe('OutputService', () => {
             expect(text).toBe('safe clipboard text')
           },
         },
-        widget: { hideWidget: () => { events.push('hide') } },
+        widget: {
+          hideWidget: () => { events.push('hide') },
+          showWidget: () => { events.push('show') },
+        },
         delay: (milliseconds) => {
           events.push(`delay:${milliseconds}`)
           return Promise.resolve()
