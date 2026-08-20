@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
+import { mean, median } from './stats.mjs'
 import { wer } from './wer.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -65,14 +66,6 @@ function parseArgs(argv) {
     }
   }
   return args
-}
-
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN)
-const median = (xs) => {
-  if (!xs.length) return NaN
-  const s = [...xs].sort((a, b) => a - b)
-  const mid = s.length >> 1
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
 async function polish(apiKey, spec, transcript, dictionary) {

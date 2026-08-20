@@ -15,6 +15,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
+import { mean, median } from './stats.mjs'
 import { wer, missedWords } from './wer.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -45,13 +46,6 @@ function parseArgs(argv) {
   }
   return args
 }
-
-const median = (xs) => {
-  const s = [...xs].sort((a, b) => a - b)
-  const mid = s.length >> 1
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
-}
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN)
 
 const args = parseArgs(process.argv)
 const truth = JSON.parse(readFileSync(join(FIXTURE_DIR, 'ground-truth.json'), 'utf8').replace(/^\uFEFF/, ''))

@@ -11,18 +11,11 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mean, median } from './stats.mjs'
 import { wer, missedWords } from './wer.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const RESULTS_DIR = join(HERE, 'results')
-
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN)
-const median = (xs) => {
-  if (!xs.length) return NaN
-  const s = [...xs].sort((a, b) => a - b)
-  const mid = s.length >> 1
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
-}
 
 function rescore(path) {
   const data = JSON.parse(readFileSync(path, 'utf8'))
