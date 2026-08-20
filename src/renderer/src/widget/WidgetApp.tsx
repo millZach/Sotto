@@ -31,6 +31,7 @@ import type {
   WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
+import { SEGMENT_SILENCE_RMS, SEGMENT_SILENCE_SECONDS } from '../audio/audioRecorder'
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
@@ -38,15 +39,14 @@ import { useWidgetDragGesture } from './useWidgetDragGesture'
 /** The listening visualizer's fixed column count; CSS staggers their motion. */
 const LISTENING_BAR_COUNT = 7
 /**
- * Voice gating for the visualizer. Levels arrive as the raw RMS of each
- * captured chunk, the same scale `SEGMENT_SILENCE_RMS` (0.01) uses to call a
- * span of audio silent, so that floor is the release threshold and twice it is
- * the attack threshold. The hold sits just past `SEGMENT_SILENCE_SECONDS`
- * (0.3s), the gap the recorder itself treats as a real pause.
+ * Voice gating for the visualizer, derived from the recorder's own silence
+ * segmentation so the wave and the recorder agree on what counts as a pause:
+ * the silence floor releases the gate, twice it attacks, and the hold sits
+ * just past the gap the recorder treats as a real pause.
  */
-const SPEAKING_ON_LEVEL = 0.02
-const SPEAKING_OFF_LEVEL = 0.01
-const SPEAKING_HOLD_MS = 320
+const SPEAKING_ON_LEVEL = SEGMENT_SILENCE_RMS * 2
+const SPEAKING_OFF_LEVEL = SEGMENT_SILENCE_RMS
+const SPEAKING_HOLD_MS = SEGMENT_SILENCE_SECONDS * 1_000 + 20
 const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
