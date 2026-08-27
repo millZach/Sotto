@@ -49,6 +49,8 @@ export interface AppSettings {
   llmTimeoutMs: number
   llmMinWords: number
   streamingAsr: boolean
+  remoteAsr: boolean
+  remoteAsrUrl: string
 }
 
 export type SettingsPatch = Partial<
@@ -89,6 +91,8 @@ const fieldSchemas = {
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   streamingAsr: z.boolean(),
+  remoteAsr: z.boolean(),
+  remoteAsrUrl: z.string().max(512),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
 export const settingsSchema = z.object(fieldSchemas)
@@ -122,6 +126,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   streamingAsr: true,
+  // Off with no address: an install that never opts in behaves exactly as it
+  // did before remote transcription existed, and never contacts a server.
+  remoteAsr: false,
+  remoteAsrUrl: '',
 }
 
 /**
@@ -177,5 +185,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
+    remoteAsr: parseField(persisted, 'remoteAsr', defaults),
+    remoteAsrUrl: parseField(persisted, 'remoteAsrUrl', defaults),
   }
 }

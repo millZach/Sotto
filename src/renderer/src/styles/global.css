@@ -1162,6 +1162,19 @@ h1[tabindex='-1']:focus {
   margin: -4px 0 22px;
 }
 
+.settings-remote-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 16px 0 0;
+  color: var(--tt-success);
+  font-size: 13px;
+}
+
+.settings-remote-status--error {
+  color: var(--tt-warning);
+}
+
 .settings-danger-zone {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

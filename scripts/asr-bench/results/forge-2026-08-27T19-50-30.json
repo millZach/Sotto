@@ -1,0 +1,344 @@
+{
+  "summary": {
+    "url": "http://forge.tail5728ca.ts.net:5092",
+    "runs": 5,
+    "ok": 35,
+    "total": 35,
+    "meanWer": 0.08207842486588132,
+    "medianMs": 180.70150000000012,
+    "p90Ms": 245.78920000000016
+  },
+  "perClip": [
+    {
+      "clip": "tiny",
+      "seconds": 1.9700625,
+      "wer": 0,
+      "text": "Send the email now.",
+      "ms": 48.39149999999995,
+      "p90": 72.9479,
+      "missed": []
+    },
+    {
+      "clip": "short",
+      "seconds": 4.3800625,
+      "wer": 0,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "ms": 77.85929999999985,
+      "p90": 125.65340000000003,
+      "missed": [
+        "river",
+        "bank"
+      ]
+    },
+    {
+      "clip": "long",
+      "seconds": 16.6150625,
+      "wer": 0,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+      "ms": 231.56319999999982,
+      "p90": 304.8219999999999,
+      "missed": []
+    },
+    {
+      "clip": "technical",
+      "seconds": 16.7900625,
+      "wer": 0.024390243902439025,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is.",
+      "ms": 233.93820000000005,
+      "p90": 396.6545000000001,
+      "missed": [
+        "sotto"
+      ]
+    },
+    {
+      "clip": "numbers",
+      "seconds": 14.6200625,
+      "wer": 0.19444444444444445,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m.",
+      "ms": 204.5577999999996,
+      "p90": 245.78920000000016,
+      "missed": [
+        "third",
+        "a",
+        "b",
+        "seven",
+        "dash",
+        "zero"
+      ]
+    },
+    {
+      "clip": "propernoun",
+      "seconds": 11.8850625,
+      "wer": 0.32,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "ms": 176.39649999999983,
+      "p90": 207.5007999999998,
+      "missed": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ]
+    },
+    {
+      "clip": "homophone",
+      "seconds": 10.3050625,
+      "wer": 0.03571428571428571,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more.",
+      "ms": 156.8115000000007,
+      "p90": 180.70150000000012,
+      "missed": [
+        "principal"
+      ]
+    }
+  ],
+  "raw": [
+    {
+      "clip": "tiny",
+      "run": 0,
+      "ok": true,
+      "ms": 72.9479,
+      "text": "Send the email now."
+    },
+    {
+      "clip": "tiny",
+      "run": 1,
+      "ok": true,
+      "ms": 48.39149999999995,
+      "text": "Send the email now."
+    },
+    {
+      "clip": "tiny",
+      "run": 2,
+      "ok": true,
+      "ms": 44.82960000000003,
+      "text": "Send the email now."
+    },
+    {
+      "clip": "tiny",
+      "run": 3,
+      "ok": true,
+      "ms": 39.475400000000036,
+      "text": "Send the email now."
+    },
+    {
+      "clip": "tiny",
+      "run": 4,
+      "ok": true,
+      "ms": 49.108400000000074,
+      "text": "Send the email now."
+    },
+    {
+      "clip": "short",
+      "run": 0,
+      "ok": true,
+      "ms": 125.65340000000003,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank."
+    },
+    {
+      "clip": "short",
+      "run": 1,
+      "ok": true,
+      "ms": 90.47360000000015,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank."
+    },
+    {
+      "clip": "short",
+      "run": 2,
+      "ok": true,
+      "ms": 77.85929999999985,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank."
+    },
+    {
+      "clip": "short",
+      "run": 3,
+      "ok": true,
+      "ms": 73.97660000000019,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank."
+    },
+    {
+      "clip": "short",
+      "run": 4,
+      "ok": true,
+      "ms": 68.91139999999996,
+      "text": "The quick brown fox jumps over the lazy dog near the riverbank."
+    },
+    {
+      "clip": "long",
+      "run": 0,
+      "ok": true,
+      "ms": 304.8219999999999,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day."
+    },
+    {
+      "clip": "long",
+      "run": 1,
+      "ok": true,
+      "ms": 233.3753999999999,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day."
+    },
+    {
+      "clip": "long",
+      "run": 2,
+      "ok": true,
+      "ms": 231.56319999999982,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day."
+    },
+    {
+      "clip": "long",
+      "run": 3,
+      "ok": true,
+      "ms": 229.26379999999995,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day."
+    },
+    {
+      "clip": "long",
+      "run": 4,
+      "ok": true,
+      "ms": 229.20749999999998,
+      "text": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day."
+    },
+    {
+      "clip": "technical",
+      "run": 0,
+      "ok": true,
+      "ms": 396.6545000000001,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is."
+    },
+    {
+      "clip": "technical",
+      "run": 1,
+      "ok": true,
+      "ms": 227.6936999999998,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is."
+    },
+    {
+      "clip": "technical",
+      "run": 2,
+      "ok": true,
+      "ms": 233.93820000000005,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is."
+    },
+    {
+      "clip": "technical",
+      "run": 3,
+      "ok": true,
+      "ms": 252.76209999999992,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is."
+    },
+    {
+      "clip": "technical",
+      "run": 4,
+      "ok": true,
+      "ms": 231.2516999999998,
+      "text": "Sato runs the Moonshine Encoder through ONNX runtime inside the electron main process, so transcription never leaves the device. Whisper pads every clip to a 30-second window, which is why latency stays flat regardless of how short the utterance is."
+    },
+    {
+      "clip": "numbers",
+      "run": 0,
+      "ok": true,
+      "ms": 245.78920000000016,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m."
+    },
+    {
+      "clip": "numbers",
+      "run": 1,
+      "ok": true,
+      "ms": 199.86149999999998,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m."
+    },
+    {
+      "clip": "numbers",
+      "run": 2,
+      "ok": true,
+      "ms": 204.5577999999996,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m."
+    },
+    {
+      "clip": "numbers",
+      "run": 3,
+      "ok": true,
+      "ms": 204.43219999999928,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m."
+    },
+    {
+      "clip": "numbers",
+      "run": 4,
+      "ok": true,
+      "ms": 226.5712999999996,
+      "text": "Transfer $4,217 on March 3, 2026. The invoice number is AB47-902, and the meeting moved from 2 15 to 4 45 p.m."
+    },
+    {
+      "clip": "propernoun",
+      "run": 0,
+      "ok": true,
+      "ms": 207.5007999999998,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts."
+    },
+    {
+      "clip": "propernoun",
+      "run": 1,
+      "ok": true,
+      "ms": 176.39649999999983,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts."
+    },
+    {
+      "clip": "propernoun",
+      "run": 2,
+      "ok": true,
+      "ms": 170.1278999999995,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts."
+    },
+    {
+      "clip": "propernoun",
+      "run": 3,
+      "ok": true,
+      "ms": 185.69940000000042,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts."
+    },
+    {
+      "clip": "propernoun",
+      "run": 4,
+      "ok": true,
+      "ms": 176.3056999999999,
+      "text": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts."
+    },
+    {
+      "clip": "homophone",
+      "run": 0,
+      "ok": true,
+      "ms": 180.70150000000012,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more."
+    },
+    {
+      "clip": "homophone",
+      "run": 1,
+      "ok": true,
+      "ms": 156.8115000000007,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more."
+    },
+    {
+      "clip": "homophone",
+      "run": 2,
+      "ok": true,
+      "ms": 146.27480000000014,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more."
+    },
+    {
+      "clip": "homophone",
+      "run": 3,
+      "ok": true,
+      "ms": 166.1347999999998,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more."
+    },
+    {
+      "clip": "homophone",
+      "run": 4,
+      "ok": true,
+      "ms": 156.04479999999967,
+      "text": "They are going to accept the new principle, not the interest rate principle. Their advice affects the effect we expected, and it is too late to buy two more."
+    }
+  ]
+}

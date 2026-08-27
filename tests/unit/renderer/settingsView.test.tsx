@@ -7,6 +7,7 @@ import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
+  REMOTE_ASR_PRIVACY_NOTICE,
   type HotkeyChangeResult,
   type ModelDisclosureCatalog,
   type ModelStatus,
@@ -62,6 +63,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     onListModelDisclosures: vi.fn(async () => disclosures),
     onInstallModel: vi.fn(async () => ({ ok: true } as const)),
     onRemoveModel: vi.fn(async () => ({ ok: true } as const)),
+    onCheckRemoteAsr: vi.fn(async () => ({ ok: true } as const)),
     ...overrides,
   }
 }
@@ -503,6 +505,60 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ formatWhitespace: false })
     expect(update).toHaveBeenCalledWith({ startMinimized: true })
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
+  })
+
+  it('saves the transcription server address and reports a reachable server', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    const check = vi.fn(async () => ({ ok: true as const }))
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckRemoteAsr: check })} />)
+
+    await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
+    await user.click(screen.getByRole('button', { name: /save and test/i }))
+
+    expect(update).toHaveBeenCalledWith({ remoteAsrUrl: 'forge.local:5092' })
+    expect(check).toHaveBeenCalledOnce()
+    expect(await screen.findByText('Connected. Sotto can reach this server.')).toBeVisible()
+  })
+
+  it('explains why an unreachable server failed without saving nothing', async () => {
+    const user = userEvent.setup()
+    const check = vi.fn(async () => ({ ok: false as const, reason: 'timeout' as const }))
+    render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
+
+    await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
+    await user.click(screen.getByRole('button', { name: /save and test/i }))
+
+    expect(await screen.findByText(/did not answer/i)).toBeVisible()
+  })
+
+  it('asks for an address before probing an empty field', async () => {
+    const user = userEvent.setup()
+    const check = vi.fn(async () => ({ ok: true as const }))
+    render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
+
+    await user.click(screen.getByRole('button', { name: /save and test/i }))
+
+    expect(check).not.toHaveBeenCalled()
+    expect(await screen.findByText('Enter a server address first.')).toBeVisible()
+  })
+
+  it('locks the remote toggle until an address is saved and discloses the audio upload', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    const { rerender } = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+
+    const toggle = screen.getByRole('switch', { name: 'Use the transcription server' })
+    expect(toggle).toBeDisabled()
+    expect(screen.getByText(REMOTE_ASR_PRIVACY_NOTICE)).toBeVisible()
+
+    rerender(<SettingsView {...baseProps({
+      onUpdateSettings: update,
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, remoteAsrUrl: 'http://forge.local:5092' },
+    })} />)
+
+    await user.click(screen.getByRole('switch', { name: 'Use the transcription server' }))
+    expect(update).toHaveBeenCalledWith({ remoteAsr: true })
   })
 
   it('renders the macOS copy row and canonicalizes shortcuts through the darwin aliases', async () => {

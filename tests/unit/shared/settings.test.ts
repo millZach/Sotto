@@ -39,6 +39,8 @@ const customSettings = {
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   streamingAsr: false,
+  remoteAsr: true,
+  remoteAsrUrl: 'http://forge.local:5092',
 } satisfies AppSettings
 
 describe('settings', () => {
@@ -73,7 +75,25 @@ describe('settings', () => {
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       streamingAsr: true,
+      remoteAsr: false,
+      remoteAsrUrl: '',
     })
+  })
+
+  it('keeps remote transcription off for installs saved before it existed', () => {
+    const legacy = { ...customSettings } as Record<string, unknown>
+    delete legacy.remoteAsr
+    delete legacy.remoteAsrUrl
+
+    const parsed = parseSettings(legacy)
+    expect(parsed.remoteAsr).toBe(false)
+    expect(parsed.remoteAsrUrl).toBe('')
+    expect(parsed.language).toBe('fr')
+  })
+
+  it('falls back to the defaults for an unusable remote server address', () => {
+    expect(parseSettings({ ...customSettings, remoteAsrUrl: 'x'.repeat(513) }).remoteAsrUrl).toBe('')
+    expect(parseSettings({ ...customSettings, remoteAsr: 'yes' }).remoteAsr).toBe(false)
   })
 
   it('builds per-platform defaults that differ only in the hotkey', () => {

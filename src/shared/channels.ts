@@ -34,6 +34,10 @@ export const OUTPUT_DELIVER = 'sotto:output:deliver' as const
 
 export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 
+export const REMOTE_ASR_TRANSCRIBE = 'sotto:remote-asr:transcribe' as const
+export const REMOTE_ASR_CANCEL = 'sotto:remote-asr:cancel' as const
+export const REMOTE_ASR_CHECK = 'sotto:remote-asr:check' as const
+
 export const STARTUP_GET = 'sotto:startup:get' as const
 export const STARTUP_SET = 'sotto:startup:set' as const
 
@@ -70,6 +74,9 @@ export const IPC_CHANNELS = Object.freeze({
   modelStatus: MODEL_STATUS,
   outputDeliver: OUTPUT_DELIVER,
   transcriptPolish: TRANSCRIPT_POLISH,
+  remoteAsrTranscribe: REMOTE_ASR_TRANSCRIBE,
+  remoteAsrCancel: REMOTE_ASR_CANCEL,
+  remoteAsrCheck: REMOTE_ASR_CHECK,
   startupGet: STARTUP_GET,
   startupSet: STARTUP_SET,
   appShow: APP_SHOW,

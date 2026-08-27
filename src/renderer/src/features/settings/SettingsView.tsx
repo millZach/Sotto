@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, CircleAlert, Gauge, HardDrive, Keyboard, MonitorCog, Sparkles, Trash2 } from 'lucide-react'
 
-import type {
-  CommandResult,
-  HotkeyChangeResult,
-  ModelDisclosure,
-  ModelDisclosureCatalog,
-  ModelInstallRequest,
-  ModelStatus,
-  StartupState,
-  UnavailableResult,
+import {
+  REMOTE_ASR_PRIVACY_NOTICE,
+  type CommandResult,
+  type HotkeyChangeResult,
+  type ModelDisclosure,
+  type ModelDisclosureCatalog,
+  type ModelInstallRequest,
+  type ModelStatus,
+  type RemoteAsrHealth,
+  type StartupState,
+  type UnavailableResult,
 } from '../../../../shared/contracts'
 import { formatAccelerator, parseAccelerator } from '../../../../shared/accelerator'
 import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
@@ -54,6 +56,7 @@ export interface SettingsViewProps {
   readonly onListModelDisclosures: () => Promise<ModelDisclosureCatalog | UnavailableResult>
   readonly onInstallModel: (request: ModelInstallRequest) => Promise<CommandResult>
   readonly onRemoveModel: (preset: ModelPreset) => Promise<CommandResult>
+  readonly onCheckRemoteAsr: () => Promise<RemoteAsrHealth>
 }
 
 const knownLanguages = [
@@ -84,6 +87,16 @@ function modelStateCopy(status: ModelStatus | undefined): string {
     case 'downloading': return `Downloading locally - ${Math.round((status.progress ?? 0) * 100)}%`
     case 'error': return `${MODEL_CATALOG[status.preset].label} model could not be prepared. Retry the download.`
     default: return 'Not installed'
+  }
+}
+
+function remoteAsrHealthCopy(health: RemoteAsrHealth): string {
+  if (health.ok) return 'Connected. Sotto can reach this server.'
+  switch (health.reason) {
+    case 'unconfigured': return 'That is not a valid http or https server address.'
+    case 'timeout': return 'The server did not answer. Check that it is running and reachable.'
+    case 'http': return 'The server answered, but not with a healthy status.'
+    default: return 'Sotto could not reach that server.'
   }
 }
 
@@ -125,6 +138,7 @@ export function SettingsView({
   onListModelDisclosures,
   onInstallModel,
   onRemoveModel,
+  onCheckRemoteAsr,
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -136,6 +150,9 @@ export function SettingsView({
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const [llmApiKeyDraft, setLlmApiKeyDraft] = useState(settings.llmApiKey)
   const [llmDictionaryDraft, setLlmDictionaryDraft] = useState(settings.llmDictionary)
+  const [remoteAsrUrlDraft, setRemoteAsrUrlDraft] = useState(settings.remoteAsrUrl)
+  const [remoteAsrStatus, setRemoteAsrStatus] = useState<{ text: string; error: boolean } | null>(null)
+  const [remoteAsrTesting, setRemoteAsrTesting] = useState(false)
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
   const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
@@ -148,6 +165,7 @@ export function SettingsView({
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
+  const remoteAsrSequenceRef = useRef(0)
   const themeSequenceRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
@@ -221,6 +239,9 @@ export function SettingsView({
   useEffect(() => {
     setLlmDictionaryDraft(settings.llmDictionary)
   }, [settings.llmDictionary])
+  useEffect(() => {
+    setRemoteAsrUrlDraft(settings.remoteAsrUrl)
+  }, [settings.remoteAsrUrl])
 
   useEffect(() => {
     if (mediaDevices === undefined) {
@@ -328,6 +349,35 @@ export function SettingsView({
         successDurationDraftRef.current = authoritative
         setSuccessDurationDraft(authoritative)
       }
+    }
+  }
+
+  // One affordance rather than separate save and test buttons: the address is
+  // only useful once it has been saved, and the probe runs against the saved
+  // value in the main process.
+  const saveAndTestRemoteAsr = async (): Promise<void> => {
+    const sequence = ++remoteAsrSequenceRef.current
+    const url = remoteAsrUrlDraft.trim()
+    setRemoteAsrStatus(null)
+    if (url.length === 0) {
+      setRemoteAsrStatus({ text: 'Enter a server address first.', error: true })
+      return
+    }
+
+    setRemoteAsrTesting(true)
+    try {
+      const saved = url === settingsRef.current.remoteAsrUrl
+        || await onUpdateSettings({ remoteAsrUrl: url }).catch(() => false)
+      if (sequence !== remoteAsrSequenceRef.current) return
+      if (!saved) {
+        setRemoteAsrStatus({ text: 'The server address could not be saved.', error: true })
+        return
+      }
+      const health = await onCheckRemoteAsr().catch((): RemoteAsrHealth => ({ ok: false, reason: 'network' }))
+      if (sequence !== remoteAsrSequenceRef.current) return
+      setRemoteAsrStatus({ text: remoteAsrHealthCopy(health), error: !health.ok })
+    } finally {
+      if (sequence === remoteAsrSequenceRef.current) setRemoteAsrTesting(false)
     }
   }
 
@@ -455,7 +505,15 @@ export function SettingsView({
         <div className="settings-fields-grid">
           <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{knownLanguages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
           <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
+          <div className="settings-input-action">
+            <Field label="Transcription server" description="Base address of an OpenAI-compatible speech server on your network, such as http://desktop.local:5092.">
+              <input className="tt-input" inputMode="url" autoComplete="off" spellCheck={false} placeholder="http://host:port" value={remoteAsrUrlDraft} onChange={(event) => { setRemoteAsrStatus(null); setRemoteAsrUrlDraft(event.currentTarget.value) }} />
+            </Field>
+            <Button variant="secondary" disabled={remoteAsrTesting} onClick={() => void saveAndTestRemoteAsr()}>{remoteAsrTesting ? 'Testing...' : 'Save and test'}</Button>
+          </div>
+          <Toggle label="Use the transcription server" checked={settings.remoteAsr} disabled={settings.remoteAsrUrl.trim().length === 0} onCheckedChange={(checked) => void save({ remoteAsr: checked })} description={REMOTE_ASR_PRIVACY_NOTICE} />
         </div>
+        {remoteAsrStatus === null ? null : <p className={`settings-remote-status${remoteAsrStatus.error ? ' settings-remote-status--error' : ''}`} role="status">{remoteAsrStatus.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{remoteAsrStatus.text}</p>}
       </Card>
 
       <Card className="settings-section">

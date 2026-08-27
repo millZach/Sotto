@@ -49,9 +49,11 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         AbortController: 'readonly',
+        Blob: 'readonly',
         clearTimeout: 'readonly',
         console: 'readonly',
         fetch: 'readonly',
+        FormData: 'readonly',
         process: 'readonly',
         setTimeout: 'readonly',
       },

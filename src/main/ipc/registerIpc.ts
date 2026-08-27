@@ -19,6 +19,9 @@ import {
   MODEL_REMOVE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
+  REMOTE_ASR_CANCEL,
+  REMOTE_ASR_CHECK,
+  REMOTE_ASR_TRANSCRIBE,
   TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -32,6 +35,7 @@ import {
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
+  remoteTranscriptionRequestSchema,
   transcriptPolishRequestSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -45,6 +49,9 @@ import {
   type OutputOutcome,
   type OutputDeliveryRequest,
   type OutputResult,
+  type RemoteAsrHealth,
+  type RemoteTranscriptionRequest,
+  type RemoteTranscriptionResult,
   type StartupState,
   type TranscriptPolishAsrContext,
   type TranscriptPolishResult,
@@ -89,6 +96,8 @@ const settingKeys = [
   'llmTimeoutMs',
   'llmMinWords',
   'streamingAsr',
+  'remoteAsr',
+  'remoteAsrUrl',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema
@@ -226,6 +235,12 @@ export interface TranscriptPolishIpcService {
   ): TranscriptPolishResult | Promise<TranscriptPolishResult>
 }
 
+export interface RemoteAsrIpcService {
+  transcribe(request: RemoteTranscriptionRequest): Promise<RemoteTranscriptionResult>
+  cancel(requestId: string): void
+  check(): Promise<RemoteAsrHealth>
+}
+
 export interface RecoveryNoticeIpcService {
   list(): readonly RecoveryNotice[] | Promise<readonly RecoveryNotice[]>
 }
@@ -241,6 +256,7 @@ export interface RegisterIpcDependencies {
   readonly models?: ModelIpcService
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
+  readonly remoteAsr?: RemoteAsrIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
 }
@@ -545,6 +561,30 @@ export function registerIpc(
         return dependencies.transcriptPolish.polish(request.text, request.asr)
       },
     )
+
+    register(
+      REMOTE_ASR_TRANSCRIBE,
+      remoteTranscriptionRequestSchema,
+      1,
+      async (request): Promise<RemoteTranscriptionResult> => {
+        if (dependencies.remoteAsr === undefined) return { ok: false, reason: 'disabled' }
+        return dependencies.remoteAsr.transcribe(request)
+      },
+    )
+    register(
+      REMOTE_ASR_CANCEL,
+      z.string().min(1).max(128),
+      1,
+      async (requestId): Promise<CommandResult> => {
+        if (dependencies.remoteAsr === undefined) return UNAVAILABLE
+        dependencies.remoteAsr.cancel(requestId)
+        return OK
+      },
+    )
+    register(REMOTE_ASR_CHECK, noPayloadSchema, 0, async (): Promise<RemoteAsrHealth> => {
+      if (dependencies.remoteAsr === undefined) return { ok: false, reason: 'disabled' }
+      return dependencies.remoteAsr.check()
+    })
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {
         return UNAVAILABLE

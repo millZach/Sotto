@@ -241,6 +241,59 @@ export type TranscriptPolishAsrContext = z.infer<typeof transcriptPolishAsrConte
 export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
 export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
 
+export const REMOTE_ASR_PRIVACY_NOTICE = 'Uploads the audio you dictate to the transcription server, which then hears everything you say to Sotto. Nothing leaves this computer while this is off, and any segment the server does not answer is transcribed on-device instead.' as const
+
+/**
+ * The renderer encodes each segment as a PCM16 WAV and the main process owns
+ * the upload, because the renderer CSP allows no cross-origin `connect-src`.
+ * The bound is the longest recording the capture limit permits (5 minutes of
+ * 16 kHz mono PCM16) plus its header.
+ */
+const MAX_REMOTE_AUDIO_BYTES = 16_000 * 2 * 300 + 44
+
+export const remoteTranscriptionRequestSchema = z
+  .object({
+    requestId: z.string().min(1).max(128),
+    wav: z.custom<ArrayBuffer>(
+      (value) =>
+        value instanceof ArrayBuffer &&
+        value.byteLength > 44 &&
+        value.byteLength <= MAX_REMOTE_AUDIO_BYTES,
+    ),
+    timeoutMs: z.number().int().min(250).max(30_000),
+  })
+  .strict()
+
+/**
+ * Every remote outcome is a value, never a thrown IPC error: the caller treats
+ * any `ok: false` the same way (fall back to the local model) and the reason
+ * only shapes the settings "test connection" copy.
+ */
+export const remoteAsrFailureReasonSchema = z.enum([
+  'disabled',
+  'unconfigured',
+  'timeout',
+  'http',
+  'network',
+  'cancelled',
+  'malformed',
+])
+
+export const remoteTranscriptionResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), text: z.string().max(200_000) }).strict(),
+  z.object({ ok: z.literal(false), reason: remoteAsrFailureReasonSchema }).strict(),
+])
+
+export const remoteAsrHealthSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true) }).strict(),
+  z.object({ ok: z.literal(false), reason: remoteAsrFailureReasonSchema }).strict(),
+])
+
+export type RemoteAsrFailureReason = z.infer<typeof remoteAsrFailureReasonSchema>
+export type RemoteTranscriptionRequest = z.infer<typeof remoteTranscriptionRequestSchema>
+export type RemoteTranscriptionResult = z.infer<typeof remoteTranscriptionResultSchema>
+export type RemoteAsrHealth = z.infer<typeof remoteAsrHealthSchema>
+
 export const modelStatusSchema = z
   .object({
     preset: modelPresetSchema,
@@ -359,6 +412,10 @@ export interface SottoBridge {
   deliverOutput(request: OutputDeliveryRequest): Promise<OutputResult>
 
   polishTranscript(request: TranscriptPolishRequest): Promise<TranscriptPolishResult>
+
+  transcribeRemote(request: RemoteTranscriptionRequest): Promise<RemoteTranscriptionResult>
+  cancelRemoteTranscription(requestId: string): Promise<CommandResult>
+  checkRemoteAsr(): Promise<RemoteAsrHealth>
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

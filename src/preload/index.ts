@@ -23,6 +23,9 @@ import {
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
+  REMOTE_ASR_CANCEL,
+  REMOTE_ASR_CHECK,
+  REMOTE_ASR_TRANSCRIBE,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -40,6 +43,8 @@ import {
   dictationCommandSchema,
   modelDisclosureCatalogSchema,
   modelStatusSchema,
+  remoteAsrHealthSchema,
+  remoteTranscriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
   transcriptPolishResultSchema,
@@ -234,6 +239,12 @@ export function createSottoBridge(
 
     polishTranscript: (request) =>
       invokeParsed(renderer, TRANSCRIPT_POLISH, transcriptPolishResultSchema, request),
+
+    transcribeRemote: (request) =>
+      invokeParsed(renderer, REMOTE_ASR_TRANSCRIBE, remoteTranscriptionResultSchema, request),
+    cancelRemoteTranscription: (requestId) =>
+      invokeParsed(renderer, REMOTE_ASR_CANCEL, commandResultSchema, requestId),
+    checkRemoteAsr: () => invokeParsed(renderer, REMOTE_ASR_CHECK, remoteAsrHealthSchema),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),

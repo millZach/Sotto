@@ -15,6 +15,7 @@ import type {
   ModelDisclosureCatalog,
   ModelInstallRequest,
   ModelStatus,
+  RemoteAsrHealth,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
@@ -36,6 +37,11 @@ import {
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { TranscriptionClient } from '../transcription/client'
+import { FallbackTranscriber } from '../transcription/fallbackTranscriber'
+import {
+  RemoteTranscriptionClient,
+  type RemoteTranscriptionBridge,
+} from '../transcription/remoteClient'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
@@ -66,6 +72,8 @@ export interface AppControllerFactoryBindings {
   readonly addHistory: SottoBridge['addHistory']
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
   readonly polishTranscript?: SottoBridge['polishTranscript']
+  /** Present only when the preload bridge exposes the remote ASR channels. */
+  readonly remoteAsr?: RemoteTranscriptionBridge
   readonly platform?: SottoPlatform
 }
 
@@ -75,13 +83,39 @@ export type AppControllerFactory = (
 
 export interface ProductionControllerFactories {
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
-  readonly createTranscriber: () => DictationTranscriber
+  readonly createTranscriber: (bindings: AppControllerFactoryBindings) => DictationTranscriber
   readonly createCuePlayer: () => DictationCuePlayer
+}
+
+/**
+ * The local worker client is the transcriber unless the bridge offers the
+ * remote channels, in which case it becomes the fallback behind them. Reading
+ * the toggle through getSettings keeps a mid-session change effective without
+ * rebuilding the controller.
+ */
+function createProductionTranscriber(
+  bindings: AppControllerFactoryBindings,
+): DictationTranscriber {
+  const local = new TranscriptionClient()
+  const remoteBridge = bindings.remoteAsr
+  if (remoteBridge === undefined) return local
+  return new FallbackTranscriber({
+    local,
+    remote: new RemoteTranscriptionClient({ bridge: remoteBridge }),
+    isRemoteEnabled: () => {
+      try {
+        const settings = bindings.getSettings()
+        return settings.remoteAsr && settings.remoteAsrUrl.trim().length > 0
+      } catch {
+        return false
+      }
+    },
+  })
 }
 
 const productionFactories: ProductionControllerFactories = {
   createRecorder: (options) => new AudioRecorder(options),
-  createTranscriber: () => new TranscriptionClient(),
+  createTranscriber: createProductionTranscriber,
   createCuePlayer: () => new SoundCuePlayer(),
 }
 
@@ -93,7 +127,7 @@ export function createProductionDictationController(
   const platform = bindings.platform
   const dependencies: DictationControllerDependencies = {
     createRecorder: factories.createRecorder,
-    transcriber: factories.createTranscriber(),
+    transcriber: factories.createTranscriber(bindings),
     cuePlayer: factories.createCuePlayer(),
     getSettings: bindings.getSettings,
     deliverOutput: bindings.deliverOutput,
@@ -129,6 +163,7 @@ export interface AppActions {
   listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
   installModel(request: ModelInstallRequest): ReturnType<SottoBridge['installModel']>
   removeModel(preset: ModelPreset): ReturnType<SottoBridge['removeModel']>
+  checkRemoteAsr(): Promise<RemoteAsrHealth>
   showApp(): Promise<void>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
@@ -389,6 +424,12 @@ export function AppProvider({
           },
           deliverOutput: (request) => bridge.deliverOutput(request),
           polishTranscript: (request) => bridge.polishTranscript(request),
+          remoteAsr: {
+            transcribeRemote: (request) => bridge.transcribeRemote(request),
+            cancelRemoteTranscription: (requestId) =>
+              bridge.cancelRemoteTranscription(requestId),
+            checkRemoteAsr: () => bridge.checkRemoteAsr(),
+          },
           addHistory: async (entry) => {
             const version = ++historyVersionRef.current
             const request = historyTailRef.current.then(() => bridge.addHistory(entry))
@@ -594,6 +635,10 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('MODEL_OPERATION_FAILED')
         return UNAVAILABLE
       }
+    },
+    checkRemoteAsr: async () => {
+      if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
+      try { return await bridge.checkRemoteAsr() } catch { return { ok: false, reason: 'network' } }
     },
     showApp: async () => {
       const generation = activeGenerationRef.current

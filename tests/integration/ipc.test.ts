@@ -52,6 +52,9 @@ import {
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
   SETTINGS_CHANGED,
+  REMOTE_ASR_CANCEL,
+  REMOTE_ASR_CHECK,
+  REMOTE_ASR_TRANSCRIBE,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -335,6 +338,8 @@ describe('typed preload bridge', () => {
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'addHistory',
+        'cancelRemoteTranscription',
+        'checkRemoteAsr',
         'clearHistory',
         'deleteHistory',
         'deliverOutput',
@@ -363,6 +368,7 @@ describe('typed preload bridge', () => {
         'searchHistory',
         'setStartup',
         'showApp',
+        'transcribeRemote',
         'updateSettings',
       ].sort(),
     )
@@ -880,6 +886,69 @@ describe('IPC validation and lifecycle', () => {
     await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: false })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: true })).resolves.toEqual({ ok: true })
     expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('forwards remote transcription over dedicated channels and rejects oversized or malformed audio', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const remoteAsr = {
+      transcribe: vi.fn(async () => ({ ok: true as const, text: 'remote text' })),
+      cancel: vi.fn(),
+      check: vi.fn(async () => ({ ok: true as const })),
+    }
+    registerIpc(harness.ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+      remoteAsr,
+    })
+
+    const wav = new ArrayBuffer(1_024)
+    await expect(harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r1', wav, timeoutMs: 4_000 }))
+      .resolves.toEqual({ ok: true, text: 'remote text' })
+    expect(remoteAsr.transcribe).toHaveBeenCalledWith({ requestId: 'r1', wav, timeoutMs: 4_000 })
+
+    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, 'r1')).resolves.toEqual({ ok: true })
+    expect(remoteAsr.cancel).toHaveBeenCalledWith('r1')
+    await expect(harness.ipc.invokeArgs(REMOTE_ASR_CHECK, [])).resolves.toEqual({ ok: true })
+
+    // A header-only buffer, an unbounded one, and a non-buffer payload are all
+    // rejected before the service ever sees them.
+    for (const wavPayload of [new ArrayBuffer(44), new ArrayBuffer(16_000 * 2 * 301), 'audio']) {
+      await expect(
+        harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r2', wav: wavPayload, timeoutMs: 4_000 }),
+      ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    }
+    await expect(harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r2', wav, timeoutMs: 60_000 }))
+      .rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
+    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, '')).rejects.toMatchObject({
+      code: 'INVALID_IPC_PAYLOAD',
+    })
+    expect(remoteAsr.transcribe).toHaveBeenCalledOnce()
+  })
+
+  it('reports remote transcription as disabled when no service is wired', async () => {
+    const harness = createIpcHarness()
+
+    await expect(
+      harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, {
+        requestId: 'r1',
+        wav: new ArrayBuffer(1_024),
+        timeoutMs: 4_000,
+      }),
+    ).resolves.toEqual({ ok: false, reason: 'disabled' })
+    await expect(harness.ipc.invokeArgs(REMOTE_ASR_CHECK, [])).resolves.toEqual({
+      ok: false,
+      reason: 'disabled',
+    })
+    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, 'r1')).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+    })
+    harness.cleanup()
   })
 
   it.each(['cancel', 'stop', 'toggle'] as const)(

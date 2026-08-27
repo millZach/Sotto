@@ -276,6 +276,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onListModelDisclosures={app.actions.listModelDisclosures}
           onInstallModel={app.actions.installModel}
           onRemoveModel={app.actions.removeModel}
+          onCheckRemoteAsr={app.actions.checkRemoteAsr}
         />
         break
       case 'help':

@@ -52,6 +52,7 @@ import {
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
+import { RemoteAsrService } from './asr/remoteAsrService'
 import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
@@ -537,6 +538,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
+  // Remote transcription uploads audio, so like the formatting pass it stays
+  // offline in E2E runs and every failure resolves to a value the renderer
+  // falls back from.
+  const remoteAsr = new RemoteAsrService({
+    getSettings: () => settings.get(),
+    ...(e2eConfiguration === null
+      ? {}
+      : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+  })
+
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
   const dispatchDictation = (command: DictationCommand): void => {
@@ -729,6 +740,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcriptPolish: {
           polish: (text, asr) => transcriptPolish.polish(text, asr),
         },
+        remoteAsr: {
+          transcribe: (request) => remoteAsr.transcribe(request),
+          cancel: (requestId) => remoteAsr.cancel(requestId),
+          check: () => remoteAsr.check(),
+        },
         widget: {
           setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),
@@ -747,6 +763,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupNativeIpc = (): void => {
         unsubscribeRecoveryNotices()
+        // No renderer is left to receive them, so abandon in-flight uploads.
+        remoteAsr.dispose()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc
