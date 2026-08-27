@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Direction 2: Low lume</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #141312;
+    --panel: #1c1b19;
+    --panel-edge: #292724;
+    --text: #ece9e4;
+    --dim: #8d8880;
+    --faint: #55524d;
+    --breath: #5fbdb2;
+    --breath-deep: #2c7a72;
+    --ember: #f0a03c;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    display: flex;
+    background: var(--void);
+    color: var(--text);
+    font: 400 14px/1.5 'Manrope', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- rail: icon-free, engraved labels ---- */
+  .rail {
+    width: 190px; flex: none;
+    display: flex; flex-direction: column;
+    padding: 28px 24px;
+    background: linear-gradient(180deg, #171614, var(--void));
+    border-right: 1px solid var(--panel-edge);
+  }
+  .mark {
+    font: 600 16px 'Manrope'; letter-spacing: 0.28em; text-transform: uppercase;
+    margin-bottom: 42px;
+  }
+  .mark::after { content: '.'; color: var(--breath); }
+  .rail nav { display: flex; flex-direction: column; gap: 2px; }
+  .rail a {
+    position: relative;
+    padding: 8px 12px; margin-left: -12px;
+    color: var(--dim); text-decoration: none; font-weight: 500; font-size: 13.5px;
+    border-radius: 7px;
+    transition: color .15s ease;
+  }
+  .rail a:hover { color: var(--text); }
+  .rail a[aria-current] { color: var(--text); }
+  .rail a[aria-current]::before {
+    content: ''; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 2px;
+    border-radius: 1px; background: var(--breath);
+  }
+  .session {
+    margin-top: auto;
+    font: 500 11px 'Spline Sans Mono', monospace;
+    color: var(--faint); line-height: 1.9;
+  }
+  .session b { color: var(--dim); font-weight: 500; }
+
+  /* ---- console ---- */
+  .console { flex: 1; min-width: 0; padding: 40px 48px; overflow-y: auto; }
+
+  /* instrument readouts */
+  .meters { display: flex; gap: 44px; margin-bottom: 40px; }
+  .meter { }
+  .meter label {
+    display: block;
+    font: 500 10px 'Spline Sans Mono', monospace;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
+    margin-bottom: 8px;
+  }
+  .meter .val {
+    font: 500 34px/1 'Spline Sans Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .meter .val small { font-size: 14px; color: var(--dim); margin-left: 4px; }
+  .meter .trend { margin-top: 10px; height: 16px; display: flex; align-items: flex-end; gap: 3px; }
+  .meter .trend i {
+    width: 4px; border-radius: 1px;
+    background: color-mix(in srgb, var(--breath) 45%, var(--panel-edge));
+  }
+  .meter .trend i:last-child { background: var(--breath); }
+
+  /* ---- the breath line: dictation surface ---- */
+  .breathline {
+    position: relative;
+    border: 1px solid var(--panel-edge);
+    border-radius: 16px;
+    background: linear-gradient(180deg, var(--panel), #191816);
+    padding: 30px 32px 26px;
+    overflow: hidden;
+  }
+  .breathline::before {
+    /* hushed glow pooled under the line, breathes when live */
+    content: ''; position: absolute; inset: auto -20% -60% -20%; height: 120px;
+    background: radial-gradient(closest-side, rgb(95 189 178 / 14%), transparent);
+    animation: breathe 5s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { opacity: .45; } }
+  .breathline h1 { font: 600 19px 'Manrope'; }
+  .breathline p { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .wave {
+    display: flex; align-items: center; gap: 4px;
+    height: 34px; margin: 22px 0;
+  }
+  .wave i {
+    flex: 1; height: 2px; border-radius: 1px;
+    background: var(--faint);
+  }
+  /* resting line with a faint pulse at center — the widget's bars, grown up */
+  .wave i:nth-child(24), .wave i:nth-child(40) { height: 6px; background: var(--breath-deep); }
+  .wave i:nth-child(30), .wave i:nth-child(34) { height: 12px; background: var(--breath-deep); }
+  .wave i:nth-child(31), .wave i:nth-child(33) { height: 18px; background: var(--breath); }
+  .wave i:nth-child(32) { height: 24px; background: var(--breath); }
+  .breathline footer { display: flex; align-items: center; gap: 18px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 11px 20px;
+    border: 1px solid color-mix(in srgb, var(--breath) 45%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--breath) 12%, transparent);
+    color: var(--text); font: 600 13.5px 'Manrope'; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .btn:hover { background: color-mix(in srgb, var(--breath) 20%, transparent); border-color: var(--breath); }
+  .btn .rec { width: 8px; height: 8px; border-radius: 50%; background: var(--breath); }
+  .keys { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 11.5px; }
+  .keys kbd {
+    padding: 3px 7px;
+    border: 1px solid var(--panel-edge); border-radius: 5px;
+    background: #111009; background: #121110;
+    font: 500 10.5px 'Spline Sans Mono', monospace; color: var(--dim);
+  }
+
+  /* ---- recent: quiet log ---- */
+  .log { margin-top: 38px; }
+  .log > header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+  .log h2 {
+    font: 500 10px 'Spline Sans Mono', monospace;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
+  }
+  .log > header a { color: var(--breath); font-size: 12px; font-weight: 600; text-decoration: none; }
+  .row {
+    display: grid; grid-template-columns: 76px 1fr; gap: 18px;
+    padding: 13px 0;
+    border-bottom: 1px solid #21201d;
+  }
+  .row time { font: 500 11px/1.9 'Spline Sans Mono', monospace; color: var(--faint); }
+  .row p {
+    font-size: 13.5px; line-height: 1.55; color: #c9c5be;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+</style>
+</head>
+<body>
+  <aside class="rail">
+    <div class="mark">Sotto</div>
+    <nav>
+      <a href="#" aria-current="page">Home</a>
+      <a href="#">History</a>
+      <a href="#">Settings</a>
+      <a href="#">Help</a>
+    </nav>
+    <div class="session"><b>READY</b> · moonshine<br>on-device · 0 queued</div>
+  </aside>
+
+  <main class="console">
+    <div class="meters">
+      <div class="meter">
+        <label>Words / wk</label>
+        <div class="val">2,847</div>
+        <div class="trend"><i style="height:5px"></i><i style="height:9px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:8px"></i><i style="height:14px"></i><i style="height:16px"></i></div>
+      </div>
+      <div class="meter">
+        <label>Avg WPM</label>
+        <div class="val">132</div>
+      </div>
+      <div class="meter">
+        <label>Minutes</label>
+        <div class="val">43<small>min</small></div>
+        <div class="trend"><i style="height:7px"></i><i style="height:6px"></i><i style="height:10px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:11px"></i><i style="height:15px"></i></div>
+      </div>
+    </div>
+
+    <section class="breathline">
+      <h1>Ready when you are</h1>
+      <p>Start here or use your shortcut in any application. Nothing leaves this machine.</p>
+      <div class="wave" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <footer>
+        <button class="btn"><span class="rec"></span> Start dictation</button>
+        <div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Space</kbd></div>
+      </footer>
+    </section>
+
+    <section class="log">
+      <header><h2>Recent</h2><a href="#">history →</a></header>
+      <div class="row">
+        <time>14:41</time>
+        <p>Morning standup notes: the irrigation controller deploy went out clean, and the flow sensor calibration is scheduled for Thursday with the vendor on site.</p>
+      </div>
+      <div class="row">
+        <time>11:06</time>
+        <p>Hey Priya — sounds good, let's move the review to 4:45 and I'll bring the updated P&amp;ID markups for the skid.</p>
+      </div>
+      <div class="row">
+        <time>yest</time>
+        <p>Reminder to archive the 3.3.5 installers and append the mac hashes before uploading the checksum file.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

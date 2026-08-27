@@ -137,6 +137,20 @@ describe('HistoryView', () => {
     expect(screen.getByText(/no transcripts match/i)).toBeVisible()
   })
 
+  it('stacks the log stamp into date and clock lines without dropping the full date from the accessible name', () => {
+    const createdAt = new Date(2026, 7, 27, 14, 1, 42).valueOf()
+    render(<HistoryView {...baseProps} entries={[{ ...entries[0]!, createdAt }]} />)
+
+    const stamp = document.querySelector('.history-entry__meta time')
+    expect(stamp).not.toBeNull()
+    const lines = [...stamp!.querySelectorAll('span')].map((span) => span.textContent)
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toBe('14:01')
+    expect(stamp!.getAttribute('datetime')).toBe(new Date(createdAt).toISOString())
+    // The short stamp is decoration; assistive tech still hears the whole date.
+    expect(stamp!.getAttribute('aria-label')).toBe(new Date(createdAt).toLocaleString())
+  })
+
   it('keeps existing local entries visible and clearable after new history is disabled', () => {
     render(<HistoryView {...baseProps} enabled={false} />)
     expect(screen.getByText(/existing local transcripts remain available/i)).toBeVisible()

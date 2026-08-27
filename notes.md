@@ -1,5 +1,17 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-27 — Retheming the whole app without moving one widget pixel
+Redesigning the management window meant rewriting tokens.css, and the widget read
+the same tokens, so any new teal would have leaked into the one surface that had
+to stay frozen. The fix was two lines: give the widget its own copy of the old
+token values in `widget/widget-tokens.css` and point `widget.css` at that instead
+of `styles/tokens.css`. 16 pixel-baseline tests still report changedPixels === 0.
+Then `npm run design:capture` scared me — the widget captured 124x54 against a
+124x56 baseline, which looked like I'd broken it. Reverting my two widget-adjacent
+files and re-running gave the same 124x54, so those app-review baselines were
+already 2px stale at HEAD. Cost about 40 minutes; the lesson is to reproduce a
+"regression" against the untouched tree before believing it.
+
 ## 2026-08-27 — Wiring remote ASR: the CSP decided the architecture, and jsdom lied about it
 Adding the optional Parakeet server path looked like a renderer job until I read
 the CSP: `connect-src 'self' sotto-model: sotto-runtime:` blocks any cross-origin

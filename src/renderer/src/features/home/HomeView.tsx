@@ -1,5 +1,5 @@
 import React, { useMemo, useState, type ReactNode } from 'react'
-import { ArrowRight, Mic, Square } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, Mic, Square } from 'lucide-react'
 
 import type { ModelStatus } from '../../../../shared/contracts'
 import type { DictationState } from '../../../../shared/dictation'
@@ -8,10 +8,10 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
-import { LevelMeter } from '../../components/LevelMeter'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy, type PlatformCopy } from '../../platformCopy'
 import type { HistoryStatus } from '../../state/AppContext'
+import { BreathLine, type BreathLineStage } from './BreathLine'
 import { computeWeeklyStats } from './weeklyStats'
 
 export interface HomeViewProps {
@@ -54,60 +54,78 @@ function statusCopy(state: DictationState, copy: PlatformCopy): { label: string;
   }
 }
 
-const SPARKLINE_WIDTH = 96
-const SPARKLINE_HEIGHT = 28
-const SPARKLINE_PAD = 2
-
-function sparklinePoints(values: readonly number[]): string {
-  const max = Math.max(...values, 1)
-  const innerWidth = SPARKLINE_WIDTH - SPARKLINE_PAD * 2
-  const innerHeight = SPARKLINE_HEIGHT - SPARKLINE_PAD * 2
-  const step = values.length > 1 ? innerWidth / (values.length - 1) : 0
-  return values
-    .map((value, index) => {
-      const x = SPARKLINE_PAD + index * step
-      const y = SPARKLINE_HEIGHT - SPARKLINE_PAD - (value / max) * innerHeight
-      return `${Math.round(x * 100) / 100},${Math.round(y * 100) / 100}`
-    })
-    .join(' ')
+function statusGlyph(state: DictationState, tone: 'normal' | 'error' | 'success'): ReactNode {
+  if (tone === 'success') return <Check />
+  if (tone === 'error') return <CircleAlert />
+  return state.status === 'listening' ? <Square /> : <Mic />
 }
 
-function Sparkline({ values }: { readonly values: readonly number[] }): ReactNode {
+function breathStage(state: DictationState): BreathLineStage {
+  if (state.status === 'listening') return 'listening'
+  if (state.status === 'processing' || state.status === 'requesting-permission') return 'processing'
+  return 'idle'
+}
+
+const TREND_HEIGHT = 16
+
+function Trend({ values }: { readonly values: readonly number[] }): ReactNode {
+  const max = Math.max(...values, 1)
   return (
-    <svg
-      className="home-stat__sparkline"
-      viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <polyline
-        points={sparklinePoints(values)}
-        fill="none"
-        stroke="var(--tt-primary)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div className="home-meter__trend" aria-hidden="true">
+      {values.map((value, index) => (
+        <span key={index} style={{ height: `${Math.max(2, Math.round((value / max) * TREND_HEIGHT))}px` }} />
+      ))}
+    </div>
   )
 }
 
-interface StatTileProps {
+/**
+ * Mono digits give the thousands separator a full character cell of its own,
+ * which reads as "2 ,847". Wrapping the separator lets CSS give it a narrow
+ * cell without disturbing the tabular rhythm of the digits themselves.
+ */
+function readout(value: number): ReactNode[] {
+  return value.toLocaleString().split(/(\d+)/u).filter(Boolean).map((part, index) => (
+    /\d/u.test(part)
+      ? <React.Fragment key={index}>{part}</React.Fragment>
+      : <span className="home-meter__separator" key={index}>{part}</span>
+  ))
+}
+
+interface MeterProps {
   readonly label: string
   readonly value: number
-  readonly sparkline?: readonly number[] | undefined
+  readonly unit?: string
+  readonly trend?: readonly number[] | undefined
 }
 
-function StatTile({ label, value, sparkline }: StatTileProps): ReactNode {
+function Meter({ label, value, unit, trend }: MeterProps): ReactNode {
   return (
-    <Card className="home-stat">
-      <p className="home-stat__label">{label}</p>
-      <p className="home-stat__value tt-tabular">{value}</p>
-      <p className="home-stat__note">this week</p>
-      {sparkline === undefined ? null : <Sparkline values={sparkline} />}
-    </Card>
+    <div className="home-meter">
+      <p className="home-meter__label tt-instrument">{label}</p>
+      <p className="home-meter__value tt-tabular">
+        {readout(value)}
+        {unit === undefined ? null : <span className="home-meter__unit">{unit}</span>}
+      </p>
+      {trend === undefined ? null : <Trend values={trend} />}
+    </div>
   )
+}
+
+const DAY_MS = 86_400_000
+
+/** Log timestamps: clock time today, "yest" yesterday, a short date before that. */
+function logTime(createdAt: number, now: number): { dateTime?: string; label: string } {
+  const date = new Date(createdAt)
+  if (!Number.isFinite(date.valueOf())) return { label: 'saved' }
+  const startOfToday = new Date(now)
+  startOfToday.setHours(0, 0, 0, 0)
+  const dateTime = date.toISOString()
+  if (createdAt >= startOfToday.valueOf()) {
+    return { dateTime, label: date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) }
+  }
+  if (createdAt >= startOfToday.valueOf() - DAY_MS) return { dateTime, label: 'yest' }
+  return { dateTime, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 }
 
 export function HomeView({
@@ -125,6 +143,7 @@ export function HomeView({
   const [submitting, setSubmitting] = useState(false)
   const modelReady = isModelReady(modelStatus)
   const copy = statusCopy(dictation, platformCopy(platform))
+  const now = Date.now()
   const stats = useMemo(() => computeWeeklyStats(entries, Date.now()), [entries])
   const recent = useMemo(
     () => [...entries].sort((first, second) => second.createdAt - first.createdAt).slice(0, 3),
@@ -156,23 +175,28 @@ export function HomeView({
     actionDisabled = true
   }
 
+  const showRecentList = settings.historyEnabled && historyStatus === 'ready' && recent.length > 0
+
   return (
     <div className="management-view home-view">
       <h1 className="tt-visually-hidden">Home</h1>
 
-      <div className="home-stats">
-        <StatTile label="Words" value={stats.words} sparkline={stats.dailyWords} />
-        <StatTile label="Avg WPM" value={stats.avgWpm} />
-        <StatTile label="Minutes dictated" value={stats.minutes} sparkline={stats.dailyMinutes} />
+      <div className="home-meters">
+        <Meter label="Words / wk" value={stats.words} trend={stats.dailyWords} />
+        <Meter label="Avg WPM" value={stats.avgWpm} />
+        <Meter label="Time / wk" value={stats.minutes} unit="min" trend={stats.dailyMinutes} />
       </div>
 
       <Card className="home-dictation-bar" data-active={active} data-tone={copy.tone}>
-        <div className="home-dictation-bar__icon" aria-hidden="true">{dictation.status === 'listening' ? <Square /> : <Mic />}</div>
         <div className="home-dictation-bar__copy" role={copy.tone === 'error' ? 'alert' : 'status'} aria-live={copy.tone === 'error' ? 'assertive' : 'polite'}>
-          <h2>{copy.label}</h2>
+          <h2><span className="home-dictation-bar__icon" aria-hidden="true">{statusGlyph(dictation, copy.tone)}</span>{copy.label}</h2>
           <p>{copy.detail}</p>
         </div>
-        {dictation.status === 'listening' ? <LevelMeter value={dictation.level} label="Microphone activity" /> : null}
+        <BreathLine
+          stage={breathStage(dictation)}
+          value={dictation.status === 'listening' ? dictation.level : 0}
+          label="Microphone activity"
+        />
         <div className="home-dictation-bar__action">
           <div className="home-dictation-bar__buttons">
             <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
@@ -183,15 +207,25 @@ export function HomeView({
       </Card>
 
       <section className="home-recent">
-        <h2 className="home-recent__label">Recent</h2>
+        <div className="home-recent__header">
+          <h2 className="home-recent__label tt-instrument">Recent</h2>
+          {showRecentList
+            ? <Button variant="ghost" onClick={onOpenHistory}>View all history <ArrowRight size={14} /></Button>
+            : null}
+        </div>
         {!settings.historyEnabled ? <p>History is off. New transcripts are not saved.</p>
           : historyStatus === 'loading' ? <p>Loading recent transcripts...</p>
             : historyStatus === 'degraded' ? <p>Recent transcripts are unavailable. Dictation is still ready.</p>
               : recent.length === 0 ? <p>No saved transcripts yet.</p>
-                : <ul>{recent.map((entry) => <li key={entry.id}>{entry.text}</li>)}</ul>}
-        {settings.historyEnabled && historyStatus === 'ready' && recent.length > 0
-          ? <Button variant="ghost" onClick={onOpenHistory}>View all history <ArrowRight size={16} /></Button>
-          : null}
+                : <ul>{recent.map((entry) => {
+                  const stamp = logTime(entry.createdAt, now)
+                  return (
+                    <li key={entry.id}>
+                      <time {...(stamp.dateTime === undefined ? {} : { dateTime: stamp.dateTime })}>{stamp.label}</time>
+                      <p>{entry.text}</p>
+                    </li>
+                  )
+                })}</ul>}
       </section>
     </div>
   )

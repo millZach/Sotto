@@ -38,6 +38,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@protobufjs/utf8', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
   Object.freeze({ name: 'onnx-community/moonshine-base-ONNX', version: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', attribution: 'Useful Sensors (Moonshine), converted by the Hugging Face ONNX community' }),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
+  Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
 ])
 
 export const EMBEDDED_BROWSER_DEPENDENCIES = Object.freeze([
@@ -141,6 +142,7 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## ONNX Runtime MIT license',
     'Copyright (c) Microsoft Corporation. All rights reserved.',
     '## Manrope SIL Open Font License 1.1',
+    '## Spline Sans Mono SIL Open Font License 1.1',
     '## Moonshine MIT license',
     'Copyright (c) 2024 Useful Sensors',
     'onnx-community/moonshine-base-ONNX',

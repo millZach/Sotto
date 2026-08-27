@@ -16,10 +16,20 @@ export interface HistoryViewProps {
   readonly onClear: () => Promise<boolean>
 }
 
-function timestamp(createdAt: number): { dateTime?: string; label: string } {
+/**
+ * The log reads as an instrument, so the stamp is split into a date line and a
+ * 24-hour clock line rather than one long locale string. `full` stays on the
+ * element as its accessible name, so assistive tech still hears the whole date.
+ */
+function timestamp(createdAt: number): { dateTime?: string; date: string; time: string; full: string } {
   const date = new Date(createdAt)
-  if (!Number.isFinite(date.valueOf())) return { label: 'Saved transcript' }
-  return { dateTime: date.toISOString(), label: date.toLocaleString() }
+  if (!Number.isFinite(date.valueOf())) return { date: 'Saved', time: 'transcript', full: 'Saved transcript' }
+  return {
+    dateTime: date.toISOString(),
+    date: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    time: date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }),
+    full: date.toLocaleString(),
+  }
 }
 
 export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClear }: HistoryViewProps): ReactNode {
@@ -55,7 +65,15 @@ export function HistoryView({ entries, enabled, status, onCopy, onDelete, onClea
         <li key={entry.id}>
           <Card as="article" className="history-entry">
             <div className="history-entry__meta">
-              {(() => { const value = timestamp(entry.createdAt); return <time {...(value.dateTime === undefined ? {} : { dateTime: value.dateTime })}>{value.label}</time> })()}
+              {(() => {
+                const value = timestamp(entry.createdAt)
+                return (
+                  <time aria-label={value.full} {...(value.dateTime === undefined ? {} : { dateTime: value.dateTime })}>
+                    <span>{value.date}</span>
+                    <span>{value.time}</span>
+                  </time>
+                )
+              })()}
               <span>{entry.language.slice(0, 12).toUpperCase()} / {entry.modelPreset}</span>
             </div>
             <p>{entry.text}</p>

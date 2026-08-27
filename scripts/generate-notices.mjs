@@ -160,6 +160,13 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.`
 
+// Both bundled faces ship under the same OFL 1.1 body; only the copyright line
+// differs, so it is swapped rather than duplicating 90 lines of licence text.
+const splineSansMonoOfl = manropeOfl.replace(
+  'Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)',
+  'Copyright 2022 The Spline Sans Mono Project Authors (https://github.com/SorkinType/SplineSansMono)',
+)
+
 const licenseSections = [
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
   ['React, React DOM, and Scheduler MIT license', await read('node_modules/react/LICENSE')],
@@ -173,6 +180,7 @@ const licenseSections = [
   ['Apache License 2.0', await read('node_modules/@huggingface/transformers/LICENSE')],
   ['Moonshine MIT license', moonshineMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
+  ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],
 ]
 
 const table = NOTICE_COMPONENTS.map((component) =>

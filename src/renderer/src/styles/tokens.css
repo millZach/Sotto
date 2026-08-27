@@ -1,77 +1,102 @@
+/* Sotto management-window palette — "Low lume".
+
+   Dark is the reference theme: a warm near-black studio where teal is the only
+   live colour and amber is reserved for success. Light is the same studio with
+   the lights on — warm paper, ink text, the deep teal as the accent.
+
+   The floating widget does NOT read this file. It keeps its own frozen copy in
+   `widget/widget-tokens.css`.
+
+   Text tones are held at WCAG AA against every surface they are used on. The
+   mockup's faintest grey (#55524d) reads at 2.4:1 and is therefore used for
+   hairlines and resting meter bars only, never for text. */
+
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
-  --tt-canvas: #f6f4f0;
-  --tt-surface: #fcfaf7;
-  --tt-surface-elevated: #fffefc;
-  --tt-surface-sunken: #f0ede8;
-  --tt-text: #262220;
-  --tt-text-muted: #6e6660;
+  --tt-canvas: #f4f1ec;
+  --tt-surface: #fbf9f5;
+  --tt-surface-elevated: #fefdfa;
+  --tt-surface-sunken: #ebe7e0;
+  --tt-text: #23201d;
+  --tt-text-muted: #5f5a53;
   --tt-border: #8a8177;
-  --tt-border-faint: #ddd7cf;
-  --tt-primary: #b25605;
-  --tt-primary-hover: #9a4a04;
+  --tt-border-faint: #ded8cf;
+  /* Two hex steps below the widget's #2c7a72 so teal *text* clears AA on the
+     sunken rail as well as on paper. --tt-activity keeps the exact widget
+     teal, because it only ever paints graphics. */
+  --tt-primary: #2a736c;
+  --tt-primary-hover: #22645d;
   --tt-primary-contrast: #ffffff;
   --tt-activity: #2c7a72;
-  --tt-success: #45702d;
-  --tt-warning: #9a6a00;
-  --tt-error: #be3e45;
+  --tt-success: #8c5810;
+  --tt-warning: #7a5a2a;
+  --tt-error: #b03a34;
   --tt-error-contrast: #ffffff;
-  --tt-focus-ring: #9a4a04;
-  --tt-overlay: rgb(38 34 32 / 56%);
-  --tt-shadow-sm: 0 1px 2px rgb(46 40 35 / 5%);
+  --tt-focus-ring: #1f6961;
+  --tt-hairline: #d8d2c8;
+  --tt-overlay: rgb(35 32 29 / 46%);
+  --tt-shadow-sm: 0 1px 2px rgb(46 40 35 / 6%);
   --tt-shadow-lg: 0 18px 44px rgb(46 40 35 / 14%);
   --tt-radius-sm: 10px;
   --tt-radius-md: 12px;
-  --tt-radius-lg: 14px;
+  --tt-radius-lg: 16px;
+  --tt-font-ui:
+    Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  --tt-font-mono:
+    'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --tt-canvas: #1b1917;
-    --tt-surface: #262321;
-    --tt-surface-elevated: #2c2926;
-    --tt-surface-sunken: #201d1b;
-    --tt-text: #f4f1ed;
-    --tt-text-muted: #aba29a;
-    --tt-border: #7d756e;
-    --tt-border-faint: #37332f;
-    --tt-primary: #f0a03c;
-    --tt-primary-hover: #f3af58;
-    --tt-primary-contrast: #2a1b04;
+    --tt-canvas: #141312;
+    --tt-surface: #1c1b19;
+    --tt-surface-elevated: #211f1d;
+    --tt-surface-sunken: #111010;
+    --tt-text: #ece9e4;
+    --tt-text-muted: #8d8880;
+    --tt-border: #7e7972;
+    --tt-border-faint: #292724;
+    --tt-primary: #5fbdb2;
+    --tt-primary-hover: #7ccfc5;
+    --tt-primary-contrast: #08201e;
     --tt-activity: #5fbdb2;
-    --tt-success: #a3c585;
-    --tt-warning: #e5b45c;
-    --tt-error: #f58e86;
+    --tt-success: #f0a03c;
+    --tt-warning: #e0b070;
+    --tt-error: #f0857c;
     --tt-error-contrast: #2a1112;
-    --tt-focus-ring: #f3af58;
-    --tt-overlay: rgb(0 0 0 / 66%);
-    --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 26%);
-    --tt-shadow-lg: 0 18px 44px rgb(0 0 0 / 34%);
+    --tt-focus-ring: #9fe3d9;
+    --tt-hairline: #232120;
+    --tt-overlay: rgb(6 5 5 / 72%);
+    --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 32%);
+    --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --tt-canvas: #1b1917;
-  --tt-surface: #262321;
-  --tt-surface-elevated: #2c2926;
-  --tt-surface-sunken: #201d1b;
-  --tt-text: #f4f1ed;
-  --tt-text-muted: #aba29a;
-  --tt-border: #7d756e;
-  --tt-border-faint: #37332f;
-  --tt-primary: #f0a03c;
-  --tt-primary-hover: #f3af58;
-  --tt-primary-contrast: #2a1b04;
+  --tt-canvas: #141312;
+  --tt-surface: #1c1b19;
+  --tt-surface-elevated: #211f1d;
+  --tt-surface-sunken: #111010;
+  --tt-text: #ece9e4;
+  --tt-text-muted: #8d8880;
+  --tt-border: #7e7972;
+  --tt-border-faint: #292724;
+  --tt-primary: #5fbdb2;
+  --tt-primary-hover: #7ccfc5;
+  --tt-primary-contrast: #08201e;
   --tt-activity: #5fbdb2;
-  --tt-success: #a3c585;
-  --tt-warning: #e5b45c;
-  --tt-error: #f58e86;
+  --tt-success: #f0a03c;
+  --tt-warning: #e0b070;
+  --tt-error: #f0857c;
   --tt-error-contrast: #2a1112;
-  --tt-focus-ring: #f3af58;
-  --tt-overlay: rgb(0 0 0 / 66%);
-  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 26%);
-  --tt-shadow-lg: 0 18px 44px rgb(0 0 0 / 34%);
+  --tt-focus-ring: #9fe3d9;
+  --tt-hairline: #232120;
+  --tt-overlay: rgb(6 5 5 / 72%);
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 32%);
+  --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
 }

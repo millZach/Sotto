@@ -181,7 +181,7 @@ export function Onboarding({
             <p className="onboarding-lead">Speech stays on this computer during transcription. Sotto is free, needs no account, and includes no telemetry.</p>
             <div className="onboarding-assurances">
               <p><Check aria-hidden="true" size={18} /> Standard speech model included</p>
-              <p><Check aria-hidden="true" size={18} /> No cloud transcription or API key</p>
+              <p><Check aria-hidden="true" size={18} /> Transcription happens on your hardware, never a third-party cloud</p>
               <p><Check aria-hidden="true" size={18} /> Optional model downloads are always disclosed first</p>
             </div>
           </section>

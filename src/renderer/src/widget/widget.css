@@ -1,4 +1,7 @@
-@import '../styles/tokens.css';
+/* The widget owns a frozen copy of the design tokens (widget-tokens.css) so
+   the management window can be rethemed without moving a single widget pixel.
+   Fonts stay shared: the widget uses Manrope and nothing else. */
+@import './widget-tokens.css';
 @import '../styles/fonts.css';
 
 /* Widget-local presentation tokens. The capsule surface and shadows adapt to
