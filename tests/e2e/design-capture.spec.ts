@@ -514,7 +514,17 @@ async function captureWidget(
       if (bounds.left < 0 || bounds.top < 0 || bounds.right > ${footprint.width} || bounds.bottom > ${footprint.height}) problems.push(element.className || element.tagName)
     }
     const detail = document.querySelector('.widget-copy')
-    if (detail !== null && (detail.scrollWidth > detail.clientWidth || detail.scrollHeight > detail.clientHeight)) problems.push('widget-detail-clipped:' + detail.textContent + ':' + detail.scrollWidth + 'x' + detail.scrollHeight + '>' + detail.clientWidth + 'x' + detail.clientHeight)
+    if (detail !== null) {
+      // Horizontal overrun is fine when the element declares ellipsis — that
+      // truncation is the widget's designed behaviour for long status lines
+      // ("Waiting for microphone" ellipsizes by intent). Vertical overrun or
+      // a plain hidden-overflow cut is still a real clip.
+      const style = getComputedStyle(detail)
+      const designedTruncation = style.textOverflow === 'ellipsis' && style.whiteSpace === 'nowrap'
+      const clippedX = detail.scrollWidth > detail.clientWidth && !designedTruncation
+      const clippedY = detail.scrollHeight > detail.clientHeight
+      if (clippedX || clippedY) problems.push('widget-detail-clipped:' + detail.textContent + ':' + detail.scrollWidth + 'x' + detail.scrollHeight + '>' + detail.clientWidth + 'x' + detail.clientHeight)
+    }
     return problems
   })()`)
   expect(widgetProblems, `${fileName} has clipped widget content`).toEqual([])
