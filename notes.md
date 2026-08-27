@@ -1,5 +1,13 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-27 — The "clipped widget text" failing our visual gate was the widget working as designed
+design:capture had been red on clean checkouts and everyone assumed stale
+baselines. The actual failure: the harness flags any scrollWidth overrun in the
+widget status line as clipped content, but that element literally declares
+text-overflow: ellipsis — "Waiting for microphone" truncating IS the design.
+One condition in the harness (skip the check when ellipsis+nowrap are declared)
+and the whole 112-tuple capture suite went green again.
+
 ## 2026-08-27 — Retheming the whole app without moving one widget pixel
 Redesigning the management window meant rewriting tokens.css, and the widget read
 the same tokens, so any new teal would have leaked into the one surface that had
