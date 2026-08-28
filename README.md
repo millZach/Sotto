@@ -203,6 +203,4 @@ Builds are ad-hoc signed and not notarized, so anyone installing the disk image 
 
 ## License
 
-Sotto is free to use under the freeware terms in [`LICENSE.md`](LICENSE.md): install and use it at no charge, share it only via unmodified official installers or a link to the official releases, no distribution of modified versions. The source is public for inspection but is not open-source licensed.
-
-Third-party licenses and brand-generation provenance are recorded in `THIRD_PARTY_NOTICES.md`.
+MIT License
