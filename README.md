@@ -23,11 +23,12 @@ Sotto is a private, offline-first dictation app for Windows and Apple silicon Ma
 
 ## Why Sotto
 
-- 🔒 **Private by design** — the Whisper model and inference runtime run entirely on your machine. No cloud transcription, no analytics, no account, no telemetry. Audio is never written to disk.
+- 🔒 **Private by design** — the Moonshine speech model and inference runtime run entirely on your machine. No cloud transcription, no analytics, no account, no telemetry. Audio is never written to disk.
 - ⚡ **One shortcut, anywhere** — a global hotkey works in any app. Sotto always copies the transcript to the clipboard and can paste it at your cursor automatically.
 - 🧠 **Three model presets** — the Balanced model ships in the installer; Fast and Accurate presets are optional, consent-gated downloads.
 - 🖥️ **GPU-accelerated when possible** — WebGPU inference with an automatic CPU/WASM fallback.
 - ✨ **Optional AI polish** — off by default: bring your own OpenRouter key for punctuation and self-correction cleanup of the finished text (never the audio), with a silent fallback to the raw local transcript.
+- 🛰️ **Optional self-hosted speed** — point Sotto at a transcription server on your own hardware for near-instant results, with a silent per-segment fallback to on-device transcription.
 - 💸 **Free** — no subscription, no per-use fee.
 
 Sotto was formerly named TalkType; version 3.0.0 renamed the app and its visual identity. On first launch, Sotto automatically migrates settings, history, and downloaded models from an existing TalkType installation.
@@ -52,9 +53,11 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
-The included Balanced Whisper model and inference runtime run on this computer. Sotto has no cloud transcription, analytics, crash upload, update telemetry, account, subscription, or per-use fee. Audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
+The included Balanced Moonshine model and inference runtime run on this computer. Sotto has no cloud transcription, analytics, crash upload, update telemetry, account, subscription, or per-use fee. Audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
 
 Optional Fast and Accurate models are not downloaded until you review their source, approximate size, license, and network-metadata disclosure and explicitly consent. Those downloads contact Hugging Face, so that provider receives ordinary request metadata such as IP address and request time; audio and transcripts are not sent.
+
+Optional remote transcription is off by default and points at a server you choose — typically your own machine on your own network. When enabled, the audio you dictate is uploaded to that server, and any segment it does not answer quickly is transcribed on-device instead. Nothing leaves this computer while it is off.
 
 Optional AI formatting is the one feature that sends transcript text off this computer, and it is off by default. When you enable it and supply your own OpenRouter API key, the finished transcript (never audio) is sent to OpenRouter for punctuation and self-correction cleanup. If the network is slow or offline, Sotto silently falls back to the raw local transcript.
 

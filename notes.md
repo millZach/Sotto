@@ -1,5 +1,14 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-28 — The release gate tripped on a chunk name, not a real bug
+Cutting 3.4.0, the packaging verifier failed with "unsafe root-relative worklet
+URL" — scary, because that check exists to catch a worklet path that breaks in
+packaged builds. The worklet URL was fine; the redesign had shuffled Rollup's
+module graph so audioRecorder landed in accelerator-*.js instead of main-*.js,
+and the verifier only scanned main-*.js chunks. One regex widening and a full
+rebuild (the provenance check rightly refused the stale installer) and the gate
+went green. Checks pinned to bundler chunk names are time bombs.
+
 ## 2026-08-27 — The "clipped widget text" failing our visual gate was the widget working as designed
 design:capture had been red on clean checkouts and everyone assumed stale
 baselines. The actual failure: the harness flags any scrollWidth overrun in the

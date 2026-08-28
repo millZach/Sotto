@@ -268,8 +268,11 @@ export async function verifyPackagedResources(input, options = {}) {
 
   const worklet = readAsarText(asarPath, 'out/renderer/audio-capture-worklet.js')
   if (!worklet.includes('sotto-audio-capture')) fail('packaged audio worklet is invalid')
+  // The chunk holding audioRecorder moves as the module graph changes (it lives
+  // in accelerator-*.js as of 3.4.0), so scan every renderer chunk rather than
+  // pinning the check to main-*.js.
   const rendererScripts = entries
-    .filter((entry) => /^out\/renderer\/assets\/main-[^/]+\.js$/.test(entry))
+    .filter((entry) => /^out\/renderer\/assets\/[^/]+\.js$/.test(entry))
     .map((entry) => readAsarText(asarPath, entry))
     .join('\n')
   if (!rendererScripts.includes('audio-capture-worklet.js') || rendererScripts.includes('addModule("/audio-capture-worklet.js")')) {
