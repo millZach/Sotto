@@ -960,6 +960,85 @@ h1[tabindex='-1']:focus {
   margin: 0 auto;
 }
 
+/* ---- update prompt ---- */
+
+/* A strip of studio signage above whatever view is open: one hairline, one
+   accent rule, one action. Never a modal, never on the floating widget. */
+.update-banner {
+  display: grid;
+  width: min(1120px, 100%);
+  align-items: center;
+  margin: 0 auto 26px;
+  border: 1px solid var(--tt-hairline);
+  border-left: 2px solid var(--tt-activity);
+  border-radius: var(--tt-radius-sm);
+  background: color-mix(in srgb, var(--tt-activity) 6%, var(--tt-surface));
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 13px 14px 13px 16px;
+}
+
+/* A finished download is the one moment here that actually succeeded. */
+.update-banner[data-tone='ready'] {
+  border-left-color: var(--tt-success);
+  background: color-mix(in srgb, var(--tt-success) 7%, var(--tt-surface));
+}
+
+.update-banner__mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tt-activity);
+}
+
+.update-banner[data-tone='ready'] .update-banner__mark {
+  background: var(--tt-success);
+}
+
+.update-banner__body {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.update-banner__title,
+.update-banner__detail {
+  margin: 0;
+}
+
+.update-banner__title {
+  color: var(--tt-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.update-banner__detail {
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+}
+
+.update-banner__progress {
+  height: 3px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--tt-surface-sunken);
+  overflow: hidden;
+}
+
+.update-banner__progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--tt-activity);
+  transition: width 220ms ease;
+}
+
+.update-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ---- home ---- */
 
 .home-view {
@@ -1599,6 +1678,33 @@ h1[tabindex='-1']:focus {
   color: var(--tt-warning);
 }
 
+.settings-update-row {
+  display: grid;
+  align-items: center;
+  margin-bottom: 22px;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* The running version is a serial number, so it is set as one. */
+.settings-update-version {
+  margin: 0;
+  color: var(--tt-text);
+  font-family: var(--tt-font-mono);
+  font-size: 12.5px;
+}
+
+.settings-update-status {
+  margin: 5px 0 0;
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+}
+
+.settings-update-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .settings-danger-zone {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1875,6 +1981,7 @@ h1[tabindex='-1']:focus {
 
   .settings-input-action,
   .settings-danger-zone,
+  .settings-update-row,
   .help-grid {
     grid-template-columns: 1fr;
   }
@@ -1882,6 +1989,17 @@ h1[tabindex='-1']:focus {
   .settings-input-action .tt-button,
   .settings-danger-zone .tt-button {
     justify-self: start;
+  }
+
+  .update-banner {
+    align-items: start;
+    gap: 10px 12px;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  /* The action row drops beneath the text instead of squeezing it. */
+  .update-banner__actions {
+    grid-column: 2;
   }
 
   .history-entry__actions {

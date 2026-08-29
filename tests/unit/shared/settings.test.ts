@@ -41,6 +41,7 @@ const customSettings = {
   streamingAsr: false,
   remoteAsr: true,
   remoteAsrUrl: 'http://forge.local:5092',
+  autoUpdateCheck: false,
 } satisfies AppSettings
 
 describe('settings', () => {
@@ -77,6 +78,7 @@ describe('settings', () => {
       streamingAsr: true,
       remoteAsr: false,
       remoteAsrUrl: '',
+      autoUpdateCheck: true,
     })
   })
 
@@ -89,6 +91,20 @@ describe('settings', () => {
     expect(parsed.remoteAsr).toBe(false)
     expect(parsed.remoteAsrUrl).toBe('')
     expect(parsed.language).toBe('fr')
+  })
+
+  it('leaves the update check on for installs saved before it existed', () => {
+    const legacy = { ...customSettings } as Record<string, unknown>
+    delete legacy.autoUpdateCheck
+
+    const parsed = parseSettings(legacy)
+    expect(parsed.autoUpdateCheck).toBe(true)
+    expect(parsed.remoteAsrUrl).toBe('http://forge.local:5092')
+  })
+
+  it('keeps an explicit update-check choice and recovers an unusable one', () => {
+    expect(parseSettings({ autoUpdateCheck: false }).autoUpdateCheck).toBe(false)
+    expect(parseSettings({ autoUpdateCheck: 'sometimes' }).autoUpdateCheck).toBe(true)
   })
 
   it('falls back to the defaults for an unusable remote server address', () => {

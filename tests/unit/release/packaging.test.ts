@@ -35,6 +35,7 @@ interface BuilderConfig {
     extraResources: BuilderResource[]
   }
   dmg: { artifactName: string; title: string }
+  publish: { provider: string; owner: string; repo: string }[]
 }
 
 const packageManifest = JSON.parse(read('package.json')) as PackageManifest
@@ -91,6 +92,31 @@ describe('release contract', () => {
     expect(verifier).toContain('out/main/external-dependencies.json')
     expect(verifier).toContain('out/preload/external-dependencies.json')
     expect(verifier).not.toContain('.matchAll(')
+  })
+
+  it('embeds the GitHub update feed while refusing to publish from any package script', () => {
+    expect(builderConfig.publish).toEqual([
+      { provider: 'github', owner: 'millZach', repo: 'Sotto' },
+    ])
+    // The feed exists so app-update.yml lands in the packaged resources. Uploading a
+    // release is a deliberate manual act, never a side effect of building one.
+    for (const script of ['package:dir', 'package:win', 'package:dir:mac', 'package:mac']) {
+      expect(packageManifest.scripts[script]).toContain('--publish never')
+    }
+  })
+
+  it('compiles the updater into main rather than shipping it as a runtime dependency', () => {
+    expect(packageManifest.dependencies['electron-updater']).toBeUndefined()
+    expect(packageManifest.devDependencies['electron-updater']).toBeTypeOf('string')
+    expect(read('electron.vite.config.ts')).toContain(
+      "externalizeDepsPlugin({ exclude: ['electron-updater'] })",
+    )
+    // Whatever the compile pulls in is redistributed inside app.asar, so the notice
+    // inventory has to see it.
+    expect(read('electron.vite.config.ts')).toContain('bundledDependencyInventory()')
+    expect(read('scripts/verify-notices.mjs')).toContain(
+      "join(root, 'out', 'main', 'bundled-dependencies.json')",
+    )
   })
 
   it('keeps the shared release scripts free of Windows-only layout assumptions', () => {

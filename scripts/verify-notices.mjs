@@ -17,6 +17,24 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
+  // Compiled into the main-process bundle, so their code ships inside app.asar
+  // even though npm records them as development dependencies.
+  packageComponent('electron-updater', '6.8.9', 'MIT', 'Loopline Systems and electron-builder contributors'),
+  packageComponent('builder-util-runtime', '9.7.0', 'MIT', 'Loopline Systems and electron-builder contributors'),
+  packageComponent('fs-extra', '10.1.0', 'MIT', 'JP Richardson'),
+  packageComponent('graceful-fs', '4.2.11', 'ISC', 'Isaac Z. Schlueter, Ben Noordhuis, and Contributors'),
+  packageComponent('jsonfile', '6.2.1', 'MIT', 'JP Richardson'),
+  packageComponent('universalify', '2.0.1', 'MIT', 'Ryan Zimmerman'),
+  packageComponent('js-yaml', '4.3.0', 'MIT', 'Vitaly Puzrin'),
+  packageComponent('lazy-val', '1.0.5', 'MIT', 'Vladimir Krivosheev'),
+  packageComponent('lodash.escaperegexp', '4.1.2', 'MIT', 'jQuery Foundation and other contributors'),
+  packageComponent('lodash.isequal', '4.5.0', 'MIT', 'JS Foundation and other contributors'),
+  packageComponent('semver', '7.7.4', 'ISC', 'Isaac Z. Schlueter and Contributors', 'node_modules/electron-updater/node_modules/semver'),
+  packageComponent('sax', '1.6.0', 'BlueOak-1.0.0', 'Isaac Z. Schlueter and sax-js contributors'),
+  packageComponent('debug', '4.4.3', 'MIT', 'TJ Holowaychuk; Josh Junon'),
+  packageComponent('ms', '2.1.3', 'MIT', 'Vercel, Inc.'),
+  packageComponent('supports-color', '7.2.0', 'MIT', 'Sindre Sorhus'),
+  packageComponent('has-flag', '4.0.0', 'MIT', 'Sindre Sorhus'),
   packageComponent('@huggingface/transformers', '4.2.0', 'Apache-2.0', 'Hugging Face'),
   Object.freeze({ name: '@huggingface/jinja', version: '0.5.6', license: 'MIT', attribution: 'Hugging Face' }),
   packageComponent('@huggingface/tokenizers', '0.1.3', 'Apache-2.0', 'Hugging Face'),
@@ -127,6 +145,19 @@ export async function verifyThirdPartyNotices(options = {}) {
     }
   }
 
+  // The main process compiles the updater in, so app.asar redistributes that whole
+  // module tree; the same inventory rule the renderer follows has to cover it.
+  const mainInventoryPath = join(root, 'out', 'main', 'bundled-dependencies.json')
+  if (existsSync(mainInventoryPath)) {
+    const mainInventory = JSON.parse(await readFile(mainInventoryPath, 'utf8'))
+    for (const packageName of mainInventory.packages ?? []) {
+      if (!names.has(packageName)) fail(`main bundle dependency is not inventoried: ${packageName}`)
+    }
+    for (const required of ['builder-util-runtime', 'electron-updater']) {
+      if (!mainInventory.packages?.includes(required)) fail(`main bundle evidence is missing ${required}`)
+    }
+  }
+
   const modelManifest = JSON.parse(await readFile(join(root, 'resources', 'models', 'manifest.lock.json'), 'utf8'))
   if (!notices.includes(modelManifest.revision) || modelManifest.repository !== 'onnx-community/moonshine-base-ONNX') {
     fail('bundled model notice drift')
@@ -141,6 +172,11 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Neither the name of its author, nor the names of its contributors',
     '## ONNX Runtime MIT license',
     'Copyright (c) Microsoft Corporation. All rights reserved.',
+    '## Windows updater dependency MIT licenses',
+    'Copyright (c) 2015 Loopline Systems',
+    '## Windows updater dependency ISC licenses',
+    '## sax Blue Oak Model License 1.0.0',
+    'https://blueoakcouncil.org/license/1.0.0',
     '## Manrope SIL Open Font License 1.1',
     '## Spline Sans Mono SIL Open Font License 1.1',
     '## Moonshine MIT license',

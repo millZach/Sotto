@@ -20,6 +20,7 @@ import type {
   SottoBridge,
   TranscriptPolishAsrContext,
   UnavailableResult,
+  UpdateStatus,
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import type { HistoryEntry } from '../../../shared/history'
@@ -36,6 +37,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
+import { updatePromptKey } from '../features/updates/updatePrompt'
 import { TranscriptionClient } from '../transcription/client'
 import { FallbackTranscriber } from '../transcription/fallbackTranscriber'
 import {
@@ -164,6 +166,10 @@ export interface AppActions {
   installModel(request: ModelInstallRequest): ReturnType<SottoBridge['installModel']>
   removeModel(preset: ModelPreset): ReturnType<SottoBridge['removeModel']>
   checkRemoteAsr(): Promise<RemoteAsrHealth>
+  checkForUpdates(): Promise<UpdateStatus | null>
+  downloadUpdate(): Promise<boolean>
+  installUpdate(): Promise<boolean>
+  dismissUpdate(): void
   showApp(): Promise<void>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
@@ -182,6 +188,10 @@ export interface AppContextValue {
   readonly dictation: DictationState
   readonly navigation: AppNavigation
   readonly recoveryNotices: readonly RecoveryNotice[]
+  /** Null until the main process answers, and on any build without a feed. */
+  readonly update: UpdateStatus | null
+  /** Prompt keys the user waved away for the rest of this session. */
+  readonly dismissedUpdates: readonly string[]
   readonly actions: AppActions
 }
 
@@ -220,6 +230,8 @@ export function AppProvider({
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [dismissedUpdates, setDismissedUpdates] = useState<readonly string[]>([])
 
   // The main process resolved the platform once and carried it across the
   // bridge; an absent bridge is already the unavailable path, so it reads as
@@ -228,6 +240,7 @@ export function AppProvider({
   const copy = platformCopy(platform)
 
   const settingsRef = useRef<AppSettings | null>(null)
+  const updateRef = useRef<UpdateStatus | null>(null)
   const controllerRef = useRef<AppController | null>(null)
   const lifecycleGenerationRef = useRef(0)
   const activeGenerationRef = useRef(0)
@@ -243,6 +256,12 @@ export function AppProvider({
         ? current
         : [...current, notice],
     )
+  }, [])
+
+  const commitUpdate = useCallback((next: UpdateStatus): void => {
+
+    updateRef.current = next
+    setUpdate(next)
   }, [])
 
   const isCurrentGeneration = useCallback(
@@ -336,6 +355,7 @@ export function AppProvider({
     let unsubscribeModelStatus: (() => void) | null = null
     let unsubscribeSettings: (() => void) | null = null
     let unsubscribeRecoveryNotices: (() => void) | null = null
+    let unsubscribeUpdateStatus: (() => void) | null = null
     setStatus('loading')
     setHistoryStatus('loading')
     setFailure(null)
@@ -346,6 +366,9 @@ export function AppProvider({
     modelStatusVersionRef.current = {}
     setDictation(initialDictationState)
     setRecoveryNotices([])
+    setUpdate(null)
+    updateRef.current = null
+    setDismissedUpdates([])
 
     if (bridge === undefined) {
       setStatus('unavailable')
@@ -368,6 +391,19 @@ export function AppProvider({
       (notices) => {
         if (!isCurrentGeneration(generation)) return
         for (const notice of notices) commitRecoveryNotice(notice)
+      },
+      () => undefined,
+    )
+    try {
+      unsubscribeUpdateStatus = bridge.onUpdateStatus((updateStatus) => {
+        if (isCurrentGeneration(generation)) commitUpdate(updateStatus)
+      })
+    } catch {
+      // Updating is optional everywhere; a feed that cannot be watched stays quiet.
+    }
+    void bridge.getUpdateStatus().then(
+      (result) => {
+        if (isCurrentGeneration(generation) && 'currentVersion' in result) commitUpdate(result)
       },
       () => undefined,
     )
@@ -512,11 +548,13 @@ export function AppProvider({
       unsubscribeModelStatus = null
       try { unsubscribeRecoveryNotices?.() } catch { /* listener is already unreachable */ }
       unsubscribeRecoveryNotices = null
+      try { unsubscribeUpdateStatus?.() } catch { /* listener is already unreachable */ }
+      unsubscribeUpdateStatus = null
       if (controllerRef.current === localController) controllerRef.current = null
       try { localController?.dispose() } catch { /* resources are independently guarded */ }
       localController = null
     }
-  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, createController, isCurrentGeneration])
+  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration])
 
   const actions = useMemo<AppActions>(() => ({
     start: () => invokeController(controllerRef.current, (controller) => controller.start()),
@@ -640,6 +678,33 @@ export function AppProvider({
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
       try { return await bridge.checkRemoteAsr() } catch { return { ok: false, reason: 'network' } }
     },
+    // Nothing about updating may raise a failure banner: an update that cannot
+    // be reached is simply an update the user hears nothing about.
+    checkForUpdates: async () => {
+      if (bridge === undefined) return null
+      const generation = activeGenerationRef.current
+      try {
+        const result = await bridge.checkForUpdates()
+        if (!('currentVersion' in result)) return null
+        if (isCurrentGeneration(generation)) commitUpdate(result)
+        return result
+      } catch {
+        return null
+      }
+    },
+    downloadUpdate: async () => {
+      if (bridge === undefined) return false
+      try { return (await bridge.downloadUpdate()).ok } catch { return false }
+    },
+    installUpdate: async () => {
+      if (bridge === undefined) return false
+      try { return (await bridge.installUpdate()).ok } catch { return false }
+    },
+    dismissUpdate: () => {
+      const key = updatePromptKey(updateRef.current)
+      if (key === null) return
+      setDismissedUpdates((current) => (current.includes(key) ? current : [...current, key]))
+    },
     showApp: async () => {
       const generation = activeGenerationRef.current
       try { await bridge?.showApp() } catch {
@@ -664,7 +729,7 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
-  }), [bridge, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
+  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
 
   const value = useMemo<AppContextValue>(() => ({
     platform,
@@ -678,8 +743,10 @@ export function AppProvider({
     dictation,
     navigation,
     recoveryNotices,
+    update,
+    dismissedUpdates,
     actions,
-  }), [actions, copy, dictation, failure, history, historyStatus, modelStatuses, navigation, platform, recoveryNotices, settings, status])
+  }), [actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, modelStatuses, navigation, platform, recoveryNotices, settings, status, update])
 
   return createElement(AppContext.Provider, { value }, children)
 }

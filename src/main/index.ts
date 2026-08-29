@@ -53,6 +53,8 @@ import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { RemoteAsrService } from './asr/remoteAsrService'
+import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
+import { UpdateService } from './updates/updateService'
 import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
@@ -89,6 +91,7 @@ import {
   MODEL_STATUS,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
+  UPDATE_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
@@ -548,6 +551,20 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
+  // GitHub Releases is only a real feed for the packaged Windows build: the
+  // macOS disk image ships no update metadata, and a development or E2E run
+  // must never reach the network. Everywhere else the service resolves to the
+  // 'unsupported' phase without constructing electron-updater at all.
+  const updatesSupported = app.isPackaged && e2eConfiguration === null && platform === 'win32'
+  const updates = new UpdateService({
+    currentVersion: app.getVersion(),
+    getSettings: () => settings.get(),
+    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
+    onStatusChanged: (status) => {
+      windows.sendToMain(UPDATE_STATUS, status)
+    },
+  })
+
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
   const dispatchDictation = (command: DictationCommand): void => {
@@ -745,6 +762,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           cancel: (requestId) => remoteAsr.cancel(requestId),
           check: () => remoteAsr.check(),
         },
+        updates: {
+          status: () => updates.status(),
+          check: () => updates.check('manual'),
+          download: () => updates.download(),
+          install: () => updates.install(),
+        },
         widget: {
           setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),
@@ -761,10 +784,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           if (!delivered) logOperational('native-main-send-failed')
         })
       })
+      // Started here rather than at construction so the first status can reach
+      // a renderer that is already able to receive it.
+      updates.start()
       const cleanupNativeIpc = (): void => {
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
         remoteAsr.dispose()
+        updates.dispose()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc

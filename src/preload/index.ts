@@ -33,6 +33,11 @@ import {
   STARTUP_GET,
   TRANSCRIPT_POLISH,
   STARTUP_SET,
+  UPDATE_CHECK,
+  UPDATE_DOWNLOAD,
+  UPDATE_GET_STATUS,
+  UPDATE_INSTALL,
+  UPDATE_STATUS,
   WIDGET_DRAG,
   WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
@@ -48,6 +53,7 @@ import {
   widgetDragSchema,
   widgetPresentationPayloadSchema,
   transcriptPolishResultSchema,
+  updateStatusSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
   type SottoBridge,
@@ -97,6 +103,7 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const modelResponseSchema = z.union([modelStatusSchema, unavailableSchema])
+const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const modelDisclosureResponseSchema = z.union([modelDisclosureCatalogSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean() }).strict()
@@ -196,6 +203,12 @@ export function createSottoBridge(
     recoveryNoticeSchema,
     2,
   )
+  const onUpdateStatus = createBufferedSubscription(
+    renderer,
+    UPDATE_STATUS,
+    updateStatusSchema,
+    1,
+  )
   const bridge: SottoBridge = {
     platform,
 
@@ -245,6 +258,12 @@ export function createSottoBridge(
     cancelRemoteTranscription: (requestId) =>
       invokeParsed(renderer, REMOTE_ASR_CANCEL, commandResultSchema, requestId),
     checkRemoteAsr: () => invokeParsed(renderer, REMOTE_ASR_CHECK, remoteAsrHealthSchema),
+
+    getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
+    checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
+    downloadUpdate: () => invokeParsed(renderer, UPDATE_DOWNLOAD, commandResultSchema),
+    installUpdate: () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
+    onUpdateStatus,
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),

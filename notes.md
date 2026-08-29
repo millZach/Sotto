@@ -1,5 +1,18 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-29 — Adding an auto-updater quietly added 16 packages to app.asar
+Wiring electron-updater in was easy; the invariant it broke was not. Production
+`dependencies` must stay exactly `['zod']`, so the updater gets compiled into
+the main chunk as a devDependency — which means its whole CommonJS tree comes
+along. One gate noticed: the external-dependency allowlist went from 11 to 25
+entries (rollup leaves bare `require('http')` specifiers unprefixed, so the
+list now carries both spellings). The notices gate did not, because it only
+ever scanned the renderer bundle — so 16 packages were about to ship inside
+app.asar unattributed. Added a bundled-dependency inventory to the main build
+and those 16 components, including a Blue Oak license I had never met, to
+THIRD_PARTY_NOTICES.md. Compiling a dependency in does not compile its license
+away.
+
 ## 2026-08-29 — The design gate failed on pixels no human can see
 Adding one <option> to a settings dropdown tripped the visual gate — on an
 onboarding capture the change cannot touch. The diff: 1157 changed pixels, max

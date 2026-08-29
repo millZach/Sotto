@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, CircleAlert, Gauge, HardDrive, Keyboard, MonitorCog, Sparkles, Trash2 } from 'lucide-react'
+import { Check, CircleAlert, Download, Gauge, HardDrive, Keyboard, MonitorCog, Sparkles, Trash2 } from 'lucide-react'
 
 import {
   REMOTE_ASR_PRIVACY_NOTICE,
+  UPDATE_CHECK_PRIVACY_NOTICE,
   type CommandResult,
   type HotkeyChangeResult,
   type ModelDisclosure,
@@ -12,6 +13,7 @@ import {
   type RemoteAsrHealth,
   type StartupState,
   type UnavailableResult,
+  type UpdateStatus,
 } from '../../../../shared/contracts'
 import { formatAccelerator, parseAccelerator } from '../../../../shared/accelerator'
 import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
@@ -46,6 +48,8 @@ export interface SettingsViewProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
   readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
+  /** Null until the main process answers; the section still renders. */
+  readonly updateStatus: UpdateStatus | null
   readonly mediaDevices?: MediaDevicesAdapter | undefined
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
@@ -57,6 +61,9 @@ export interface SettingsViewProps {
   readonly onInstallModel: (request: ModelInstallRequest) => Promise<CommandResult>
   readonly onRemoveModel: (preset: ModelPreset) => Promise<CommandResult>
   readonly onCheckRemoteAsr: () => Promise<RemoteAsrHealth>
+  readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
+  readonly onDownloadUpdate: () => Promise<boolean>
+  readonly onInstallUpdate: () => Promise<boolean>
 }
 
 const knownLanguages = [
@@ -100,6 +107,20 @@ function remoteAsrHealthCopy(health: RemoteAsrHealth): string {
   }
 }
 
+function updateStatusCopy(status: UpdateStatus | null): string {
+  if (status === null) return 'Update status is unavailable.'
+  switch (status.phase.phase) {
+    case 'checking': return 'Asking GitHub...'
+    case 'up-to-date': return 'You are on the newest release.'
+    case 'available': return `Sotto ${status.phase.version} is available.`
+    case 'downloading': return `Downloading ${status.phase.version} - ${status.phase.percent}%`
+    case 'downloaded': return `Sotto ${status.phase.version} is downloaded. It installs when you restart.`
+    case 'failed': return 'Sotto could not reach GitHub. It will try again later.'
+    case 'unsupported': return 'Update checks run only in the installed Windows app.'
+    default: return 'Not checked yet.'
+  }
+}
+
 function parseBoundedInteger(value: string, minimum: number, maximum: number): number | null {
   if (!/^\d+$/u.test(value.trim())) return null
   const parsed = Number(value)
@@ -128,6 +149,7 @@ export function SettingsView({
   settings,
   platform,
   modelStatuses,
+  updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   onUpdateSettings,
   onReplaceHotkey,
@@ -139,6 +161,9 @@ export function SettingsView({
   onInstallModel,
   onRemoveModel,
   onCheckRemoteAsr,
+  onCheckForUpdates,
+  onDownloadUpdate,
+  onInstallUpdate,
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -153,6 +178,7 @@ export function SettingsView({
   const [remoteAsrUrlDraft, setRemoteAsrUrlDraft] = useState(settings.remoteAsrUrl)
   const [remoteAsrStatus, setRemoteAsrStatus] = useState<{ text: string; error: boolean } | null>(null)
   const [remoteAsrTesting, setRemoteAsrTesting] = useState(false)
+  const [updateBusy, setUpdateBusy] = useState(false)
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
   const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
@@ -381,6 +407,17 @@ export function SettingsView({
     }
   }
 
+  // One busy flag for all three: they are the same button row, and only one of
+  // check, download, or restart can sensibly be in flight at a time.
+  const runUpdateAction = async (operation: () => Promise<unknown>): Promise<void> => {
+    setUpdateBusy(true)
+    try {
+      await operation().catch(() => undefined)
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
   const optionalDisclosure = useCallback((preset: Exclude<ModelPreset, 'instant'>): ModelDisclosure | undefined => (
     disclosures?.models.find((model) => model.preset === preset && !model.bundled)
   ), [disclosures])
@@ -544,6 +581,24 @@ export function SettingsView({
           <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
           <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => { const value = event.currentTarget.value; pasteDelayDraftRef.current = value; pasteDelayEditVersionRef.current += 1; setPasteDelayDraft(value) }} /></Field><Button variant="secondary" onClick={() => void savePasteDelay()}>Save paste delay</Button></div>
           <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field><Button variant="secondary" onClick={() => void saveSuccessDuration()}>Save success duration</Button></div>
+        </div>
+      </Card>
+
+      <Card className="settings-section">
+        <div className="settings-section__heading"><Download aria-hidden="true" /><div><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div></div>
+        <div className="settings-update-row">
+          <div>
+            <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `Sotto ${updateStatus.currentVersion}`}</p>
+            <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
+          </div>
+          <div className="settings-update-actions">
+            {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
+            {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart to update</Button> : null}
+            <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
+          </div>
+        </div>
+        <div className="settings-fields-grid">
+          <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
         </div>
       </Card>
 

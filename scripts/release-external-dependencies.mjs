@@ -1,11 +1,22 @@
 import { builtinModules } from 'node:module'
 
+// The unprefixed builtins come from electron-updater and its CommonJS
+// dependencies, which are compiled into the main chunk rather than shipped as
+// runtime modules. Rollup keeps their `require('http')`-style specifiers
+// verbatim, so the reviewed list carries both spellings.
 const reviewedInventories = Object.freeze({
   main: Object.freeze({
     version: 1,
     scope: 'main',
     imports: Object.freeze([
+      'assert',
+      'child_process',
+      'constants',
+      'crypto',
       'electron',
+      'events',
+      'fs',
+      'http',
       'node:child_process',
       'node:crypto',
       'node:fs',
@@ -15,6 +26,13 @@ const reviewedInventories = Object.freeze({
       'node:stream',
       'node:stream/promises',
       'node:url',
+      'os',
+      'path',
+      'stream',
+      'tty',
+      'url',
+      'util',
+      'zlib',
       'zod',
     ]),
     dynamicImports: Object.freeze([]),
@@ -69,6 +87,9 @@ export function verifyExternalDependencyInventories(
       }
       continue
     }
+    // Unprefixed builtins are still builtins; only the reviewed allowlist above
+    // decides which of them the bundle is allowed to reach for.
+    if (builtins.has(specifier)) continue
     const root = packageRoot(specifier)
     if (!packaged.has(root)) {
       throw new Error(`external package is missing from app.asar: ${root}`)

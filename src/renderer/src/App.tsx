@@ -9,6 +9,8 @@ import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
 import { HomeView } from './features/home/HomeView'
 import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
+import { UpdateBanner } from './features/updates/UpdateBanner'
+import { updatePromptKey } from './features/updates/updatePrompt'
 import {
   BrowserMicrophoneTest,
   type MicrophoneTestController,
@@ -267,6 +269,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           settings={app.settings}
           platform={app.platform}
           modelStatuses={app.modelStatuses}
+          updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
           onSetStartup={app.actions.setStartup}
@@ -277,6 +280,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onInstallModel={app.actions.installModel}
           onRemoveModel={app.actions.removeModel}
           onCheckRemoteAsr={app.actions.checkRemoteAsr}
+          onCheckForUpdates={app.actions.checkForUpdates}
+          onDownloadUpdate={app.actions.downloadUpdate}
+          onInstallUpdate={app.actions.installUpdate}
         />
         break
       case 'help':
@@ -297,6 +303,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
     }
 
+    const promptKey = updatePromptKey(app.update)
+    const updatePrompt = app.update !== null && promptKey !== null && !app.dismissedUpdates.includes(promptKey)
+      ? <UpdateBanner
+          status={app.update}
+          onDownload={app.actions.downloadUpdate}
+          onInstall={app.actions.installUpdate}
+          onDismiss={app.actions.dismissUpdate}
+        />
+      : null
+
     content = (
       <>
         <AppShell
@@ -305,6 +321,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           statusTone={statusTone}
           onNavigate={app.actions.navigate}
         >
+          {updatePrompt}
           {view}
         </AppShell>
         <ToastRegion messages={app.recoveryNotices.map((notice) => ({

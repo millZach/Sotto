@@ -66,7 +66,14 @@ function bundledDependencyInventory(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin(), externalDependencyInventory('main')],
+    // electron-updater is a devDependency that is compiled into the main chunk,
+    // exactly like zod is compiled into the sandboxed preload: production
+    // `dependencies` must stay `zod` alone so app.asar ships one module tree.
+    plugins: [
+      externalizeDepsPlugin({ exclude: ['electron-updater'] }),
+      externalDependencyInventory('main'),
+      bundledDependencyInventory(),
+    ],
   },
   preload: {
     // Sandboxed preload scripts cannot resolve arbitrary node_modules at runtime.

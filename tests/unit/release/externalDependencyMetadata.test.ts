@@ -5,7 +5,14 @@ import { describe, expect, it } from 'vitest'
 import { verifyExternalDependencyInventories } from '../../../scripts/release-external-dependencies.mjs'
 
 const mainImports = [
+  'assert',
+  'child_process',
+  'constants',
+  'crypto',
   'electron',
+  'events',
+  'fs',
+  'http',
   'node:child_process',
   'node:crypto',
   'node:fs',
@@ -15,6 +22,13 @@ const mainImports = [
   'node:stream',
   'node:stream/promises',
   'node:url',
+  'os',
+  'path',
+  'stream',
+  'tty',
+  'url',
+  'util',
+  'zlib',
   'zod',
 ]
 

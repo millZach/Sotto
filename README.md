@@ -53,7 +53,9 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
-The included Balanced Moonshine model and inference runtime run on this computer. Sotto has no cloud transcription, analytics, crash upload, update telemetry, account, subscription, or per-use fee. Audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
+The included Balanced Moonshine model and inference runtime run on this computer. Sotto has no cloud transcription, analytics, crash upload, account, subscription, or per-use fee. Audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
+
+Automatic update checks are the one thing that is on by default. Roughly every four hours the installed Windows app asks the GitHub releases page for this repository whether a newer version exists, which means GitHub sees an ordinary web request from your computer: IP address, time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, an update is only downloaded after you ask for it, and the whole check can be turned off under Settings → Updates.
 
 Optional Fast and Accurate models are not downloaded until you review their source, approximate size, license, and network-metadata disclosure and explicitly consent. Those downloads contact Hugging Face, so that provider receives ordinary request metadata such as IP address and request time; audio and transcripts are not sent.
 
@@ -98,6 +100,7 @@ Sotto closes to the Windows notification area or the macOS menu bar. Use that me
 - Transcription: Fast, Balanced, or Accurate preset; language; WebGPU or CPU/WASM preference; conservative whitespace formatting
 - Formatting: optional AI cleanup via OpenRouter (off by default, needs your API key) with quality tiers, a personal dictionary for tricky words, and streaming transcription so long dictations finish almost immediately after you stop
 - Output: mandatory clipboard safety copy, optional automatic paste, paste delay, and success-message duration
+- Updates: the version you are running, an automatic GitHub release check that is on by default and can be turned off, and a manual check
 - Application and privacy: launch at login, start minimized, local history, retention, clear history, and reset settings
 
 Automatic paste is best effort. Windows blocks synthetic input into elevated applications, password fields, protected desktops, and some custom editors. macOS blocks it in secure input fields and until both the Automation and Accessibility grants exist. When paste is rejected, Sotto shows **Copied — paste manually** and leaves the complete text in the clipboard. If a Windows target app is running as administrator, either paste manually or run both apps at the same integrity level.

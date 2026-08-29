@@ -28,6 +28,10 @@ import {
   SETTINGS_UPDATE,
   STARTUP_GET,
   STARTUP_SET,
+  UPDATE_CHECK,
+  UPDATE_DOWNLOAD,
+  UPDATE_GET_STATUS,
+  UPDATE_INSTALL,
   WIDGET_DRAG,
   WIDGET_PRESENTATION,
   WIDGET_PUBLISH,
@@ -54,6 +58,7 @@ import {
   type RemoteTranscriptionResult,
   type StartupState,
   type TranscriptPolishAsrContext,
+  type UpdateStatus,
   type TranscriptPolishResult,
   type WidgetDragPayload,
   type WidgetPresentationPayload,
@@ -98,6 +103,7 @@ const settingKeys = [
   'streamingAsr',
   'remoteAsr',
   'remoteAsrUrl',
+  'autoUpdateCheck',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema
@@ -241,6 +247,13 @@ export interface RemoteAsrIpcService {
   check(): Promise<RemoteAsrHealth>
 }
 
+export interface UpdateIpcService {
+  status(): UpdateStatus | Promise<UpdateStatus>
+  check(): Promise<UpdateStatus>
+  download(): Promise<CommandResult>
+  install(): CommandResult | Promise<CommandResult>
+}
+
 export interface RecoveryNoticeIpcService {
   list(): readonly RecoveryNotice[] | Promise<readonly RecoveryNotice[]>
 }
@@ -257,6 +270,7 @@ export interface RegisterIpcDependencies {
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
   readonly remoteAsr?: RemoteAsrIpcService
+  readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
 }
@@ -446,6 +460,23 @@ export function registerIpc(
     register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
       dependencies.hotkeys.replace(accelerator),
     )
+
+    register(UPDATE_GET_STATUS, noPayloadSchema, 0, async () => {
+      if (dependencies.updates === undefined) return UNAVAILABLE
+      return dependencies.updates.status()
+    })
+    register(UPDATE_CHECK, noPayloadSchema, 0, async () => {
+      if (dependencies.updates === undefined) return UNAVAILABLE
+      return dependencies.updates.check()
+    })
+    register(UPDATE_DOWNLOAD, noPayloadSchema, 0, async (): Promise<CommandResult> => {
+      if (dependencies.updates === undefined) return UNAVAILABLE
+      return dependencies.updates.download()
+    })
+    register(UPDATE_INSTALL, noPayloadSchema, 0, async (): Promise<CommandResult> => {
+      if (dependencies.updates === undefined) return UNAVAILABLE
+      return dependencies.updates.install()
+    })
 
     register(STARTUP_GET, noPayloadSchema, 0, () => dependencies.startup.get())
     register(STARTUP_SET, z.boolean(), 1, (enabled) =>

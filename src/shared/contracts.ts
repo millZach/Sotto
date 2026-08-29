@@ -294,6 +294,41 @@ export type RemoteTranscriptionRequest = z.infer<typeof remoteTranscriptionReque
 export type RemoteTranscriptionResult = z.infer<typeof remoteTranscriptionResultSchema>
 export type RemoteAsrHealth = z.infer<typeof remoteAsrHealthSchema>
 
+export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.' as const
+
+const updateVersionSchema = z.string().min(1).max(64)
+
+/**
+ * One observable step of the update lifecycle. `unsupported` is the honest
+ * answer for a development run, an E2E run, and the macOS build, none of which
+ * ship an update feed; `failed` covers every offline or malformed-feed path,
+ * which the app treats as "try again later" and never as an error worth
+ * interrupting dictation for.
+ */
+export const updatePhaseSchema = z.discriminatedUnion('phase', [
+  z.object({ phase: z.literal('idle') }).strict(),
+  z.object({ phase: z.literal('checking') }).strict(),
+  z.object({ phase: z.literal('up-to-date') }).strict(),
+  z.object({ phase: z.literal('available'), version: updateVersionSchema }).strict(),
+  z
+    .object({
+      phase: z.literal('downloading'),
+      version: updateVersionSchema,
+      percent: z.number().int().min(0).max(100),
+    })
+    .strict(),
+  z.object({ phase: z.literal('downloaded'), version: updateVersionSchema }).strict(),
+  z.object({ phase: z.literal('failed') }).strict(),
+  z.object({ phase: z.literal('unsupported') }).strict(),
+])
+
+export const updateStatusSchema = z
+  .object({ currentVersion: updateVersionSchema, phase: updatePhaseSchema })
+  .strict()
+
+export type UpdatePhase = z.infer<typeof updatePhaseSchema>
+export type UpdateStatus = z.infer<typeof updateStatusSchema>
+
 export const modelStatusSchema = z
   .object({
     preset: modelPresetSchema,
@@ -416,6 +451,12 @@ export interface SottoBridge {
   transcribeRemote(request: RemoteTranscriptionRequest): Promise<RemoteTranscriptionResult>
   cancelRemoteTranscription(requestId: string): Promise<CommandResult>
   checkRemoteAsr(): Promise<RemoteAsrHealth>
+
+  getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
+  checkForUpdates(): Promise<UpdateStatus | UnavailableResult>
+  downloadUpdate(): Promise<CommandResult>
+  installUpdate(): Promise<CommandResult>
+  onUpdateStatus(listener: (status: UpdateStatus) => void): Unsubscribe
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

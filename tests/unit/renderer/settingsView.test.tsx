@@ -8,6 +8,7 @@ import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   REMOTE_ASR_PRIVACY_NOTICE,
+  UPDATE_CHECK_PRIVACY_NOTICE,
   type HotkeyChangeResult,
   type ModelDisclosureCatalog,
   type ModelStatus,
@@ -64,6 +65,10 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     onInstallModel: vi.fn(async () => ({ ok: true } as const)),
     onRemoveModel: vi.fn(async () => ({ ok: true } as const)),
     onCheckRemoteAsr: vi.fn(async () => ({ ok: true } as const)),
+    updateStatus: { currentVersion: '3.4.0', phase: { phase: 'up-to-date' } },
+    onCheckForUpdates: vi.fn(async () => null),
+    onDownloadUpdate: vi.fn(async () => true),
+    onInstallUpdate: vi.fn(async () => true),
     ...overrides,
   }
 }
@@ -559,6 +564,60 @@ describe('SettingsView', () => {
 
     await user.click(screen.getByRole('switch', { name: 'Use the transcription server' }))
     expect(update).toHaveBeenCalledWith({ remoteAsr: true })
+  })
+
+  it('discloses what an update check sends and saves the choice through the ordinary patch flow', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+
+    const toggle = screen.getByRole('switch', { name: 'Check for updates automatically' })
+    expect(toggle).toBeChecked()
+    expect(screen.getByText(UPDATE_CHECK_PRIVACY_NOTICE)).toBeVisible()
+    expect(screen.getByText('Sotto 3.4.0')).toBeVisible()
+    expect(screen.getByText('You are on the newest release.')).toBeVisible()
+
+    await user.click(toggle)
+
+    expect(update).toHaveBeenCalledWith({ autoUpdateCheck: false })
+  })
+
+  it('checks on demand and offers the matching action for each update phase', async () => {
+    const user = userEvent.setup()
+    const check = vi.fn(async () => null)
+    const download = vi.fn(async () => true)
+    const install = vi.fn(async () => true)
+
+    const { unmount } = render(<SettingsView {...baseProps({ onCheckForUpdates: check })} />)
+    await user.click(screen.getByRole('button', { name: 'Check now' }))
+    expect(check).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument()
+    unmount()
+
+    render(<SettingsView {...baseProps({
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'available', version: '3.5.0' } },
+      onDownloadUpdate: download,
+    })} />)
+    expect(screen.getByText('Sotto 3.5.0 is available.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(download).toHaveBeenCalledOnce()
+    cleanup()
+
+    render(<SettingsView {...baseProps({
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'downloaded', version: '3.5.0' } },
+      onInstallUpdate: install,
+    })} />)
+    await user.click(screen.getByRole('button', { name: 'Restart to update' }))
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('says plainly when this build has no update feed at all', () => {
+    render(<SettingsView {...baseProps({
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'unsupported' } },
+    })} />)
+
+    expect(screen.getByText('Update checks run only in the installed Windows app.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled()
   })
 
   it('renders the macOS copy row and canonicalizes shortcuts through the darwin aliases', async () => {

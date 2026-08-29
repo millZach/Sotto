@@ -13,6 +13,7 @@ import {
   MODEL_DOWNLOAD_PRIVACY_NOTICE,
   type ModelDisclosureCatalog,
   type SottoBridge,
+  type UpdateStatus,
 } from '../../../src/shared/contracts'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
@@ -76,6 +77,11 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     removeModel: vi.fn(async () => OK),
     onModelStatus: vi.fn(() => () => undefined),
     deliverOutput: vi.fn(async () => 'copied' as const),
+    getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
+    checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
+    downloadUpdate: vi.fn(async () => OK),
+    installUpdate: vi.fn(async () => OK),
+    onUpdateStatus: vi.fn(() => () => undefined),
     getStartup: vi.fn(async () => ({ enabled: false })),
     setStartup: vi.fn(async (enabled) => ({ enabled })),
     showApp: vi.fn(async () => undefined),
@@ -258,6 +264,59 @@ describe('Sotto application onboarding integration', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible())
     expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
+  })
+
+  it('carries a release offer into the management window and keeps a dismissal for the session', async () => {
+    const user = userEvent.setup()
+    const downloadUpdate = vi.fn(async () => OK)
+    let publish: ((status: UpdateStatus) => void) | null = null
+    renderApp(createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      getUpdateStatus: vi.fn(async () => ({
+        currentVersion: '3.4.0',
+        phase: { phase: 'available' as const, version: '3.5.0' },
+      })),
+      onUpdateStatus: vi.fn((listener: (status: UpdateStatus) => void) => {
+        publish = listener
+        return () => undefined
+      }),
+      downloadUpdate,
+    }))
+
+    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await screen.findByText('Sotto 3.5.0 is available')
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(downloadUpdate).toHaveBeenCalledOnce()
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss update notice' }))
+    expect(screen.queryByText('Sotto 3.5.0 is available')).not.toBeInTheDocument()
+
+    // Progress on the version that was waved away stays waved away.
+    act(() => publish?.({
+      currentVersion: '3.4.0',
+      phase: { phase: 'downloading', version: '3.5.0', percent: 30 },
+    }))
+    expect(screen.queryByText('Downloading Sotto 3.5.0')).not.toBeInTheDocument()
+
+    // A finished download is a different moment, so it surfaces once more.
+    act(() => publish?.({
+      currentVersion: '3.4.0',
+      phase: { phase: 'downloaded', version: '3.5.0' },
+    }))
+    expect(screen.getByText('Sotto 3.5.0 is ready to install')).toBeVisible()
+  })
+
+  it('keeps the management window quiet while nothing is on offer', async () => {
+    renderApp(createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      getUpdateStatus: vi.fn(async () => ({
+        currentVersion: '3.4.0',
+        phase: { phase: 'up-to-date' as const },
+      })),
+    }))
+
+    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    expect(document.querySelector('.update-banner')).toBeNull()
   })
 
   it('navigates the management shell and copies History through the trusted bridge without auto-paste', async () => {

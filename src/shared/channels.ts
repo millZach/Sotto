@@ -38,6 +38,12 @@ export const REMOTE_ASR_TRANSCRIBE = 'sotto:remote-asr:transcribe' as const
 export const REMOTE_ASR_CANCEL = 'sotto:remote-asr:cancel' as const
 export const REMOTE_ASR_CHECK = 'sotto:remote-asr:check' as const
 
+export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const
+export const UPDATE_CHECK = 'sotto:update:check' as const
+export const UPDATE_DOWNLOAD = 'sotto:update:download' as const
+export const UPDATE_INSTALL = 'sotto:update:install' as const
+export const UPDATE_STATUS = 'sotto:update:status' as const
+
 export const STARTUP_GET = 'sotto:startup:get' as const
 export const STARTUP_SET = 'sotto:startup:set' as const
 
@@ -77,6 +83,11 @@ export const IPC_CHANNELS = Object.freeze({
   remoteAsrTranscribe: REMOTE_ASR_TRANSCRIBE,
   remoteAsrCancel: REMOTE_ASR_CANCEL,
   remoteAsrCheck: REMOTE_ASR_CHECK,
+  updateGetStatus: UPDATE_GET_STATUS,
+  updateCheck: UPDATE_CHECK,
+  updateDownload: UPDATE_DOWNLOAD,
+  updateInstall: UPDATE_INSTALL,
+  updateStatus: UPDATE_STATUS,
   startupGet: STARTUP_GET,
   startupSet: STARTUP_SET,
   appShow: APP_SHOW,

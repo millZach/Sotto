@@ -51,6 +51,7 @@ export interface AppSettings {
   streamingAsr: boolean
   remoteAsr: boolean
   remoteAsrUrl: string
+  autoUpdateCheck: boolean
 }
 
 export type SettingsPatch = Partial<
@@ -93,6 +94,7 @@ const fieldSchemas = {
   streamingAsr: z.boolean(),
   remoteAsr: z.boolean(),
   remoteAsrUrl: z.string().max(512),
+  autoUpdateCheck: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
 export const settingsSchema = z.object(fieldSchemas)
@@ -130,6 +132,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // did before remote transcription existed, and never contacts a server.
   remoteAsr: false,
   remoteAsrUrl: '',
+  // On by default: an install that never opens Settings still learns about a
+  // fix. The check asks GitHub for a version number and sends nothing else,
+  // and turning it off stops the request entirely.
+  autoUpdateCheck: true,
 }
 
 /**
@@ -187,5 +193,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     remoteAsr: parseField(persisted, 'remoteAsr', defaults),
     remoteAsrUrl: parseField(persisted, 'remoteAsrUrl', defaults),
+    autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
   }
 }

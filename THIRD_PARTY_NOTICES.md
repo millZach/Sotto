@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
+Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
 
 Electron additionally ships its exact upstream `LICENSE.electron.txt` and comprehensive `LICENSES.chromium.html` beside `Sotto.exe` in the Windows installation, and inside `Sotto.app/Contents/Resources` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -13,6 +13,22 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `scheduler` | `0.27.0` | MIT | Meta Platforms, Inc. and affiliates |
 | `lucide-react` | `1.24.0` | ISC and MIT | Lucide Icons and Contributors; Cole Bemis |
 | `zod` | `4.4.3` | MIT | Colin McDonnell |
+| `electron-updater` | `6.8.9` | MIT | Loopline Systems and electron-builder contributors |
+| `builder-util-runtime` | `9.7.0` | MIT | Loopline Systems and electron-builder contributors |
+| `fs-extra` | `10.1.0` | MIT | JP Richardson |
+| `graceful-fs` | `4.2.11` | ISC | Isaac Z. Schlueter, Ben Noordhuis, and Contributors |
+| `jsonfile` | `6.2.1` | MIT | JP Richardson |
+| `universalify` | `2.0.1` | MIT | Ryan Zimmerman |
+| `js-yaml` | `4.3.0` | MIT | Vitaly Puzrin |
+| `lazy-val` | `1.0.5` | MIT | Vladimir Krivosheev |
+| `lodash.escaperegexp` | `4.1.2` | MIT | jQuery Foundation and other contributors |
+| `lodash.isequal` | `4.5.0` | MIT | JS Foundation and other contributors |
+| `semver` | `7.7.4` | ISC | Isaac Z. Schlueter and Contributors |
+| `sax` | `1.6.0` | BlueOak-1.0.0 | Isaac Z. Schlueter and sax-js contributors |
+| `debug` | `4.4.3` | MIT | TJ Holowaychuk; Josh Junon |
+| `ms` | `2.1.3` | MIT | Vercel, Inc. |
+| `supports-color` | `7.2.0` | MIT | Sindre Sorhus |
+| `has-flag` | `4.0.0` | MIT | Sindre Sorhus |
 | `@huggingface/transformers` | `4.2.0` | Apache-2.0 | Hugging Face |
 | `@huggingface/jinja` | `0.5.6` | MIT | Hugging Face |
 | `@huggingface/tokenizers` | `0.1.3` | Apache-2.0 | Hugging Face |
@@ -35,6 +51,8 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `onnx-community/moonshine-base-ONNX` | `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad` | MIT | Useful Sensors (Moonshine), converted by the Hugging Face ONNX community |
 | `Manrope` (font, latin + latin-ext woff2 subsets) | `v20 (Google Fonts static serving)` | OFL-1.1 | The Manrope Project Authors |
 | `Spline Sans Mono` (font, latin woff2 subset) | `v13 (Google Fonts static serving)` | OFL-1.1 | The Spline Sans Mono Project Authors |
+
+`electron-updater` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from `node_modules` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
 
 The bundled Standard model is `onnx-community/moonshine-base-ONNX` revision `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 
@@ -174,6 +192,156 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## Windows updater dependency MIT licenses
+
+The following copyright notices cover the MIT-licensed packages compiled into the
+main-process bundle. Each is distributed under the identical MIT terms reproduced
+once below.
+
+```text
+electron-updater, builder-util-runtime
+Copyright (c) 2015 Loopline Systems
+
+fs-extra
+Copyright (c) 2011-2017 JP Richardson
+
+jsonfile
+Copyright (c) 2012-2015, JP Richardson <jprichardson@gmail.com>
+
+universalify
+Copyright (c) 2017, Ryan Zimmerman <opensrc@ryanzim.com>
+
+js-yaml
+Copyright (C) 2011-2015 by Vitaly Puzrin
+
+lazy-val
+Copyright (c) Vladimir Krivosheev
+
+lodash.escaperegexp
+Copyright jQuery Foundation and other contributors <https://jquery.org/>
+Based on Underscore.js, copyright Jeremy Ashkenas, DocumentCloud and Investigative
+Reporters & Editors <http://underscorejs.org/>
+
+lodash.isequal
+Copyright JS Foundation and other contributors <https://js.foundation/>
+Based on Underscore.js, copyright Jeremy Ashkenas, DocumentCloud and Investigative
+Reporters & Editors <http://underscorejs.org/>
+
+debug
+Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
+Copyright (c) 2018-2021 Josh Junon
+
+ms
+Copyright (c) 2020 Vercel, Inc.
+
+supports-color, has-flag
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+```
+
+```text
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Windows updater dependency ISC licenses
+
+```text
+graceful-fs
+Copyright (c) 2011-2022 Isaac Z. Schlueter, Ben Noordhuis, and Contributors
+
+semver
+Copyright (c) Isaac Z. Schlueter and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+## sax Blue Oak Model License 1.0.0
+
+```text
+# Blue Oak Model License
+
+Version 1.0.0
+
+## Purpose
+
+This license gives everyone as much permission to work with
+this software as possible, while protecting contributors
+from liability.
+
+## Acceptance
+
+In order to receive this license, you must agree to its
+rules.  The rules of this license are both obligations
+under that agreement and conditions to your license.
+You must not do anything with this software that triggers
+a rule that you cannot or will not follow.
+
+## Copyright
+
+Each contributor licenses you to do everything with this
+software that would otherwise infringe that contributor's
+copyright in it.
+
+## Notices
+
+You must ensure that everyone who gets a copy of
+any part of this software from you, with or without
+changes, also gets the text of this license or a link to
+<https://blueoakcouncil.org/license/1.0.0>.
+
+## Excuse
+
+If anyone notifies you in writing that you have not
+complied with [Notices](#notices), you can keep your
+license by taking all practical steps to comply within 30
+days after the notice.  If you do not do so, your license
+ends immediately.
+
+## Patent
+
+Each contributor licenses you to do everything with this
+software that would otherwise infringe any patent claims
+they can license or become able to license.
+
+## Reliability
+
+No contributor can revoke this license.
+
+## No Liability
+
+***As far as the law allows, this software comes as is,
+without any warranty or condition, and no contributor
+will be liable to anyone for any damages related to this
+software or this license, under any kind of legal claim.***
 ```
 
 ## Hugging Face Jinja MIT license

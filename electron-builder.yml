@@ -12,6 +12,14 @@ files:
 
 asar: true
 
+# Embeds app-update.yml in the packaged resources so the Windows updater knows
+# which repository to read. Publishing is never automatic: every package script
+# passes --publish never, and releases are uploaded by hand.
+publish:
+  - provider: github
+    owner: millZach
+    repo: Sotto
+
 extraResources:
   - from: resources/models
     to: models
