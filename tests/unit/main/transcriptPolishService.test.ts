@@ -96,6 +96,7 @@ describe('TranscriptPolishService', () => {
     for (const [quality, expected] of [
       ['low', 'inception/mercury-2'],
       ['medium', 'amazon/nova-2-lite-v1'],
+      ['value', 'z-ai/glm-5.3-flash'],
       ['high', 'anthropic/claude-haiku-4.5'],
     ] as const) {
       const { fetchFn, service } = createService({

@@ -14,7 +14,7 @@ export type ModelPreset = 'fast' | 'instant'
 /** Inference always runs on CPU/WASM; the WebGPU/auto options were removed. */
 export type InferencePreference = 'wasm'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
-export type LlmQuality = 'low' | 'medium' | 'high'
+export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 export const SETTINGS_VERSION = 1 as const
 
@@ -87,7 +87,7 @@ const fieldSchemas = {
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
-  llmQuality: z.enum(['low', 'medium', 'high']),
+  llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   streamingAsr: z.boolean(),

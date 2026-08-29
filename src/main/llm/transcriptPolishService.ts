@@ -42,6 +42,16 @@ export const QUALITY_TIERS: Record<LlmQuality, QualityTier> = {
     fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
     minTimeoutMs: 7_000,
   },
+  /**
+   * GLM-5.3 Flash benched at Haiku-grade cleanup for a fraction of the cost,
+   * but its endpoint refuses to disable reasoning and cold starts spiked to
+   * ~7 s, so the tier gets the same generous floor as `high`.
+   */
+  value: {
+    primary: { id: 'z-ai/glm-5.3-flash', reasoning: 'minimal' },
+    fallback: { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' },
+    minTimeoutMs: 8_000,
+  },
   high: {
     primary: { id: 'anthropic/claude-haiku-4.5', reasoning: false },
     fallback: { id: 'amazon/nova-2-lite-v1', reasoning: false },

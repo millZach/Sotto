@@ -115,6 +115,7 @@ describe('settings', () => {
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
     expect(parseSettings({ llmQuality: 'high' }).llmQuality).toBe('high')
+    expect(parseSettings({ llmQuality: 'value' }).llmQuality).toBe('value')
     expect(parseSettings({ llmQuality: 'ultra' }).llmQuality).toBe('low')
     expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
