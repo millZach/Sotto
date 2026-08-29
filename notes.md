@@ -1,5 +1,14 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-29 — Benched the new flash models: the 20x-cheaper one hallucinates
+Ran the polish-pass bench against Gemini 3.7 Flash, DeepSeek v4 Flash 0731, and
+GLM-5.3 Flash (8 models × 11 fixtures × 2 runs). DeepSeek at $0.045/M looked
+like a steal until one fixture came back as pure word salad — OpenRouter spread
+the calls across seven providers and one of them is just broken. GLM-5.3 Flash
+was the real find: Haiku-grade cleanup at 7x cheaper than Nova, cold-start
+spikes aside. Bonus lesson: the bench's saved API key had been quietly revoked,
+so last month's all-ERROR run was an auth failure wearing a model-failure mask.
+
 ## 2026-08-28 — The release gate tripped on a chunk name, not a real bug
 Cutting 3.4.0, the packaging verifier failed with "unsafe root-relative worklet
 URL" — scary, because that check exists to catch a worklet path that breaks in

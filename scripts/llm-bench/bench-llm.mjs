@@ -43,6 +43,12 @@ const API_MODELS = [
   { id: 'qwen/qwen3-32b', provider: ['cerebras', 'groq'], reasoning: false },
   { id: 'z-ai/glm-5-turbo', reasoning: false },
   { id: 'mistralai/ministral-8b-2512' },
+  // 2026-08 flash sweep: cheap high-throughput candidates vs the shipping tiers.
+  { id: 'google/gemini-3.7-flash', reasoning: 'minimal' },
+  { id: 'google/gemini-3.1-flash-lite', reasoning: 'minimal' }, // shipping fallback, was missing here
+  { id: 'deepseek/deepseek-v4-flash-0731', reasoning: false },
+  { id: 'z-ai/glm-5.3-flash', reasoning: 'minimal' }, // endpoint refuses to disable reasoning
+  { id: 'z-ai/glm-4.7-flash', reasoning: false },
 ]
 
 function parseArgs(argv) {
