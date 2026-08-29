@@ -1,5 +1,15 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-29 — The design gate failed on pixels no human can see
+Adding one <option> to a settings dropdown tripped the visual gate — on an
+onboarding capture the change cannot touch. The diff: 1157 changed pixels, max
+channel delta 5, all antialiasing on one button's border. Not my code (clean
+HEAD failed identically — the lesson from last time, applied), not hover (I
+parked the cursor at 0,0 by script and it still failed), not Windows updates
+(none since Aug 12). The machine's rendering just drifted a hair in two days;
+7 more baselines had the same drift under threshold. Refreshed all 8. If the
+gate flaps back, the comparator needs a small per-channel noise floor.
+
 ## 2026-08-29 — Benched the new flash models: the 20x-cheaper one hallucinates
 Ran the polish-pass bench against Gemini 3.7 Flash, DeepSeek v4 Flash 0731, and
 GLM-5.3 Flash (8 models × 11 fixtures × 2 runs). DeepSeek at $0.045/M looked

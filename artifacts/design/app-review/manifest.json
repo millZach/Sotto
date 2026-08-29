@@ -85,7 +85,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-navigation-dark.png",
       "width": 1080,
       "height": 720,
-      "sha256": "be657009b6db942a34232432eaf0ffc3ead5293af7a4c67a8d06858593962abc"
+      "sha256": "c37163de9e19c2c6a33b77fb921aad4a6f0fb3f096b83a92d74e0c01eb74c6f7"
     },
     {
       "scalePercent": 100,
@@ -225,7 +225,7 @@
       "relativePath": "artifacts/design/app-review/baseline/home-error-dark.png",
       "width": 1080,
       "height": 720,
-      "sha256": "dddb19b05dec5ac74f4bf08fcc55ec670f60d9ede6cfbbdc7fe1e660ff05cd33"
+      "sha256": "8a78e934cf3d610229b63d4aac8159413197df8f375edcbed0149e0ed9a54e9b"
     },
     {
       "scalePercent": 100,
@@ -239,7 +239,7 @@
       "relativePath": "artifacts/design/app-review/baseline/home-error-light.png",
       "width": 1080,
       "height": 720,
-      "sha256": "c9a02b5ca53663fbf6077d2c5aa2d4b960c29224bcb05f6ca04841eb9a35e960"
+      "sha256": "5f823e66bdfb3be04d46a31732e97032ca57da5b36ab74a4a8aefbc230d0d7de"
     },
     {
       "scalePercent": 100,
@@ -281,7 +281,7 @@
       "relativePath": "artifacts/design/app-review/baseline/home-processing-dark.png",
       "width": 1080,
       "height": 720,
-      "sha256": "22121f93bf20dd22aa696925bca97a964f5452e1284cbf9270fb9d02522f5de8"
+      "sha256": "b0fef238eddc36f2289327fe9c5395a9773dfa325789a3872240befe65c1d5cb"
     },
     {
       "scalePercent": 100,
@@ -365,7 +365,7 @@
       "relativePath": "artifacts/design/app-review/baseline/home-success-dark.png",
       "width": 1080,
       "height": 720,
-      "sha256": "e0b512e68bb55927bbd6ab19f093385259a0f1227aeb6d0b4f664e31b76b3475"
+      "sha256": "8aa3b6e06873e3e8c091e68658cb35f77647e6fbf4c9aa3dac13ef2a2baa4055"
     },
     {
       "scalePercent": 100,
@@ -379,7 +379,7 @@
       "relativePath": "artifacts/design/app-review/baseline/home-success-light.png",
       "width": 1080,
       "height": 720,
-      "sha256": "95c161be6caab06707ba095d283b0458ba5af38c899af7ee3e106ea9a406de63"
+      "sha256": "2cbcaf835f9bf35130a4b86b54b614fe9215f34d6d9f90708afbe23c8c8556e5"
     },
     {
       "scalePercent": 100,
@@ -435,7 +435,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-2-microphone-ready-light.png",
       "width": 1080,
       "height": 668,
-      "sha256": "56e3a75414f1c35dd879f0342bc53dbf0c563e826dd1fc3f4eae582abf33347d"
+      "sha256": "8de2cd766412dd23aec4063684d9676d03fd9a9cb5b34bb738d9d6f57b27244b"
     },
     {
       "scalePercent": 100,
@@ -925,7 +925,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-150-onboarding-dark.png",
       "width": 1620,
       "height": 954,
-      "sha256": "ae56d543ecb5542b1a3ac425456deaad534af8f90254c9a61db836d66a06b837"
+      "sha256": "bb03a113dff7fdde31b9dc9425453685195c4a5ebce9dc55f2d230d4e38ef8cd"
     },
     {
       "scalePercent": 150,
