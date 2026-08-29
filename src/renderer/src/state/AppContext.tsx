@@ -23,6 +23,7 @@ import type {
   UpdateStatus,
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
+import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { SottoPlatform } from '../../../shared/platform'
 import type { AppSettings, ModelPreset, SettingsPatch } from '../../../shared/settings'
@@ -467,8 +468,12 @@ export function AppProvider({
             checkRemoteAsr: () => bridge.checkRemoteAsr(),
           },
           addHistory: async (entry) => {
+            // E2E dictations get a constant timestamp so design captures do not
+            // bake the capture minute into the RECENT log. The widget never sees
+            // createdAt, so its elapsed clock keeps running on real time.
+            const stamped = window.sottoE2E === undefined ? entry : { ...entry, createdAt: E2E_HISTORY_CREATED_AT }
             const version = ++historyVersionRef.current
-            const request = historyTailRef.current.then(() => bridge.addHistory(entry))
+            const request = historyTailRef.current.then(() => bridge.addHistory(stamped))
             historyTailRef.current = request.then(() => undefined, () => undefined)
             let entries: HistoryEntry[]
             try {

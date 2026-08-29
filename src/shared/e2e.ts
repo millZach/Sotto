@@ -1,6 +1,13 @@
 import { z } from 'zod'
 
 export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
+/**
+ * Scripted E2E dictations stamp their history entry with this instead of the
+ * wall clock, so design captures render one constant date label rather than
+ * the minute the suite happened to run. Kept in the fixture era (July 2026,
+ * older than a week) so the entry also stays out of the weekly stats tiles.
+ */
+export const E2E_HISTORY_CREATED_AT = Date.UTC(2026, 6, 12, 19, 30)
 export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence.'
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
 export const E2E_SNAPSHOT_CHANNEL = 'sotto:e2e:snapshot'

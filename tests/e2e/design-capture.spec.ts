@@ -164,6 +164,18 @@ async function withSotto(
 async function waitForStableFrame(page: Page): Promise<void> {
   await page.evaluate(`(async () => {
     await document.fonts.ready
+    // Infinite animations (the processing breath line's keyframes) would be
+    // captured at whatever phase the screenshot happens to land on, so pin
+    // them all to the start of their cycle; finite ones are awaited below.
+    for (const animation of document.getAnimations()) {
+      const pinEndTime = animation.effect?.getComputedTiming().endTime
+      const finite = typeof pinEndTime === 'number' && Number.isFinite(pinEndTime) && pinEndTime <= 1000
+      if (finite) continue
+      try {
+        animation.currentTime = 0
+        animation.pause()
+      } catch {}
+    }
     const finiteAnimations = document.getAnimations().filter((animation) => {
       const endTime = animation.effect?.getComputedTiming().endTime
       return typeof endTime === 'number' && Number.isFinite(endTime) && endTime <= 1000
@@ -294,6 +306,17 @@ interface PixelDifference {
   readonly pixelCount: number
 }
 
+/**
+ * Per-channel deltas at or below this are treated as identical. Chromium's
+ * rasterization of the same frame drifts by a few units per channel across
+ * runs and reboots (measured: 1 on the breath line between two same-day runs,
+ * up to 5 on a button border across two days) with nothing visibly different.
+ * Real changes clear this floor by an order of magnitude - a retimed text
+ * label measured >100 - so the gate keeps its teeth while no longer failing
+ * on pixels nobody can see.
+ */
+const CHANNEL_NOISE_FLOOR = 6
+
 async function pixelDifference(actual: Buffer, baseline: Buffer): Promise<PixelDifference> {
   const actualImage = await sharp(actual).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const baselineImage = await sharp(baseline).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -310,8 +333,9 @@ async function pixelDifference(actual: Buffer, baseline: Buffer): Promise<PixelD
     let changed = false
     for (let channel = 0; channel < 4; channel += 1) {
       const delta = Math.abs((actualImage.data[index + channel] ?? 0) - (baselineImage.data[index + channel] ?? 0))
+      if (delta <= CHANNEL_NOISE_FLOOR) continue
       totalChannelDelta += delta
-      if (delta !== 0) changed = true
+      changed = true
     }
     if (changed) changedPixels += 1
   }

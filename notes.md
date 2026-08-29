@@ -1,5 +1,18 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-08-29 — Made the visual gate deterministic instead of refreshing it again
+Third sub-perceptual gate failure in one day broke my patience with baseline
+refreshes. Root causes found: the scripted E2E dictation stamped its history
+entry with the wall clock, so every capture baked the run's minute into the
+RECENT log; the processing breath line's infinite keyframes got captured at
+whatever phase the screenshot landed on; and Chromium rasterization jitters by
+1–5 channel units run to run. Three fixes: E2E entries now get one constant
+timestamp, the harness pins infinite animations to phase zero before each
+shot, and the comparator ignores per-channel deltas of 6 or less (real changes
+measured 100+). Verified green minutes apart — the failure mode that used to
+trip it. Playwright's clock API was a dead end first: page.clock.setFixedTime
+does not work on Electron pages in 1.61.
+
 ## 2026-08-29 — Adding an auto-updater quietly added 16 packages to app.asar
 Wiring electron-updater in was easy; the invariant it broke was not. Production
 `dependencies` must stay exactly `['zod']`, so the updater gets compiled into
