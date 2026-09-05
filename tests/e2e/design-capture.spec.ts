@@ -164,7 +164,7 @@ async function withSotto(
 async function waitForStableFrame(page: Page): Promise<void> {
   await page.evaluate(`(async () => {
     await document.fonts.ready
-    // Infinite animations (the processing breath line's keyframes) would be
+    // Infinite animations (the deck wave's keyframes) would be
     // captured at whatever phase the screenshot happens to land on, so pin
     // them all to the start of their cycle; finite ones are awaited below.
     for (const animation of document.getAnimations()) {
@@ -246,7 +246,7 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
       if (shortcut.scrollWidth > shortcut.clientWidth + tolerance) problems.push('shortcut-horizontal-overflow')
     }
 
-    const activeDictationBar = document.querySelector('.home-dictation-bar[data-active="true"]')
+    const activeDictationBar = document.querySelector('.dictation-strip[data-active="true"]')
     const homeRecent = document.querySelector('.home-recent')
     const contentBounds = content?.getBoundingClientRect()
     if (activeDictationBar !== null && homeRecent !== null && contentBounds !== undefined) {
@@ -278,7 +278,7 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
 }
 
 async function assertDictationBarTone(page: Page, tone: 'success' | 'error'): Promise<void> {
-  const bar = page.locator('.home-dictation-bar')
+  const bar = page.locator('.dictation-strip')
   await expect(bar).toHaveAttribute('data-tone', tone)
   const colors = await bar.evaluate((element: unknown, toneName: unknown) => {
     const target = element as {
@@ -289,7 +289,7 @@ async function assertDictationBarTone(page: Page, tone: 'success' | 'error'): Pr
       document: { createElement: (tag: string) => { style: { color: string }; remove: () => void } }
       getComputedStyle: (candidate: unknown) => { color: string }
     }
-    const icon = target.querySelector('.home-dictation-bar__icon')
+    const icon = target.querySelector('.dictation-strip__icon')
     const probe = globals.document.createElement('span')
     probe.style.color = `var(--tt-${toneName as string})`
     target.appendChild(probe)
@@ -477,25 +477,30 @@ async function captureFullSurface(
   metadata: CaptureHint = {},
 ): Promise<void> {
   await expect(surface).toHaveCount(1)
-  await expect(surface.getByText(requiredText)).toBeVisible()
+  await expect(surface.getByText(requiredText).first()).toBeVisible()
   await page.evaluate("document.querySelector('.app-content')?.scrollTo(0, 0)")
   await waitForStableFrame(page)
   expect(await pageBoundProblems(page), `${fileName} has overlap, wrapping, or clipping defects`).toEqual([])
   await page.evaluate(`(() => {
     const shell = document.querySelector('.app-shell')
+    const stage = document.querySelector('.app-stage')
     const content = document.querySelector('.app-content')
-    if (!(shell instanceof HTMLElement) || !(content instanceof HTMLElement)) throw new Error('management scroll surface is unavailable')
+    if (!(shell instanceof HTMLElement) || !(stage instanceof HTMLElement) || !(content instanceof HTMLElement)) throw new Error('management scroll surface is unavailable')
+    // The rail shell is one row of two columns (rail | stage); the stage stacks
+    // the deck over the scrolling content. Let all three grow to their content.
     shell.style.setProperty('height', 'auto')
     shell.style.setProperty('min-height', '0')
     shell.style.setProperty('overflow', 'visible')
-    shell.style.setProperty('grid-template-rows', '52px auto')
+    shell.style.setProperty('grid-template-rows', 'auto')
+    stage.style.setProperty('height', 'auto')
+    stage.style.setProperty('grid-template-rows', 'auto auto')
     content.style.setProperty('overflow', 'visible')
     content.style.setProperty('height', 'auto')
   })()`)
   try {
     await waitForStableFrame(page)
     const bounds = await surface.boundingBox()
-    const requiredBounds = await surface.getByText(requiredText).boundingBox()
+    const requiredBounds = await surface.getByText(requiredText).first().boundingBox()
     expect(bounds, `${fileName} full surface must have layout bounds`).not.toBeNull()
     expect(requiredBounds, `${fileName} required lower content must have bounds`).not.toBeNull()
     expect(bounds!.width).toBeGreaterThan(200)
@@ -674,7 +679,7 @@ test.describe('authoritative design-review captures', () => {
 
       await withSotto(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
         await page.getByRole('link', { name: 'History' }).click()
-        await expect(page.getByText(populatedHistory[0]!.text)).toBeVisible()
+        await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
         const historySearch = page.getByRole('searchbox', { name: 'Search transcripts' })
         await assertFocusPresentation(historySearch)
         await capturePage(page, `focus-input-${theme}.png`)

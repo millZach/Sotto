@@ -204,7 +204,7 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByText(/started with an empty history/i)).toBeVisible()
     expect(document.body).not.toHaveTextContent('C:\\private\\settings.json')
     expect(document.body).not.toHaveTextContent('private transcript content')
-    expect(screen.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 2, name: /^ready$/i })).toBeVisible()
   })
 
   it('explains both macOS permission panes when auto-paste is refused', async () => {
@@ -330,7 +330,7 @@ describe('Sotto application onboarding integration', () => {
     renderApp(bridge)
     await screen.findByRole('heading', { level: 1, name: 'Home' })
     await user.click(screen.getByRole('link', { name: 'History' }))
-    await user.click(screen.getByRole('button', { name: 'Copy transcript' }))
+    await user.click(screen.getAllByRole('button', { name: 'Copy transcript' })[0]!)
     expect(deliverOutput).toHaveBeenCalledWith({ text: 'trusted local transcript', autoPaste: false, pasteDelayMs: 275 })
   })
 

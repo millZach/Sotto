@@ -8,13 +8,33 @@ import { useApp } from '../state/AppContext'
 export interface AppTitlebarProps {
   readonly onMinimize: () => Promise<void> | void
   readonly onClose: () => Promise<void> | void
+  /** Anything that belongs between the page title and the window controls, such as search. */
+  readonly children?: ReactNode
 }
 
-export function AppTitlebar({ onMinimize, onClose }: AppTitlebarProps): ReactNode {
+/** The titlebar names the page; each page keeps its own (visually hidden) h1. */
+function pageCopy(app: ReturnType<typeof useApp>): { title: string; subtitle: string } | null {
+  if (app.status !== 'ready' || app.settings === null || !app.settings.onboardingComplete) return null
+  switch (app.navigation) {
+    case 'history': {
+      if (!app.settings.historyEnabled && app.history.length === 0) return { title: 'History', subtitle: 'History is off' }
+      const count = app.history.length
+      return { title: 'History', subtitle: `${count} ${count === 1 ? 'transcript' : 'transcripts'}, kept on this computer` }
+    }
+    case 'settings': return { title: 'Settings', subtitle: 'Changes save as you make them' }
+    case 'help': return { title: 'Help', subtitle: 'Shortcuts, privacy, and troubleshooting' }
+    case 'home': return { title: 'Home', subtitle: 'Dictation, kept on this computer' }
+    default: return null
+  }
+}
+
+export function AppTitlebar({ onMinimize, onClose, children }: AppTitlebarProps): ReactNode {
+  const app = useApp()
   // macOS draws native traffic lights over this bar and closes to the tray
   // through the same intercepted close, so the custom controls would duplicate
   // system chrome.
-  const nativeWindowControls = useApp().platform === 'darwin'
+  const nativeWindowControls = app.platform === 'darwin'
+  const page = pageCopy(app)
 
   return (
     <header
@@ -26,6 +46,13 @@ export function AppTitlebar({ onMinimize, onClose }: AppTitlebarProps): ReactNod
         <SottoMark className="app-titlebar__mark" />
         <span>Sotto</span>
       </div>
+      {page === null ? null : (
+        <div className="app-titlebar__page" aria-hidden="true">
+          <span className="app-titlebar__title">{page.title}</span>
+          <span className="app-titlebar__subtitle">{page.subtitle}</span>
+        </div>
+      )}
+      {children}
       {nativeWindowControls ? null : (
         <div className="app-titlebar__controls">
           <Button iconOnly variant="ghost" aria-label="Minimize Sotto" onClick={() => void onMinimize()}>

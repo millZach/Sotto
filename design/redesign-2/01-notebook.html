@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Direction 1: Notebook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f5f5f2;
+    --page: #fbfbf9;
+    --rule: #e2e2dd;
+    --rule-strong: #c9c9c2;
+    --ink: #1b1c1e;
+    --ink-2: #5a5c60;
+    --ink-3: #8b8d92;
+    --teal: #2a736c;
+    --teal-ink: #1f5f59;
+    --teal-wash: #e3efed;
+    --danger: #a8362f;
+    --serif: 'Literata', Georgia, serif;
+    --sans: 'Manrope', system-ui, sans-serif;
+    --hover: rgb(0 0 0 / 6%);
+  }
+  [data-theme='dark'] {
+    --paper: #1f2022;
+    --page: #262729;
+    --rule: #34363a;
+    --rule-strong: #4a4d52;
+    --ink: #ebe9e4;
+    --ink-2: #aeaba4;
+    --ink-3: #7b7974;
+    --teal: #6dc2b7;
+    --teal-ink: #8ad2c8;
+    --teal-wash: #24413e;
+    --danger: #e98a82;
+    --hover: rgb(255 255 255 / 8%);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    display: grid; place-items: center;
+    background: #8f9094;
+    font: 500 14px/1.5 var(--sans);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .window {
+    width: 1100px; height: 720px;
+    display: grid; grid-template-rows: 52px 1fr;
+    background: var(--paper);
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgb(0 0 0 / 35%);
+  }
+  svg { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ---- titlebar ---- */
+  .titlebar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-left: 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 20px; height: 20px; }
+  .brand span { font: 500 17px var(--serif); letter-spacing: -0.01em; }
+  .controls { display: flex; align-self: stretch; }
+  .controls button {
+    width: 46px; border: 0; background: transparent; color: var(--ink-2);
+    display: grid; place-items: center;
+  }
+  .controls button:hover { background: var(--hover); color: var(--ink); }
+  .controls svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+
+  /* ---- masthead tabs ---- */
+  .frame { display: grid; grid-template-rows: 46px 1fr; min-height: 0; }
+  .masthead {
+    display: flex; align-items: stretch; justify-content: space-between;
+    padding: 0 190px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .tabs { display: flex; gap: 28px; }
+  .tabs a {
+    display: flex; align-items: center;
+    color: var(--ink-3); text-decoration: none; font-weight: 600; font-size: 14px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs a:hover { color: var(--ink); }
+  .tabs a[aria-current] { color: var(--ink); border-color: var(--teal); }
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--ink-2); font-size: 12.5px;
+  }
+  .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+  /* ---- reading column ---- */
+  .content { overflow-y: auto; min-height: 0; }
+  .view { display: none; }
+  .window[data-view='home'] .view[data-view='home'],
+  .window[data-view='history'] .view[data-view='history'],
+  .window[data-view='settings'] .view[data-view='settings'],
+  .window[data-view='help'] .view[data-view='help'] { display: block; }
+  .column { width: 720px; margin: 0 auto; padding: 40px 0 64px; }
+  h1 { font: 500 30px/1.2 var(--serif); letter-spacing: -0.015em; }
+  h2 { font: 500 21px/1.25 var(--serif); letter-spacing: -0.01em; }
+  .lede { color: var(--ink-2); margin-top: 8px; font-size: 14.5px; }
+  kbd {
+    display: inline-block; padding: 1px 6px 2px; margin: 0 1px;
+    border: 1px solid var(--rule-strong); border-bottom-width: 2px; border-radius: 4px;
+    font: 600 11.5px var(--sans); color: var(--ink-2); background: var(--page);
+    vertical-align: 1px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 6px; border: 1px solid transparent;
+    background: var(--ink); color: var(--paper); font-weight: 600; font-size: 13.5px;
+  }
+  .btn:hover { background: var(--teal-ink); }
+  .btn.quiet { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
+  .btn.quiet:hover { border-color: var(--ink); background: transparent; }
+  .btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .link { background: none; border: 0; padding: 0; color: var(--teal-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--teal-ink) 40%, transparent); font-weight: 600; font-size: 13px; }
+  .link:hover { text-decoration-color: currentColor; }
+  .link.danger { color: var(--danger); text-decoration-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+  /* ---- home ---- */
+  .page {
+    margin-top: 28px;
+    background: var(--page);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 22px 28px 26px;
+    box-shadow: 0 1px 0 var(--rule);
+  }
+  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .page-head .note { color: var(--ink-3); font-size: 12.5px; }
+  .level { margin: 20px 0 18px; height: 14px; display: flex; align-items: center; gap: 0; }
+  .level i { flex: 1; height: 1px; background: var(--rule-strong); }
+  .level i:nth-child(n+30):nth-child(-n+34) { background: var(--teal); }
+  .level i:nth-child(31), .level i:nth-child(33) { height: 6px; }
+  .level i:nth-child(32) { height: 10px; }
+  .last {
+    padding-top: 6px;
+    background: repeating-linear-gradient(to bottom, transparent 0 27px, var(--rule) 27px 28px);
+    background-position: 0 7px;
+  }
+  .last h3 { font: 600 12.5px var(--sans); color: var(--ink-3); line-height: 28px; }
+  .last p { font: 400 17px/28px var(--serif); color: var(--ink); }
+  .last footer { display: flex; gap: 18px; line-height: 28px; }
+  .week { margin-top: 40px; display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
+  .week p { font: 400 17px/1.5 var(--serif); color: var(--ink-2); }
+  .week b { font-weight: 600; color: var(--ink); }
+  .ticks { display: flex; align-items: flex-end; gap: 4px; height: 26px; flex: none; }
+  .ticks i { width: 5px; background: var(--rule-strong); border-radius: 1px; }
+  .ticks i:last-child { background: var(--teal); }
+  .entries { margin-top: 40px; }
+  .entries header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .entry {
+    display: grid; grid-template-columns: 64px 1fr; gap: 20px;
+    padding: 16px 0; border-top: 1px solid var(--rule);
+  }
+  .entry time { color: var(--ink-3); font-size: 12.5px; text-align: right; padding-top: 4px; }
+  .entry p { font: 400 15.5px/1.6 var(--serif); }
+  .entry .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .entry .meta { display: flex; gap: 16px; align-items: center; margin-top: 8px; color: var(--ink-3); font-size: 12.5px; }
+  .entry .meta .link { font-size: 12.5px; }
+  .entries > footer { padding-top: 16px; border-top: 1px solid var(--rule); }
+
+  /* ---- history ---- */
+  .toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-top: 26px; }
+  .search { position: relative; flex: 1; max-width: 420px; }
+  .search svg { position: absolute; left: 0; top: 7px; width: 17px; height: 17px; stroke: var(--ink-3); fill: none; stroke-width: 2; stroke-linecap: round; }
+  .search input {
+    width: 100%; padding: 6px 0 8px 26px; border: 0; border-bottom: 1px solid var(--rule-strong);
+    background: transparent; font: 500 14.5px var(--sans); color: var(--ink); outline: 0;
+  }
+  .search input::placeholder { color: var(--ink-3); }
+  .search input:focus { border-color: var(--teal); }
+  .toolbar .right { display: flex; gap: 20px; align-items: baseline; color: var(--ink-3); font-size: 12.5px; padding-bottom: 8px; }
+  .day { margin-top: 34px; }
+  .day h2 { font-size: 18px; padding-bottom: 8px; }
+  .day .entry:first-of-type { border-top-color: var(--rule-strong); }
+
+  /* ---- settings & help ---- */
+  .with-margin { position: relative; }
+  .marginalia {
+    position: absolute; left: -170px; top: 48px; width: 140px;
+    font-size: 12.5px; line-height: 1.9; color: var(--ink-3);
+  }
+  .marginalia a { display: block; text-decoration: none; color: inherit; }
+  .marginalia a:hover, .marginalia a[aria-current] { color: var(--ink); }
+  .marginalia a[aria-current] { font-weight: 700; }
+  .section { margin-top: 40px; }
+  .section:first-of-type { margin-top: 30px; }
+  .section > p { color: var(--ink-2); margin-top: 4px; margin-bottom: 8px; font-size: 13.5px; }
+  .row {
+    display: grid; grid-template-columns: 1fr 280px; gap: 32px; align-items: center;
+    padding: 14px 0; border-top: 1px solid var(--rule);
+  }
+  .row:first-of-type { border-top-color: var(--rule-strong); }
+  .row label b { display: block; font-weight: 600; font-size: 14px; }
+  .row label span { display: block; color: var(--ink-2); font-size: 12.5px; margin-top: 2px; line-height: 1.45; }
+  .row .ctl { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+  .select, .input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 6px;
+    background: var(--page); color: var(--ink); font: 500 13.5px var(--sans);
+  }
+  .select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%); background-position: calc(100% - 15px) 16px, calc(100% - 10px) 16px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
+  textarea.input { min-height: 72px; resize: none; font-family: var(--sans); }
+  .toggle { width: 40px; height: 22px; border-radius: 11px; border: 1px solid var(--rule-strong); background: var(--page); position: relative; flex: none; padding: 0; }
+  .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink-3); }
+  .toggle[aria-checked='true'] { background: var(--teal); border-color: var(--teal); }
+  .toggle[aria-checked='true']::after { left: 21px; background: #fff; }
+  .toggle:disabled { opacity: .5; }
+  .segment { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 6px; overflow: hidden; }
+  .segment button { border: 0; background: var(--page); padding: 7px 14px; font-weight: 600; font-size: 13px; color: var(--ink-2); }
+  .segment button + button { border-left: 1px solid var(--rule-strong); }
+  .segment button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+  .version { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-top: 1px solid var(--rule-strong); }
+  .version p { font: 400 15px var(--serif); }
+  .version p span { color: var(--ink-2); font: 500 12.5px var(--sans); display: block; margin-top: 2px; }
+  .qa { margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--rule); }
+  .qa h2 { font-size: 19px; }
+  .qa p { margin-top: 8px; color: var(--ink-2); font-size: 14.5px; line-height: 1.65; max-width: 62ch; }
+  .qa p + p { margin-top: 10px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
+  .steps div { padding: 16px 0 0; border-top: 1px solid var(--rule-strong); }
+  .steps b { display: block; font: 500 17px/1.3 var(--serif); }
+  .steps span { display: block; margin-top: 6px; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="mark-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cf6c0d"/><stop offset="1" stop-color="#8f4404"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="url(#mark-g)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="#fff"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  </defs>
+</svg>
+
+<div class="window" data-view="home">
+  <header class="titlebar">
+    <div class="brand"><svg><use href="#mark"/></svg><span>Sotto</span></div>
+    <div class="controls"><button aria-label="Minimize"><svg><use href="#i-minus"/></svg></button><button aria-label="Close to tray"><svg><use href="#i-x"/></svg></button></div>
+  </header>
+
+  <div class="frame">
+    <div class="masthead">
+      <nav class="tabs">
+        <a href="?view=home" data-nav="home">Home</a>
+        <a href="?view=history" data-nav="history">History</a>
+        <a href="?view=settings" data-nav="settings">Settings</a>
+        <a href="?view=help" data-nav="help">Help</a>
+      </nav>
+      <div class="status"><i></i>Ready, local and private</div>
+    </div>
+
+    <div class="content">
+
+      <!-- HOME -->
+      <section class="view column" data-view="home">
+        <h1>Ready when you are.</h1>
+        <p class="lede">Start here, or press <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd> in any application. Press it again to finish.</p>
+
+        <div class="page">
+          <div class="page-head">
+            <button class="btn"><svg><use href="#i-mic"/></svg>Start dictation</button>
+            <span class="note">Standard model, English, on this computer</span>
+          </div>
+          <div class="level" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="last">
+            <h3>Last dictation, today at 11:14, pasted into Notion</h3>
+            <p>Morning standup notes: the irrigation controller deploy went out clean, and the flow sensor calibration is scheduled for Thursday with the vendor on site.</p>
+            <footer><button class="link">Copy again</button><button class="link">Open in history</button></footer>
+          </div>
+        </div>
+
+        <div class="week">
+          <p>This week: <b>2,847 words</b> in <b>43 minutes</b>, about <b>132 a minute</b>.</p>
+          <div class="ticks" aria-hidden="true"><i style="height:9px"></i><i style="height:15px"></i><i style="height:12px"></i><i style="height:20px"></i><i style="height:14px"></i><i style="height:22px"></i><i style="height:26px"></i></div>
+        </div>
+
+        <section class="entries">
+          <header><h2>Earlier</h2></header>
+          <div class="entry"><time>07:14</time><p class="clamp">Hey Priya, sounds good. Let's move the review to 4:45 and I'll bring the updated P&amp;ID markups for the skid.</p></div>
+          <div class="entry"><time>Yesterday</time><p class="clamp">Reminder to archive the 3.3.5 installers and append the mac hashes before uploading the checksum file.</p></div>
+          <div class="entry"><time>Yesterday</time><p class="clamp">Draft for the release notes: auto-update now asks before downloading, the design gate is deterministic, and the Value formatting tier runs on GLM-5.3 Flash.</p></div>
+          <footer><button class="link">All history</button></footer>
+        </section>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="view column" data-view="history">
+        <h1>Everything you've said.</h1>
+        <p class="lede">Transcripts are kept only on this computer. Search them, copy them, or remove them.</p>
+        <div class="toolbar">
+          <label class="search"><svg><use href="#i-search"/></svg><input type="search" placeholder="Search your transcripts"></label>
+          <div class="right"><span>34 transcripts, keeping 100</span><button class="link danger">Clear history</button></div>
+        </div>
+
+        <div class="day">
+          <h2>Today</h2>
+          <div class="entry"><time>11:14</time><div><p>Morning standup notes: the irrigation controller deploy went out clean, and the flow sensor calibration is scheduled for Thursday with the vendor on site.</p><div class="meta"><span>English, Standard, 12 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+          <div class="entry"><time>07:14</time><div><p>Hey Priya, sounds good. Let's move the review to 4:45 and I'll bring the updated P&amp;ID markups for the skid.</p><div class="meta"><span>English, Standard, 9 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+        </div>
+        <div class="day">
+          <h2>Yesterday</h2>
+          <div class="entry"><time>16:40</time><div><p>Reminder to archive the 3.3.5 installers and append the mac hashes before uploading the checksum file.</p><div class="meta"><span>English, Standard, 8 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+          <div class="entry"><time>09:22</time><div><p>Draft for the release notes: auto-update now asks before downloading, the design gate is deterministic, and the Value formatting tier runs on GLM-5.3 Flash.</p><div class="meta"><span>English, Standard, 14 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+        </div>
+        <div class="day">
+          <h2>Monday, August 31</h2>
+          <div class="entry"><time>14:05</time><div><p>The pump curve on the second stage looks flat above eighty percent, so let's ask the vendor for the impeller trim options before we commit.</p><div class="meta"><span>English, Standard, 11 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+          <div class="entry"><time>08:51</time><div><p>Grocery list: oat milk, coffee filters, the good tortillas, and something green for the week.</p><div class="meta"><span>English, Standard, 6 s</span><button class="link">Copy</button><button class="link danger">Delete</button></div></div></div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view column with-margin" data-view="settings">
+        <nav class="marginalia">
+          <a href="#" aria-current="true">Appearance</a><a href="#">Capture</a><a href="#">Transcription</a><a href="#">Formatting</a><a href="#">Output</a><a href="#">Updates</a><a href="#">Privacy</a>
+        </nav>
+        <h1>Settings</h1>
+        <p class="lede">Changes save as you make them.</p>
+
+        <section class="section">
+          <h2>Appearance</h2>
+          <p>How Sotto looks and moves.</p>
+          <div class="row"><label><b>Theme</b><span>Follow Windows, or choose one.</span></label><div class="ctl"><div class="segment"><button aria-pressed="true">System</button><button>Light</button><button>Dark</button></div></div></div>
+          <div class="row"><label><b>Reduced motion</b><span>Follow Windows or minimize non-essential motion.</span></label><div class="ctl"><select class="select"><option>Follow system</option></select></div></div>
+          <div class="row"><label><b>Show floating widget when idle</b><span>Keep the small dictation sliver on screen between sessions. Click it to dictate.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Capture</h2>
+          <p>Microphone, shortcut, and recording length.</p>
+          <div class="row"><label><b>Microphone</b><span>Input used for future recordings.</span></label><div class="ctl"><select class="select"><option>Windows default</option></select></div></div>
+          <div class="row"><label><b>Global shortcut</b><span>Used anywhere in Windows to start and stop dictation.</span></label><div class="ctl"><input class="input" value="Ctrl+Shift+Space"><button class="btn quiet">Apply</button></div></div>
+          <div class="row"><label><b>Maximum recording time</b><span>Sotto stops automatically at this limit.</span></label><div class="ctl"><select class="select"><option>1 minute</option></select></div></div>
+          <div class="row"><label><b>Sound cues</b><span>Play a short local sound when recording starts and stops.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Transcription</h2>
+          <p>Balance speed, accuracy, and local hardware use.</p>
+          <div class="row"><label><b>Language</b><span>Automatic uses English defaults; choose a language for multilingual speech.</span></label><div class="ctl"><select class="select"><option>Automatic</option></select></div></div>
+          <div class="row"><label><b>Whitespace formatting</b><span>Trim and normalize repeated whitespace without changing words.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+          <div class="row"><label><b>Transcription server</b><span>An OpenAI-compatible speech server on your network, such as http://desktop.local:5092.</span></label><div class="ctl"><input class="input" placeholder="http://"></div></div>
+          <div class="row"><label><b>Use the transcription server</b><span>Falls back to on-device transcription per segment if the server is slow.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Formatting</h2>
+          <p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p>
+          <div class="row"><label><b>AI formatting</b><span>Sends transcript text, never audio, to OpenRouter for cleanup. Falls back to the raw transcript if offline.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+          <div class="row"><label><b>Formatting quality</b><span>Low is near-instant; higher tiers format better but add up to a couple of seconds.</span></label><div class="ctl"><select class="select"><option>Value, near-High (GLM-5.3 Flash)</option></select></div></div>
+          <div class="row"><label><b>OpenRouter API key</b><span>Stored locally in settings.</span></label><div class="ctl"><input class="input" type="password" value="sk-or-v1-9f3a2"></div></div>
+          <div class="row"><label><b>Personal dictionary</b><span>One word or name per line. Mis-heard words are corrected toward these.</span></label><div class="ctl"><textarea class="input">Priya
+P&amp;ID
+Moonshine</textarea></div></div>
+          <div class="row"><label><b>Streaming transcription</b><span>Transcribe while you speak so long dictations finish almost immediately after you stop.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Output</h2>
+          <p>Clipboard copy always protects the result when paste is unavailable.</p>
+          <div class="row"><label><b>Automatic clipboard copy</b><span>Always on for every successful transcript.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true" disabled></button></div></div>
+          <div class="row"><label><b>Automatic paste</b><span>Paste at the cursor after copying.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+          <div class="row"><label><b>Paste delay</b><span>Milliseconds to wait before attempting paste.</span></label><div class="ctl"><input class="input" value="120"></div></div>
+          <div class="row"><label><b>Success message duration</b><span>Milliseconds the success state remains visible.</span></label><div class="ctl"><input class="input" value="1500"></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Updates</h2>
+          <p>Sotto looks for new releases on GitHub and asks before downloading.</p>
+          <div class="version"><p>Sotto 3.5.0 is up to date<span>Checked today at 09:12</span></p><button class="btn quiet">Check now</button></div>
+          <div class="row"><label><b>Check for updates automatically</b><span>Once a day. GitHub receives only ordinary request metadata.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        </section>
+
+        <section class="section">
+          <h2>Application and privacy</h2>
+          <p>Startup behavior and what is kept locally.</p>
+          <div class="row"><label><b>Start with Windows</b></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+          <div class="row"><label><b>Start minimized</b></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+          <div class="row"><label><b>Keep local history</b><span>Store transcript text locally for search and reuse.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+          <div class="row"><label><b>History retention</b><span>Maximum saved entries.</span></label><div class="ctl"><select class="select"><option>100 entries</option></select></div></div>
+          <div class="row"><label><b>Clear transcript history</b><span>Removes saved text without changing settings or models.</span></label><div class="ctl"><button class="btn quiet">Clear history</button></div></div>
+          <div class="row"><label><b>Reset settings</b><span>Restores defaults and reopens setup. Models and history stay.</span></label><div class="ctl"><button class="btn quiet">Reset settings</button></div></div>
+        </section>
+      </section>
+
+      <!-- HELP -->
+      <section class="view column with-margin" data-view="help">
+        <nav class="marginalia">
+          <a href="#" aria-current="true">How it works</a><a href="#">Shortcuts</a><a href="#">Microphone</a><a href="#">Privacy</a><a href="#">Models</a><a href="#">Pasting</a><a href="#">Resetting</a>
+        </nav>
+        <h1>Help</h1>
+        <p class="lede">Sotto is small on purpose. This page covers everything it does.</p>
+
+        <div class="steps">
+          <div><b>Press the shortcut</b><span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd> works in any application. The widget opens and starts listening.</span></div>
+          <div><b>Speak naturally</b><span>Pause when you like. Press the shortcut again when you're finished, or Escape to cancel.</span></div>
+          <div><b>Your words appear</b><span>The transcript is copied, then pasted at your cursor. Nothing is sent anywhere.</span></div>
+        </div>
+
+        <article class="qa"><h2>What if another app already uses my shortcut?</h2><p>Sotto keeps your previous working shortcut active. Choose a different combination in Settings and apply it again.</p></article>
+        <article class="qa"><h2>Recording won't start.</h2><p>Open Windows Settings, then Privacy &amp; security, then Microphone, and allow desktop apps. Then choose an available input in Sotto's Settings.</p></article>
+        <article class="qa"><h2>What leaves this computer?</h2><p>Speech and transcripts stay here. Sotto has no account, analytics, cloud transcription, or per-use fee.</p><p>Two optional features do use the network: installing the Multi-lingual model contacts Hugging Face, and AI formatting sends transcript text to OpenRouter. Both are off until you turn them on, and audio is never sent.</p></article>
+        <article class="qa"><h2>Which model should I use?</h2><p>Standard is included, works offline, and is English-only. Multi-lingual is an optional download for non-English speech. Installing it sends ordinary network metadata, such as your IP address, to Hugging Face.</p></article>
+        <article class="qa"><h2>The text was copied but not pasted.</h2><p>Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in elevated, protected, or password fields and in applications with custom input handling. Paste manually with <kbd>Ctrl</kbd><kbd>V</kbd>.</p></article>
+        <article class="qa"><h2>What does resetting do?</h2><p>Resetting settings reopens first-run setup. It does not remove models or clear transcript history. Use the History controls when you want to remove saved text.</p></article>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  const win = document.querySelector('.window');
+  const params = new URLSearchParams(location.search);
+  const setView = (v) => {
+    win.dataset.view = v;
+    document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === v));
+    document.querySelector('.content').scrollTop = 0;
+  };
+  setView(params.get('view') || 'home');
+  document.documentElement.dataset.theme = params.get('theme') || 'light';
+  document.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.nav); }));
+  addEventListener('keydown', e => { if (e.key === 't') document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; });
+</script>
+</body>
+</html>
