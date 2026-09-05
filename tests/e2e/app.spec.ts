@@ -127,7 +127,7 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
 
     await finishOnboarding(launched.page)
     await launched.page.getByRole('link', { name: 'History' }).click()
-    await expect(launched.page.getByText(DETERMINISTIC_TRANSCRIPT)).toBeVisible()
+    await expect(launched.page.getByText(DETERMINISTIC_TRANSCRIPT).first()).toBeVisible()
   } finally {
     await closeSotto(launched)
   }

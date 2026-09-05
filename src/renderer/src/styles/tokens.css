@@ -1,46 +1,52 @@
-/* Sotto management-window palette — "Low lume".
+/* Sotto management-window palette — "Rail".
 
-   Dark is the reference theme: a warm near-black studio where teal is the only
-   live colour and amber is reserved for success. Light is the same studio with
-   the lights on — warm paper, ink text, the deep teal as the accent.
+   A cool, neutral workspace: a slightly darker side rail, white (or near-black)
+   panels on a soft canvas, hairline dividers, and one teal for anything live.
+   Dark and light are the same layout with the lights flipped, not two designs.
 
    The floating widget does NOT read this file. It keeps its own frozen copy in
    `widget/widget-tokens.css`.
 
-   Text tones are held at WCAG AA against every surface they are used on. The
-   mockup's faintest grey (#55524d) reads at 2.4:1 and is therefore used for
-   hairlines and resting meter bars only, never for text. */
+   Text tones are held at WCAG AA against every surface they are used on, and
+   `--tt-border` (the strong control border) clears 3:1 against every surface.
+   The faintest greys (`--tt-hairline`, `--tt-border-faint`) draw dividers and
+   resting chart bars only, never text. */
 
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
-  --tt-canvas: #f4f1ec;
-  --tt-surface: #fbf9f5;
-  --tt-surface-elevated: #fefdfa;
-  --tt-surface-sunken: #ebe7e0;
-  --tt-text: #23201d;
-  --tt-text-muted: #5f5a53;
-  --tt-border: #8a8177;
-  --tt-border-faint: #ded8cf;
-  /* Two hex steps below the widget's #2c7a72 so teal *text* clears AA on the
-     sunken rail as well as on paper. --tt-activity keeps the exact widget
-     teal, because it only ever paints graphics. */
-  --tt-primary: #2a736c;
-  --tt-primary-hover: #22645d;
+  --tt-canvas: #eef0f2;
+  --tt-side: #e2e5e9;
+  --tt-surface: #ffffff;
+  --tt-surface-elevated: #ffffff;
+  --tt-surface-sunken: #f4f5f7;
+  --tt-text: #17191c;
+  --tt-text-muted: #5a616a;
+  --tt-text-faint: #6f7680;
+  --tt-border: #767d86;
+  --tt-border-faint: #c0c6cd;
+  --tt-hairline: #d6dadf;
+  --tt-hover: rgb(0 0 0 / 5%);
+  /* Teal text and icons sit at #237c74 so they clear AA on white and on the
+     rail; the filled primary control keeps the widget's exact #2c7a72. */
+  --tt-primary: #237c74;
+  --tt-primary-hover: #1d6a63;
   --tt-primary-contrast: #ffffff;
+  --tt-primary-fill: #2c7a72;
+  --tt-primary-fill-hover: #33877e;
   --tt-activity: #2c7a72;
+  --tt-activity-wash: rgb(35 124 116 / 10%);
   --tt-success: #8c5810;
   --tt-warning: #7a5a2a;
-  --tt-error: #b03a34;
+  --tt-error: #b7433b;
   --tt-error-contrast: #ffffff;
   --tt-focus-ring: #1f6961;
-  --tt-hairline: #d8d2c8;
-  --tt-overlay: rgb(35 32 29 / 46%);
-  --tt-shadow-sm: 0 1px 2px rgb(46 40 35 / 6%);
-  --tt-shadow-lg: 0 18px 44px rgb(46 40 35 / 14%);
-  --tt-radius-sm: 10px;
-  --tt-radius-md: 12px;
-  --tt-radius-lg: 16px;
+  --tt-overlay: rgb(23 25 28 / 46%);
+  --tt-shadow-sm: 0 1px 2px rgb(23 25 28 / 6%);
+  --tt-shadow-lg: 0 18px 44px rgb(23 25 28 / 16%);
+  --tt-radius-sm: 6px;
+  --tt-radius-md: 8px;
+  --tt-radius-lg: 8px;
   --tt-font-ui:
     Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     'Segoe UI', sans-serif;
@@ -52,51 +58,63 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --tt-canvas: #141312;
-    --tt-surface: #1c1b19;
-    --tt-surface-elevated: #211f1d;
-    --tt-surface-sunken: #111010;
-    --tt-text: #ece9e4;
-    --tt-text-muted: #8d8880;
-    --tt-border: #7e7972;
-    --tt-border-faint: #292724;
-    --tt-primary: #5fbdb2;
-    --tt-primary-hover: #7ccfc5;
+    --tt-canvas: #1a1c1f;
+    --tt-side: #131518;
+    --tt-surface: #212428;
+    --tt-surface-elevated: #282b30;
+    --tt-surface-sunken: #282b30;
+    --tt-text: #e7e9ec;
+    --tt-text-muted: #969ca4;
+    --tt-text-faint: #8a9099;
+    --tt-border: #767d86;
+    --tt-border-faint: #3c4147;
+    --tt-hairline: #2d3136;
+    --tt-hover: rgb(255 255 255 / 6%);
+    --tt-primary: #4cc2b5;
+    --tt-primary-hover: #6fd0c5;
     --tt-primary-contrast: #08201e;
-    --tt-activity: #5fbdb2;
+    --tt-primary-fill: #2c7a72;
+    --tt-primary-fill-hover: #33877e;
+    --tt-activity: #4cc2b5;
+    --tt-activity-wash: rgb(76 194 181 / 12%);
     --tt-success: #f0a03c;
     --tt-warning: #e0b070;
-    --tt-error: #f0857c;
+    --tt-error: #ef8079;
     --tt-error-contrast: #2a1112;
     --tt-focus-ring: #9fe3d9;
-    --tt-hairline: #232120;
     --tt-overlay: rgb(6 5 5 / 72%);
-    --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 32%);
+    --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
     --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --tt-canvas: #141312;
-  --tt-surface: #1c1b19;
-  --tt-surface-elevated: #211f1d;
-  --tt-surface-sunken: #111010;
-  --tt-text: #ece9e4;
-  --tt-text-muted: #8d8880;
-  --tt-border: #7e7972;
-  --tt-border-faint: #292724;
-  --tt-primary: #5fbdb2;
-  --tt-primary-hover: #7ccfc5;
+  --tt-canvas: #1a1c1f;
+  --tt-side: #131518;
+  --tt-surface: #212428;
+  --tt-surface-elevated: #282b30;
+  --tt-surface-sunken: #282b30;
+  --tt-text: #e7e9ec;
+  --tt-text-muted: #969ca4;
+  --tt-text-faint: #8a9099;
+  --tt-border: #767d86;
+  --tt-border-faint: #3c4147;
+  --tt-hairline: #2d3136;
+  --tt-hover: rgb(255 255 255 / 6%);
+  --tt-primary: #4cc2b5;
+  --tt-primary-hover: #6fd0c5;
   --tt-primary-contrast: #08201e;
-  --tt-activity: #5fbdb2;
+  --tt-primary-fill: #2c7a72;
+  --tt-primary-fill-hover: #33877e;
+  --tt-activity: #4cc2b5;
+  --tt-activity-wash: rgb(76 194 181 / 12%);
   --tt-success: #f0a03c;
   --tt-warning: #e0b070;
-  --tt-error: #f0857c;
+  --tt-error: #ef8079;
   --tt-error-contrast: #2a1112;
   --tt-focus-ring: #9fe3d9;
-  --tt-hairline: #232120;
   --tt-overlay: rgb(6 5 5 / 72%);
-  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 32%);
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
   --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
 }

@@ -19,7 +19,7 @@ describe('HelpView', () => {
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.getByText(/previous working shortcut active/i)).toBeVisible()
     expect(screen.getByText(/resetting settings reopens first-run setup/i)).toBeVisible()
-    expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
+    expect(screen.getAllByLabelText('Ctrl+Shift+Space')[0]).toBeVisible()
     expect(screen.queryByRole('heading', { level: 2, name: 'Paste permissions' })).not.toBeInTheDocument()
   })
 
@@ -30,6 +30,6 @@ describe('HelpView', () => {
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.getByRole('heading', { level: 2, name: 'Paste permissions' })).toBeVisible()
     expect(screen.getByText(copy.accessibilityHelp ?? '')).toBeVisible()
-    expect(screen.getByLabelText('Control+Shift+Space')).toBeVisible()
+    expect(screen.getAllByLabelText('Control+Shift+Space')[0]).toBeVisible()
   })
 })

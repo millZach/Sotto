@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Direction 3: Tidepool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #edf3f0;
+    --glow: rgb(44 122 114 / 12%);
+    --panel: #ffffff;
+    --tint: #f3f8f6;
+    --line: #e0e9e5;
+    --text: #14302c;
+    --muted: #5f7772;
+    --faint: #93a7a2;
+    --teal: #2c7a72;
+    --teal-deep: #1f5f59;
+    --teal-soft: #d9ece7;
+    --sage-soft: #e6efe1;
+    --amber: #e8833a;
+    --amber-soft: #fbe8d8;
+    --danger: #c24a44;
+    --shadow: 0 10px 30px rgb(20 48 44 / 8%), 0 1px 2px rgb(20 48 44 / 6%);
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --hover: rgb(20 48 44 / 6%);
+  }
+  [data-theme='dark'] {
+    --canvas: #0f1a19;
+    --glow: rgb(95 189 178 / 10%);
+    --panel: #182524;
+    --tint: #1d2c2a;
+    --line: #27403c;
+    --text: #e6f0ed;
+    --muted: #9db5af;
+    --faint: #6b847e;
+    --teal: #5fbdb2;
+    --teal-deep: #8ad2c8;
+    --teal-soft: #234642;
+    --sage-soft: #223a2f;
+    --amber: #f0a03c;
+    --amber-soft: #43301a;
+    --danger: #ef8b83;
+    --shadow: 0 10px 30px rgb(0 0 0 / 30%), 0 1px 2px rgb(0 0 0 / 30%);
+    --hover: rgb(255 255 255 / 7%);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { display: grid; place-items: center; background: #7d8c88; font: 500 14px/1.5 var(--sans); color: var(--text); -webkit-font-smoothing: antialiased; }
+  svg { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .ic { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  .window {
+    position: relative; width: 1100px; height: 720px;
+    display: grid; grid-template-rows: 52px 64px 1fr;
+    background: var(--canvas) radial-gradient(60% 40% at 50% 0%, var(--glow), transparent 70%);
+    overflow: hidden; box-shadow: 0 30px 80px rgb(0 0 0 / 35%);
+  }
+  .titlebar { display: flex; align-items: center; justify-content: space-between; padding-left: 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 22px; height: 22px; }
+  .brand span { font: 500 19px var(--serif); }
+  .controls { display: flex; align-self: stretch; }
+  .controls button { width: 46px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; }
+  .controls button:hover { background: var(--hover); color: var(--text); }
+  .controls .ic { width: 16px; height: 16px; }
+
+  /* ---- floating pill nav ---- */
+  .navrow { position: relative; display: flex; justify-content: center; align-items: flex-start; }
+  .pill { display: flex; gap: 2px; padding: 4px; background: var(--panel); border-radius: 999px; box-shadow: var(--shadow); }
+  .pill a { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px 0 14px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 13.5px; }
+  .pill a:hover { background: var(--hover); color: var(--text); }
+  .pill a[aria-current] { background: var(--teal-soft); color: var(--teal-deep); }
+  .chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--tint); color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
+  .navrow > .chip { position: absolute; right: 24px; top: 8px; }
+
+  .content { overflow-y: auto; min-height: 0; }
+  .view { display: none; }
+  .window[data-view='home'] .view[data-view='home'],
+  .window[data-view='history'] .view[data-view='history'],
+  .window[data-view='settings'] .view[data-view='settings'],
+  .window[data-view='help'] .view[data-view='help'] { display: block; }
+  .column { width: 880px; margin: 0 auto; padding: 12px 0 56px; }
+  h1 { font: 500 34px/1.15 var(--serif); letter-spacing: -0.01em; }
+  h2 { font: 500 21px/1.2 var(--serif); }
+  .lede { color: var(--muted); margin-top: 6px; font-size: 14.5px; }
+  .panel { background: var(--panel); border-radius: 24px; box-shadow: var(--shadow); }
+  .panel + .panel, .titlerow + .panel, h1 + .panel { margin-top: 18px; }
+  .lede + .panel { margin-top: 24px; }
+  .titlerow { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+  kbd { display: inline-block; padding: 2px 7px; border-radius: 6px; background: var(--tint); border: 1px solid var(--line); font: 600 11.5px var(--sans); color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 18px; border-radius: 999px; border: 0; background: var(--teal); color: #fff; font-weight: 700; font-size: 13.5px; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.soft { background: var(--teal-soft); color: var(--teal-deep); }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.ghost:hover { background: var(--hover); color: var(--text); filter: none; }
+  .btn.ghost.danger { color: var(--danger); }
+  .btn.sm { height: 32px; padding: 0 14px; font-size: 12.5px; }
+  .btn .ic { width: 15px; height: 15px; }
+  .search { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; border-radius: 999px; background: var(--panel); box-shadow: var(--shadow); color: var(--faint); }
+  .search input { flex: 1; border: 0; background: transparent; font: 500 14px var(--sans); color: var(--text); outline: 0; }
+  .search input::placeholder { color: var(--faint); }
+
+  /* ---- home ---- */
+  .hero { margin-top: 22px; display: grid; grid-template-columns: 300px 1fr; }
+  .orbwrap { display: grid; place-items: center; align-content: center; gap: 18px; padding: 30px 24px; border-right: 1px solid var(--line); }
+  .orb { position: relative; width: 132px; height: 132px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff;
+    background: radial-gradient(circle at 35% 30%, #6dc7bb, var(--teal) 55%, #1c5a54 100%);
+    box-shadow: 0 14px 34px rgb(44 122 114 / 35%), inset 0 -8px 20px rgb(0 0 0 / 15%); }
+  .orb .ic { width: 40px; height: 40px; stroke-width: 1.7; }
+  .orb::before, .orb::after { content: ''; position: absolute; inset: -18px; border-radius: 50%; border: 1.5px solid var(--teal); opacity: .28; }
+  .orb::after { inset: -38px; opacity: .12; }
+  .orbwrap b { font-size: 15px; font-weight: 700; margin-top: 10px; }
+  .orbwrap .keys { display: flex; gap: 4px; }
+  .week { padding: 26px 32px 24px; }
+  .week .figures { display: flex; gap: 40px; margin-top: 16px; }
+  .figures div b { display: block; font: 500 34px/1 var(--serif); letter-spacing: -0.01em; }
+  .figures div span { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; }
+  .spark { margin-top: 20px; width: 100%; height: 72px; }
+  .recent { padding: 24px 32px 12px; }
+  .recent header { display: flex; align-items: center; justify-content: space-between; }
+  .entry { display: grid; grid-template-columns: 82px 1fr; gap: 16px; align-items: start; padding: 16px 0; border-top: 1px solid var(--line); }
+  .recent .entry:first-of-type { margin-top: 14px; }
+  .entry .chip { height: 26px; padding: 0 10px; }
+  .entry p { font-size: 14.5px; line-height: 1.55; padding-top: 2px; }
+  .entry .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* ---- history ---- */
+  .filters { display: flex; gap: 8px; margin-top: 16px; }
+  .filters button { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  .filters button[aria-pressed='true'] { background: var(--text); border-color: var(--text); color: var(--canvas); }
+  .daylabel { margin: 26px 0 10px 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .card { padding: 18px 22px; border-radius: 18px; }
+  .card + .card { margin-top: 10px; }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card .top span { color: var(--faint); font-size: 12.5px; }
+  .card p { margin-top: 10px; font-size: 14.5px; line-height: 1.55; }
+  .card .actions { display: flex; gap: 6px; margin-top: 12px; }
+
+  /* ---- settings ---- */
+  .sec { padding: 22px 28px 8px; }
+  .sec header { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; }
+  .sec header .icon { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; background: var(--teal-soft); color: var(--teal-deep); }
+  .sec header .icon.amber { background: var(--amber-soft); color: var(--amber); }
+  .sec header .icon.sage { background: var(--sage-soft); color: #4f7a3f; }
+  [data-theme='dark'] .sec header .icon.sage { color: #a3c585; }
+  .sec header p { color: var(--muted); font-size: 13px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .row label b { display: block; font-weight: 600; font-size: 14px; }
+  .row label span { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.45; }
+  .row .ctl { display: flex; align-items: center; gap: 8px; flex: none; }
+  .select, .input { height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--tint); color: var(--text); font: 600 13px var(--sans); width: 240px; }
+  .select { appearance: none; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 17px) 16px, calc(100% - 12px) 16px; background-size: 5px 5px; background-repeat: no-repeat; }
+  .input.short { width: 96px; text-align: right; }
+  textarea.input { height: 76px; padding: 8px 14px; resize: none; }
+  .toggle { width: 46px; height: 27px; border-radius: 999px; border: 0; background: var(--line); position: relative; padding: 0; flex: none; }
+  .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 3px rgb(0 0 0 / 20%); }
+  .toggle[aria-checked='true'] { background: var(--teal); }
+  .toggle[aria-checked='true']::after { left: 22px; }
+  .toggle:disabled { opacity: .5; }
+  .segment { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--tint); border: 1px solid var(--line); }
+  .segment button { border: 0; background: transparent; height: 30px; padding: 0 14px; border-radius: 999px; font-weight: 600; font-size: 12.5px; color: var(--muted); }
+  .segment button[aria-pressed='true'] { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+
+  /* ---- help ---- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 26px 28px 30px; }
+  .steps .step { position: relative; padding: 20px; border-radius: 18px; background: var(--tint); }
+  .steps .num { position: absolute; top: 16px; right: 18px; font: 500 22px var(--serif); color: var(--faint); }
+  .steps .icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--teal-soft); color: var(--teal-deep); }
+  .steps b { display: block; margin-top: 16px; font-size: 15px; font-weight: 700; }
+  .steps p { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .qa { border-top: 1px solid var(--line); }
+  .qa summary { list-style: none; display: flex; align-items: center; justify-content: space-between; padding: 16px 0; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary .ic { color: var(--faint); }
+  .qa[open] summary .ic { transform: rotate(180deg); }
+  .qa .a { padding: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 66ch; }
+  .qa .a p + p { margin-top: 8px; }
+  .qas { padding: 8px 28px 10px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="mark-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cf6c0d"/><stop offset="1" stop-color="#8f4404"/></linearGradient>
+    <linearGradient id="spark-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c7a72" stop-opacity=".35"/><stop offset="1" stop-color="#2c7a72" stop-opacity="0"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="url(#mark-g)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="#fff"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 13l3.5-4.5"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="3"/><path d="M9 4V3h6v1M9 12h6M9 16h4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/></symbol>
+  </defs>
+</svg>
+
+<div class="window" data-view="home">
+  <header class="titlebar">
+    <div class="brand"><svg><use href="#mark"/></svg><span>Sotto</span></div>
+    <div class="controls"><button aria-label="Minimize"><svg class="ic"><use href="#i-minus"/></svg></button><button aria-label="Close to tray"><svg class="ic"><use href="#i-x"/></svg></button></div>
+  </header>
+
+  <div class="navrow">
+    <nav class="pill">
+      <a href="?view=home" data-nav="home"><svg class="ic"><use href="#i-home"/></svg>Home</a>
+      <a href="?view=history" data-nav="history"><svg class="ic"><use href="#i-clock"/></svg>History</a>
+      <a href="?view=settings" data-nav="settings"><svg class="ic"><use href="#i-sliders"/></svg>Settings</a>
+      <a href="?view=help" data-nav="help"><svg class="ic"><use href="#i-help"/></svg>Help</a>
+    </nav>
+    <span class="chip"><i></i>Ready, on this device</span>
+  </div>
+
+  <div class="content">
+
+    <!-- HOME -->
+    <section class="view column" data-view="home">
+      <h1>Good afternoon, Zach.</h1>
+      <p class="lede">Ready when you are. Press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> anywhere, or start here.</p>
+
+      <div class="panel hero">
+        <div class="orbwrap">
+          <button class="orb" aria-label="Start dictation"><svg class="ic"><use href="#i-mic"/></svg></button>
+          <b>Start dictation</b>
+        </div>
+        <div class="week">
+          <h2>This week</h2>
+          <div class="figures">
+            <div><b>2,847</b><span>words</span></div>
+            <div><b>132</b><span>words a minute</span></div>
+            <div><b>43</b><span>minutes</span></div>
+          </div>
+          <svg class="spark" viewBox="0 0 520 72" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 48 C 40 40, 60 30, 90 34 S 150 52, 190 44 S 260 62, 300 60 S 380 30, 420 22 S 490 12, 520 8 L520 72 L0 72 Z" fill="url(#spark-g)"/>
+            <path d="M0 48 C 40 40, 60 30, 90 34 S 150 52, 190 44 S 260 62, 300 60 S 380 30, 420 22 S 490 12, 520 8" fill="none" stroke="#2c7a72" stroke-width="2.2" stroke-linecap="round"/>
+            <circle cx="520" cy="8" r="4" fill="#2c7a72"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel recent">
+        <header><h2>Recent</h2><button class="btn soft sm" data-nav="history">See all</button></header>
+        <div class="entry"><span class="chip">11:14</span><p class="clamp">Morning standup notes: the irrigation controller deploy went out clean, and the flow sensor calibration is scheduled for Thursday with the vendor on site.</p></div>
+        <div class="entry"><span class="chip">07:14</span><p class="clamp">Hey Priya, sounds good. Let's move the review to 4:45 and I'll bring the updated P&amp;ID markups for the skid.</p></div>
+        <div class="entry"><span class="chip">Yesterday</span><p class="clamp">Reminder to archive the 3.3.5 installers and append the mac hashes before uploading the checksum file.</p></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view column" data-view="history">
+      <div class="titlerow">
+        <div><h1>History</h1><p class="lede">34 transcripts, kept on this computer only.</p></div>
+        <button class="btn ghost danger sm">Clear history</button>
+      </div>
+      <div class="search" style="margin-top:20px"><svg class="ic"><use href="#i-search"/></svg><input placeholder="Search your transcripts"></div>
+      <div class="filters"><button aria-pressed="true">All</button><button>Today</button><button>This week</button><button>Pasted</button><button>Copied only</button></div>
+
+      <p class="daylabel">Today</p>
+      <div class="panel card"><div class="top"><span class="chip">11:14</span><span>English, Standard, 12 seconds, pasted into Notion</span></div><p>Morning standup notes: the irrigation controller deploy went out clean, and the flow sensor calibration is scheduled for Thursday with the vendor on site.</p><div class="actions"><button class="btn soft sm"><svg class="ic"><use href="#i-copy"/></svg>Copy</button><button class="btn ghost danger sm"><svg class="ic"><use href="#i-trash"/></svg>Delete</button></div></div>
+      <div class="panel card"><div class="top"><span class="chip">07:14</span><span>English, Standard, 9 seconds, pasted into Teams</span></div><p>Hey Priya, sounds good. Let's move the review to 4:45 and I'll bring the updated P&amp;ID markups for the skid.</p><div class="actions"><button class="btn soft sm"><svg class="ic"><use href="#i-copy"/></svg>Copy</button><button class="btn ghost danger sm"><svg class="ic"><use href="#i-trash"/></svg>Delete</button></div></div>
+      <p class="daylabel">Yesterday</p>
+      <div class="panel card"><div class="top"><span class="chip">16:40</span><span>English, Standard, 8 seconds, copied</span></div><p>Reminder to archive the 3.3.5 installers and append the mac hashes before uploading the checksum file.</p><div class="actions"><button class="btn soft sm"><svg class="ic"><use href="#i-copy"/></svg>Copy</button><button class="btn ghost danger sm"><svg class="ic"><use href="#i-trash"/></svg>Delete</button></div></div>
+      <div class="panel card"><div class="top"><span class="chip">09:22</span><span>English, Standard, 14 seconds, pasted into Notion</span></div><p>Draft for the release notes: auto-update now asks before downloading, the design gate is deterministic, and the Value formatting tier runs on GLM-5.3 Flash.</p><div class="actions"><button class="btn soft sm"><svg class="ic"><use href="#i-copy"/></svg>Copy</button><button class="btn ghost danger sm"><svg class="ic"><use href="#i-trash"/></svg>Delete</button></div></div>
+      <p class="daylabel">Monday, August 31</p>
+      <div class="panel card"><div class="top"><span class="chip">14:05</span><span>English, Standard, 11 seconds, pasted into Outlook</span></div><p>The pump curve on the second stage looks flat above eighty percent, so let's ask the vendor for the impeller trim options before we commit.</p><div class="actions"><button class="btn soft sm"><svg class="ic"><use href="#i-copy"/></svg>Copy</button><button class="btn ghost danger sm"><svg class="ic"><use href="#i-trash"/></svg>Delete</button></div></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view column" data-view="settings">
+      <h1>Settings</h1>
+      <p class="lede">Changes save as you make them.</p>
+
+      <div class="panel sec">
+        <header><div class="icon"><svg class="ic"><use href="#i-monitor"/></svg></div><div><h2>Appearance</h2><p>How Sotto looks and moves.</p></div></header>
+        <div class="row"><label><b>Theme</b><span>Follow Windows, or choose one.</span></label><div class="ctl"><div class="segment"><button aria-pressed="true">System</button><button>Light</button><button>Dark</button></div></div></div>
+        <div class="row"><label><b>Reduced motion</b><span>Follow Windows or minimize non-essential motion.</span></label><div class="ctl"><select class="select"><option>Follow system</option></select></div></div>
+        <div class="row"><label><b>Show floating widget when idle</b><span>Keep the small dictation sliver on screen between sessions. Click it to dictate.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon amber"><svg class="ic"><use href="#i-mic"/></svg></div><div><h2>Capture</h2><p>Microphone, shortcut, and recording length.</p></div></header>
+        <div class="row"><label><b>Microphone</b><span>Input used for future recordings.</span></label><div class="ctl"><select class="select"><option>Windows default</option></select></div></div>
+        <div class="row"><label><b>Global shortcut</b><span>Used anywhere in Windows to start and stop dictation.</span></label><div class="ctl"><input class="input" value="Ctrl+Shift+Space" style="width:170px"><button class="btn soft sm">Apply</button></div></div>
+        <div class="row"><label><b>Maximum recording time</b><span>Sotto stops automatically at this limit.</span></label><div class="ctl"><select class="select"><option>1 minute</option></select></div></div>
+        <div class="row"><label><b>Sound cues</b><span>Play a short local sound when recording starts and stops.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon"><svg class="ic"><use href="#i-gauge"/></svg></div><div><h2>Transcription</h2><p>Balance speed, accuracy, and local hardware use.</p></div></header>
+        <div class="row"><label><b>Language</b><span>Automatic uses English defaults; choose a language for multilingual speech.</span></label><div class="ctl"><select class="select"><option>Automatic</option></select></div></div>
+        <div class="row"><label><b>Whitespace formatting</b><span>Trim and normalize repeated whitespace without changing words.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        <div class="row"><label><b>Transcription server</b><span>An OpenAI-compatible speech server on your network.</span></label><div class="ctl"><input class="input" placeholder="http://desktop.local:5092"></div></div>
+        <div class="row"><label><b>Use the transcription server</b><span>Falls back to on-device transcription if the server is slow.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+        <div class="row"><label><b>Streaming transcription</b><span>Transcribe while you speak so long dictations finish right after you stop.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon sage"><svg class="ic"><use href="#i-sparkle"/></svg></div><div><h2>Formatting</h2><p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p></div></header>
+        <div class="row"><label><b>AI formatting</b><span>Sends transcript text, never audio, to OpenRouter. Falls back to the raw transcript if offline.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+        <div class="row"><label><b>Formatting quality</b><span>Low is near-instant; higher tiers add up to a couple of seconds.</span></label><div class="ctl"><select class="select"><option>Value, near-High (GLM-5.3 Flash)</option></select></div></div>
+        <div class="row"><label><b>OpenRouter API key</b><span>Stored locally in settings.</span></label><div class="ctl"><input class="input" type="password" value="sk-or-v1-9f3a2"></div></div>
+        <div class="row"><label><b>Personal dictionary</b><span>One word or name per line. Mis-heard words are corrected toward these.</span></label><div class="ctl"><textarea class="input">Priya
+P&amp;ID
+Moonshine</textarea></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon"><svg class="ic"><use href="#i-clip"/></svg></div><div><h2>Output</h2><p>Clipboard copy always protects the result when paste is unavailable.</p></div></header>
+        <div class="row"><label><b>Automatic clipboard copy</b><span>Always on for every successful transcript.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true" disabled></button></div></div>
+        <div class="row"><label><b>Automatic paste</b><span>Paste at the cursor after copying.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        <div class="row"><label><b>Paste delay</b><span>Milliseconds to wait before attempting paste.</span></label><div class="ctl"><input class="input short" value="120"></div></div>
+        <div class="row"><label><b>Success message duration</b><span>Milliseconds the success state remains visible.</span></label><div class="ctl"><input class="input short" value="1500"></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon amber"><svg class="ic"><use href="#i-download"/></svg></div><div><h2>Updates</h2><p>Sotto looks for new releases on GitHub and asks before downloading.</p></div></header>
+        <div class="row"><label><b>Sotto 3.5.0 is up to date</b><span>Checked today at 09:12.</span></label><div class="ctl"><button class="btn soft sm">Check now</button></div></div>
+        <div class="row"><label><b>Check for updates automatically</b><span>Once a day. GitHub receives only ordinary request metadata.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+      </div>
+
+      <div class="panel sec">
+        <header><div class="icon"><svg class="ic"><use href="#i-shield"/></svg></div><div><h2>Application and privacy</h2><p>Startup behavior and what is kept locally.</p></div></header>
+        <div class="row"><label><b>Start with Windows</b></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        <div class="row"><label><b>Start minimized</b></label><div class="ctl"><button class="toggle" role="switch" aria-checked="false"></button></div></div>
+        <div class="row"><label><b>Keep local history</b><span>Store transcript text locally for search and reuse.</span></label><div class="ctl"><button class="toggle" role="switch" aria-checked="true"></button></div></div>
+        <div class="row"><label><b>History retention</b><span>Maximum saved entries.</span></label><div class="ctl"><select class="select"><option>100 entries</option></select></div></div>
+        <div class="row"><label><b>Clear transcript history</b><span>Removes saved text without changing settings or models.</span></label><div class="ctl"><button class="btn ghost danger sm">Clear history</button></div></div>
+        <div class="row"><label><b>Reset settings</b><span>Restores defaults and reopens setup. Models and history stay.</span></label><div class="ctl"><button class="btn soft sm">Reset settings</button></div></div>
+      </div>
+    </section>
+
+    <!-- HELP -->
+    <section class="view column" data-view="help">
+      <h1>Help</h1>
+      <p class="lede">Sotto is small on purpose. This page covers everything it does.</p>
+
+      <div class="panel">
+        <div class="steps">
+          <div class="step"><span class="num">1</span><div class="icon"><svg class="ic"><use href="#i-keyboard"/></svg></div><b>Press the shortcut</b><p><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> works in any application. The widget opens and starts listening.</p></div>
+          <div class="step"><span class="num">2</span><div class="icon"><svg class="ic"><use href="#i-mic"/></svg></div><b>Speak naturally</b><p>Pause when you like. Press the shortcut again to finish, or Escape to cancel.</p></div>
+          <div class="step"><span class="num">3</span><div class="icon"><svg class="ic"><use href="#i-text"/></svg></div><b>Your words appear</b><p>The transcript is copied, then pasted at your cursor. Nothing is sent anywhere.</p></div>
+        </div>
+      </div>
+
+      <div class="panel qas">
+        <details class="qa" open style="border-top:0"><summary>What if another app already uses my shortcut?<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Sotto keeps your previous working shortcut active. Choose a different combination in Settings and apply it again.</p></div></details>
+        <details class="qa"><summary>Recording won't start<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Open Windows Settings, then Privacy &amp; security, then Microphone, and allow desktop apps. Then choose an available input in Sotto's Settings.</p></div></details>
+        <details class="qa"><summary>What leaves this computer?<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Speech and transcripts stay here. Sotto has no account, analytics, cloud transcription, or per-use fee.</p><p>Installing the Multi-lingual model contacts Hugging Face, and AI formatting sends transcript text to OpenRouter. Both are off until you turn them on. Audio is never sent.</p></div></details>
+        <details class="qa"><summary>Which model should I use?<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Standard is included, works offline, and is English-only. Multi-lingual is an optional download for non-English speech.</p></div></details>
+        <details class="qa"><summary>The text was copied but not pasted<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Automatic paste may be blocked in elevated, protected, or password fields and in applications with custom input handling. Paste manually with <kbd>Ctrl</kbd> <kbd>V</kbd>.</p></div></details>
+        <details class="qa"><summary>What does resetting do?<svg class="ic"><use href="#i-chev"/></svg></summary><div class="a"><p>Resetting settings reopens first-run setup. It does not remove models or clear transcript history.</p></div></details>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  const win = document.querySelector('.window');
+  const params = new URLSearchParams(location.search);
+  const setView = (v) => {
+    win.dataset.view = v;
+    document.querySelectorAll('.pill [data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === v));
+    document.querySelector('.content').scrollTop = 0;
+  };
+  setView(params.get('view') || 'home');
+  document.documentElement.dataset.theme = params.get('theme') || 'light';
+  document.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.nav); }));
+  addEventListener('keydown', e => { if (e.key === 't') document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; });
+</script>
+</body>
+</html>

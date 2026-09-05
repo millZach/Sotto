@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, CircleAlert, Download, Gauge, HardDrive, Keyboard, MonitorCog, Sparkles, Trash2 } from 'lucide-react'
+import { Check, CircleAlert, Trash2 } from 'lucide-react'
 
 import {
   REMOTE_ASR_PRIVACY_NOTICE,
@@ -33,6 +33,7 @@ import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
+import { KNOWN_LANGUAGES } from '../../languages'
 import { platformCopy } from '../../platformCopy'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
@@ -66,17 +67,23 @@ export interface SettingsViewProps {
   readonly onInstallUpdate: () => Promise<boolean>
 }
 
-const knownLanguages = [
-  { value: 'auto', label: 'Automatic (English default)' },
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'it', label: 'Italian' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'zh', label: 'Chinese' },
+const SETTINGS_SECTIONS = [
+  { id: 'settings-appearance', label: 'Appearance' },
+  { id: 'settings-capture', label: 'Capture' },
+  { id: 'settings-transcription', label: 'Transcription' },
+  { id: 'settings-formatting', label: 'Formatting' },
+  { id: 'settings-output', label: 'Output' },
+  { id: 'settings-updates', label: 'Updates' },
+  { id: 'settings-privacy', label: 'Privacy' },
 ] as const
+
+type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
+
+function prefersStillMotion(): boolean {
+  if (typeof document !== 'undefined' && document.documentElement.dataset.reducedMotion === 'on') return true
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
 
 function bytesLabel(bytes: number): string {
   return `${Math.round(bytes / 1_000_000)} MB`
@@ -423,7 +430,25 @@ export function SettingsView({
   ), [disclosures])
 
   const copy = platformCopy(platform)
-  const languageKnown = knownLanguages.some(({ value }) => value === settings.language)
+  const languageKnown = KNOWN_LANGUAGES.some(({ value }) => value === settings.language)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id)
+  // Scroll-spy for the sub-navigation: the last section whose top has passed
+  // the scroller's top edge is the one being read.
+  const updateActiveSection = useCallback((): void => {
+    const scroller = scrollRef.current
+    if (scroller === null) return
+    const edge = scroller.getBoundingClientRect().top + 24
+    let current: SettingsSectionId = SETTINGS_SECTIONS[0].id
+    for (const section of SETTINGS_SECTIONS) {
+      const element = scroller.querySelector<HTMLElement>(`#${section.id}`)
+      if (element !== null && element.getBoundingClientRect().top <= edge) current = section.id
+    }
+    if (scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+      current = 'settings-privacy'
+    }
+    setActiveSection(current)
+  }, [])
   const microphoneKnown = settings.microphoneId === null || microphones.some(({ deviceId }) => deviceId === settings.microphoneId)
 
   const saveTheme = async (theme: Theme): Promise<void> => {
@@ -467,157 +492,185 @@ export function SettingsView({
     )
   }), [modelStatuses, optionalDisclosure, save, settings.modelPreset])
 
+  const jumpToSection = (id: SettingsSectionId): void => {
+    setActiveSection(id)
+    const target = scrollRef.current?.querySelector<HTMLElement>(`#${id}`)
+    if (target === null || target === undefined) return
+    if (typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start', behavior: prefersStillMotion() ? 'auto' : 'smooth' })
+    }
+  }
+
   return (
     <div className="management-view settings-view">
       <h1 className="tt-visually-hidden" ref={headingRef} tabIndex={-1}>Settings</h1>
-      {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
+      <div className="settings-layout">
+        <nav className="settings-subnav" aria-label="Settings sections">
+          {SETTINGS_SECTIONS.map((section) => (
+            <a
+              key={section.id}
+              className="tt-focusable"
+              href={`#${section.id}`}
+              aria-current={activeSection === section.id ? 'true' : undefined}
+              onClick={(event) => { event.preventDefault(); jumpToSection(section.id) }}
+            >{section.label}</a>
+          ))}
+        </nav>
+        <div className="settings-scroll" ref={scrollRef} onScroll={updateActiveSection}>
+          {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
 
-      <Card className="settings-section">
-        <div className="settings-section__heading"><MonitorCog aria-hidden="true" /><div><h2>Appearance</h2><p>Choose how Sotto looks and moves.</p></div></div>
-        <div className="settings-fields-grid">
-          <Field label="Theme" description={copy.settingsThemeDescription}><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
-          <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
-          <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
-        </div>
-      </Card>
+          <Card className="settings-section" id="settings-appearance">
+            <div className="settings-section__heading"><h2>Appearance</h2><p>Choose how Sotto looks and moves.</p></div>
+            <div className="settings-rows">
+              <Field label="Theme" description={copy.settingsThemeDescription}><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
+              <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
+              <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
+            </div>
+          </Card>
 
-      <Card className="settings-section">
-        <div className="settings-section__heading"><Keyboard aria-hidden="true" /><div><h2>Capture</h2><p>Control the microphone, shortcut, and recording length.</p></div></div>
-        <div className="settings-fields-grid">
-          <Field label="Microphone" description={deviceState === 'error' ? copy.settingsMicrophoneUnavailable : 'Input used for future recordings.'}>
-            <Select value={settings.microphoneId ?? ''} onChange={(event) => void save({ microphoneId: event.currentTarget.value || null })}>
-              <option value="">{copy.settingsMicrophoneDefaultOption}</option>
-              {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
-              {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
-            </Select>
-          </Field>
-          <div className="settings-input-action">
-            <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
-              <input className="tt-input" value={hotkeyDraft} onChange={(event) => {
-                const value = event.currentTarget.value
-                hotkeyDraftRef.current = value
-                hotkeyEditVersionRef.current += 1
-                setHotkeyDraft(value)
+          <Card className="settings-section" id="settings-capture">
+            <div className="settings-section__heading"><h2>Capture</h2><p>Control the microphone, shortcut, and recording length.</p></div>
+            <div className="settings-rows">
+              <Field label="Microphone" description={deviceState === 'error' ? copy.settingsMicrophoneUnavailable : 'Input used for future recordings.'}>
+                <Select value={settings.microphoneId ?? ''} onChange={(event) => void save({ microphoneId: event.currentTarget.value || null })}>
+                  <option value="">{copy.settingsMicrophoneDefaultOption}</option>
+                  {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
+                  {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
+                </Select>
+              </Field>
+              <div className="settings-input-action">
+                <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
+                  <input className="tt-input" value={hotkeyDraft} onChange={(event) => {
+                    const value = event.currentTarget.value
+                    hotkeyDraftRef.current = value
+                    hotkeyEditVersionRef.current += 1
+                    setHotkeyDraft(value)
+                  }} />
+                </Field>
+                <Button variant="secondary" onClick={async () => {
+                  const candidate = parseAccelerator(hotkeyDraftRef.current, platform)
+                  if (candidate === null) {
+                    const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
+                    hotkeyDraftRef.current = display
+                    setHotkeyDraft(display)
+                    setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
+                    return
+                  }
+                  const submission: DraftSubmission<string> = {
+                    token: ++hotkeyTokenRef.current,
+                    submitted: candidate,
+                    authoritativeAtSubmit: canonicalAccelerator(settingsRef.current.hotkey, platform),
+                    editVersion: hotkeyEditVersionRef.current,
+                  }
+                  hotkeySubmissionRef.current = submission
+                  const result = await onReplaceHotkey(candidate).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
+                  if (hotkeySubmissionRef.current?.token !== submission.token) return
+                  if (result.ok) setNotice({ text: 'Global shortcut updated.', error: false })
+                  else {
+                    hotkeySubmissionRef.current = null
+                    if (hotkeyEditVersionRef.current === submission.editVersion) {
+                      const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
+                      hotkeyDraftRef.current = display
+                      setHotkeyDraft(display)
+                    }
+                    setNotice({ text: result.reason === 'conflict' ? 'Another application is already using that shortcut. Your previous shortcut is still active.' : result.reason === 'invalid' ? 'That shortcut is not valid. Your previous shortcut is still active.' : 'The shortcut could not be updated. Your previous shortcut is still active.', error: true })
+                  }
+                }}>Apply shortcut</Button>
+              </div>
+              <Field label="Maximum recording time" description="Sotto stops automatically at this limit."><Select value={String(settings.maxRecordingSeconds)} onChange={(event) => void save({ maxRecordingSeconds: Number(event.currentTarget.value) as AppSettings['maxRecordingSeconds'] })}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></Select></Field>
+              <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="Play a short local sound when recording starts and stops." />
+            </div>
+          </Card>
+
+          <Card className="settings-section" id="settings-transcription">
+            <div className="settings-section__heading"><h2>Transcription</h2><p>Balance speed, accuracy, and local hardware use.</p></div>
+            <div className="settings-model-grid">{modelCards}</div>
+            {disclosureState === 'error' ? <p className="settings-inline-warning"><CircleAlert size={16} />{modelReady(modelStatuses.instant) ? 'Optional model details are unavailable. Standard remains ready and no download can start.' : 'Optional model details are unavailable, so no model download can start.'}</p> : null}
+            <div className="settings-rows">
+              <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{KNOWN_LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
+              <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
+              <div className="settings-input-action">
+                <Field label="Transcription server" description="Base address of an OpenAI-compatible speech server on your network, such as http://desktop.local:5092.">
+                  <input className="tt-input" inputMode="url" autoComplete="off" spellCheck={false} placeholder="http://host:port" value={remoteAsrUrlDraft} onChange={(event) => { setRemoteAsrStatus(null); setRemoteAsrUrlDraft(event.currentTarget.value) }} />
+                </Field>
+                <Button variant="secondary" disabled={remoteAsrTesting} onClick={() => void saveAndTestRemoteAsr()}>{remoteAsrTesting ? 'Testing...' : 'Save and test'}</Button>
+              </div>
+              <Toggle label="Use the transcription server" checked={settings.remoteAsr} disabled={settings.remoteAsrUrl.trim().length === 0} onCheckedChange={(checked) => void save({ remoteAsr: checked })} description={REMOTE_ASR_PRIVACY_NOTICE} />
+            </div>
+            {remoteAsrStatus === null ? null : <p className={`settings-remote-status${remoteAsrStatus.error ? ' settings-remote-status--error' : ''}`} role="status">{remoteAsrStatus.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{remoteAsrStatus.text}</p>}
+          </Card>
+
+          <Card className="settings-section" id="settings-formatting">
+            <div className="settings-section__heading"><h2>Formatting</h2><p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p></div>
+            <div className="settings-rows">
+              <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text (never audio) to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
+              <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
+              <div className="settings-input-action">
+                <Field label="OpenRouter API key" description="Required for AI formatting. Stored locally in settings.">
+                  <input className="tt-input" type="password" autoComplete="off" value={llmApiKeyDraft} onChange={(event) => setLlmApiKeyDraft(event.currentTarget.value)} />
+                </Field>
+                <Button variant="secondary" onClick={() => void save({ llmApiKey: llmApiKeyDraft.trim() }, 'API key saved.')}>Save API key</Button>
+              </div>
+              <div className="settings-input-action">
+                <Field label="Personal dictionary" description="One word or name per line. The AI corrects mis-heard words toward these.">
+                  <textarea className="tt-input" rows={5} value={llmDictionaryDraft} onChange={(event) => setLlmDictionaryDraft(event.currentTarget.value)} />
+                </Field>
+                <Button variant="secondary" onClick={() => void save({ llmDictionary: llmDictionaryDraft }, 'Dictionary saved.')}>Save dictionary</Button>
+              </div>
+              <Toggle label="Streaming transcription" checked={settings.streamingAsr} onCheckedChange={(checked) => void save({ streamingAsr: checked })} description="Transcribe while you speak so long dictations finish almost immediately after you stop." />
+            </div>
+          </Card>
+
+          <Card className="settings-section" id="settings-output">
+            <div className="settings-section__heading"><h2>Output</h2><p>Clipboard copy always protects the result when paste is unavailable.</p></div>
+            <div className="settings-rows">
+              <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always enabled for every successful non-empty transcript." />
+              <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
+              <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => { const value = event.currentTarget.value; pasteDelayDraftRef.current = value; pasteDelayEditVersionRef.current += 1; setPasteDelayDraft(value) }} /></Field><Button variant="secondary" onClick={() => void savePasteDelay()}>Save paste delay</Button></div>
+              <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field><Button variant="secondary" onClick={() => void saveSuccessDuration()}>Save success duration</Button></div>
+            </div>
+          </Card>
+
+          <Card className="settings-section" id="settings-updates">
+            <div className="settings-section__heading"><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div>
+            <div className="settings-update-row">
+              <div>
+                <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `Sotto ${updateStatus.currentVersion}`}</p>
+                <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
+              </div>
+              <div className="settings-update-actions">
+                {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
+                {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart to update</Button> : null}
+                <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
+              </div>
+            </div>
+            <div className="settings-rows">
+              <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
+            </div>
+          </Card>
+
+          <Card className="settings-section" id="settings-privacy">
+            <div className="settings-section__heading"><h2>Application and privacy</h2><p>Choose startup behavior and what is retained locally.</p></div>
+            <div className="settings-rows">
+              <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
+                const result = await onSetStartup(checked).catch(() => null)
+                setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: copy.settingsStartupFailureNotice, error: true })
               }} />
-            </Field>
-            <Button variant="secondary" onClick={async () => {
-              const candidate = parseAccelerator(hotkeyDraftRef.current, platform)
-              if (candidate === null) {
-                const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
-                hotkeyDraftRef.current = display
-                setHotkeyDraft(display)
-                setNotice({ text: 'Enter a valid shortcut. Your previous shortcut is still active.', error: true })
-                return
-              }
-              const submission: DraftSubmission<string> = {
-                token: ++hotkeyTokenRef.current,
-                submitted: candidate,
-                authoritativeAtSubmit: canonicalAccelerator(settingsRef.current.hotkey, platform),
-                editVersion: hotkeyEditVersionRef.current,
-              }
-              hotkeySubmissionRef.current = submission
-              const result = await onReplaceHotkey(candidate).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
-              if (hotkeySubmissionRef.current?.token !== submission.token) return
-              if (result.ok) setNotice({ text: 'Global shortcut updated.', error: false })
-              else {
-                hotkeySubmissionRef.current = null
-                if (hotkeyEditVersionRef.current === submission.editVersion) {
-                  const display = formatAccelerator(settingsRef.current.hotkey, platform, 'editing')
-                  hotkeyDraftRef.current = display
-                  setHotkeyDraft(display)
-                }
-                setNotice({ text: result.reason === 'conflict' ? 'Another application is already using that shortcut. Your previous shortcut is still active.' : result.reason === 'invalid' ? 'That shortcut is not valid. Your previous shortcut is still active.' : 'The shortcut could not be updated. Your previous shortcut is still active.', error: true })
-              }
-            }}>Apply shortcut</Button>
-          </div>
-          <Field label="Maximum recording time" description="Sotto stops automatically at this limit."><Select value={String(settings.maxRecordingSeconds)} onChange={(event) => void save({ maxRecordingSeconds: Number(event.currentTarget.value) as AppSettings['maxRecordingSeconds'] })}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></Select></Field>
-          <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="Play a short local sound when recording starts and stops." />
+              <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
+              <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse." />
+              <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
+            </div>
+            <div className="settings-danger-row">
+              <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div>
+              <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
+            </div>
+            <div className="settings-danger-row">
+              <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Downloaded models and history remain in place.</p></div>
+              <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
+            </div>
+          </Card>
         </div>
-      </Card>
-
-      <Card className="settings-section">
-        <div className="settings-section__heading"><Gauge aria-hidden="true" /><div><h2>Transcription</h2><p>Balance speed, accuracy, and local hardware use.</p></div></div>
-        <div className="settings-model-grid">{modelCards}</div>
-        {disclosureState === 'error' ? <p className="settings-inline-warning"><CircleAlert size={16} />{modelReady(modelStatuses.instant) ? 'Optional model details are unavailable. Standard remains ready and no download can start.' : 'Optional model details are unavailable, so no model download can start.'}</p> : null}
-        <div className="settings-fields-grid">
-          <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{knownLanguages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
-          <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
-          <div className="settings-input-action">
-            <Field label="Transcription server" description="Base address of an OpenAI-compatible speech server on your network, such as http://desktop.local:5092.">
-              <input className="tt-input" inputMode="url" autoComplete="off" spellCheck={false} placeholder="http://host:port" value={remoteAsrUrlDraft} onChange={(event) => { setRemoteAsrStatus(null); setRemoteAsrUrlDraft(event.currentTarget.value) }} />
-            </Field>
-            <Button variant="secondary" disabled={remoteAsrTesting} onClick={() => void saveAndTestRemoteAsr()}>{remoteAsrTesting ? 'Testing...' : 'Save and test'}</Button>
-          </div>
-          <Toggle label="Use the transcription server" checked={settings.remoteAsr} disabled={settings.remoteAsrUrl.trim().length === 0} onCheckedChange={(checked) => void save({ remoteAsr: checked })} description={REMOTE_ASR_PRIVACY_NOTICE} />
-        </div>
-        {remoteAsrStatus === null ? null : <p className={`settings-remote-status${remoteAsrStatus.error ? ' settings-remote-status--error' : ''}`} role="status">{remoteAsrStatus.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{remoteAsrStatus.text}</p>}
-      </Card>
-
-      <Card className="settings-section">
-        <div className="settings-section__heading"><Sparkles aria-hidden="true" /><div><h2>Formatting</h2><p>Optional AI cleanup for punctuation, self-corrections, and tricky words.</p></div></div>
-        <div className="settings-fields-grid">
-          <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text (never audio) to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
-          <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
-          <div className="settings-input-action">
-            <Field label="OpenRouter API key" description="Required for AI formatting. Stored locally in settings.">
-              <input className="tt-input" type="password" autoComplete="off" value={llmApiKeyDraft} onChange={(event) => setLlmApiKeyDraft(event.currentTarget.value)} />
-            </Field>
-            <Button variant="secondary" onClick={() => void save({ llmApiKey: llmApiKeyDraft.trim() }, 'API key saved.')}>Save API key</Button>
-          </div>
-          <div className="settings-input-action">
-            <Field label="Personal dictionary" description="One word or name per line. The AI corrects mis-heard words toward these.">
-              <textarea className="tt-input" rows={5} value={llmDictionaryDraft} onChange={(event) => setLlmDictionaryDraft(event.currentTarget.value)} />
-            </Field>
-            <Button variant="secondary" onClick={() => void save({ llmDictionary: llmDictionaryDraft }, 'Dictionary saved.')}>Save dictionary</Button>
-          </div>
-          <Toggle label="Streaming transcription" checked={settings.streamingAsr} onCheckedChange={(checked) => void save({ streamingAsr: checked })} description="Transcribe while you speak so long dictations finish almost immediately after you stop." />
-        </div>
-      </Card>
-
-      <Card className="settings-section">
-        <div className="settings-section__heading"><HardDrive aria-hidden="true" /><div><h2>Output</h2><p>Clipboard copy always protects the result when paste is unavailable.</p></div></div>
-        <div className="settings-fields-grid">
-          <Toggle label="Automatic clipboard copy" checked disabled onCheckedChange={() => undefined} description="Always enabled for every successful non-empty transcript." />
-          <Toggle label="Automatic paste" checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
-          <div className="settings-input-action"><Field label="Paste delay" description="Milliseconds to wait before attempting paste (50-1000)." {...(pasteDelayError === undefined ? {} : { error: pasteDelayError })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft} onChange={(event) => { const value = event.currentTarget.value; pasteDelayDraftRef.current = value; pasteDelayEditVersionRef.current += 1; setPasteDelayDraft(value) }} /></Field><Button variant="secondary" onClick={() => void savePasteDelay()}>Save paste delay</Button></div>
-          <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field><Button variant="secondary" onClick={() => void saveSuccessDuration()}>Save success duration</Button></div>
-        </div>
-      </Card>
-
-      <Card className="settings-section">
-        <div className="settings-section__heading"><Download aria-hidden="true" /><div><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div></div>
-        <div className="settings-update-row">
-          <div>
-            <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `Sotto ${updateStatus.currentVersion}`}</p>
-            <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
-          </div>
-          <div className="settings-update-actions">
-            {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
-            {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart to update</Button> : null}
-            <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
-          </div>
-        </div>
-        <div className="settings-fields-grid">
-          <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
-        </div>
-      </Card>
-
-      <Card className="settings-section">
-        <div className="settings-section__heading"><HardDrive aria-hidden="true" /><div><h2>Application and privacy</h2><p>Choose startup behavior and what is retained locally.</p></div></div>
-        <div className="settings-fields-grid">
-          <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
-            const result = await onSetStartup(checked).catch(() => null)
-            setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: copy.settingsStartupFailureNotice, error: true })
-          }} />
-          <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
-          <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse." />
-          <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
-        </div>
-        <div className="settings-danger-zone">
-          <div><h3>Clear transcript history</h3><p>Remove saved text without changing settings or models.</p></div><Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
-          <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Downloaded models and history remain in place.</p></div><Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
-        </div>
-      </Card>
+      </div>
 
       {installPreset === null ? null : (() => {
         const disclosure = optionalDisclosure(installPreset)

@@ -31,7 +31,7 @@ describe('HistoryView', () => {
     render(<HistoryView {...baseProps} onCopy={copy} />)
 
     await user.type(screen.getByRole('searchbox', { name: /search transcripts/i }), '  ALPHA  ')
-    expect(screen.getByText('Alpha note')).toBeVisible()
+    expect(screen.getAllByText('Alpha note')[0]).toBeVisible()
     expect(screen.queryByText('beta NOTE')).not.toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'Copy transcript' })[0]!)
     expect(copy).toHaveBeenCalledWith('Alpha note')
@@ -154,7 +154,7 @@ describe('HistoryView', () => {
   it('keeps existing local entries visible and clearable after new history is disabled', () => {
     render(<HistoryView {...baseProps} enabled={false} />)
     expect(screen.getByText(/existing local transcripts remain available/i)).toBeVisible()
-    expect(screen.getByText('Alpha note')).toBeVisible()
+    expect(screen.getAllByText('Alpha note')[0]).toBeVisible()
     expect(screen.getByRole('button', { name: /clear history/i })).toBeEnabled()
   })
 })

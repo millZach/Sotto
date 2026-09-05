@@ -5,6 +5,8 @@ import type { AppSettings, ModelPreset } from '../../shared/settings'
 import { AppShell, type AppStatusTone } from './components/AppShell'
 import { AppTitlebar } from './components/AppTitlebar'
 import { Card } from './components/Card'
+import { TitlebarSearch } from './components/TitlebarSearch'
+import { DictationStrip } from './features/dictation/DictationStrip'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
 import { HomeView } from './features/home/HomeView'
@@ -53,6 +55,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [modelState, setModelState] = useState<OnboardingModelState>('checking')
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | undefined>()
+  const [historyQuery, setHistoryQuery] = useState('')
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
   const microphoneMountedRef = useRef(false)
@@ -259,6 +262,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           entries={app.history}
           enabled={app.settings.historyEnabled}
           status={app.historyStatus}
+          query={historyQuery}
+          onQueryChange={setHistoryQuery}
           onCopy={app.actions.copyHistory}
           onDelete={app.actions.deleteHistory}
           onClear={app.actions.clearHistory}
@@ -286,20 +291,17 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} />
+        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} />
         break
       default:
         view = <HomeView
           settings={app.settings}
-          platform={app.platform}
-          dictation={app.dictation}
           modelStatus={app.modelStatuses[app.settings.modelPreset]}
           entries={app.history}
           historyStatus={app.historyStatus}
-          onStart={app.actions.start}
-          onStop={app.actions.stop}
+          version={app.update?.currentVersion}
           onOpenHistory={() => app.actions.navigate('history')}
-          onOpenSettings={() => app.actions.navigate('settings')}
+          onCopy={app.actions.copyHistory}
         />
     }
 
@@ -313,12 +315,25 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
       : null
 
+    const deck = (
+      <DictationStrip
+        settings={app.settings}
+        platform={app.platform}
+        dictation={app.dictation}
+        modelStatus={app.modelStatuses[app.settings.modelPreset]}
+        onStart={app.actions.start}
+        onStop={app.actions.stop}
+        onOpenSettings={() => app.actions.navigate('settings')}
+      />
+    )
+
     content = (
       <>
         <AppShell
           navigation={navigation}
           statusText={statusText}
           statusTone={statusTone}
+          deck={deck}
           onNavigate={app.actions.navigate}
         >
           {updatePrompt}
@@ -332,12 +347,24 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     )
   }
 
+  const management = app.status === 'ready' && app.settings !== null
+    && app.settings.onboardingComplete && app.navigation !== 'onboarding'
+
   return (
     <div className="app-frame">
       <AppTitlebar
         onMinimize={app.actions.minimizeApp}
         onClose={app.actions.hideApp}
-      />
+      >
+        {management ? (
+          <TitlebarSearch
+            value={historyQuery}
+            platform={app.platform}
+            onChange={setHistoryQuery}
+            onActivate={() => { if (app.navigation !== 'history') app.actions.navigate('history') }}
+          />
+        ) : null}
+      </AppTitlebar>
       <div className="app-frame__body">{content}</div>
     </div>
   )
