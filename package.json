@@ -1,6 +1,6 @@
 {
   "name": "sotto",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "Offline-first Windows dictation",
   "author": "Sotto",
   "private": true,
@@ -20,9 +20,9 @@
     "model:verify": "node scripts/verify-model.mjs",
     "notices:verify": "node scripts/verify-notices.mjs",
     "package:dir": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked",
-    "package:win": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 3.5.0.exe\"",
+    "package:win": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 3.6.0.exe\"",
     "package:dir:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
-    "package:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-3.5.0-arm64.dmg\""
+    "package:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-3.6.0-arm64.dmg\""
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
