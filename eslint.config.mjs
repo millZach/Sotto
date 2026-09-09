@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'coverage/**',
+      'artifacts/agent-control-smoke/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

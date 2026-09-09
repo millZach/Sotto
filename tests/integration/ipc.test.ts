@@ -343,6 +343,7 @@ describe('typed preload bridge', () => {
     expect(Object.keys(bridge).sort()).toEqual(
       [
         'addHistory',
+        'agents',
         'cancelRemoteTranscription',
         'checkForUpdates',
         'checkRemoteAsr',
@@ -387,12 +388,15 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('ipcRenderer')
     expect(bridge).not.toHaveProperty('onWidgetState')
     expect(Object.isFrozen(bridge)).toBe(true)
+    expect(Object.isFrozen(bridge.agents)).toBe(true)
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['command', 'detectWake', 'get', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech'])
   })
 
-  it('creates a frozen least-privilege widget surface that cannot start dictation or access private data', async () => {
+  it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
     const bridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     expect(Object.keys(bridge).sort()).toEqual(
       [
+        'agents',
         'onWidgetState',
         'onWidgetVisibilityChange',
         'platform',
@@ -408,6 +412,8 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('requestDictation')
     expect(bridge).not.toHaveProperty('deliverOutput')
     expect(Object.isFrozen(bridge)).toBe(true)
+    expect(Object.isFrozen(bridge.agents)).toBe(true)
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['command', 'get', 'onState'])
 
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })

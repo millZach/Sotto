@@ -70,13 +70,15 @@ export class NativeSettingsCoordinator {
     return this.enqueue(async () => {
       const previous = await this.dependencies.repository.get()
       try {
-        const updated = await this.dependencies.repository.update(patchSnapshot)
+        // Apply fallible native effects before committing settings and OS-vault credentials.
+        // Public snapshots deliberately contain a credential marker, not a rollback secret.
         if (
-          Object.hasOwn(patchSnapshot, 'autoPaste') &&
-          updated.autoPaste !== previous.autoPaste
+          patchSnapshot.autoPaste !== undefined &&
+          patchSnapshot.autoPaste !== previous.autoPaste
         ) {
-          await this.dependencies.onAutoPasteChanged(updated.autoPaste)
+          await this.dependencies.onAutoPasteChanged(patchSnapshot.autoPaste)
         }
+        const updated = await this.dependencies.repository.update(patchSnapshot)
         await this.notifySettingsChanged(updated)
         return updated
       } catch {

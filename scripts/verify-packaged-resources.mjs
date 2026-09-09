@@ -93,13 +93,13 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
     application = await electron.launch({
       executablePath: executable,
       args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`],
-      env: {
+      env: Object.fromEntries(Object.entries({
         ...process.env,
         ...smokeEnvironment,
         SOTTO_E2E: '1',
         SOTTO_E2E_SCENARIO: 'success',
         SOTTO_E2E_USER_DATA: forbiddenE2EProfile,
-      },
+      }).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)),
       timeout: 45_000,
     })
     const first = await application.firstWindow({ timeout: 45_000 })
@@ -206,6 +206,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const target = requireInsideRepositoryRelease(input)
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
+  if (existsSync(join(resources, 'runtime', 'kws'))) fail('unreviewed wake runtime must not be bundled; use an explicitly supplied local runtime')
   for (const required of [
     profile.executablePath(target),
     asarPath,
@@ -227,6 +228,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const entries = listAsarEntries(asarPath)
   for (const required of [
     'out/main/index.js',
+    'out/main/wakeWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/external-dependencies.json',

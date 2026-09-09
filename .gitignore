@@ -14,6 +14,7 @@ test-results/
 Thumbs.db
 .worktrees/
 handoff/
+artifacts/agent-control-smoke/
 
 # Generated local inference payloads (locks remain versioned).
 resources/models/**

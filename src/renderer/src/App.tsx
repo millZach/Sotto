@@ -21,6 +21,8 @@ import {
 import { useApp } from './state/AppContext'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
+import { AgentProvider } from './agents/AgentContext'
+import { AgentView } from './agents/AgentView'
 
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
@@ -257,6 +259,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
     let view: ReactNode
     switch (navigation) {
+      case 'agents':
+        view = <AgentView />
+        break
       case 'history':
         view = <HistoryView
           entries={app.history}
@@ -351,6 +356,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     && app.settings.onboardingComplete && app.navigation !== 'onboarding'
 
   return (
+    <AgentProvider settings={app.settings} dictation={app.dictation}>
     <div className="app-frame">
       <AppTitlebar
         onMinimize={app.actions.minimizeApp}
@@ -367,5 +373,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       </AppTitlebar>
       <div className="app-frame__body">{content}</div>
     </div>
+    </AgentProvider>
   )
 }

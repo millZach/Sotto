@@ -1,5 +1,5 @@
 import React, { type MouseEvent, type ReactNode } from 'react'
-import { CircleHelp, Clock3, Home, Mic, Settings } from 'lucide-react'
+import { CircleHelp, Clock3, Home, Mic, Settings, Workflow } from 'lucide-react'
 
 import type { AppNavigation } from '../state/AppContext'
 
@@ -20,6 +20,7 @@ export interface AppShellProps {
 const destinations = [
   { id: 'home' as const, label: 'Home', icon: Home },
   { id: 'history' as const, label: 'History', icon: Clock3 },
+  { id: 'agents' as const, label: 'Agents', icon: Workflow },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
   { id: 'help' as const, label: 'Help', icon: CircleHelp },
 ]

@@ -79,8 +79,8 @@ mac:
   # driven at runtime by app.dock.show()/hide().
   extendInfo:
     NSMicrophoneUsageDescription: >-
-      Sotto records your microphone only while you are dictating. Audio is transcribed on this
-      Mac and discarded straight afterwards.
+      Sotto records your microphone while dictating or when you enable agent voice control.
+      Wake detection and transcription run locally on this Mac. Background audio is discarded.
     NSAppleEventsUsageDescription: >-
       Sotto asks System Events to press Command-V so your dictation lands in the app you were
       typing in. Declining leaves the text on your clipboard to paste yourself.

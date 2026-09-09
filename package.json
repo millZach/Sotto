@@ -51,6 +51,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "sharp": "0.34.5",
+    "sherpa-onnx": "1.13.7",
     "typescript": "6.0.3",
     "typescript-eslint": "8.63.0",
     "vite": "7.3.6",

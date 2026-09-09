@@ -66,6 +66,10 @@ function bundledDependencyInventory(): Plugin {
 
 export default defineConfig({
   main: {
+    build: { rollupOptions: { input: {
+      index: resolve(__dirname, 'src/main/index.ts'),
+      wakeWorker: resolve(__dirname, 'src/main/agents/wakeWorker.ts'),
+    } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
     // `dependencies` must stay `zod` alone so app.asar ships one module tree.

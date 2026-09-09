@@ -14,6 +14,8 @@ const WORK_AREA = { x: 1_000, y: 100, width: 1_200, height: 900 } as const
 const INSET = 16
 
 const EXPECTED_SIZES = {
+  'agents-compact': { horizontal: { width: 320, height: 72 }, vertical: { width: 320, height: 72 } },
+  'agents-expanded': { horizontal: { width: 420, height: 560 }, vertical: { width: 420, height: 560 } },
   'idle-resting': {
     horizontal: { width: 124, height: 54 },
     vertical: { width: 54, height: 124 },
@@ -30,6 +32,8 @@ const EXPECTED_SIZES = {
 
 const EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 const PRESENTATIONS: readonly WidgetPresentation[] = [
+  'agents-compact',
+  'agents-expanded',
   'idle-resting',
   'idle-hovered',
   'active',
@@ -49,6 +53,18 @@ describe('widget presentation geometry', () => {
 
   it('centers every presentation 16 DIPs inside all four work-area edges', () => {
     const expectedBounds: Record<WidgetPresentation, Record<WidgetEdge, object>> = {
+      'agents-compact': {
+        top: { x: 1440, y: 116, width: 320, height: 72 },
+        bottom: { x: 1440, y: 912, width: 320, height: 72 },
+        left: { x: 1016, y: 514, width: 320, height: 72 },
+        right: { x: 1864, y: 514, width: 320, height: 72 },
+      },
+      'agents-expanded': {
+        top: { x: 1390, y: 116, width: 420, height: 560 },
+        bottom: { x: 1390, y: 424, width: 420, height: 560 },
+        left: { x: 1016, y: 270, width: 420, height: 560 },
+        right: { x: 1764, y: 270, width: 420, height: 560 },
+      },
       'idle-resting': {
         top: { x: 1_538, y: 116, width: 124, height: 54 },
         bottom: { x: 1_538, y: 930, width: 124, height: 54 },

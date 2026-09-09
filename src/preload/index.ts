@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { z } from 'zod'
+import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_WAKE, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -181,6 +182,20 @@ function createBufferedSubscription<Output>(
   }
 }
 
+function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentBridge {
+  return Object.freeze({
+    get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    ...(role === 'main' ? {
+    synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
+    prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
+    detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
+    releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
+    } : {}),
+    command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
+    onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE, agentStateSchema, listener),
+  })
+}
+
 export function createSottoBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
@@ -210,6 +225,7 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    agents: createAgentBridge(renderer, 'main'),
     platform,
 
     listRecoveryNotices: () =>
@@ -295,6 +311,8 @@ export function createSottoWidgetBridge(
   return Object.freeze({
     platform,
 
+    agents: createAgentBridge(renderer, 'widget'),
+
     onWidgetState,
     onWidgetVisibilityChange,
     requestToggle: () =>
@@ -372,6 +390,7 @@ export function exposeE2EBridge(
   const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
   if (!scenario.success) return
   const bridge: SottoE2EBridge = Object.freeze({
+    agentEvent: (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => invokeParsed(renderer, AGENT_E2E, voidSchema, event),
     scenario: scenario.data,
     snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
     triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),

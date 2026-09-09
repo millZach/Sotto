@@ -48,7 +48,7 @@ import {
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'settings' | 'help'
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'

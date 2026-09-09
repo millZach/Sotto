@@ -4,7 +4,7 @@
 
 # Sotto
 
-**Press a shortcut. Speak. Your words appear — and never leave your computer.**
+**Private dictation, with a desktop control center for your agents in development.**
 
 Sotto is a private, offline-first dictation app for Windows and Apple silicon Macs. Press the global shortcut, speak, press it again, and Sotto copies the local transcript and optionally pastes it at the active cursor. Raw audio stays in memory and is discarded after transcription.
 
@@ -29,7 +29,7 @@ Sotto is a private, offline-first dictation app for Windows and Apple silicon Ma
 - 🖥️ **GPU-accelerated when possible** — WebGPU inference with an automatic CPU/WASM fallback.
 - ✨ **Optional AI polish** — off by default: bring your own OpenRouter key for punctuation and self-correction cleanup of the finished text (never the audio), with a silent fallback to the raw local transcript.
 - 🛰️ **Optional self-hosted speed** — point Sotto at a transcription server on your own hardware for near-instant results, with a silent per-segment fallback to on-device transcription.
-- 💸 **Free** — no subscription, no per-use fee.
+- 💸 **Free dictation** — no Sotto subscription or per-use fee for basic local talk-to-text.
 
 Sotto was formerly named TalkType; version 3.0.0 renamed the app and its visual identity. On first launch, Sotto automatically migrates settings, history, and downloaded models from an existing TalkType installation.
 
@@ -53,7 +53,7 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
-The included Balanced Moonshine model and inference runtime run on this computer. Sotto has no cloud transcription, analytics, crash upload, account, subscription, or per-use fee. Audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
+The included Balanced Moonshine model and inference runtime run on this computer. Basic local dictation needs no account, subscription, or per-use fee. Sotto has no analytics or crash upload. Dictation audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
 
 Automatic update checks are the one thing that is on by default. Roughly every four hours the installed Windows app asks the GitHub releases page for this repository whether a newer version exists, which means GitHub sees an ordinary web request from your computer: IP address, time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, an update is only downloaded after you ask for it, and the whole check can be turned off under Settings → Updates.
 
@@ -61,7 +61,15 @@ Optional Fast and Accurate models are not downloaded until you review their sour
 
 Optional remote transcription is off by default and points at a server you choose — typically your own machine on your own network. When enabled, the audio you dictate is uploaded to that server, and any segment it does not answer quickly is transcribed on-device instead. Nothing leaves this computer while it is off.
 
-Optional AI formatting is the one feature that sends transcript text off this computer, and it is off by default. When you enable it and supply your own OpenRouter API key, the finished transcript (never audio) is sent to OpenRouter for punctuation and self-correction cleanup. If the network is slow or offline, Sotto silently falls back to the raw local transcript.
+Optional AI formatting is off by default. When you enable it and supply your own OpenRouter API key, the finished transcript (never audio) is sent to OpenRouter for punctuation and self-correction cleanup. If the network is slow or offline, Sotto silently falls back to the raw local transcript. Optional agent control also sends the prompts you submit to the connected harness and, when configured, sends assignment text and relevant thread context to your selected reasoning provider. Provider usage is billed separately from Sotto access. Credentials are encrypted using the operating system credential store and are not returned to the UI.
+
+## Agent control center (development beta)
+
+The **Agents** view connects to an existing local T3 Code installation, creates projects and threads, collects prompts until you say **“send it,”** and supervises only the threads you assign. It queues questions one at a time and yields a thread to manual control when you send directly in T3. The floating widget retains click-to-dictate and dragging.
+
+This is an unreleased development feature. The first adapter is verified against **T3 Code 0.0.38** and rejects other versions until their contract is checked. Wake control requires separately supplied compatible local model/runtime files; their distribution, real microphone acceptance, and macOS live checks remain release gates. Production sign-in, checkout, and billing webhooks are not deployed. Unpackaged builds label access **Private development beta**; packaged builds without a membership service retain free dictation and do not grant agent actions.
+
+Read the [agent setup and behavior guide](docs/agent-control.md), [implementation evidence and remaining gates](docs/verification/issue-9-implementation.md), and [membership service contract](docs/verification/issue-9-membership-service.md) before using or distributing this feature.
 
 ## Install and first run
 

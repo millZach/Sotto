@@ -164,6 +164,7 @@ export interface BrowserWindowLike {
   hide(): void
   show(): void
   focus(): void
+  setFocusable?(focusable: boolean): void
   minimize(): void
   isMinimized(): boolean
   restore(): void
@@ -671,6 +672,7 @@ export class WindowManager {
     this.widgetPresentation = presentation
     const widget = this.widgetWindow
     if (!this.widgetVisible || widget === null || widget.isDestroyed()) return
+    widget.setFocusable?.(presentation === 'agents-expanded' || this.dependencies.chrome.widgetFocusable)
     if (this.widgetDrag !== null) {
       this.reconcileWidgetPresentationDuringDrag(widget)
       return
