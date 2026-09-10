@@ -30,6 +30,7 @@ function stateFixture(): AgentState {
     pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
     credentials: { t3: true, reasoning: false, secure: true },
+    reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },
   }
 }
@@ -133,6 +134,16 @@ describe('AgentView user workflows', () => {
     expect(command).not.toHaveBeenCalled()
   })
 
+  it('offers an existing subscription for Sotto reasoning', () => {
+    const state = stateFixture()
+    vi.mocked(useAgents).mockReturnValue(connection(state))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    expect(screen.getByRole('option', { name: 'ChatGPT subscription · Codex' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Claude subscription · Claude Code' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Grok subscription · not available yet' })).toBeInTheDocument()
+  })
+
   it('does not present a saved or unsaved API key as belonging to a different provider', () => {
     const state = stateFixture()
     state.configuration.reasoning = 'openrouter'
@@ -145,6 +156,54 @@ describe('AgentView user workflows', () => {
     fireEvent.change(screen.getByLabelText('Sotto reasoning'), { target: { value: 'openai' } })
     expect(screen.getByLabelText('Reasoning API key')).toHaveValue('')
     expect(screen.getByLabelText('Reasoning API key')).toHaveAttribute('placeholder', 'Your provider API key')
+  })
+
+  it('checks and saves a subscription without asking for an API key or retaining another provider model', async () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'openrouter'
+    state.configuration.reasoningModel = 'old-provider-model'
+    state.reasoningAccounts = [{ provider: 'claude', label: 'Claude Max', installed: true, ready: true,
+      detail: 'Uses the subscription signed into Claude Code.', models: [{ id: 'sonnet', name: 'Sonnet' }] }]
+    const command = vi.fn(async () => state)
+    vi.mocked(useAgents).mockReturnValue(connection(state, command))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.change(screen.getByLabelText('Reasoning API key'), { target: { value: 'unsaved-api-key' } })
+    fireEvent.change(screen.getByLabelText('Sotto reasoning'), { target: { value: 'claude' } })
+    await waitFor(() => expect(screen.getByText('Claude Max connected')).toBeInTheDocument())
+    expect(command).toHaveBeenCalledWith({ type: 'check-reasoning', provider: 'claude' })
+    expect(screen.queryByLabelText('Reasoning API key')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Reasoning model')).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Reasoning model'), { target: { value: 'sonnet' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
+    await waitFor(() => expect(screen.getByText('Settings saved')).toBeInTheDocument())
+    expect(command).toHaveBeenLastCalledWith({ type: 'configure', patch: expect.objectContaining({ reasoning: 'claude', reasoningModel: 'sonnet' }) })
+    expect(command).toHaveBeenCalledTimes(2)
+  })
+
+  it('recognizes a ready subscription without an API key and retains setup for an unavailable account', () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'codex'
+    state.reasoningAccounts = [{ provider: 'codex', label: 'ChatGPT', installed: true, ready: true, detail: 'Connected', models: [] }]
+    vi.mocked(useAgents).mockReturnValue(connection(state))
+    const view = render(<AgentView />)
+    expect(screen.queryByLabelText('Reasoning setup')).not.toBeInTheDocument()
+    state.reasoningAccounts[0]!.ready = false
+    view.rerender(<AgentView />)
+    expect(screen.getByLabelText('Reasoning setup')).toBeInTheDocument()
+  })
+
+  it('allows unrelated settings to be saved when the existing subscription is unavailable', async () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'claude'
+    state.reasoningAccounts = [{ provider: 'claude', label: 'Claude', installed: true, ready: false, detail: 'Sign in again.', models: [] }]
+    const command = vi.fn(async () => state)
+    vi.mocked(useAgents).mockReturnValue(connection(state, command))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.change(screen.getByLabelText('Default projects directory'), { target: { value: 'D:\\New projects' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: expect.objectContaining({ reasoning: 'claude', projectsDirectory: 'D:\\New projects' }) }))
   })
 })
 

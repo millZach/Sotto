@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { supportsAgentSupervision, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -135,10 +135,24 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
   const [token, setToken] = useState('')
   const [reasoningKey, setReasoningKey] = useState('')
   const [saved, setSaved] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const subscription = isSubscriptionReasoning(configuration.reasoning)
+  const api = configuration.reasoning === 'openrouter' || configuration.reasoning === 'openai'
+  const account = state.reasoningAccounts.find(item => item.provider === configuration.reasoning)
+  const reasoningChanged = configuration.reasoning !== state.configuration.reasoning || configuration.reasoningModel !== state.configuration.reasoningModel
   const providerInput = useRef<HTMLSelectElement>(null)
   useEffect(() => { if (focusReasoning) { providerInput.current?.focus(); providerInput.current?.scrollIntoView?.({ block: 'nearest' }) } }, [focusReasoning])
   const change = <K extends keyof AgentConfiguration>(key: K, value: AgentConfiguration[K]): void => {
     setConfiguration((current) => ({ ...current, [key]: value })); setSaved(false)
+  }
+  const checkSubscription = async (provider: SubscriptionProvider): Promise<void> => {
+    setChecking(true)
+    try { await command({ type: 'check-reasoning', provider }) } finally { setChecking(false) }
+  }
+  const chooseReasoning = (provider: AgentConfiguration['reasoning']): void => {
+    setConfiguration(current => ({ ...current, reasoning: provider, reasoningModel: '' }))
+    setReasoningKey(''); setSaved(false)
+    if (isSubscriptionReasoning(provider)) void checkSubscription(provider)
   }
   const save = async (): Promise<void> => {
     const result = await command({ type: 'configure', patch: {
@@ -158,7 +172,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       if (stored === null || stored.error !== null) return
       setToken('')
     }
-    if (reasoningKey.trim()) {
+    if (api && reasoningKey.trim()) {
       const stored = await command({ type: 'credential', slot: 'reasoning', value: reasoningKey.trim() })
       if (stored === null || stored.error !== null) return
       setReasoningKey('')
@@ -175,12 +189,27 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
         {state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}{!model.ready ? ' · unavailable' : ''}</option>)}
       </select></label>
       <label>Automatic follow-up limit<input type="number" min={0} max={100} value={configuration.followupLimit} onChange={(event) => change('followupLimit', Math.min(100, Math.max(0, Number(event.target.value))))} /></label>
-      <label>Sotto reasoning<select ref={providerInput} value={configuration.reasoning} onChange={(event) => { change('reasoning', event.target.value as AgentConfiguration['reasoning']); setReasoningKey('') }}>
-        <option value="none">Not configured</option><option value="openrouter">OpenRouter API</option><option value="openai">OpenAI API</option>
+      <label>Sotto reasoning<select ref={providerInput} value={configuration.reasoning} disabled={checking} onChange={(event) => chooseReasoning(event.target.value as AgentConfiguration['reasoning'])}>
+        <option value="none">Not configured</option>
+        <optgroup label="Your subscriptions">
+          <option value="codex">ChatGPT subscription · Codex</option>
+          <option value="claude">Claude subscription · Claude Code</option>
+          <option value="grok">Grok subscription · not available yet</option>
+        </optgroup>
+        <optgroup label="API accounts"><option value="openrouter">OpenRouter API</option><option value="openai">OpenAI API</option></optgroup>
       </select></label>
-      <label>Reasoning model<input value={configuration.reasoningModel} onChange={(event) => change('reasoningModel', event.target.value)} placeholder="Provider model ID" disabled={configuration.reasoning === 'none'} /></label>
-      {configuration.reasoning !== 'none' ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
-      <p className="agent-field-wide agent-muted">Voice commands to create projects or threads and automatic follow-ups require a reasoning provider, model, and API key. Manual controls and prompt dictation remain available without this connection.</p>
+      <label>Reasoning model{subscription ? <select value={configuration.reasoningModel} onChange={event => change('reasoningModel', event.target.value)} disabled={checking || !account?.ready}>
+        <option value="">{account?.models[0] ? `Default (${account.models[0].name})` : 'Supported default'}</option>
+        {configuration.reasoningModel && !account?.models.some(model => model.id === configuration.reasoningModel) ? <option value={configuration.reasoningModel}>{configuration.reasoningModel}</option> : null}
+        {account?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+      </select> : <input value={configuration.reasoningModel} onChange={(event) => change('reasoningModel', event.target.value)} placeholder="Provider model ID" disabled={configuration.reasoning === 'none'} />}</label>
+      {subscription ? <div className="agent-field-wide agent-subscription-status" role="status">
+        <div><strong>{checking ? 'Checking your subscription…' : account?.ready ? `${account.label} connected` : 'Subscription connection'}</strong>
+          <p>{checking ? 'Checking the account in your installed provider app.' : account?.detail ?? 'Check the subscription signed into your provider app. No API key is needed.'}</p></div>
+        <Button variant="secondary" disabled={checking || state.busy} onClick={() => { if (isSubscriptionReasoning(configuration.reasoning)) void checkSubscription(configuration.reasoning) }}>Check connection</Button>
+      </div> : null}
+      {api ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
+      <p className="agent-field-wide agent-muted">Sotto uses this connection to understand voice commands and decide routine follow-ups. Subscription usage follows your provider’s allowance and any extra usage you enabled there. Sotto never switches accounts or enables paid overages for you.</p>
       <label className="agent-checkbox"><input type="checkbox" checked={configuration.speak} onChange={(event) => change('speak', event.target.checked)} />Spoken replies using a local system voice</label>
       <label className="agent-field-wide">Local wake model folder<input value={configuration.wakeModelDirectory} onChange={(event) => change('wakeModelDirectory', event.target.value)} placeholder="Absolute path to your local wake model" />
         <span>Wake setup is required before using “Hey Sotto.” This build supports a separately supplied Sherpa phonetic model. Its distribution license is unresolved, so Sotto does not include or download the weights. Text agent controls remain available.</span>
@@ -190,11 +219,11 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       </label>
     </div>
     <div className="agent-billing"><p><strong>Your connected accounts</strong></p>
-      <p>T3’s project agents use the subscriptions or API accounts configured in T3. Sotto reasoning uses the API account you select above. Local spoken replies have no provider usage charge.</p>
+      <p>T3’s project agents use the accounts configured in T3. Sotto reasoning uses the subscription or API account selected above. Your provider app keeps its own sign-in. Local spoken replies have no provider usage charge.</p>
       {!state.credentials.secure ? <p role="alert">Secure credential storage is unavailable. Credentials cannot be saved on this system.</p> : null}
       <p>Assignment context expires after seven days without activity. Turning off history prevents saving that context. Unsent drafts stay on this desktop until sent or cleared so they survive a restart.</p>
     </div>
-    <div className="agent-actions"><Button onClick={() => void save()} disabled={state.busy}>Save connection settings</Button>{saved ? <span role="status">Settings saved</span> : null}</div>
+    <div className="agent-actions"><Button onClick={() => void save()} disabled={state.busy || checking || (reasoningChanged && subscription && !account?.ready)}>Save connection settings</Button>{saved ? <span role="status">Settings saved</span> : null}</div>
     <div className="agent-billing agent-membership"><p><strong>Sotto access</strong></p>
       <p>{state.membership.label}</p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>
       {state.membership.expiresAt ? <p>Current access ends {new Date(state.membership.expiresAt).toLocaleString()}.</p> : null}
@@ -274,7 +303,9 @@ export function AgentView(): ReactNode {
     const threads = state.host.threads.filter((thread) => thread.projectId === project.id && (matchesProject || thread.title.toLocaleLowerCase().includes(query)))
     return { project, threads, matches: matchesProject || threads.length > 0 }
   }).filter((entry) => entry.matches)
-  const reasoningReady = state.configuration.reasoning !== 'none' && Boolean(state.configuration.reasoningModel.trim()) && state.credentials.reasoning
+  const reasoningReady = isSubscriptionReasoning(state.configuration.reasoning)
+    ? state.reasoningAccounts.some(account => account.provider === state.configuration.reasoning && account.ready)
+    : state.configuration.reasoning !== 'none' && Boolean(state.configuration.reasoningModel.trim()) && state.credentials.reasoning
   const voiceLabel = {
     off: window.sottoE2E === undefined ? 'Voice control is off' : 'Test mode · microphone disabled', starting: 'Preparing local voice', wake: 'Say “Hey Sotto”',
     listening: 'Listening · say “send it” to submit', speaking: 'Sotto is speaking',
@@ -300,7 +331,7 @@ export function AgentView(): ReactNode {
         <Button variant="secondary" onClick={() => void command({ type: 'configure', patch: { enabled: !state.configuration.enabled } })}>{state.configuration.enabled ? 'Turn off agent control' : 'Enable agent control'}</Button>
       </div>
     </section>
-    {!reasoningReady ? <section className="agent-reasoning-setup" aria-label="Reasoning setup"><div><strong>Connect reasoning for voice app commands</strong><p>Creating projects and threads by voice and automatic follow-ups need a reasoning API connection. You can still use manual controls and dictate prompts.</p></div><Button variant="secondary" onClick={() => { setFocusReasoning(true); setSettingsOpen(true) }}>Set up reasoning</Button></section> : null}
+    {!reasoningReady ? <section className="agent-reasoning-setup" aria-label="Reasoning setup"><div><strong>Connect reasoning for voice app commands</strong><p>Creating projects and threads by voice and automatic follow-ups need a connected subscription or API account. You can still use manual controls and dictate prompts.</p></div><Button variant="secondary" onClick={() => { setFocusReasoning(true); setSettingsOpen(true) }}>Set up reasoning</Button></section> : null}
     {agents.voice.error ? <p className="agent-error" role="alert">{agents.voice.error}</p> : null}
     {state.error || agents.error ? <p className="agent-error" role="alert">{state.error ?? agents.error}</p> : null}
     {state.notice && state.notice !== state.error ? <p className="agent-notice" role="status">{state.notice}</p> : null}

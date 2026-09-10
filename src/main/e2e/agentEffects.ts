@@ -71,6 +71,11 @@ export class E2EAgentHost implements AgentHost {
 
 const pendingReasoning = new Map<string, () => void>()
 export const e2eAgentReasoner: AgentReasoner = {
+  async account(provider) {
+    return { provider, label: provider === 'claude' ? 'Claude subscription' : provider === 'codex' ? 'ChatGPT subscription' : 'Grok subscription',
+      installed: true, ready: provider !== 'grok', detail: provider === 'grok' ? 'Grok subscription reasoning is not available in this build.' : 'Connected through the provider app; no API key is needed.',
+      models: provider === 'grok' ? [] : [{ id: 'fixture-model', name: 'Fixture reasoning model' }] }
+  },
   async intent(utterance) {
     if (utterance.toLowerCase().includes('create a project called clarified project')) {
       const folder = /(?:[A-Za-z]:[\\/]|\/)[^\r\n]+$/u.exec(utterance)?.[0]

@@ -1,0 +1,30 @@
+# Existing Claude and Grok accounts for Sotto reasoning
+
+Checked September 9, 2026. This is bounded primary-source research, not an implementation or a live inference test. No credentials were opened, copied, or printed. No sign-in flow, account change, installation, or model request was performed.
+
+Both providers document an integration through their own installed client. Sotto should expose the native client account as a reasoning route, keep authentication with that client, and validate its JSON response before executing Sotto's own permitted actions. This is an architectural recommendation inferred from the interfaces below.
+
+| Route | Verified local state | Supported interface and funding |
+| --- | --- | --- |
+| Claude Code account | `claude` 2.1.267 is installed. A filtered `claude auth status --json` reports logged in through `claude.ai`, with a Max subscription. Email, identifiers, and other status fields were suppressed. | The official subprocess interface is `claude -p` with JSON output. The current billing notice says `claude -p` and Agent SDK usage still use subscription limits; the announced separate-credit transition is paused. [CLI integration](https://code.claude.com/docs/en/headless), [current billing notice](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan). |
+| Grok Build account | The installed `grok` command belongs to `@xai-official/grok`, version 1.0.5. Its help exposes headless prompts, JSON schemas, tool controls, and ACP. Sign-in status was not verified: the inspected help provides no read-only auth-status command. | Official docs support `grok -p` for scripts and `grok agent stdio` for application integration. Their ACP example explicitly supports an already authenticated local client using `cached_token`. Grok's current FAQ includes Build in the shared SuperGrok weekly allowance. [Headless and ACP](https://docs.x.ai/build/cli/headless-scripting), [subscription usage](https://docs.x.ai/grok/faq#how-do-supergroks-weekly-usage-limits-work). |
+
+## Claude commercial boundary
+
+Anthropic's current legal page explicitly permits running the unmodified Claude Code binary in products under its Commercial Terms, subject to conditions: retain the binary and its authentication methods; each end user authenticates under their own agreement; do not purchase, resell, or intermediate their usage. Claude credentials must stay in Anthropic's sign-in flow. Plain factual references are permitted; branding must not imply endorsement. [Claude Code legal conditions](https://code.claude.com/docs/en/legal-and-compliance#can-customers-offer-claude-code-in-their-products).
+
+The Agent SDK overview separately says third-party products cannot offer Claude.ai login or subscription rate limits without prior approval. Therefore the documented unmodified-client route should not be generalized into permission for Sotto-owned OAuth, token extraction, or a subscription-backed API proxy. [SDK integration requirement](https://code.claude.com/docs/en/agent-sdk/overview#get-started).
+
+## Constraining the reasoning process
+
+The installed Claude CLI documents `--safe-mode` (disables customizations while retaining normal authentication), `--tools ""` (no built-in tools), `--permission-prompts none`, `--no-session-persistence`, `--output-format json`, `--json-schema`, and `--system-prompt`. These provide a concrete candidate invocation for a bounded JSON decision using the existing account. Pass prompts through stdin and launch with an argument array. Do not use `--bare` for this route: installed help explicitly says it does not read OAuth or keychain credentials. Help support is verified; the combined invocation has not been run against a model. [Structured CLI output](https://code.claude.com/docs/en/headless#get-structured-output).
+
+Grok supports `--json-schema`, `--tools`, `--disallowed-tools`, `--no-subagents`, `--disable-web-search`, `--max-turns`, and `--permission-mode dontAsk`. Deny rules override allow rules. However, this inspection does not establish that an empty `--tools` value removes every capability, or that these flags suppress all configured hooks/MCP startup effects. An implementation must verify complete containment before treating Grok as text-only. Do not assume ACP's absent filesystem capabilities remove tools the agent implements itself. [CLI controls](https://docs.x.ai/build/cli/reference), [permissions](https://docs.x.ai/build/features/permissions).
+
+Grok loads native and compatibility configuration, including Claude/Cursor hooks and MCP servers. Its home contains both authentication and other settings, so changing `GROK_HOME` is not a transparent way to reuse the existing login. [Settings reference](https://docs.x.ai/build/settings/reference).
+
+## Account selection and remaining limits
+
+Native sign-in does not guarantee the selected model uses that account. Claude documents API-key environment precedence. Grok documents per-model explicit keys taking precedence over the active session. Detect the actual route and fail clearly instead of silently changing funding. Existing quota or user-enabled extra-usage policies still apply; Sotto must not enable purchases or top-ups. [Claude subscription authentication](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan), [Grok authentication precedence](https://docs.x.ai/build/enterprise#authentication).
+
+For Grok, the inspected official documentation expressly supports other-app integration but does not settle every commercial packaging or branding question. Use the user-installed client for this implementation; do not infer a redistribution grant for the entire binary from the npm launcher's Apache-2.0 metadata. Consumer terms prohibit account sharing and point developers/businesses to enterprise terms. [Integration scope](https://docs.x.ai/build/overview), [consumer terms](https://x.ai/legal/terms-of-service), [enterprise terms](https://x.ai/legal/terms-of-service-enterprise).

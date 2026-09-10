@@ -38,7 +38,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: AgentControl, sen
   ipc.handle(AGENT_COMMAND, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
     const command = agentCommandSchema.parse(payload)
-    if (['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    if (['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     return control.command(command)
   })
   return () => { wake.dispose(); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH) }

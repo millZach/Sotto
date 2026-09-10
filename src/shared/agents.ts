@@ -50,6 +50,17 @@ export function supportsAgentSupervision(capabilities: AgentCapabilities): boole
 }
 export type AgentHostSnapshot = z.infer<typeof agentHostSnapshotSchema>
 
+export const subscriptionProviderSchema = z.enum(['codex', 'claude', 'grok'])
+export type SubscriptionProvider = z.infer<typeof subscriptionProviderSchema>
+export const subscriptionAccountSchema = z.object({
+  provider: subscriptionProviderSchema, label: z.string(), installed: z.boolean(), ready: z.boolean(),
+  detail: z.string(), models: z.array(z.object({ id: z.string(), name: z.string() })),
+})
+export type SubscriptionAccount = z.infer<typeof subscriptionAccountSchema>
+export function isSubscriptionReasoning(provider: string): provider is SubscriptionProvider {
+  return provider === 'codex' || provider === 'claude' || provider === 'grok'
+}
+
 export const agentConfigurationSchema = z.object({
   enabled: z.boolean(),
   endpoint: z.string().max(2_048),
@@ -59,7 +70,7 @@ export const agentConfigurationSchema = z.object({
   speak: z.boolean(),
   wakeModelDirectory: z.string().max(4_096),
   wakeRuntimeDirectory: z.string().max(4_096),
-  reasoning: z.enum(['none', 'openrouter', 'openai']),
+  reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
   membershipEndpoint: z.string().max(2_048),
 }).strict()
@@ -95,6 +106,7 @@ export const agentStateSchema = z.object({
   speech: z.object({ id: z.number(), text: z.string() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ t3: z.boolean(), reasoning: z.boolean(), secure: z.boolean() }),
+  reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   membership: z.object({
     status: z.enum(['beta', 'free', 'active', 'expired', 'unavailable']),
     label: z.string(), expiresAt: z.string().nullable(),
@@ -107,6 +119,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),
   z.object({ type: z.literal('refresh') }).strict(),
+  z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('utterance'), text }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),

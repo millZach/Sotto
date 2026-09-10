@@ -1,4 +1,4 @@
-﻿import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
@@ -12,6 +12,38 @@ async function setup(page: Page): Promise<void> {
   await page.getByRole('button', { name: /finish setup/i }).click()
   await page.getByRole('link', { name: 'Agents', exact: true }).click()
 }
+
+test('selects an existing subscription for reasoning without an API key and shows unavailable routes honestly', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await setup(page)
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByLabel('Sotto reasoning').selectOption('claude')
+    await expect(page.getByText('Claude subscription connected', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Reasoning API key', { exact: true })).toHaveCount(0)
+    await page.getByLabel('Reasoning model').selectOption('fixture-model')
+    await page.getByRole('button', { name: 'Save connection settings', exact: true }).click()
+    await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
+      provider: state.configuration.reasoning, model: state.configuration.reasoningModel, key: state.credentials.reasoning,
+    })))).toEqual({ provider: 'claude', model: 'fixture-model', key: false })
+    await page.getByLabel('Sotto reasoning').selectOption('grok')
+    await expect(page.getByText('Grok subscription reasoning is not available in this build.', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save connection settings', exact: true })).toBeDisabled()
+    await page.getByLabel('Sotto reasoning').selectOption('codex')
+    await expect(page.getByText('ChatGPT subscription connected', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Reasoning model')).toHaveValue('')
+    await page.getByRole('button', { name: 'Save connection settings', exact: true }).click()
+    await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Reasoning setup', { exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Sotto reasoning')).toHaveValue('codex')
+    await page.getByLabel('Sotto reasoning').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/agent-control-smoke/subscription-settings-e2e.png' })
+  } finally { await closeSotto(launched) }
+})
 
 test('collects an explicit prompt, queues ready threads, and yields only the directly controlled thread', async () => {
   const launched = await launchSotto()

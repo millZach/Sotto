@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import type { AgentConfiguration, AgentHostSnapshot, AgentThread } from '../../shared/agents'
+import { isSubscriptionReasoning, type AgentConfiguration, type AgentHostSnapshot, type AgentThread, type SubscriptionAccount, type SubscriptionProvider } from '../../shared/agents'
 import type { AgentCredentials } from './credentials'
+import type { SubscriptionClient } from './subscriptionTypes'
 
 export const agentIntentSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('create-project'), title: z.string().min(1), path: z.string().optional() }),
@@ -16,15 +17,32 @@ export const agentDecisionSchema = z.object({
 })
 export type AgentDecision = z.infer<typeof agentDecisionSchema>
 export interface AgentReasoner {
+  account?(provider: SubscriptionProvider): Promise<SubscriptionAccount>
   intent(utterance: string, host: AgentHostSnapshot, projectId: string | null, modelId: string): Promise<AgentIntent>
   decide(instruction: string, thread: AgentThread): Promise<AgentDecision>
 }
 
 /** A text-only model has no host tools or credential access. Its output is validated before use. */
 export class ConfiguredAgentReasoner implements AgentReasoner {
-  constructor(private readonly configuration: () => AgentConfiguration, private readonly credentials: AgentCredentials) {}
+  private subscriptionTail: Promise<unknown> = Promise.resolve()
+  constructor(private readonly configuration: () => AgentConfiguration, private readonly credentials: AgentCredentials,
+    private readonly subscriptions: Partial<Record<SubscriptionProvider, SubscriptionClient>> = {}) {}
+  async account(provider: SubscriptionProvider): Promise<SubscriptionAccount> {
+    const client = this.subscriptions[provider]
+    if (!client) return { provider, label: provider, installed: false, ready: false, models: [], detail: 'This subscription client is unavailable in this build.' }
+    return client.status()
+  }
   private async json(system: string, input: unknown): Promise<unknown> {
     const config = this.configuration()
+    if (isSubscriptionReasoning(config.reasoning)) {
+      const client = this.subscriptions[config.reasoning]
+      if (!client) throw new Error('This subscription client is unavailable in this build. Choose an available reasoning connection.')
+      // Several assigned threads may finish together. Native clients receive
+      // one bounded decision at a time; a previous failure must not poison the lane.
+      const decision = this.subscriptionTail.then(() => client.complete(system, input, config.reasoningModel.trim()))
+      this.subscriptionTail = decision.catch(() => undefined)
+      return decision
+    }
     if (config.reasoning === 'none' || !config.reasoningModel) throw new Error('Configure Sotto reasoning to interpret this request. Direct controls remain available.')
     const key = this.credentials.get('reasoning')
     if (!key) throw new Error('Connect a Sotto reasoning API account first. T3 accounts fund T3 agents separately.')

@@ -126,6 +126,9 @@ import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
 import { AgentControl } from './agents/control'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
+import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
+import { GrokSubscriptionClient } from './agents/subscriptionGrok'
+import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
@@ -470,7 +473,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const agentControl: AgentControl = new AgentControl({
     directory: userDataPath, host: agentHost, credentials, membership,
     historyEnabled: () => agentHistoryEnabled,
-    reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials) : e2eAgentReasoner,
+    reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
+      claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
+      codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex')),
+      grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok')),
+    }) : e2eAgentReasoner,
   })
   await agentControl.start()
   const unsubscribeAgents = agentControl.subscribe(state => {

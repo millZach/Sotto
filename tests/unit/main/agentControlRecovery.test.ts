@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
-import { ConfiguredAgentReasoner, type AgentIntent } from '../../../src/main/agents/reasoning'
+import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '../../../src/main/agents/reasoning'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentCommand, AgentConfiguration } from '../../../src/shared/agents'
@@ -59,6 +59,7 @@ async function fixture(host = new E2EAgentHost()) {
   const credentials = new AgentCredentials(credentialsDirectory, encryption)
   await credentials.load()
   const service = { offline: false, intent: { type: 'select-project', projectId: 'project' } as AgentIntent,
+    decision: { decision: 'followup', text: 'Fix the current failing test within the assigned scope.' } as AgentDecision,
     decisionGate: null as Promise<void> | null }
   const requests: { origin: string; authorization: string | null; utterance: string }[] = []
   const decisions: string[] = []
@@ -70,7 +71,7 @@ async function fixture(host = new E2EAgentHost()) {
     else decisions.push(message.messages?.at(-1)?.text ?? '')
     if (service.offline) throw new TypeError('Fixture provider is offline')
     if (message.utterance === undefined) await service.decisionGate
-    const result = message.utterance === undefined ? { decision: 'followup', text: 'Fix the current failing test within the assigned scope.' } : service.intent
+    const result = message.utterance === undefined ? service.decision : service.intent
     return Response.json({ choices: [{ message: { content: JSON.stringify(result) } }] })
   })
   let control: AgentControl
@@ -327,6 +328,93 @@ describe('composition navigation and explicit spoken controls', () => {
 })
 
 describe('supervision event ordering', () => {
+  it('restores a completed response without paying for another review, while new responses and explicit resume still work', async () => {
+    const f = await fixture()
+    await f.account()
+    f.service.decision = { decision: 'done', text: 'The assigned change is complete.' }
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'The implementation is complete.' })
+    await expect.poll(() => f.control.get().queue[0]?.text).toBe(f.service.decision.text)
+    const before = await f.control.command({ type: 'refresh' })
+    expect(f.decisions).toHaveLength(1)
+    await f.restart()
+    const restored = await f.control.command({ type: 'refresh' })
+    expect(f.decisions).toHaveLength(1)
+    expect(restored.queue).toEqual(before.queue)
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'A genuinely new response arrived.' })
+    await expect.poll(() => f.decisions.length).toBe(2)
+    await f.control.command({ type: 'refresh' })
+    await f.control.command({ type: 'resume', threadId: 'workshop' })
+    await expect.poll(() => f.decisions.length).toBe(3)
+    await f.control.command({ type: 'refresh' })
+  })
+
+  it.each(['blocked', 'question'] as const)('restores a completed %s review and allows explicit resume', async kind => {
+    const f = await fixture()
+    await f.account()
+    f.service.decision = { decision: 'human', text: 'Your choice is needed.' }
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
+    f.host.event({ type: kind === 'question' ? 'question' : 'ready', threadId: 'workshop', text: 'Choose the final behavior.', requestId: 'request:with:colons' })
+    await expect.poll(() => f.control.get().queue[0]?.kind).toBe(kind)
+    const before = await f.control.command({ type: 'refresh' })
+    await f.restart()
+    const restored = await f.control.command({ type: 'refresh' })
+    expect(f.decisions).toHaveLength(1)
+    expect(restored.queue).toEqual(before.queue)
+    await f.control.command({ type: 'resume', threadId: 'workshop' })
+    await expect.poll(() => f.decisions.length).toBe(2)
+    await f.control.command({ type: 'refresh' })
+    if (kind === 'question') {
+      await f.host.execute({ type: 'answer', commandId: 'external-answer', threadId: 'workshop', requestId: 'request:with:colons', answer: 'The original behavior.' })
+      f.host.event({ type: 'question', threadId: 'workshop', text: 'A new question needs review.', requestId: 'new:request' })
+      await expect.poll(() => f.decisions.length).toBe(3)
+      const next = await f.control.command({ type: 'refresh' })
+      expect(next.queue.some(item => item.requestId === 'new:request')).toBe(true)
+      expect(next.queue.some(item => item.requestId === 'request:with:colons')).toBe(false)
+    }
+  })
+
+  it('keeps another restored pending question in the attention queue after the first is answered', async () => {
+    const f = await fixture()
+    await f.account()
+    f.service.decision = { decision: 'human', text: 'Your choice is needed.' }
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
+    await f.control.command({ type: 'pause', threadId: 'workshop' })
+    f.host.event({ type: 'question', threadId: 'workshop', text: 'First choice.', requestId: 'first:request' })
+    f.host.event({ type: 'question', threadId: 'workshop', text: 'Second choice.', requestId: 'second:request' })
+    await f.control.command({ type: 'resume', threadId: 'workshop' })
+    await expect.poll(() => f.decisions.length).toBe(1)
+    await f.control.command({ type: 'refresh' })
+    await f.restart()
+    await f.control.command({ type: 'answer', threadId: 'workshop', requestId: 'first:request', answer: 'Use the first option.' })
+    const next = await f.control.command({ type: 'refresh' })
+    expect(f.decisions).toHaveLength(1)
+    expect(next.queue.map(item => item.requestId)).toEqual(['second:request'])
+  })
+
+  it('recovers unfinished reasoning after a crash instead of treating a merely observed message as complete', async () => {
+    const f = await fixture()
+    await f.account()
+    f.service.decision = { decision: 'done', text: 'Review finished.' }
+    let release!: () => void
+    f.service.decisionGate = new Promise<void>(resolve => { release = resolve })
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'This result was still being reviewed at the crash.' })
+    await expect.poll(() => f.decisions.length).toBe(1)
+    await f.control.command({ type: 'refresh' })
+    const interruptedState = await readFile(join(f.root, 'agents.json'), 'utf8')
+    expect(JSON.parse(interruptedState).queue).toEqual([])
+    release()
+    await expect.poll(() => f.control.get().queue.length).toBe(1)
+    await f.control.command({ type: 'refresh' })
+    // Reopen the exact durable state that existed before the external result.
+    await writeFile(join(f.root, 'agents.json'), interruptedState)
+    await f.restart()
+    await expect.poll(() => f.decisions.length).toBe(2)
+    await expect.poll(() => f.control.get().queue[0]?.text).toBe('Review finished.')
+    await f.control.command({ type: 'refresh' })
+  })
+
   it('processes failures arriving during dispatch and still enforces the follow-up limit and repeated-failure stop', async () => {
     const host = new DispatchEventHost([
       [{ type: 'failure', threadId: 'workshop', text: 'Fixable test two' }],

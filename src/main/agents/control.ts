@@ -4,8 +4,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema,
-  defaultAgentConfiguration, EMPTY_AGENT_HOST, supportsAgentSupervision,
-  type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread,
+  defaultAgentConfiguration, EMPTY_AGENT_HOST, supportsAgentSupervision, isSubscriptionReasoning,
+  type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
@@ -39,6 +39,8 @@ export class AgentControl {
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
   private readonly considered = new Map<string, string>()
+  private readonly recoveredQueueIds = new Map<string, Set<string>>()
+  private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -59,6 +61,7 @@ export class AgentControl {
       busy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
       credentials: { t3: false, reasoning: false, secure: false },
+      reasoningAccounts: [],
       membership: { status: 'free', label: 'Free dictation', expiresAt: null },
     }
     this.store = new AtomicJsonStore(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
@@ -82,6 +85,14 @@ export class AgentControl {
     }
     this.state.queue = this.state.queue.filter(item => item.requestId || (!historyDisabled && Date.parse(item.createdAt) > cutoff))
       .map(item => historyDisabled ? { ...item, text: 'Open T3 to review this pending request.' } : item)
+    // A durable attention item means its observation already reached a result.
+    // Do not persist the in-flight `considered` map: a crash must retry unfinished work.
+    for (const item of this.state.queue) {
+      if (item.kind === 'permission') continue
+      const ids = this.recoveredQueueIds.get(item.threadId) ?? new Set<string>()
+      ids.add(item.id)
+      this.recoveredQueueIds.set(item.threadId, ids)
+    }
     this.outbox = outbox
     // Redaction also reaches disk when control is disabled and no reconnect will run.
     await this.persist()
@@ -94,6 +105,10 @@ export class AgentControl {
       }).catch(() => undefined)
     }, 30_000)
     this.updateCredentials()
+    if (isSubscriptionReasoning(this.state.configuration.reasoning)) {
+      // Native login/model discovery must not hold up dictation or the desktop window.
+      void this.checkReasoning(this.state.configuration.reasoning).then(() => this.publish())
+    }
     this.observe()
     this.unsubscribe = this.dependencies.host.subscribe(snapshot => this.acceptSnapshot(snapshot))
     if (this.state.configuration.enabled) await this.command({ type: 'connect' })
@@ -126,6 +141,19 @@ export class AgentControl {
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
     this.state.credentials = { t3: vault.has('t3'), reasoning: vault.has('reasoning'), secure: vault.available() }
+  }
+  private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
+    const pending = this.accountChecks.get(provider)
+    if (pending) return pending
+    const check = (async () => {
+      const account = await this.dependencies.reasoner.account?.(provider).catch(() => ({
+        provider, label: provider, installed: false, ready: false, models: [],
+        detail: 'Could not check this subscription. Open the provider app to check its sign-in, then check the connection in Sotto.',
+      }))
+      if (!this.disposed && account) this.state.reasoningAccounts = [...this.state.reasoningAccounts.filter(item => item.provider !== provider), account]
+    })()
+    this.accountChecks.set(provider, check)
+    try { await check } finally { this.accountChecks.delete(provider) }
   }
   private observe(): void {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId), ...(this.state.activeThreadId ? [this.state.activeThreadId] : [])])])
@@ -220,6 +248,7 @@ export class AgentControl {
       }
       case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected. T3 work continues.'); return
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot()); return
+      case 'check-reasoning': await this.checkReasoning(command.provider); return
       case 'utterance': await this.utterance(command.text.trim()); return
       case 'compose':
         if (!this.state.composing) this.startDraft()
@@ -304,6 +333,7 @@ export class AgentControl {
         const assignment = this.assignment(command.threadId)
         assignment.mode = 'managed'; assignment.paused = false; assignment.followups = 0; assignment.lastFailure = ''
         this.considered.delete(command.threadId)
+        this.recoveredQueueIds.delete(command.threadId)
         this.state.queue = this.state.queue.filter(q => q.threadId !== command.threadId || q.kind !== 'blocked')
         this.say(`Resumed managing ${this.thread(command.threadId).title}.`)
         this.acceptSnapshot(await this.dependencies.host.snapshot())
@@ -500,6 +530,15 @@ export class AgentControl {
       const last = thread.messages.at(-1)
       const question = thread.requests.find(r => r.kind === 'question' && !assignment.handledRequestIds.includes(r.id))
       const key = question?.id ?? (last?.role === 'assistant' ? last.id : null)
+      const recovered = this.recoveredQueueIds.get(thread.id)
+      if (key && recovered) {
+        const matched = ['ready', 'question', 'blocked'].map(kind => `${thread.id}:${key}:${kind}`).filter(id => recovered.has(id))
+        if (matched.length) this.considered.set(thread.id, key)
+        // Restore each queued observation once, including another old question
+        // exposed after answering the first. New identities remain eligible.
+        for (const id of matched) recovered.delete(id)
+        if (!recovered.size) this.recoveredQueueIds.delete(thread.id)
+      }
       if (key && (question || (thread.status !== 'running' && last && Date.parse(last.createdAt) > Date.now() - 7 * 86_400_000)) && this.considered.get(thread.id) !== key) {
         if (assignment.mode === 'manual' || assignment.paused || !assignment.instruction || this.state.configuration.reasoning === 'none') {
           this.enqueue(thread, question ? 'question' : 'ready', question?.text ?? last?.text ?? 'Ready for your next prompt.', question?.id)

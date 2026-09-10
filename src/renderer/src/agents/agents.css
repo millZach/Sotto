@@ -89,6 +89,9 @@
 .agent-billing { font-size: 12px; margin: 20px 0; color: var(--tt-text-muted); }
 .agent-billing strong { color: var(--tt-text); }
 .agent-billing p { margin: 6px 0; }
+.agent-subscription-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-block: 1px solid var(--tt-border-faint); font-size: 12px; }
+.agent-subscription-status p { margin: 5px 0 0; color: var(--tt-text-muted); line-height: 1.5; }
+.agent-subscription-status .tt-button { flex-shrink: 0; }
 .agent-new-project { display: grid; gap: 10px; margin: 0 3px 20px; }
 .agent-view .agent-checkbox { display: flex; align-items: center; gap: 8px; font-size: 11px; line-height: 1.5; }
 .agent-checkbox input { accent-color: var(--tt-activity); }
