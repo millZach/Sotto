@@ -31,3 +31,29 @@ HTTP authentication, permission, credit, rate-limit and service failures produce
 - The running normal-profile build preserves the user's ChatGPT / GPT-5.6 Luna / Low reasoning selection and prior control-off state. Grok settings are left open for key entry. The existing Natural / Female 1 selection remains saved until the user saves/previews a configured Grok voice.
 
 No live Grok speech API key was supplied, so no paid speech generation or subjective Grok audio-quality test was performed. Enter the key directly in Sotto, select **Save API key**, choose a voice, then **Use and preview voice** to complete live verification. No installer, purchase, push or release was performed.
+
+## September 10 follow-up: live WAV response
+
+The user supplied the dedicated xAI speech key and reported `Grok speech returned invalid WAV audio`. The original September 9 verification above used fixtures only; this follow-up exercised the live provider.
+
+- [x] Reproduce the exact error using the saved speech key and Altair, without exposing credentials.
+- [x] Replay the captured response locally and minimize it to a regression test before fixing the parser.
+- [x] Finalize streaming WAV lengths while preserving samples and rejecting malformed audio.
+- [x] Run relevant automated checks, rebuild, and retry the normal-profile desktop preview with Computer Use.
+- [x] Preserve Grok / Altair, the saved key, enabled agent control, assignments, and ChatGPT / GPT-5.6 Luna / Low reasoning.
+
+The live request returned HTTP 200, `audio/wav`, and 191,564 bytes, matching HTTP Content-Length. Its 24 kHz mono PCM16 header declared data length `0x7fffffff` and RIFF length `0x80000023`. Sotto recognized only the other streaming marker, `0xffffffff`, and mistook the large placeholder for a truncated data chunk. The actual payload contained 191,520 bytes of complete samples (3.99 seconds).
+
+An offline Electron harness replayed this response through the production service and reproduced the exact error. A minimal test using the same header also failed before the fix. The parser now recognizes both streaming markers, requires a preceding format and nonempty frame-aligned samples, and writes the actual data and RIFF lengths before playback. Odd data lengths receive WAV padding. Ordinary finite oversized chunks remain errors. The captured response passes afterward, and its sample bytes are unchanged.
+
+Verification of this fix:
+
+- Typecheck, lint, and production build passed.
+- Three focused suites passed **53 tests**: Grok service (42 cases), speech IPC, and configured renderer speech.
+- The Grok Electron setup/recovery/preview test passed using an updated fixture with the live provider's streaming header. It exercises the real vault, service, IPC and audio playback lifecycle. Its earlier speech error clears only after successful output.
+- An independent read-only review found no material issues.
+- Computer Use observed the original error in the normal-profile app, then inspected the rebuilt app, opened settings, and ran **Use and preview voice** with the user's saved Grok / Altair selection. The completed preview displayed no speech error, and runtime stderr remained empty. The app is left open at those settings. This verifies the software playback path; no subjective listening-quality assessment is claimed.
+
+The diagnostic generated one short synthetic phrase through xAI; the desktop preview also used the live API, and enabled control reconnected on restart. Offline replays and automated tests make no xAI requests. Debug-only synthetic audio and the replay harness remain in the ignored `artifacts/agent-control-smoke/` directory. No credential or authorization header was recorded. No installer, push, or release was performed.
+
+Prevention: the original ideal, fully sized WAV fixture missed the provider's streaming header. The desktop fixture and dedicated regression cases now reproduce that boundary condition.

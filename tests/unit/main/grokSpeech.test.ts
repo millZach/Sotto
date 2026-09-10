@@ -64,6 +64,44 @@ describe('GrokSpeechService', () => {
     expect(fetchFn.mock.calls[0]![1]!.body).toBeUndefined()
   })
 
+  it.each([0x7fffffff, 0xffffffff])('finalizes streaming WAV lengths (%i) without changing audio samples', async size => {
+    // The live xAI response uses data=0x7fffffff and RIFF=0x80000023.
+    const audio = wave()
+    audio.writeUInt32LE((size + 36) >>> 0, 4)
+    audio.writeUInt32LE(size, 40)
+    const { service } = setup(vi.fn<typeof fetch>().mockResolvedValue(audioResponse(audio)))
+    const result = await service.synthesize('Hi', 'altair')
+    expect(Buffer.from(result.audioBase64, 'base64')).toEqual(wave())
+  })
+
+  it.each(['empty', 'partial sample', 'missing format', 'zero alignment'])('rejects a streaming WAV with %s', async kind => {
+    let audio = wave()
+    audio.writeUInt32LE(0x80000023, 4)
+    audio.writeUInt32LE(0x7fffffff, 40)
+    if (kind === 'empty') audio = audio.subarray(0, 44)
+    if (kind === 'partial sample') audio = audio.subarray(0, 47)
+    if (kind === 'missing format') audio.write('JUNK', 12)
+    if (kind === 'zero alignment') audio.writeUInt16LE(0, 32)
+    const { service } = setup(vi.fn<typeof fetch>().mockResolvedValue(audioResponse(audio)))
+    await expect(service.synthesize('Hi', 'altair')).rejects.toThrow('invalid WAV')
+  })
+
+  it('pads an odd streaming data length without counting the padding as audio', async () => {
+    const audio = wave().subarray(0, 47)
+    audio.writeUInt32LE(0x80000023, 4)
+    audio.writeUInt32LE(0x7fffffff, 40)
+    audio.writeUInt32LE(24000, 28)
+    audio.writeUInt16LE(1, 32)
+    audio.writeUInt16LE(8, 34)
+    const { service } = setup(vi.fn<typeof fetch>().mockResolvedValue(audioResponse(audio)))
+    const result = Buffer.from((await service.synthesize('Hi', 'altair')).audioBase64, 'base64')
+    expect(result.length).toBe(48)
+    expect(result.readUInt32LE(4)).toBe(40)
+    expect(result.readUInt32LE(40)).toBe(3)
+    expect(result.subarray(44, 47)).toEqual(audio.subarray(44))
+    expect(result[47]).toBe(0)
+  })
+
   it('does not use environment or other saved keys when the speech key is missing', async () => {
     vi.stubEnv('XAI_API_KEY', 'environment-key')
     const fetchFn = vi.fn<typeof fetch>()

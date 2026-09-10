@@ -53,16 +53,27 @@ function validateWave(audio: Buffer): AgentSpeechAudio {
   if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') throw invalid()
   let hasFormat = false
   let hasAudio = false
+  let blockAlign = 0
   for (let offset = 12; offset + 8 <= audio.length;) {
-    const size = audio.readUInt32LE(offset + 4)
+    let size = audio.readUInt32LE(offset + 4)
     const start = offset + 8
-    // A streaming WAV can leave the final data chunk length unspecified.
     const id = audio.toString('ascii', offset, offset + 4)
-    const end = id === 'data' && size === 0xffffffff ? audio.length : start + size
+    // xAI streams WAV with data=0x7fffffff and RIFF=0x80000023.
+    // Finalize known unknown-length markers after the bounded body completes,
+    // so the browser receives a normal WAV with an accurate playback duration.
+    if (id === 'data' && (size === 0x7fffffff || size === 0xffffffff)) {
+      size = audio.length - start
+      if (!hasFormat || !blockAlign || !size || size % blockAlign !== 0) throw invalid()
+      if (size % 2) audio = Buffer.concat([audio, Buffer.alloc(1)])
+      audio.writeUInt32LE(size, offset + 4)
+      audio.writeUInt32LE(audio.length - 8, 4)
+    }
+    const end = start + size
     if (end > audio.length) throw invalid()
     if (id === 'fmt ') {
       if (size < 16 || ![1, 3, 0xfffe].includes(audio.readUInt16LE(start))) throw invalid()
       hasFormat = true
+      blockAlign = audio.readUInt16LE(start + 12)
     }
     if (id === 'data' && end > start) hasAudio = true
     offset = end + (size % 2)
