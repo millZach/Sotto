@@ -78,6 +78,8 @@ test('keeps dark agent settings and widget prompts usable at the minimum window 
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await page.getByLabel('Prompt').fill('Review this small-screen prompt.')
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
+    await expect(widget.getByRole('button', { name: 'Expand agent controls' })).toBeVisible()
+    await widget.getByRole('button', { name: 'Expand agent controls' }).click()
     await expect(widget.getByLabel('Prompt')).toHaveValue('Review this small-screen prompt.')
     await widget.getByRole('button', { name: 'Send it', exact: true }).scrollIntoViewIfNeeded()
     await widget.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-dark-prompt.png' })

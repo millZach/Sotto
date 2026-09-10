@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { supportsAgentSupervision, type AgentConfiguration, type AgentState } from '../../../shared/agents'
+import { supportsAgentSupervision, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -27,6 +27,10 @@ export function AgentComposer({ state, command, compact = false }: {
   const version = useRef(0)
   const target = state.host.threads.find((entry) => entry.id === (state.draftThreadId ?? state.activeThreadId))
   const project = state.host.projects.find((entry) => entry.id === target?.projectId)
+  const questionId = state.draftRequestId ?? (!state.composing ? state.queue.find((entry) => entry.threadId === target?.id && entry.kind === 'question')?.requestId : undefined)
+  const answering = questionId !== undefined && questionId !== null
+  const assigned = state.assignments.some((entry) => entry.threadId === target?.id)
+  const hasDraft = state.composing || state.draftThreadId !== null || draft.length > 0
   useEffect(() => {
     if (writes.current === 0) setDraft(state.draft)
   }, [state.draft, state.draftThreadId])
@@ -45,16 +49,19 @@ export function AgentComposer({ state, command, compact = false }: {
     const result = await command({ type: 'send' })
     if (result !== null) setDraft(result.draft)
   }
+  if ((target === undefined || !assigned) && !hasDraft) return null
   return <section className="agent-composer">
-    <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{state.draftRequestId ? 'Answer draft' : 'Prompt'}</label>
+    <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
+    {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}
+    {!assigned ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || state.connection !== 'connected' || !supportsAgentSupervision(state.host.capabilities)} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
-      rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : 'Dictate or type your prompt. Pauses won’t send it.'}
-      disabled={target === undefined} spellCheck />
+      rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : answering ? 'Dictate or type your answer. It stays saved until you send or clear it.' : 'Dictate or type your prompt. Pauses won’t send it.'}
+      disabled={target === undefined || !assigned} spellCheck />
     <div className="agent-composer__footer"><span>Say “send it” when you’re ready.</span>
       <div className="agent-actions">
-        {draft.length > 0 ? <Button variant="ghost" onClick={() => { setDraft(''); void command({ type: 'cancel-draft' }) }}>Clear</Button> : null}
-        <Button disabled={state.busy || target === undefined || draft.trim().length === 0 || state.connection !== 'connected'} onClick={() => void send()}>
+        {hasDraft ? <Button variant="ghost" onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) setDraft(result.draft) }) }}>Clear</Button> : null}
+        <Button disabled={state.busy || target === undefined || !assigned || draft.trim().length === 0 || state.connection !== 'connected'} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
       </div>
@@ -62,14 +69,37 @@ export function AgentComposer({ state, command, compact = false }: {
   </section>
 }
 
+export function AgentLatestResponse({ thread, compact = false }: { readonly thread: AgentThread | undefined; readonly compact?: boolean }): ReactNode {
+  const latest = thread?.messages.filter((message) => message.role === 'assistant').at(-1)
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => { setExpanded(false) }, [latest?.id, thread?.id])
+  if (latest === undefined || !latest.text.trim()) return null
+  const limit = compact ? 320 : 700
+  const shortened = latest.text.length > limit
+  return <section className="agent-response" aria-label={`Latest response from ${thread?.title ?? 'thread'}`}>
+    <div className="agent-section-title"><h2>Latest response</h2>{thread?.status === 'running' ? <span>Still working</span> : null}</div>
+    <p className={expanded ? 'agent-response__text agent-response__text--expanded' : 'agent-response__text'}>{shortened && !expanded ? `${latest.text.slice(0, limit).trimEnd()}…` : latest.text}</p>
+    {shortened ? <Button variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Show less' : 'Read full response'}</Button> : null}
+  </section>
+}
+
+function AgentReadyUpdate({ text, compact }: { readonly text: string; readonly compact: boolean }): ReactNode {
+  const [expanded, setExpanded] = useState(false)
+  const preview = text.replace(/\s+/gu, ' ').trim()
+  const limit = compact ? 200 : 320
+  const shortened = preview.length > limit
+  return <>
+    <p className={expanded ? 'agent-queue__update-full' : undefined}>{expanded ? text : shortened ? `${preview.slice(0, limit).trimEnd()}…` : preview}</p>
+    {shortened ? <Button variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Show less update' : 'Read full update'}</Button> : null}
+  </>
+}
+
 export function AgentQueue({ state, command, compact = false }: {
   readonly state: AgentState; readonly command: Command; readonly compact?: boolean
 }): ReactNode {
-  const [answer, setAnswer] = useState('')
   const active = state.queue.find((entry) => entry.threadId === state.activeThreadId)
   const thread = state.host.threads.find((entry) => entry.id === active?.threadId)
   const request = thread?.requests.find((entry) => entry.id === active?.requestId)
-  useEffect(() => { setAnswer('') }, [active?.id])
   const reply = (value: string, approved?: boolean): void => {
     if (active?.requestId === undefined) return
     void command({ type: 'answer', threadId: active.threadId, requestId: active.requestId, answer: value,
@@ -90,26 +120,23 @@ export function AgentQueue({ state, command, compact = false }: {
       })}</div> : null}
       {active === undefined ? <p className="agent-muted">Select a waiting thread or say “next.”</p> : <div className="agent-queue__question">
         <span className="agent-eyebrow">{active.kind === 'permission' ? 'Permission requested' : active.kind === 'question' ? 'Your decision' : 'Ready for you'}</span>
-        <p>{active.text}</p>
+        {active.kind === 'ready' ? <AgentReadyUpdate key={active.id} text={active.text} compact={compact} /> : <p>{active.text}</p>}
         {active.requestId === undefined ? null : request?.kind === 'permission' || active.kind === 'permission'
           ? <div className="agent-actions"><Button variant="secondary" onClick={() => reply('Denied', false)}>Deny</Button><Button onClick={() => reply('Approved', true)}>Approve</Button></div>
-          : <div className="agent-answer">
-            {request?.options.length ? <div className="agent-actions">{request.options.map((option) =>
-              <Button key={option.id} variant="secondary" onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
-            <label className="tt-visually-hidden" htmlFor={compact ? 'widget-agent-answer' : 'agent-answer'}>Your answer</label>
-            <textarea id={compact ? 'widget-agent-answer' : 'agent-answer'} rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Your answer" />
-            <Button disabled={answer.trim().length === 0 || state.busy} onClick={() => reply(answer)}>Answer question</Button>
-          </div>}
+          : request?.options.length ? <div className="agent-actions">{request.options.map((option) =>
+            <Button key={option.id} variant="secondary" disabled={state.busy || state.connection !== 'connected'} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
       </div>}
     </>}
   </section>
 }
 
-function AgentConnectionSettings({ state, command }: { readonly state: AgentState; readonly command: Command }): ReactNode {
+function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
   const [configuration, setConfiguration] = useState(state.configuration)
   const [token, setToken] = useState('')
   const [reasoningKey, setReasoningKey] = useState('')
   const [saved, setSaved] = useState(false)
+  const providerInput = useRef<HTMLSelectElement>(null)
+  useEffect(() => { if (focusReasoning) { providerInput.current?.focus(); providerInput.current?.scrollIntoView?.({ block: 'nearest' }) } }, [focusReasoning])
   const change = <K extends keyof AgentConfiguration>(key: K, value: AgentConfiguration[K]): void => {
     setConfiguration((current) => ({ ...current, [key]: value })); setSaved(false)
   }
@@ -148,11 +175,12 @@ function AgentConnectionSettings({ state, command }: { readonly state: AgentStat
         {state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}{!model.ready ? ' · unavailable' : ''}</option>)}
       </select></label>
       <label>Automatic follow-up limit<input type="number" min={0} max={100} value={configuration.followupLimit} onChange={(event) => change('followupLimit', Math.min(100, Math.max(0, Number(event.target.value))))} /></label>
-      <label>Sotto reasoning<select value={configuration.reasoning} onChange={(event) => change('reasoning', event.target.value as AgentConfiguration['reasoning'])}>
-        <option value="none">Human decisions only</option><option value="openrouter">OpenRouter API</option><option value="openai">OpenAI API</option>
+      <label>Sotto reasoning<select ref={providerInput} value={configuration.reasoning} onChange={(event) => { change('reasoning', event.target.value as AgentConfiguration['reasoning']); setReasoningKey('') }}>
+        <option value="none">Not configured</option><option value="openrouter">OpenRouter API</option><option value="openai">OpenAI API</option>
       </select></label>
       <label>Reasoning model<input value={configuration.reasoningModel} onChange={(event) => change('reasoningModel', event.target.value)} placeholder="Provider model ID" disabled={configuration.reasoning === 'none'} /></label>
-      {configuration.reasoning !== 'none' ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
+      {configuration.reasoning !== 'none' ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
+      <p className="agent-field-wide agent-muted">Voice commands to create projects or threads and automatic follow-ups require a reasoning provider, model, and API key. Manual controls and prompt dictation remain available without this connection.</p>
       <label className="agent-checkbox"><input type="checkbox" checked={configuration.speak} onChange={(event) => change('speak', event.target.checked)} />Spoken replies using a local system voice</label>
       <label className="agent-field-wide">Local wake model folder<input value={configuration.wakeModelDirectory} onChange={(event) => change('wakeModelDirectory', event.target.value)} placeholder="Absolute path to your local wake model" />
         <span>Wake setup is required before using “Hey Sotto.” This build supports a separately supplied Sherpa phonetic model. Its distribution license is unresolved, so Sotto does not include or download the weights. Text agent controls remain available.</span>
@@ -179,35 +207,74 @@ function AgentConnectionSettings({ state, command }: { readonly state: AgentStat
   </section>
 }
 
-function AgentNewProject({ state, command }: { readonly state: AgentState; readonly command: Command }): ReactNode {
+function AgentNewProject({ state, command, onCreated }: { readonly state: AgentState; readonly command: Command; readonly onCreated: () => void }): ReactNode {
   const [title, setTitle] = useState('')
   const [path, setPath] = useState('')
   const [existing, setExisting] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const create = async (): Promise<void> => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      const result = await command({ type: 'create-project', title: title.trim(), ...(path.trim() ? { path: path.trim() } : {}), ...(existing ? { useExisting: true } : {}) })
+      if (result !== null && result.error === null) { setTitle(''); setPath(''); setExisting(false); onCreated() }
+    } finally { setSubmitting(false) }
+  }
   return <form className="agent-new-project" onSubmit={(event) => {
     event.preventDefault()
-    void command({ type: 'create-project', title: title.trim(), ...(path.trim() ? { path: path.trim() } : {}), ...(existing ? { useExisting: true } : {}) })
+    void create()
   }}>
     <label>Project name<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Workshop" /></label>
     <label>Project folder<input value={path} onChange={(event) => setPath(event.target.value)} placeholder={state.configuration.projectsDirectory ? `Inside ${state.configuration.projectsDirectory}` : 'Choose a folder or set your projects directory'} /></label>
     <label className="agent-checkbox"><input type="checkbox" checked={existing} onChange={(event) => setExisting(event.target.checked)} />Use this folder if it already exists</label>
-    <Button type="submit" disabled={state.busy || !title.trim()}><FolderPlus size={14} aria-hidden="true" />Create project</Button>
+    <Button type="submit" disabled={state.busy || submitting || !title.trim()}><FolderPlus size={14} aria-hidden="true" />Create project</Button>
   </form>
+}
+
+function AgentNewThread({ state, command, project }: { readonly state: AgentState; readonly command: Command; readonly project: AgentProject }): ReactNode {
+  const [threadName, setThreadName] = useState('')
+  const [modelOverride, setModelOverride] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const details = useRef<HTMLDetailsElement>(null)
+  const modelId = modelOverride || state.configuration.defaultModelId
+  const create = async (): Promise<void> => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      const result = await command({ type: 'create-thread', projectId: project.id, title: threadName.trim() || 'New thread', modelId })
+      if (result !== null && result.error === null) {
+        setThreadName(''); setModelOverride('')
+        if (details.current !== null) details.current.open = false
+      }
+    } finally { setSubmitting(false) }
+  }
+  return <details ref={details} className="agent-new-thread"><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
+    <label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label>
+    <label>Agent model<select value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
+    <Button type="submit" disabled={state.busy || submitting || !modelId || state.connection !== 'connected' || !state.host.capabilities.threads}><Plus size={14} aria-hidden="true" />Open thread</Button>
+  </form></details>
 }
 
 export function AgentView(): ReactNode {
   const agents = useAgents()
   const { state, command } = agents
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [focusReasoning, setFocusReasoning] = useState(false)
   const [newProject, setNewProject] = useState(false)
-  const [threadName, setThreadName] = useState('')
-  const [modelOverride, setModelOverride] = useState('')
+  const [search, setSearch] = useState('')
   if (state === null) return <div className="management-view agent-view"><h1>Agents</h1><p>{agents.error ?? 'Preparing agent controls…'}</p></div>
   const active = state.host.threads.find((thread) => thread.id === state.activeThreadId)
   const activeProject = state.host.projects.find((project) => project.id === (active?.projectId ?? state.activeProjectId))
   const assignment = state.assignments.find((entry) => entry.threadId === active?.id)
   const connected = state.connection === 'connected'
   const fullSupervision = supportsAgentSupervision(state.host.capabilities)
-  const modelId = modelOverride || state.configuration.defaultModelId
+  const query = search.trim().toLocaleLowerCase()
+  const visibleProjects = state.host.projects.map((project) => {
+    const matchesProject = `${project.title} ${project.path}`.toLocaleLowerCase().includes(query)
+    const threads = state.host.threads.filter((thread) => thread.projectId === project.id && (matchesProject || thread.title.toLocaleLowerCase().includes(query)))
+    return { project, threads, matches: matchesProject || threads.length > 0 }
+  }).filter((entry) => entry.matches)
+  const reasoningReady = state.configuration.reasoning !== 'none' && Boolean(state.configuration.reasoningModel.trim()) && state.credentials.reasoning
   const voiceLabel = {
     off: window.sottoE2E === undefined ? 'Voice control is off' : 'Test mode · microphone disabled', starting: 'Preparing local voice', wake: 'Say “Hey Sotto”',
     listening: 'Listening · say “send it” to submit', speaking: 'Sotto is speaking',
@@ -215,14 +282,14 @@ export function AgentView(): ReactNode {
   }[agents.voice.status]
   return <div className="management-view agent-view">
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
-      <div className="agent-actions"><Button variant="ghost" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
+      <div className="agent-actions"><Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
         <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect T3 Code' : state.connection === 'connecting' ? 'Connecting…' : 'Connect T3 Code'}</Button></div>
     </header>
     <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{connected ? 'T3 Code connected' : 'T3 Code disconnected'}{state.host.version ? ` · ${state.host.version}` : ''}</span>
       <span>{state.assignments.length} assigned · {state.queue.length} waiting</span>
       {connected ? <Button variant="ghost" iconOnly aria-label="Refresh T3 Code" onClick={() => void command({ type: 'refresh' })}><RefreshCw size={14} /></Button> : null}
     </div>
-    {settingsOpen ? <AgentConnectionSettings state={state} command={command} /> : null}
+    {settingsOpen ? <AgentConnectionSettings state={state} command={command} focusReasoning={focusReasoning} /> : null}
     <section className="agent-voice" aria-label="Voice control"><div><Mic size={18} aria-hidden="true" /><div><strong>{voiceLabel}</strong><span>Wake detection and speech recognition stay on this desktop.</span></div></div>
       <div className="agent-actions">
         {state.configuration.enabled ? <><Button variant="ghost" iconOnly aria-label={agents.voice.status === 'muted' ? 'Unmute listening' : 'Mute listening'} onClick={agents.muteVoice}>{agents.voice.status === 'muted' ? <Mic size={16} /> : <MicOff size={16} />}</Button>
@@ -233,6 +300,7 @@ export function AgentView(): ReactNode {
         <Button variant="secondary" onClick={() => void command({ type: 'configure', patch: { enabled: !state.configuration.enabled } })}>{state.configuration.enabled ? 'Turn off agent control' : 'Enable agent control'}</Button>
       </div>
     </section>
+    {!reasoningReady ? <section className="agent-reasoning-setup" aria-label="Reasoning setup"><div><strong>Connect reasoning for voice app commands</strong><p>Creating projects and threads by voice and automatic follow-ups need a reasoning API connection. You can still use manual controls and dictate prompts.</p></div><Button variant="secondary" onClick={() => { setFocusReasoning(true); setSettingsOpen(true) }}>Set up reasoning</Button></section> : null}
     {agents.voice.error ? <p className="agent-error" role="alert">{agents.voice.error}</p> : null}
     {state.error || agents.error ? <p className="agent-error" role="alert">{state.error ?? agents.error}</p> : null}
     {state.notice && state.notice !== state.error ? <p className="agent-notice" role="status">{state.notice}</p> : null}
@@ -240,35 +308,37 @@ export function AgentView(): ReactNode {
     {connected && !fullSupervision ? <p className="agent-notice">This connection supports limited controls. Automatic management requires reliable questions, permissions, message origins, and recovery.</p> : null}
     <div className="agent-workspace">
       <aside className="agent-threads" aria-label="Projects and threads"><div className="agent-section-title"><h2>Projects</h2><Button variant="ghost" iconOnly aria-label="New project" disabled={!connected || !state.host.capabilities.projects} onClick={() => setNewProject(!newProject)}><Plus size={15} /></Button></div>
-        {newProject ? <AgentNewProject state={state} command={command} /> : null}
-        {state.host.projects.length === 0 ? <p className="agent-muted">Connect T3 to see your projects and threads.</p> : state.host.projects.map((project) => <div className="agent-project" key={project.id}>
+        {newProject ? <AgentNewProject state={state} command={command} onCreated={() => setNewProject(false)} /> : null}
+        <label className="tt-visually-hidden" htmlFor="agent-thread-search">Search projects and threads</label>
+        <input id="agent-thread-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search projects and threads" />
+        <div className="agent-project-list">
+        {state.host.projects.length === 0 ? <p className="agent-muted">Connect T3 to see your projects and threads.</p> : visibleProjects.length === 0 ? <p className="agent-muted">No matching projects or threads.</p> : visibleProjects.map(({ project, threads }) => <div className="agent-project" key={project.id}>
           <button className="agent-project__title" type="button" aria-pressed={activeProject?.id === project.id} onClick={() => void command({ type: 'select-project', projectId: project.id })}><ChevronDown size={13} aria-hidden="true" />{project.title}</button>
-          {state.host.threads.filter((thread) => thread.projectId === project.id).map((thread) => {
+          {threads.map((thread) => {
             const managed = state.assignments.find((entry) => entry.threadId === thread.id)
             return <div className="agent-thread" data-selected={state.activeThreadId === thread.id} key={thread.id}>
               <button type="button" aria-label={`Select ${thread.title}`} onClick={() => void command({ type: 'select-thread', threadId: thread.id })}>
                 <i data-status={thread.status} /><span>{thread.title}<small>{managed?.mode === 'manual' ? 'Manual control' : managed?.paused ? 'Management paused' : managed ? 'Managed' : thread.status === 'running' ? 'Working' : 'Unassigned'}</small></span>
               </button>
-              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={!fullSupervision} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
+              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={state.busy || !connected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
             </div>
           })}
         </div>)}
+        </div>
       </aside>
       <div className="agent-detail">
+        {activeProject !== undefined ? <AgentNewThread state={state} command={command} project={activeProject} /> : null}
         <AgentQueue state={state} command={command} />
         <AgentManualNotice state={state} command={command} />
-        {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or create one in the project below.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working in T3' : 'Ready for a prompt'}</p></div>
-          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={!fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
+        {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or open one in your selected project.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working in T3' : assignment === undefined ? 'Unassigned · manage this thread to send prompts' : 'Ready for a prompt'}</p></div>
+          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.busy || !connected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
             <span>{assignment.followups}/{state.configuration.followupLimit} follow-ups</span>
             {assignment.mode === 'managed' ? <Button variant="ghost" onClick={() => void command({ type: assignment.paused ? 'resume' : 'pause', threadId: active.id })}>{assignment.paused ? 'Resume management' : 'Pause management'}</Button> : null}
             <Button variant="ghost" onClick={() => void command({ type: 'unassign', threadId: active.id })}>Stop managing</Button>
-          </>}{active.status === 'running' && state.host.capabilities.interrupt ? <Button variant="secondary" onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
+          </>}{assignment !== undefined && active.status === 'running' && state.host.capabilities.interrupt ? <Button variant="secondary" disabled={state.busy || !connected} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
         </section>}
+        <AgentLatestResponse thread={active} />
         <AgentComposer state={state} command={command} />
-        {activeProject !== undefined ? <details className="agent-new-thread"><summary>Open a new thread in {activeProject.title}</summary><form onSubmit={(event) => {
-          event.preventDefault()
-          void command({ type: 'create-thread', projectId: activeProject.id, title: threadName.trim() || 'New thread', modelId })
-        }}><label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label><label>Agent model<select value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label><Button type="submit" disabled={state.busy || !modelId || !connected || !state.host.capabilities.threads}><Plus size={14} aria-hidden="true" />Open thread</Button></form></details> : null}
       </div>
     </div>
   </div>

@@ -141,3 +141,41 @@ test('keeps permission decisions explicit while allowing an exact spoken denial 
     expect(snapshot.draft).toBe('')
   } finally { await closeSotto(launched) }
 })
+
+test('retains a typed question answer across queue navigation, widget edits, and restart', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  let launched = await launchSotto('success', directory)
+  try {
+    await onboard(launched.page)
+    await event(launched.page, workshopQuestion)
+    await event(launched.page, docsQuestion)
+    await launched.page.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout')
+    await launched.page.getByRole('button', { name: 'Later', exact: true }).click()
+    await expect(launched.page.getByRole('alert').first()).toContainText('Send or clear your draft')
+    expect((await state(launched.page)).activeThreadId).toBe('workshop')
+
+    const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
+    await expect(widget.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout')
+    await widget.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout and controls.')
+    await expect(launched.page.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout and controls.')
+
+    await launched.page.getByRole('button', { name: 'Select Docs', exact: true }).click()
+    await expect(launched.page.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout and controls.')
+    await expect(launched.page.getByText('This draft stays with Workshop.', { exact: true })).toBeVisible()
+    await closeSotto(launched)
+
+    launched = await launchSotto('success', directory)
+    await launched.page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await event(launched.page, workshopQuestion)
+    await event(launched.page, docsQuestion)
+    await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('Keep the existing layout and controls.')
+    expect((await state(launched.page)).draftRequestId).toBe('layout-question')
+    await launched.page.getByRole('button', { name: 'Send it', exact: true }).click()
+    await expect.poll(async () => (await state(launched.page)).host.threads.find(thread => thread.id === 'workshop')?.requests.length).toBe(0)
+    expect((await state(launched.page)).host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
+    await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
+  } finally {
+    await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+  }
+})

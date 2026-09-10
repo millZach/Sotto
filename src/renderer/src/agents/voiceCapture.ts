@@ -13,7 +13,7 @@ import {
 
 export interface VoiceCaptureOptions {
   readonly selectedDeviceId?: string
-  /** Mono 16 kHz PCM. Utterances are local and contain no leading room silence. */
+  /** Finite mono 16 kHz PCM in [-1, 1], with a short local pre-roll. */
   readonly onUtterance: (audio: Float32Array) => void
   readonly onLevel?: (level: number) => void
   readonly onError: (error: Error) => void
@@ -183,7 +183,14 @@ export class BrowserVoiceCapture implements VoiceCapture {
         offset += pending.length
       }
       this.clearAudio()
-      this.options.onUtterance(resampleMono(joined, sampleRate))
+      const audio = resampleMono(joined, sampleRate)
+      // Sinc resampling can ring beyond full scale even after the microphone
+      // worklet clamps its input. Bound the voice PCM sent to wake detection.
+      for (let index = 0; index < audio.length; index += 1) {
+        const sample = audio[index]!
+        audio[index] = Number.isFinite(sample) ? Math.max(-1, Math.min(1, sample)) : 0
+      }
+      this.options.onUtterance(audio)
     } else {
       this.clearAudio()
     }

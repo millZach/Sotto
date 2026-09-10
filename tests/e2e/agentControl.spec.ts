@@ -236,6 +236,7 @@ test('redacts processed assignment context when local history is disabled while 
     await expect.poll(async () => (await state(page)).host.threads.find(thread => thread.id === 'workshop')?.messages.filter(message => message.role === 'user').length).toBe(1)
     await command(page, { type: 'pause', threadId: 'workshop' })
     await event(page, { type: 'permission', threadId: 'workshop', text: questionText })
+    await command(page, { type: 'assign', threadId: 'docs' })
     await command(page, { type: 'select-thread', threadId: 'docs' })
     await command(page, { type: 'utterance', text: requestText })
     await page.getByLabel('Prompt', { exact: true }).fill(draft)

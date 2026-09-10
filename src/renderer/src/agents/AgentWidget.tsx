@@ -3,9 +3,9 @@ import { ChevronDown, ChevronUp, Mic, MicOff, VolumeX, Workflow } from 'lucide-r
 
 import type { WidgetPresentation, WidgetDragPayload } from '../../../shared/contracts'
 import { useWidgetDragGesture } from '../widget/useWidgetDragGesture'
-import type { AgentState } from '../../../shared/agents'
+import { supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
-import { AgentComposer, AgentManualNotice, AgentQueue } from './AgentView'
+import { AgentComposer, AgentLatestResponse, AgentManualNotice, AgentQueue } from './AgentView'
 
 export function AgentWidget({ state, command, onPresentationChange, onToggle, onDrag, visibilityGeneration, dragCancellationVersion }: {
   readonly state: AgentState
@@ -23,13 +23,19 @@ export function AgentWidget({ state, command, onPresentationChange, onToggle, on
     onDrag?.({ ...phase, generation: dragGeneration.current })
   }, undefined, dragCancellationVersion)
   const previousReadyCount = useRef(state.queue.length)
+  const previousComposing = useRef(state.composing)
+  const previousManual = useRef(false)
   const active = state.host.threads.find((thread) => thread.id === state.activeThreadId)
   const project = state.host.projects.find((entry) => entry.id === active?.projectId)
-  const manual = state.assignments.find((entry) => entry.threadId === active?.id)?.mode === 'manual'
+  const assignment = state.assignments.find((entry) => entry.threadId === active?.id)
+  const manual = assignment?.mode === 'manual'
   useEffect(() => {
-    if (state.queue.length > previousReadyCount.current || state.composing || manual) setExpanded(true)
+    const voiceStartedPrompt = state.composing && !previousComposing.current && state.voice.status === 'listening'
+    if (state.queue.length > previousReadyCount.current || voiceStartedPrompt || (manual && !previousManual.current)) setExpanded(true)
     previousReadyCount.current = state.queue.length
-  }, [state.queue.length, state.composing, manual])
+    previousComposing.current = state.composing
+    previousManual.current = manual
+  }, [state.queue.length, state.composing, state.voice.status, manual])
   useEffect(() => { onPresentationChange?.(expanded ? 'agents-expanded' : 'agents-compact') }, [expanded, onPresentationChange])
   const status = state.voice.status === 'listening' ? 'Listening · say “send it”'
     : state.voice.status === 'speaking' ? 'Sotto is speaking'
@@ -53,6 +59,8 @@ export function AgentWidget({ state, command, onPresentationChange, onToggle, on
         {state.voice.error ? <p className="agent-error" role="alert">{state.voice.error}</p> : null}
         <AgentQueue state={state} command={command} compact />
         <AgentManualNotice state={state} command={command} />
+        {active !== undefined && assignment === undefined ? <div className="agent-widget__assignment"><p className="agent-muted">Manage this thread to send prompts through Sotto.</p><button type="button" className="tt-button tt-button--secondary" disabled={state.busy || state.connection !== 'connected' || !supportsAgentSupervision(state.host.capabilities)} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</button></div> : null}
+        <AgentLatestResponse thread={active} compact />
         <AgentComposer state={state} command={command} compact />
         <div className="agent-widget__controls"><button type="button" className="tt-button tt-button--ghost" onClick={() => void command({ type: 'voice', action: 'sleep' })}>Stop listening</button></div>
       </div> : null}
