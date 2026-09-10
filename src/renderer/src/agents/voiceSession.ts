@@ -113,7 +113,8 @@ export class AgentVoiceSession {
   private capture: VoiceCapture | null = null
   private local: LocalVoiceTranscriber | null = null
   private wake: LocalWakeDetector | null = null
-  private error: string | undefined
+  private inputError: string | undefined
+  private speechError: string | undefined
   private captureGeneration = 0
   private audioGeneration = 0
   private recognitionId: string | null = null
@@ -137,7 +138,7 @@ export class AgentVoiceSession {
   async start(): Promise<void> {
     if (this.disposed) return
     this.enabled = true
-    this.error = undefined
+    this.inputError = undefined
     await this.ensureCapture()
   }
 
@@ -159,7 +160,7 @@ export class AgentVoiceSession {
       this.stopSpeaking()
       await this.releaseCapture()
     } else {
-      this.error = undefined
+      this.inputError = undefined
       await this.ensureCapture()
     }
     this.publish()
@@ -174,7 +175,7 @@ export class AgentVoiceSession {
       this.stopSpeaking()
       await this.releaseCapture()
     } else {
-      this.error = undefined
+      this.inputError = undefined
       await this.ensureCapture()
     }
     this.publish()
@@ -205,9 +206,13 @@ export class AgentVoiceSession {
       if (generation !== this.speechGeneration || this.disposed) return
       try {
         await this.dependencies.speech.speak(text)
+        if (generation === this.speechGeneration) {
+          this.speechError = undefined
+          this.publish()
+        }
       } catch (error: unknown) {
         if (generation === this.speechGeneration) {
-          this.error = voiceFailure(error, 'Spoken reply is unavailable. Read it in the widget.')
+          this.speechError = voiceFailure(error, 'Spoken reply is unavailable. Read it in the widget.')
           this.publish()
         }
       }
@@ -246,9 +251,10 @@ export class AgentVoiceSession {
     else if (this.dictationActive) status = 'dictation'
     else if (this.speechPending > 0 || this.echoSuppressed) status = 'speaking'
     else if (this.starting) status = 'starting'
-    else if (this.capture === null && this.error !== undefined) status = 'error'
+    else if (this.capture === null && this.inputError !== undefined) status = 'error'
     else status = this.conversation ? 'listening' : 'wake'
-    return { status, ...(this.error === undefined ? {} : { error: this.error }) }
+    const error = this.inputError ?? this.speechError
+    return { status, ...(error === undefined ? {} : { error }) }
   }
 
   private async ensureCapture(): Promise<void> {
@@ -277,7 +283,7 @@ export class AgentVoiceSession {
         ...(this.options.onLevel === undefined ? {} : { onLevel: this.options.onLevel }),
         onError: (error) => {
           if (generation !== this.captureGeneration) return
-          this.error = microphoneFailure(error)
+          this.inputError = microphoneFailure(error)
           void this.releaseCapture().then(() => this.publish())
         },
       })
@@ -290,7 +296,7 @@ export class AgentVoiceSession {
       this.publish()
     } catch (error: unknown) {
       if (generation !== this.captureGeneration) return
-      this.error = microphoneFailure(error)
+      this.inputError = microphoneFailure(error)
       await this.releaseCapture()
       this.publish()
     }
@@ -314,7 +320,7 @@ export class AgentVoiceSession {
     if (!this.canCapture() || this.speechPending > 0 || this.echoSuppressed || this.local === null) return
     if (this.queue.length >= MAX_PENDING_UTTERANCES) {
       if (this.conversation) {
-        this.error = 'Local transcription could not keep up. Listening paused; review your draft, then retry.'
+        this.inputError = 'Local transcription could not keep up. Listening paused; review your draft, then retry.'
         this.conversation = false
         void this.releaseCapture().then(() => this.publish())
         return
@@ -358,7 +364,7 @@ export class AgentVoiceSession {
           await this.receiveText(result.text, activated)
         } catch (error: unknown) {
           if (pending.generation !== this.audioGeneration) continue
-          this.error = voiceFailure(error, 'Local voice transcription failed. Retry to reconnect.')
+          this.inputError = voiceFailure(error, 'Local voice transcription failed. Retry to reconnect.')
           await this.releaseCapture()
           this.publish()
           return
@@ -379,7 +385,7 @@ export class AgentVoiceSession {
       if (!activated) return
       this.conversation = true
       this.capture?.setWakeMode?.(false)
-      this.error = undefined
+      this.inputError = undefined
       this.publish()
       await this.options.onWake?.()
       if (!this.canCapture()) return

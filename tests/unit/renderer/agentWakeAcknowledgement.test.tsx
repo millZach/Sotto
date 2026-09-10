@@ -48,7 +48,7 @@ describe('wake acknowledgement in the real application voice session', () => {
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
       composing: false, pendingRequest: '', busy: false, notice: '', error: null,
       speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
-      credentials: { t3: false, reasoning: false, secure: true }, reasoningAccounts: [],
+      credentials: { t3: false, reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
       membership: { status: 'beta', label: 'Development beta', expiresAt: null },
     }
     const command = vi.fn(async () => state)

@@ -159,6 +159,63 @@ describe('desktop agent voice interaction', () => {
     h.session.dispose()
   })
 
+  it('clears a failed preview after a successful retry while agent control stays off', async () => {
+    const h = harness()
+    h.speech.speak.mockRejectedValueOnce(new Error('xAI rejected the speech API key.'))
+    await h.session.speak('Preview the selected voice.')
+    expect(h.session.getState()).toEqual({ status: 'off', error: 'xAI rejected the speech API key.' })
+    await h.session.speak('Preview the selected voice.')
+    expect(h.session.getState()).toEqual({ status: 'off' })
+    expect(h.states.at(-1)).toEqual({ status: 'off' })
+    expect(h.capture.start).not.toHaveBeenCalled()
+    h.session.dispose()
+  })
+
+  it('keeps microphone errors visible through failed and successful speech previews', async () => {
+    vi.useFakeTimers()
+    const h = harness()
+    h.capture.start.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'))
+    await h.session.start()
+    const microphoneError = 'Microphone access was denied. Allow Sotto to use the microphone, then retry.'
+    h.speech.speak.mockRejectedValueOnce(new Error('xAI speech quota exceeded.'))
+    await h.session.speak('Preview the selected voice.')
+    expect(h.session.getState().error).toBe(microphoneError)
+    await h.session.speak('Preview the selected voice.')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.session.getState()).toEqual({ status: 'error', error: microphoneError })
+    await h.session.start()
+    expect(h.session.getState()).toEqual({ status: 'wake' })
+    h.session.dispose()
+  })
+
+  it('retains a speech failure through input start and stop until speech actually succeeds', async () => {
+    const h = harness()
+    h.speech.speak.mockRejectedValueOnce(new Error('Grok speech is unavailable.'))
+    await h.session.speak('Preview the selected voice.')
+    await h.session.start()
+    expect(h.session.getState()).toEqual({ status: 'wake', error: 'Grok speech is unavailable.' })
+    await h.session.stop()
+    expect(h.session.getState()).toEqual({ status: 'off', error: 'Grok speech is unavailable.' })
+    await h.session.speak('Preview the selected voice.')
+    expect(h.session.getState()).toEqual({ status: 'off' })
+    h.session.dispose()
+  })
+
+  it('does not let cancelled speech clear an earlier output error', async () => {
+    const h = harness()
+    h.speech.speak.mockRejectedValueOnce(new Error('Grok speech is unavailable.'))
+    await h.session.speak('Preview the selected voice.')
+    const delayed = deferred<void>()
+    h.speech.speak.mockImplementationOnce(() => delayed.promise)
+    const preview = h.session.speak('Preview the selected voice.')
+    await Promise.resolve()
+    h.session.stopSpeaking()
+    delayed.resolve()
+    await preview
+    expect(h.session.getState()).toEqual({ status: 'off', error: 'Grok speech is unavailable.' })
+    h.session.dispose()
+  })
+
   it('uses sensitive capture only while waiting for the wake phrase', async () => {
     const h = harness()
     await h.session.start()

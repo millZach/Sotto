@@ -111,7 +111,10 @@ export function AgentProvider({ children, settings, dictation }: {
       onUtterance: async (text) => { await connection.command({ type: 'utterance', text }) },
       // A long composition must keep accepting speech after the user pauses to think.
       conversationTimeoutMs: 0,
-    }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects())
+    }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects({
+      async speak(text) { if (stateRef.current?.configuration.speechProvider === 'grok') await speech.output.speak(text) },
+      stop() { speech.output.stop() },
+    }))
     voiceRef.current = session
     return () => { session.dispose(); speech.dispose(); voiceRef.current = null }
   }, [connection.command])

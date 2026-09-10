@@ -1,7 +1,8 @@
 import type { AgentVoiceDependencies } from '../agents/voiceSession'
+import type { VoiceSpeechOutput } from '../agents/voiceSpeech'
 
 /** Controlled microphone/transcription/speaker effects around the production voice state machine. */
-export function createE2EAgentVoiceEffects(): AgentVoiceDependencies {
+export function createE2EAgentVoiceEffects(speech?: VoiceSpeechOutput): AgentVoiceDependencies {
   const transcripts = new Map<number, string>()
   let next = 0
   return {
@@ -39,7 +40,7 @@ export function createE2EAgentVoiceEffects(): AgentVoiceDependencies {
       },
       cancel() {}, dispose() { transcripts.clear() },
     }),
-    speech: { async speak() {}, stop() {} },
+    speech: speech ?? { async speak() {}, stop() {} },
     createId: () => crypto.randomUUID(),
     setTimer: (callback, duration) => window.setTimeout(callback, duration),
     clearTimer: timer => window.clearTimeout(timer as number),

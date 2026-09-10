@@ -132,6 +132,8 @@ import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
 import { NaturalSpeechModels } from './agents/speechModels'
+import { GrokSpeechService } from './agents/grokSpeech'
+import { e2eGrokSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
@@ -409,6 +411,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   )
   const credentials = new AgentCredentials(userDataPath, safeStorage)
   await credentials.load()
+  const grokSpeech = new GrokSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eGrokSpeechFetch }) })
   const settings = new SecureSettings(plainSettings, credentials)
   await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
   let agentHistoryEnabled = (await settings.get()).historyEnabled
@@ -773,7 +776,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-      })
+      }, grokSpeech)
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),

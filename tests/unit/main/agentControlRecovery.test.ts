@@ -8,7 +8,7 @@ import { AgentCredentials, type CredentialEncryption } from '../../../src/main/a
 import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '../../../src/main/agents/reasoning'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import type { AgentCommand, AgentConfiguration } from '../../../src/shared/agents'
+import { agentCommandSchema, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -113,6 +113,29 @@ afterEach(async () => {
 })
 
 describe('reasoning account route isolation', () => {
+  it('persists Grok speech credentials separately and preserves both voices through unrelated settings and restart', async () => {
+    const f = await fixture()
+    await f.account()
+    const key = 'fixture-dedicated-grok-speech-key'
+    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: key })
+    await f.control.command({ type: 'configure', patch: { speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3' } })
+    await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { followupLimit: 4 } }))
+    await f.restart()
+    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3', reasoning: 'openrouter' })
+    expect(f.control.get().credentials).toMatchObject({ grokSpeech: true, reasoning: true })
+    expect(JSON.stringify(f.control.get())).not.toContain(key)
+    expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
+    expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
+    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
+    await reloaded.load()
+    expect(reloaded.get('grokSpeech')).toBe(key)
+    expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
+    await f.control.command({ type: 'configure', patch: { reasoning: 'openai', speechProvider: 'natural' } })
+    expect(f.credentials.get('grokSpeech')).toBe(key)
+    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: '' })
+    expect(f.control.get().credentials.grokSpeech).toBe(false)
+  })
+
   it.each([
     ['openrouter', ROUTER_KEY, 'https://openrouter.ai', 'openai', OPENAI_KEY, 'https://api.openai.com'],
     ['openai', OPENAI_KEY, 'https://api.openai.com', 'openrouter', ROUTER_KEY, 'https://openrouter.ai'],

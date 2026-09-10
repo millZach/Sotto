@@ -167,6 +167,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       speak: configuration.speak,
       speechProvider: configuration.speechProvider,
       speechVoice: configuration.speechVoice,
+      grokSpeechVoice: configuration.grokSpeechVoice,
       wakeModelDirectory: configuration.wakeModelDirectory,
       wakeRuntimeDirectory: configuration.wakeRuntimeDirectory,
       reasoning: configuration.reasoning,
@@ -222,7 +223,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       </div> : null}
       {api ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
       <p className="agent-field-wide agent-muted">Sotto uses this connection to understand voice commands and decide routine follow-ups. Subscription usage follows your provider’s allowance and any extra usage you enabled there. Sotto never switches accounts or enables paid overages for you.</p>
-      <VoiceSettings configuration={configuration} command={command} change={change} />
+      <VoiceSettings configuration={configuration} command={command} change={change} grokKeySaved={state.credentials.grokSpeech} voiceError={state.voice.error} />
       <label className="agent-field-wide">Local wake model folder<input value={configuration.wakeModelDirectory} onChange={(event) => change('wakeModelDirectory', event.target.value)} placeholder="Absolute path to your local wake model" />
         <span>Wake setup is required before using “Hey Sotto.” This build supports a separately supplied Sherpa phonetic model. Its distribution license is unresolved, so Sotto does not include or download the weights. Text agent controls remain available.</span>
       </label>

@@ -43,7 +43,7 @@ export class NativeSystemSpeech implements VoiceSpeechOutput {
       }
       const cancel = (): void => finish()
       this.finish = cancel
-      timer = globalThis.setTimeout(() => finish(new Error('Local speech generation timed out. Read the reply in the widget.')), 65_000)
+      timer = globalThis.setTimeout(() => { this.cancelSynthesis?.(); finish(new Error('Speech generation timed out. Read the reply in the widget.')) }, 65_000)
       void this.synthesize(text).then(async (result) => {
         if (settled) return
         const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))

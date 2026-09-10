@@ -162,6 +162,23 @@ describe('natural speech output', () => {
     await expect(f.output.speak('Another preview')).rejects.toThrow('Install a system voice')
   })
 
+  it('routes Grok speech through native IPC and cancels pending audio without loading local models', async () => {
+    const pending = deferred<{ audioBase64: string; mimeType: 'audio/wav' }>()
+    const bridge = { synthesizeSpeech: vi.fn(async () => pending.promise), cancelSpeech: vi.fn(async () => undefined), voiceModel: vi.fn(async () => ready) }
+    const f = createConfiguredSpeech(bridge, () => ({ ...defaultAgentConfiguration(), speechProvider: 'grok' }))
+    disposables.push(f)
+    const spoken = f.output.speak('Grok preview')
+    expect(bridge.synthesizeSpeech).toHaveBeenCalledWith('Grok preview')
+    f.output.stop()
+    await spoken
+    expect(bridge.cancelSpeech).toHaveBeenCalled()
+    pending.resolve({ audioBase64: 'UklGRg==', mimeType: 'audio/wav' })
+    await flush()
+    expect(players).toHaveLength(0)
+    expect(workers).toHaveLength(0)
+    expect(bridge.voiceModel).not.toHaveBeenCalled()
+  })
+
   it('bounds stalled worker generation and permits a fresh worker after timeout', async () => {
     vi.useFakeTimers()
     const local = new NaturalSpeechSynthesizer(async () => ready)

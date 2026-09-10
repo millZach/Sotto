@@ -60,7 +60,7 @@ export class AgentControl {
       pendingRequest: '',
       busy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { t3: false, reasoning: false, secure: false },
+      credentials: { t3: false, reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
       membership: { status: 'free', label: 'Free dictation', expiresAt: null },
     }
@@ -140,7 +140,7 @@ export class AgentControl {
   }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { t3: vault.has('t3'), reasoning: vault.has('reasoning'), secure: vault.available() }
+    this.state.credentials = { t3: vault.has('t3'), reasoning: vault.has('reasoning'), grokSpeech: vault.has('grokSpeech'), secure: vault.available() }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)

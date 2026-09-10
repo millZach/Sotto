@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
@@ -70,6 +72,49 @@ test('chooses and previews a natural voice without changing subscription reasoni
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('M3')
+  } finally { await closeSotto(launched) }
+})
+
+test('configures Grok API speech, recovers from a rejected key, and previews a custom voice with agents off', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await setup(page)
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByLabel('Speech voice', { exact: true }).selectOption('grok')
+    await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
+    await expect(page.getByText(/\$15 per million characters, including previews/u)).toBeVisible()
+    await page.getByLabel('Grok speech API key', { exact: true }).fill('fixture-invalid-grok-key')
+    await page.getByRole('button', { name: 'Save API key', exact: true }).click()
+    await expect(page.getByLabel('Grok speech API key', { exact: true })).toHaveValue('')
+    await expect(page.getByText(/Grok speech rejected the API key/u).first()).toBeVisible()
+    await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.voice.error))).toContain('rejected the API key')
+    await page.getByLabel('Grok speech API key', { exact: true }).fill('fixture-valid-grok-key')
+    await page.getByRole('button', { name: 'Replace API key', exact: true }).click()
+    await expect(page.getByLabel('Grok voice', { exact: true }).locator('option')).toHaveCount(3)
+    await page.getByLabel('Grok voice', { exact: true }).selectOption('fixture-custom-voice')
+    await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
+      provider: state.configuration.speechProvider, voice: state.configuration.grokSpeechVoice,
+      reasoning: state.configuration.reasoning, enabled: state.configuration.enabled,
+      error: state.voice.error, keySaved: state.credentials.grokSpeech,
+    })))).toEqual({ provider: 'grok', voice: 'fixture-custom-voice', reasoning: 'none', enabled: false, error: null, keySaved: true })
+    await expect(page.getByText(/Grok speech rejected the API key/u)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Stop speech', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Stop speech', exact: true }).click()
+    await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/agent-control-smoke/grok-tts-settings-e2e.png' })
+    expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
+    expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
+    await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('fixture-custom-voice')
+    await expect(page.getByLabel('Grok speech API key', { exact: true })).toHaveValue('')
+    await page.getByRole('button', { name: 'Remove API key', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.credentials.grokSpeech))).toBe(false)
   } finally { await closeSotto(launched) }
 })
 

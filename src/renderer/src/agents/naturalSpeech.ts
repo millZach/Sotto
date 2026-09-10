@@ -57,7 +57,7 @@ export class NaturalSpeechSynthesizer {
   }
 }
 
-export function createConfiguredSpeech(bridge: Pick<AgentBridge, 'voiceModel' | 'synthesizeSpeech'>, configuration: () => AgentConfiguration | undefined): { output: NativeSystemSpeech; dispose(): void } {
+export function createConfiguredSpeech(bridge: Pick<AgentBridge, 'voiceModel' | 'synthesizeSpeech' | 'cancelSpeech'>, configuration: () => AgentConfiguration | undefined): { output: NativeSystemSpeech; dispose(): void } {
   const local = bridge.voiceModel ? new NaturalSpeechSynthesizer(bridge.voiceModel) : null
   const output = new NativeSystemSpeech(async text => {
     const selected = configuration()
@@ -65,8 +65,8 @@ export function createConfiguredSpeech(bridge: Pick<AgentBridge, 'voiceModel' | 
       if (local === null) throw new Error('Natural speech is unavailable in this build. Reopen the updated app.')
       return local.synthesize(text, selected.speechVoice)
     }
-    if (!bridge.synthesizeSpeech) throw new Error('System speech is unavailable in this build.')
+    if (!bridge.synthesizeSpeech) throw new Error('Speech is unavailable in this build. Reopen the updated app.')
     return bridge.synthesizeSpeech(text)
-  }, () => local?.cancel())
+  }, () => { local?.cancel(); void bridge.cancelSpeech?.().catch(() => undefined) })
   return { output, dispose() { output.stop(); local?.dispose() } }
 }
