@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       'coverage/**',
       'artifacts/agent-control-smoke/**',
+      'artifacts/natural-voice-qa/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

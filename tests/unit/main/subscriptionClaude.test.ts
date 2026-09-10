@@ -6,11 +6,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { ClaudeSubscriptionClient } from '../../../src/main/agents/subscriptionClaude'
 
 const roots: string[] = []
-const flags = '--safe-mode --tools --permission-prompts --no-session-persistence --output-format --system-prompt --model'
+const flags = '--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose'
+const nativeModels = [
+  { value: 'haiku', displayName: 'Native quick model' },
+  { value: 'default', displayName: 'Native account default', resolvedModel: 'claude-next-default', supportsEffort: true, supportedEffortLevels: ['low', 'high'] },
+  { value: 'claude-future[1m]', displayName: 'New extended model', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { value: 'sonnet', displayName: 'Native Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
+]
 interface Scenario {
   auth?: { loggedIn: boolean; authMethod?: string; subscriptionType?: string; email?: string }
   help?: string
   result?: unknown
+  models?: unknown
+  discovery?: 'mismatch' | 'error'
   mode?: 'exit' | 'invalid' | 'timeout' | 'large-out' | 'large-err'
 }
 interface Invocation { args: string[]; input: string; pid: number; overrides: string[] }
@@ -22,7 +30,7 @@ async function fixture(scenario: Scenario = {}, options: { completionTimeoutMs?:
   const logPath = join(root, 'calls.jsonl')
   const script = join(root, 'claude-fixture.cjs')
   const configure = async (value: Scenario): Promise<void> => {
-    await writeFile(scenarioPath, JSON.stringify({ auth: { loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max', email: 'private-fixture@example.test' }, help: flags, ...value }))
+    await writeFile(scenarioPath, JSON.stringify({ auth: { loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max', email: 'private-fixture@example.test' }, help: flags, models: nativeModels, ...value }))
   }
   await configure(scenario)
   // This replaces only the external executable. Real spawn, pipes, deadlines,
@@ -41,6 +49,12 @@ else {
   let input = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => input += chunk);
   process.stdin.on('end', () => {
     record(input);
+    if (args.includes('--input-format')) {
+      const request = JSON.parse(input.trim());
+      process.stdout.write(JSON.stringify({type:'control_response', response:{subtype:scenario.discovery==='error'?'error':'success', request_id:scenario.discovery==='mismatch'?'other-request':request.request_id,
+        response:{models:scenario.models, account:{email:'private-fixture@example.test'}}}}) + '\\n');
+      return;
+    }
     if (scenario.mode === 'timeout') { setInterval(() => {}, 1000); return; }
     if (scenario.mode === 'exit') { process.stderr.write('fixture-secret-error'); process.stdout.write('fixture-secret-error'); process.exitCode = 7; return; }
     if (scenario.mode === 'large-out') { process.stdout.write('x'.repeat(20000)); return; }
@@ -90,17 +104,63 @@ describe('Claude native subscription client', () => {
     await f.client.complete('JSON only', {}, 'sonnet')
     await f.configure({ auth: { loggedIn: false } })
     await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/sign in.*subscription/iu)
-    expect((await f.calls()).filter(call => call.args.includes('--print'))).toHaveLength(1)
+    expect((await f.calls()).filter(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toHaveLength(1)
   })
 
-  it('uses the advertised Sonnet default for an empty model without passing API overrides', async () => {
+  it('discovers the full native catalog and per-model effort without inventing defaults or starting a model turn', async () => {
     const f = await fixture()
-    expect((await f.client.status()).models[0]).toEqual({ id: 'sonnet', name: 'Claude Sonnet' })
+    const account = await f.client.status()
+    expect(account).toMatchObject({ installed: true, ready: true, defaultModelId: 'default', allowCustomModel: true })
+    expect(account.models).toEqual(nativeModels.map(model => ({ id: model.value, name: model.displayName, reasoningEfforts: model.supportedEffortLevels ?? [] })))
+    expect(account.models.some(model => model.defaultReasoningEffort !== undefined)).toBe(false)
+    expect(JSON.stringify(account)).not.toContain('private-fixture')
+    const discovery = (await f.calls()).at(-1)!
+    expect(discovery.args).toEqual(expect.arrayContaining(['--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence', '--input-format', 'stream-json', '--output-format', 'stream-json']))
+    expect(JSON.parse(discovery.input)).toMatchObject({ type: 'control_request', request: { subtype: 'initialize' } })
+    expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
+  })
+
+  it('uses the native account default for an empty model without passing API overrides', async () => {
+    const f = await fixture()
     await expect(f.client.complete('JSON only', { check: 'default model' }, '')).resolves.toEqual({ type: 'clarify', text: 'Which project?' })
     const completion = (await f.calls()).at(-1)!
-    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('sonnet')
+    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('default')
+    expect(completion.args).not.toContain('--effort')
     expect(completion.overrides).toEqual([])
     expect(completion.args.some(arg => /api[ _-]?key/iu.test(arg))).toBe(false)
+  })
+
+  it('dispatches a newly discovered extended-context model with its chosen native effort', async () => {
+    const f = await fixture()
+    await f.client.complete('JSON only', {}, 'claude-future[1m]', 'xhigh')
+    const completion = (await f.calls()).at(-1)!
+    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('claude-future[1m]')
+    expect(completion.args[completion.args.indexOf('--effort') + 1]).toBe('xhigh')
+    expect(completion.overrides).toEqual([])
+  })
+
+  it.each([['haiku', 'high'], ['sonnet', 'max'], ['', 'medium'], ['claude-custom-id', 'high']] as const)('refuses unsupported effort %s/%s before inference instead of silently downshifting', async (model, effort) => {
+    const f = await fixture()
+    await expect(f.client.complete('JSON only', {}, model, effort)).rejects.toThrow(/effort/iu)
+    expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
+  })
+
+  it('refreshes effort capabilities before each request and accepts custom native model IDs with default effort', async () => {
+    const f = await fixture()
+    await f.client.status()
+    await f.configure({ models: nativeModels.map(model => model.value === 'sonnet' ? { ...model, supportedEffortLevels: ['low'] } : model) })
+    await expect(f.client.complete('JSON only', {}, 'sonnet', 'high')).rejects.toThrow(/effort/iu)
+    await f.client.complete('JSON only', {}, 'claude-custom-id[1m]')
+    const completion = (await f.calls()).at(-1)!
+    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('claude-custom-id[1m]')
+    expect(completion.args).not.toContain('--effort')
+  })
+
+  it.each([{ models: [] }, { models: [{ value: '--injected-flag', displayName: 'Invalid' }] }, { discovery: 'error' }, { discovery: 'mismatch' }] as const)('does not substitute a handpicked catalog when native discovery fails', async scenario => {
+    const f = await fixture(scenario)
+    expect(await f.client.status()).toMatchObject({ installed: true, ready: false, models: [] })
+    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/Claude Code/iu)
+    expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
   })
 
   it('refuses a different native authentication method instead of using API billing', async () => {

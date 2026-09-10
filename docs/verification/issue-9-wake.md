@@ -38,6 +38,31 @@ The reproducible session experiment and output are retained under ignored `artif
 
 Session proof files are under ignored `artifacts/agent-control-smoke/`: `probe-wake.ps1`, `probe-sherpa.cjs`, and result JSONL files. Test WAVs were generated in a task-owned temporary folder, not committed or uploaded. Three existing local ASR bench speech fixtures were also checked. Standalone model inference took roughly 45–130 ms for short WAVs, and 250–400 ms for longer fixture speech on this Windows machine. Measurements are synthetic, single-machine observations.
 
+## First-attempt wake diagnosis and regression, 2026-09-09
+
+The reported repeated-wake problem has two reproduced software causes. In the first replay, the existing capture gate and detector missed 10 of 24 single-wake cases: three David/Zira wake WAVs, four input gains (1, 0.3, 0.1, 0.05), and simulated 16/48 kHz microphones. Six quiet cases never passed the capture gate. Four reached the detector but produced no keyword. Restoring the amplitude of the exact captured quiet David clip made it detect without changing timing or text, excluding the first-token timing limit as that case's cause.
+
+Wake monitoring now uses RMS 0.006 instead of 0.012. The main process applies a single gain to the detector's copy, targeting peak 0.5 with a maximum gain of 12. It preserves silence and louder signals. The prompt audio is unchanged. Activated conversation capture returns to the original RMS 0.012: a trial that changed this threshold globally regressed David's 48 kHz “Send it” into “Send her.” Restoring the activated threshold restored all six David/Zira “Send it” and David “Next” results across both rates. No audio padding, action-word rewrite, model confidence reduction, or extra wake aliases were added.
+
+Candidate detector peak targets of 0.3 and 0.6 each introduced one quiet “Hey Soda” false wake in the contrastive replay. Raising the keyword confidence threshold did not fix the false wake and lost true wakes. The final peak 0.5 passed the expanded matrix with production source and the same pinned local model/runtime:
+
+- **70/70 first-wake detections:** five positive WAVs, seven gains (1, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05), and 16/48 kHz simulated input. Combined wake/command fixtures may segment at their existing sentence pause; their first clip activates and later command clips do not independently activate.
+- **280/280 negative cases rejected:** embedded wake phrases, name-only speech, soda/sofa/tomorrow, four short command fixtures, three ASR benchmark speech fixtures, deterministic noise, tone and silence, across the same gains/rates.
+- **6/6 short command transcription checks:** the actual local Moonshine runtime recognizes captured David/Zira “Send it” and David “Next” at both rates.
+
+The old wake acknowledgement called and awaited `session.speak`, which suppresses capture during speech preparation and playback. A cold speech model therefore discarded a separately spoken first command and delayed a combined wake/command. The real `AgentProvider` and `AgentVoiceSession` regression reproduced both failures with only external audio/model effects replaced. The callback now plays a 75 ms local tone, respecting the existing sound-cues setting, without awaiting playback, loading a speech model, or suppressing capture. Both first-command regressions pass. Generated spoken responses retain their existing echo suppression. Muting listening also permits an explicit voice preview while keeping the microphone released.
+
+Reproduce capture plus native detection without rebuilding the application or opening a microphone:
+
+```powershell
+node scripts/probe-agent-wake-capture.mjs --model-directory 'C:\path\to\local\model' --fixtures-directory 'C:\path\to\David-Zira-wavs'
+node scripts/probe-agent-wake-capture.mjs --model-directory 'C:\path\to\local\model' --fixtures-directory 'C:\path\to\David-Zira-wavs' --negative
+```
+
+The script compiles the current service/worker and capture module into an owned temporary folder, validates the existing model/runtime, supplies 128-frame microphone blocks, reports results, and exits nonzero on a miss or false wake. `--minimal` replays the original quiet David failure. Required fixture names are listed in the script; missing/empty/wrong-rate fixtures fail instead of silently passing. Session outputs remain under ignored `artifacts/agent-control-smoke/wake-positive-final.jsonl`, `wake-negative-final.jsonl`, and `wake-short-command-final.jsonl`. The four focused unit suites cover 25 checks, including unchanged prompt PCM, gain bounds, capture mode transitions, first-command retention, mute, dictation and generated-speech suppression.
+
+These are deterministic synthetic-audio and application-session results, not physical microphone or room-acoustic measurements. The supported activation remains **“Hey Soto” / “Hey Sotto”**. Bare “Soto” is not an activation, pending explicit product direction; this change does not claim to fix that different phrase.
+
 ## Model provenance and unresolved licensing
 
 The [official model documentation](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html) documents the phonetic model and its custom keyword interface. The [official release archive](https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2) is 32,885,699 bytes, SHA-256 `68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6`. The deployed encoder, decoder, joiner and tokens total about 5.45 MB. No archive model LICENSE/NOTICE/README was present.

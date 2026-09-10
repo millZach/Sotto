@@ -134,9 +134,9 @@ export class AgentControl {
     const value = this.get()
     for (const listener of this.listeners) listener(value)
   }
-  private say(text: string): void {
+  private say(text: string, preview = false): void {
     this.state.notice = text
-    this.state.speech = { id: this.state.speech.id + 1, text }
+    this.state.speech = { id: this.state.speech.id + 1, text, preview }
   }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
@@ -209,6 +209,7 @@ export class AgentControl {
   private async execute(command: AgentCommand): Promise<void> {
     if (['utterance', 'compose', 'assign', 'send', 'answer'].includes(command.type)) this.contextActivityAt = Date.now()
     switch (command.type) {
+      case 'preview-voice': this.say('Hi, I’m Sotto. Your agents are ready when you are.', true); return
       case 'cancel-request': this.state.pendingRequest = ''; this.say('Pending request cleared.'); return
       case 'voice': this.state.voice.action = command.action; this.state.voice.revision += 1; return
       case 'voice-state': this.state.voice.status = command.status; this.state.voice.error = command.error; return
@@ -435,9 +436,15 @@ export class AgentControl {
     if (normalized === 'cancel draft' || normalized === 'clear draft') { await this.execute({ type: 'cancel-draft' }); return }
     if (normalized === 'next' || normalized === 'later') { await this.execute({ type: normalized }); return }
     const resume = /^(resume managing|pause managing|manage|select|open) (.+)$/iu.exec(normalized)
-    if (resume) {
+    if (resume && !(this.state.pendingRequest && ['select', 'open'].includes(resume[1]!))) {
       const matches = this.state.host.threads.filter(t => t.title.toLocaleLowerCase() === resume[2])
       if (matches.length > 0) {
+        if (resume[1] === 'manage' && matches.length === 1 && matches[0]!.id === this.state.draftThreadId
+          && !this.state.assignments.some(assignment => assignment.threadId === matches[0]!.id)) {
+          await this.execute({ type: 'assign', threadId: matches[0]!.id })
+          this.say(`Managing ${matches[0]!.title}. Your draft is ready; say send it when you are ready.`)
+          return
+        }
         if (this.state.composing && this.state.draft.trim()) throw new Error('Send or clear your draft before using thread management controls.')
         if (matches.length > 1) throw new Error('More than one thread has that name. Select the thread using the controls.')
         if (this.state.composing) this.clearDraft()
@@ -445,7 +452,7 @@ export class AgentControl {
         return
       }
     }
-    if (!this.state.draft.trim() && /^(here[’']?s my prompt|here is my prompt|start prompt|my prompt is)\b/u.test(normalized)) {
+    if ((this.state.composing || this.state.activeThreadId) && !this.state.draft.trim() && /^(here[’']?s my prompt|here is my prompt|start prompt|my prompt is)\b/u.test(normalized)) {
       if (!this.state.composing) this.startDraft()
       this.state.draft = text.replace(/^(here[’']?s my prompt|here is my prompt|start prompt|my prompt is)\b[:,.]?\s*/iu, '')
       this.say('I’m listening. Say send it when your prompt is ready.')
@@ -467,12 +474,22 @@ export class AgentControl {
     const request = this.state.pendingRequest ? `${this.state.pendingRequest}\nUser clarification: ${text}` : text
     if (request.length > 18_000) throw new Error('This request is too long. Clear it and start a shorter command; use the prompt editor for project instructions.')
     this.canAct()
-    const intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId)
+    const intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId)
     if (intent.type === 'clarify') {
       this.state.pendingRequest = `${request}\nSotto clarification: ${intent.text}`.slice(0, 20_000)
       this.say(intent.text)
     } else {
-      try { await this.execute(intent); this.state.pendingRequest = '' } catch (error) {
+      try {
+        if (intent.type === 'compose') {
+          if (this.state.draft.trim()) throw new Error('Send or clear your existing draft before preparing another prompt.')
+          await this.execute({ type: 'select-thread', threadId: intent.threadId })
+          this.clearDraft(); this.startDraft(); this.state.draft = intent.text
+          this.say(this.state.assignments.some(assignment => assignment.threadId === intent.threadId)
+            ? `Prompt for ${this.thread(intent.threadId).title}. ${intent.text ? 'Review or keep speaking, then say send it.' : 'Tell me your prompt, then say send it.'}`
+            : `Prompt for ${this.thread(intent.threadId).title}. Manage this thread before sending; your draft is saved.`)
+        } else await this.execute(intent)
+        this.state.pendingRequest = ''
+      } catch (error) {
         const failure = error instanceof Error ? error.message : 'Sotto could not complete this action.'
         this.state.pendingRequest = `${request}\nSotto action could not complete: ${failure}`.slice(0, 20_000)
         throw error

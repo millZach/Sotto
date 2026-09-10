@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -14,8 +15,16 @@ interface ClaudeSubscriptionOptions {
   outputLimitBytes?: number
 }
 
-const REQUIRED_FLAGS = ['--safe-mode', '--tools', '--permission-prompts', '--no-session-persistence', '--output-format', '--system-prompt', '--model']
-const MODELS = [{ id: 'sonnet', name: 'Claude Sonnet' }, { id: 'opus', name: 'Claude Opus' }] as const
+const REQUIRED_FLAGS = ['--safe-mode', '--tools', '--permission-prompts', '--no-session-persistence', '--input-format', '--output-format', '--system-prompt', '--model', '--effort', '--verbose']
+const MODEL_ID = z.string().max(160).regex(/^[a-z0-9][a-z0-9._:/-]*(?:\[[a-z0-9]+\])?$/iu)
+const NATIVE_MODEL = z.object({
+  value: MODEL_ID, displayName: z.string().min(1).max(300),
+  supportsEffort: z.boolean().optional(),
+  supportedEffortLevels: z.array(z.string().max(32).regex(/^[a-z][a-z0-9_-]*$/u)).max(30).optional(),
+})
+const INITIALIZED = z.object({ type: z.literal('control_response'), response: z.object({
+  subtype: z.literal('success'), request_id: z.string(), response: z.object({ models: z.array(NATIVE_MODEL).min(1).max(300) }),
+}) })
 const AUTH = z.object({ loggedIn: z.boolean(), authMethod: z.string().optional(), subscriptionType: z.string().nullable().optional() })
 const RESULT = z.object({ type: z.literal('result'), is_error: z.boolean().optional(), result: z.string() })
 // Keep native OS identity and networking, not provider keys, alternate account
@@ -35,19 +44,22 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
 
   async status(): Promise<SubscriptionAccount> { return (await this.inspect()).account }
 
-  async complete(system: string, input: unknown, model: string): Promise<unknown> {
-    const selectedModel = model || MODELS[0].id
-    if (!/^[a-z0-9][a-z0-9._:/-]{0,159}$/iu.test(selectedModel)) throw new Error('Choose a valid Claude model before starting reasoning.')
+  async complete(system: string, input: unknown, model: string, effort?: string): Promise<unknown> {
+    if (model && !MODEL_ID.safeParse(model).success) throw new Error('Choose a valid Claude model before starting reasoning.')
     let prompt: string
     try { prompt = JSON.stringify(input) } catch { throw new Error('Claude reasoning needs a JSON-compatible request.') }
     if (!prompt || Buffer.byteLength(prompt) > 1_000_000 || system.length > 30_000) throw new Error('The Claude reasoning request is too large or invalid.')
     const { account, executable } = await this.inspect()
     if (!account.ready || !executable) throw new Error(account.detail)
+    const selectedModel = model || account.defaultModelId
+    if (effort && !account.models.find(candidate => candidate.id === selectedModel)?.reasoningEfforts?.includes(effort)) {
+      throw new Error('Claude Code does not report that reasoning effort for this model. Choose a supported effort or use the native default.')
+    }
     const output = await this.run(executable, [
       '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
-      '--output-format', 'json', '--model', selectedModel, '--system-prompt',
+      '--output-format', 'json', ...(selectedModel ? ['--model', selectedModel] : []), ...(effort ? ['--effort', effort] : []), '--system-prompt',
       `${system}\nReturn exactly one JSON object. Do not include Markdown or commentary outside that object.`,
-    ], prompt, this.options.completionTimeoutMs ?? 60_000)
+    ], prompt, this.options.completionTimeoutMs ?? 180_000)
     try {
       const envelope = RESULT.parse(JSON.parse(output))
       if (envelope.is_error) throw new Error('Provider reported failure')
@@ -60,7 +72,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
   private async inspect(): Promise<{ account: SubscriptionAccount; executable: string | null }> {
     const executable = await this.findExecutable()
     const account: SubscriptionAccount = { provider: 'claude', label: 'Claude Code subscription', installed: Boolean(executable), ready: false,
-      detail: 'Install Claude Code and sign in with your Claude subscription, then check the connection in Sotto.', models: MODELS.map(model => ({ ...model })) }
+      detail: 'Install Claude Code and sign in with your Claude subscription, then check the connection in Sotto.', models: [] }
     if (!executable) return { account, executable }
     try {
       await mkdir(this.workingDirectory, { recursive: true })
@@ -75,12 +87,36 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
         account.detail = 'Sign in to Claude Code with your Claude subscription, then check the connection in Sotto. Sotto will not switch to API billing.'
         return { account, executable }
       }
+      account.models = await this.models(executable)
+      if (account.models.some(model => model.id === 'default')) account.defaultModelId = 'default'
+      account.allowCustomModel = true
       account.ready = true
       account.detail = 'Uses your signed-in Claude subscription. Its usage limits and account settings apply.'
     } catch {
-      account.detail = 'Could not verify the Claude Code subscription. Open Claude Code to check its sign-in, then check the connection in Sotto.'
+      account.detail = 'Could not verify the Claude Code subscription and model list. Open Claude Code to check its sign-in, then check the connection in Sotto.'
     }
     return { account, executable }
+  }
+
+  private async models(executable: string): Promise<SubscriptionAccount['models']> {
+    const requestId = randomUUID()
+    // Native control initialization is metadata only: no user message or model
+    // turn is sent. EOF closes the unmodified CLI after it reports capabilities.
+    const output = await this.run(executable, [
+      '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
+      '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    ], `${JSON.stringify({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false } })}\n`, 15_000)
+    for (const line of output.split('\n')) {
+      let message: unknown
+      try { message = JSON.parse(line) } catch { continue }
+      const parsed = INITIALIZED.safeParse(message)
+      if (!parsed.success || parsed.data.response.request_id !== requestId) continue
+      return parsed.data.response.response.models.map(model => ({
+        id: model.value, name: model.displayName,
+        reasoningEfforts: model.supportsEffort === false ? [] : [...(model.supportedEffortLevels ?? [])],
+      }))
+    }
+    throw new Error('Claude Code did not report an available model catalog.')
   }
 
   private async findExecutable(): Promise<string | null> {

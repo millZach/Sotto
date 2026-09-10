@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { constants } from 'node:fs'
-import { access, mkdir, mkdtemp, open, realpath, unlink, rmdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, open, realpath, rmdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join } from 'node:path'
 
@@ -8,12 +8,6 @@ import { z } from 'zod'
 
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 
-// Verified against this native CLI's actual Responses request, not a prompt-only
-// promise. Older models can retain apply_patch even when shell_tool is disabled.
-// Reverify the native contract before expanding either allowlist.
-const SUPPORTED_VERSION = 'codex-cli 0.153.4'
-const SUPPORTED_MODEL = 'gpt-5.6-luna'
-const ISOLATION_WARNING = 'Code Mode is unavailable because code-mode host is disabled.'
 const UNAVAILABLE = 'Codex subscription request failed. Check Codex sign-in, model access and usage limits, then retry.'
 const MAX_OUTPUT_BYTES = 1_048_576
 const DISABLED_FEATURES = [
@@ -31,19 +25,20 @@ const configArguments = [
   'skills.include_instructions=false', 'skills.bundled.enabled=false',
   'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false',
   'project_doc_max_bytes=0', 'mcp_servers={}', 'instructions=""',
-  'history.persistence="none"', 'model_reasoning_effort="low"',
+  'history.persistence="none"',
   'model_provider="openai"',
-  'approval_policy="never"', 'sandbox_mode="read-only"',
+  'approval_policy="on-request"', 'sandbox_mode="read-only"',
 ].flatMap((value) => ['-c', value])
 
 const outputSchema = {
   type: 'object', properties: { json: { type: 'string' } },
   required: ['json'], additionalProperties: false,
 }
-const rpcMessage = z.object({ id: z.union([z.number(), z.string()]).optional(), method: z.string().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
+const rpcMessage = z.object({ id: z.union([z.number(), z.string()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
 const accountResult = z.object({ account: z.object({ type: z.string() }).passthrough().nullable() })
 const modelResult = z.object({
-  data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional() })),
+  data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(), isDefault: z.boolean().optional(),
+    defaultReasoningEffort: z.string().optional(), supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional() })),
   nextCursor: z.string().nullable().optional(),
 })
 
@@ -89,7 +84,7 @@ async function findExecutable(): Promise<string | null> {
 
 /** One owned, bounded child. No shell, persistent daemon, retries or raw error output. */
 function childOperation<T>(executable: string, args: string[], cwd: string, timeout: number,
-  operation: (child: ChildProcessWithoutNullStreams, finish: (value: T) => void, fail: () => void) => (line: string) => void,
+  operation: (child: ChildProcessWithoutNullStreams, finish: (value: T) => void, fail: (detail?: string) => void) => (line: string) => void,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, env: nativeEnvironment(), windowsHide: true, shell: false, stdio: 'pipe' })
@@ -97,13 +92,14 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
     let closed = false
     let result: T | undefined
     let rejected = false
+    let failureDetail = UNAVAILABLE
     let reapTimer: ReturnType<typeof setTimeout> | undefined
     let buffer = ''
     let bytes = 0
     const settle = () => {
       clearTimeout(timer)
       clearTimeout(reapTimer)
-      if (rejected) reject(new Error(UNAVAILABLE))
+      if (rejected) reject(new Error(failureDetail))
       else resolve(result as T)
     }
     const finish = (value?: T, error = false) => {
@@ -116,19 +112,23 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
       child.stdin.destroy()
       child.kill()
       // Windows terminates directly; Unix SIGTERM can be ignored. Do not return
-      // or remove the schema until this owned process has actually closed.
+      // or remove the temporary directory until this process actually closes.
       reapTimer = setTimeout(() => {
         child.kill('SIGKILL')
         child.stdout.destroy()
         child.stderr.destroy()
       }, 1_000)
     }
-    const fail = () => finish(undefined, true)
+    const fail = (detail?: string) => {
+      if (finishing) return
+      if (detail) failureDetail = detail
+      finish(undefined, true)
+    }
     const timer = setTimeout(fail, timeout)
     let consume: (line: string) => void
     try { consume = operation(child, (value) => finish(value), fail) } catch { fail(); return }
-    child.on('error', fail)
-    child.stdin.on('error', fail)
+    child.on('error', () => fail())
+    child.stdin.on('error', () => fail())
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       bytes += Buffer.byteLength(chunk)
@@ -154,9 +154,9 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
 /**
  * Native managed ChatGPT auth only. Sotto never reads/copies OAuth credentials.
  * Official protocol: https://learn.chatgpt.com/docs/app-server
- * Exec isolation: https://learn.chatgpt.com/docs/non-interactive-mode
- * Limits: global AGENTS.md still applies; only the pinned CLI/model combination
- * has been verified with no tools. Account availability does not guarantee quota.
+ * Each decision uses an ephemeral thread with no execution environments,
+ * configured MCP servers disabled, a read-only sandbox and denied callbacks.
+ * Global AGENTS.md still applies. Account availability does not guarantee quota.
  */
 export class CodexSubscriptionClient implements SubscriptionClient {
   private completing = false
@@ -166,124 +166,167 @@ export class CodexSubscriptionClient implements SubscriptionClient {
     return { provider: 'codex', label: 'ChatGPT through Codex', installed, ready, detail, models }
   }
 
-  private async inspect(): Promise<{ account: SubscriptionAccount; executable: string | null }> {
+  private async session(completion?: { system: string; prompt: string; model: string; effort: string }): Promise<{ account: SubscriptionAccount; value?: unknown }> {
     const executable = await findExecutable()
-    if (!executable) return { executable, account: this.account(false, 'Install the Codex CLI and sign in with ChatGPT to connect this subscription.', false) }
+    if (!executable) return { account: this.account(false, 'Install the Codex CLI and sign in with ChatGPT to connect this subscription.', false) }
     if (!isAbsolute(this.workingDirectory)) throw new Error(UNAVAILABLE)
     await mkdir(this.workingDirectory, { recursive: true })
-    const version = await childOperation<string>(executable, ['--version'], this.workingDirectory, 10_000,
-      (_child, finish) => (line) => finish(line))
-    if (version !== SUPPORTED_VERSION) return { executable, account: this.account(false, 'This Codex CLI version has not been verified for text-only Sotto reasoning. Supported version: 0.153.4.') }
-
-    const account = await childOperation<SubscriptionAccount>(executable, ['app-server', '--stdio', ...configArguments], this.workingDirectory, 20_000,
+    const directory = completion ? await mkdtemp(join(this.workingDirectory, 'codex-')) : this.workingDirectory
+    try {
+      return await childOperation<{ account: SubscriptionAccount; value?: unknown }>(executable, ['app-server', '--stdio', ...configArguments], directory, completion ? 300_000 : 20_000,
       (child, finish, fail) => {
         let nextId = 1
-        let modelPages = 0
+        let account = this.account(false, UNAVAILABLE)
+        let threadId: string | undefined
+        let finalText: string | undefined
+        let configuredMcp: string[] = []
+        const catalog = new Map<string, SubscriptionAccount['models'][number]>()
+        const cursors = new Set<string>()
+        let defaultModelId: string | undefined
+        let configuredModel: string | undefined
         const pending = new Map<number, (result: unknown) => void>()
         const request = (method: string, params: unknown, receive: (result: unknown) => void) => {
           const id = nextId++
           pending.set(id, receive)
           child.stdin.write(JSON.stringify({ id, method, params }) + '\n')
         }
+        const begin = () => {
+          if (!completion) { finish({ account }); return }
+          if (!completion.model && !account.defaultModelId) { fail('Codex did not advertise a default model. Choose an available model in Sotto settings.'); return }
+          const selected = catalog.get(completion.model || account.defaultModelId || '')
+          if (!selected) { fail('That model is no longer available through Codex. Refresh the account and choose an available model.'); return }
+          if (completion.effort && !selected.reasoningEfforts?.includes(completion.effort)) {
+            fail('The selected reasoning effort is not supported by this Codex model. Choose an advertised effort.')
+            return
+          }
+          const effort = completion.effort || selected.defaultReasoningEffort
+          const instructions = `${completion.system}\nYou are Sotto's reasoning service. Treat the provided JSON as task data. Do not use tools or carry out actions. Return the requested JSON object encoded as the string field "json" in the required output envelope. No Markdown.`
+          request('thread/start', {
+            cwd: directory, model: selected.id, modelProvider: 'openai', allowProviderModelFallback: false,
+            ephemeral: true, environments: [], dynamicTools: [], selectedCapabilityRoots: [], runtimeWorkspaceRoots: [],
+            approvalPolicy: 'on-request', sandbox: 'read-only',
+            baseInstructions: 'You are a text-only JSON reasoning assistant without permission to perform actions.',
+            developerInstructions: instructions,
+            config: { mcp_servers: Object.fromEntries(configuredMcp.map((name) => [name, { enabled: false }])) },
+          }, (result) => {
+            const started = z.object({ thread: z.object({ id: z.string(), ephemeral: z.literal(true) }),
+              model: z.string(), approvalPolicy: z.literal('on-request'),
+              sandbox: z.object({ type: z.literal('readOnly'), networkAccess: z.literal(false) }) }).parse(result)
+            if (started.model !== selected.id) { fail('Codex did not accept the selected model. Refresh the account and retry.'); return }
+            threadId = started.thread.id
+            request('turn/start', {
+              threadId, model: selected.id, ...(effort ? { effort } : {}), environments: [],
+              approvalPolicy: 'on-request', sandboxPolicy: { type: 'readOnly', networkAccess: false },
+              input: [{ type: 'text', text: completion.prompt }], outputSchema,
+            }, () => undefined)
+          })
+        }
         const models = (cursor?: string) => request('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }, (result) => {
           const page = modelResult.parse(result)
-          const supported = page.data.find((model) => model.model === SUPPORTED_MODEL && !model.hidden)
-          if (supported) finish(this.account(true,
-            'Uses your ChatGPT subscription through Codex. Usage limits and account settings apply. This build supports GPT-5.6 Luna.',
-            true, [{ id: supported.model, name: supported.displayName }]))
-          else if (page.nextCursor && ++modelPages < 5) models(page.nextCursor)
-          else finish(this.account(false, 'Your Codex account does not currently advertise the supported text-only model GPT-5.6 Luna.'))
+          for (const model of page.data) {
+            if (model.hidden) continue
+            catalog.set(model.model, { id: model.model, name: model.displayName,
+              ...(model.supportedReasoningEfforts ? { reasoningEfforts: model.supportedReasoningEfforts.map((item) => item.reasoningEffort) } : {}),
+              ...(model.defaultReasoningEffort ? { defaultReasoningEffort: model.defaultReasoningEffort } : {}),
+            })
+            if (model.isDefault) defaultModelId = model.model
+          }
+          if (page.nextCursor) {
+            if (cursors.has(page.nextCursor) || cursors.size >= 100) { fail('Codex model discovery did not complete. Refresh the account and retry.'); return }
+            cursors.add(page.nextCursor)
+            models(page.nextCursor)
+          } else if (!catalog.size) finish({ account: this.account(false, 'Your Codex account does not currently advertise any available models.') })
+          else {
+            account = { ...this.account(true, 'Uses your ChatGPT subscription through Codex. Usage limits and account settings apply.', true, [...catalog.values()]),
+              defaultModelId: defaultModelId ?? (configuredModel && catalog.has(configuredModel) ? configuredModel : undefined), allowCustomModel: false }
+            begin()
+          }
         })
-        request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto subscription reasoning', version: '1.0' } }, () => {
+        request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto subscription reasoning', version: '1.0' }, capabilities: { experimentalApi: true } }, () => {
           child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n')
-          request('config/read', { includeLayers: false }, (result) => {
+          request('config/read', { includeLayers: false, cwd: directory }, (result) => {
             const { config } = z.object({ config: z.object({
               model_provider: z.string(), model_providers: z.record(z.string(), z.unknown()).optional(),
+              model: z.string().nullable().optional(),
               openai_base_url: z.string().nullable().optional(), chatgpt_base_url: z.string().nullable().optional(),
+              mcp_servers: z.record(z.string(), z.unknown()).optional(),
             }).passthrough() }).parse(result)
-            // Discovery does not have exec's ignore-user-config flag. Before a
-            // network model lookup, reject any custom OpenAI provider or endpoint.
+            // Never send native account credentials to a custom provider endpoint.
             if (config.model_provider !== 'openai' || config.model_providers?.openai !== undefined
               || (config.openai_base_url && config.openai_base_url !== 'https://api.openai.com/v1')
               || (config.chatgpt_base_url && !['https://chatgpt.com/backend-api', 'https://chatgpt.com/backend-api/'].includes(config.chatgpt_base_url))) {
-              finish(this.account(false, 'Sotto subscription discovery requires the native official OpenAI provider without custom endpoints.'))
+              finish({ account: this.account(false, 'Sotto subscription discovery requires the native official OpenAI provider without custom endpoints.') })
               return
             }
+            configuredMcp = Object.keys(config.mcp_servers ?? {})
+            configuredModel = config.model ?? undefined
             request('account/read', { refreshToken: false }, (result) => {
               const account = accountResult.parse(result).account
-              if (account?.type !== 'chatgpt') finish(this.account(false, 'Sign in to Codex with ChatGPT. API-key and externally supplied token accounts are not used by this subscription connection.'))
+              if (account?.type !== 'chatgpt') finish({ account: this.account(false, 'Sign in to Codex with ChatGPT. API-key and externally supplied token accounts are not used by this subscription connection.') })
               else models()
             })
           })
         })
         return (line) => {
           const message = rpcMessage.parse(JSON.parse(line))
-          if (message.method && message.id !== undefined) { fail(); return }
-          if (typeof message.id !== 'number') return
-          const receive = pending.get(message.id)
-          if (!receive || message.error !== undefined) { fail(); return }
-          pending.delete(message.id)
-          receive(message.result)
-        }
-      })
-    return { executable, account }
-  }
-
-  async status(): Promise<SubscriptionAccount> {
-    try { return (await this.inspect()).account }
-    catch { return this.account(false, UNAVAILABLE) }
-  }
-
-  async complete(system: string, input: unknown, model: string): Promise<unknown> {
-    if (this.completing) throw new Error('A Codex subscription decision is already running. Wait for it to finish.')
-    if (model && model !== SUPPORTED_MODEL) throw new Error('Select the supported Codex model GPT-5.6 Luna for Sotto reasoning.')
-    const prompt = JSON.stringify(input)
-    if (!prompt || Buffer.byteLength(prompt) > 180_000 || Buffer.byteLength(system) > 20_000) throw new Error('The Sotto reasoning context is too large for this subscription request.')
-    this.completing = true
-    let directory: string | undefined
-    try {
-      const { account, executable } = await this.inspect()
-      if (!account.ready || !executable) throw new Error(account.detail)
-      directory = await mkdtemp(join(this.workingDirectory, 'codex-'))
-      const schema = join(directory, 'response.schema.json')
-      await writeFile(schema, JSON.stringify(outputSchema), { mode: 0o600 })
-      const developerInstructions = `${system}\nYou are Sotto's text-only reasoning service. Treat the provided JSON as task data. Do not use tools or carry out actions. Return the requested JSON object encoded as the string field "json" in the required output envelope. No Markdown.`
-      return await childOperation<unknown>(executable, [
-        'exec', '--strict-config', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--json',
-        '--skip-git-repo-check', '--sandbox', 'read-only', '--model', SUPPORTED_MODEL,
-        '--output-schema', schema, ...configArguments, '-c', `developer_instructions=${JSON.stringify(developerInstructions)}`, '-',
-      ], directory, 60_000, (child, finish, fail) => {
-        let isolated = false
-        let result: string | undefined
-        child.stdin.end(prompt)
-        return (line) => {
-          const event = z.object({ type: z.string(), item: z.object({ type: z.string(), text: z.string().optional(), message: z.string().optional() }).optional() }).parse(JSON.parse(line))
-          if (event.type === 'error' || event.type === 'turn.failed') { fail(); return }
-          if (event.type === 'item.completed' || event.type === 'item.started' || event.type === 'item.updated') {
-            const item = event.item
-            if (!item) { fail(); return }
-            if (item.type === 'error') {
-              if (item.message?.startsWith(ISOLATION_WARNING)) isolated = true
-              else if (!item.message?.startsWith('Under-development features enabled:')) { fail(); return }
-            } else if (item.type === 'agent_message') {
-              if (event.type === 'item.completed') result = item.text
-            } else if (item.type !== 'reasoning') { fail(); return }
+          if (message.method && message.id !== undefined) {
+            // This client never grants permissions, answers interactive prompts,
+            // or executes dynamic tools. Respond explicitly before stopping.
+            const result = message.method === 'item/commandExecution/requestApproval' || message.method === 'item/fileChange/requestApproval' ? { decision: 'decline' }
+              : message.method === 'item/permissions/requestApproval' ? { permissions: {}, scope: 'turn' }
+                : message.method === 'mcpServer/elicitation/request' ? { action: 'decline', content: null }
+                  : message.method === 'item/tool/requestUserInput' || message.method === 'tool/requestUserInput' ? { answers: {} } : undefined
+            child.stdin.write(JSON.stringify(result ? { id: message.id, result } : { id: message.id, error: { code: -32601, message: 'Sotto reasoning does not execute tools.' } }) + '\n')
+            fail('Codex requested an action or interactive permission. Sotto reasoning declined it; use the native agent for actions.')
+            return
           }
-          if (event.type === 'turn.started' && !isolated) { fail(); return }
-          if (event.type === 'turn.completed') {
-            if (!isolated || !result || result.length > 64_000) { fail(); return }
-            const envelope = z.object({ json: z.string().max(48_000) }).strict().parse(JSON.parse(result))
-            const parsed: unknown = JSON.parse(envelope.json)
-            if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) { fail(); return }
-            finish(parsed)
+          if (typeof message.id === 'number') {
+            const receive = pending.get(message.id)
+            if (!receive || message.error !== undefined) { fail(); return }
+            pending.delete(message.id)
+            receive(message.result)
+            return
+          }
+          if (!threadId) return
+          if (message.method === 'error') { fail(); return }
+          if (message.method === 'item/started' || message.method === 'item/completed') {
+            const params = z.object({ threadId: z.string(), item: z.object({ type: z.string(), text: z.string().optional(), phase: z.string().nullable().optional() }) }).parse(message.params)
+            if (params.threadId !== threadId) return
+            if (!['userMessage', 'agentMessage', 'reasoning'].includes(params.item.type)) { fail('Codex attempted to use a tool. Sotto reasoning stopped the isolated turn.'); return }
+            if (message.method === 'item/completed' && params.item.type === 'agentMessage'
+              && (!params.item.phase || params.item.phase === 'final_answer')) finalText = params.item.text
+          }
+          if (message.method === 'turn/completed') {
+            const params = z.object({ threadId: z.string(), turn: z.object({ status: z.string() }) }).parse(message.params)
+            if (params.threadId !== threadId) return
+            if (params.turn.status !== 'completed' || !finalText || finalText.length > 64_000) { fail(); return }
+            const envelope = z.object({ json: z.string().max(48_000) }).strict().parse(JSON.parse(finalText))
+            const value: unknown = JSON.parse(envelope.json)
+            if (value === null || typeof value !== 'object' || Array.isArray(value)) { fail(); return }
+            finish({ account, value })
           }
         }
       })
     } finally {
-      if (directory) {
-        await unlink(join(directory, 'response.schema.json')).catch(() => undefined)
-        await rmdir(directory).catch(() => undefined)
-      }
+      if (completion) await rmdir(directory).catch(() => undefined)
+    }
+  }
+
+  async status(): Promise<SubscriptionAccount> {
+    try { return (await this.session()).account }
+    catch { return this.account(false, UNAVAILABLE) }
+  }
+
+  async complete(system: string, input: unknown, model: string, effort = ''): Promise<unknown> {
+    if (this.completing) throw new Error('A Codex subscription decision is already running. Wait for it to finish.')
+    const prompt = JSON.stringify(input)
+    if (!prompt || Buffer.byteLength(prompt) > 180_000 || Buffer.byteLength(system) > 20_000) throw new Error('The Sotto reasoning context is too large for this subscription request.')
+    this.completing = true
+    try {
+      const response = await this.session({ system, prompt, model, effort })
+      if (!response.account.ready) throw new Error(response.account.detail)
+      return response.value
+    } finally {
       this.completing = false
     }
   }

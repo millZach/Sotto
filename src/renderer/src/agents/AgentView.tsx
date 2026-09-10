@@ -5,6 +5,7 @@ import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionPro
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
+import { VoiceSettings } from './VoiceSettings'
 
 type Command = AgentConnection['command']
 
@@ -139,7 +140,10 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
   const subscription = isSubscriptionReasoning(configuration.reasoning)
   const api = configuration.reasoning === 'openrouter' || configuration.reasoning === 'openai'
   const account = state.reasoningAccounts.find(item => item.provider === configuration.reasoning)
-  const reasoningChanged = configuration.reasoning !== state.configuration.reasoning || configuration.reasoningModel !== state.configuration.reasoningModel
+  const defaultReasoningModel = account?.models.find(model => model.id === account.defaultModelId)
+  const selectedReasoningModel = configuration.reasoningModel ? account?.models.find(model => model.id === configuration.reasoningModel) : defaultReasoningModel
+  const reasoningEfforts = selectedReasoningModel?.reasoningEfforts ?? []
+  const reasoningChanged = configuration.reasoning !== state.configuration.reasoning || configuration.reasoningModel !== state.configuration.reasoningModel || configuration.reasoningEffort !== state.configuration.reasoningEffort
   const providerInput = useRef<HTMLSelectElement>(null)
   useEffect(() => { if (focusReasoning) { providerInput.current?.focus(); providerInput.current?.scrollIntoView?.({ block: 'nearest' }) } }, [focusReasoning])
   const change = <K extends keyof AgentConfiguration>(key: K, value: AgentConfiguration[K]): void => {
@@ -150,7 +154,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
     try { await command({ type: 'check-reasoning', provider }) } finally { setChecking(false) }
   }
   const chooseReasoning = (provider: AgentConfiguration['reasoning']): void => {
-    setConfiguration(current => ({ ...current, reasoning: provider, reasoningModel: '' }))
+    setConfiguration(current => ({ ...current, reasoning: provider, reasoningModel: '', reasoningEffort: '' }))
     setReasoningKey(''); setSaved(false)
     if (isSubscriptionReasoning(provider)) void checkSubscription(provider)
   }
@@ -161,10 +165,13 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       defaultModelId: configuration.defaultModelId,
       followupLimit: configuration.followupLimit,
       speak: configuration.speak,
+      speechProvider: configuration.speechProvider,
+      speechVoice: configuration.speechVoice,
       wakeModelDirectory: configuration.wakeModelDirectory,
       wakeRuntimeDirectory: configuration.wakeRuntimeDirectory,
       reasoning: configuration.reasoning,
       reasoningModel: configuration.reasoningModel,
+      reasoningEffort: configuration.reasoningEffort,
     } })
     if (result === null || result.error !== null) return
     if (token.trim()) {
@@ -194,15 +201,20 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
         <optgroup label="Your subscriptions">
           <option value="codex">ChatGPT subscription · Codex</option>
           <option value="claude">Claude subscription · Claude Code</option>
-          <option value="grok">Grok subscription · not available yet</option>
+          <option value="grok">Grok subscription · Grok Build</option>
         </optgroup>
         <optgroup label="API accounts"><option value="openrouter">OpenRouter API</option><option value="openai">OpenAI API</option></optgroup>
       </select></label>
-      <label>Reasoning model{subscription ? <select value={configuration.reasoningModel} onChange={event => change('reasoningModel', event.target.value)} disabled={checking || !account?.ready}>
-        <option value="">{account?.models[0] ? `Default (${account.models[0].name})` : 'Supported default'}</option>
+      <label>Reasoning model{subscription ? <select value={configuration.reasoningModel} onChange={event => { setConfiguration(current => ({ ...current, reasoningModel: event.target.value, reasoningEffort: '' })); setSaved(false) }} disabled={checking || !account?.ready}>
+        <option value="">{defaultReasoningModel && defaultReasoningModel.id !== 'default' ? `Default (${defaultReasoningModel.name})` : 'Provider default'}</option>
         {configuration.reasoningModel && !account?.models.some(model => model.id === configuration.reasoningModel) ? <option value={configuration.reasoningModel}>{configuration.reasoningModel}</option> : null}
         {account?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
       </select> : <input value={configuration.reasoningModel} onChange={(event) => change('reasoningModel', event.target.value)} placeholder="Provider model ID" disabled={configuration.reasoning === 'none'} />}</label>
+      {subscription ? <label>Reasoning effort<select aria-label="Reasoning effort" value={configuration.reasoningEffort} onChange={event => change('reasoningEffort', event.target.value)} disabled={checking || !account?.ready || (reasoningEfforts.length === 0 && !configuration.reasoningEffort)}>
+        <option value="">{selectedReasoningModel?.defaultReasoningEffort ? `Default (${selectedReasoningModel.defaultReasoningEffort})` : 'Provider default'}</option>
+        {configuration.reasoningEffort && !reasoningEfforts.includes(configuration.reasoningEffort) ? <option value={configuration.reasoningEffort}>{configuration.reasoningEffort} · unavailable</option> : null}
+        {reasoningEfforts.map(effort => <option key={effort} value={effort}>{effort.charAt(0).toUpperCase() + effort.slice(1)}</option>)}
+      </select>{account?.ready && reasoningEfforts.length === 0 ? <span>{selectedReasoningModel ? 'This model does not offer a reasoning level in its provider app.' : 'Select a model to see its available reasoning levels.'}</span> : null}</label> : null}
       {subscription ? <div className="agent-field-wide agent-subscription-status" role="status">
         <div><strong>{checking ? 'Checking your subscription…' : account?.ready ? `${account.label} connected` : 'Subscription connection'}</strong>
           <p>{checking ? 'Checking the account in your installed provider app.' : account?.detail ?? 'Check the subscription signed into your provider app. No API key is needed.'}</p></div>
@@ -210,7 +222,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       </div> : null}
       {api ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
       <p className="agent-field-wide agent-muted">Sotto uses this connection to understand voice commands and decide routine follow-ups. Subscription usage follows your provider’s allowance and any extra usage you enabled there. Sotto never switches accounts or enables paid overages for you.</p>
-      <label className="agent-checkbox"><input type="checkbox" checked={configuration.speak} onChange={(event) => change('speak', event.target.checked)} />Spoken replies using a local system voice</label>
+      <VoiceSettings configuration={configuration} command={command} change={change} />
       <label className="agent-field-wide">Local wake model folder<input value={configuration.wakeModelDirectory} onChange={(event) => change('wakeModelDirectory', event.target.value)} placeholder="Absolute path to your local wake model" />
         <span>Wake setup is required before using “Hey Sotto.” This build supports a separately supplied Sherpa phonetic model. Its distribution license is unresolved, so Sotto does not include or download the weights. Text agent controls remain available.</span>
       </label>

@@ -183,6 +183,7 @@ export class AgentVoiceSession {
   /** Return to wake-only monitoring. The application retains any composed draft. */
   sleep(): void {
     this.conversation = false
+    this.capture?.setWakeMode?.(true)
     this.clearInactivity()
     this.invalidateAudio()
     this.capture?.setSuppressed(this.speechPending > 0 || this.echoSuppressed)
@@ -190,7 +191,7 @@ export class AgentVoiceSession {
   }
 
   speak(text: string): Promise<void> {
-    if (this.disposed || text.trim().length === 0 || this.dictationActive || this.muted) {
+    if (this.disposed || text.trim().length === 0 || this.dictationActive) {
       return Promise.resolve()
     }
     const generation = this.speechGeneration
@@ -281,6 +282,7 @@ export class AgentVoiceSession {
         },
       })
       this.capture = capture
+      capture.setWakeMode?.(!this.conversation)
       capture.setSuppressed(this.speechPending > 0 || this.echoSuppressed)
       await capture.start()
       if (generation !== this.captureGeneration) return
@@ -376,6 +378,7 @@ export class AgentVoiceSession {
     if (!this.conversation) {
       if (!activated) return
       this.conversation = true
+      this.capture?.setWakeMode?.(false)
       this.error = undefined
       this.publish()
       await this.options.onWake?.()

@@ -5,7 +5,8 @@ import type { AppSettings } from '../../../shared/settings'
 import type { DictationState } from '../../../shared/dictation'
 import { AgentVoiceSession, type AgentVoiceState } from './voiceSession'
 import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
-import { NativeSystemSpeech } from './voiceSpeech'
+import { createConfiguredSpeech } from './naturalSpeech'
+import { playWakeCue } from './voiceCue'
 
 export interface AgentConnection {
   readonly state: AgentState | null
@@ -80,8 +81,8 @@ export function AgentProvider({ children, settings, dictation }: {
 
   useEffect(() => {
     if (window.sotto?.agents === undefined) return
-    const synthesizeSpeech = window.sotto.agents.synthesizeSpeech
     const agentBridge = window.sotto.agents
+    const speech = createConfiguredSpeech(agentBridge, () => stateRef.current?.configuration)
     const session = new AgentVoiceSession({
       wakeDetector: {
         async load() {
@@ -94,7 +95,7 @@ export function AgentProvider({ children, settings, dictation }: {
         },
         dispose() { void agentBridge.releaseWake?.().catch(() => undefined) },
       },
-      ...(synthesizeSpeech === undefined ? {} : { speechOutput: new NativeSystemSpeech(synthesizeSpeech) }),
+      ...(agentBridge.synthesizeSpeech === undefined ? {} : { speechOutput: speech.output }),
       getSettings: () => {
         const current = settingsRef.current
         if (current === null) throw new Error('Speech settings are not ready.')
@@ -104,15 +105,15 @@ export function AgentProvider({ children, settings, dictation }: {
         setVoice(next)
         void connection.command({ type: 'voice-state', status: next.status, error: next.error ?? null })
       },
-      onWake: async () => {
-        if (stateRef.current?.configuration.speak) await session.speak('I’m listening.')
+      onWake: () => {
+        if (settingsRef.current?.soundCues) playWakeCue()
       },
       onUtterance: async (text) => { await connection.command({ type: 'utterance', text }) },
       // A long composition must keep accepting speech after the user pauses to think.
       conversationTimeoutMs: 0,
     }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects())
     voiceRef.current = session
-    return () => { session.dispose(); voiceRef.current = null }
+    return () => { session.dispose(); speech.dispose(); voiceRef.current = null }
   }, [connection.command])
 
   const voiceEnabled = connection.state?.configuration.enabled === true
@@ -154,7 +155,7 @@ export function AgentProvider({ children, settings, dictation }: {
     if (spoken.current === null) { spoken.current = state.speech.id; return }
     if (spoken.current === state.speech.id) return
     spoken.current = state.speech.id
-    if (state.configuration.enabled && state.configuration.speak) {
+    if (state.speech.preview || (state.configuration.enabled && state.configuration.speak)) {
       void voiceRef.current?.speak(state.speech.text)
     }
   }, [connection.state])

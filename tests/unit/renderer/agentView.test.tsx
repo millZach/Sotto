@@ -43,6 +43,59 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(cleanup)
 
 describe('AgentView user workflows', () => {
+  it('lets an obsolete saved reasoning effort be cleared when the model stops advertising effort levels', async () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'claude'
+    state.configuration.reasoningModel = 'available'
+    state.configuration.reasoningEffort = 'high'
+    state.reasoningAccounts = [{ provider: 'claude', label: 'Claude', installed: true, ready: true, detail: 'Connected', models: [{ id: 'available', name: 'Available model' }] }]
+    const command = vi.fn(async () => state)
+    vi.mocked(useAgents).mockReturnValue(connection(state, command))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    expect(screen.getByLabelText('Reasoning effort')).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: expect.objectContaining({ reasoningEffort: '' }) }))
+  })
+
+  it('does not invent a provider default from the first catalog entry', () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'codex'
+    state.reasoningAccounts = [{ provider: 'codex', label: 'ChatGPT', installed: true, ready: true, detail: 'Connected',
+      models: [{ id: 'first', name: 'First model', reasoningEfforts: ['high'] }] }]
+    vi.mocked(useAgents).mockReturnValue(connection(state))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    expect(screen.queryByRole('option', { name: 'Default (First model)' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Reasoning effort')).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'High' })).not.toBeInTheDocument()
+  })
+
+  it('lets a subscription choose every advertised model and its supported reasoning effort', async () => {
+    const state = stateFixture()
+    state.configuration.reasoning = 'codex'
+    state.reasoningAccounts = [{ provider: 'codex', label: 'ChatGPT', installed: true, ready: true, detail: 'Connected',
+      defaultModelId: 'gpt-6-astra', models: [
+        { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'low' },
+        { id: 'gpt-6-astra', name: 'GPT-6 Astra', reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], defaultReasoningEffort: 'medium' },
+      ] }]
+    const command = vi.fn(async () => state)
+    vi.mocked(useAgents).mockReturnValue(connection(state, command))
+    render(<AgentView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    expect(screen.getByRole('option', { name: 'Default (GPT-6 Astra)' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Reasoning model'), { target: { value: 'gpt-6-astra' } })
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'ultra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: expect.objectContaining({
+      reasoning: 'codex', reasoningModel: 'gpt-6-astra', reasoningEffort: 'ultra',
+    }) }))
+    fireEvent.change(screen.getByLabelText('Reasoning model'), { target: { value: 'gpt-5.6-luna' } })
+    expect(screen.getByLabelText('Reasoning effort')).toHaveValue('')
+    expect(screen.queryByRole('option', { name: 'Ultra' })).not.toBeInTheDocument()
+  })
+
   it('retains a failed project form, then closes and clears it after confirmed creation', async () => {
     const state = stateFixture()
     const command = vi.fn().mockResolvedValueOnce({ ...state, error: 'Folder is unavailable' }).mockResolvedValue(state)
@@ -141,7 +194,7 @@ describe('AgentView user workflows', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.getByRole('option', { name: 'ChatGPT subscription · Codex' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Claude subscription · Claude Code' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Grok subscription · not available yet' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Grok subscription · Grok Build' })).toBeInTheDocument()
   })
 
   it('does not present a saved or unsaved API key as belonging to a different provider', () => {

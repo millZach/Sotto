@@ -1,14 +1,20 @@
 import { z } from 'zod'
 import { app } from 'electron'
 import { join } from 'node:path'
-import { AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_WAKE, agentCommandSchema } from '../../shared/agents'
+import { AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_VOICE_MODEL, AGENT_WAKE, agentCommandSchema } from '../../shared/agents'
 import type { SottoPlatform } from '../../shared/platform'
 import { synthesizeAgentSpeech } from './speech'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { AgentControl } from './control'
 import { AgentWakeService } from './wake'
+import type { NaturalSpeechModels } from './speechModels'
 
-export function registerAgentIpc(ipc: IpcMainAdapter, control: AgentControl, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: AgentControl, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>): () => void {
+  ipc.handle(AGENT_VOICE_MODEL, async (event, payload) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    const action = z.enum(['status', 'download']).parse(payload)
+    return action === 'download' ? speechModels.download() : speechModels.status()
+  })
   const wake = new AgentWakeService(app.isPackaged ? join(process.resourcesPath, 'runtime', 'kws') : join(app.getAppPath(), 'node_modules', 'sherpa-onnx'), join(__dirname, 'wakeWorker.js'))
   ipc.handle(AGENT_WAKE, async (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
@@ -38,8 +44,8 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: AgentControl, sen
   ipc.handle(AGENT_COMMAND, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
     const command = agentCommandSchema.parse(payload)
-    if (['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    if (['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     return control.command(command)
   })
-  return () => { wake.dispose(); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH) }
+  return () => { wake.dispose(); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

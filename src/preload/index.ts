@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { z } from 'zod'
-import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_WAKE, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
+import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_VOICE_MODEL, AGENT_WAKE, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -187,6 +187,7 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     ...(role === 'main' ? {
     synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
+    voiceModel: (action: 'status' | 'download') => invokeParsed(renderer, AGENT_VOICE_MODEL, agentVoiceModelStatusSchema, action),
     prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
     detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),

@@ -16,7 +16,7 @@ interface LocalAudioElement {
 export class NativeSystemSpeech implements VoiceSpeechOutput {
   private finish: (() => void) | null = null
 
-  constructor(private readonly synthesize: (text: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>) {}
+  constructor(private readonly synthesize: (text: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>, private readonly cancelSynthesis?: () => void) {}
 
   speak(text: string): Promise<void> {
     this.stop()
@@ -55,7 +55,7 @@ export class NativeSystemSpeech implements VoiceSpeechOutput {
         if (timer !== undefined) globalThis.clearTimeout(timer)
         timer = globalThis.setTimeout(() => finish(new Error('Spoken reply timed out. Read it in the widget.')), 180_000)
         await player.play()
-      }).catch(() => finish(new Error('Local spoken reply is unavailable. Check your system voice and audio output.')))
+      }).catch((error: unknown) => finish(error instanceof Error ? error : new Error('Spoken reply is unavailable. Check the selected voice and audio output.')))
     })
   }
 
@@ -63,6 +63,7 @@ export class NativeSystemSpeech implements VoiceSpeechOutput {
     const finish = this.finish
     this.finish = null
     finish?.()
+    this.cancelSynthesis?.()
   }
 }
 

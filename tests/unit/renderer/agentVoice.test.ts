@@ -21,6 +21,7 @@ function harness() {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     setSuppressed: vi.fn(),
+    setWakeMode: vi.fn(),
   }
   const local = {
     load: vi.fn(async () => undefined),
@@ -143,6 +144,29 @@ describe('desktop agent voice interaction', () => {
     await vi.advanceTimersByTimeAsync(500)
     expect(h.capture.setSuppressed).toHaveBeenLastCalledWith(false)
     expect(h.onWake).not.toHaveBeenCalled()
+    h.session.dispose()
+  })
+
+  it('can preview a reply while listening is muted without reopening the microphone', async () => {
+    const h = harness()
+    await h.session.start()
+    await h.session.setMuted(true)
+    h.capture.start.mockClear()
+    await h.session.speak('Preview the selected voice.')
+    expect(h.speech.speak).toHaveBeenCalledWith('Preview the selected voice.')
+    expect(h.capture.start).not.toHaveBeenCalled()
+    expect(h.session.getState().status).toBe('muted')
+    h.session.dispose()
+  })
+
+  it('uses sensitive capture only while waiting for the wake phrase', async () => {
+    const h = harness()
+    await h.session.start()
+    expect(h.capture.setWakeMode).toHaveBeenLastCalledWith(true)
+    await h.hear('Hey Sotto')
+    expect(h.capture.setWakeMode).toHaveBeenLastCalledWith(false)
+    await h.hear('Stop listening.')
+    expect(h.capture.setWakeMode).toHaveBeenLastCalledWith(true)
     h.session.dispose()
   })
 

@@ -5,9 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
+import type { SubscriptionClient } from '../../../src/main/agents/subscriptionTypes'
 import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type SubscriptionProvider } from '../../../src/shared/agents'
+import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, type SubscriptionProvider } from '../../../src/shared/agents'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -20,7 +21,7 @@ async function fixture() {
   const configuration = defaultAgentConfiguration()
   const client = {
     status: vi.fn(async () => ({ provider: 'claude' as const, installed: true, ready: true, label: 'Claude Max', detail: 'Connected', models: [] })),
-    complete: vi.fn(async (_system: string, input: unknown, model: string): Promise<unknown> => {
+    complete: vi.fn<SubscriptionClient['complete']>(async (_system, input, model) => {
       if (model === 'unavailable-fixture-model') throw new Error('Fixture model unavailable')
       return 'utterance' in (input as object)
         ? { type: 'select-project', projectId: 'project' } : { decision: 'done', text: 'Assignment complete.' }
@@ -40,15 +41,22 @@ afterEach(async () => {
 })
 
 describe('Sotto subscription reasoning integration', () => {
-  it.each(['claude', 'codex'] as const)('uses %s for both intent and supervision with no Sotto API credential', async provider => {
+  it('migrates old configuration without resetting effort in unrelated settings patches', () => {
+    const legacy = Object.fromEntries(Object.entries(defaultAgentConfiguration()).filter(([key]) => key !== 'reasoningEffort'))
+    expect(agentConfigurationSchema.parse(legacy).reasoningEffort).toBe('')
+    expect(agentCommandSchema.parse({ type: 'configure', patch: { speak: false } })).toEqual({ type: 'configure', patch: { speak: false } })
+  })
+  it.each(['claude', 'codex', 'grok'] as const)('uses the selected %s model and effort for both intent and supervision with no Sotto API credential', async provider => {
     const f = await fixture()
     f.configuration.reasoning = provider
+    f.configuration.reasoningModel = 'subscription-advertised-model'
+    f.configuration.reasoningEffort = 'high'
     const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { [provider]: f.client })
     expect(await reasoner.intent('Select my project.', EMPTY_AGENT_HOST, null, '')).toEqual({ type: 'select-project', projectId: 'project' })
     expect(await reasoner.decide('Finish the assigned change.', { id: 'thread', title: 'Feature', projectId: 'project', modelId: 'coding-model', status: 'idle', messages: [], requests: [] }))
       .toEqual({ decision: 'done', text: 'Assignment complete.' })
     expect(f.client.complete).toHaveBeenCalledTimes(2)
-    expect(f.client.complete.mock.calls.every(call => call[2] === '')).toBe(true)
+    expect(f.client.complete.mock.calls.every(call => call[2] === 'subscription-advertised-model' && call[3] === 'high')).toBe(true)
     expect(f.fetch).not.toHaveBeenCalled()
     expect(f.credentials.has('reasoning')).toBe(false)
   })
@@ -105,7 +113,7 @@ describe('Sotto subscription reasoning integration', () => {
     }
     const initial = await start()
     await f.credentials.set('reasoning', 'fixture-previous-api-key')
-    await initial.command({ type: 'configure', patch: { reasoning: 'claude', reasoningModel: '' } })
+    await initial.command({ type: 'configure', patch: { reasoning: 'claude', reasoningModel: 'selected-model', reasoningEffort: 'high' } })
     expect(f.credentials.has('reasoning')).toBe(false)
     const checked = await initial.command({ type: 'check-reasoning', provider: 'claude' as SubscriptionProvider })
     expect(checked.reasoningAccounts).toEqual([expect.objectContaining({ provider: 'claude', ready: true })])
@@ -118,6 +126,8 @@ describe('Sotto subscription reasoning integration', () => {
     const restarted = await start()
     // A native client can stall without delaying the rest of Sotto's startup.
     expect(restarted.get().configuration.reasoning).toBe('claude')
+    expect(restarted.get().configuration.reasoningModel).toBe('selected-model')
+    expect(restarted.get().configuration.reasoningEffort).toBe('high')
     expect(restarted.get().reasoningAccounts).toEqual([])
     finishStatus()
     await vi.waitFor(() => expect(restarted.get().reasoningAccounts[0]?.ready).toBe(true))

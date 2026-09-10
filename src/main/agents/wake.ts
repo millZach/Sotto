@@ -75,6 +75,17 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** Normalize only the detector copy; prompt/dictation PCM keeps its original level. */
+export function normalizeWakeInput(audio: Float32Array): Float32Array {
+  let peak = 0
+  for (const sample of audio) peak = Math.max(peak, Math.abs(sample))
+  if (peak === 0 || peak >= 0.5) return audio
+  // The phonetic model misses quiet but intelligible speech at native microphone
+  // levels. One bounded gain preserves phoneme timing and avoids gain pumping.
+  const gain = Math.min(12, 0.5 / peak)
+  return Float32Array.from(audio, sample => sample * gain)
+}
+
 /** One isolated local CPU worker, with bounded PCM input and no background audio storage. */
 export class AgentWakeService {
   private worker: Worker | null = null
@@ -124,7 +135,7 @@ export class AgentWakeService {
     if (audio.length < 1 || audio.length > 132_000 || audio.some(sample => !Number.isFinite(sample) || Math.abs(sample) > 1)) {
       throw new Error('Wake audio must be at most 8.25 seconds of normalized mono 16 kHz PCM.')
     }
-    return this.request('detect', audio)
+    return this.request('detect', normalizeWakeInput(audio))
   }
 
   dispose(message = 'Local wake detection was stopped.'): void {

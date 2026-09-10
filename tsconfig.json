@@ -2,6 +2,7 @@
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,

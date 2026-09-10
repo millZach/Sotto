@@ -3,5 +3,5 @@ import type { SubscriptionAccount } from '../../shared/agents'
 export type { SubscriptionProvider, SubscriptionAccount } from '../../shared/agents'
 export interface SubscriptionClient {
   status(): Promise<SubscriptionAccount>
-  complete(system: string, input: unknown, model: string): Promise<unknown>
+  complete(system: string, input: unknown, model: string, effort?: string): Promise<unknown>
 }

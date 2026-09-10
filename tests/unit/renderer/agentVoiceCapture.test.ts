@@ -52,6 +52,7 @@ async function microphone(sampleRate: number) {
   captures.push(capture)
   await capture.start()
   return {
+    setWakeMode: (wake: boolean) => capture.setWakeMode(wake),
     utterances,
     onError,
     feed(seconds: number, sample: (time: number) => number) {
@@ -68,6 +69,27 @@ function peak(audio: Float32Array): number {
 }
 
 describe('agent microphone PCM boundary', () => {
+  it.each([16_000, 48_000])('keeps the first quiet phrase at %i Hz without changing its captured volume', async sampleRate => {
+    const capture = await microphone(sampleRate)
+    capture.feed(0.5, () => 0)
+    capture.feed(0.45, time => 0.01 * Math.sin(2 * Math.PI * 240 * time))
+    capture.feed(0.7, () => 0)
+    expect(capture.utterances).toHaveLength(1)
+    expect(peak(capture.utterances[0]!)).toBeCloseTo(0.01, 3)
+  })
+
+  it('preserves the original activated-speech gate instead of changing command segmentation', async () => {
+    const capture = await microphone(48_000)
+    capture.setWakeMode(false)
+    capture.feed(0.45, time => 0.01 * Math.sin(2 * Math.PI * 240 * time))
+    capture.feed(0.7, () => 0)
+    expect(capture.utterances).toHaveLength(0)
+    capture.feed(0.45, time => 0.03 * Math.sin(2 * Math.PI * 240 * time))
+    capture.feed(0.7, () => 0)
+    expect(capture.utterances).toHaveLength(1)
+    expect(peak(capture.utterances[0]!)).toBeCloseTo(0.03, 3)
+  })
+
   it.each([16_000, 44_100, 48_000])('keeps a clipped microphone waveform normalized after resampling from %i Hz', async (sampleRate) => {
     const capture = await microphone(sampleRate)
     capture.feed(0.2, () => 0)

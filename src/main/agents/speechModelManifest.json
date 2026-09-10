@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "repository": "onnx-community/Supertonic-TTS-ONNX",
+  "revision": "cff123c84b0655d9d647641f1b532c3cbb8f7faa",
+  "license": "OpenRAIL-M",
+  "files": [
+    {
+      "path": "LICENSE",
+      "url": "https://huggingface.co/Supertone/supertonic/resolve/b6856d033f622c63ea29441795be266a1133e227/LICENSE",
+      "bytes": 15007,
+      "sha256": "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f"
+    },
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/config.json",
+      "bytes": 247,
+      "sha256": "37cdafab327b4360e0d6911956bfb3ca3d7254b53749e06ca41ab422d7686259"
+    },
+    {
+      "path": "tokenizer.json",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/tokenizer.json",
+      "bytes": 2038,
+      "sha256": "da6954f045585fc12c8ea9831b3c3eb1c5bffc8ef7ff6b6db7de781cd472ee01"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/tokenizer_config.json",
+      "bytes": 119,
+      "sha256": "87dad35dfef4b41ef8bb92723e2fc040b91d3fdf770ee5f4716fa5d4896f7a68"
+    },
+    {
+      "path": "onnx/text_encoder.onnx",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/text_encoder.onnx",
+      "bytes": 433169,
+      "sha256": "50a03d29d5dc95918eeff578f542b814f3cf5a741f927116f5a8462a76ff6898"
+    },
+    {
+      "path": "onnx/text_encoder.onnx_data",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/text_encoder.onnx_data",
+      "bytes": 28426752,
+      "sha256": "6415854f135a318909dc716e90f83a391d9a91bd9da09bdb6d6763d6b0a6c102"
+    },
+    {
+      "path": "onnx/latent_denoiser.onnx",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/latent_denoiser.onnx",
+      "bytes": 398102,
+      "sha256": "9a639a8c05c9be111848562c5cf10ea2697a589c6341830aac479d0ce7b75aa9"
+    },
+    {
+      "path": "onnx/latent_denoiser.onnx_data",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/latent_denoiser.onnx_data",
+      "bytes": 132098880,
+      "sha256": "cde4abf1136defce235bc446eaab4954a57721ae8d5a4754cdd337bf191b612f"
+    },
+    {
+      "path": "onnx/voice_decoder.onnx",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/voice_decoder.onnx",
+      "bytes": 59921,
+      "sha256": "83c104006dabcd6b568c0d5acb6fec18f65609d2391dd2c459e4440e85027669"
+    },
+    {
+      "path": "onnx/voice_decoder.onnx_data",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/onnx/voice_decoder.onnx_data",
+      "bytes": 101353472,
+      "sha256": "ea52402c9ba5131ee2b3901a86db2f0b435b322169cd75157e053493d967d17f"
+    },
+    {
+      "path": "voices/F1.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/F1.bin",
+      "bytes": 51712,
+      "sha256": "5ef84e3421e4f80994a5a40a18ba39ba9fc48175c41ae6cf3e56418820872dbf"
+    },
+    {
+      "path": "voices/F2.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/F2.bin",
+      "bytes": 51712,
+      "sha256": "1949cf0e066c4278980d2b835cf334dab0f8f781704c9116bf48a072278f7c72"
+    },
+    {
+      "path": "voices/F3.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/F3.bin",
+      "bytes": 51712,
+      "sha256": "38ee1d62ad8a02877ab0d08b501742b76cf3586ed888514df1a7f27cc0f8d171"
+    },
+    {
+      "path": "voices/F4.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/F4.bin",
+      "bytes": 51712,
+      "sha256": "63890c361868a296c51f9aee114f51e0a9a92c3f46a91582539545f7ab408a72"
+    },
+    {
+      "path": "voices/F5.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/F5.bin",
+      "bytes": 51712,
+      "sha256": "793223d8d11e0ee49721842ebdc7bd46b4487579588f646953e75ad3fc8ffb9c"
+    },
+    {
+      "path": "voices/M1.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/M1.bin",
+      "bytes": 51712,
+      "sha256": "7d53fbaaccf39a358010dcc5f289fc1d5cb350fe5f518be35f62cc518d794892"
+    },
+    {
+      "path": "voices/M2.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/M2.bin",
+      "bytes": 51712,
+      "sha256": "2e02979a394f89002d920f0bcc006206d4cd8da90e8cc82d0532831a5bb20e79"
+    },
+    {
+      "path": "voices/M3.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/M3.bin",
+      "bytes": 51712,
+      "sha256": "470d2b6b77239628ce90ba879ca5366fb5e6103fdd7e7053954a7b6d5dc2142a"
+    },
+    {
+      "path": "voices/M4.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/M4.bin",
+      "bytes": 51712,
+      "sha256": "4700e92c614fd34971a8ed9c8140c2f2162ab8ef3067f8e1e7ef67c3e6488fb7"
+    },
+    {
+      "path": "voices/M5.bin",
+      "url": "https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/resolve/cff123c84b0655d9d647641f1b532c3cbb8f7faa/voices/M5.bin",
+      "bytes": 51712,
+      "sha256": "c40fbc4093d113ef261cbc7bfe3f080dd813d3168347d682c78b1ca71a07da1f"
+    }
+  ]
+}

@@ -131,6 +131,7 @@ import { GrokSubscriptionClient } from './agents/subscriptionGrok'
 import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
+import { NaturalSpeechModels } from './agents/speechModels'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
@@ -392,6 +393,7 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
+  const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
@@ -764,11 +766,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : () => registerLocalAssetProtocols({
           protocol,
           net,
-          modelSources: () => productionModels.manager.protocolSources(),
+          modelSources: async () => ({ ...await productionModels.manager.protocolSources(), ...await naturalSpeechModels.protocolSources() }),
           runtimeSource: productionModels.runtimeSource,
         }),
     registerIpc: () => {
-      const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform)
+      const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
+        status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
+        download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
+      })
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),

@@ -13,7 +13,7 @@ async function setup(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Agents', exact: true }).click()
 }
 
-test('selects an existing subscription for reasoning without an API key and shows unavailable routes honestly', async () => {
+test('selects each native subscription with its available model and reasoning effort without an API key', async () => {
   const launched = await launchSotto()
   const { page } = launched
   try {
@@ -23,25 +23,53 @@ test('selects an existing subscription for reasoning without an API key and show
     await expect(page.getByText('Claude subscription connected', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Reasoning API key', { exact: true })).toHaveCount(0)
     await page.getByLabel('Reasoning model').selectOption('fixture-model')
+    await page.getByLabel('Reasoning effort').selectOption('high')
     await page.getByRole('button', { name: 'Save connection settings', exact: true }).click()
     await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
-      provider: state.configuration.reasoning, model: state.configuration.reasoningModel, key: state.credentials.reasoning,
-    })))).toEqual({ provider: 'claude', model: 'fixture-model', key: false })
+      provider: state.configuration.reasoning, model: state.configuration.reasoningModel, effort: state.configuration.reasoningEffort, key: state.credentials.reasoning,
+    })))).toEqual({ provider: 'claude', model: 'fixture-model', effort: 'high', key: false })
     await page.getByLabel('Sotto reasoning').selectOption('grok')
-    await expect(page.getByText('Grok subscription reasoning is not available in this build.', { exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Save connection settings', exact: true })).toBeDisabled()
+    await expect(page.getByText('Grok subscription connected', { exact: true })).toBeVisible()
+    await page.getByLabel('Reasoning model').selectOption('fixture-alternate')
+    await page.getByLabel('Reasoning effort').selectOption('max')
+    await page.getByRole('button', { name: 'Save connection settings', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
+      provider: state.configuration.reasoning, model: state.configuration.reasoningModel, effort: state.configuration.reasoningEffort,
+    })))).toEqual({ provider: 'grok', model: 'fixture-alternate', effort: 'max' })
     await page.getByLabel('Sotto reasoning').selectOption('codex')
     await expect(page.getByText('ChatGPT subscription connected', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Reasoning model')).toHaveValue('')
+    await expect(page.getByLabel('Reasoning effort')).toHaveValue('')
     await page.getByRole('button', { name: 'Save connection settings', exact: true }).click()
     await expect(page.getByText('Settings saved', { exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.configuration.reasoning))).toBe('codex')
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.getByLabel('Reasoning setup', { exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.getByLabel('Sotto reasoning')).toHaveValue('codex')
     await page.getByLabel('Sotto reasoning').scrollIntoViewIfNeeded()
     await page.screenshot({ path: 'artifacts/agent-control-smoke/subscription-settings-e2e.png' })
+  } finally { await closeSotto(launched) }
+})
+
+test('chooses and previews a natural voice without changing subscription reasoning', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await setup(page)
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('natural')
+    await page.getByLabel('Voice', { exact: true }).selectOption('M3')
+    await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
+      provider: state.configuration.speechProvider, voice: state.configuration.speechVoice, reasoning: state.configuration.reasoning, preview: state.speech.preview,
+    })))).toEqual({ provider: 'natural', voice: 'M3', reasoning: 'none', preview: true })
+    await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/agent-control-smoke/natural-voice-settings-e2e.png' })
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('M3')
   } finally { await closeSotto(launched) }
 })
 

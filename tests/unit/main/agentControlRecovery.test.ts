@@ -188,6 +188,18 @@ describe('reasoning account route isolation', () => {
 })
 
 describe('composition navigation and explicit spoken controls', () => {
+  it('previews the configured voice while agents are disabled without inference or host work', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'disconnect' })
+    const before = f.control.get()
+    const previewed = await f.control.command({ type: 'preview-voice' })
+    expect(previewed).toMatchObject({ error: null, configuration: { enabled: false },
+      speech: { id: before.speech.id + 1, text: 'Hi, I’m Sotto. Your agents are ready when you are.', preview: true } })
+    expect(previewed.host).toEqual(before.host)
+    expect(previewed.assignments).toEqual(before.assignments)
+    expect(f.requests).toEqual([])
+  })
+
   it('dictates and sends the first prompt immediately after creating a managed thread without reasoning', async () => {
     const f = await fixture()
     const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'New voice thread', modelId: 'claude:test' })
@@ -505,6 +517,85 @@ describe('question draft recovery', () => {
 })
 
 describe('clarification recovery', () => {
+  it('asks for the thread before capturing a prompt prefix when no thread is selected', async () => {
+    const f = await fixture()
+    await f.account()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'select-project', projectId: 'project' })
+    f.service.intent = { type: 'clarify', text: 'Which thread should receive your prompt?' }
+    const question = await f.control.command({ type: 'utterance', text: "Here's my prompt: Keep the existing colors." })
+    expect(question.error).toBeNull()
+    expect(question.pendingRequest).toContain('Keep the existing colors.')
+    f.service.intent = { type: 'compose', threadId: 'workshop', text: 'Keep the existing colors.' }
+    const answer = await f.control.command({ type: 'utterance', text: 'Workshop.' })
+    expect(answer).toMatchObject({ error: null, draft: 'Keep the existing colors.', draftThreadId: 'workshop', composing: true })
+  })
+
+  it('begins listening after a thread clarification when no prompt has been dictated yet', async () => {
+    const f = await fixture()
+    await f.account()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'select-project', projectId: 'project' })
+    f.service.intent = { type: 'clarify', text: 'Which thread should receive your prompt?' }
+    await f.control.command({ type: 'utterance', text: 'I want to add a prompt to a thread.' })
+    f.service.intent = { type: 'compose', threadId: 'workshop', text: '' }
+    const selected = await f.control.command({ type: 'utterance', text: 'Workshop.' })
+    expect(selected).toMatchObject({ error: null, composing: true, draftThreadId: 'workshop', draft: '' })
+    const dictated = await f.control.command({ type: 'utterance', text: 'Keep the existing colors.' })
+    expect(dictated).toMatchObject({ error: null, draft: 'Keep the existing colors.', draftThreadId: 'workshop' })
+    expect(f.requests).toHaveLength(2)
+  })
+
+  it('requires explicit management before sending a prepared prompt to an unassigned thread', async () => {
+    const f = await fixture()
+    await f.account()
+    f.service.intent = { type: 'compose', threadId: 'workshop', text: 'Keep the existing colors.' }
+    const drafted = await f.control.command({ type: 'utterance', text: 'Add a prompt to Workshop: Keep the existing colors.' })
+    expect(drafted).toMatchObject({ error: null, draft: 'Keep the existing colors.', draftThreadId: 'workshop', assignments: [] })
+    const blocked = await f.control.command({ type: 'utterance', text: 'Send it.' })
+    expect(blocked.error).toContain('Assign this thread')
+    expect(blocked.draft).toBe('Keep the existing colors.')
+    const managed = await f.control.command({ type: 'utterance', text: 'Manage Workshop.' })
+    expect(managed).toMatchObject({ error: null, draft: 'Keep the existing colors.', draftThreadId: 'workshop' })
+    const sent = await f.control.command({ type: 'utterance', text: 'Send it.' })
+    expect(sent.error).toBeNull()
+    expect(sent.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(1)
+  })
+
+  it('keeps the pending prompt and presents a readable error when its clarification has an invalid model response', async () => {
+    const f = await fixture()
+    await f.account()
+    f.service.intent = { type: 'clarify', text: 'Which thread should receive your prompt?' }
+    const pending = await f.control.command({ type: 'utterance', text: 'Add a prompt: Keep the existing colors.' })
+    f.service.intent = { type: 'submit', threadId: 'workshop' } as unknown as AgentIntent
+    const failed = await f.control.command({ type: 'utterance', text: 'Workshop.' })
+    expect(failed.error).toContain('Sotto could not interpret')
+    expect(failed.error).not.toContain('invalid_union')
+    expect(failed.pendingRequest).toBe(pending.pendingRequest)
+    expect(failed.host.threads.every(thread => thread.messages.length === 0)).toBe(true)
+  })
+
+  it.each(['Workshop.', 'Select Workshop.', 'Open Workshop.'])('retains a spoken prompt through naming its thread (%s) and sends only after explicit confirmation', async clarification => {
+    const f = await fixture()
+    await f.account()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'select-project', projectId: 'project' })
+    f.service.intent = { type: 'clarify', text: 'Which thread should receive your prompt?' }
+    const clarified = await f.control.command({ type: 'utterance', text: 'Add a prompt to a thread: Keep the existing colors and fix the heading.' })
+    expect(clarified.pendingRequest).toContain('Keep the existing colors and fix the heading.')
+    await f.restart()
+    f.service.intent = { type: 'compose', threadId: 'workshop', text: 'Keep the existing colors and fix the heading.' }
+    const named = await f.control.command({ type: 'utterance', text: clarification })
+    expect(named.error).toBeNull()
+    expect(named).toMatchObject({ activeThreadId: 'workshop', draftThreadId: 'workshop', draft: 'Keep the existing colors and fix the heading.', composing: true, pendingRequest: '' })
+    expect(f.requests.at(-1)?.utterance).toContain(`User clarification: ${clarification}`)
+    expect(named.host.threads.every(thread => thread.messages.length === 0)).toBe(true)
+    const sent = await f.control.command({ type: 'utterance', text: 'Send it.' })
+    expect(sent.error).toBeNull()
+    expect(sent.host.threads.find(thread => thread.id === 'workshop')?.messages).toMatchObject([{ role: 'user', text: 'Keep the existing colors and fix the heading.' }])
+    expect(sent.host.threads.find(thread => thread.id === 'docs')?.messages).toEqual([])
+  })
+
   it('retains a valid spoken project request and its execution failure for a corrective folder reply', async () => {
     const f = await fixture()
     await f.account()

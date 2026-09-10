@@ -24,9 +24,13 @@ export interface VoiceCapture {
   stop(): Promise<void>
   /** Clears any partial utterance and discards microphone frames while true. */
   setSuppressed(suppressed: boolean): void
+  /** Activated speech keeps the existing dictation-like segmentation threshold. */
+  setWakeMode?(wake: boolean): void
 }
 
-// These are initial capture settings, not claims about measured wake accuracy.
+// Quiet speech needs to reach the local detector before microphone AGC settles.
+// Keep the captured waveform unchanged; detector-only gain is applied in main.
+const WAKE_RMS = 0.006
 const SPEECH_RMS = 0.012
 const PRE_ROLL_SECONDS = 0.18
 const END_SILENCE_SECONDS = 0.65
@@ -65,6 +69,7 @@ interface VoiceBrowser {
 export class BrowserVoiceCapture implements VoiceCapture {
   private session: CaptureSession | null = null
   private suppressed = false
+  private wakeMode = true
   private preRoll: Float32Array[] = []
   private preRollFrames = 0
   private chunks: Float32Array[] = []
@@ -141,6 +146,10 @@ export class BrowserVoiceCapture implements VoiceCapture {
     this.clearAudio()
   }
 
+  setWakeMode(wake: boolean): void {
+    this.wakeMode = wake
+  }
+
   private receive(input: Float32Array, sampleRate: number): void {
     const level = calculateRms(input)
     const now = Date.now()
@@ -148,7 +157,7 @@ export class BrowserVoiceCapture implements VoiceCapture {
       this.lastLevelAt = now
       this.options.onLevel?.(level)
     }
-    const voiced = level >= SPEECH_RMS
+    const voiced = level >= (this.wakeMode ? WAKE_RMS : SPEECH_RMS)
     const chunk = input.slice()
     if (this.chunks.length === 0 && !voiced) {
       this.preRoll.push(chunk)

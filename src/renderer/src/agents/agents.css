@@ -17,6 +17,13 @@
 .agent-voice span { display: block; font-size: 11px; margin-top: 3px; color: var(--tt-text-muted); }
 .agent-error, .agent-notice { margin: 0; padding: 10px 13px; border-radius: 5px; background: var(--tt-surface); border-left: 3px solid var(--tt-border); font-size: 12px; overflow-wrap: anywhere; }
 .agent-error { border-color: var(--tt-error); color: var(--tt-error); }
+.agent-voice-settings { display: grid; gap: 12px; padding-block: 16px; border-block: 1px solid var(--tt-border-faint); }
+.agent-voice-settings .agent-hint { margin: 0; }
+.agent-voice-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.agent-voice-settings progress { width: 100%; accent-color: var(--tt-activity); }
+.agent-voice-license { color: var(--tt-text-muted); font-size: 11px; }
+.agent-voice-license summary { cursor: pointer; }
+.agent-voice-license pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: inherit; line-height: 1.6; }
 .agent-workspace { display: grid; grid-template-columns: minmax(200px, 25%) minmax(0, 1fr); background: var(--tt-surface); border: 1px solid var(--tt-border-faint); border-radius: 8px; min-height: 400px; }
 .agent-threads { min-width: 0; border-right: 1px solid var(--tt-border-faint); padding: 18px 12px; }
 .agent-threads > .agent-section-title { padding: 0 4px 12px; }

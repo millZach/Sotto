@@ -73,8 +73,11 @@ const pendingReasoning = new Map<string, () => void>()
 export const e2eAgentReasoner: AgentReasoner = {
   async account(provider) {
     return { provider, label: provider === 'claude' ? 'Claude subscription' : provider === 'codex' ? 'ChatGPT subscription' : 'Grok subscription',
-      installed: true, ready: provider !== 'grok', detail: provider === 'grok' ? 'Grok subscription reasoning is not available in this build.' : 'Connected through the provider app; no API key is needed.',
-      models: provider === 'grok' ? [] : [{ id: 'fixture-model', name: 'Fixture reasoning model' }] }
+      installed: true, ready: true, detail: 'Connected through the provider app; no API key is needed.',
+      defaultModelId: 'fixture-model', models: [
+        { id: 'fixture-model', name: 'Fixture reasoning model', reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium' },
+        { id: 'fixture-alternate', name: 'Another subscription model', reasoningEfforts: ['low', 'high', 'max'] },
+      ] }
   },
   async intent(utterance) {
     if (utterance.toLowerCase().includes('create a project called clarified project')) {

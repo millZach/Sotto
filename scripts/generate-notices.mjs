@@ -191,6 +191,20 @@ const sections = licenseSections.map(([heading, text]) =>
   `## ${heading}\n\n\`\`\`text\n${text.trim()}\n\`\`\``,
 ).join('\n\n')
 
+const naturalVoiceNotice = `## Optional Supertonic natural voices
+
+AI-generated local speech uses the optional Supertonic model and ten preset voices by Supertone Inc., converted for Transformers.js by the Hugging Face ONNX community. Model weights are downloaded separately and are not included in the installer. The pinned conversion is onnx-community/Supertonic-TTS-ONNX revision cff123c84b0655d9d647641f1b532c3cbb8f7faa; exact asset hashes are recorded in src/main/agents/speechModelManifest.json.
+
+Downloading and using these voices is subject to the OpenRAIL-M license below, including Attachment A's use restrictions. Redistributed model copies must retain these notices and restrictions. Generated speech is machine-generated. The local inference path uses no paid API or subscription.
+
+Model: https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/tree/cff123c84b0655d9d647641f1b532c3cbb8f7faa
+
+License source: https://huggingface.co/Supertone/supertonic/resolve/b6856d033f622c63ea29441795be266a1133e227/LICENSE
+
+\`\`\`text
+${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
+\`\`\``
+
 const output = `# Third-Party Notices
 
 Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
@@ -216,6 +230,8 @@ Every platform derivative descends from that same original artwork: the macOS \`
 Source and legibility proof are retained in \`artifacts/design/brand/\` in the source repository. Packaged users receive only the final application artwork.
 
 ${sections}
+
+${naturalVoiceNotice}
 `
 
 await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), output, 'utf8')

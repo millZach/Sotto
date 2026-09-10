@@ -5,10 +5,14 @@ export const AGENT_COMMAND = 'sotto:agents:command'
 export const AGENT_STATE = 'sotto:agents:state'
 export const AGENT_E2E = 'sotto:e2e:agents'
 export const AGENT_SPEECH = 'sotto:agents:speech'
+export const AGENT_VOICE_MODEL = 'sotto:agents:voice-model'
 export const AGENT_WAKE = 'sotto:agents:wake'
 export const agentWakeDetectionSchema = z.object({ detected: z.boolean(), endSeconds: z.number().min(0).max(8.25) })
 export type AgentWakeDetection = z.infer<typeof agentWakeDetectionSchema>
 export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_000), mimeType: z.literal('audio/wav') })
+export const agentVoiceModelStatusSchema = z.object({ ready: z.boolean(), completedBytes: z.number().nonnegative(), totalBytes: z.number().nonnegative() })
+export type AgentVoiceModelStatus = z.infer<typeof agentVoiceModelStatusSchema>
+export const NATURAL_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
 
 const id = z.string().min(1).max(512)
 const text = z.string().max(100_000)
@@ -54,7 +58,11 @@ export const subscriptionProviderSchema = z.enum(['codex', 'claude', 'grok'])
 export type SubscriptionProvider = z.infer<typeof subscriptionProviderSchema>
 export const subscriptionAccountSchema = z.object({
   provider: subscriptionProviderSchema, label: z.string(), installed: z.boolean(), ready: z.boolean(),
-  detail: z.string(), models: z.array(z.object({ id: z.string(), name: z.string() })),
+  detail: z.string(), models: z.array(z.object({
+    id: z.string(), name: z.string(), reasoningEfforts: z.array(z.string()).optional(),
+    defaultReasoningEffort: z.string().optional(),
+  })),
+  defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),
 })
 export type SubscriptionAccount = z.infer<typeof subscriptionAccountSchema>
 export function isSubscriptionReasoning(provider: string): provider is SubscriptionProvider {
@@ -68,16 +76,19 @@ export const agentConfigurationSchema = z.object({
   defaultModelId: z.string().max(512),
   followupLimit: z.number().int().min(0).max(100),
   speak: z.boolean(),
+  speechProvider: z.enum(['natural', 'system']).default('natural'),
+  speechVoice: z.enum(NATURAL_VOICES).default('F1'),
   wakeModelDirectory: z.string().max(4_096),
   wakeRuntimeDirectory: z.string().max(4_096),
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
+  reasoningEffort: z.string().max(64).default(''),
   membershipEndpoint: z.string().max(2_048),
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   enabled: false, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', membershipEndpoint: '',
+  followupLimit: 5, speak: true, speechProvider: 'natural', speechVoice: 'F1', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
 })
 
 export const agentAssignmentSchema = z.object({
@@ -103,7 +114,7 @@ export const agentStateSchema = z.object({
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
-  speech: z.object({ id: z.number(), text: z.string() }),
+  speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ t3: z.boolean(), reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
@@ -114,12 +125,13 @@ export const agentStateSchema = z.object({
 })
 export type AgentState = z.infer<typeof agentStateSchema>
 export const agentCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial() }).strict(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['t3', 'reasoning', 'membership']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),
   z.object({ type: z.literal('refresh') }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
+  z.object({ type: z.literal('preview-voice') }).strict(),
   z.object({ type: z.literal('utterance'), text }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
@@ -146,6 +158,7 @@ export interface AgentBridge {
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>
   releaseWake?(): Promise<AgentWakeDetection>
   synthesizeSpeech?(text: string): Promise<{ audioBase64: string; mimeType: 'audio/wav' }>
+  voiceModel?(action: 'status' | 'download'): Promise<AgentVoiceModelStatus>
   get(): Promise<AgentState>
   command(command: AgentCommand): Promise<AgentState>
   onState(listener: (state: AgentState) => void): () => void

@@ -1,5 +1,7 @@
 # Sotto subscription reasoning correction
 
+This records the first subscription implementation. Its model restrictions and Grok placeholder are superseded by the [complete native model-selection follow-up](subscription-model-selection-qa.md).
+
 Acceptance checklist for the September 9, 2026 desktop correction:
 
 - [x] Reproduce the missing subscription selector with a failing renderer test.
