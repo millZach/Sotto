@@ -227,13 +227,15 @@ export function AgentView(): ReactNode {
       <div className="agent-actions">
         {state.configuration.enabled ? <><Button variant="ghost" iconOnly aria-label={agents.voice.status === 'muted' ? 'Unmute listening' : 'Mute listening'} onClick={agents.muteVoice}>{agents.voice.status === 'muted' ? <Mic size={16} /> : <MicOff size={16} />}</Button>
           <Button variant="ghost" iconOnly aria-label="Stop speech" onClick={agents.stopSpeech}><VolumeX size={16} /></Button>
-          {agents.voice.status === 'error' ? <Button variant="secondary" onClick={agents.retryVoice}>Retry voice</Button> : null}</> : null}
+          {agents.voice.status === 'error' ? (!state.configuration.wakeModelDirectory || !state.configuration.wakeRuntimeDirectory
+            ? <Button variant="secondary" onClick={() => setSettingsOpen(true)}>Set up voice</Button>
+            : <Button variant="secondary" onClick={agents.retryVoice}>Retry voice</Button>) : null}</> : null}
         <Button variant="secondary" onClick={() => void command({ type: 'configure', patch: { enabled: !state.configuration.enabled } })}>{state.configuration.enabled ? 'Turn off agent control' : 'Enable agent control'}</Button>
       </div>
     </section>
     {agents.voice.error ? <p className="agent-error" role="alert">{agents.voice.error}</p> : null}
     {state.error || agents.error ? <p className="agent-error" role="alert">{state.error ?? agents.error}</p> : null}
-    {state.notice ? <p className="agent-notice" role="status">{state.notice}</p> : null}
+    {state.notice && state.notice !== state.error ? <p className="agent-notice" role="status">{state.notice}</p> : null}
     {state.pendingRequest ? <details className="agent-notice"><summary>Pending spoken request</summary><p>{state.pendingRequest}</p><Button variant="ghost" onClick={() => void command({ type: 'cancel-request' })}>Clear request</Button></details> : null}
     {connected && !fullSupervision ? <p className="agent-notice">This connection supports limited controls. Automatic management requires reliable questions, permissions, message origins, and recovery.</p> : null}
     <div className="agent-workspace">

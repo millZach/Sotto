@@ -71,7 +71,7 @@ afterEach(() => { vi.useRealTimers() })
 describe('desktop agent voice interaction', () => {
   it('requires working local wake setup before opening the microphone', async () => {
     const h = harness()
-    h.wake.load.mockRejectedValueOnce(new Error('Wake setup required.'))
+    h.wake.load.mockRejectedValueOnce(new Error("Error invoking remote method 'sotto:agents:wake': Error: Wake setup required."))
     await h.session.start()
     expect(h.capture.start).not.toHaveBeenCalled()
     expect(h.local.load).not.toHaveBeenCalled()

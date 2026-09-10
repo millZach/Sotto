@@ -80,6 +80,13 @@ function controlWords(text: string): string {
   return text.toLocaleLowerCase('en').replace(/[\p{P}]/gu, '').replace(/\s+/g, ' ').trim()
 }
 
+function voiceFailure(error: unknown, fallback: string): string {
+  // Electron adds IPC plumbing to native errors. Keep the actionable message.
+  return error instanceof Error
+    ? error.message.replace(/^Error invoking remote method 'sotto:agents:[^']+': (?:Error: )?/u, '')
+    : fallback
+}
+
 function microphoneFailure(error: unknown): string {
   const name = typeof error === 'object' && error !== null && 'name' in error ? error.name : ''
   if (name === 'NotAllowedError' || name === 'SecurityError') {
@@ -88,7 +95,7 @@ function microphoneFailure(error: unknown): string {
   if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError') {
     return 'The selected microphone is unavailable. Choose an available microphone, then retry.'
   }
-  return error instanceof Error ? error.message : 'Local voice input is unavailable. Retry to reconnect.'
+  return voiceFailure(error, 'Local voice input is unavailable. Retry to reconnect.')
 }
 
 /**
@@ -199,7 +206,7 @@ export class AgentVoiceSession {
         await this.dependencies.speech.speak(text)
       } catch (error: unknown) {
         if (generation === this.speechGeneration) {
-          this.error = error instanceof Error ? error.message : 'Spoken reply is unavailable. Read it in the widget.'
+          this.error = voiceFailure(error, 'Spoken reply is unavailable. Read it in the widget.')
           this.publish()
         }
       }
@@ -349,7 +356,7 @@ export class AgentVoiceSession {
           await this.receiveText(result.text, activated)
         } catch (error: unknown) {
           if (pending.generation !== this.audioGeneration) continue
-          this.error = error instanceof Error ? error.message : 'Local voice transcription failed. Retry to reconnect.'
+          this.error = voiceFailure(error, 'Local voice transcription failed. Retry to reconnect.')
           await this.releaseCapture()
           this.publish()
           return

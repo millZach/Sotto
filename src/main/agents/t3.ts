@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access } from 'node:fs/promises'
+import { access, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -449,7 +449,10 @@ export class T3CodeHost implements AgentHost {
       const executable = process.platform === 'win32' ? join(root, 'T3 Code (Alpha).exe') : join(root, 'MacOS', 'T3 Code')
       const resources = process.platform === 'win32' ? join(root, 'resources') : join(root, 'Resources')
       const bin = join(resources, 'server.asar', 'apps', 'server', 'dist', 'bin.mjs')
-      try { await access(executable); await access(join(resources, 'server.asar')) } catch { continue }
+      // Electron treats access(archive.asar) as an entry lookup at an empty
+      // archive path and reports ENOENT. stat works for the archive in both
+      // Electron and ordinary Node, which also runs the compatibility probe.
+      try { await access(executable); await stat(join(resources, 'server.asar')) } catch { continue }
       try {
         const { stdout } = await execFileAsync(executable, [bin, 'auth', 'pairing', 'create', '--base-dir', join(homedir(), '.t3'),
           '--label', this.options.clientLabel ?? 'Sotto agent control', '--ttl', '5m', '--json'], {

@@ -10,6 +10,7 @@ export class E2EAgentHost implements AgentHost {
   private readonly commands = new Set<string>()
   private uncertain = false
   private rejection: string | null = null
+  private connectRejection: string | null = null
   private state: AgentHostSnapshot = {
     ...structuredClone(EMPTY_AGENT_HOST), version: '0.0.38',
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
@@ -17,7 +18,15 @@ export class E2EAgentHost implements AgentHost {
     projects: [{ id: 'project', title: 'Sotto test', path: 'C:/sotto-test' }],
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
   }
-  async connect(): Promise<AgentHostSnapshot> { this.state.connected = true; return this.snapshot() }
+  async connect(): Promise<AgentHostSnapshot> {
+    if (this.connectRejection !== null) {
+      const message = this.connectRejection
+      this.connectRejection = null
+      throw new Error(message)
+    }
+    this.state.connected = true
+    return this.snapshot()
+  }
   async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.state) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   disconnect(): void { this.state.connected = false }
@@ -46,6 +55,7 @@ export class E2EAgentHost implements AgentHost {
     return { accepted: true }
   }
   event(event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]): void {
+    if (event.type === 'connect-reject') { this.connectRejection = event.text; return }
     if (event.type === 'uncertain') { this.uncertain = true; return }
     if (event.type === 'reject') { this.rejection = event.text; return }
     if (event.type === 'reasoner-release') { pendingReasoning.get(event.threadId)?.(); pendingReasoning.delete(event.threadId); return }

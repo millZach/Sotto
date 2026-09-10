@@ -88,3 +88,5 @@ These gates prevent calling issue 9 a completed paid production release. The [se
 ## Final delivery
 
 Local delivery consists of the implementation commit on `main`, this evidence record, the setup guide and the verified unpacked Windows build at `release/win-unpacked/Sotto.exe`. The package smoke opened no microphone. No installer was produced, and no push, publication, deployment or issue closure was performed. The remaining release gates above are still open.
+
+The first normal development launch subsequently exposed an Electron-specific T3 discovery defect. See the [startup correction](issue-9-startup-fix.md) for the reproduction, regression tests and verified live connection/wake startup. That correction is in source and the running development app; the packaged build above predates it.

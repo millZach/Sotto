@@ -193,11 +193,16 @@ export class AgentControl {
       case 'connect': {
         this.state.connection = 'connecting'; this.publish()
         this.observe()
-        const snapshot = await this.dependencies.host.connect({ endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') })
-        this.acceptSnapshot(snapshot)
-        if (!snapshot.connected) throw new Error('T3 did not confirm the connection.')
-        this.state.configuration.enabled = true
-        this.say('T3 Code connected')
+        try {
+          const snapshot = await this.dependencies.host.connect({ endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') })
+          this.acceptSnapshot(snapshot)
+          if (!snapshot.connected) throw new Error('T3 did not confirm the connection.')
+          this.state.configuration.enabled = true
+          this.say('T3 Code connected')
+        } catch (error) {
+          this.disconnect()
+          throw error
+        }
         return
       }
       case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected. T3 work continues.'); return
