@@ -1,13 +1,13 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { clockLabel, describeThreads, groupThreads, listThreads, providerKey, startedLabel, threadCounts } from '../../../src/renderer/src/agents/threadFacts'
+import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -37,7 +37,7 @@ function stateFixture(): AgentState {
 }
 
 function connection(state: AgentState | null, command = vi.fn(async () => state)): ReturnType<typeof useAgents> {
-  return { state, command, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn() }
+  return { state, command, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } }
 }
 
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
@@ -47,28 +47,16 @@ function renderThreads(state: AgentState | null, command = vi.fn(async () => sta
   return { ...view, command, onOpenAgents }
 }
 
-const row = (title: string): HTMLElement => {
-  const article = screen.getByRole('button', { name: title }).closest('article')
-  if (article === null) throw new Error(`No row for ${title}`)
-  return article
-}
-
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(cleanup)
 
 describe('thread grouping and states from Sotto state', () => {
-  it('groups by needs you, running, finished today and earlier days, newest first', () => {
-    const state = stateFixture()
-    const groups = groupThreads(describeThreads(state, NOW), NOW)
+  it('groups explicit settled work separately from open idle and running threads', () => {
+    const groups = groupThreads(describeThreads(stateFixture(), NOW), NOW)
     expect(groups.map(group => [group.label, group.rows.map(entry => entry.thread.title)])).toEqual([
-      ['Needs you', ['Visual gate flake']],
-      ['Running', ['Footer links', 'Weekly note']],
-      ['Finished today', ['Release notes 1.4', 'Grok voice previews']],
-      ['Yesterday', ['Streaming WAV stall', 'Thread routing']],
-      [new Date(Date.UTC(2026, 6, 9, 15, 24)).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }), ['Notes cleanup']],
-      [new Date(Date.UTC(2026, 6, 8, 17, 44)).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }), ['Benchmark rerun']],
+      ['Unsettled', ['Visual gate flake', 'Footer links', 'Weekly note', 'Grok voice previews', 'Streaming WAV stall']],
+      ['Settled', ['Release notes 1.4', 'Thread routing', 'Notes cleanup', 'Benchmark rerun']],
     ])
-    expect(threadCounts(describeThreads(state, NOW), NOW)).toEqual({ active: 3, week: 9 })
   })
 
   it('derives the state of a row from the queue, the assignment and the thread status, never from the provider', () => {
@@ -80,7 +68,7 @@ describe('thread grouping and states from Sotto state', () => {
     expect(byTitle('Footer links')).toMatchObject({ state: 'working', stateLabel: 'Working', provider: 'Codex', providerKey: 'codex', attention: false })
     expect(byTitle('Streaming WAV stall')).toMatchObject({ state: 'stopped', stateLabel: 'Stopped', management: 'stopped' })
     expect(byTitle('Streaming WAV stall').sentence).toMatch(/^Stopped at the follow-up limit\./u)
-    expect(byTitle('Release notes 1.4')).toMatchObject({ state: 'done', stateLabel: 'Done' })
+    expect(byTitle('Release notes 1.4')).toMatchObject({ state: 'done', stateLabel: 'Settled' })
     expect(byTitle('Notes cleanup')).toMatchObject({ state: 'done', management: 'none', assignment: undefined, providerKey: 'grok' })
     // The card under an open row is your side of the thread: the sentence already carries the provider's.
     expect(byTitle('Weekly note').lastMessage).toMatchObject({ who: 'Sotto', text: expect.stringMatching(/^It is Friday\./u) })
@@ -131,8 +119,17 @@ describe('thread grouping and states from Sotto state', () => {
     expect(listThreads(rows, '  ').listed).toHaveLength(9)
   })
 
+  it('says in the footer how many threads Sotto is looking after and how to talk to them', () => {
+    expect(lookingAfterSentence(3)).toBe('Sotto is looking after 3 threads. Say “Hey Sotto” to talk to any of them.')
+    expect(lookingAfterSentence(1)).toBe('Sotto is looking after 1 thread. Say “Hey Sotto” to talk to it.')
+    expect(lookingAfterSentence(0)).toBe('Nothing is running. Say “Hey Sotto” to start a thread.')
+    const running = stateFixture().host.threads.filter(thread => thread.status === 'running').length
+    expect(lookingAfterSentence(running)).toMatch(/^Sotto is looking after 3 threads\./u)
+  })
+
   it('treats a blocked queue item as needing you and a user pause as paused, and a manual assignment as yours', () => {
     const state = stateFixture()
+    state.host.threads.find(thread => thread.id === 'release-notes')!.settledOverride = 'active'
     state.queue.push({ id: 'release-notes:release-notes-2:blocked', threadId: 'release-notes', kind: 'blocked', text: 'Scope changed. Decide whether to keep going.', createdAt: new Date(NOW).toISOString(), deferred: false })
     const paused = state.assignments.find(entry => entry.threadId === 'grok-previews')!
     paused.paused = true
@@ -145,157 +142,165 @@ describe('thread grouping and states from Sotto state', () => {
   })
 })
 
-describe('ThreadsView', () => {
-  it('renders the groups, rows and header counts from the mockup', () => {
-    renderThreads(stateFixture())
-    expect(screen.getByRole('heading', { name: 'Threads' })).toBeInTheDocument()
-    expect(screen.getByText('3 active, 9 this week')).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent)).toEqual(expect.arrayContaining(['Needs you', 'Running', 'Finished today', 'Yesterday']))
-    const visual = row('Visual gate flake')
-    expect(within(visual).getByText('Claude, in workshop')).toBeInTheDocument()
-    expect(within(visual).getByText('Waiting on you')).toBeInTheDocument()
-    expect(within(visual).getByText(clockLabel(Date.UTC(2026, 6, 12, 19, 41)))).toBeInTheDocument()
-    expect(within(visual).getByText(/Found the cause\./u)).toBeInTheDocument()
-    expect(within(row('Footer links')).getByText('2 min')).toBeInTheDocument()
-    expect(within(row('Streaming WAV stall')).getByText('Stopped')).toBeInTheDocument()
-    // Provider badges carry their tint key; Done rows have no status dot, the other states keep theirs.
-    expect(visual.querySelector('.thread-row__agent')).toHaveAttribute('data-provider', 'claude')
-    expect(row('Footer links').querySelector('.thread-row__agent')).toHaveAttribute('data-provider', 'codex')
-    expect(row('Weekly note').querySelector('.thread-row__agent')).toHaveAttribute('data-provider', 'grok')
-    expect(row('Release notes 1.4').querySelector('.thread-row__state i')).toBeNull()
-    expect(visual.querySelector('.thread-row__state i')).not.toBeNull()
-    expect(row('Footer links').querySelector('.thread-row__state i')).not.toBeNull()
-    expect(row('Streaming WAV stall').querySelector('.thread-row__state i')).not.toBeNull()
+describe('ThreadsView workspace', () => {
+  for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'replacement images preserved' : 'the unchanged draft cleared'}`, async () => {
+    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    state.host.models.forEach(model => { model.supportsImages = true })
+    let draftId = ''
+    const command = vi.fn(async (...args: unknown[]) => {
+      const request = args[0] as AgentCommand
+      if (request.type === 'manual-send') draftId = request.draftId!
+      return { ...state, error: 'Delivery not yet confirmed' }
+    })
+    const { rerender } = renderThreads(state, command)
+    const imageFile = () => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'same-name.png', { type: 'image/png' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Review this' } })
+    fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
+    await screen.findByRole('img', { name: 'same-name.png' })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    if (edited) {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove same-name.png' }))
+      fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
+      await screen.findByRole('img', { name: 'same-name.png' })
+    }
+    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'Review this' : ''))
+    expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
+    expect(command).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the empty state with a way to start a thread when Sotto knows no threads', () => {
+  it('shows loading and retry states instead of describing unfetched history as empty', () => {
     const state = stateFixture()
-    state.host.threads = []
-    state.assignments = []
-    state.queue = []
-    const { onOpenAgents } = renderThreads(state)
-    expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeInTheDocument()
-    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
-    expect(screen.getByText(/The provider keeps every thread/u)).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/workshop/u)
-    fireEvent.click(screen.getByRole('button', { name: 'New thread' }))
-    expect(onOpenAgents).toHaveBeenCalledTimes(1)
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    thread.messages = []; thread.historyStatus = 'loading'
+    const { rerender, command } = renderThreads(state)
+    expect(screen.getByRole('status')).toHaveTextContent('Loading messages')
+    expect(screen.queryByText('What is next for this thread?')).not.toBeInTheDocument()
+    thread.historyStatus = 'error'; thread.historyError = 'Connection interrupted'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading messages' }))
+    expect(command).toHaveBeenCalledWith({ type: 'refresh' })
   })
 
-  it('searches the whole row, keeps the Needs you group listed, and explains when nothing matches', () => {
-    const { command } = renderThreads(stateFixture())
-    const search = screen.getByRole('searchbox', { name: 'Search threads' })
-    fireEvent.change(search, { target: { value: 'sotto-site' } })
-    expect(screen.getByRole('button', { name: 'Footer links' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Visual gate flake' })).toBeInTheDocument()
-    expect(screen.getByText('1 of 9')).toBeInTheDocument()
-    expect(screen.getByText('Needs you')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Release notes 1.4' })).not.toBeInTheDocument()
-    fireEvent.change(search, { target: { value: '  GROK ' } })
-    expect(screen.getByRole('button', { name: 'Weekly note' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Grok voice previews' })).toBeInTheDocument()
-    fireEvent.change(search, { target: { value: 'deploy' } })
-    expect(screen.getByRole('heading', { name: 'Nothing matches “deploy”.' })).toBeInTheDocument()
-    expect(screen.getByText('0 of 9')).toBeInTheDocument()
-    // The attention queue stays above the empty result, with its answers.
-    const ask = screen.getByLabelText('Permission request for Visual gate flake')
-    expect(within(ask).getByRole('button', { name: 'Allow' })).toBeInTheDocument()
-    expect(within(ask).getByRole('button', { name: 'Deny' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
-    expect(search).toHaveValue('')
-    expect(screen.getByText('3 active, 9 this week')).toBeInTheDocument()
-    expect(command).not.toHaveBeenCalled()
-  })
-
-  it('answers the queue item inline: Allow approves, Deny declines, nothing else ever answers', () => {
-    const { command } = renderThreads(stateFixture())
-    const ask = screen.getByLabelText('Permission request for Visual gate flake')
-    expect(within(ask).getByText('Run a command in workshop')).toBeInTheDocument()
-    expect(within(ask).getByText('npm test -- --run tests/unit/agents')).toBeInTheDocument()
-    expect(within(ask).getByText('Say “allow” or “deny”, or choose here.')).toBeInTheDocument()
-    // Opening, closing and searching around the request are not answers.
-    fireEvent.click(row('Visual gate flake'))
-    fireEvent.click(row('Visual gate flake'))
-    fireEvent.click(screen.getByRole('button', { name: 'Visual gate flake' }))
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: 'visual' } })
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: '' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Footer links' }))
-    expect(command).not.toHaveBeenCalled()
-    fireEvent.click(within(ask).getByRole('button', { name: 'Deny' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Denied', approved: false })
-    fireEvent.click(within(ask).getByRole('button', { name: 'Allow' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Approved', approved: true })
-    expect(command.mock.calls.every(([call]) => call.type === 'answer' && call.approved !== undefined)).toBe(true)
-  })
-
-  it('sends a question to the Agents room for a typed or spoken answer instead of approving anything', () => {
+  it('bounds initial transcript rendering and reveals earlier messages on request', () => {
     const state = stateFixture()
-    state.queue = [{ id: 'footer-links:q:question', threadId: 'footer-links', kind: 'question', text: 'Keep the old docs path as a redirect?', requestId: 'footer-question', createdAt: new Date(NOW).toISOString(), deferred: false }]
-    const { command, onOpenAgents } = renderThreads(state)
-    const ask = screen.getByLabelText('Question from Footer links')
-    expect(within(ask).getByText('Keep the old docs path as a redirect?')).toBeInTheDocument()
-    expect(within(ask).queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument()
-    fireEvent.click(within(ask).getByRole('button', { name: 'Answer in Agents' }))
-    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'footer-links' })
-    expect(onOpenAgents).toHaveBeenCalledTimes(1)
-    expect(command.mock.calls.some(([call]) => call.type === 'answer')).toBe(false)
-  })
-
-  it('opens a row in place with how it started, who is managing, follow-ups, the last message and its controls', () => {
-    const { command, onOpenAgents } = renderThreads(stateFixture())
-    fireEvent.click(screen.getByRole('button', { name: 'Visual gate flake' }))
-    const open = row('Visual gate flake')
-    expect(open).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('button', { name: 'Visual gate flake' })).toHaveAttribute('aria-expanded', 'true')
-    expect(within(open).getByText(`Started ${clockLabel(Date.UTC(2026, 6, 12, 19, 32))} from a voice prompt.`)).toBeInTheDocument()
-    expect(within(open).getByText(/Sotto is managing it, 2 of 5 follow-ups used\. Sonnet 4\.5 from Claude\./u)).toBeInTheDocument()
-    expect(within(open).getByText(`You, ${clockLabel(Date.UTC(2026, 6, 12, 19, 32))}`)).toBeInTheDocument()
-    expect(within(open.querySelector('.thread-row__recent') as HTMLElement).getByText(/Find why the visual gate flakes/u)).toBeInTheDocument()
-    expect(within(open).getAllByText(/Found the cause\./u)).toHaveLength(1)
-    fireEvent.click(within(open).getByRole('button', { name: 'Pause managing' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'pause', threadId: 'visual-gate' })
-    fireEvent.click(within(open).getByRole('button', { name: 'Stop managing' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'unassign', threadId: 'visual-gate' })
-    fireEvent.click(within(open).getByRole('button', { name: 'Open transcript' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'select-thread', threadId: 'visual-gate' })
-    expect(onOpenAgents).toHaveBeenCalledTimes(1)
-    // Only one row is open at a time; clicking the open row's body closes it.
-    fireEvent.click(screen.getByRole('button', { name: 'Footer links' }))
-    expect(row('Visual gate flake')).not.toHaveAttribute('aria-current')
-    expect(row('Footer links')).toHaveAttribute('aria-current', 'true')
-    fireEvent.click(row('Footer links').querySelector('.thread-row__now') as HTMLElement)
-    expect(row('Footer links')).not.toHaveAttribute('aria-current')
-  })
-
-  it('says plainly when Sotto stopped at the follow-up limit and offers Resume managing', () => {
-    const { command } = renderThreads(stateFixture())
-    fireEvent.click(screen.getByRole('button', { name: 'Streaming WAV stall' }))
-    const open = row('Streaming WAV stall')
-    expect(within(open).getByText(`Started ${startedLabel(Date.UTC(2026, 6, 11, 15, 40), NOW)} from a voice prompt.`)).toBeInTheDocument()
-    expect(within(open).getByText(/Sotto stopped it at the follow-up limit, 5 of 5 follow-ups used\./u)).toBeInTheDocument()
-    expect(within(open).queryByRole('button', { name: 'Pause managing' })).not.toBeInTheDocument()
-    fireEvent.click(within(open).getByRole('button', { name: 'Resume managing' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'resume', threadId: 'wav-stall' })
-  })
-
-  it('offers Manage for a thread Sotto is not managing and no Stop managing', () => {
-    const { command } = renderThreads(stateFixture())
-    fireEvent.click(screen.getByRole('button', { name: 'Notes cleanup' }))
-    const open = row('Notes cleanup')
-    expect(within(open).getByText(/Sotto is not managing this thread\./u)).toBeInTheDocument()
-    expect(within(open).queryByRole('button', { name: 'Stop managing' })).not.toBeInTheDocument()
-    fireEvent.click(within(open).getByRole('button', { name: 'Manage' }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'assign', threadId: 'notes-cleanup' })
-  })
-
-  it('disables the decision and management controls while a command is in flight', () => {
-    const state = stateFixture()
-    state.busy = true
+    state.host.threads.find(item => item.id === state.activeThreadId)!.messages = Array.from({ length: 100 }, (_, index) => ({ id: `message-${index}`, role: 'assistant', text: `History item ${index}`, createdAt: new Date(NOW).toISOString() }))
     renderThreads(state)
-    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Footer links' }))
-    expect(screen.getByRole('button', { name: 'Pause managing' })).toBeDisabled()
+    expect(screen.queryByText('History item 0', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getByText('History item 99', { exact: true })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (20)' }))
+    expect(screen.getByText('History item 0', { exact: true })).toBeVisible()
+  })
+
+  it('submits provider model, reasoning, and permissions from the thread controls', async () => {
+    const state = stateFixture()
+    state.activeThreadId = 'grok-previews'
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    thread.status = 'idle'; thread.requests = []
+    state.host.capabilities.configureThread = true
+    state.host.models = [{ id: thread.modelId, provider: 'Grok', name: 'Current', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }, { id: 'alternate', name: 'Alternate', provider: 'Codex', ready: true }]
+    const { command } = renderThreads(state)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
+    fireEvent.click(screen.getByRole('option', { name: 'Alternate' }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
+    expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Thread reasoning' }), { target: { value: 'high' } })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
+    expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, reasoningEffort: 'high' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Thread permissions' }), { target: { value: 'full-access' } })
+    await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, runtimeMode: 'full-access' }))
+  })
+
+  it('lists open work and expands settled history without changing its lifecycle', async () => {
+    const state = stateFixture()
+    const { command, rerender } = renderThreads(state)
+    expect(screen.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Footer links', exact: true })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Release notes 1.4', exact: true })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Settled 4/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Release notes 1.4', exact: true }))
+    state.activeThreadId = 'release-notes'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    await screen.findByRole('heading', { name: 'Release notes 1.4', exact: true })
+    expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Release notes are in the draft release.')
+    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'select-thread', threadId: 'release-notes' })
+    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+  })
+
+  it('follows the coordinator selection and protects a saved draft from another thread', () => {
+    const state = stateFixture()
+    const view = renderThreads(state)
+    state.activeThreadId = 'footer-links'
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('heading', { name: 'Footer links', exact: true })).toBeVisible()
+    state.draft = 'Bound to the first thread'; state.draftThreadId = 'visual-gate'
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.queryByRole('textbox', { name: 'Prompt', exact: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open draft thread', exact: true })).toBeVisible()
+  })
+
+  it('retains an edited manual prompt when a retry only reconciles an earlier action', async () => {
+    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const { command } = renderThreads(state)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'An edited unsent prompt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt', exact: true }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled())
+    expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'An edited unsent prompt' })
+    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('An edited unsent prompt')
+  })
+
+  it('offers New thread without submitting or assigning any work', () => {
+    const { command, onOpenAgents } = renderThreads(stateFixture())
+    fireEvent.click(screen.getByRole('button', { name: 'New thread', exact: true }))
+    expect(onOpenAgents).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'New thread' })).toBeVisible()
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('shows an empty workspace and a way to create a thread', () => {
+    const state = stateFixture(); state.host.threads = []; state.queue = []
+    renderThreads(state)
+    expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Unsettled', exact: true })).toHaveTextContent('All caught up.')
+  })
+
+  it('searches settled history while preserving live attention in the sidebar', () => {
+    renderThreads(stateFixture())
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: 'codex' } })
+    expect(screen.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Weekly note', exact: true })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: 'not-found' } })
+    expect(screen.getByText('Nothing matches "not-found".')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
+  })
+
+  it('keeps permission decisions explicit and disables them while busy', () => {
+    const state = stateFixture()
+    const { command, rerender } = renderThreads(state)
+    fireEvent.click(screen.getByRole('button', { name: 'Allow', exact: true }))
+    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Approved', approved: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Deny', exact: true }))
+    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Denied', approved: false })
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, busy: true }, command))
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause managing', exact: true })).toBeDisabled()
+  })
+
+  it('writes an answer in the selected workspace without changing pages', () => {
+    const state = stateFixture()
+    state.assignments = []
+    state.queue[0] = { ...state.queue[0]!, kind: 'question', text: 'Which direction?' }
+    const { command, onOpenAgents } = renderThreads(state)
+    fireEvent.click(screen.getByRole('button', { name: 'Write an answer', exact: true }))
+    expect(screen.getByRole('textbox', { name: 'Your answer', exact: true })).toHaveFocus()
+    expect(command).not.toHaveBeenCalled()
+    expect(onOpenAgents).not.toHaveBeenCalled()
   })
 })
 

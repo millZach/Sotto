@@ -13,7 +13,7 @@ describe('HelpView', () => {
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" />)
     expect(screen.getByRole('heading', { level: 1, name: 'Help' })).toBeVisible()
     expect(screen.getByText(/press escape to cancel/i)).toBeVisible()
-    expect(screen.getByText(/speech and transcripts stay on this computer/i)).toBeVisible()
+    expect(screen.getByText(/local dictation keeps audio and transcripts on this computer/i)).toBeVisible()
     expect(screen.getByText(/ip address and request time/i)).toBeVisible()
     expect(screen.getByText(copy.helpMicrophoneAccess)).toBeVisible()
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()

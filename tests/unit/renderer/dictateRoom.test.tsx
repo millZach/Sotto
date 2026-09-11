@@ -152,16 +152,21 @@ describe('DictateRoom', () => {
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()
   })
 
-  it('draws the hero wave with a resting hump, then answers the microphone level', () => {
+  it('shares the widget speaking gate and seven-bar animation, settling after silence', () => {
+    vi.useFakeTimers()
     const rendered = render(<DictateRoom {...baseProps} />)
     const resting = barHeights(rendered.container)
     expect(resting).toHaveLength(7)
     expect(resting[3]!).toBeGreaterThan(resting[0]!)
     expect(resting[0]).toBe(14)
     rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'listening', sessionId: 'one', startedAt: 0, level: 1 }} />)
-    const loud = barHeights(rendered.container)
-    expect(loud[3]).toBe(130)
-    expect(loud[3]!).toBeGreaterThan(resting[3]!)
+    const bars = screen.getByTestId('listening-bars')
+    expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 }} />)
+    expect(bars).toHaveAttribute('data-speaking', 'true')
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(bars).not.toHaveAttribute('data-speaking')
   })
 
   it('keeps the hero geometry, the sentence scale, and the reduced-motion wave override in the stylesheet', () => {

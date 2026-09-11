@@ -80,11 +80,12 @@ describe('SettingsView', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     for (const name of [
       'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
-      'Maximum recording time', 'Sound cues', 'Language', 'Whitespace formatting',
+      'Sound cues', 'Language', 'Whitespace formatting',
       'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
       copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history', 'History retention',
     ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === copy.settingsLaunchAtStartupLabel || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
+    expect(screen.getByRole('radiogroup', { name: 'Maximum recording time' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeDisabled()
   })
@@ -178,7 +179,7 @@ describe('SettingsView', () => {
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })
     await user.clear(input)
     await user.type(input, 'Ctrl+Alt+Space')
-    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+    await user.tab()
     expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+Space')
     expect(input).toHaveValue('Ctrl+Shift+Space')
     expect(screen.getByRole('alert')).toHaveTextContent(/another application is already using/i)
@@ -194,7 +195,7 @@ describe('SettingsView', () => {
     expect(input).not.toHaveValue(expect.stringContaining('CommandOrControl'))
     await user.clear(input)
     await user.type(input, 'Ctrl+Alt+M')
-    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+    await user.tab()
 
     expect(replace).toHaveBeenCalledWith('CommandOrControl+Alt+M')
   })
@@ -208,7 +209,7 @@ describe('SettingsView', () => {
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })
     await user.clear(input)
     await user.type(input, 'Ctrl+Alt+Space')
-    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+    await user.tab()
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, hotkey: 'Ctrl+Shift+M' }} />)
     resolve({ ok: false, reason: 'conflict' })
     await waitFor(() => expect(input).toHaveValue('Ctrl+Shift+M'))
@@ -222,7 +223,7 @@ describe('SettingsView', () => {
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })
     await user.clear(input)
     await user.type(input, 'Ctrl+Alt+Space')
-    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+    await user.tab()
     await user.clear(input)
     await user.type(input, 'Ctrl+Shift+N')
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, hotkey: 'Ctrl+Alt+Space' }} />)
@@ -240,13 +241,13 @@ describe('SettingsView', () => {
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '49')
-    await user.click(screen.getByRole('button', { name: /save paste delay/i }))
+    await user.tab()
     expect(update).not.toHaveBeenCalledWith({ pasteDelayMs: 49 })
     expect(screen.getByText(/between 50 and 1000/i)).toBeVisible()
     const duration = screen.getByRole('textbox', { name: 'Success message duration' })
     await user.clear(duration)
     await user.type(duration, 'not a number')
-    await user.click(screen.getByRole('button', { name: /save success duration/i }))
+    await user.tab()
     expect(update).not.toHaveBeenCalled()
   })
 
@@ -259,7 +260,7 @@ describe('SettingsView', () => {
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '300')
-    await user.click(screen.getByRole('button', { name: /save paste delay/i }))
+    await user.tab()
     await user.clear(delay)
     await user.type(delay, '450')
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, pasteDelayMs: 300 }} />)
@@ -279,7 +280,7 @@ describe('SettingsView', () => {
     const duration = screen.getByRole('textbox', { name: 'Success message duration' })
     await user.clear(duration)
     await user.type(duration, '1500')
-    await user.click(screen.getByRole('button', { name: /save success duration/i }))
+    await user.tab()
     await user.clear(duration)
     await user.type(duration, '2200')
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, successDisplayMs: 1500 }} />)
@@ -484,7 +485,7 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Maximum recording time' }), '120')
+    await user.click(screen.getByRole('radio', { name: '2 min' }))
     await user.click(screen.getByRole('switch', { name: 'Sound cues' }))
     await user.click(screen.getByRole('switch', { name: 'Whitespace formatting' }))
     await user.click(screen.getByRole('switch', { name: 'Start minimized' }))
@@ -504,7 +505,7 @@ describe('SettingsView', () => {
     render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckRemoteAsr: check })} />)
 
     await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
-    await user.click(screen.getByRole('button', { name: /save and test/i }))
+    await user.click(screen.getByRole('button', { name: /test connection/i }))
 
     expect(update).toHaveBeenCalledWith({ remoteAsrUrl: 'forge.local:5092' })
     expect(check).toHaveBeenCalledOnce()
@@ -517,7 +518,7 @@ describe('SettingsView', () => {
     render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
 
     await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
-    await user.click(screen.getByRole('button', { name: /save and test/i }))
+    await user.click(screen.getByRole('button', { name: /test connection/i }))
 
     expect(await screen.findByText(/did not answer/i)).toBeVisible()
   })
@@ -527,7 +528,7 @@ describe('SettingsView', () => {
     const check = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
 
-    await user.click(screen.getByRole('button', { name: /save and test/i }))
+    await user.click(screen.getByRole('button', { name: /test connection/i }))
 
     expect(check).not.toHaveBeenCalled()
     expect(await screen.findByText('Enter a server address first.')).toBeVisible()
@@ -622,7 +623,7 @@ describe('SettingsView', () => {
     expect(input).toHaveValue('Command+Shift+Space')
     await user.clear(input)
     await user.type(input, 'Control+Shift+Space')
-    await user.click(screen.getByRole('button', { name: /apply shortcut/i }))
+    await user.tab()
 
     expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
   })

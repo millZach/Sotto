@@ -117,6 +117,14 @@ export function designThreadsFixture(): DesignThreadsFixture {
       message('notes-cleanup-2', 'assistant', -3, 15, 24, 'Removed nine empty daily notes and left everything with content untouched.'),
     ]),
   ]
+  // Explicit provider lifecycle facts: idle work can stay open until the user settles it.
+  for (const entry of threads) {
+    entry.updatedAt = entry.messages.at(-1)?.createdAt
+    if (['release-notes', 'thread-routing', 'benchmark', 'notes-cleanup'].includes(entry.id)) {
+      entry.settledOverride = 'settled'
+      entry.settledAt = entry.updatedAt
+    }
+  }
   const ids = (threadId: string): string[] => threads.find(entry => entry.id === threadId)?.messages.map(entry => entry.id) ?? []
   return {
     models: [

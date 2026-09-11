@@ -14,8 +14,8 @@ const WORK_AREA = { x: 1_000, y: 100, width: 1_200, height: 900 } as const
 const INSET = 16
 
 const EXPECTED_SIZES = {
-  'agents-compact': { horizontal: { width: 320, height: 72 }, vertical: { width: 320, height: 72 } },
-  'agents-expanded': { horizontal: { width: 420, height: 560 }, vertical: { width: 420, height: 560 } },
+  'pill-controls': { horizontal: { width: 320, height: 88 }, vertical: { width: 88, height: 320 } },
+  'threads-expanded': { horizontal: { width: 420, height: 560 }, vertical: { width: 420, height: 560 } },
   'idle-resting': {
     horizontal: { width: 124, height: 54 },
     vertical: { width: 54, height: 124 },
@@ -32,8 +32,8 @@ const EXPECTED_SIZES = {
 
 const EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 const PRESENTATIONS: readonly WidgetPresentation[] = [
-  'agents-compact',
-  'agents-expanded',
+  'pill-controls',
+  'threads-expanded',
   'idle-resting',
   'idle-hovered',
   'active',
@@ -53,13 +53,13 @@ describe('widget presentation geometry', () => {
 
   it('centers every presentation 16 DIPs inside all four work-area edges', () => {
     const expectedBounds: Record<WidgetPresentation, Record<WidgetEdge, object>> = {
-      'agents-compact': {
-        top: { x: 1440, y: 116, width: 320, height: 72 },
-        bottom: { x: 1440, y: 912, width: 320, height: 72 },
-        left: { x: 1016, y: 514, width: 320, height: 72 },
-        right: { x: 1864, y: 514, width: 320, height: 72 },
+      'pill-controls': {
+        top: { x: 1440, y: 116, width: 320, height: 88 },
+        bottom: { x: 1440, y: 896, width: 320, height: 88 },
+        left: { x: 1016, y: 390, width: 88, height: 320 },
+        right: { x: 2096, y: 390, width: 88, height: 320 },
       },
-      'agents-expanded': {
+      'threads-expanded': {
         top: { x: 1390, y: 116, width: 420, height: 560 },
         bottom: { x: 1390, y: 424, width: 420, height: 560 },
         left: { x: 1016, y: 270, width: 420, height: 560 },

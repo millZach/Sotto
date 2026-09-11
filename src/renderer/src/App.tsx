@@ -6,7 +6,7 @@ import { AppShell } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
-import { HistoryView } from './features/history/HistoryView'
+import { HistoryFooter, HistoryView } from './features/history/HistoryView'
 import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
 import { UpdateBanner } from './features/updates/UpdateBanner'
 import { updatePromptKey } from './features/updates/updatePrompt'
@@ -21,8 +21,9 @@ import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider, useAgents } from './agents/AgentContext'
 import { MODEL_CATALOG } from '../../shared/modelCatalog'
 import { languageLabel } from './languages'
-import { AgentView } from './agents/AgentView'
+import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadsView } from './agents/ThreadsView'
+import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 
 const recoveryMessages = {
@@ -53,12 +54,9 @@ function FooterStatus({ navigation, settings }: {
 }): ReactNode {
   const agents = useAgents()
   switch (navigation) {
-    case 'agents':
-    case 'threads': {
-      const running = agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0
-      if (running === 0) return 'Nothing is running.'
-      return `Sotto is looking after ${running} ${running === 1 ? 'thread' : 'threads'}.`
-    }
+    case 'agents': return <AgentAppearance />
+    case 'threads':
+      return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
     case 'history': return settings.historyEnabled ? 'Kept on this computer only. Nothing leaves it.' : 'History is off.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
@@ -83,6 +81,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const [modelState, setModelState] = useState<OnboardingModelState>('checking')
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | undefined>()
   const [historyQuery, setHistoryQuery] = useState('')
+  const [historyClearOpen, setHistoryClearOpen] = useState(false)
+  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | null>(null)
+  const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
   const microphoneMountedRef = useRef(false)
@@ -95,6 +96,22 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   useEffect(() => {
     applyDocumentPreferences(app.settings)
   }, [app.settings])
+
+  useEffect(() => {
+    const search = (event: KeyboardEvent): void => {
+      if (!app.settings?.onboardingComplete || document.querySelector('dialog[open], [role="dialog"]')) return
+      if (event.key.toLowerCase() !== 'k' || !(app.platform === 'darwin' ? event.metaKey : event.ctrlKey)) return
+      event.preventDefault()
+      app.actions.navigate('history')
+      setHistorySearchRequest(value => value + 1)
+    }
+    window.addEventListener('keydown', search)
+    return () => window.removeEventListener('keydown', search)
+  }, [app.actions, app.platform, app.settings?.onboardingComplete])
+
+  useEffect(() => {
+    if (historySearchRequest > 0 && app.navigation === 'history') document.querySelector<HTMLInputElement>('.history-find__input')?.focus()
+  }, [historySearchRequest, app.navigation])
 
   const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
     const existing = microphoneReleasesRef.current.get(controller)
@@ -272,11 +289,11 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     let view: ReactNode
     switch (navigation) {
       case 'agents':
-        view = <AgentView onOpenThreads={() => app.actions.navigate('threads')} />
+        view = <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
         break
       case 'threads':
         view = <ThreadsView
-          onOpenAgents={() => app.actions.navigate('agents')}
+          onOpenAgents={() => { setAgentSheet('session'); app.actions.navigate('agents') }}
           now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
         />
         break
@@ -287,6 +304,10 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           status={app.historyStatus}
           query={historyQuery}
           onQueryChange={setHistoryQuery}
+          clearOpen={historyClearOpen}
+          onClearOpenChange={setHistoryClearOpen}
+          onOpenDictate={() => app.actions.navigate('home')}
+          onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
           onDelete={app.actions.deleteHistory}
           onClear={app.actions.clearHistory}
@@ -346,8 +367,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         <AppShell
           navigation={navigation}
           platform={app.platform}
-          statusText={<FooterStatus navigation={navigation} settings={app.settings} />}
-          onNavigate={app.actions.navigate}
+          statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
+          onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
           onMinimize={app.actions.minimizeApp}
           onClose={app.actions.hideApp}
         >

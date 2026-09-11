@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
-import { AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
+import { AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
@@ -31,8 +31,72 @@ function fixture() {
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
   }, grok))
   const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => listeners.get(channel)!({ sender: source.webContents, senderFrame: frame }, payload)
-  return { state, grok, invoke, main, widget }
+  return { state, control, grok, invoke, main, widget }
 }
+
+describe('agent command IPC authorization', () => {
+  it.each([false, true])('allows a trusted widget to configure speak=%s', async speak => {
+    const f = fixture()
+    const command = { type: 'configure', patch: { speak } }
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toBe(f.state)
+    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+  })
+
+  it.each(Object.entries(defaultAgentConfiguration()).filter(([key]) => key !== 'speak'))(
+    'keeps %s configuration and mixed speak patches main-only', async (key, value) => {
+      const f = fixture()
+      for (const patch of [{ [key]: value }, { speak: false, [key]: value }, { speak: true, [key]: undefined }]) {
+        const command = { type: 'configure', patch }
+        await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
+        expect(f.control.command).not.toHaveBeenCalled()
+        await expect(f.invoke(AGENT_COMMAND, command)).resolves.toBe(f.state)
+        expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+        f.control.command.mockClear()
+      }
+    },
+  )
+
+  it('rejects empty, non-boolean and unknown-key widget patches without dispatch', async () => {
+    const f = fixture()
+    for (const patch of [{}, { speak: undefined }, { speak: null }, { speak: 'false' }, { speak: 0 }, { speak: false, unknown: true }]) {
+      await expect(f.invoke(AGENT_COMMAND, { type: 'configure', patch }, f.widget)).rejects.toThrow()
+    }
+    expect(f.control.command).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ...['t3', 'reasoning', 'membership', 'grokSpeech'].map(slot => ({ type: 'credential', slot, value: 'fixture' })),
+    { type: 'connect' }, { type: 'disconnect' },
+    { type: 'membership', action: 'refresh' },
+    { type: 'voice-state', status: 'idle', error: null },
+    { type: 'check-reasoning', provider: 'codex' },
+    { type: 'preview-voice' },
+  ])('keeps privileged command %j main-only', async command => {
+    const f = fixture()
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
+    expect(f.control.command).not.toHaveBeenCalled()
+    await expect(f.invoke(AGENT_COMMAND, command)).resolves.toBe(f.state)
+    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+  })
+
+  it('rejects speak-only commands from child frames, navigated widgets and untrusted senders', async () => {
+    const f = fixture()
+    const command = { type: 'configure', patch: { speak: false } }
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget, { url: f.widget.url, parent: {} })).rejects.toThrow('AGENT_SENDER_REJECTED')
+    const impostor = { ...f.widget, webContents: { ...f.widget.webContents } }
+    await expect(f.invoke(AGENT_COMMAND, command, impostor)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    f.widget.webContents.getURL = () => 'https://untrusted.example/'
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    expect(f.control.command).not.toHaveBeenCalled()
+  })
+
+  it.each(['mute', 'unmute'])('preserves widget microphone %s commands', async action => {
+    const f = fixture()
+    const command = { type: 'voice', action }
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toBe(f.state)
+    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+  })
+})
 
 describe('native speech IPC', () => {
   it('uses only the saved provider and its exact voice, with no system fallback on Grok errors', async () => {

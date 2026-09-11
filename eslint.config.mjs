@@ -4,6 +4,8 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      '.worktrees/**',
+      '.claude/tmp/**',
       'coverage/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/natural-voice-qa/**',
@@ -24,6 +26,7 @@ export default tseslint.config(
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
       globals: {
         __dirname: 'readonly',
         console: 'readonly',

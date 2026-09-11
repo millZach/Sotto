@@ -1,3 +1,4 @@
+import { ListeningBars } from './ListeningBars'
 import React, { type CSSProperties, type ReactNode } from 'react'
 
 export type VoiceWaveStage = 'idle' | 'listening' | 'processing'
@@ -21,14 +22,8 @@ export interface VoiceWaveProps {
 
 const BAR_COUNT = 7
 
-/**
- * The widget's silhouette: a centred hump, so the middle bar answers a voice
- * first and the outer bars only fill in when someone is really speaking.
- */
+/** A centered silhouette for the idle and processing states. */
 const PROFILE: readonly number[] = [0.45, 0.7, 0.9, 1, 0.9, 0.7, 0.45]
-
-/** Silence never flattens a live line: the widget's bars keep a small roll going. */
-const LISTENING_FLOOR = 0.25
 
 /** Transcribing has no level to answer, so the bars roll at a fixed, gentle height. */
 const PROCESSING_LEVEL = 0.4
@@ -46,18 +41,15 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
   switch: { width: 2, gap: 2, rest: 4, peak: 14 },
 }
 
-/**
- * The widget's seven-bar visualizer, reproduced for the management window.
- * Each bar's peak is written inline from the microphone level so the CSS loop
- * swings exactly as high as the voice; with motion reduced the same inline
- * height stands still, so the line still reports the level by height alone.
+/** Listening delegates to the same component and CSS as the floating widget.
+ * Idle and processing retain the room's resting silhouette.
  */
 export function VoiceWave({ stage, value, label, size = 'widget' }: VoiceWaveProps): ReactNode {
   const geometry = GEOMETRY[size]
   const safeValue = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
   const listening = stage === 'listening'
   const level = listening
-    ? Math.max(LISTENING_FLOOR, safeValue)
+    ? safeValue
     : stage === 'processing' ? PROCESSING_LEVEL : 0
   const liveProps = listening
     ? {
@@ -75,6 +67,8 @@ export function VoiceWave({ stage, value, label, size = 'widget' }: VoiceWavePro
     '--wave-rest': `${geometry.rest}px`,
     '--wave-peak': `${geometry.peak}px`,
   } as CSSProperties
+
+  if (listening) return <div className="voice-wave voice-wave--listening" data-stage={stage} data-size={size} style={style} {...liveProps}><ListeningBars level={safeValue} /></div>
 
   return (
     <div className="voice-wave" data-stage={stage} style={style} {...liveProps}>

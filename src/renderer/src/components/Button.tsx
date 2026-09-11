@@ -28,5 +28,5 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     className,
   ].filter(Boolean).join(' ')
 
-  return <button ref={ref} {...props} type={type} className={classes}>{children}</button>
+  return <button ref={ref} title={iconOnly ? props['aria-label'] : undefined} {...props} type={type} className={classes}>{children}</button>
 })

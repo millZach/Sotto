@@ -1,3 +1,4 @@
+import { version as appVersion } from '../../package.json'
 import {
   app,
   BrowserWindow,
@@ -653,7 +654,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && platform === 'win32'
   const updates = new UpdateService({
-    currentVersion: app.getVersion(),
+    currentVersion: appVersion,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {

@@ -378,7 +378,7 @@ describe('WidgetApp', () => {
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
     // The mark must stay the packaged icon's burnt amber, never the retired purple.
     expect([...glyph.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
-      .toEqual(['#cf6c0d', '#8f4404'])
+      .toEqual(['#47b8a9', '#47b8a9'])
   })
 
   it('leaves the resting sliver free of the app mark', () => {
@@ -1249,7 +1249,7 @@ describe('visual preview parser', () => {
 
   it('keeps widget source clean and the canvas transparent with complete motion overrides', () => {
     const source = readFileSync('src/renderer/src/widget/WidgetApp.tsx', 'utf8')
-    const css = readFileSync('src/renderer/src/widget/widget.css', 'utf8')
+    const css = readFileSync('src/renderer/src/components/listeningBars.css', 'utf8') + '\n' + readFileSync('src/renderer/src/widget/widget.css', 'utf8')
     expect(`${source}\n${css}`).not.toMatch(/[\u00e2\ufffd]/)
     expect(css).toMatch(/html,\s*\nbody,\s*\n#root[\s\S]*background: transparent/)
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')

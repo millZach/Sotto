@@ -2299,3 +2299,10 @@ textarea.tt-input {
 .help-topics__group:first-child {
   border-top: 0;
 }
+
+/* The Dictate room uses the widget visualizer, enlarged without changing its motion. */
+.voice-wave--listening { justify-content: center; }
+.voice-wave--listening .widget-bars { flex: none; }
+.voice-wave--listening[data-size="hero"] { width: 180px; }
+.voice-wave--listening[data-size="hero"] .widget-bars { transform: scale(3); transform-origin: center; }
+.voice-wave--listening[data-size="deck"] .widget-bars { transform: scale(1.5); }

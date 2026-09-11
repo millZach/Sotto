@@ -146,8 +146,8 @@ export type WidgetVisibilityPayload = z.infer<typeof widgetVisibilitySchema>
 
 /** Native widget visual states with distinct presentation footprints. */
 export const widgetPresentationSchema = z.enum([
-  'agents-compact',
-  'agents-expanded',
+  'pill-controls',
+  'threads-expanded',
   'idle-resting',
   'idle-hovered',
   'active',

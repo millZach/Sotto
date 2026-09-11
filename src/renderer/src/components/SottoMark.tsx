@@ -18,15 +18,15 @@ export function SottoMark({ className }: SottoMarkProps): ReactNode {
     <svg className={className} aria-hidden="true" viewBox="0 0 96 96">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#cf6c0d" />
-          <stop offset="1" stopColor="#8f4404" />
+          <stop offset="0" stopColor="#47b8a9" />
+          <stop offset="1" stopColor="#47b8a9" />
         </linearGradient>
       </defs>
       <rect width="96" height="96" rx="22" fill={`url(#${gradientId})`} />
-      <rect x="26" y="20" width="9" height="56" rx="4.5" fill="#ffffff" />
+      <rect x="26" y="20" width="9" height="56" rx="4.5" fill="#000000" />
       <path
         d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0"
-        stroke="#ffffff"
+        stroke="#000000"
         strokeWidth="7.5"
         strokeLinecap="round"
         fill="none"

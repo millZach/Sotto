@@ -351,6 +351,7 @@ export function parseDevelopmentRendererSources(
 export class WindowManager {
   private mainWindow: BrowserWindowLike | null = null
   private widgetWindow: BrowserWindowLike | null = null
+  private widgetFocusable: boolean | null = null
   private mainReady: Promise<BrowserWindowLike> | null = null
   private widgetReady: Promise<BrowserWindowLike> | null = null
   private quitting = false
@@ -485,6 +486,7 @@ export class WindowManager {
       },
     })
     this.widgetWindow = window
+    this.widgetFocusable = this.dependencies.chrome.widgetFocusable
     // The constructor's alwaysOnTop (and setAlwaysOnTop's default 'floating'
     // level) silently fails to apply WS_EX_TOPMOST on current Windows 11
     // builds; the explicit 'normal' level sticks and survives hide/show.
@@ -635,6 +637,9 @@ export class WindowManager {
         }
 
         try {
+          // A hidden expanded panel can reset to the pill before its next
+          // reveal. Apply that change while native deactivation is harmless.
+          this.applyWidgetFocusability(widget)
           widget.showInactive()
         } catch (error) {
           const rollbackGeneration = this.advanceWidgetVisibilityGeneration()
@@ -672,7 +677,7 @@ export class WindowManager {
     this.widgetPresentation = presentation
     const widget = this.widgetWindow
     if (!this.widgetVisible || widget === null || widget.isDestroyed()) return
-    widget.setFocusable?.(presentation === 'agents-expanded' || this.dependencies.chrome.widgetFocusable)
+    this.applyWidgetFocusability(widget)
     if (this.widgetDrag !== null) {
       this.reconcileWidgetPresentationDuringDrag(widget)
       return
@@ -1114,6 +1119,17 @@ export class WindowManager {
       }
     } catch {
       // Placement and native bounds are best effort.
+    }
+  }
+
+  private applyWidgetFocusability(widget: BrowserWindowLike): void {
+    const focusable = this.widgetPresentation === 'threads-expanded' || this.dependencies.chrome.widgetFocusable
+    // On Windows, even setFocusable(false) on an already nonfocusable window
+    // invokes native deactivation and can take focus from the dictation target.
+    // Only explicit thread expansion/collapse changes this policy.
+    if (focusable !== this.widgetFocusable) {
+      widget.setFocusable?.(focusable)
+      this.widgetFocusable = focusable
     }
   }
 

@@ -140,9 +140,9 @@ export function AppShell({
               </a>
             ))}
           </nav>
-          <span className="app-footer__status" aria-live="polite" aria-atomic="true" title={typeof statusText === 'string' ? statusText : undefined}>
+          <div className="app-footer__status" aria-live="polite" aria-atomic="true" title={typeof statusText === 'string' ? statusText : undefined}>
             {statusText}
-          </span>
+          </div>
         </footer>
       ) : null}
     </div>

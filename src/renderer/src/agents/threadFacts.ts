@@ -1,4 +1,5 @@
 import type { AgentAssignment, AgentModel, AgentProject, AgentQueueItem, AgentState, AgentThread } from '../../../shared/agents'
+import { isThreadClosed } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -37,7 +38,7 @@ export interface ThreadRow {
   readonly attention: boolean
   /** One sentence of what is happening now. */
   readonly sentence: string
-  /** The instant used for ordering, day grouping and the clock beside the row. */
+  /** Last known activity for ordering and the row clock; NaN when unknown. */
   readonly activityAt: number
   /** Beside the state: how long a working thread has been at it, otherwise the clock of its last activity. */
   readonly when: string
@@ -56,8 +57,8 @@ export interface ThreadGroup {
   readonly rows: readonly ThreadRow[]
 }
 
-const parse = (value: string | undefined): number => {
-  if (value === undefined || value === '') return Number.NaN
+const parse = (value: string | null | undefined): number => {
+  if (value == null || value === '') return Number.NaN
   return Date.parse(value)
 }
 
@@ -86,6 +87,7 @@ export function clockLabel(at: number): string {
 
 /** "4 min", "2 h", "3 d": how long a working thread has been at it. */
 export function elapsedLabel(since: number, now: number): string {
+  if (!Number.isFinite(since) || !Number.isFinite(now)) return ''
   const minutes = Math.max(0, Math.floor((now - since) / 60_000))
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes} min`
@@ -151,28 +153,33 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const model = state.host.models.find(entry => entry.id === thread.modelId)
   const assignment = state.assignments.find(entry => entry.threadId === thread.id)
   const provider = model?.provider ?? state.host.name
-  const last = thread.messages.at(-1)
   const lastAssistant = thread.messages.findLast(entry => entry.role === 'assistant')
   const lastUser = thread.messages.findLast(entry => entry.role === 'user')
-  const decision = state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
+  const closed = isThreadClosed(thread)
+  const decision = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
   const blocked = state.queue.find(item => item.threadId === thread.id && item.kind === 'blocked')
-  const attention = thread.requests.length > 0 || state.queue.some(item => item.threadId === thread.id)
+  const attention = !closed && (thread.requests.length > 0 || state.queue.some(item => item.threadId === thread.id))
   // Once you take over, Sotto's earlier stop is history: manual outranks stopped.
   const management: ThreadRow['management'] = assignment === undefined ? 'none'
     : assignment.mode === 'manual' ? 'manual'
       : assignment.stopReason !== 'none' ? 'stopped'
         : assignment.paused ? 'paused' : 'managed'
   const stopped = assignment !== undefined && management === 'stopped'
-  const lastAt = parse(last?.createdAt)
   const stoppedAt = parse(assignment?.stoppedAt)
   const startedAt = parse(assignment?.startedAt)
-  const activityAt = [lastAt, stoppedAt, startedAt].find(Number.isFinite) ?? now
+  const activityAt = [parse(thread.updatedAt), parse(thread.settledAt), parse(thread.archivedAt), stoppedAt, startedAt,
+    ...thread.messages.map(message => parse(message.createdAt))]
+    .reduce((latest, at) => Number.isFinite(at) && (!Number.isFinite(latest) || at > latest) ? at : latest, Number.NaN)
 
   let state_: ThreadRowState
   let stateLabel: string
   let sentence: string
   let sentenceFromUser = false
-  if (decision !== undefined || (blocked !== undefined && !stopped) || thread.status === 'error') {
+  if (closed) {
+    state_ = 'done'
+    stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
+    sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
+  } else if (decision !== undefined || (blocked !== undefined && !stopped) || thread.status === 'error') {
     state_ = 'needs'
     stateLabel = thread.status === 'error' && decision === undefined && blocked === undefined ? 'Needs attention' : 'Waiting on you'
     sentence = decision !== undefined
@@ -236,22 +243,32 @@ export function listThreads(rows: readonly ThreadRow[], query: string): { readon
   return { matching, listed: rows.filter(row => row.attention || matching.includes(row)) }
 }
 
-/** Needs you, Running, then finished threads by day, newest first inside each group. */
-export function groupThreads(rows: readonly ThreadRow[], now: number): ThreadGroup[] {
-  const sorted = [...rows].sort((first, second) => second.activityAt - first.activityAt)
-  const needs = sorted.filter(row => row.state === 'needs')
-  const running = sorted.filter(row => row.state === 'working')
+/** Explicitly unsettled work and settled/archived history; unknown activity sorts last. */
+export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadGroup[] {
+  // Retain the old clock argument for callers; lifecycle grouping does not use it.
+  void _now
+  const sorted = [...rows].sort((first, second) => {
+    const firstAt = Number.isFinite(first.activityAt) ? first.activityAt : Number.NEGATIVE_INFINITY
+    const secondAt = Number.isFinite(second.activityAt) ? second.activityAt : Number.NEGATIVE_INFINITY
+    return (secondAt - firstAt) || first.thread.id.localeCompare(second.thread.id)
+  })
+  const unsettled = sorted.filter(row => !isThreadClosed(row.thread))
+  const settled = sorted.filter(row => isThreadClosed(row.thread))
   const groups: ThreadGroup[] = []
-  if (needs.length > 0) groups.push({ id: 'needs', label: 'Needs you', tone: 'needs', rows: needs })
-  if (running.length > 0) groups.push({ id: 'running', label: 'Running', tone: 'plain', rows: running })
-  for (const row of sorted) {
-    if (row.state === 'needs' || row.state === 'working') continue
-    const label = dayLabel(row.activityAt, now)
-    const group = groups.at(-1)
-    if (group !== undefined && group.id === `day:${label}`) groups[groups.length - 1] = { ...group, rows: [...group.rows, row] }
-    else groups.push({ id: `day:${label}`, label, tone: 'plain', rows: [row] })
-  }
+  if (unsettled.length > 0) groups.push({ id: 'unsettled', label: 'Unsettled', tone: 'plain', rows: unsettled })
+  if (settled.length > 0) groups.push({ id: 'settled', label: 'Settled', tone: 'plain', rows: settled })
   return groups
+}
+
+/**
+ * The footer's one sentence on the Threads page and in the Agents room, from
+ * the number of threads Sotto is looking after: "Sotto is looking after 3
+ * threads. Say “Hey Sotto” to talk to any of them."
+ */
+export function lookingAfterSentence(count: number): string {
+  if (count <= 0) return 'Nothing is running. Say “Hey Sotto” to start a thread.'
+  if (count === 1) return 'Sotto is looking after 1 thread. Say “Hey Sotto” to talk to it.'
+  return `Sotto is looking after ${count} threads. Say “Hey Sotto” to talk to any of them.`
 }
 
 /** "3 active, 11 this week": active is needs you plus running; this week is any activity in the last seven days. */

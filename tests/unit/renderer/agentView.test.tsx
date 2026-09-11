@@ -2,10 +2,10 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentComposer, AgentLatestResponse, AgentQueue, AgentView } from '../../../src/renderer/src/agents/AgentView'
-import { AgentWidget } from '../../../src/renderer/src/agents/AgentWidget'
+import { WidgetApp } from '../../../src/renderer/src/widget/WidgetApp'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -42,7 +42,96 @@ function connection(state: AgentState, command = vi.fn(async () => state)): Retu
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(cleanup)
 
+describe('one pill with agent controls', () => {
+  const idle = { status: 'idle', theme: 'dark', reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false } as const
+  it('keeps the idle pill and expands threads only on request, across attention and voice changes', () => {
+    let state = stateFixture()
+    state.configuration.enabled = true
+    const command = vi.fn(async () => state)
+    const onPresentationChange = vi.fn()
+    const view = () => <WidgetApp snapshot={idle} platform="win32" now={0} agents={{ state, command, error: null }} onPresentationChange={onPresentationChange} />
+    const { rerender, container } = render(view())
+    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
+    expect(container.querySelector('.agent-widget')).toBeNull()
+    expect(onPresentationChange).toHaveBeenLastCalledWith('idle-resting')
+    state = { ...state, queue: [{ id: 'ready', threadId: 'thread', kind: 'ready', text: 'Build complete', createdAt: new Date().toISOString(), deferred: false }], composing: true, draftThreadId: 'thread', draft: 'Spoken prompt', voice: { ...state.voice, status: 'listening' } }
+    rerender(view())
+    expect(screen.queryByRole('region', { name: 'Threads' })).toBeNull()
+    fireEvent.mouseEnter(screen.getByTestId('widget-sliver'))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand threads' }))
+    expect(screen.getByRole('region', { name: 'Threads' })).toBeInTheDocument()
+    expect(screen.getByText('Build complete')).toBeInTheDocument()
+    expect(screen.getByLabelText('Prompt')).toHaveValue('Spoken prompt')
+    expect(onPresentationChange).toHaveBeenLastCalledWith('threads-expanded')
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse threads' }))
+    state = { ...state, voice: { ...state.voice, status: 'speaking' } }
+    rerender(view())
+    expect(screen.queryByRole('region', { name: 'Threads' })).toBeNull()
+    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
+  })
+
+  it('mutes microphone and speech independently without starting dictation', () => {
+    const state = stateFixture()
+    state.configuration.enabled = true
+    state.configuration.speak = true
+    const command = vi.fn(async () => state)
+    const onToggle = vi.fn()
+    const { rerender } = render(<WidgetApp snapshot={idle} platform="win32" now={0} onToggle={onToggle} agents={{ state, command, error: null }} />)
+    fireEvent.mouseEnter(screen.getByTestId('widget-sliver'))
+    fireEvent.click(screen.getByRole('button', { name: 'Mute microphone' }))
+    expect(command).toHaveBeenCalledWith({ type: 'voice', action: 'mute' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mute voice' }))
+    expect(command).toHaveBeenCalledWith({ type: 'voice', action: 'stop-speaking' })
+    expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { speak: false } })
+    expect(onToggle).not.toHaveBeenCalled()
+    state.configuration.speak = false
+    state.voice.status = 'muted'
+    rerender(<WidgetApp snapshot={idle} platform="win32" now={0} agents={{ state, command, error: null }} />)
+    expect(screen.getByRole('button', { name: 'Unmute microphone' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Unmute voice' })).toHaveAttribute('title', 'Unmute voice')
+  })
+
+  it('retains dictation controls and waveform when the pill also has agent controls', () => {
+    const state = stateFixture()
+    state.configuration.enabled = true
+    const command = vi.fn(async () => state)
+    const onStop = vi.fn()
+    const onPresentationChange = vi.fn()
+    render(<WidgetApp snapshot={{ ...idle, status: 'listening', sessionId: 'test', startedAt: 0, level: 0.6, cancellable: true }} platform="win32" now={5000} agents={{ state, command, error: null }} onStop={onStop} onPresentationChange={onPresentationChange} />)
+    expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
+    expect(screen.getByText('00:05')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument()
+    expect(onPresentationChange).toHaveBeenLastCalledWith('pill-controls')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('AgentView user workflows', () => {
+  it('merges a delayed screenshot read with the newest managed prompt text', async () => {
+    const state = stateFixture()
+    state.draft = 'Original text'; state.draftThreadId = 'thread'; state.composing = true
+    state.host.models[0]!.supportsImages = true
+    let finishRead: (() => void) | undefined
+    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+      finishRead = () => { Object.defineProperty(this, 'result', { value: 'data:image/png;base64,iVBORw0KGgo=' }); this.dispatchEvent(new ProgressEvent('load')) }
+    })
+    const command = vi.fn(async (request: AgentCommand) => {
+      if (request.type === 'compose') { state.draft = request.text; if (request.attachments) state.draftAttachments = request.attachments }
+      return { ...state }
+    })
+    try {
+      render(<AgentComposer state={state} command={command} />)
+      fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File(['image'], 'slow.png', { type: 'image/png' })] } })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Newer text while reading' } })
+      await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'compose', text: 'Newer text while reading' }))
+      if (!finishRead) throw new Error('FileReader did not start')
+      finishRead()
+      await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'compose', text: 'Newer text while reading', attachments: [expect.objectContaining({ name: 'slow.png' })] }))
+      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Newer text while reading')
+    } finally { read.mockRestore() }
+  })
+
   it('lets an obsolete saved reasoning effort be cleared when the model stops advertising effort levels', async () => {
     const state = stateFixture()
     state.configuration.reasoning = 'claude'
@@ -314,42 +403,5 @@ describe('Agent prompt and response controls', () => {
     expect(screen.getByText(/Final details/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(screen.queryByText(/Final details/)).not.toBeInTheDocument()
-  })
-})
-
-describe('AgentWidget attention behavior', () => {
-  it('stays compact for main-window typing and respects collapse during an ongoing voice draft', () => {
-    let state = stateFixture()
-    const command = vi.fn(async () => state)
-    const props = { command, visibilityGeneration: 0, dragCancellationVersion: 0 }
-    const { rerender } = render(<AgentWidget state={state} {...props} />)
-    state = { ...state, composing: true, draftThreadId: 'thread', draft: 'Typed in main window' }
-    rerender(<AgentWidget state={state} {...props} />)
-    expect(screen.getByRole('button', { name: 'Expand agent controls' })).toBeInTheDocument()
-    state = { ...state, voice: { ...state.voice, status: 'listening' } }
-    rerender(<AgentWidget state={state} {...props} />)
-    expect(screen.getByRole('button', { name: 'Expand agent controls' })).toBeInTheDocument()
-    state = { ...state, composing: false, draftThreadId: null, draft: '' }
-    rerender(<AgentWidget state={state} {...props} />)
-    state = { ...state, composing: true, draftThreadId: 'thread', draft: 'Spoken prompt' }
-    rerender(<AgentWidget state={state} {...props} />)
-    expect(screen.getByLabelText('Prompt')).toHaveValue('Spoken prompt')
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse agent controls' }))
-    state = { ...state, voice: { ...state.voice, status: 'speaking' } }
-    rerender(<AgentWidget state={state} {...props} />)
-    state = { ...state, voice: { ...state.voice, status: 'listening' } }
-    rerender(<AgentWidget state={state} {...props} />)
-    expect(screen.getByRole('button', { name: 'Expand agent controls' })).toBeInTheDocument()
-  })
-
-  it('still brings a newly ready thread to attention', () => {
-    const state = stateFixture()
-    const command = vi.fn(async () => state)
-    const props = { command, visibilityGeneration: 0, dragCancellationVersion: 0 }
-    const { rerender } = render(<AgentWidget state={state} {...props} />)
-    const next: AgentState = { ...state, queue: [{ id: 'ready', threadId: 'thread', kind: 'ready', text: 'Build complete', createdAt: '1', deferred: false }] }
-    rerender(<AgentWidget state={next} {...props} />)
-    expect(screen.getByRole('button', { name: 'Collapse agent controls' })).toBeInTheDocument()
-    expect(screen.getByText('Build complete')).toBeInTheDocument()
   })
 })

@@ -702,7 +702,7 @@ test.describe('authoritative design-review captures', () => {
 
     await withSotto({ onboardingComplete: true }, async ({ page }) => {
       await page.getByRole('tab', { name: 'Agents' }).click()
-      await expect(page.getByRole('heading', { level: 1, name: 'Agents' })).toBeVisible()
+      await expect(page.locator('.agent-orb')).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
     })
@@ -716,14 +716,21 @@ test.describe('authoritative design-review captures', () => {
       const clearHistory = page.getByRole('button', { name: 'Clear history' })
       await assertFocusPresentation(clearHistory)
       await capturePage(page, 'focus-destructive.png', { focusTarget: 'destructive', focus: true })
+      await page.locator('.history-entry__toggle').first().click()
       await page.getByRole('button', { name: 'Copy transcript' }).first().click()
       await expect(page.getByRole('status')).toContainText('Transcript copied')
       await capturePage(page, 'history-populated.png', { category: 'history', state: 'populated-feedback' })
 
+      await historySearch.fill('installer')
+      await capturePage(page, 'history-search.png')
+      await historySearch.fill('')
       await page.getByRole('button', { name: 'Clear history' }).click()
       await page.getByRole('button', { name: 'Clear all transcripts' }).click()
-      await expect(page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
       await capturePage(page, 'history-empty.png', { category: 'history', state: 'empty-feedback' })
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: false }) })
+      await capturePage(page, 'history-off.png')
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: true }) })
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
@@ -736,11 +743,12 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
       const settingsSections = [
-        ['Appearance', 'appearance'],
-        ['Capture', 'capture'],
+        ['AI account', 'account'],
+        ['Dictation', 'capture'],
         ['Transcription', 'transcription'],
+        ['Cleanup', 'cleanup'],
         ['Output', 'output'],
-        ['Application and privacy', 'application-privacy'],
+        ['Application', 'application-privacy'],
       ] as const
       for (const [heading, state] of settingsSections) {
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
@@ -748,8 +756,11 @@ test.describe('authoritative design-review captures', () => {
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
+      await page.getByRole('button', { name: 'Set up a transcription server', exact: true }).click()
+      await capturePage(page, 'settings-server.png')
+      await page.keyboard.press('Escape')
       await page.getByLabel('Paste delay').fill('10')
-      await page.getByRole('button', { name: 'Save paste delay' }).click()
+      await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
       await capturePage(page, 'settings-validation-error.png', { category: 'settings', state: 'validation-error' })
 
@@ -764,14 +775,14 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
-      await expect(page.getByText('3 active, 9 this week')).toBeVisible()
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       // The coordinator queues the fixture's permission request once it has connected.
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
       await expect(page.getByText('Waiting on you')).toBeVisible()
       const open = async (title: string): Promise<void> => {
         const toggle = page.getByRole('button', { name: title })
         await toggle.click()
-        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        await expect(toggle).toHaveAttribute('aria-current', 'page')
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
@@ -779,16 +790,16 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'threads-populated.png', { category: 'threads', state: 'populated' })
 
       await open('Footer links')
-      await expect(page.getByText(/Started .* from a voice prompt\./u)).toBeVisible()
+      await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
       await capturePage(page, 'threads-open-running.png', { category: 'threads', state: 'open-running' })
 
       await open('Streaming WAV stall')
-      await expect(page.getByText(/Sotto stopped it at the follow-up limit/u)).toBeVisible()
+      await expect(page.getByLabel('Thread transcript')).toContainText('The length marker fix still fails')
       await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
       await capturePage(page, 'threads-stopped.png', { category: 'threads', state: 'stopped-open' })
 
       await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
-      await expect(page.getByText('3 of 9')).toBeVisible()
+      await expect(page.getByRole('button', { name: /Settled/ })).toHaveAttribute('aria-expanded', 'true')
       // The attention queue stays listed whatever the query; a Codex-only result set follows it.
       await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
@@ -799,8 +810,35 @@ test.describe('authoritative design-review captures', () => {
 
     await withSotto({ onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
       await page.getByRole('link', { name: 'Threads' }).click()
-      await expect(page.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /No threads yet|Nothing here yet/i })).toBeVisible()
       await capturePage(page, 'threads-empty.png', { category: 'threads', state: 'empty' })
+    })
+  })
+
+  test('orb and session states follow the voice and permission journeys', async () => {
+    await withSotto({ onboardingComplete: true }, async ({ page }) => {
+      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
+      await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+      await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'wake')
+      await capturePage(page, 'agents-wake.png')
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('sotto:e2e:microphone', { detail: 'Hey Sotto' })))
+      await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'listening')
+      await capturePage(page, 'agents-listening.png')
+      const threadId = await page.evaluate(async () => {
+        const state = await window.sotto!.agents!.get()
+        const id = state.host.threads[0]!.id
+        await window.sotto!.agents!.command({ type: 'assign', threadId: id })
+        await window.sotto!.agents!.command({ type: 'select-thread', threadId: id })
+        await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: id, text: 'Allow the agent to update the project files?', requestId: 'crossing-permission' })
+        return id
+      })
+      await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
+      await capturePage(page, 'agents-attention.png')
+      await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Workshop' })).toBeVisible()
+      await capturePage(page, 'agents-session.png')
+      await page.keyboard.press('Escape')
+      expect(await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)?.requests.length, threadId)).toBe(1)
     })
   })
 
@@ -833,7 +871,7 @@ test.describe('authoritative design-review captures', () => {
         await captureFullSurface(page, page.locator('.history-view'), `scale-${scalePercent}-history.png`, /Draft the launch summary/i)
 
         await page.getByRole('link', { name: 'Settings' }).click()
-        await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings.png`, /Application and privacy/i)
+        await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings.png`, /^Application$/i)
 
         await page.getByRole('link', { name: 'Help' }).click()
         await captureFullSurface(page, page.locator('.help-view'), `scale-${scalePercent}-help.png`, /Reset safely/i)
@@ -844,11 +882,11 @@ test.describe('authoritative design-review captures', () => {
   for (const theme of widgetThemes) {
     test(`${theme} widget states missing from the established widget baseline are captured`, async () => {
       await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
-        // The renderer publishes its first widget snapshot from a dictation
-        // session, so cancel one and wait for the automatic reset back to the
-        // resting idle sliver before capturing it.
-        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
+        // Bootstrap seeds the idle snapshot after showing both windows. Wait
+        // for that seed so it cannot overwrite the first recording snapshot.
         const widget = await widgetPage(launched, theme, 'reduced')
+        await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
+        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
@@ -862,15 +900,17 @@ test.describe('authoritative design-review captures', () => {
       })
 
       await withSotto({ onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
-        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched, theme, 'reduced')
+        await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
+        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.getByText('Waiting for microphone', { exact: true })).toBeVisible()
         await captureWidget(widget, `widget-permission-${theme}.png`, { category: 'widget', state: 'requesting-permission', theme, reducedMotion: true })
       })
 
       await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
-        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         const widget = await widgetPage(launched, theme, 'reduced')
+        await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
+        await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.getByText('Cancelled', { exact: true })).toBeVisible()

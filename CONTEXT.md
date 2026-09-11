@@ -89,8 +89,26 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Backend.** The memory system under test in SottoMemEval: it observes history events and answers questions, and never sees ground-truth labels. The `none` backend remembers nothing and always abstains; it is the required baseline. This is the one place "backend" is the right word; a provider adapter is never a backend.
 
+## Main window
+
+**Crossing.** The main window's shell since redesign round 3: one black room under a thin strip, black only, set in Bricolage Grotesque. There is no light theme and no appearance setting; a persisted theme value is tolerated and ignored. The floating widget keeps its own look. Avoid: "dark mode" (there is no other mode).
+
+**Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
+
+**Switch.** The two-state control in the strip that flips the room between Dictate and Agents. It is a tablist; arrow keys move between the two. Avoid: "tabs" in prose.
+
+**Room.** The single content area under the strip. The switch chooses the Dictate room or the Agents room; the footer links open the other pages (Threads, History, Dictionary, Settings, Help) in the same area.
+
+**Dictate room.** The Dictate side of the switch: the large seven-bar wave, one sentence for the current state, one button with the shortcut, then the last transcript at reading size with Copy.
+
+**Footer status.** The one-line status text on the right of the footer links, supplied by whichever page is open (for example the model and paste mode in the Dictate room, the thread count on the Threads page).
+
 ## Where things live
 
+- `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links and footer status.
+- `src/renderer/src/features/dictate/DictateRoom.tsx` — the Dictate room.
+- `src/renderer/src/styles/tokens.css` and `global.css` — the black token set and shared styles; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
+- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (one theme, scales, motion, focus).
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.

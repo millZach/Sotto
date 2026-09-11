@@ -1,0 +1,87 @@
+/* ---- recording visualizer ---- */
+
+/* Seven bars on one staggered loop. The renderer gates the loop on the
+   microphone level: the wave runs only while data-speaking is set, and the
+   bars rest at their floor height the moment the speaker goes quiet. */
+.widget-bars {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+}
+
+/* Vertically the visualizer rotates 90 degrees. The pre-rotation box is 39x18;
+   the margins swap its layout footprint to 18x39 so the rotated bars occupy the
+   right amount of the column without overlapping neighbours. */
+.widget-shell[data-orientation='vertical'] .widget-bars {
+  flex: none;
+  width: 39px;
+  height: 18px;
+  justify-content: center;
+  margin: 10.5px -10.5px;
+  transform: rotate(90deg);
+}
+
+/* The loop and its per-bar stagger live together on the base rule so the
+   nth-child delays below keep overriding the shorthand's delay and the wave
+   ripples across the row. Quiet is the resting state: the gate below suppresses
+   the loop, leaving the keyframe floor height, held still, with a brief settle
+   so the wave lands rather than snapping. */
+.widget-bars__bar {
+  width: 3px;
+  height: 5px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--widget-activity, var(--tt-activity));
+  animation: widget-bar 0.9s ease-in-out infinite;
+  transition: height 0.18s ease;
+}
+
+.widget-bars:not([data-speaking]) .widget-bars__bar {
+  animation: none;
+}
+
+.widget-bars__bar:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.widget-bars__bar:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.widget-bars__bar:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+.widget-bars__bar:nth-child(5) {
+  animation-delay: 0.48s;
+}
+
+.widget-bars__bar:nth-child(6) {
+  animation-delay: 0.6s;
+}
+
+.widget-bars__bar:nth-child(7) {
+  animation-delay: 0.72s;
+}
+
+@keyframes widget-bar {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 17px;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .widget-bars__bar { animation: none; transition: none; }
+  .widget-bars[data-speaking] .widget-bars__bar { height: 11px; }
+}
+:root[data-reduced-motion="on"] .widget-bars__bar { animation: none; transition: none; }
+:root[data-reduced-motion="on"] .widget-bars[data-speaking] .widget-bars__bar { height: 11px; }

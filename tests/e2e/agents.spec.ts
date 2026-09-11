@@ -182,13 +182,14 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await page.getByLabel('Prompt').fill('Review this small-screen prompt.')
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
-    await expect(widget.getByRole('button', { name: 'Expand agent controls' })).toBeVisible()
-    await widget.getByRole('button', { name: 'Expand agent controls' }).click()
+    await widget.getByTestId('widget-sliver').hover()
+    await expect(widget.getByRole('button', { name: 'Expand threads' })).toBeVisible()
+    await widget.getByRole('button', { name: 'Expand threads' }).click()
     await expect(widget.getByLabel('Prompt')).toHaveValue('Review this small-screen prompt.')
     await widget.getByRole('button', { name: 'Send it', exact: true }).scrollIntoViewIfNeeded()
     await widget.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-dark-prompt.png' })
     await widget.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Prompt')).toHaveValue('')
-    expect(await widget.locator('.agent-widget__body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await widget.locator('.widget-threads').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   } finally { await closeSotto(launched) }
 })

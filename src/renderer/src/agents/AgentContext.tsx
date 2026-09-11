@@ -7,6 +7,7 @@ import { AgentVoiceSession, type AgentVoiceState } from './voiceSession'
 import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
 import { createConfiguredSpeech } from './naturalSpeech'
 import { playWakeCue } from './voiceCue'
+import { useAttentionReview, type AttentionReview } from './attentionReview'
 
 export interface AgentConnection {
   readonly state: AgentState | null
@@ -34,7 +35,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     return () => { current.current = false; unsubscribe() }
   }, [bridge])
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
-    const operation = tail.current.then(async () => {
+    const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !current.current) return null
       const version = observed.current
       try {
@@ -48,7 +49,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         if (current.current) setError('The action could not be confirmed. Your draft is retained; check the connection before retrying.')
         return null
       }
-    })
+    }
+    // Audio controls must not wait for a provider operation or model response.
+    // The main-process controller gives these same commands an immediate lane.
+    const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
+    if (request.type === 'select-thread' || request.type === 'voice' || request.type === 'voice-state' || speechPreference) return run()
+    const operation = tail.current.then(run)
     tail.current = operation
     return operation
   }, [bridge])
@@ -56,6 +62,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
 }
 
 interface AgentContextValue extends AgentConnection {
+  readonly attention: AttentionReview
   readonly voice: AgentVoiceState
   readonly muteVoice: () => void
   readonly stopSpeech: () => void
@@ -78,6 +85,15 @@ export function AgentProvider({ children, settings, dictation }: {
   stateRef.current = connection.state
   const spoken = useRef<number | null>(null)
   const voiceAction = useRef<number | null>(null)
+  const stopSpeech = useCallback(() => {
+    voiceRef.current?.stopSpeaking()
+    void connection.command({ type: 'voice', action: 'stop-speaking' })
+  }, [connection.command])
+  const attention = useAttentionReview(connection.state, connection.command, stopSpeech)
+
+  useEffect(() => {
+    if (connection.state?.configuration.speak === false) voiceRef.current?.stopSpeaking()
+  }, [connection.state?.configuration.speak])
 
   useEffect(() => {
     if (window.sotto?.agents === undefined) return
@@ -159,15 +175,18 @@ export function AgentProvider({ children, settings, dictation }: {
     if (spoken.current === state.speech.id) return
     spoken.current = state.speech.id
     if (state.speech.preview || (state.configuration.enabled && state.configuration.speak)) {
+      // Selection updates replace narration; they must not accumulate a backlog.
+      voiceRef.current?.stopSpeaking()
       void voiceRef.current?.speak(state.speech.text)
     }
   }, [connection.state])
 
   return <AgentContext.Provider value={{
     ...connection,
+    attention,
     voice,
     muteVoice: () => { void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },
-    stopSpeech: () => { void connection.command({ type: 'voice', action: 'stop-speaking' }) },
+    stopSpeech,
     retryVoice: () => { void voiceRef.current?.start() },
   }}>{children}</AgentContext.Provider>
 }
@@ -176,4 +195,8 @@ export function useAgents(): AgentContextValue {
   const context = useContext(AgentContext)
   if (context === null) throw new Error('AgentProvider is required')
   return context
+}
+
+export function useOptionalAgents(): AgentContextValue | null {
+  return useContext(AgentContext)
 }
