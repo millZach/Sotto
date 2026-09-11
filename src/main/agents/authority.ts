@@ -1,4 +1,9 @@
-export type RiskyAction = 'spend' | 'publish' | 'destroy' | 'relax-verification'
+import { z } from 'zod'
+
+export const riskyActionSchema = z.enum(['spend', 'publish', 'destroy', 'relax-verification'])
+export type RiskyAction = z.infer<typeof riskyActionSchema>
+export const approvalWords: readonly string[] = ['allow', 'approve']
+export const denialWords: readonly string[] = ['deny', 'reject']
 
 export interface AuthorizationQuery {
   action: RiskyAction; resource: string; scope: string; at?: string
@@ -12,21 +17,15 @@ export interface Authority {
 }
 
 const riskyKeywords: [RiskyAction, RegExp][] = [
-  ['destroy', /\b(?:delete|remove|rm\s+-rf|force\s+push|drop\s+(?:table|database)|reset\s+--hard|wipe|purge)\b|(?<![\w-])--force\b/iu],
-  ['relax-verification', /\b(?:skip\s+(?:the\s+)?tests|disable\s+checks|bypass|without\s+verification|skip\s+verification)\b|(?<![\w-])--no-verify\b/iu],
-  ['publish', /\b(?:publish|release|deploy|push\s+to\s+(?:main|master)|merge\s+to\s+main)\b/iu],
-  ['spend', /\b(?:spend|spending|billing|payment|purchase|buy|credits|upgrade\s+the\s+plan|charge)\b/iu],
+  ['spend', /(?<![\w./-])(?:spend|pay|purchase|subscribe|buy|charge|upgrade\s+the\s+plan)(?![\w/-]|\.\w)/iu],
+  ['publish', /(?<![\w./-])(?:publish|deploy|(?:create|cut)\s+(?:a\s+)?(?:GitHub\s+)?release|merge\s+to\s+main)(?![\w/-]|\.\w)/iu],
+  ['destroy', /(?<![\w./-])(?:push\s+(?:--force|-f|(?:to\s+|[\w.-]+\s+)?(?:main|master))|git\s+clean\s+-fd|rm\s+-rf|force\s+push|drop\s+(?:table|database)|reset\s+--hard|overwrite|truncate|wipe|purge)(?![\w/-]|\.\w)/iu],
+  ['relax-verification', /(?<![\w./-])(?:skip\s+(?:the\s+)?(?:tests|CI|verification)|disable\s+(?:the\s+)?checks|bypass|without\s+verification|--no-verify|--no-gpg-sign)(?![\w/-]|\.\w)/iu],
 ]
 
 export function classifyRiskyAction(
   request: { kind: 'question' | 'permission'; text: string },
-  approved: boolean | undefined, projectId: string,
-): { action: RiskyAction; resource: '*'; scope: string } | null {
-  if (request.kind !== 'permission' || approved !== true) return null
-  const match = riskyKeywords.find(([, keywords]) => keywords.test(request.text))
-  return match ? { action: match[0], resource: '*', scope: projectId } : null
-}
-
-export function isExplicitApproval(answer: string): boolean {
-  return ['allow', 'approve', 'approved', 'yes'].includes(answer.trim().toLowerCase().replace(/\p{P}+$/gu, '').trim())
+): RiskyAction[] {
+  if (request.kind !== 'permission') return []
+  return riskyKeywords.filter(([, keywords]) => keywords.test(request.text)).map(([action]) => action)
 }

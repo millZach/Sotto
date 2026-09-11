@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 
 export const migrations: readonly { readonly version: number; readonly sql: string }[]
+export const latestMigrationVersion: number
 export const memoryInsertSql: string
 export const policyInsertSql: string
 

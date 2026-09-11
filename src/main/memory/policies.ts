@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { AuthorizationQuery, AuthorizationResult } from '../agents/authority'
+import { riskyActionSchema, type AuthorizationQuery, type AuthorizationResult } from '../agents/authority'
 import { policyInsertSql } from './migrations.mjs'
 import type { MemoryStore } from './store'
 
 export const policyRecordSchema = z.object({
   id: z.string().min(1),
-  action: z.enum(['spend', 'publish', 'destroy', 'relax-verification']),
+  action: riskyActionSchema,
   resource: z.string().min(1), scope: z.string().min(1),
   effect: z.enum(['allow', 'always-confirm']), source: z.enum(['user', 'questionnaire']),
   note: z.string(), grantedAt: z.iso.datetime(),
@@ -16,7 +16,7 @@ export type PolicyRecord = z.infer<typeof policyRecordSchema>
 type GrantInput = Pick<PolicyRecord, 'action' | 'note'> &
   Partial<Omit<PolicyRecord, 'action' | 'note' | 'revokedAt'>>
 
-function inactiveAt(record: PolicyRecord, at: string): boolean {
+function isInactiveAt(record: PolicyRecord, at: string): boolean {
   return (record.revokedAt !== null && Date.parse(record.revokedAt) <= Date.parse(at)) ||
     (record.expiresAt !== null && Date.parse(record.expiresAt) <= Date.parse(at))
 }
@@ -47,17 +47,19 @@ export class PolicyStore {
       WHERE (? IS NULL OR scope = ? OR scope = 'global') ORDER BY grantedAt, id`)
       .all(scope ?? null, scope ?? null)
     const at = new Date().toISOString()
-    return rows.map(row => policyRecordSchema.parse(row)).filter(record => includeInactive || !inactiveAt(record, at))
+    return rows.map(row => policyRecordSchema.parse(row)).filter(record => includeInactive || !isInactiveAt(record, at))
   }
 
   authorizes({ action, resource, scope, at = new Date().toISOString() }: AuthorizationQuery): AuthorizationResult {
     z.iso.datetime().parse(at)
     // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
     const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
-      WHERE action = ? AND (resource = ? OR resource = '*') AND (scope = ? OR scope = 'global')
-      ORDER BY grantedAt DESC, id DESC`).all(action, resource, scope)
+      WHERE action = ? AND (scope = ? OR scope = 'global')
+      ORDER BY grantedAt DESC, id DESC`).all(action, scope)
     const matches = rows.map(row => policyRecordSchema.parse(row))
-    const active = matches.filter(record => !inactiveAt(record, at))
+      .filter(record => record.resource === '*' || record.resource === resource ||
+        (record.effect === 'always-confirm' && resource === '*'))
+    const active = matches.filter(record => !isInactiveAt(record, at))
     const boundary = active.find(record => record.effect === 'always-confirm')
     if (boundary) return { allowed: false, reason: 'always-confirm', policyId: boundary.id }
     const allow = active.find(record => record.effect === 'allow')

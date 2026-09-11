@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import { latestMigrationVersion, migrations } from '../../../src/main/memory/migrations.mjs'
 import { MemoryStore, memorySchema, type Memory } from '../../../src/main/memory/store'
 
 let root: string | undefined
@@ -42,14 +43,14 @@ afterEach(async () => {
 })
 
 describe('MemoryStore', () => {
-  it('creates the file, enables WAL and foreign keys, and records migrations 1 and 2 only once', () => {
+  it('creates the file, enables WAL and foreign keys, and records every migration only once', () => {
     store.open()
     expect(existsSync(path)).toBe(true)
     store.insert(memory())
     const db = new DatabaseSync(path)
     try {
       const applied = db.prepare('SELECT * FROM schema_migrations').all()
-      expect(applied).toEqual([{ version: 1, appliedAt: expect.any(String) }, { version: 2, appliedAt: expect.any(String) }])
+      expect(applied).toEqual(migrations.map(({ version }) => ({ version, appliedAt: expect.any(String) })))
       expect(db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' })
       store.close()
       store.open()
@@ -191,7 +192,7 @@ describe('MemoryStore', () => {
     })
     expect(JSON.parse(output.trim())).toEqual({
       sqliteVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      migrationVersion: 2, matchedId: 'memory-probe', fts5: true,
+      migrationVersion: latestMigrationVersion, matchedId: 'memory-probe', fts5: true,
     })
   })
 })

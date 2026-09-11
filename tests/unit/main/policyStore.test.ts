@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { PolicyStore, policyRecordSchema } from '../../../src/main/memory/policies'
+import { migrations } from '../../../src/main/memory/migrations.mjs'
 import { MemoryStore, type Memory } from '../../../src/main/memory/store'
 
 let root: string
@@ -41,7 +42,7 @@ afterEach(async () => {
 describe('PolicyStore', () => {
   it('migration 2 creates separate policy rows while memories still work', () => {
     expect(memoryStore.database().prepare('SELECT version FROM schema_migrations ORDER BY version').all())
-      .toEqual([{ version: 1 }, { version: 2 }])
+      .toEqual(migrations.map(({ version }) => ({ version })))
     expect(policies.list()).toEqual([])
     memoryStore.insert(memory('evidence'))
     expect(memoryStore.search('publish', { limit: 1 })[0]?.id).toBe('evidence')
@@ -89,6 +90,28 @@ describe('PolicyStore', () => {
     expect(policies.authorizes({ ...query, at: '2026-09-10T10:59:59.000Z' }).allowed).toBe(true)
     expect(policies.list()).toEqual([])
     expect(policies.list({ includeInactive: true })).toEqual([record])
+  })
+
+  it.each([
+    ['always-confirm', 'repository', 'always-confirm'],
+    ['allow', 'npm', 'no-policy'],
+    ['allow', '*', 'allowed'],
+  ] as const)('matches an unknown resource against %s on %s as %s', (effect, resource, reason) => {
+    const record = effect === 'always-confirm'
+      ? policies.recordRiskBoundaries([{ action: 'destroy', resource, scope: 'project', note: 'Confirm repository changes' }], 'questionnaire')[0]!
+      : policies.grant({ ...query, resource, effect, note: '' })
+    expect(policies.authorizes({ action: record.action, resource: '*', scope: 'project' }))
+      .toEqual({ allowed: reason === 'allowed', reason, ...(reason === 'no-policy' ? {} : { policyId: record.id }) })
+    expect(policies.authorizes({ action: record.action, resource: '*', scope: 'other' }).reason).toBe('no-policy')
+  })
+
+  it('considers only matching resources when reporting inactive policies for an unknown resource', () => {
+    const boundary = policies.grant({ ...query, effect: 'always-confirm', expiresAt: at, note: '' })
+    vi.setSystemTime('2026-09-10T12:00:01.000Z')
+    const allow = policies.grant({ ...query, note: '' })
+    policies.revoke(allow.id)
+    expect(policies.authorizes({ ...query, resource: '*' }))
+      .toEqual({ allowed: false, reason: 'expired', policyId: boundary.id })
   })
 
   it('revokes grants, retains inactive records and rejects unknown ids', () => {

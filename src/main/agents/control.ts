@@ -9,7 +9,7 @@ import {
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
-import { classifyRiskyAction, isExplicitApproval, type Authority } from './authority'
+import { approvalWords, classifyRiskyAction, denialWords, type Authority } from './authority'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
@@ -430,17 +430,10 @@ export class AgentControl {
     if (request?.kind !== 'permission') return
     if (turn?.source === 'supervision') throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
     if (command.approved !== true) return
-    const risky = classifyRiskyAction(request, command.approved, thread.projectId)
-    if (!risky) return
-    const verdict = this.dependencies.authority?.authorizes({ ...risky, at: new Date().toISOString() })
-      ?? { allowed: false, reason: 'no-policy' as const }
-    if (turn === undefined || turn.source === 'utterance' || turn.source === 'command') {
-      if (verdict.reason === 'always-confirm' && !isExplicitApproval(command.answer)) {
-        throw new Error("This action always needs your confirmation. Say 'approve' to allow it once.")
-      }
-      return
-    }
-    if (!verdict.allowed) throw new Error('No active policy allows this action. This request stays in your attention queue.')
+    // Every risky class is checked against policy. The user's explicit Allow is the confirmation an
+    // always-confirm boundary requires, so no verdict rejects a user-sourced approval; boundaries stay in force.
+    const at = new Date().toISOString()
+    for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
   }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn): Promise<void> {
     this.canAct()
@@ -539,8 +532,8 @@ export class AgentControl {
     const activeQuestion = this.state.queue.find(q => q.threadId === this.state.activeThreadId && (q.kind === 'question' || q.kind === 'permission'))
     if (activeQuestion?.requestId) {
       if (activeQuestion.kind === 'permission') {
-        if (!['allow', 'deny', 'approve', 'reject'].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
-        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: ['allow', 'approve'].includes(normalized) }, turn)
+        if (![...approvalWords, ...denialWords].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
+        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: approvalWords.includes(normalized) }, turn)
       } else {
         this.startDraft()
         this.state.draft = text

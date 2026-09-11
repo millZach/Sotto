@@ -58,6 +58,8 @@ export const migrations = [{
   `,
 }]
 
+export const latestMigrationVersion = migrations.at(-1).version
+
 const memoryColumns = [
   'id', 'type', 'scope', 'content', 'sourceClass', 'confidence', 'evidenceCount', 'importance',
   'createdAt', 'lastConfirmedAt', 'lastUsedAt', 'validFrom', 'validTo', 'supersededBy',
