@@ -10,7 +10,7 @@ import { _electron as electron } from '@playwright/test'
 import { verifyPackagedMemoryStore } from '../../../scripts/verify-packaged-resources.mjs'
 
 afterEach(() => vi.restoreAllMocks())
-const evidence = { sqliteVersion: '3.51.2', migrationVersion: 1, matchedId: 'memory-probe', fts5: true }
+const evidence = { sqliteVersion: '3.51.2', migrationVersion: 2, matchedId: 'memory-probe', fts5: true }
 function launchResult(output, exitCode = 0) {
   const child = new EventEmitter()
   child.stdout = new PassThrough()

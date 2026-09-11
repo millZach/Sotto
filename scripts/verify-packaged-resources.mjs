@@ -117,7 +117,7 @@ export async function verifyPackagedMemoryStore(target) {
       throw new Error('invalid JSON evidence')
     }
     if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
-        result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
+        result.migrationVersion !== 2 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
     return result

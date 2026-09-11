@@ -9,6 +9,7 @@ import {
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
+import { classifyRiskyAction, isExplicitApproval, type Authority } from './authority'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
@@ -60,6 +61,7 @@ export class AgentControl {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     historyEnabled?: () => boolean
     turns?: TurnRecorder
+    authority?: Authority
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -421,10 +423,30 @@ export class AgentControl {
       seenMessageIds: thread.messages.map(m => m.id), ownMessageIds: [], handledRequestIds: [], lastFailure: '' })
     this.state.activeThreadId = threadId; this.state.activeProjectId = thread.projectId
   }
+  private guardAuthority(command: AgentHostCommand, turn?: ActiveTurn): void {
+    if (command.type !== 'answer') return
+    const thread = this.thread(command.threadId)
+    const request = thread.requests.find(r => r.id === command.requestId)
+    if (request?.kind !== 'permission') return
+    if (turn?.source === 'supervision') throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
+    if (command.approved !== true) return
+    const risky = classifyRiskyAction(request, command.approved, thread.projectId)
+    if (!risky) return
+    const verdict = this.dependencies.authority?.authorizes({ ...risky, at: new Date().toISOString() })
+      ?? { allowed: false, reason: 'no-policy' as const }
+    if (turn === undefined || turn.source === 'utterance' || turn.source === 'command') {
+      if (verdict.reason === 'always-confirm' && !isExplicitApproval(command.answer)) {
+        throw new Error("This action always needs your confirmation. Say 'approve' to allow it once.")
+      }
+      return
+    }
+    if (!verdict.allowed) throw new Error('No active policy allows this action. This request stays in your attention queue.')
+  }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
     if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
+    this.guardAuthority(command, turn)
     this.outbox.push({ id: command.commandId, type: command.type, ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),

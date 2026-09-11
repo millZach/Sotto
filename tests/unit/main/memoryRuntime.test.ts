@@ -29,7 +29,7 @@ describe('runtime memory', () => {
     expect(log).not.toHaveBeenCalled()
     const db = new DatabaseSync(path)
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual([{ version: 1 }])
+      expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual([{ version: 1 }, { version: 2 }])
     } finally {
       db.close()
     }
@@ -46,7 +46,7 @@ describe('runtime memory', () => {
   it('probes the real store migration, nullable timestamps and full-text search', async () => {
     expect(probeMemoryStore(join(await createRoot(), 'memory.sqlite'))).toEqual({
       sqliteVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      migrationVersion: 1, matchedId: 'memory-probe', fts5: true,
+      migrationVersion: 2, matchedId: 'memory-probe', fts5: true,
     })
   })
 })

@@ -42,14 +42,14 @@ afterEach(async () => {
 })
 
 describe('MemoryStore', () => {
-  it('creates the file, enables WAL and foreign keys, and records migration 1 only once', () => {
+  it('creates the file, enables WAL and foreign keys, and records migrations 1 and 2 only once', () => {
     store.open()
     expect(existsSync(path)).toBe(true)
     store.insert(memory())
     const db = new DatabaseSync(path)
     try {
       const applied = db.prepare('SELECT * FROM schema_migrations').all()
-      expect(applied).toEqual([{ version: 1, appliedAt: expect.any(String) }])
+      expect(applied).toEqual([{ version: 1, appliedAt: expect.any(String) }, { version: 2, appliedAt: expect.any(String) }])
       expect(db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' })
       store.close()
       store.open()
@@ -191,7 +191,7 @@ describe('MemoryStore', () => {
     })
     expect(JSON.parse(output.trim())).toEqual({
       sqliteVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      migrationVersion: 1, matchedId: 'memory-probe', fts5: true,
+      migrationVersion: 2, matchedId: 'memory-probe', fts5: true,
     })
   })
 })

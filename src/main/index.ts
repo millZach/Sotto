@@ -138,6 +138,7 @@ import { GrokSpeechService } from './agents/grokSpeech'
 import { e2eGrokSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { openRuntimeMemory } from './memory/runtime'
+import { PolicyStore } from './memory/policies'
 import { probeMemoryStore } from './memory/probe'
 
 const memoryProbeMode = process.env.SOTTO_MEMORY_PROBE === '1'
@@ -412,6 +413,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const memoryStore = e2eConfiguration === null
     ? openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
     : undefined
+  const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -505,6 +507,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const agentControl: AgentControl = new AgentControl({
     directory: userDataPath, host: agentHost, credentials, membership,
+    ...(authority === undefined ? {} : { authority }),
     historyEnabled: () => agentHistoryEnabled,
     turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {

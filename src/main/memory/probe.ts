@@ -20,13 +20,13 @@ export function probeMemoryStore(path: string): {
     if (matches[0]?.id !== 'memory-probe') throw new Error('Memory store full-text query failed')
     const db = new DatabaseSync(path, { readOnly: true })
     try {
-      const migrations = db.prepare('SELECT version FROM schema_migrations').all()
-      if (migrations.length !== 1 || migrations[0]?.version !== 1) {
+      const migrations = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()
+      if (migrations.length !== 2 || migrations[0]?.version !== 1 || migrations[1]?.version !== 2) {
         throw new Error('Memory store migration evidence is missing')
       }
       const version = db.prepare('SELECT sqlite_version() AS version').get()?.version
       if (typeof version !== 'string') throw new Error('SQLite version evidence is missing')
-      return { sqliteVersion: version, migrationVersion: 1, matchedId: matches[0].id, fts5: true }
+      return { sqliteVersion: version, migrationVersion: 2, matchedId: matches[0].id, fts5: true }
     } finally {
       db.close()
     }
