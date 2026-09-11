@@ -25,6 +25,7 @@ const reviewedInventories = Object.freeze({
       'node:module',
       'node:os',
       'node:path',
+      'node:sqlite',
       'node:stream',
       'node:stream/promises',
       'node:url',
