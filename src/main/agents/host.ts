@@ -8,6 +8,10 @@ export type AgentHostCommand =
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
+/**
+ * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;
+ * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
+ */
 export interface AgentHost {
   connect(connection: AgentHostConnection): Promise<AgentHostSnapshot>
   snapshot(): Promise<AgentHostSnapshot>

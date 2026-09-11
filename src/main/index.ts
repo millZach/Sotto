@@ -124,6 +124,7 @@ import { z } from 'zod'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
+import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
@@ -470,7 +471,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
-  const agentHost = testAgentHost ?? new T3CodeHost({ onCredential: value => credentials.set('t3', value) })
+  const agentHost = testAgentHost ?? new SottoThreadHost('t3',
+    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), new ThreadRegistry(userDataPath))
   const membership = new AgentMembershipClient({
     configuration: () => agentControl.get().configuration,
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
