@@ -29,17 +29,29 @@ export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<
     SOTTO_E2E: '1',
     SOTTO_E2E_SCENARIO: scenario,
     SOTTO_E2E_USER_DATA: userData,
-  }).filter((entry): entry is [string, string] => entry[1] !== undefined))
+  }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE'))
 }
 
 async function removeOwnedProfile(path: string): Promise<void> {
   await rm(requireOwnedE2EProfile(path), { recursive: true, force: true })
 }
 
+export async function firstSottoWindow(application: ElectronApplication): Promise<Page> {
+  const first = await application.firstWindow()
+  await first.waitForLoadState('domcontentloaded')
+  if (first.url().endsWith('/index.html')) return first
+  const existing = application.windows().find(page => page.url().endsWith('/index.html'))
+  if (existing) return existing
+  return application.waitForEvent('window', { predicate: async page => {
+    await page.waitForLoadState('domcontentloaded')
+    return page.url().endsWith('/index.html')
+  } })
+}
+
 const defaultDependencies: LaunchDependencies = {
   createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
   launch: (options) => electron.launch(options),
-  firstWindow: (application) => application.firstWindow(),
+  firstWindow: firstSottoWindow,
   removeProfile: removeOwnedProfile,
 }
 

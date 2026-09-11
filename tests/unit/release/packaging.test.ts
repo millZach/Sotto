@@ -96,7 +96,7 @@ describe('release contract', () => {
 
   it('embeds the GitHub update feed while refusing to publish from any package script', () => {
     expect(builderConfig.publish).toEqual([
-      { provider: 'github', owner: 'millZach', repo: 'Sotto' },
+      { provider: 'github', owner: 'millZach', repo: 'Sotto-releases' },
     ])
     // The feed exists so app-update.yml lands in the packaged resources. Uploading a
     // release is a deliberate manual act, never a side effect of building one.

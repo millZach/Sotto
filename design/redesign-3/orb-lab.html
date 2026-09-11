@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto orb lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { display: grid; grid-template-columns: 1fr 320px; background: #000; color: #e8eae9; font: 400 13px/1.5 'Bricolage Grotesque', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .stage { position: relative; display: grid; place-items: center; min-height: 0; }
+  canvas { width: min(90vh, 100%); aspect-ratio: 1; cursor: pointer; }
+  .stage .title { position: absolute; left: 24px; top: 20px; font-weight: 500; font-size: 15px; }
+  .stage .hint { position: absolute; left: 24px; bottom: 20px; color: #6a716d; }
+  .panel { border-left: 1px solid #1c1f1e; padding: 18px 18px 30px; overflow: auto; display: grid; gap: 14px; align-content: start; background: #060707; }
+  .panel h2 { font-size: 13px; font-weight: 600; color: #9aa19d; margin-top: 8px; }
+  .row { display: grid; grid-template-columns: 96px 1fr 52px; align-items: center; gap: 10px; }
+  .row label { color: #b8bfbb; }
+  .row output { text-align: right; color: #6a716d; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #b58cff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { font: inherit; color: #b8bfbb; background: none; border: 1px solid #262a28; border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .chips button[aria-pressed='true'] { color: #000; background: #e8eae9; border-color: #e8eae9; }
+  .swatches { display: flex; gap: 8px; align-items: center; }
+  .swatches button { width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--sw); cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+  .swatches button[aria-pressed='true'] { outline-color: #9aa19d; }
+  .pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pick label { display: flex; align-items: center; gap: 8px; color: #b8bfbb; }
+  .pick input { width: 34px; height: 24px; border: 0; background: none; padding: 0; }
+  textarea { width: 100%; min-height: 150px; background: #0c0e0d; color: #9aa19d; border: 1px solid #1c1f1e; border-radius: 8px; padding: 10px; font: 11.5px/1.4 ui-monospace, monospace; resize: vertical; }
+  .actions { display: flex; gap: 8px; }
+  .actions button { font: inherit; font-weight: 500; color: #000; background: #e8eae9; border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .actions button.quiet { color: #b8bfbb; background: none; border: 1px solid #262a28; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="title">Orb lab</div>
+    <canvas id="orb"></canvas>
+    <div class="hint">Click the orb to cycle states. Settings live in the box at the bottom right; paste them back into orb.js TUNE when you like one.</div>
+  </div>
+  <aside class="panel">
+    <h2>State</h2>
+    <div class="chips" id="states"></div>
+    <h2>Colour</h2>
+    <div class="swatches" id="swatches"></div>
+    <div class="pick"><label>A <input type="color" id="colA"></label><label>B <input type="color" id="colB"></label></div>
+    <h2>Shape</h2>
+    <div id="shape"></div>
+    <h2>Light</h2>
+    <div id="light"></div>
+    <h2>Settings</h2>
+    <textarea id="out" spellcheck="false"></textarea>
+    <div class="actions"><button id="copy">Copy settings</button><button class="quiet" id="reset">Reset</button></div>
+  </aside>
+
+<script src="orb.js?v=4"></script>
+<script>
+  const canvas = document.getElementById('orb');
+  const params = new URLSearchParams(location.search);
+  const orb = SottoOrb(canvas, { colors: params.get('color') || 'teal', state: params.get('orb') || 'wake', still: params.get('still') === '1' });
+  const SLIDERS = {
+    shape: [
+      ['density', 3, 5, 1], ['radius', 0.18, 0.42, 0.01], ['amp', 0, 0.5, 0.01], ['lump', 0.6, 4, 0.1], ['ripple', 1, 9, 0.1], ['rippleMix', 0, 1, 0.05], ['grain', 3, 20, 0.5], ['grainMix', 0, 0.5, 0.01], ['tilt', -1, 1, 0.05], ['perspective', 0, 0.6, 0.02],
+    ],
+    light: [
+      ['line', 0.3, 2, 0.05], ['alpha', 0.1, 1, 0.02], ['rim', 0, 4, 0.1], ['back', 0, 1, 0.02], ['hot', 0, 1, 0.05], ['bloom', 0, 2.5, 0.05], ['bloomWide', 4, 60, 1], ['bloomTight', 1, 20, 0.5], ['fill', 0, 1, 0.02], ['halo', 0, 0.6, 0.01], ['dust', 0, 600, 20],
+    ],
+  };
+  const out = document.getElementById('out');
+  const show = () => { out.value = JSON.stringify(orb.settings(), null, 2); };
+  const inputs = {};
+  for (const group in SLIDERS) {
+    const host = document.getElementById(group);
+    for (const [key, min, max, step] of SLIDERS[group]) {
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = `<label>${key}</label><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+      const input = row.querySelector('input'), o = row.querySelector('output');
+      input.value = orb.settings()[key]; o.textContent = input.value;
+      input.addEventListener('input', () => { o.textContent = input.value; orb.tune({ [key]: Number(input.value) }); show(); });
+      inputs[key] = input; host.appendChild(row);
+    }
+  }
+  const sync = () => { const s = orb.settings(); for (const k in inputs) { inputs[k].value = s[k]; inputs[k].parentElement.querySelector('output').textContent = s[k]; } show(); };
+  const states = document.getElementById('states');
+  let current = params.get('orb') || 'wake';
+  for (const name of Object.keys(orb.states)) {
+    const b = document.createElement('button'); b.textContent = name; b.setAttribute('aria-pressed', name === current);
+    b.addEventListener('click', () => setState(name)); states.appendChild(b);
+  }
+  function setState(name) { current = name; orb.setState(name); states.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.textContent === name)); }
+  canvas.addEventListener('click', () => { const order = Object.keys(orb.states); setState(order[(order.indexOf(current) + 1) % order.length]); });
+  const sw = document.getElementById('swatches');
+  const colA = document.getElementById('colA'), colB = document.getElementById('colB');
+  const setPair = ([a, b]) => { colA.value = a; colB.value = b; };
+  for (const name in orb.presets) {
+    const b = document.createElement('button'); b.style.setProperty('--sw', `linear-gradient(135deg, ${orb.presets[name][0]}, ${orb.presets[name][1]})`);
+    b.setAttribute('aria-pressed', name === (params.get('color') || 'teal'));
+    b.addEventListener('click', () => { orb.setColors(name); setPair(orb.presets[name]); sw.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    sw.appendChild(b);
+  }
+  setPair(orb.colors());
+  const custom = () => { orb.setColors([colA.value, colB.value]); sw.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', false)); };
+  colA.addEventListener('input', custom); colB.addEventListener('input', custom);
+  document.getElementById('copy').addEventListener('click', () => navigator.clipboard.writeText(out.value));
+  document.getElementById('reset').addEventListener('click', () => { orb.tune({ ...orb.defaults }); sync(); });
+  show();
+</script>
+</body>
+</html>

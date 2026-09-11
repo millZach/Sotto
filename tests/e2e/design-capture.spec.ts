@@ -18,6 +18,7 @@ import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import {
   closeSotto,
+  firstSottoWindow,
   launchSotto,
   type LaunchedSotto,
   type LaunchDependencies,
@@ -143,7 +144,7 @@ async function withSotto(
         ...launchOptions,
         args: ['--disable-gpu', `--force-device-scale-factor=${scaleFactor}`, ...(launchOptions.args ?? [])],
       }),
-      firstWindow: (application) => application.firstWindow(),
+      firstWindow: firstSottoWindow,
       removeProfile: async () => undefined,
     }
     launched = await launchSotto(options.scenario ?? 'success', profile, dependencies)
@@ -162,6 +163,11 @@ async function withSotto(
 }
 
 async function waitForStableFrame(page: Page): Promise<void> {
+  // Clicks, scrolling, and scale changes can leave the pointer over a different
+  // control by capture time (including Chromium's native checkbox hover paint).
+  // Park it on the empty top-left window edge before settling animations. A
+  // move alone preserves the keyboard focus and :focus-visible being reviewed.
+  await page.mouse.move(0, 0)
   await page.evaluate(`(async () => {
     await document.fonts.ready
     // Infinite animations (the deck wave's keyframes) would be

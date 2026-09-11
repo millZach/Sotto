@@ -35,6 +35,8 @@ import { SEGMENT_SILENCE_RMS, SEGMENT_SILENCE_SECONDS } from '../audio/audioReco
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
+import { useAgentConnection } from '../agents/AgentContext'
+import { AgentWidget } from '../agents/AgentWidget'
 
 /** The listening visualizer's fixed column count; CSS staggers their motion. */
 const LISTENING_BAR_COUNT = 7
@@ -572,6 +574,7 @@ export interface WidgetEntryProps {
 }
 
 export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): ReactNode {
+  const agents = useAgentConnection(preview === null ? bridge?.agents : undefined)
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
@@ -624,7 +627,11 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
   return (
     <>
       <WidgetAnnouncements snapshot={snapshot} platform={platform} />
-      {snapshot === null ? null : (
+      {snapshot === null ? null : snapshot.status === 'idle' && agents.state !== null
+        && agents.state.configuration.enabled ? (
+        <AgentWidget state={agents.state} command={agents.command} onPresentationChange={actions.onPresentationChange}
+          onToggle={actions.onToggle} onDrag={actions.onDrag} visibilityGeneration={visibilityGeneration} dragCancellationVersion={dragCancellationVersion} />
+      ) : (
         <WidgetApp
           snapshot={snapshot}
           platform={platform}

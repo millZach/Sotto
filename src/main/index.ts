@@ -10,6 +10,8 @@ import {
   protocol,
   screen,
   session,
+  safeStorage,
+  shell,
   systemPreferences,
   Tray,
   type Event as ElectronEvent,
@@ -117,6 +119,23 @@ import {
   snapshotE2EState,
 } from './e2e/e2eBoundary'
 import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL } from '../shared/e2e'
+import { AGENT_STATE, AGENT_E2E } from '../shared/agents'
+import { z } from 'zod'
+import { AgentCredentials } from './agents/credentials'
+import { SecureSettings } from './agents/secureSettings'
+import { T3CodeHost } from './agents/t3'
+import { SottoThreadHost, ThreadRegistry } from './agents/threads'
+import { AgentControl } from './agents/control'
+import { ConfiguredAgentReasoner } from './agents/reasoning'
+import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
+import { GrokSubscriptionClient } from './agents/subscriptionGrok'
+import { CodexSubscriptionClient } from './agents/subscriptionCodex'
+import { AgentMembershipClient } from './agents/membership'
+import { registerAgentIpc } from './agents/ipc'
+import { NaturalSpeechModels } from './agents/speechModels'
+import { GrokSpeechService } from './agents/grokSpeech'
+import { e2eGrokSpeechFetch } from './e2e/agentSpeech'
+import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
 if (e2eConfiguration === null) {
@@ -143,6 +162,7 @@ type NativeDiagnostic =
   | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
   | 'settings-update-failed'
+  | 'secure-key-migration-unavailable'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -307,6 +327,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   focus(): void {
     this.window.focus()
   }
+  setFocusable(focusable: boolean): void { this.window.setFocusable(focusable) }
 
   minimize(): void {
     this.window.minimize()
@@ -375,6 +396,7 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
+  const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
@@ -382,12 +404,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ? null
     : join(__dirname, '../../build/icon.ico')
   const recoveryNotices = new RecoveryNoticeCenter()
-  const { settings, history } = createStorageRepositories(
+  const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
     recoveryNotices,
     Date.now,
     platformDefaults,
   )
+  const credentials = new AgentCredentials(userDataPath, safeStorage)
+  await credentials.load()
+  const grokSpeech = new GrokSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eGrokSpeechFetch }) })
+  const settings = new SecureSettings(plainSettings, credentials)
+  await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
+  let agentHistoryEnabled = (await settings.get()).historyEnabled
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -442,6 +470,29 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
     },
   })
+  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
+  const agentHost = testAgentHost ?? new SottoThreadHost('t3',
+    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), new ThreadRegistry(userDataPath))
+  const membership = new AgentMembershipClient({
+    configuration: () => agentControl.get().configuration,
+    credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
+  })
+  const agentControl: AgentControl = new AgentControl({
+    directory: userDataPath, host: agentHost, credentials, membership,
+    historyEnabled: () => agentHistoryEnabled,
+    reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
+      claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
+      codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex')),
+      grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok')),
+    }) : e2eAgentReasoner,
+  })
+  await agentControl.start()
+  const unsubscribeAgents = agentControl.subscribe(state => {
+    windows.sendToMain(AGENT_STATE, state)
+    windows.sendToWidget(AGENT_STATE, state)
+    if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
+  })
+  app.on('will-quit', () => { unsubscribeAgents(); agentControl.dispose() })
   const applicationMenuTemplate = buildApplicationMenuTemplate({
     platform,
     appName: APP_NAME,
@@ -534,7 +585,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     })().catch(() => undefined)
   }
   const transcriptPolish = new TranscriptPolishService({
-    getSettings: () => settings.get(),
+    getSettings: () => settings.forFormatting(),
     onDiagnostic: (diagnostic) => appendPolishDiagnostic(`${JSON.stringify(diagnostic)}\n`),
     ...(e2eConfiguration === null
       ? {}
@@ -626,6 +677,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(currentTrayState)
     },
     async onSettingsChanged(settings): Promise<void> {
+      agentHistoryEnabled = settings.historyEnabled
+      await agentControl.privacyChanged()
       showWidgetWhenIdle = settings.showWidgetWhenIdle
       if (settings.onboardingComplete && dictationLifecycle.isIdle()) {
         // Re-seed the resting sliver so theme/shortcut changes repaint it and
@@ -718,10 +771,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : () => registerLocalAssetProtocols({
           protocol,
           net,
-          modelSources: () => productionModels.manager.protocolSources(),
+          modelSources: async () => ({ ...await productionModels.manager.protocolSources(), ...await naturalSpeechModels.protocolSources() }),
           runtimeSource: productionModels.runtimeSource,
         }),
     registerIpc: () => {
+      const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
+        status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
+        download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
+      }, grokSpeech)
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),
@@ -788,6 +845,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // a renderer that is already able to receive it.
       updates.start()
       const cleanupNativeIpc = (): void => {
+        cleanupAgents()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
         remoteAsr.dispose()
@@ -795,6 +853,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc
+      ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
+        if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
+        testAgentHost?.event(z.object({ type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject']), threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional() }).strict().parse(payload))
+      })
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
           throw new Error('E2E_SENDER_REJECTED')
@@ -814,6 +876,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
       })
       return () => {
+        ipcMain.removeHandler(AGENT_E2E)
         ipcMain.removeHandler(E2E_SNAPSHOT_CHANNEL)
         ipcMain.removeHandler(E2E_TRIGGER_SHORTCUT_CHANNEL)
         cleanupNativeIpc()

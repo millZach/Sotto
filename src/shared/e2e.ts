@@ -35,6 +35,7 @@ export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export interface SottoE2EBridge {
+  agentEvent?(event: { type: 'ready' | 'manual' | 'question' | 'permission' | 'disconnect' | 'failure' | 'reasoner-release' | 'uncertain' | 'reject' | 'connect-reject'; threadId: string; text: string; requestId?: string | undefined; status?: 'idle' | 'running' | 'error' | undefined }): Promise<void>
   readonly scenario: E2EScenario
   snapshot(): Promise<E2ESnapshot>
   triggerShortcut(): Promise<void>

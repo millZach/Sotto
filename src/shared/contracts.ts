@@ -146,6 +146,8 @@ export type WidgetVisibilityPayload = z.infer<typeof widgetVisibilitySchema>
 
 /** Native widget visual states with distinct presentation footprints. */
 export const widgetPresentationSchema = z.enum([
+  'agents-compact',
+  'agents-expanded',
   'idle-resting',
   'idle-hovered',
   'active',
@@ -414,6 +416,7 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
+  readonly agents?: import('./agents').AgentBridge
   readonly platform: SottoPlatform
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
@@ -469,6 +472,7 @@ export interface SottoBridge {
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
+  readonly agents?: import('./agents').AgentBridge
   readonly platform: SottoPlatform
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
