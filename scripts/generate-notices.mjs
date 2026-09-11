@@ -66,7 +66,7 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
 
-const manropeOfl = `Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)
+const ofl = (copyrightLine) => `${copyrightLine}
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -86,7 +86,7 @@ with others.
 
 The OFL allows the licensed fonts to be used, studied, modified and
 redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded, 
+fonts, including any derivative works, can be bundled, embedded,
 redistributed and/or sold with any software provided that any reserved
 names are not used by derivative works. The fonts and derivatives,
 however, cannot be released under any other type of license. The
@@ -160,18 +160,79 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.`
 
-// Both bundled faces ship under the same OFL 1.1 body; only the copyright line
-// differs, so it is swapped rather than duplicating 90 lines of licence text.
-const splineSansMonoOfl = manropeOfl.replace(
-  'Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)',
-  'Copyright 2022 The Spline Sans Mono Project Authors (https://github.com/SorkinType/SplineSansMono)',
+// Bundled faces share the OFL 1.1 body with their own copyright line.
+const manropeOfl = ofl('Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)')
+const splineSansMonoOfl = ofl('Copyright 2022 The Spline Sans Mono Project Authors (https://github.com/SorkinType/SplineSansMono)')
+const bricolageGrotesqueOfl = ofl('Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)')
+
+// Preserve the updater dependency notices when regenerating the bundled inventory.
+const updaterMit = microsoftMit.replace(
+  'Copyright (c) Microsoft Corporation. All rights reserved.',
+  `electron-updater, builder-util-runtime
+Copyright (c) 2015 Loopline Systems
+
+fs-extra
+Copyright (c) 2011-2017 JP Richardson
+
+jsonfile
+Copyright (c) 2012-2015, JP Richardson <jprichardson@gmail.com>
+
+universalify
+Copyright (c) 2017, Ryan Zimmerman <opensrc@ryanzim.com>
+
+js-yaml
+Copyright (C) 2011-2015 by Vitaly Puzrin
+
+lazy-val
+Copyright (c) Vladimir Krivosheev
+
+lodash.escaperegexp
+Copyright jQuery Foundation and other contributors <https://jquery.org/>
+Based on Underscore.js, copyright Jeremy Ashkenas, DocumentCloud and Investigative
+Reporters & Editors <http://underscorejs.org/>
+
+lodash.isequal
+Copyright JS Foundation and other contributors <https://js.foundation/>
+Based on Underscore.js, copyright Jeremy Ashkenas, DocumentCloud and Investigative
+Reporters & Editors <http://underscorejs.org/>
+
+debug
+Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
+Copyright (c) 2018-2021 Josh Junon
+
+ms
+Copyright (c) 2020 Vercel, Inc.
+
+supports-color, has-flag
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)`,
 )
+
+const updaterIsc = `graceful-fs
+Copyright (c) 2011-2022 Isaac Z. Schlueter, Ben Noordhuis, and Contributors
+
+semver
+Copyright (c) Isaac Z. Schlueter and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
 
 const licenseSections = [
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
   ['React, React DOM, and Scheduler MIT license', await read('node_modules/react/LICENSE')],
   ['Lucide ISC and Feather MIT licenses', await read('node_modules/lucide-react/LICENSE')],
   ['Zod MIT license', await read('node_modules/zod/LICENSE')],
+  ['Windows updater dependency MIT licenses', updaterMit],
+  ['Windows updater dependency ISC licenses', updaterIsc],
+  ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
   ['Hugging Face Jinja MIT license', await read('node_modules/@huggingface/jinja/LICENSE')],
   ['ONNX Runtime MIT license', microsoftMit],
   ['Platform.js MIT license', await read('node_modules/platform/LICENSE')],
@@ -181,6 +242,7 @@ const licenseSections = [
   ['Moonshine MIT license', moonshineMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
   ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],
+  ['Bricolage Grotesque SIL Open Font License 1.1', bricolageGrotesqueOfl],
 ]
 
 const table = NOTICE_COMPONENTS.map((component) =>
@@ -193,13 +255,17 @@ const sections = licenseSections.map(([heading, text]) =>
 
 const naturalVoiceNotice = `## Optional Supertonic natural voices
 
-AI-generated local speech uses the optional Supertonic model and ten preset voices by Supertone Inc., converted for Transformers.js by the Hugging Face ONNX community. Model weights are downloaded separately and are not included in the installer. The pinned conversion is onnx-community/Supertonic-TTS-ONNX revision cff123c84b0655d9d647641f1b532c3cbb8f7faa; exact asset hashes are recorded in src/main/agents/speechModelManifest.json.
+AI-generated speech from Supertonic is available as an explicit optional download. Model weights and the ten preset voice styles are by Supertone Inc.; this Transformers.js conversion is by the Hugging Face ONNX community. The pinned conversion is \`onnx-community/Supertonic-TTS-ONNX\` revision \`cff123c84b0655d9d647641f1b532c3cbb8f7faa\`. The complete asset names, sizes, and SHA-256 hashes are in \`src/main/agents/speechModelManifest.json\`. No Supertonic weights are included in the installer.
 
-Downloading and using these voices is subject to the OpenRAIL-M license below, including Attachment A's use restrictions. Redistributed model copies must retain these notices and restrictions. Generated speech is machine-generated. The local inference path uses no paid API or subscription.
+The model is licensed under **OpenRAIL-M**, not MIT. Downloading or using these voices is subject to the complete license below, including the use restrictions in Attachment A. Users of these voices must comply with those restrictions; redistributed model copies must retain this license, notices, and the required restrictions. Speech produced by these voices is machine-generated. No third-party subscription or paid API is used for local synthesis.
 
-Model: https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/tree/cff123c84b0655d9d647641f1b532c3cbb8f7faa
+Upstream model: https://huggingface.co/Supertone/supertonic
+
+Conversion: https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/tree/cff123c84b0655d9d647641f1b532c3cbb8f7faa
 
 License source: https://huggingface.co/Supertone/supertonic/resolve/b6856d033f622c63ea29441795be266a1133e227/LICENSE
+
+The following is the unmodified upstream license (SHA-256 \`0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f\`).
 
 \`\`\`text
 ${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
@@ -207,13 +273,15 @@ ${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
 
 const output = `# Third-Party Notices
 
-Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
+Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
 | Component | Version / revision | License | Copyright / attribution |
 |---|---|---|---|
 ${table}
+
+\`electron-updater\` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from \`node_modules\` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
 
 The bundled Standard model is \`onnx-community/moonshine-base-ONNX\` revision \`b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad\`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, \`Xenova/whisper-tiny\` revision \`5332fcc35e32a33b86612b9a57a89be7906102b1\` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 

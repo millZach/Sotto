@@ -57,6 +57,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   Object.freeze({ name: 'onnx-community/moonshine-base-ONNX', version: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', attribution: 'Useful Sensors (Moonshine), converted by the Hugging Face ONNX community' }),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
   Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
+  Object.freeze({ name: 'Bricolage Grotesque', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Bricolage Grotesque Project Authors' }),
 ])
 
 export const EMBEDDED_BROWSER_DEPENDENCIES = Object.freeze([
@@ -179,6 +180,8 @@ export async function verifyThirdPartyNotices(options = {}) {
     'https://blueoakcouncil.org/license/1.0.0',
     '## Manrope SIL Open Font License 1.1',
     '## Spline Sans Mono SIL Open Font License 1.1',
+    '## Bricolage Grotesque SIL Open Font License 1.1',
+    'Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)',
     '## Moonshine MIT license',
     'Copyright (c) 2024 Useful Sensors',
     'onnx-community/moonshine-base-ONNX',
