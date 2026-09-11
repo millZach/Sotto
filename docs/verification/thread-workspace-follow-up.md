@@ -2,6 +2,8 @@
 
 September 11 merge preparation (user authorized push and merge of the completed overhaul): full serial Vitest run passed **2,232 tests**, with 8 existing skips, across 127 passing files and 3 skipped files. The initial two-worker run had one Codex fixture acknowledgement timeout at its 200 ms deadline; its complete adapter suite passed in isolation and the subsequent full serial run passed unchanged. Typecheck, full lint, build, third-party notices (46 components), and staged whitespace checks passed. The authoritative design baselines were refreshed for the approved thread workspace/footer changes; all six capture journeys and the 83-tuple manifest passed. Temporary agent prompts, logs, probes, and diagnostic captures remain local. Release packaging is outside the requested merge.
 
+The final visual comparison exposed a timer-only capture race (`00:01` versus `00:00` in the listening pill). The design harness now fixes Date in that test widget renderer and waits for its elapsed display; normal timers and the product clock are unchanged. Baselines were regenerated with the same deterministic clock; pixel comparison thresholds remain unchanged.
+
 September 11 folder error and provider model picker:
 
 - [x] Resolve a chosen folder by normalized path, independent of navigation's active project ID. Refresh delayed acknowledgements and retain attempted folders through retry/reselection to avoid duplicate folder submissions.

@@ -547,6 +547,14 @@ async function captureWidget(
   // other states use the active 248x88 window.
   footprint: { readonly width: number; readonly height: number } = { width: 248, height: 88 },
 ): Promise<void> {
+  // The live pill counts wall-clock seconds even when its animations are
+  // paused. Freeze only this test renderer's Date so repeated captures do not
+  // compare 00:00 with 00:01; timers and real recording effects keep running.
+  const elapsed = page.locator('.widget-time')
+  if (await elapsed.count()) {
+    await page.clock.setFixedTime(0)
+    await expect(elapsed).toHaveText('00:00')
+  }
   await waitForStableFrame(page)
   const logicalViewport = await page.evaluate<readonly [number, number]>('[innerWidth, innerHeight]')
   expect(logicalViewport[0]).toBeGreaterThanOrEqual(footprint.width)
