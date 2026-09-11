@@ -61,6 +61,14 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in a probe mode that opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and prints its evidence. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
 
+## Authority
+
+**Policy record.** One row in the `policies` table of the memory store that carries authority: an action (`spend`, `publish`, `destroy`, `relax-verification`), a resource (`*` or a specific path, repository or provider), a scope (`global` or a project id), an effect (`allow` or `always-confirm`), a source (`user` or `questionnaire`), a note, and granted, expiry and revocation times. Policy records are the only thing that can authorize a risky action; a memory whose authority field says `permission` is evidence, never a grant. An `always-confirm` record beats any `allow`; expired or revoked records never allow. See ADR-0004. Avoid: "permission memory", "rule".
+
+**Risky action.** A permission approval that the coordinator classifies from the request text as spending, publishing, destroying or relaxing verification. A request can carry several classes. Dispatch of a risky action consults policy before the provider sees the answer: supervision never answers a permission request, and the user's explicit Allow is the confirmation an `always-confirm` boundary requires. Avoid: "dangerous command", "privileged op".
+
+**Risk boundary.** An action the user says Sotto must always confirm, captured by the questionnaire and stored as `always-confirm` policy records with source `questionnaire`, never as inferred memory.
+
 ## Memory evaluation
 
 **SottoMemEval.** The product-specific memory benchmark in `scripts/memeval/`: labelled memory cases run against a pluggable backend, scored per category (recall, abstention, temporal adaptation, temporary exception, project leak, authority leak), printed as a table and saved with the backend name and case-set version. Run it with `npm run memeval`.
@@ -80,6 +88,7 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `docs/agent-control.md` — user-facing behaviour of agent control.
-- `src/main/memory/` — the memory store, its migrations, the runtime opener and the packaged probe.
+- `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
+- `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store and ADR-0004 on authority in policy records.
