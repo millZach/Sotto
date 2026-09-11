@@ -91,7 +91,28 @@ describe('release contract', () => {
     expect(viteConfig).toContain("externalDependencyInventory('preload')")
     expect(verifier).toContain('out/main/external-dependencies.json')
     expect(verifier).toContain('out/preload/external-dependencies.json')
+    expect(verifier).not.toContain('scripts/probe-memory-store.mjs')
+    expect(verifier).toContain("SOTTO_MEMORY_PROBE: '1'")
+    expect(verifier).toContain('SOTTO_MEMORY_PROBE_USER_DATA')
+    expect(verifier).toContain('const memoryStore = await verifyPackagedMemoryStore(target)')
+    expect(verifier.indexOf('const memoryStore =')).toBeLessThan(
+      verifier.indexOf('const smoke = await verifyNormalPackagedLaunch'),
+    )
     expect(verifier).not.toContain('.matchAll(')
+  })
+
+  it('bundles the memory store into the runtime and closes it on quit', () => {
+    const main = read('src/main/index.ts')
+    expect(main).toContain("from './memory/runtime'")
+    expect(main).toContain("openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)")
+    expect(main).toContain('memoryStore?.close()')
+    expect(main).toContain("from './memory/probe'")
+  })
+
+  it('keeps the direct runtime probe outside the checkout and reopens the database', () => {
+    const probe = read('scripts/probe-memory-store.mjs')
+    expect(probe).toContain("join(tmpdir(), 'sotto-memory-store-probe-')")
+    expect(probe).toMatch(/db.close\(\)[\s\S]*db = new DatabaseSync[\s\S]*assert.deepEqual\(migrateDatabase\(db\), \[\]\)/)
   })
 
   it('embeds the GitHub update feed while refusing to publish from any package script', () => {

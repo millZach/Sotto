@@ -77,6 +77,59 @@ function productionModuleRoots(entries) {
   return [...roots].sort()
 }
 
+export async function verifyPackagedMemoryStore(target) {
+  const probeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-memory-'))
+  let application
+  let timeout
+  let stdout = ''
+  let stderr = ''
+  try {
+    const smokeEnvironment = await profile.smokeEnvironment(probeRoot)
+    application = await electron.launch({
+      executablePath: profile.executablePath(target),
+      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`],
+      env: Object.fromEntries(Object.entries({
+        ...process.env,
+        ...smokeEnvironment,
+        SOTTO_MEMORY_PROBE: '1',
+        SOTTO_MEMORY_PROBE_USER_DATA: join(probeRoot, 'user-data'),
+      }).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)),
+      timeout: 45_000,
+    })
+    const child = application.process()
+    child.stdout.on('data', chunk => { stdout = (stdout + String(chunk)).slice(-64 * 1024) })
+    child.stderr.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-4000) })
+    const exited = new Promise((resolveExit, rejectExit) => {
+      child.once('close', (code, signal) => {
+        if (code === 0 && signal === null) resolveExit()
+        else rejectExit(new Error(`packaged app exited with code ${code}, signal ${signal}`))
+      })
+      timeout = globalThis.setTimeout(() => rejectExit(new Error('packaged app probe timed out')), 60_000)
+    })
+    // The startup flag installs this one-shot handler only in probe mode. The
+    // process may exit before evaluate's reply; its exit code/output are decisive.
+    void application.evaluate(({ app }) => app.quit()).catch(() => undefined)
+    await exited
+    let result
+    try {
+      result = JSON.parse(stdout.trim())
+    } catch {
+      throw new Error('invalid JSON evidence')
+    }
+    if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
+        result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
+      throw new Error('invalid store evidence')
+    }
+    return result
+  } catch (error) {
+    fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
+  } finally {
+    globalThis.clearTimeout(timeout)
+    await application?.close().catch(() => undefined)
+    await rm(probeRoot, { recursive: true, force: true })
+  }
+}
+
 async function verifyNormalPackagedLaunch(target, asarPath, entries) {
   const executable = profile.executablePath(target)
   const workerEntry = entries.find((entry) =>
@@ -289,6 +342,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const installer = options.installer === undefined
     ? undefined
     : await verifyInstallerAppAsar(options.installer, asarPath)
+  const memoryStore = await verifyPackagedMemoryStore(target)
   const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
   const asarInfo = await stat(asarPath)
   const executableInfo = await stat(profile.executablePath(target))
@@ -305,6 +359,7 @@ export async function verifyPackagedResources(input, options = {}) {
       artifactCount: provenance.artifacts.length,
     },
     ...(installer === undefined ? {} : { installer }),
+    memoryStore,
     smoke,
   }
 }

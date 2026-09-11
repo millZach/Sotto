@@ -137,4 +137,23 @@ describe('buildApplicationMenuTemplate', () => {
 
     expect(electronTemplate).toHaveLength(4)
   })
+
+  it('adds a developer command that reveals recent turn records', () => {
+    const onShowTurnRecords = vi.fn()
+    const view = submenu(
+      darwinTemplate({ includeDeveloperTools: true, onShowTurnRecords }),
+      'View',
+    )
+
+    expect(entries(view)).toEqual([
+      'reload',
+      'toggleDevTools',
+      'separator',
+      'Show recent turn records',
+    ])
+
+    view.find((item) => item.label === 'Show recent turn records')?.click?.()
+
+    expect(onShowTurnRecords).toHaveBeenCalledTimes(1)
+  })
 })

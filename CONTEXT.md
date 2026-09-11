@@ -39,6 +39,10 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Draft.** The one prompt or answer the user is composing, bound to a thread and optionally to a question request. A draft survives a restart.
 
+**Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
+
+**Turn record.** One JSON line in `turns.jsonl` in the user data folder, written by the turn recorder when a turn finishes: source (`utterance`, `command` or `supervision`), the Sotto thread ID and project the turn acted on, the provider session resolved from the thread registry, timings (intent, retrieval, delegation, total; speech-to-intent and speech-to-first-feedback once the voice pipeline supplies an end-of-speech time), retrieved memory IDs (empty until memory exists), a context-token estimate, the outcome (`completed`, `clarified`, `failed`) and the text and error, which are blanked when Keep local history is off. Draft edits are not turns. Avoid: "trace", "log entry".
+
 **Outbox.** Durable intent for a dispatched command whose acknowledgement may be lost. Sotto reconciles outbox items against the next status rather than resending.
 
 ## Speech
@@ -47,12 +51,35 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Utterance.** One transcribed spoken command handled by the coordinator.
 
+## Memory
+
+**Memory.** One remembered fact about the user, a project or the world, with the metadata the spec requires: type, scope, content, source class (explicit, observed, inferred, imported, agent-confirmed), confidence, evidence count, importance, temporal fields (created, last confirmed, last used, valid from, valid to), provenance, tags, state (active, superseded, disputed, temporary, archived) and authority (preference, policy, permission). Avoid: "fact", "note", "record".
+
+**Memory store.** The SQLite database `memory.sqlite` in the user data folder, the single source of truth for accepted memories. It is opened by Node's built-in `node:sqlite` in the packaged Electron runtime, so production dependencies stay `zod` only, and it carries a full-text index for lexical retrieval. Search honours a memory's validity window and includes temporary memories that are current. See ADR-0003.
+
+**Provenance.** Where a memory came from: a list of Sotto thread IDs with a reference into the thread (for example a turn record ID). Provenance never carries a provider session ID; the thread registry resolves that when needed.
+
+**Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in a probe mode that opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and prints its evidence. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
+
+## Memory evaluation
+
+**SottoMemEval.** The product-specific memory benchmark in `scripts/memeval/`: labelled memory cases run against a pluggable backend, scored per category (recall, abstention, temporal adaptation, temporary exception, project leak, authority leak), printed as a table and saved with the backend name and case-set version. Run it with `npm run memeval`.
+
+**Case.** One labelled scenario in a case set: a short history of provider events, a question asked as of a date and a project, and the expected outcome (an answer pattern, an abstention, or a forbidden leak pattern). Cases carry a `draft` or `reviewed` status until the founder has checked them. Avoid: "sample", "example".
+
+**Case set.** A versioned file of cases (`scripts/memeval/cases/v1.json`). Results always name the case-set version they were scored against.
+
+**Backend.** The memory system under test in SottoMemEval: it observes history events and answers questions, and never sees ground-truth labels. The `none` backend remembers nothing and always abstains; it is the required baseline. This is the one place "backend" is the right word; a provider adapter is never a backend.
+
 ## Where things live
 
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
+- `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `docs/agent-control.md` — user-facing behaviour of agent control.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity.
+- `src/main/memory/` — the memory store, its migrations, the runtime opener and the packaged probe.
+- `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store.

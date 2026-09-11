@@ -21,8 +21,8 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, rename, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
 
 import {
   bootstrapSotto,
@@ -126,6 +126,7 @@ import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
+import { TurnRecorder } from './agents/turns'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
 import { GrokSubscriptionClient } from './agents/subscriptionGrok'
@@ -136,9 +137,20 @@ import { NaturalSpeechModels } from './agents/speechModels'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { e2eGrokSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
+import { openRuntimeMemory } from './memory/runtime'
+import { probeMemoryStore } from './memory/probe'
 
+const memoryProbeMode = process.env.SOTTO_MEMORY_PROBE === '1'
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
-if (e2eConfiguration === null) {
+if (memoryProbeMode) {
+  const directory = process.env.SOTTO_MEMORY_PROBE_USER_DATA
+  if (!directory || !isAbsolute(directory)) {
+    console.error('[Sotto] memory-store-probe-profile-invalid')
+    app.exit(1)
+    throw new Error('Memory probe requires an absolute isolated user-data directory')
+  }
+  app.setPath('userData', directory)
+} else if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E
   delete process.env.SOTTO_E2E_SCENARIO
   delete process.env.SOTTO_E2E_USER_DATA
@@ -163,6 +175,7 @@ type NativeDiagnostic =
   | 'native-widget-show-failed'
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
+  | 'memory-store-open-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -396,6 +409,10 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
+  const memoryStore = e2eConfiguration === null
+    ? openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
+    : undefined
+  app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
   // Packaged builds get the brand icon stamped onto the executable by
@@ -471,8 +488,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
+  const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new SottoThreadHost('t3',
-    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), new ThreadRegistry(userDataPath))
+    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!)
+  const turns = new TurnRecorder({
+    directory: userDataPath,
+    historyEnabled: () => agentHistoryEnabled,
+    resolveSession: id => {
+      const binding = threadRegistry?.byThread(id)
+      return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined
+    },
+  })
   const membership = new AgentMembershipClient({
     configuration: () => agentControl.get().configuration,
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
@@ -480,6 +506,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const agentControl: AgentControl = new AgentControl({
     directory: userDataPath, host: agentHost, credentials, membership,
     historyEnabled: () => agentHistoryEnabled,
+    turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
       claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
       codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex')),
@@ -493,6 +520,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
   app.on('will-quit', () => { unsubscribeAgents(); agentControl.dispose() })
+  const showTurnRecords = (): void => {
+    void (async () => {
+      await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
+      shell.showItemInFolder(turns.path())
+      console.log(`[Sotto] ${(await turns.recent(20)).length} recent turn records`)
+    })().catch(() => console.error('[Sotto] turn-records-unavailable'))
+  }
   const applicationMenuTemplate = buildApplicationMenuTemplate({
     platform,
     appName: APP_NAME,
@@ -500,6 +534,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
+    onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
     // Windows keeps Electron's default menu: installing null would also drop the
@@ -692,6 +727,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const trayController = new TrayController(trayAdapter, {
+    ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
     setAutoPaste(enabled): void {
       void settingsCoordinator
@@ -901,7 +937,26 @@ app.setAppUserModelId(APP_ID)
 // Electron's unhandled default does exactly that.
 app.on('window-all-closed', () => undefined)
 
-void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
-  logOperational('bootstrap-terminal-failed')
-  app.quit()
-})
+if (memoryProbeMode) {
+  // Wait for the verifier to attach stdout/exit listeners before running. This
+  // handshake avoids racing Playwright's main-process debugger attachment.
+  const timeout = setTimeout(() => app.exit(1), 60_000)
+  void app.whenReady().then(() => {
+    app.once('before-quit', (event) => {
+      event.preventDefault()
+      clearTimeout(timeout)
+      try {
+        const evidence = probeMemoryStore(join(app.getPath('userData'), 'memory.sqlite'))
+        process.stdout.write(`${JSON.stringify(evidence)}\n`, () => app.exit(0))
+      } catch (error) {
+        console.error('[Sotto] memory-store-probe-failed', error)
+        app.exit(1)
+      }
+    })
+  })
+} else {
+  void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
+    logOperational('bootstrap-terminal-failed')
+    app.quit()
+  })
+}

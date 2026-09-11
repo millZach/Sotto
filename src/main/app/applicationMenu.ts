@@ -43,6 +43,7 @@ export interface ApplicationMenuTemplateOptions {
   readonly appName: string
   readonly includeDeveloperTools: boolean
   readonly onShowSettings: () => void
+  readonly onShowTurnRecords?: () => void
 }
 
 function separator(): ApplicationMenuItem {
@@ -88,10 +89,16 @@ function editMenu(): ApplicationMenuItem {
   }
 }
 
-function viewMenu(): ApplicationMenuItem {
+function viewMenu(onShowTurnRecords?: () => void): ApplicationMenuItem {
   return {
     label: 'View',
-    submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }],
+    submenu: [
+      { role: 'reload' },
+      { role: 'toggleDevTools' },
+      ...(onShowTurnRecords
+        ? [separator(), { label: 'Show recent turn records', click: onShowTurnRecords }]
+        : []),
+    ],
   }
 }
 
@@ -121,7 +128,7 @@ export function buildApplicationMenuTemplate(
   return [
     appMenu(options.appName, options.onShowSettings),
     editMenu(),
-    ...(options.includeDeveloperTools ? [viewMenu()] : []),
+    ...(options.includeDeveloperTools ? [viewMenu(options.onShowTurnRecords)] : []),
     windowMenu(),
   ]
 }
