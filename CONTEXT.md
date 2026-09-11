@@ -51,6 +51,16 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Utterance.** One transcribed spoken command handled by the coordinator.
 
+## Memory
+
+**Memory.** One remembered fact about the user, a project or the world, with the metadata the spec requires: type, scope, content, source class (explicit, observed, inferred, imported, agent-confirmed), confidence, evidence count, importance, temporal fields (created, last confirmed, last used, valid from, valid to), provenance, tags, state (active, superseded, disputed, temporary, archived) and authority (preference, policy, permission). Avoid: "fact", "note", "record".
+
+**Memory store.** The SQLite database `memory.sqlite` in the user data folder, the single source of truth for accepted memories. It is opened by Node's built-in `node:sqlite` in the packaged Electron runtime, so production dependencies stay `zod` only, and it carries a full-text index for lexical retrieval. Search honours a memory's validity window and includes temporary memories that are current. See ADR-0003.
+
+**Provenance.** Where a memory came from: a list of Sotto thread IDs with a reference into the thread (for example a turn record ID). Provenance never carries a provider session ID; the thread registry resolves that when needed.
+
+**Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in a probe mode that opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and prints its evidence. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
+
 ## Memory evaluation
 
 **SottoMemEval.** The product-specific memory benchmark in `scripts/memeval/`: labelled memory cases run against a pluggable backend, scored per category (recall, abstention, temporal adaptation, temporary exception, project leak, authority leak), printed as a table and saved with the backend name and case-set version. Run it with `npm run memeval`.
@@ -70,5 +80,6 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `docs/agent-control.md` — user-facing behaviour of agent control.
+- `src/main/memory/` — the memory store, its migrations, the runtime opener and the packaged probe.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store.
