@@ -47,6 +47,16 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Utterance.** One transcribed spoken command handled by the coordinator.
 
+## Memory evaluation
+
+**SottoMemEval.** The product-specific memory benchmark in `scripts/memeval/`: labelled memory cases run against a pluggable backend, scored per category (recall, abstention, temporal adaptation, temporary exception, project leak, authority leak), printed as a table and saved with the backend name and case-set version. Run it with `npm run memeval`.
+
+**Case.** One labelled scenario in a case set: a short history of provider events, a question asked as of a date and a project, and the expected outcome (an answer pattern, an abstention, or a forbidden leak pattern). Cases carry a `draft` or `reviewed` status until the founder has checked them. Avoid: "sample", "example".
+
+**Case set.** A versioned file of cases (`scripts/memeval/cases/v1.json`). Results always name the case-set version they were scored against.
+
+**Backend.** The memory system under test in SottoMemEval: it observes history events and answers questions, and never sees ground-truth labels. The `none` backend remembers nothing and always abstains; it is the required baseline. This is the one place "backend" is the right word; a provider adapter is never a backend.
+
 ## Where things live
 
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
@@ -55,4 +65,5 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
 - `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `docs/agent-control.md` — user-facing behaviour of agent control.
+- `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
 - `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity.
