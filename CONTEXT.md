@@ -39,6 +39,10 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Draft.** The one prompt or answer the user is composing, bound to a thread and optionally to a question request. A draft survives a restart.
 
+**Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
+
+**Turn record.** One JSON line in `turns.jsonl` in the user data folder, written by the turn recorder when a turn finishes: source (`utterance`, `command` or `supervision`), the Sotto thread ID and project the turn acted on, the provider session resolved from the thread registry, timings (intent, retrieval, delegation, total; speech-to-intent and speech-to-first-feedback once the voice pipeline supplies an end-of-speech time), retrieved memory IDs (empty until memory exists), a context-token estimate, the outcome (`completed`, `clarified`, `failed`) and the text and error, which are blanked when Keep local history is off. Draft edits are not turns. Avoid: "trace", "log entry".
+
 **Outbox.** Durable intent for a dispatched command whose acknowledgement may be lost. Sotto reconciles outbox items against the next status rather than resending.
 
 ## Speech
@@ -63,6 +67,7 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
+- `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `docs/agent-control.md` — user-facing behaviour of agent control.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
