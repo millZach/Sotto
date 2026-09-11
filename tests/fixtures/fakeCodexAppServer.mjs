@@ -2,6 +2,37 @@ import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+// Hand-written shapes from Codex 0.154.0's generated response schemas.
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+const string = value => typeof value === 'string'
+const strings = value => Array.isArray(value) && value.every(string)
+const variant = (value, key, check) => object(value) && Object.keys(value).length === 1 && object(value[key]) && check(value[key])
+const networkAmendment = value => object(value.network_policy_amendment) && ['allow', 'deny'].includes(value.network_policy_amendment.action) && string(value.network_policy_amendment.host)
+const commandDecision = value => ['accept', 'acceptForSession', 'decline', 'cancel'].includes(value)
+  || variant(value, 'acceptWithExecpolicyAmendment', amendment => strings(amendment.execpolicy_amendment))
+  || variant(value, 'applyNetworkPolicyAmendment', networkAmendment)
+const legacyApproval = value => ['approved', 'approved_for_session', 'approved_mcp_policy_amendment', 'timed_out', 'abort'].includes(value.decision)
+  || variant(value.decision, 'approved_execpolicy_amendment', amendment => strings(amendment.proposed_execpolicy_amendment))
+  || variant(value.decision, 'network_policy_amendment', networkAmendment)
+  || variant(value.decision, 'denied', denied => string(denied.rejection))
+const responseChecks = {
+  'item/commandExecution/requestApproval': value => commandDecision(value.decision),
+  'item/fileChange/requestApproval': value => ['accept', 'acceptForSession', 'decline', 'cancel'].includes(value.decision),
+  'item/permissions/requestApproval': value => object(value.permissions)
+    && (value.permissions.fileSystem == null || object(value.permissions.fileSystem))
+    && (value.permissions.network == null || object(value.permissions.network) && (value.permissions.network.enabled == null || typeof value.permissions.network.enabled === 'boolean'))
+    && (value.scope === undefined || ['turn', 'session'].includes(value.scope))
+    && (value.strictAutoReview == null || typeof value.strictAutoReview === 'boolean'),
+  'item/tool/requestUserInput': value => object(value.answers) && Object.values(value.answers).every(answer => object(answer) && strings(answer.answers)),
+  'mcpServer/elicitation/request': value => ['accept', 'decline', 'cancel'].includes(value.action),
+  'item/tool/call': value => typeof value.success === 'boolean' && Array.isArray(value.contentItems) && value.contentItems.every(item => object(item)
+    && (item.type === 'inputText' && string(item.text) || item.type === 'inputImage' && string(item.imageUrl) || item.type === 'inputAudio' && string(item.audioUrl))),
+  'account/chatgptAuthTokens/refresh': value => string(value.accessToken) && string(value.chatgptAccountId) && (value.chatgptPlanType == null || string(value.chatgptPlanType)),
+  'attestation/generate': value => string(value.token),
+  'currentTime/read': value => Number.isInteger(value.currentTimeAt),
+  applyPatchApproval: legacyApproval,
+  execCommandApproval: legacyApproval,
+}
 
 // Only synthetic fixture input enters this log. The production adapter never logs protocol bodies.
 const directory = process.env.SOTTO_FAKE_CODEX_DIR ?? process.argv[2]
@@ -37,16 +68,22 @@ function raise(thread, kind, text, method, overrides = {}) {
       : { isBlocking: true, questions: [{ id: 'choice', header: 'Choice', question: text, options: [{ label: 'Blue', description: 'Blue option' }] }] }) }
   if (method === 'mcpServer/elicitation/request') Object.assign(params, { mode: 'form', serverName: 'fixture', message: text,
     requestedSchema: { type: 'object', properties: { choice: { type: 'string', enum: ['Blue', 'Green'] } }, required: ['choice'] } })
-  pending.set(id, thread.id)
+  pending.set(id, { threadId: thread.id, method })
   emit({ id, method, params: { ...params, ...overrides } })
 }
 createInterface({ input: process.stdin }).on('line', line => {
   const message = JSON.parse(line)
   record(message)
   if (!message.method) {
-    const threadId = pending.get(message.id)
+    const request = pending.get(message.id)
+    if (request) {
+      const valid = message.error !== undefined
+        ? message.result === undefined && object(message.error) && Number.isInteger(message.error.code) && string(message.error.message)
+        : object(message.result) && responseChecks[request.method]?.(message.result)
+      if (!valid) appendFileSync(file('violations.jsonl'), JSON.stringify({ method: request.method, id: message.id, reason: 'Response does not match the generated schema shape.' }) + '\n')
+    }
     pending.delete(message.id)
-    if (threadId) notify('serverRequest/resolved', { threadId, requestId: message.id })
+    if (request) notify('serverRequest/resolved', { threadId: request.threadId, requestId: message.id })
     return
   }
   const { id, method, params = {} } = message

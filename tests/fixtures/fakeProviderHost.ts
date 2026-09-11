@@ -50,6 +50,9 @@ export class FakeProviderHost implements AgentHost {
       const thread = this.state.threads.find(thread => thread.id === command.threadId)
       if (!thread) throw new Error('Unknown provider session')
       if (command.type === 'send') {
+        if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) {
+          throw new Error('The thread changed in the provider before Sotto could reply.')
+        }
         thread.messages.push({ id: command.messageId, commandId: command.commandId, role: 'user',
           text: command.text, createdAt: new Date().toISOString() })
         thread.status = 'running'

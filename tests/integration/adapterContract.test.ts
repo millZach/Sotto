@@ -22,6 +22,7 @@ describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   return { root, host, connection: { endpoint: '', credential: '' }, projectId: 'contract-project', modelId: 'fake:model',
     skips: { uncertain: 'FakeProviderHost has no transport acknowledgement seam.', restart: 'FakeProviderHost has no persisted process state.' },
     driver: {
+      typeInProvider: async (id, text) => { get(id).messages.push({ id: randomUUID(), role: 'user', text, createdAt: new Date().toISOString() }); host.emit() },
       completeTurn: async (id, text) => { const thread = get(id); thread.status = 'idle'; thread.messages.push({ id: randomUUID(), role: 'assistant', text, createdAt: new Date().toISOString() }); host.emit() },
       raiseQuestion: async (id, text) => { get(id).requests.push({ id: randomUUID(), kind: 'question', text, options: [] }); host.emit() },
       raisePermission: async (id, text) => { get(id).requests.push({ id: randomUUID(), kind: 'permission', text, options: [] }); host.emit() },

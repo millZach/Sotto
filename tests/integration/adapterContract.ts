@@ -8,6 +8,7 @@ import type { RecordedRpc } from '../fixtures/codexFixture'
 export interface AdapterFixture {
   host: AgentHost; connection: AgentHostConnection; projectId: string; modelId: string; root: string
   driver: {
+    typeInProvider(sessionId: string, text: string): Promise<void>
     completeTurn(sessionId: string, text: string): Promise<void>
     raiseQuestion(sessionId: string, text: string): Promise<void>
     raisePermission(sessionId: string, text: string): Promise<void>
@@ -33,6 +34,12 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Contract thread' })
     })
     afterEach(async () => { await f?.cleanup() })
+    it('observes provider takeover and rejects a reply based on stale user input', async () => {
+      await send()
+      await f.driver.typeInProvider(sessionId, 'Typed in the provider')
+      await expect.poll(async () => (await thread()).messages.some(m => m.role === 'user' && m.text === 'Typed in the provider' && m.commandId === undefined)).toBe(true)
+      await expect(f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'stale-reply', text: 'Stale reply', expectedLastUserMessageId: 'own-message' })).rejects.toThrow('changed')
+    })
     it('creates projects and threads, streams replies, and transitions running to idle', async () => {
       expect((await f.host.snapshot()).projects).toContainEqual({ id: f.projectId, title: 'Project', path: f.root })
       expect(await thread()).toMatchObject({ title: 'Contract thread', status: 'idle', modelId: f.modelId })

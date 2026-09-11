@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
-import { codexFixture } from '../../fixtures/codexFixture'
+import { codexFixture, rolloutLine } from '../../fixtures/codexFixture'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 const controls: AgentControl[] = []
@@ -32,6 +32,111 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   return control
 }
 describe('Codex App Server provider adapter', () => {
+  it('reports model listing failure without inventing an available model', async () => {
+    const f = await codexFixture(); fixtures.push(f)
+    await f.script({ reject: 'model/list' })
+    const snapshot = await f.host.connect(f.connection)
+    await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
+    expect(snapshot.models).toEqual([])
+    expect(snapshot).toMatchObject({ error: expect.stringMatching(/models.*list|list.*models/iu) })
+    await expect(create(f)).rejects.toThrow('Choose an available Codex model.')
+    expect((await f.host.connect(f.connection))).not.toHaveProperty('error')
+    expect((await create(f)).result).toEqual({ accepted: true })
+  })
+  it.each(['answer again', 'interrupt', 'disconnect'] as const)('writes only one accept when its write callback times out before %s', async next => {
+    const f = await fixture(false, 200); const { threadId } = await create(f)
+    await f.driver.raisePermission(threadId, 'Synthetic permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const requestId = (await f.host.snapshot()).threads[0]!.requests[0]!.id
+    const rpcId = JSON.parse(requestId.slice(4))
+    const command = { type: 'answer' as const, commandId: 'answer', threadId, requestId, answer: '', approved: true }
+    const child = f.adapter['child']!
+    const originalWrite = child.stdin.write.bind(child.stdin)
+    const callbacks: (() => void)[] = []
+    // Keep the provider's resolved notification from hiding the write-timeout race.
+    child.stdout.pause()
+    child.stdin.write = ((chunk: string, callback?: (error?: Error | null) => void) => originalWrite(chunk, error => {
+      if (callback) callbacks.push(() => callback(error))
+    })) as typeof child.stdin.write
+    try {
+      expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+      let secondError: unknown
+      if (next === 'answer again') { try { await f.host.execute(command) } catch (error) { secondError = error } }
+      else if (next === 'interrupt') await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId })
+      else { f.host.disconnect(); await f.adapter.closed() }
+      await expect.poll(async () => (await f.driver.requests()).filter(r => r.id === rpcId && r.result).length).toBeGreaterThan(0)
+      expect((await f.driver.requests()).filter(r => r.id === rpcId && r.result)).toEqual([{ id: rpcId, result: { decision: 'accept' } }])
+      if (next === 'answer again') expect(secondError).toMatchObject({ message: 'This Codex request is no longer pending.' })
+      expect((await f.host.snapshot()).threads[0]!.requests).toEqual([])
+    } finally {
+      child.stdin.write = originalWrite
+      for (const callback of callbacks) callback()
+      child.stdout.resume()
+    }
+  })
+  it('does not decline an already answered request captured before another decline finishes', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.driver.raisePermission(threadId, 'First permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    await f.driver.raisePermission(threadId, 'Second permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(2)
+    const [first, second] = (await f.host.snapshot()).threads[0]!.requests
+    const child = f.adapter['child']!
+    const originalWrite = child.stdin.write.bind(child.stdin)
+    let release: (() => void) | undefined
+    child.stdin.write = ((chunk: string, callback?: (error?: Error | null) => void) => originalWrite(chunk, error => {
+      if (JSON.parse(chunk).id === JSON.parse(first!.id.slice(4))) release = () => callback?.(error)
+      else callback?.(error)
+    })) as typeof child.stdin.write
+    const interrupt = f.host.execute({ type: 'interrupt', commandId: 'stop', threadId })
+    try {
+      await expect.poll(() => !!release).toBe(true)
+      await f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId: second!.id, answer: '', approved: true })
+      release!(); await interrupt
+      f.host.disconnect(); await f.adapter.closed()
+      expect((await f.driver.requests()).filter(r => r.id === JSON.parse(second!.id.slice(4)) && r.result)).toEqual([
+        { id: JSON.parse(second!.id.slice(4)), result: { decision: 'accept' } },
+      ])
+    } finally { release?.(); child.stdin.write = originalWrite; await interrupt }
+  })
+  it('rejects an MCP form answer that omits a required second field', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Choose color', method: 'mcpServer/elicitation/request', params: { requestedSchema: {
+      type: 'object', properties: { choice: { type: 'string' }, explanation: { type: 'string' } }, required: ['choice', 'explanation'],
+    } } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const requestId = (await f.host.snapshot()).threads[0]!.requests[0]!.id
+    await expect(f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId, answer: '{"choice":"Blue"}' })).rejects.toThrow('Answer the required field')
+    expect((await f.host.snapshot()).threads[0]!.requests).toHaveLength(1)
+  })
+  it.each([
+    ['item/commandExecution/requestApproval', {}],
+    ['item/commandExecution/requestApproval', { decision: 'allow' }],
+    ['item/fileChange/requestApproval', {}],
+    ['item/fileChange/requestApproval', { decision: 'allow' }],
+    ['item/permissions/requestApproval', { decision: 'decline' }],
+    ['item/permissions/requestApproval', { permissions: [] }],
+    ['item/permissions/requestApproval', { permissions: {}, scope: 'forever' }],
+    ['item/tool/requestUserInput', {}],
+    ['item/tool/requestUserInput', { answers: { choice: { answers: [true] } } }],
+    ['item/tool/requestUserInput', { answers: { choice: 'Blue' } }],
+    ['mcpServer/elicitation/request', {}],
+    ['mcpServer/elicitation/request', { action: 'allow' }],
+  ])('makes malformed %s replies fail fixture inspection and cleanup (%j)', async (method, result) => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Synthetic question', method })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const pending = (await f.host.snapshot()).threads[0]!.requests[0]!
+    f.adapter['child']!.stdin.write(JSON.stringify({ id: JSON.parse(pending.id.slice(4)), result }) + '\n')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(0)
+    try {
+      await expect(f.driver.requests()).rejects.toThrow(`Invalid Codex reply for ${method}:`)
+      await expect(f.cleanup()).rejects.toThrow(`Invalid Codex reply for ${method}:`)
+    } finally {
+      fixtures.splice(fixtures.indexOf(f), 1)
+      await f.cleanup().catch(() => undefined)
+    }
+  })
   it('performs the handshake and isolates provider IDs and working directories', async () => {
     const f = await fixture(true); const { threadId } = await create(f)
     const real = await f.realId(threadId)
@@ -125,7 +230,7 @@ describe('Codex App Server provider adapter', () => {
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(0)
     await expect(f.host.execute({ ...command, requestId: pending.id })).rejects.toThrow('no longer pending')
   })
-  it('ignores unknown observed sessions and closes unanswered questions with an empty answer', async () => {
+  it('ignores unknown observed provider sessions and closes unanswered questions with an empty answer', async () => {
     const f = await fixture(); const { threadId } = await create(f)
     f.host.observeThreads?.(['unknown', threadId]); await f.driver.raiseQuestion(threadId, 'Unanswered')
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
@@ -154,7 +259,7 @@ describe('Codex App Server provider adapter', () => {
     await expect.poll(async () => (await f.driver.requests()).some(r => r.id !== undefined && r.result !== undefined)).toBe(true)
     expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
   })
-  it.each(['item/tool/requestUserInput', 'tool/requestUserInput', 'mcpServer/elicitation/request'])('delivers question answers for %s', async method => {
+  it.each(['item/tool/requestUserInput', 'mcpServer/elicitation/request'])('delivers question answers for %s', async method => {
     const f = await fixture(); const { threadId } = await create(f)
     await f.action(threadId, { type: 'question', text: 'Choose color', method })
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
@@ -180,11 +285,10 @@ describe('Codex App Server provider adapter', () => {
     await control.command({ type: 'compose', text: 'Own prompt' }); expect((await control.command({ type: 'send' })).error).toBeNull()
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     const path = join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
-    const line = (ordinal: number, payload: unknown, type = 'event_msg') => JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
-    await writeFile(path, line(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
-      line(2, { type: 'item_completed', item: { type: 'UserMessage', id: 'own-rollout', content: [{ type: 'text', text: 'Own prompt' }] } }) +
-      line(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
-    await f.adapter.pollSessions(); expect(control.get().assignments[0]!.mode).toBe('managed')
+    await writeFile(path, rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
+      rolloutLine(2, { type: 'item_completed', item: { type: 'UserMessage', id: 'own-rollout', content: [{ type: 'text', text: 'Own prompt' }] } }) +
+      rolloutLine(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
+    await f.adapter.pollSessionLogs(); expect(control.get().assignments[0]!.mode).toBe('managed')
     await f.driver.raisePermission(threadId, 'Allow build?')
     await expect.poll(() => control.get().queue.some(q => q.kind === 'permission')).toBe(true)
     await control.command({ type: 'later' })
@@ -195,7 +299,7 @@ describe('Codex App Server provider adapter', () => {
     await expect.poll(() => control.get().queue.some(q => q.kind === 'question')).toBe(true)
     const questionId = control.get().queue.find(q => q.kind === 'question')!.requestId!
     await control.command({ type: 'answer', threadId, requestId: questionId, answer: 'Blue' })
-    await appendFile(path, line(4, { type: 'item_completed', item: { type: 'UserMessage', id: 'cli-user', content: [{ type: 'text', text: 'I am controlling this' }] } }))
+    await appendFile(path, rolloutLine(4, { type: 'item_completed', item: { type: 'UserMessage', id: 'cli-user', content: [{ type: 'text', text: 'I am controlling this' }] } }))
     await expect.poll(() => control.get().assignments[0]!.mode).toBe('manual')
     expect(control.get().host.threads[0]!.messages.find(m => m.id === 'cli-user')!.commandId).toBeUndefined()
     expect(await readFile(join(f.root, 'codex-threads.json'), 'utf8')).not.toContain('Own prompt')

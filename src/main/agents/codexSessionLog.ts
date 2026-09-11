@@ -5,11 +5,12 @@ import { z } from 'zod'
 import type { AgentMessage } from '../../shared/agents'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
+export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
 const entrySchema = z.object({ timestamp: z.string(), ordinal: z.number().optional(), type: z.string(), payload: z.unknown() })
 const textContent = z.array(z.object({ type: z.string(), text: z.string().optional() }))
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; offset: number; buffer: Buffer; own: Map<string, string>; seen: Set<string> }
+type Tail = { path?: string | undefined; offset: number; buffer: Buffer; own: Map<string, string>; seen: Set<string>; lastSuppressed?: string | undefined }
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
@@ -76,15 +77,16 @@ export class CodexSessionLogWatcher {
       const event = userEvent.parse(entry.payload)
       const item = event.type === 'item_completed' && ['UserMessage', 'user_message'].includes(event.item?.type ?? '') ? event.item : undefined
       if (!item && event.type !== 'user_message') return
-      const text = item ? (item.content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
-        : event.message ?? event.text ?? (event.content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+      const text = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
       if (!text) return
       const id = item?.id ?? event.id ?? `rollout:${promptDigest(`${entry.ordinal ?? entry.timestamp}:${text}`)}`
       if (tail.seen.has(id)) return
       tail.seen.add(id)
       const digest = promptDigest(text)
+      if (tail.lastSuppressed === digest) return
+      tail.lastSuppressed = undefined
       const own = [...tail.own].find(([, value]) => value === digest)
-      if (own) { tail.own.delete(own[0]); return }
+      if (own) { tail.own.delete(own[0]); tail.lastSuppressed = digest; return }
       if (!this.stopped) this.options.onMessage(threadId, { id, role: 'user', text, createdAt: entry.timestamp })
     } catch { /* Partial, malformed and unrelated rollout entries do not transfer authority. */ }
   }

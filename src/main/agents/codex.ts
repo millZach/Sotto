@@ -6,11 +6,13 @@ import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type Age
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
-import { CodexSessionLogWatcher, promptDigest } from './codexSessions'
-import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
+import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
+import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
-const configArguments = ['model_provider="openai"', 'approval_policy="on-request"', 'approvals_reviewer="user"', 'sandbox_mode="workspace-write"'].flatMap(v => ['-c', v])
+const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
+const configArguments = Object.entries({ model_provider: 'openai', approval_policy: threadPolicy.approvalPolicy,
+  approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(), origins: z.array(originSchema).default([]) })
 const aliasesSchema = z.record(z.string(), aliasSchema)
@@ -38,6 +40,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  private readonly providerSessionIds = new Map<string, string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly live = new Set<string>()
   private readonly observed = new Set<string>()
@@ -47,9 +50,10 @@ export class CodexAppServerHost implements AgentHost {
   private readonly turnDates = new Map<string, string>()
   private readonly fileSummaries = new Map<string, string>()
   private readonly requests = new Map<string, CodexPendingRequest>()
+  private readonly inFlightRequestIds = new Set<string>()
   private readonly waiters = new Map<string, Waiter>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
-  private readonly uncertainSessions = new Set<string>()
+  private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
   private child: ChildProcessWithoutNullStreams | undefined
   private watcher: CodexSessionLogWatcher | undefined
@@ -73,6 +77,8 @@ export class CodexAppServerHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Codex connection was cancelled.')
     if (!executable) throw new Error('Install Codex and sign in before connecting this provider.')
     this.aliases = aliases; this.state.projects = projects
+    this.providerSessionIds.clear()
+    for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
@@ -118,12 +124,12 @@ export class CodexAppServerHost implements AgentHost {
         this.state.version = result.version ?? result.userAgent ?? ''
       })
       this.write({ method: 'initialized' })
-      this.state.models = [{ id: 'gpt-5.4', provider: 'Codex', name: 'Codex default', ready: true }]
+      this.state.models = []; delete this.state.error
       await this.rpc('model/list', { limit: 100, includeHidden: false }, value => {
         const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional() })) }).parse(value)
         const models = result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true }))
-        if (models.length) this.state.models = models
-      }).catch(() => undefined)
+        this.state.models = models; delete this.state.error
+      }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
       await Promise.all(Object.keys(this.aliases).map(id => this.resume(id)))
@@ -136,7 +142,7 @@ export class CodexAppServerHost implements AgentHost {
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId, status: 'idle', messages: [], requests: [] })
     return this.threads.get(id)!
   }
-  private sessionId(codexThreadId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.codexThreadId === codexThreadId) }
+  private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
   private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()] }) }
   private emit(): void { for (const listener of this.listeners) listener(this.current()) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -144,10 +150,10 @@ export class CodexAppServerHost implements AgentHost {
     this.writing = this.aliasStore.write(structuredClone(this.aliases))
     return this.writing
   }
-  async pollSessions(): Promise<void> { await this.watcher?.poll() }
+  async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
   async snapshot(): Promise<AgentHostSnapshot> {
-    await this.pollSessions()
-    if (this.state.connected) await Promise.all([...this.uncertainSessions].map(async id => {
+    await this.pollSessionLogs()
+    if (this.state.connected) await Promise.all([...this.unconfirmedDispatchSessionIds].map(async id => {
       await this.rpc('thread/read', { threadId: this.aliases[id]!.codexThreadId, includeTurns: true }, value => this.applyThread(id, threadResponse.parse(value).thread)).catch(() => undefined)
     }))
     return this.current()
@@ -162,7 +168,7 @@ export class CodexAppServerHost implements AgentHost {
     if (pending) return pending
     const alias = this.aliases[id]!
     const operation = this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', excludeTurns: false }, value => {
+      ...threadPolicy, excludeTurns: false }, value => {
       this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id); this.emit()
     }).finally(() => { this.resuming.delete(id) })
     this.resuming.set(id, operation); return operation
@@ -180,7 +186,7 @@ export class CodexAppServerHost implements AgentHost {
     }
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : (item.content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(item.content)
     let origin: Origin | undefined
     if (item.type === 'userMessage') {
       origin = alias.origins.find(o => o.itemId === item.id || o.messageId === item.clientId)
@@ -189,7 +195,7 @@ export class CodexAppServerHost implements AgentHost {
     }
     this.addMessage(id, { id: origin?.messageId ?? item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', text,
       createdAt: origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
-    if (origin) this.uncertainSessions.delete(id)
+    if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
   private applyTurn(id: string, turn: z.infer<typeof turnSchema>): void {
     const thread = this.ensureThread(id)
@@ -233,10 +239,11 @@ export class CodexAppServerHost implements AgentHost {
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
         this.creating.add(command.threadId)
         await this.rpc('thread/start', { cwd: project.path, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
-          approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...threadPolicy, ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = threadResponse.parse(value)
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd: project.path,
             title: command.title, modelId: command.modelId, createdAt: new Date().toISOString(), origins: [] }
+          this.providerSessionIds.set(response.thread.id, command.threadId)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
         }, () => { this.creating.delete(command.threadId) })
@@ -255,7 +262,7 @@ export class CodexAppServerHost implements AgentHost {
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           })
         } else {
-          await this.resume(id); await this.pollSessions()
+          await this.resume(id); await this.pollSessionLogs()
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(m => m.role === 'user')?.id ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
           }
@@ -265,21 +272,21 @@ export class CodexAppServerHost implements AgentHost {
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
             await this.rpc('turn/start', { threadId: alias.codexThreadId, clientUserMessageId: command.messageId,
-              input: [{ type: 'text', text: command.text }], approvalPolicy: 'on-request', approvalsReviewer: 'user' }, value => {
+              input: [{ type: 'text', text: command.text }], approvalPolicy: threadPolicy.approvalPolicy, approvalsReviewer: threadPolicy.approvalsReviewer }, value => {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
               origin.turnId = turn.id
               this.applyTurn(id, turn)
               if (!this.ensureThread(id).messages.some(m => m.id === origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt })
-              this.uncertainSessions.delete(id); this.emit()
+              this.unconfirmedDispatchSessionIds.delete(id); this.emit()
               return this.persist()
             }, () => {
               alias.origins = alias.origins.filter(o => o !== origin)
               this.watcher?.forget(alias.codexThreadId, origin.messageId)
-              this.uncertainSessions.delete(id)
+              this.unconfirmedDispatchSessionIds.delete(id)
               return this.persist()
             })
           } catch (error) {
-            if (!(error instanceof Rejected)) this.uncertainSessions.add(id)
+            if (!(error instanceof Rejected)) this.unconfirmedDispatchSessionIds.add(id)
             throw error
           }
         }
@@ -325,7 +332,7 @@ export class CodexAppServerHost implements AgentHost {
       this.ensureThread(id).status = 'error'
       if (params.turnId) this.terminalTurns.add(params.turnId)
     }
-    if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(`rpc:${JSON.stringify(params.requestId)}`)
+    if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(requestKey(params.requestId))
     this.emit()
   }
   private write(value: unknown): void {
@@ -349,22 +356,30 @@ export class CodexAppServerHost implements AgentHost {
   private async respond(pending: CodexPendingRequest, result: unknown): Promise<void> {
     const child = this.child
     if (!child) throw new Uncertain('Codex disconnected before receiving the answer.')
+    this.inFlightRequestIds.add(pending.request.id)
+    this.removeRequest(pending.request.id); this.emit()
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Uncertain('Codex answer delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000)
-      child.stdin.write(JSON.stringify({ id: pending.id, result }) + '\n', error => { clearTimeout(timer); if (error) reject(new Uncertain('Codex answer delivery is uncertain.')); else resolve() })
+      child.stdin.write(JSON.stringify({ id: pending.id, result }) + '\n', error => {
+        clearTimeout(timer); this.inFlightRequestIds.delete(pending.request.id)
+        if (error) reject(new Uncertain('Codex answer delivery is uncertain.')); else resolve()
+      })
     })
-    this.removeRequest(pending.request.id); this.emit()
   }
   private async decline(sessionId: string): Promise<void> {
-    for (const pending of [...this.requests.values()]) if (pending.sessionId === sessionId) await this.respond(pending, declineRequest(pending.method))
+    for (const pending of [...this.requests.values()]) {
+      if (pending.sessionId === sessionId && this.requests.has(pending.request.id) && !this.inFlightRequestIds.has(pending.request.id)) await this.respond(pending, declineRequest(pending.method))
+    }
+  }
+  private reset(): void {
+    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear()
+    for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
+    this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()
+    for (const thread of this.threads.values()) thread.requests = []
   }
   private lostChild(): void {
-    const child = this.child; this.child = undefined; child?.kill('SIGKILL')
-    this.state.connected = false; this.live.clear(); this.resuming.clear()
+    const child = this.child; this.reset(); child?.kill('SIGKILL')
     void this.watcher?.stop()
-    for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
-    this.waiters.clear(); this.requests.clear()
-    for (const thread of this.threads.values()) thread.requests = []
     this.emit()
   }
   disconnect(): void { this.shutdown(true) }
@@ -372,18 +387,18 @@ export class CodexAppServerHost implements AgentHost {
     this.generation++
     const child = this.child
     if (child) {
-      for (const pending of this.requests.values()) { try { this.write({ id: pending.id, result: declineRequest(pending.method) }) } catch { /* Closed pipes cannot grant permission. */ } }
+      for (const pending of this.requests.values()) {
+        if (this.inFlightRequestIds.has(pending.request.id)) continue
+        try { this.write({ id: pending.id, result: declineRequest(pending.method) }) } catch { /* Closed pipes cannot grant permission. */ }
+      }
       // Flush denials before ending stdin; force termination if the server keeps running.
       child.stdin.end()
       const timer = setTimeout(() => child.kill('SIGKILL'), 100)
       timer.unref(); child.once('close', () => clearTimeout(timer))
     }
-    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear()
+    this.reset()
     const watcher = this.watcher; this.watcher = undefined
     this.stopping = Promise.all([this.stopping, watcher?.stop()]).then(() => undefined)
-    for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
-    this.waiters.clear(); this.requests.clear()
-    for (const thread of this.threads.values()) thread.requests = []
     if (publish) this.emit()
   }
   /** Shutdown barrier for callers removing user data or replacing a host. */
