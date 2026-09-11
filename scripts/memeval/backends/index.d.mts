@@ -1,3 +1,4 @@
+// Sibling index.mjs is the source of truth; keep this declaration in step by hand.
 import type { HistoryEvent } from '../schema.mjs'
 
 export interface BackendAnswer { answer: string | null; memoryIds: string[] }

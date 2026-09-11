@@ -1,3 +1,4 @@
+// Sibling score.mjs is the source of truth; keep this declaration in step by hand.
 import type { Category, Expected } from './schema.mjs'
 import type { BackendAnswer } from './backends/index.mjs'
 

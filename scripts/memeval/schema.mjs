@@ -4,12 +4,14 @@ import { z } from 'zod'
 export const CATEGORIES = Object.freeze([
   'recall', 'abstain', 'temporal', 'exception', 'project-leak', 'authority-leak',
 ])
+export const ANSWER_CATEGORIES = Object.freeze(['recall', 'temporal', 'exception'])
+export const PATTERN_FLAGS = 'is'
 
 const text = z.string().min(1)
 const timestamp = z.union([z.iso.date(), z.iso.datetime({ offset: true, local: true })])
 const pattern = text.refine((value) => {
   try {
-    new RegExp(value, 'i')
+    new RegExp(value, PATTERN_FLAGS)
     return true
   } catch {
     return false
@@ -33,7 +35,7 @@ const caseSchema = z.object({
   asOf: timestamp,
   history: z.array(z.object({
     at: timestamp,
-    agent: z.enum(['claude', 'codex', 'grok']),
+    provider: z.enum(['claude', 'codex', 'grok']),
     project: text,
     role: z.enum(['user', 'assistant']),
     text,
@@ -48,7 +50,7 @@ const caseSchema = z.object({
 
 export const caseSetSchema = z.object({
   version: text,
-  cases: z.array(caseSchema).min(20).max(30),
+  cases: z.array(caseSchema).min(1),
 }).superRefine((set, context) => {
   const ids = new Set()
   set.cases.forEach((entry, index) => {
@@ -57,6 +59,12 @@ export const caseSetSchema = z.object({
     }
     ids.add(entry.id)
   })
+})
+
+export const authoredCaseSetSchema = caseSetSchema.superRefine((set, context) => {
+  if (set.cases.length < 20 || set.cases.length > 30) {
+    context.addIssue({ code: 'custom', path: ['cases'], message: 'Expected 20 to 30 authored cases' })
+  }
   for (const category of CATEGORIES) {
     if (!set.cases.some((entry) => entry.category === category)) {
       context.addIssue({ code: 'custom', path: ['cases'], message: `Missing category: ${category}` })

@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
-import { createBackend } from './backends/index.mjs'
+import { createBackend as createRegisteredBackend } from './backends/index.mjs'
 import { caseSetSchema } from './schema.mjs'
 import { buildCategoryTable, scoreCase } from './score.mjs'
 
@@ -18,16 +18,22 @@ function parseArgs(argv) {
     const separator = argv[i].indexOf('=')
     const flag = separator < 0 ? argv[i] : argv[i].slice(0, separator)
     const inlineVal = separator < 0 ? undefined : argv[i].slice(separator + 1)
-    const key = new Map([['--backend', 'backend'], ['--cases', 'casesPath'], ['--out', 'outDir']]).get(flag)
-    if (!key) throw new Error(`Unknown flag: ${flag}`)
-    const val = inlineVal ?? argv[++i]
-    if (!val || val.startsWith('--')) throw new Error(`Missing value for ${flag}`)
-    args[key] = val
+    const value = () => {
+      const val = inlineVal ?? argv[++i]
+      if (!val || val.startsWith('--')) throw new Error(`Missing value for ${flag}`)
+      return val
+    }
+    switch (flag) {
+      case '--backend': args.backend = value(); break
+      case '--cases': args.casesPath = value(); break
+      case '--out': args.outDir = value(); break
+      default: throw new Error(`Unknown flag: ${flag}`)
+    }
   }
   return args
 }
 
-export async function runMemEval({ backend, casesPath, outDir = join(HERE, 'results') }) {
+export async function runMemEval({ backend, casesPath, outDir = join(HERE, 'results'), createBackend = createRegisteredBackend }) {
   let caseSet
   try {
     caseSet = caseSetSchema.parse(JSON.parse(readFileSync(casesPath, 'utf8').replace(/^\uFEFF/, '')))
@@ -48,7 +54,7 @@ export async function runMemEval({ backend, casesPath, outDir = join(HERE, 'resu
   const generatedAt = new Date().toISOString()
   const results = {
     backend: instance.name,
-    caseSet: { path: casesPath, version: caseSet.version },
+    caseSet: { path: resolve(casesPath), version: caseSet.version },
     generatedAt,
     cases,
     table: buildCategoryTable(cases),
