@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { latestMigrationVersion, migrations } from '../../../src/main/memory/migrations.mjs'
 import { openRuntimeMemory } from '../../../src/main/memory/runtime'
 import { probeMemoryStore } from '../../../src/main/memory/probe'
 
@@ -29,7 +30,7 @@ describe('runtime memory', () => {
     expect(log).not.toHaveBeenCalled()
     const db = new DatabaseSync(path)
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual([{ version: 1 }])
+      expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual(migrations.map(({ version }) => ({ version })))
     } finally {
       db.close()
     }
@@ -46,7 +47,32 @@ describe('runtime memory', () => {
   it('probes the real store migration, nullable timestamps and full-text search', async () => {
     expect(probeMemoryStore(join(await createRoot(), 'memory.sqlite'))).toEqual({
       sqliteVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      migrationVersion: 1, matchedId: 'memory-probe', fts5: true,
+      migrationVersion: latestMigrationVersion, matchedId: 'memory-probe', fts5: true,
     })
+  })
+
+  it('probes every migration when the schema gains another version', async () => {
+    vi.resetModules()
+    vi.doMock('../../../src/main/memory/migrations.mjs', async importOriginal => {
+      const actual = await importOriginal<typeof import('../../../src/main/memory/migrations.mjs')>()
+      const migrations = [...actual.migrations, { version: actual.migrations.at(-1)!.version + 1, sql: 'CREATE TABLE future_probe (id TEXT)' }]
+      return { ...actual, migrations, latestMigrationVersion: migrations.at(-1)!.version }
+    })
+    try {
+      const { probeMemoryStore } = await import('../../../src/main/memory/probe')
+      // migrateDatabase closes over its original list; apply the simulated next migration after open.
+      const { MemoryStore } = await import('../../../src/main/memory/store')
+      const open = MemoryStore.prototype.open
+      vi.spyOn(MemoryStore.prototype, 'open').mockImplementation(function (this: InstanceType<typeof MemoryStore>) {
+        open.call(this)
+        this.database().prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)')
+          .run(latestMigrationVersion + 1, new Date().toISOString())
+      })
+      expect(probeMemoryStore(join(await createRoot(), 'memory.sqlite')).migrationVersion).toBe(latestMigrationVersion + 1)
+    } finally {
+      vi.restoreAllMocks()
+      vi.doUnmock('../../../src/main/memory/migrations.mjs')
+      vi.resetModules()
+    }
   })
 })

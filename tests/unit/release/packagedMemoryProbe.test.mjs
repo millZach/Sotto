@@ -7,10 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@playwright/test', () => ({ _electron: { launch: vi.fn() } }))
 import { _electron as electron } from '@playwright/test'
+import { latestMigrationVersion } from '../../../src/main/memory/migrations.mjs'
 import { verifyPackagedMemoryStore } from '../../../scripts/verify-packaged-resources.mjs'
 
 afterEach(() => vi.restoreAllMocks())
-const evidence = { sqliteVersion: '3.51.2', migrationVersion: 1, matchedId: 'memory-probe', fts5: true }
+const evidence = { sqliteVersion: '3.51.2', migrationVersion: latestMigrationVersion, matchedId: 'memory-probe', fts5: true }
 function launchResult(output, exitCode = 0) {
   const child = new EventEmitter()
   child.stdout = new PassThrough()
@@ -56,5 +57,23 @@ describe('packaged memory probe', () => {
   it('rejects missing packaged resources that prevent launch', async () => {
     electron.launch.mockRejectedValue(new Error('missing main module'))
     await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/missing main module/)
+  })
+
+  it('expects the latest migration when the schema gains another version', async () => {
+    vi.resetModules()
+    vi.doMock('../../../src/main/memory/migrations.mjs', async importOriginal => ({
+      ...await importOriginal(), latestMigrationVersion: latestMigrationVersion + 1,
+    }))
+    try {
+      const { verifyPackagedMemoryStore } = await import('../../../scripts/verify-packaged-resources.mjs')
+      const next = { ...evidence, migrationVersion: latestMigrationVersion + 1 }
+      launchResult(JSON.stringify(next))
+      await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual(next)
+      launchResult(JSON.stringify(evidence))
+      await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/invalid store evidence/)
+    } finally {
+      vi.doUnmock('../../../src/main/memory/migrations.mjs')
+      vi.resetModules()
+    }
   })
 })

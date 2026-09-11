@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { DatabaseSync } from 'node:sqlite'
 
-import { memoryInsertSql, migrateDatabase } from '../src/main/memory/migrations.mjs'
+import { memoryInsertSql, migrateDatabase, migrations } from '../src/main/memory/migrations.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'sotto-memory-store-probe-'))
 let db
 try {
   db = new DatabaseSync(join(root, 'memory.sqlite'))
   const applied = migrateDatabase(db)
-  assert.deepEqual(applied, [1])
+  assert.deepEqual(applied, migrations.map(m => m.version))
   const now = new Date().toISOString()
   db.prepare(memoryInsertSql)
     .run('memory-probe', 'preference', 'probe-project', 'Packaged SQLite remembers concise explanations',
@@ -30,7 +30,7 @@ try {
   assert.deepEqual(migrateDatabase(db), [])
   const sqliteVersion = db.prepare('SELECT sqlite_version() AS version').get().version
   process.stdout.write(`${JSON.stringify({
-    sqliteVersion, migrationVersion: applied[0], matchedId: matched.id, fts5: true,
+    sqliteVersion, migrationVersion: applied.at(-1), matchedId: matched.id, fts5: true,
   })}\n`)
 } finally {
   db?.close()

@@ -39,7 +39,26 @@ export const migrations = [{
       INSERT INTO memories_fts(rowid, content, tags) VALUES (new.rowid, new.content, new.tags);
     END;
   `,
+}, {
+  version: 2,
+  sql: `
+    CREATE TABLE policies (
+      id TEXT PRIMARY KEY NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('spend', 'publish', 'destroy', 'relax-verification')),
+      resource TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      effect TEXT NOT NULL CHECK (effect IN ('allow', 'always-confirm')),
+      source TEXT NOT NULL CHECK (source IN ('user', 'questionnaire')),
+      note TEXT NOT NULL,
+      grantedAt TEXT NOT NULL,
+      expiresAt TEXT,
+      revokedAt TEXT
+    );
+    CREATE INDEX policies_action_scope ON policies(action, scope);
+  `,
 }]
+
+export const latestMigrationVersion = migrations.at(-1).version
 
 const memoryColumns = [
   'id', 'type', 'scope', 'content', 'sourceClass', 'confidence', 'evidenceCount', 'importance',
@@ -48,6 +67,12 @@ const memoryColumns = [
 ]
 export const memoryInsertSql = `INSERT INTO memories (${memoryColumns.join(', ')})
   VALUES (${memoryColumns.map(() => '?').join(', ')})`
+
+const policyColumns = [
+  'id', 'action', 'resource', 'scope', 'effect', 'source', 'note', 'grantedAt', 'expiresAt', 'revokedAt',
+]
+export const policyInsertSql = `INSERT INTO policies (${policyColumns.join(', ')})
+  VALUES (${policyColumns.map(() => '?').join(', ')})`
 
 // Shared by the TypeScript store and the direct runtime probe.
 export function migrateDatabase(db) {
