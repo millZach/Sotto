@@ -8,6 +8,7 @@ import { pathToFileURL, URL } from 'node:url'
 
 import { _electron as electron } from '@playwright/test'
 
+import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyPreparedAssets } from './verify-model.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
@@ -117,7 +118,7 @@ export async function verifyPackagedMemoryStore(target) {
       throw new Error('invalid JSON evidence')
     }
     if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
-        result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
+        result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
     return result

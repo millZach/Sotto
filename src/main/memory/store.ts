@@ -114,6 +114,9 @@ export class MemoryStore {
     this.db = undefined
   }
 
+  /** Shared with the policy store; not for use outside src/main/memory */
+  database(): DatabaseSync { return this.requireOpen() }
+
   private requireOpen(): DatabaseSync {
     if (this.db === undefined) throw new Error('Memory store is not open')
     return this.db

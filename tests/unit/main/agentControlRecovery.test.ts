@@ -181,6 +181,30 @@ describe('reasoning account route isolation', () => {
     expect(reloaded.has('t3')).toBe(false)
   })
 
+  it('refuses provider changes with assignments and disconnects without clearing the T3 credential once unassigned', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'credential', slot: 't3', value: 'fixture-t3-token' })
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
+    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider or its server.')
+    expect(blocked.configuration.provider).toBe('t3')
+    expect(blocked.connection).toBe('connected')
+    await f.control.command({ type: 'unassign', threadId: 'workshop' })
+    const changed = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
+    expect(changed).toMatchObject({ error: null, configuration: { provider: 'codex' }, connection: 'disconnected', credentials: { t3: true } })
+    expect(f.credentials.get('t3')).toBe('fixture-t3-token')
+    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption); await reloaded.load()
+    expect(reloaded.get('t3')).toBe('fixture-t3-token')
+  })
+
+  it('refuses provider changes while a creation acknowledgement is pending', async () => {
+    const f = await fixture(new UnacknowledgedCreationHost())
+    await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Pending', modelId: 'claude:test' })
+    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
+    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider or its server.')
+    expect(blocked.configuration.provider).toBe('t3')
+  })
+
   it('keeps the original route when deleting its credential fails', async () => {
     const f = await fixture()
     await f.account()

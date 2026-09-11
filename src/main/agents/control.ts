@@ -9,6 +9,7 @@ import {
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
+import { approvalWords, classifyRiskyAction, denialWords, type Authority } from './authority'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
@@ -60,6 +61,7 @@ export class AgentControl {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     historyEnabled?: () => boolean
     turns?: TurnRecorder
+    authority?: Authority
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -259,14 +261,15 @@ export class AgentControl {
       case 'voice-state': this.state.voice.status = command.status; this.state.voice.error = command.error; return
       case 'configure': {
         const next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
-        if (next.endpoint !== this.state.configuration.endpoint && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the T3 server.')
+        const providerChanged = next.provider !== this.state.configuration.provider || next.endpoint !== this.state.configuration.endpoint
+        if (providerChanged && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the provider or its server.')
         // Delete the old route's key durably before exposing the new route. If
         // either write fails, the old credential cannot reach another provider.
         if (next.reasoning !== this.state.configuration.reasoning) await this.dependencies.credentials.set('reasoning', '')
         if (next.endpoint !== this.state.configuration.endpoint) {
           await this.dependencies.credentials.set('t3', '')
-          this.disconnect()
         }
+        if (providerChanged) this.disconnect()
         this.state.configuration = next
         if (!next.enabled) this.disconnect()
         return
@@ -421,10 +424,23 @@ export class AgentControl {
       seenMessageIds: thread.messages.map(m => m.id), ownMessageIds: [], handledRequestIds: [], lastFailure: '' })
     this.state.activeThreadId = threadId; this.state.activeProjectId = thread.projectId
   }
+  private guardAuthority(command: AgentHostCommand, turn?: ActiveTurn): void {
+    if (command.type !== 'answer') return
+    const thread = this.thread(command.threadId)
+    const request = thread.requests.find(r => r.id === command.requestId)
+    if (request?.kind !== 'permission') return
+    if (turn?.source === 'supervision') throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
+    if (command.approved !== true) return
+    // Every risky class is checked against policy. The user's explicit Allow is the confirmation an
+    // always-confirm boundary requires, so no verdict rejects a user-sourced approval; boundaries stay in force.
+    const at = new Date().toISOString()
+    for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
+  }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
     if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
+    this.guardAuthority(command, turn)
     this.outbox.push({ id: command.commandId, type: command.type, ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -517,8 +533,8 @@ export class AgentControl {
     const activeQuestion = this.state.queue.find(q => q.threadId === this.state.activeThreadId && (q.kind === 'question' || q.kind === 'permission'))
     if (activeQuestion?.requestId) {
       if (activeQuestion.kind === 'permission') {
-        if (!['allow', 'deny', 'approve', 'reject'].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
-        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: ['allow', 'approve'].includes(normalized) }, turn)
+        if (![...approvalWords, ...denialWords].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
+        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: approvalWords.includes(normalized) }, turn)
       } else {
         this.startDraft()
         this.state.draft = text

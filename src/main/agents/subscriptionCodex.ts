@@ -42,7 +42,7 @@ const modelResult = z.object({
   nextCursor: z.string().nullable().optional(),
 })
 
-function nativeEnvironment(): NodeJS.ProcessEnv {
+export function nativeEnvironment(): NodeJS.ProcessEnv {
   // Preserve native login discovery, OS/keychain access and the system proxy.
   // API keys, provider endpoint overrides and NODE_OPTIONS never enter the child.
   return Object.fromEntries(Object.entries(process.env).filter(([key]) =>
@@ -50,7 +50,7 @@ function nativeEnvironment(): NodeJS.ProcessEnv {
   ))
 }
 
-async function findExecutable(): Promise<string | null> {
+export async function findExecutable(): Promise<string | null> {
   const windows = process.platform === 'win32'
   const architecture = process.arch === 'arm64' ? 'arm64' : 'x64'
   const triple = windows ? `${architecture === 'arm64' ? 'aarch64' : 'x86_64'}-pc-windows-msvc`
