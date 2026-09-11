@@ -1,0 +1,1383 @@
+{
+  "date": "2026-09-11T22:52:35.092Z",
+  "args": {
+    "mode": "screen",
+    "runs": 5,
+    "budget": 2,
+    "only": [
+      "forge-parakeet"
+    ],
+    "forgeUrl": "http://forge.tail5728ca.ts.net:5092"
+  },
+  "status": "complete",
+  "configs": [
+    {
+      "id": "forge-parakeet",
+      "base": "forge-parakeet",
+      "model": "parakeet-tdt-0.6b",
+      "minute": 0,
+      "hints": false,
+      "cleanup": false,
+      "requestForm": "multipart/file/wav"
+    }
+  ],
+  "runs": [
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "warmup",
+      "run": 0,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 288.355,
+        "cleanupMs": 0,
+        "totalMs": 288.4502
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "warmup",
+      "run": 1,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 109.37099999999998,
+        "cleanupMs": 0,
+        "totalMs": 109.39600000000007
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 109.59289999999999,
+        "cleanupMs": 0,
+        "totalMs": 109.63029999999992
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 1,
+      "ok": true,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 63.33179999999993,
+        "cleanupMs": 0,
+        "totalMs": 63.358400000000074
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 2,
+      "ok": true,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 49.26769999999999,
+        "cleanupMs": 0,
+        "totalMs": 49.30449999999996
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 3,
+      "ok": true,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 42.775699999999915,
+        "cleanupMs": 0,
+        "totalMs": 42.804700000000025
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 4,
+      "ok": true,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 49.649,
+        "cleanupMs": 0,
+        "totalMs": 49.81149999999991
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 225.03959999999984,
+        "cleanupMs": 0,
+        "totalMs": 225.06799999999998
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 1,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 75.68979999999988,
+        "cleanupMs": 0,
+        "totalMs": 75.73140000000012
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 2,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 71.22340000000008,
+        "cleanupMs": 0,
+        "totalMs": 71.2614000000001
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 3,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 78.2165,
+        "cleanupMs": 0,
+        "totalMs": 78.23749999999995
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 4,
+      "ok": true,
+      "error": null,
+      "transcript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "rawTranscript": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "normalizedTranscript": "the quick brown fox jumps over the lazy dog near the riverbank",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [
+        "river",
+        "bank"
+      ],
+      "timings": {
+        "asrMs": 94.44060000000013,
+        "cleanupMs": 0,
+        "totalMs": 94.45440000000008
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "error": null,
+      "transcript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "rawTranscript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "normalizedTranscript": "zack asked whether whisperflow or super whisper handles punctuation better than otter a script ping priya sovamya on the anthropic thread before the kubernetes migration starts",
+      "wer": 0.32,
+      "nameAccuracy": {
+        "matched": 4,
+        "total": 9,
+        "accuracy": 0.4444444444444444,
+        "spans": [
+          {
+            "name": "Zache",
+            "matched": false
+          },
+          {
+            "name": "Wispr Flow",
+            "matched": false
+          },
+          {
+            "name": "Superwhisper",
+            "matched": false
+          },
+          {
+            "name": "Otter",
+            "matched": true
+          },
+          {
+            "name": "Descript",
+            "matched": false
+          },
+          {
+            "name": "Priya",
+            "matched": true
+          },
+          {
+            "name": "Sowmya",
+            "matched": false
+          },
+          {
+            "name": "Anthropic",
+            "matched": true
+          },
+          {
+            "name": "Kubernetes",
+            "matched": true
+          }
+        ]
+      },
+      "missedWords": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ],
+      "timings": {
+        "asrMs": 259.61580000000004,
+        "cleanupMs": 0,
+        "totalMs": 259.6233
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 1,
+      "ok": true,
+      "error": null,
+      "transcript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "rawTranscript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "normalizedTranscript": "zack asked whether whisperflow or super whisper handles punctuation better than otter a script ping priya sovamya on the anthropic thread before the kubernetes migration starts",
+      "wer": 0.32,
+      "nameAccuracy": {
+        "matched": 4,
+        "total": 9,
+        "accuracy": 0.4444444444444444,
+        "spans": [
+          {
+            "name": "Zache",
+            "matched": false
+          },
+          {
+            "name": "Wispr Flow",
+            "matched": false
+          },
+          {
+            "name": "Superwhisper",
+            "matched": false
+          },
+          {
+            "name": "Otter",
+            "matched": true
+          },
+          {
+            "name": "Descript",
+            "matched": false
+          },
+          {
+            "name": "Priya",
+            "matched": true
+          },
+          {
+            "name": "Sowmya",
+            "matched": false
+          },
+          {
+            "name": "Anthropic",
+            "matched": true
+          },
+          {
+            "name": "Kubernetes",
+            "matched": true
+          }
+        ]
+      },
+      "missedWords": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ],
+      "timings": {
+        "asrMs": 180.42830000000004,
+        "cleanupMs": 0,
+        "totalMs": 180.43579999999997
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 2,
+      "ok": true,
+      "error": null,
+      "transcript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "rawTranscript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "normalizedTranscript": "zack asked whether whisperflow or super whisper handles punctuation better than otter a script ping priya sovamya on the anthropic thread before the kubernetes migration starts",
+      "wer": 0.32,
+      "nameAccuracy": {
+        "matched": 4,
+        "total": 9,
+        "accuracy": 0.4444444444444444,
+        "spans": [
+          {
+            "name": "Zache",
+            "matched": false
+          },
+          {
+            "name": "Wispr Flow",
+            "matched": false
+          },
+          {
+            "name": "Superwhisper",
+            "matched": false
+          },
+          {
+            "name": "Otter",
+            "matched": true
+          },
+          {
+            "name": "Descript",
+            "matched": false
+          },
+          {
+            "name": "Priya",
+            "matched": true
+          },
+          {
+            "name": "Sowmya",
+            "matched": false
+          },
+          {
+            "name": "Anthropic",
+            "matched": true
+          },
+          {
+            "name": "Kubernetes",
+            "matched": true
+          }
+        ]
+      },
+      "missedWords": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ],
+      "timings": {
+        "asrMs": 176.47530000000006,
+        "cleanupMs": 0,
+        "totalMs": 176.48299999999972
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 3,
+      "ok": true,
+      "error": null,
+      "transcript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "rawTranscript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "normalizedTranscript": "zack asked whether whisperflow or super whisper handles punctuation better than otter a script ping priya sovamya on the anthropic thread before the kubernetes migration starts",
+      "wer": 0.32,
+      "nameAccuracy": {
+        "matched": 4,
+        "total": 9,
+        "accuracy": 0.4444444444444444,
+        "spans": [
+          {
+            "name": "Zache",
+            "matched": false
+          },
+          {
+            "name": "Wispr Flow",
+            "matched": false
+          },
+          {
+            "name": "Superwhisper",
+            "matched": false
+          },
+          {
+            "name": "Otter",
+            "matched": true
+          },
+          {
+            "name": "Descript",
+            "matched": false
+          },
+          {
+            "name": "Priya",
+            "matched": true
+          },
+          {
+            "name": "Sowmya",
+            "matched": false
+          },
+          {
+            "name": "Anthropic",
+            "matched": true
+          },
+          {
+            "name": "Kubernetes",
+            "matched": true
+          }
+        ]
+      },
+      "missedWords": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ],
+      "timings": {
+        "asrMs": 170.71879999999965,
+        "cleanupMs": 0,
+        "totalMs": 170.73029999999972
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 4,
+      "ok": true,
+      "error": null,
+      "transcript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "rawTranscript": "Zack asked whether Whisperflow or Super Whisper handles punctuation better than otter and a script. Ping Priya and Sovamya on the anthropic thread before the Kubernetes migration starts.",
+      "normalizedTranscript": "zack asked whether whisperflow or super whisper handles punctuation better than otter a script ping priya sovamya on the anthropic thread before the kubernetes migration starts",
+      "wer": 0.32,
+      "nameAccuracy": {
+        "matched": 4,
+        "total": 9,
+        "accuracy": 0.4444444444444444,
+        "spans": [
+          {
+            "name": "Zache",
+            "matched": false
+          },
+          {
+            "name": "Wispr Flow",
+            "matched": false
+          },
+          {
+            "name": "Superwhisper",
+            "matched": false
+          },
+          {
+            "name": "Otter",
+            "matched": true
+          },
+          {
+            "name": "Descript",
+            "matched": false
+          },
+          {
+            "name": "Priya",
+            "matched": true
+          },
+          {
+            "name": "Sowmya",
+            "matched": false
+          },
+          {
+            "name": "Anthropic",
+            "matched": true
+          },
+          {
+            "name": "Kubernetes",
+            "matched": true
+          }
+        ]
+      },
+      "missedWords": [
+        "zache",
+        "wispr",
+        "flow",
+        "superwhisper",
+        "descript",
+        "sowmya"
+      ],
+      "timings": {
+        "asrMs": 172.48289999999997,
+        "cleanupMs": 0,
+        "totalMs": 172.4952000000003
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    }
+  ],
+  "requests": [
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 42.93580000000003
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 9.605999999999995
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "warmup",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 288.33789999999993
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "warmup",
+      "run": 1,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 109.3546
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 109.57529999999997
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 1,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 63.31720000000007
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 2,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 49.24770000000001
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 3,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 42.761400000000094
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 4,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 49.63290000000006
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 225.01819999999998
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 1,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 75.67880000000014
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 2,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 71.2177999999999
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 3,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 78.20879999999988
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "short",
+      "phase": "measured",
+      "run": 4,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 94.43499999999995
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 259.61159999999995
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 1,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 180.4242999999999
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 2,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 176.47119999999973
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 3,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 170.71349999999984
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "propernoun",
+      "phase": "measured",
+      "run": 4,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 172.47779999999966
+    }
+  ],
+  "hints": {},
+  "summary": [
+    {
+      "configuration": "forge-parakeet",
+      "state": "15/15",
+      "meanWer": 0.10666666666666667,
+      "nameAccuracy": 0.4444444444444444,
+      "nameMatched": 20,
+      "nameTotal": 45,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 5,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 49.649,
+              "p95": 109.59289999999999
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 49.81149999999991,
+              "p95": 109.63029999999992
+            }
+          }
+        },
+        {
+          "clip": "short",
+          "seconds": 4.38,
+          "samples": 5,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 78.2165,
+              "p95": 225.03959999999984
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 78.23749999999995,
+              "p95": 225.06799999999998
+            }
+          }
+        },
+        {
+          "clip": "propernoun",
+          "seconds": 11.885,
+          "samples": 5,
+          "wer": 0.32,
+          "nameAccuracy": 0.4444444444444444,
+          "latency": {
+            "asrMs": {
+              "p50": 176.47530000000006,
+              "p95": 259.61580000000004
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 176.48299999999972,
+              "p95": 259.6233
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 17
+      },
+      "cleanupOutcomes": {
+        "not-requested": 15
+      },
+      "cost": 0,
+      "asrCost1000": 0,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0
+    }
+  ],
+  "spend": {
+    "reported": 0,
+    "estimated": 0,
+    "accounted": 0
+  },
+  "setup": {
+    "node": "v24.14.1",
+    "platform": "win32",
+    "dictionary": [
+      "Sotto",
+      "Moonshine",
+      "Whisper",
+      "Wispr Flow",
+      "Superwhisper",
+      "Zache",
+      "Electron",
+      "ONNX",
+      "Kubernetes",
+      "Anthropic",
+      "Priya",
+      "Sowmya",
+      "Otter",
+      "Descript"
+    ],
+    "cleanupModels": [
+      {
+        "model": "amazon/nova-2-lite-v1",
+        "reasoning": {
+          "enabled": false
+        }
+      },
+      {
+        "model": "google/gemini-3.1-flash-lite",
+        "reasoning": {
+          "effort": "minimal"
+        }
+      }
+    ],
+    "cleanupSystemPrompt": "You clean up raw speech-to-text transcripts for dictation. Rewrite the transcript as polished written text while staying faithful to the speaker's meaning.\n\nRules:\n- Add punctuation, capitalization, and sentence and paragraph breaks.\n- Always remove: \"um\", \"uh\", stutters, and immediate word repetitions (\"the the report\" becomes \"the report\").\n- Remove \"like\", \"you know\", \"I mean\", and thought-starting \"so\"/\"okay so\"/\"well\"/\"anyway\" ONLY when they are pure verbal tics the sentence reads identically without. Keep \"like\" in comparisons (\"looks like\"), approximations (\"like eighty percent\"), and as a verb (\"I like it\").\n- NEVER remove hedges, qualifiers, or emphasis — \"kind of\", \"sort of\", \"maybe\", \"probably\", \"actually\", \"honestly\", \"basically\", \"really\" express the speaker's degree of confidence and must survive. \"kind of cluttered\" stays \"kind of cluttered\", never just \"cluttered\".\n- When unsure whether a word is filler, keep it.\n- Fix obvious speech-recognition errors using context.\n- Resolve self-corrections: \"meet at 3 no wait make that 4\" becomes \"meet at 4\".\n- When the speaker enumerates parallel items (\"first... second...\", \"we need X, we need Y, we need Z\"), format them as a list: one item per line, each starting with \"- \".\n- When the speaker announces a list (\"I need a list of...\", \"here's what we need\", \"things to get:\"), the enumerated items ALWAYS become a \"- \" list, even if they were spoken as a plain comma-separated sentence.\n- Interpret the spoken commands \"new line\" and \"new paragraph\" as literal line/paragraph breaks.\n- Do not summarize, add content, or change the meaning. Light restructuring for readability (paragraph breaks, lists) is allowed, but never drop information.\n- Words the speaker may use (correct misspellings toward these): Sotto, Moonshine, Whisper, Wispr Flow, Superwhisper, Zache, Electron, ONNX, Kubernetes, Anthropic, Priya, Sowmya, Otter, Descript.\n\nOutput ONLY the cleaned text. No preamble, no quotes, no explanation.\n\nExamples:\n\nTranscript:\num can we move the meeting to tuesday no wait wednesday works better new line also bring the uh q3 numbers\nCleaned:\nCan we move the meeting to Tuesday — Wednesday works better.\nAlso bring the Q3 numbers.\n\nTranscript:\ntell dave i'll have the draft done by five no scratch that by end of day\nCleaned:\nTell Dave I'll have the draft done by end of day.\n\nTranscript:\nso um i was thinking we could you know maybe push the the release to friday because honestly the tests are like not done yet and the docs are kind of rough\nCleaned:\nI was thinking we could maybe push the release to Friday because honestly the tests are not done yet and the docs are kind of rough.\n\nTranscript:\nokay so before we launch there's three things we still need to do first we need to finish the onboarding flow second fix the mic permissions bug and then third update the readme oh and one more thing we should double check the installer\nCleaned:\nBefore we launch there are three things we still need to do:\n- Finish the onboarding flow\n- Fix the mic permissions bug\n- Update the README\n- Double check the installer\n\nTranscript:\ni want to make a list of things i need from the store i need apples oranges turkey bread and um cat litter and a couple other things i can't think of right now\nCleaned:\nThings I need from the store:\n- Apples\n- Oranges\n- Turkey\n- Bread\n- Cat litter\n\nAnd a couple other things I can't think of right now.\n\nNotice: late additions (\"oh and one more thing\", \"also\") join the list as items; the connector phrase itself never appears.\n\nNotice: when the speaker corrects themselves (\"no wait\", \"no scratch that\"), keep ONLY the corrected version; the correction phrase itself never appears in the output. Verbal tics (um, uh, stray \"you know\") vanish, but hedges and emphasis (\"maybe\", \"honestly\", \"kind of\") always stay. Enumerations become \"- \" lists.",
+    "cleanupPromptSha256": "7dd967e21d5dd71036537321722c407fd3842b9cb55317ab92aca33194351149",
+    "cleanupPolicy": "Requested fixed total 2500ms; primary gets 1300ms, fallback reserve 1200ms; minimum fallback budget 500ms. No production 7000ms floor or length scaling. Fewer than five whitespace words skips cleanup. Production prompts, reasoning, max_tokens=4000 and output guards mirrored. One network/429 retry within each leg deadline is a benchmark requirement.",
+    "fixtures": [
+      {
+        "clip": "tiny",
+        "reference": "Send the email now.",
+        "names": [],
+        "seconds": 1.97,
+        "sha256": "6dfabcf5a2cdf8ec17cb2395fc7e15157e9d18f978f5c50c8b9084d9bf8218a1",
+        "bytes": 63086
+      },
+      {
+        "clip": "short",
+        "reference": "The quick brown fox jumps over the lazy dog near the river bank.",
+        "names": [],
+        "seconds": 4.38,
+        "sha256": "89db937fe94a8428076485a211d1cca1056575216fc92dfcfce0287bdab1fc23",
+        "bytes": 140206
+      },
+      {
+        "clip": "long",
+        "reference": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+        "names": [],
+        "seconds": 16.615,
+        "sha256": "6b60ad33a76c00eb2d029c5fab5b5896f71585765d73e77bd1c166fece15967c",
+        "bytes": 531726
+      },
+      {
+        "clip": "technical",
+        "reference": "Sotto runs the Moonshine encoder through ONNX Runtime inside the Electron main process, so transcription never leaves the device. Whisper pads every clip to a thirty second window, which is why latency stays flat regardless of how short the utterance is.",
+        "names": [
+          "Sotto",
+          "Moonshine",
+          "ONNX",
+          "Electron",
+          "Whisper"
+        ],
+        "seconds": 16.79,
+        "sha256": "d65c01aa0636151f1be0f4fd06a2f73325149adbf64adacd39c2aa1761c6710c",
+        "bytes": 537326
+      },
+      {
+        "clip": "numbers",
+        "reference": "Transfer four thousand two hundred and seventeen dollars on March third, twenty twenty six. The invoice number is A B 4 7 dash 9 0 2, and the meeting moved from 2:15 to 4:45 p.m.",
+        "names": [],
+        "seconds": 14.62,
+        "sha256": "2cf1b82c9e5397b0a791c5cf31969d63c37fc73273c160c63b92abbc2369e671",
+        "bytes": 467886
+      },
+      {
+        "clip": "propernoun",
+        "reference": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+        "names": [
+          "Zache",
+          "Wispr Flow",
+          "Superwhisper",
+          "Otter",
+          "Descript",
+          "Priya",
+          "Sowmya",
+          "Anthropic",
+          "Kubernetes"
+        ],
+        "seconds": 11.885,
+        "sha256": "5c427b26652a6583157470da65bbf2db5c9df8bed0c78390a8336b847ee36d24",
+        "bytes": 380366
+      },
+      {
+        "clip": "homophone",
+        "reference": "They are going to accept the new principle, not the interest rate principal. Their advice affects the effect we expected, and it is too late to buy two more.",
+        "names": [],
+        "seconds": 10.305,
+        "sha256": "80ff871f9694bd4dc2c47165ebad3afabed12a855aa70104d4fbd274c3267ccf",
+        "bytes": 329806
+      }
+    ],
+    "networkRoute": "Windows host to Forge: pong from forge (100.68.194.68) via 192.168.1.160:41641 in 3ms. Cloud: this machine's normal Internet route to openrouter.ai; no proxy configured by harness. Upload and full body parsing included; no encoding/IPC/paste timing.",
+    "forge": {
+      "/health": {
+        "httpStatus": 200,
+        "response": {
+          "status": "ok"
+        },
+        "error": null
+      },
+      "/v1/models": {
+        "httpStatus": 200,
+        "response": {
+          "object": "list",
+          "data": [
+            {
+              "id": "parakeet-tdt-0.6b",
+              "object": "model",
+              "created": 1700000000,
+              "owned_by": "nvidia"
+            },
+            {
+              "id": "whisper-1",
+              "object": "model",
+              "created": 1700000000,
+              "owned_by": "nvidia"
+            }
+          ]
+        },
+        "error": null
+      }
+    },
+    "endpoints": {},
+    "cleanupPricing": {},
+    "priceSource": "docs/research/2026-09-11-stt-bench-candidates.md; Voxtral estimate uses conservative EU $0.0033/min (default $0.003). usage.cost wins.",
+    "hintSource": "https://openrouter.ai/docs/guides/overview/multimodal/stt"
+  },
+  "finishedAt": "2026-09-11T22:52:37.564Z"
+}
