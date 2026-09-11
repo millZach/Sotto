@@ -108,6 +108,14 @@ export const agentAssignmentSchema = z.object({
   seenMessageIds: z.array(z.string()), ownMessageIds: z.array(z.string()),
   handledRequestIds: z.array(z.string()), lastFailure: z.string(),
   contextUpdatedAt: z.number().default(0),
+  /** ISO time the assignment began (assign or create-thread). Empty for assignments saved before it was recorded. */
+  startedAt: z.string().default(''),
+  /** How the current instruction reached the thread: a spoken "send it", a typed Send, or not yet known. */
+  origin: z.enum(['voice', 'typed', 'unknown']).default('unknown'),
+  /** Why Sotto stopped managing on its own; 'none' while managing or after a user pause. Cleared by resume. */
+  stopReason: z.enum(['none', 'limit', 'repeat', 'error']).default('none'),
+  /** ISO time of that stop; empty when stopReason is 'none'. */
+  stoppedAt: z.string().default(''),
 })
 export type AgentAssignment = z.infer<typeof agentAssignmentSchema>
 export const agentQueueItemSchema = z.object({

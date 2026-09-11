@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import type { SottoE2EBridge } from '../../shared/e2e'
+import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../agents/host'
 import type { AgentReasoner } from '../agents/reasoning'
 
@@ -17,6 +17,14 @@ export class E2EAgentHost implements AgentHost {
     models: [{ id: 'claude:test', provider: 'Claude', name: 'Claude Test', ready: true }],
     projects: [{ id: 'project', title: 'Sotto test', path: 'C:/sotto-test' }],
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
+  }
+  constructor(scenario: E2EScenario = 'success') {
+    if (scenario === 'design-threads' || scenario === 'design-threads-empty') {
+      const fixture = designThreadsFixture()
+      this.state.models = structuredClone([...fixture.models])
+      this.state.projects = structuredClone([...fixture.projects])
+      this.state.threads = scenario === 'design-threads' ? structuredClone([...fixture.threads]) : []
+    }
   }
   async connect(): Promise<AgentHostSnapshot> {
     if (this.connectRejection !== null) {

@@ -27,7 +27,8 @@ const destinations = [
 
 /**
  * The rail: a 60px column of icon links with the session dot at its foot,
- * beside a stage that holds the dictation deck and the scrolling page.
+ * beside a stage that holds the dictation deck and the scrolling page. The
+ * Threads page belongs to the Agents room, so its icon stays lit there.
  */
 export function AppShell({
   navigation,
@@ -51,7 +52,7 @@ export function AppShell({
               key={id}
               href={`#${id}`}
               className="app-navigation__link tt-focusable"
-              aria-current={navigation === id ? 'page' : undefined}
+              aria-current={navigation === id || (id === 'agents' && navigation === 'threads') ? 'page' : undefined}
               title={label}
               onClick={(event) => navigate(event, id)}
             >

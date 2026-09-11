@@ -23,6 +23,8 @@ import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider } from './agents/AgentContext'
 import { AgentView } from './agents/AgentView'
+import { ThreadsView } from './agents/ThreadsView'
+import { E2E_THREADS_NOW } from '../../shared/e2e'
 
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
@@ -260,7 +262,13 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     let view: ReactNode
     switch (navigation) {
       case 'agents':
-        view = <AgentView />
+        view = <AgentView onOpenThreads={() => app.actions.navigate('threads')} />
+        break
+      case 'threads':
+        view = <ThreadsView
+          onOpenAgents={() => app.actions.navigate('agents')}
+          now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
+        />
         break
       case 'history':
         view = <HistoryView

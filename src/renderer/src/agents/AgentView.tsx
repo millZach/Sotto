@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, ChevronDown, FolderPlus, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
+import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
 import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -297,7 +297,7 @@ function AgentNewThread({ state, command, project }: { readonly state: AgentStat
   </form></details>
 }
 
-export function AgentView(): ReactNode {
+export function AgentView({ onOpenThreads }: { readonly onOpenThreads?: (() => void) | undefined } = {}): ReactNode {
   const agents = useAgents()
   const { state, command } = agents
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -326,7 +326,8 @@ export function AgentView(): ReactNode {
   }[agents.voice.status]
   return <div className="management-view agent-view">
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
-      <div className="agent-actions"><Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
+      <div className="agent-actions">{onOpenThreads !== undefined ? <Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button> : null}
+        <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
         <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect T3 Code' : state.connection === 'connecting' ? 'Connecting…' : 'Connect T3 Code'}</Button></div>
     </header>
     <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{connected ? 'T3 Code connected' : 'T3 Code disconnected'}{state.host.version ? ` · ${state.host.version}` : ''}</span>

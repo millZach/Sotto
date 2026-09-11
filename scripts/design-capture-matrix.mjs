@@ -34,6 +34,11 @@ for (const theme of DESIGN_CAPTURE_THEMES) {
     ['settings-application-privacy', 'settings', 'application-privacy'],
     ['settings-validation-error', 'settings', 'validation-error'],
     ['help', 'help', 'overview'],
+    ['threads-populated', 'threads', 'populated'],
+    ['threads-open-running', 'threads', 'open-running'],
+    ['threads-stopped', 'threads', 'stopped-open'],
+    ['threads-search', 'threads', 'search'],
+    ['threads-empty', 'threads', 'empty'],
   ]) add({ id: `${id}-${theme}`, category, state, theme })
 
   add({

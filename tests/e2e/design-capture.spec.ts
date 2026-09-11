@@ -13,7 +13,7 @@ import {
   designCaptureTupleKey,
 } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import type { E2EScenario } from '../../src/shared/e2e'
+import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import {
@@ -39,7 +39,7 @@ type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'home' | 'history' | 'settings' | 'help' | 'scale' | 'widget'
+  readonly category: 'onboarding' | 'home' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -102,12 +102,34 @@ function digest(value: Buffer): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
+
+/**
+ * Saved coordinator state for the Threads page captures: agent control is
+ * already on so Sotto connects to the fixture host at launch, and every
+ * fixture thread but one is assigned. The coordinator's own seven-day
+ * windows read the real clock, so context stamps are taken now; the page
+ * itself reads the fixed E2E_THREADS_NOW.
+ */
+function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown> {
+  const fixture = designThreadsFixture()
+  return {
+    configuration: { provider: 't3', enabled: true, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: 'claude:sonnet',
+      followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
+      reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
+    assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],
+    queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
+    pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+  }
+}
+
 async function createProfile(
   theme: CaptureTheme,
   options: {
     readonly onboardingComplete: boolean
     readonly history?: readonly HistoryEntry[]
     readonly motion?: CaptureMotion
+    readonly agents?: DesignAgentsProfile
   },
 ): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
@@ -120,6 +142,7 @@ async function createProfile(
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
+  if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(options.agents), null, 2)}\n`, 'utf8')
   return profile
 }
 
@@ -131,6 +154,7 @@ async function withSotto(
     readonly motion?: CaptureMotion
     readonly scenario?: E2EScenario
     readonly scalePercent?: CaptureScale
+    readonly agents?: DesignAgentsProfile
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -732,6 +756,49 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('link', { name: 'Help' }).click()
         await expect(page.getByRole('heading', { name: 'Help' })).toBeVisible()
         await captureFullSurface(page, page.locator('.help-view'), `help-${theme}.png`, /Reset safely/i)
+      })
+    })
+
+    test(`${theme} threads page states`, async () => {
+      await withSotto(theme, { onboardingComplete: true, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
+        await page.getByRole('link', { name: 'Agents' }).click()
+        await page.getByRole('button', { name: 'All threads' }).click()
+        await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
+        await expect(page.getByText('3 active, 9 this week')).toBeVisible()
+        // The coordinator queues the fixture's permission request once it has connected.
+        await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
+        await expect(page.getByText('Waiting on you')).toBeVisible()
+        const open = async (title: string): Promise<void> => {
+          const toggle = page.getByRole('button', { name: title })
+          await toggle.click()
+          await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+          await toggle.scrollIntoViewIfNeeded()
+        }
+        await open('Visual gate flake')
+        await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
+        await capturePage(page, `threads-populated-${theme}.png`, { category: 'threads', state: 'populated', theme })
+
+        await open('Footer links')
+        await expect(page.getByText(/Started .* from a voice prompt\./u)).toBeVisible()
+        await capturePage(page, `threads-open-running-${theme}.png`, { category: 'threads', state: 'open-running', theme })
+
+        await open('Streaming WAV stall')
+        await expect(page.getByText(/Sotto stopped it at the follow-up limit/u)).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
+        await capturePage(page, `threads-stopped-${theme}.png`, { category: 'threads', state: 'stopped-open', theme })
+
+        await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
+        await expect(page.getByText('3 of 9')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Visual gate flake' })).toHaveCount(0)
+        await page.evaluate("document.querySelector('.app-content')?.scrollTo(0, 0)")
+        await capturePage(page, `threads-search-${theme}.png`, { category: 'threads', state: 'search', theme })
+      })
+
+      await withSotto(theme, { onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
+        await page.getByRole('link', { name: 'Agents' }).click()
+        await page.getByRole('button', { name: 'All threads' }).click()
+        await expect(page.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
+        await capturePage(page, `threads-empty-${theme}.png`, { category: 'threads', state: 'empty', theme })
       })
     })
 

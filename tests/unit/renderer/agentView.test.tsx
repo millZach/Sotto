@@ -24,7 +24,7 @@ function stateFixture(): AgentState {
         { id: 'guide', projectId: 'docs', title: 'Write guide', modelId: 'model', status: 'idle', messages: [], requests: [] },
       ],
     },
-    assignments: [{ threadId: 'thread', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: 0 }],
+    assignments: [{ threadId: 'thread', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: 0, startedAt: '', origin: 'unknown', stopReason: 'none', stoppedAt: '' }],
     queue: [], activeThreadId: 'thread', activeProjectId: 'project',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', busy: false, notice: '', error: null,

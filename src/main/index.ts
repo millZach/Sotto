@@ -491,7 +491,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
     },
   })
-  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
+  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new ConfiguredProviderHost({
     hosts: {

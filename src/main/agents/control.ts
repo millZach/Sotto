@@ -382,6 +382,7 @@ export class AgentControl {
         this.canAct()
         const assignment = this.assignment(command.threadId)
         assignment.mode = 'managed'; assignment.paused = false; assignment.followups = 0; assignment.lastFailure = ''
+        assignment.stopReason = 'none'; assignment.stoppedAt = ''
         this.considered.delete(command.threadId)
         this.recoveredQueueIds.delete(command.threadId)
         this.state.queue = this.state.queue.filter(q => q.threadId !== command.threadId || q.kind !== 'blocked')
@@ -420,6 +421,7 @@ export class AgentControl {
     const thread = this.thread(threadId)
     if (this.state.assignments.some(a => a.threadId === threadId)) return
     this.state.assignments.push({ threadId, mode: 'managed', instruction, followups: 0, paused: false,
+      startedAt: new Date().toISOString(), origin: 'unknown', stopReason: 'none', stoppedAt: '',
       contextUpdatedAt: Date.now(),
       seenMessageIds: thread.messages.map(m => m.id), ownMessageIds: [], handledRequestIds: [], lastFailure: '' })
     this.state.activeThreadId = threadId; this.state.activeProjectId = thread.projectId
@@ -483,6 +485,8 @@ export class AgentControl {
     const messageId = randomUUID()
     assignment.ownMessageIds.push(messageId)
     assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
+    assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
+    assignment.stopReason = 'none'; assignment.stoppedAt = ''
     assignment.contextUpdatedAt = Date.now()
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text }, turn)
     this.clearDraft()
@@ -678,6 +682,7 @@ export class AgentControl {
     let failure: string | undefined
     try {
       if (assignment.followups >= this.state.configuration.followupLimit) {
+        assignment.stopReason = 'limit'; assignment.stoppedAt = new Date().toISOString()
         assignment.paused = true; this.enqueue(thread, 'blocked', `The ${this.state.configuration.followupLimit} follow-up limit is reached. Review the thread and resume management to authorize more.`); return
       }
       this.canAct()
@@ -693,6 +698,7 @@ export class AgentControl {
       const failure = (thread.messages.at(-1)?.text ?? thread.requests.find(r => r.id === requestId)?.text ?? decision.text).toLocaleLowerCase().replace(/\s+/gu, ' ').trim()
       const failureFingerprint = createHash('sha256').update(failure).digest('hex')
       if (!failure || failureFingerprint === assignment.lastFailure) {
+        assignment.stopReason = 'repeat'; assignment.stoppedAt = new Date().toISOString()
         assignment.paused = true; this.enqueue(thread, 'blocked', 'The agent is repeating a failure without progress. Review the thread before resuming.'); return
       }
       turn = this.beginTurn({ source: 'supervision', commandType: 'send', text: decision.text, threadId: thread.id, projectId: thread.projectId })
@@ -711,11 +717,13 @@ export class AgentControl {
       }
     } catch (error) {
       assignment.paused = true
+      assignment.stopReason = 'error'; assignment.stoppedAt = new Date().toISOString()
       failure = error instanceof Error ? error.message : 'Sotto needs your attention to continue.'
       this.enqueue(thread, 'blocked', failure)
     } finally {
       await this.persist().catch(error => {
         assignment.paused = true
+        assignment.stopReason = 'error'; assignment.stoppedAt = new Date().toISOString()
         failure = error instanceof Error ? error.message : 'Could not save agent state.'
         this.enqueue(thread, 'blocked', failure)
       })
