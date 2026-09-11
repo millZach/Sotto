@@ -17,7 +17,6 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings
 
 afterEach(() => {
   cleanup()
-  delete document.documentElement.dataset.theme
   delete document.documentElement.dataset.reducedMotion
 })
 
@@ -76,11 +75,11 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
 const copy = platformCopy('win32')
 
 describe('SettingsView', () => {
-  it.each(['light', 'dark'] as const)('renders the complete field matrix in a %s container', async (theme) => {
-    render(<div data-theme={theme}><SettingsView {...baseProps()} /></div>)
+  it('renders the complete field matrix in the black-only container', async () => {
+    render(<div><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     for (const name of [
-      'Theme', 'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
+      'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
       'Maximum recording time', 'Sound cues', 'Language', 'Whitespace formatting',
       'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
       copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history', 'History retention',
@@ -100,18 +99,10 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
   })
 
-  it('applies theme immediately and resynchronizes numeric drafts from authoritative settings', async () => {
+  it('resynchronizes numeric drafts from authoritative settings', async () => {
     const user = userEvent.setup()
-    let resolveTheme!: (saved: boolean) => void
-    const update = vi.fn(() => new Promise<boolean>((done) => { resolveTheme = done }))
-    const props = baseProps({ onUpdateSettings: update })
+    const props = baseProps()
     const rendered = render(<SettingsView {...props} />)
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Theme' }), 'dark')
-    expect(update).toHaveBeenCalledWith({ theme: 'dark' })
-    expect(document.documentElement.dataset.theme).toBe('dark')
-    resolveTheme(true)
-    await act(async () => undefined)
-
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '999')
@@ -119,21 +110,15 @@ describe('SettingsView', () => {
     expect(delay).toHaveValue('275')
   })
 
-  it('keeps the newest immediate theme when an older save fails later', async () => {
+  it('has no theme choice and still saves reduced motion', async () => {
     const user = userEvent.setup()
-    const saves: Array<{ patch: unknown; resolve: (saved: boolean) => void }> = []
-    const update = vi.fn((patch: unknown) => new Promise<boolean>((resolve) => saves.push({ patch, resolve })))
-    render(<SettingsView {...baseProps({ onUpdateSettings: update as SettingsViewProps['onUpdateSettings'] })} />)
-    const theme = screen.getByRole('combobox', { name: 'Theme' })
-    await user.selectOptions(theme, 'dark')
-    await user.selectOptions(theme, 'light')
-    expect(document.documentElement.dataset.theme).toBe('light')
-    expect(saves.map(({ patch }) => patch)).toEqual([{ theme: 'dark' }, { theme: 'light' }])
-    saves[0]?.resolve(false)
-    await act(async () => undefined)
-    expect(document.documentElement.dataset.theme).toBe('light')
-    saves[1]?.resolve(true)
-    await act(async () => undefined)
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+
+    expect(screen.queryByRole('combobox', { name: 'Theme' })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
+    expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
+    expect(document.documentElement.dataset.reducedMotion).toBe('on')
   })
 
   it('enumerates microphones, preserves an unknown persisted choice, and refreshes on devicechange', async () => {
@@ -630,7 +615,7 @@ describe('SettingsView', () => {
     expect(screen.getByRole('option', { name: macCopy.settingsMicrophoneDefaultOption })).toBeVisible()
     expect(screen.getByText(macCopy.settingsGlobalShortcutDescription)).toBeVisible()
     expect(screen.getByText(macCopy.settingsAutoPasteDescription)).toBeVisible()
-    expect(screen.getByText(macCopy.settingsThemeDescription)).toBeVisible()
+    expect(screen.getByText(macCopy.settingsReducedMotionDescription)).toBeVisible()
     expect(screen.queryByRole('switch', { name: copy.settingsLaunchAtStartupLabel })).not.toBeInTheDocument()
 
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })

@@ -164,9 +164,9 @@ describe('shared main-window frame', () => {
       createStateBridge: () => createBridge({
         getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
       }),
-      stateText: 'Home',
+      stateText: /ready when you are/i,
     },
-  ])('renders exactly one titlebar and both controls in the $name state', async ({
+  ])('renders exactly one strip and both window controls in the $name state', async ({
     createStateBridge,
     stateText,
   }) => {
@@ -174,7 +174,8 @@ describe('shared main-window frame', () => {
 
     await waitFor(() => expect(document.body).toHaveTextContent(stateText))
 
-    expect(container.querySelectorAll('.app-titlebar')).toHaveLength(1)
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
+    expect(container.querySelectorAll('.app-titlebar, .app-navigation, .dictation-strip')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
   })
@@ -204,7 +205,7 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByText(/started with an empty history/i)).toBeVisible()
     expect(document.body).not.toHaveTextContent('C:\\private\\settings.json')
     expect(document.body).not.toHaveTextContent('private transcript content')
-    expect(screen.getByRole('heading', { level: 2, name: /^ready$/i })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible()
   })
 
   it('explains both macOS permission panes when auto-paste is refused', async () => {
@@ -232,7 +233,7 @@ describe('Sotto application onboarding integration', () => {
     expect(document.body).not.toHaveTextContent('private storage detail')
   })
 
-  it('shows first-run onboarding and applies forced theme and motion preferences', async () => {
+  it('shows first-run onboarding, applies the motion preference, and never themes the root', async () => {
     const bridge = createBridge({
       getSettings: vi.fn(async () => ({
         ...DEFAULT_SETTINGS,
@@ -245,8 +246,8 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /private dictation/i })).toBeVisible())
     // The heading commits with the settings render, but the preferences land in
     // a passive effect, so the attributes need their own wait.
-    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'))
-    expect(document.documentElement.dataset.reducedMotion).toBe('on')
+    await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
+    expect(document.documentElement).not.toHaveAttribute('data-theme')
   })
 
   it('removes forced root attributes when following system preferences', () => {
@@ -257,13 +258,23 @@ describe('Sotto application onboarding integration', () => {
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
   })
 
+  it.each(['light', 'dark', 'system'] as const)('tolerates a persisted %s theme without theming the black window', (theme) => {
+    document.documentElement.dataset.theme = 'light'
+    applyDocumentPreferences({ ...DEFAULT_SETTINGS, theme, reducedMotion: 'on' })
+    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(document.documentElement.dataset.reducedMotion).toBe('on')
+  })
+
   it('shows the complete management dashboard after onboarding is already complete', async () => {
     renderApp(createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
 
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
     expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent(/pastes automatically/i)
   })
 
   it('carries a release offer into the management window and keeps a dismissal for the session', async () => {
@@ -283,7 +294,7 @@ describe('Sotto application onboarding integration', () => {
       downloadUpdate,
     }))
 
-    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await screen.findByText('Sotto 3.5.0 is available')
     await user.click(screen.getByRole('button', { name: 'Download' }))
     expect(downloadUpdate).toHaveBeenCalledOnce()
@@ -315,7 +326,7 @@ describe('Sotto application onboarding integration', () => {
       })),
     }))
 
-    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     expect(document.querySelector('.update-banner')).toBeNull()
   })
 
@@ -328,7 +339,7 @@ describe('Sotto application onboarding integration', () => {
       deliverOutput,
     })
     renderApp(bridge)
-    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(screen.getByRole('link', { name: 'History' }))
     await user.click(screen.getAllByRole('button', { name: 'Copy transcript' })[0]!)
     expect(deliverOutput).toHaveBeenCalledWith({ text: 'trusted local transcript', autoPaste: false, pasteDelayMs: 275 })
@@ -345,7 +356,7 @@ describe('Sotto application onboarding integration', () => {
       hideApp,
       quitApp,
     }))
-    await screen.findByRole('heading', { level: 1, name: 'Home' })
+    await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(screen.getByRole('button', { name: /minimize sotto/i }))
     await user.click(screen.getByRole('button', { name: /close sotto to tray/i }))
     expect(minimizeApp).toHaveBeenCalledOnce()
@@ -361,7 +372,7 @@ describe('Sotto application onboarding integration', () => {
 
     await completeReadySetup(user)
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true }))
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
   })
 
   it('installs an optional model only after returned disclosure and explicit consent', async () => {
@@ -648,8 +659,9 @@ describe('transcription pipeline prewarm', () => {
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
 
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeInTheDocument())
     expect(screen.getByLabelText('Command+Shift+Space')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: /help/i }))
     expect(screen.getByText(copy.helpMicrophoneAccess)).toBeVisible()

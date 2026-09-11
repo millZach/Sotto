@@ -18,7 +18,6 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
     'Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again.',
   onboardingMicrophoneMissing:
     'Connect or enable an input device in Windows Settings > System > Sound, then try again.',
-  settingsThemeDescription: 'Follow Windows or force a complete light or dark theme.',
   settingsReducedMotionDescription: 'Follow Windows or minimize non-essential motion.',
   settingsMicrophoneUnavailable: 'Microphones are unavailable. Check Windows privacy settings.',
   settingsMicrophoneDefaultOption: 'Windows default',

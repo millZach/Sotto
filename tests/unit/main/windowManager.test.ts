@@ -296,7 +296,7 @@ describe('WindowManager construction', () => {
         minHeight: 560,
         show: false,
         title: 'Sotto',
-        backgroundColor: '#1b1917',
+        backgroundColor: '#000000',
         autoHideMenuBar: true,
         frame: false,
         webPreferences: {
@@ -436,7 +436,7 @@ describe('WindowManager construction', () => {
       minHeight: 560,
       show: false,
       title: 'Sotto',
-      backgroundColor: '#1b1917',
+      backgroundColor: '#000000',
       autoHideMenuBar: true,
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: platformProfile('darwin').trafficLightPosition,

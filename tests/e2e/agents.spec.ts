@@ -12,7 +12,7 @@ async function setup(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await page.getByRole('link', { name: 'Agents', exact: true }).click()
+  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
 }
 
 test('selects each native subscription with its available model and reasoning effort without an API key', async () => {
@@ -155,7 +155,7 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   }
 })
 
-test('keeps dark agent settings and widget prompts usable at the minimum window size', async () => {
+test('keeps agent settings and widget prompts usable at the minimum window size', async () => {
   const launched = await launchSotto()
   const { page } = launched
   try {
@@ -172,7 +172,6 @@ test('keeps dark agent settings and widget prompts usable at the minimum window 
     await page.getByRole('button', { name: 'Connect T3 Code' }).click()
     await page.getByRole('button', { name: 'Manage Workshop', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await page.getByLabel('Default projects directory').fill('D:\\Builder projects')
     await page.getByRole('button', { name: 'Save connection settings' }).click()

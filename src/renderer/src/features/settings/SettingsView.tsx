@@ -25,7 +25,6 @@ import type {
   ModelPreset,
   ReducedMotion,
   SettingsPatch,
-  Theme,
 } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
@@ -134,12 +133,6 @@ function parseBoundedInteger(value: string, minimum: number, maximum: number): n
   return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null
 }
 
-function applyThemePreference(theme: Theme): void {
-  if (typeof document === 'undefined') return
-  if (theme === 'system') delete document.documentElement.dataset.theme
-  else document.documentElement.dataset.theme = theme
-}
-
 function applyMotionPreference(reducedMotion: ReducedMotion): void {
   if (typeof document === 'undefined') return
   if (reducedMotion === 'system') delete document.documentElement.dataset.reducedMotion
@@ -199,7 +192,6 @@ export function SettingsView({
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
   const remoteAsrSequenceRef = useRef(0)
-  const themeSequenceRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -451,15 +443,6 @@ export function SettingsView({
   }, [])
   const microphoneKnown = settings.microphoneId === null || microphones.some(({ deviceId }) => deviceId === settings.microphoneId)
 
-  const saveTheme = async (theme: Theme): Promise<void> => {
-    const sequence = ++themeSequenceRef.current
-    applyThemePreference(theme)
-    const saved = await save({ theme })
-    if (sequence === themeSequenceRef.current && !saved) {
-      applyThemePreference(settingsRef.current.theme)
-    }
-  }
-
   const saveMotion = async (reducedMotion: ReducedMotion): Promise<void> => {
     const sequence = ++motionSequenceRef.current
     applyMotionPreference(reducedMotion)
@@ -520,9 +503,8 @@ export function SettingsView({
           {notice === null ? null : <p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p>}
 
           <Card className="settings-section" id="settings-appearance">
-            <div className="settings-section__heading"><h2>Appearance</h2><p>Choose how Sotto looks and moves.</p></div>
+            <div className="settings-section__heading"><h2>Appearance</h2><p>Choose how Sotto moves.</p></div>
             <div className="settings-rows">
-              <Field label="Theme" description={copy.settingsThemeDescription}><Select value={settings.theme} onChange={(event) => void saveTheme(event.currentTarget.value as Theme)}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></Select></Field>
               <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
               <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
             </div>

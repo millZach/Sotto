@@ -2,14 +2,11 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 
 import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
 import type { AppSettings, ModelPreset } from '../../shared/settings'
-import { AppShell, type AppStatusTone } from './components/AppShell'
-import { AppTitlebar } from './components/AppTitlebar'
+import { AppShell } from './components/AppShell'
 import { Card } from './components/Card'
-import { TitlebarSearch } from './components/TitlebarSearch'
-import { DictationStrip } from './features/dictation/DictationStrip'
+import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
-import { HomeView } from './features/home/HomeView'
 import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
 import { UpdateBanner } from './features/updates/UpdateBanner'
 import { updatePromptKey } from './features/updates/updatePrompt'
@@ -18,10 +15,12 @@ import {
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
-import { useApp } from './state/AppContext'
+import { useApp, type AppNavigation } from './state/AppContext'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
-import { AgentProvider } from './agents/AgentContext'
+import { AgentProvider, useAgents } from './agents/AgentContext'
+import { MODEL_CATALOG } from '../../shared/modelCatalog'
+import { languageLabel } from './languages'
 import { AgentView } from './agents/AgentView'
 import { ThreadsView } from './agents/ThreadsView'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
@@ -36,14 +35,38 @@ export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
 }
 
+/**
+ * The main window is black whatever `theme` says (the field is kept for old
+ * settings files and the widget snapshot), so only reduced motion reaches the
+ * root; a stale theme attribute from an earlier build is cleared.
+ */
 export function applyDocumentPreferences(settings: AppSettings | null, root: HTMLElement = document.documentElement): void {
-  if (settings?.theme === 'light' || settings?.theme === 'dark') {
-    root.dataset.theme = settings.theme
-  } else {
-    delete root.dataset.theme
-  }
+  delete root.dataset.theme
   if (settings?.reducedMotion === 'on') root.dataset.reducedMotion = 'on'
   else delete root.dataset.reducedMotion
+}
+
+/** The footer's one sentence: what this page keeps, or what the machine is looking after. */
+function FooterStatus({ navigation, settings }: {
+  readonly navigation: Exclude<AppNavigation, 'onboarding'>
+  readonly settings: AppSettings
+}): ReactNode {
+  const agents = useAgents()
+  switch (navigation) {
+    case 'agents':
+    case 'threads': {
+      const running = agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0
+      if (running === 0) return 'Nothing is running.'
+      return `Sotto is looking after ${running} ${running === 1 ? 'thread' : 'threads'}.`
+    }
+    case 'history': return settings.historyEnabled ? 'Kept on this computer only. Nothing leaves it.' : 'History is off.'
+    case 'settings': return 'Changes save as you make them.'
+    case 'help': return 'Shortcuts, privacy, and troubleshooting.'
+    default: {
+      const model = MODEL_CATALOG[settings.modelPreset].label
+      return `${model} model, ${languageLabel(settings.language)}. ${settings.autoPaste ? 'Pastes automatically.' : 'Copies to the clipboard.'}`
+    }
+  }
 }
 
 function toModelState(status: ModelStatus | undefined): OnboardingModelState {
@@ -245,19 +268,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     )
   } else {
     const navigation = app.navigation
-    const statusTone: AppStatusTone = app.failure !== null
-      ? 'attention'
-      : app.dictation.status === 'listening'
-        ? 'listening'
-        : app.dictation.status === 'processing'
-          ? 'processing'
-          : 'ready'
-    const statusText = {
-      ready: 'Ready · Local & private',
-      listening: 'Listening',
-      processing: 'Transcribing locally',
-      attention: 'Needs attention',
-    }[statusTone]
 
     let view: ReactNode
     switch (navigation) {
@@ -307,13 +317,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} />
         break
       default:
-        view = <HomeView
+        view = <DictateRoom
           settings={app.settings}
+          platform={app.platform}
+          dictation={app.dictation}
           modelStatus={app.modelStatuses[app.settings.modelPreset]}
           entries={app.history}
           historyStatus={app.historyStatus}
-          version={app.update?.currentVersion}
-          onOpenHistory={() => app.actions.navigate('history')}
+          onStart={app.actions.start}
+          onStop={app.actions.stop}
+          onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
         />
     }
@@ -328,26 +341,15 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
       : null
 
-    const deck = (
-      <DictationStrip
-        settings={app.settings}
-        platform={app.platform}
-        dictation={app.dictation}
-        modelStatus={app.modelStatuses[app.settings.modelPreset]}
-        onStart={app.actions.start}
-        onStop={app.actions.stop}
-        onOpenSettings={() => app.actions.navigate('settings')}
-      />
-    )
-
     content = (
       <>
         <AppShell
           navigation={navigation}
-          statusText={statusText}
-          statusTone={statusTone}
-          deck={deck}
+          platform={app.platform}
+          statusText={<FooterStatus navigation={navigation} settings={app.settings} />}
           onNavigate={app.actions.navigate}
+          onMinimize={app.actions.minimizeApp}
+          onClose={app.actions.hideApp}
         >
           {updatePrompt}
           {view}
@@ -365,22 +367,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   return (
     <AgentProvider settings={app.settings} dictation={app.dictation}>
-    <div className="app-frame">
-      <AppTitlebar
-        onMinimize={app.actions.minimizeApp}
-        onClose={app.actions.hideApp}
-      >
-        {management ? (
-          <TitlebarSearch
-            value={historyQuery}
-            platform={app.platform}
-            onChange={setHistoryQuery}
-            onActivate={() => { if (app.navigation !== 'history') app.actions.navigate('history') }}
-          />
-        ) : null}
-      </AppTitlebar>
-      <div className="app-frame__body">{content}</div>
-    </div>
+      {management ? content : (
+        <AppShell
+          navigation={null}
+          platform={app.platform}
+          onMinimize={app.actions.minimizeApp}
+          onClose={app.actions.hideApp}
+        >
+          {content}
+        </AppShell>
+      )}
     </AgentProvider>
   )
 }

@@ -1,22 +1,10 @@
 /* ---- threads: every thread Sotto is looking after, grouped by what you need to know ---- */
 
-/* Provider badge tints, the mockup's hues on each theme: peach for Claude, slate for Codex, lavender for Grok. */
+/* Provider badge tints, the mockup's hues on black: peach for Claude, slate for Codex, lavender for Grok. */
 .threads-view {
-  --tt-badge-claude: #efc9a6; --tt-badge-claude-ink: #4a2c10;
-  --tt-badge-codex: #dde1e6; --tt-badge-codex-ink: #23282e;
-  --tt-badge-grok: #d9d3ff; --tt-badge-grok-ink: #2f2670;
-}
-:root[data-theme='dark'] .threads-view {
   --tt-badge-claude: #e2b28a; --tt-badge-claude-ink: #1f1206;
   --tt-badge-codex: #d3d7dd; --tt-badge-codex-ink: #14181c;
   --tt-badge-grok: #c9c2ff; --tt-badge-grok-ink: #1b1540;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .threads-view {
-    --tt-badge-claude: #e2b28a; --tt-badge-claude-ink: #1f1206;
-    --tt-badge-codex: #d3d7dd; --tt-badge-codex-ink: #14181c;
-    --tt-badge-grok: #c9c2ff; --tt-badge-grok-ink: #1b1540;
-  }
 }
 
 .threads-view { box-sizing: border-box; flex: 0 0 auto; width: 100%; max-width: 768px; margin-inline: auto; padding: 22px 24px 48px; display: grid; align-content: start; }

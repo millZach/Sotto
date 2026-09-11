@@ -395,7 +395,7 @@ export class WindowManager {
       minHeight: 560,
       show: false,
       title: APP_NAME,
-      backgroundColor: '#1b1917',
+      backgroundColor: '#000000',
       autoHideMenuBar: true,
       ...windowIconOptions(this.dependencies),
       ...mainWindowChromeOptions(this.dependencies.chrome),

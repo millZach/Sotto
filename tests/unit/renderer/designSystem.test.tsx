@@ -36,9 +36,9 @@ function contrastRatio(first: string, second: string): number {
   return (lighter! + 0.05) / (darker! + 0.05)
 }
 
-function colorPalettes(): Array<Record<'canvas' | 'surface' | 'surface-elevated' | 'border', string>> {
-  const names = ['canvas', 'surface', 'surface-elevated', 'border'] as const
-  const declarations = [...tokensCss.matchAll(/--tt-(canvas|surface|surface-elevated|border):\s*(#[0-9a-f]{6});/giu)]
+function colorPalettes(): Array<Record<'canvas' | 'surface' | 'surface-elevated' | 'border' | 'text' | 'text-2' | 'text-muted' | 'activity', string>> {
+  const names = ['canvas', 'surface', 'surface-elevated', 'border', 'text', 'text-2', 'text-muted', 'activity'] as const
+  const declarations = [...tokensCss.matchAll(/--tt-(canvas|surface|surface-elevated|border|text|text-2|text-muted|activity):\s*(#[0-9a-f]{6});/giu)]
   const palettes: Array<Partial<Record<(typeof names)[number], string>>> = []
   for (const match of declarations) {
     const name = match[1] as (typeof names)[number]
@@ -168,17 +168,23 @@ describe('Sotto design-system primitives', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save')
   })
 
-  it('defines complete light/dark/system tokens, 44px controls, and both reduced-motion paths', () => {
+  it('defines one black palette with the Crossing tokens, no theme switch, and both reduced-motion paths', () => {
     for (const token of [
-      'canvas', 'surface', 'surface-elevated', 'text', 'text-muted', 'border',
+      'canvas', 'surface', 'surface-elevated', 'text', 'text-2', 'text-muted', 'border', 'hairline', 'pill', 'pill-ink',
       'primary', 'primary-hover', 'activity', 'success', 'warning', 'error',
-      'error-contrast', 'focus-ring', 'shadow-sm', 'shadow-lg', 'radius-sm', 'radius-md', 'radius-lg',
+      'error-contrast', 'focus-ring', 'shadow-sm', 'shadow-lg', 'radius-sm', 'radius-md', 'radius-lg', 'radius-pill',
     ]) {
       expect(tokensCss).toContain(`--tt-${token}:`)
     }
-    expect(tokensCss).toContain("[data-theme='light']")
-    expect(tokensCss).toContain("[data-theme='dark']")
-    expect(tokensCss).toContain('prefers-color-scheme: dark')
+    expect(tokensCss).toContain('--tt-canvas: #000000;')
+    expect(tokensCss).toContain('color-scheme: dark;')
+    expect(tokensCss).not.toContain('data-theme')
+    expect(tokensCss).not.toContain('prefers-color-scheme')
+    expect(tokensCss).not.toContain('--tt-side')
+    expect(globalCss).not.toContain('data-theme')
+    expect(globalCss).not.toContain('prefers-color-scheme')
+    expect(tokensCss).toMatch(/--tt-font-ui:\s*'Bricolage Grotesque'/u)
+    expect(globalCss).toContain('font-optical-sizing: auto')
     expect(globalCss).toContain('min-height: 44px')
     expect(globalCss).toContain(':focus-visible')
     expect(globalCss).toContain('prefers-reduced-motion: reduce')
@@ -193,14 +199,27 @@ describe('Sotto design-system primitives', () => {
     expect(onboardingSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
   })
 
-  it('keeps control and card borders at 3:1 contrast against every supported surface', () => {
+  it('keeps control borders at 3:1 and every text tier at 4.5:1 against the black room and its surfaces', () => {
     const palettes = colorPalettes()
-    expect(palettes).toHaveLength(3)
-    for (const palette of palettes) {
-      for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
-        expect(contrastRatio(palette.border, palette[surface])).toBeGreaterThanOrEqual(3)
+    expect(palettes).toHaveLength(1)
+    const [palette] = palettes
+    for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
+      expect(contrastRatio(palette!.border, palette![surface])).toBeGreaterThanOrEqual(3)
+      for (const ink of ['text', 'text-2', 'text-muted', 'activity'] as const) {
+        expect(contrastRatio(palette![ink], palette![surface]), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
+  })
+
+  it('bundles Bricolage Grotesque as local latin and latin-ext subsets without touching the widget', () => {
+    const fontsCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/fonts.css'), 'utf8')
+    const faces = [...fontsCss.matchAll(/font-family:\s*'Bricolage Grotesque'/gu)]
+    expect(faces).toHaveLength(2)
+    expect(fontsCss).toContain("url('../assets/fonts/bricolage-grotesque-latin.woff2')")
+    expect(fontsCss).toContain("url('../assets/fonts/bricolage-grotesque-latin-ext.woff2')")
+    expect(fontsCss).toMatch(/font-weight:\s*200 800/u)
+    const widgetCss = readFileSync(join(process.cwd(), 'src/renderer/src/widget/widget.css'), 'utf8')
+    expect(widgetCss).not.toContain('Bricolage')
   })
 
   it('normalizes the production Electron shortcut for Windows display', () => {

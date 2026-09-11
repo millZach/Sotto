@@ -1,12 +1,13 @@
 @import './tokens.css';
 @import './fonts.css';
 
-/* Sotto management window — "Rail".
+/* Sotto management window — "Crossing".
 
-   A 60px icon rail, a titlebar that names the page, and a dictation deck that
-   stays pinned under it on every tab so the widget's seven-bar wave is always
-   one glance away. Content sits in white panels on a soft canvas with hairline
-   dividers. The floating widget is deliberately excluded — it carries its own
+   One black room between a thin top strip and a footer line. A switch in the
+   strip flips the room between Dictate and Agents; Threads, History, Settings
+   and Help are plain links in the footer. Type is Bricolage Grotesque, the
+   only colour is the dictation teal, and the one action on a page is a white
+   pill. The floating widget is deliberately excluded — it carries its own
    frozen tokens in widget/widget-tokens.css. */
 
 *,
@@ -27,7 +28,8 @@ body {
   background: var(--tt-canvas);
   color: var(--tt-text);
   font-family: var(--tt-font-ui);
-  font-size: 13px;
+  font-optical-sizing: auto;
+  font-size: 14px;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -127,76 +129,80 @@ h1[tabindex='-1']:focus {
 
 /* ---- controls ---- */
 
+/* Pills. The primary action is white ink on the room; everything else is a
+   quiet pill: a hairline that firms up on hover, no fill. */
 .tt-button {
   display: inline-flex;
-  min-height: 30px;
+  min-height: 34px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid var(--tt-border-faint);
-  border-radius: var(--tt-radius-sm);
-  padding: 0 12px;
-  background: var(--tt-surface);
-  color: var(--tt-text);
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-pill);
+  padding: 0 14px;
+  background: transparent;
+  color: var(--tt-text-2);
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease;
 }
 
 .tt-button:hover:not(:disabled) {
-  background: var(--tt-surface-sunken);
+  border-color: var(--tt-text-faint);
+  color: var(--tt-text);
 }
 
 .tt-button:active:not(:disabled) {
-  background: color-mix(in srgb, var(--tt-text) 8%, var(--tt-surface-sunken));
+  background: var(--tt-hover);
 }
 
 .tt-button:disabled {
   cursor: not-allowed;
-  opacity: 0.52;
+  opacity: 0.45;
 }
 
 .tt-button--primary {
-  border-color: var(--tt-primary-fill);
-  background: var(--tt-primary-fill);
-  color: #ffffff;
+  border-color: var(--tt-pill);
+  background: var(--tt-pill);
+  color: var(--tt-pill-ink);
+  font-weight: 600;
 }
 
 .tt-button--primary:hover:not(:disabled) {
-  border-color: var(--tt-primary-fill-hover);
-  background: var(--tt-primary-fill-hover);
+  border-color: var(--tt-pill);
+  color: var(--tt-pill-ink);
+  filter: brightness(1.12);
 }
 
 .tt-button--primary:active:not(:disabled) {
-  background: var(--tt-primary-fill);
+  background: var(--tt-pill);
+  filter: brightness(0.94);
 }
 
 .tt-button--ghost {
   border-color: transparent;
   background: transparent;
-  color: var(--tt-text-muted);
+  color: var(--tt-text-faint);
 }
 
 .tt-button--ghost:hover:not(:disabled) {
-  background: var(--tt-hover);
+  border-color: transparent;
   color: var(--tt-text);
 }
 
 /* Destructive controls stay tinted in the page. The point of no return,
    inside the confirmation dialog, does get the solid plate. */
 .tt-button--danger {
-  border-color: color-mix(in srgb, var(--tt-error) 45%, transparent);
-  background: color-mix(in srgb, var(--tt-error) 8%, transparent);
+  border-color: transparent;
   color: var(--tt-error);
 }
 
 .tt-button--danger:hover:not(:disabled) {
-  border-color: var(--tt-error);
-  background: color-mix(in srgb, var(--tt-error) 16%, transparent);
-  color: var(--tt-error);
+  border-color: #4a2a25;
+  color: #ffbcb0;
 }
 
 .tt-dialog__actions .tt-button--danger {
@@ -207,10 +213,11 @@ h1[tabindex='-1']:focus {
 
 .tt-dialog__actions .tt-button--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--tt-error) 86%, var(--tt-canvas));
+  color: var(--tt-error-contrast);
 }
 
 .tt-button--icon {
-  width: 30px;
+  width: 34px;
   padding: 0;
 }
 
@@ -219,7 +226,7 @@ h1[tabindex='-1']:focus {
 .tt-card {
   position: relative;
   border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-md);
+  border-radius: var(--tt-radius-lg);
   background: var(--tt-surface);
   box-shadow: var(--tt-shadow-sm);
   padding: 20px;
@@ -252,11 +259,11 @@ h1[tabindex='-1']:focus {
   width: 100%;
   min-height: 30px;
   border: 1px solid var(--tt-border-faint);
-  border-radius: var(--tt-radius-sm);
+  border-radius: var(--tt-radius-md);
   background: var(--tt-surface-sunken);
-  padding: 4px 10px;
+  padding: 4px 12px;
   color: var(--tt-text);
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 500;
   transition: border-color 120ms ease, background-color 120ms ease;
 }
@@ -344,7 +351,7 @@ textarea.tt-input {
   flex: 0 0 auto;
   margin-top: 1px;
   border: 1px solid var(--tt-border);
-  border-radius: 10px;
+  border-radius: var(--tt-radius-pill);
   background: var(--tt-surface-sunken);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -361,12 +368,12 @@ textarea.tt-input {
 }
 
 .tt-toggle[aria-checked='true'] .tt-toggle__track {
-  border-color: var(--tt-primary-fill);
-  background: var(--tt-primary-fill);
+  border-color: var(--tt-text);
+  background: var(--tt-text);
 }
 
 .tt-toggle[aria-checked='true'] .tt-toggle__thumb {
-  background: #ffffff;
+  background: var(--tt-canvas);
   transform: translateX(16px);
 }
 
@@ -396,13 +403,13 @@ textarea.tt-input {
 .tt-kbd {
   display: inline-block;
   min-width: 22px;
-  border: 1px solid var(--tt-border-faint);
-  border-radius: 4px;
-  background: var(--tt-surface-sunken);
-  padding: 1px 5px;
-  color: var(--tt-text-muted);
-  font-family: var(--tt-font-mono);
-  font-size: 11px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-sm);
+  background: transparent;
+  padding: 2px 7px;
+  color: var(--tt-text-2);
+  font-family: var(--tt-font-ui);
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
   text-align: center;
@@ -615,9 +622,9 @@ textarea.tt-input {
 .onboarding-eyebrow {
   margin: 0 0 10px;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
@@ -625,9 +632,10 @@ textarea.tt-input {
   max-width: 560px;
   margin: 0;
   font-size: clamp(26px, 3.6vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.022em;
-  line-height: 1.16;
+  font-variation-settings: 'opsz' 96;
+  font-weight: 500;
+  letter-spacing: -0.7px;
+  line-height: 1.12;
 }
 
 .onboarding-lead {
@@ -853,287 +861,158 @@ textarea.tt-input {
   }
 }
 
-/* ---- application frame ---- */
+/* ---- the shell: strip, room, footer ----
 
-.app-frame {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  height: 100vh;
-  min-height: 0;
-  grid-template-rows: 52px minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.app-frame__body {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
+   One black room between a thin top strip and a footer line. The strip carries
+   the mark, the Dictate/Agents switch and (on Windows) the window controls,
+   and is the frameless window's drag region. The room is the only surface
+   that scrolls. The footer holds the page links and one sentence of status. */
 
 .app-shell {
   display: grid;
   width: 100%;
   min-width: 0;
-  height: 100%;
+  height: 100vh;
   min-height: 0;
-  grid-template-columns: 60px minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-rows: 60px minmax(0, 1fr) 44px;
   background: var(--tt-canvas);
+  color: var(--tt-text);
+  overflow: hidden;
 }
 
-/* ---- titlebar: brand, page title, search, window controls ---- */
+/* Loading, unavailable and onboarding get the strip and the room, no footer. */
+.app-shell--bare {
+  grid-template-rows: 60px minmax(0, 1fr);
+}
 
-.app-titlebar {
+.app-strip {
   -webkit-app-region: drag;
-  display: flex;
-  grid-column: 1 / -1;
+  display: grid;
   align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--tt-hairline);
-  background: var(--tt-side);
-  padding-left: 19px;
+  grid-template-columns: 1fr auto 1fr;
+  padding-left: 20px;
   user-select: none;
 }
 
 /* Reserves the strip macOS paints its traffic lights into (16px inset + the
    three 20px buttons and their gaps), which no element of ours can occupy. */
-.app-titlebar--mac {
+.app-strip--mac {
   padding-left: 78px;
 }
 
-.app-titlebar__brand {
+.app-mark {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.app-titlebar__brand > span {
+  gap: 9px;
   color: var(--tt-text);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.1px;
 }
 
-.app-titlebar__mark {
+.app-mark__glyph {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
-.app-titlebar__page {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 10px;
-  padding-left: 16px;
-  border-left: 1px solid var(--tt-border-faint);
-  line-height: 1.3;
-}
-
-.app-titlebar__title {
-  color: var(--tt-text);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.app-titlebar__subtitle {
-  overflow: hidden;
-  color: var(--tt-text-faint);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-titlebar__search {
+/* The switch: two tabs in one pill-shaped track, the selected one filled. */
+.app-switch {
   -webkit-app-region: no-drag;
-  position: relative;
-  display: flex;
-  width: 320px;
-  height: 30px;
-  flex: 0 1 320px;
+  display: inline-flex;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-pill);
+  background: rgb(255 255 255 / 3%);
+  padding: 4px;
+}
+
+.app-switch__tab {
+  display: inline-flex;
+  height: 34px;
+  min-height: 34px;
   align-items: center;
-  margin-left: auto;
-}
-
-.app-titlebar__search > svg {
-  position: absolute;
-  left: 10px;
-  color: var(--tt-text-faint);
-  pointer-events: none;
-}
-
-.app-titlebar__search .tt-input {
-  height: 30px;
-  min-height: 30px;
-  padding-left: 30px;
-  padding-right: 60px;
-  background: var(--tt-surface);
+  gap: 9px;
+  border: 0;
+  border-radius: var(--tt-radius-pill);
+  padding: 0 16px 0 12px;
+  background: transparent;
+  color: var(--tt-text-2);
+  cursor: pointer;
+  font-size: 13.5px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
-.app-titlebar__search .tt-kbd {
+.app-switch__tab:hover:not([aria-selected='true']) {
+  color: var(--tt-text);
+}
+
+.app-switch__tab[aria-selected='true'] {
+  background: var(--tt-pill);
+  color: var(--tt-pill-ink);
+}
+
+/* The ring sits inside the tab so it never crosses the neighbouring pill. */
+.app-switch__tab:focus-visible {
+  outline-offset: -3px;
+}
+
+.app-switch .voice-wave__bar {
+  border-radius: var(--tt-radius-pill);
+  background: currentColor;
+}
+
+/* The Agents glyph: the orb reduced to a ring with a dashed inner ring. */
+.app-switch__orb {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border: 1.7px solid currentColor;
+  border-radius: 50%;
+}
+
+.app-switch__orb::after {
+  content: '';
   position: absolute;
-  right: 8px;
-  pointer-events: none;
+  inset: 3px;
+  border: 1.2px dashed currentColor;
+  border-radius: 50%;
+  opacity: 0.7;
 }
 
-.app-titlebar__controls {
+.app-controls {
   -webkit-app-region: no-drag;
   display: flex;
-  flex: none;
   align-self: stretch;
+  justify-self: end;
 }
 
-.app-titlebar__controls .tt-button {
+.app-controls .tt-button {
   width: 46px;
   min-height: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--tt-text-muted);
-}
-
-.app-titlebar__controls .tt-button:hover:not(:disabled) {
-  background: var(--tt-hover);
-  color: var(--tt-text);
-}
-
-/* ---- the icon rail ---- */
-
-.app-navigation {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  align-items: center;
-  border-right: 1px solid var(--tt-hairline);
-  background: var(--tt-side);
-  padding: 10px 0 14px;
-}
-
-.app-navigation nav {
-  display: grid;
-  gap: 6px;
-}
-
-.app-navigation__link {
-  position: relative;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: var(--tt-radius-md);
-  color: var(--tt-text-muted);
-  text-decoration: none;
-  transition: color 120ms ease, background-color 120ms ease;
-}
-
-.app-navigation__link:hover {
-  background: var(--tt-hover);
-  color: var(--tt-text);
-}
-
-.app-navigation__link[aria-current='page'] {
-  background: var(--tt-surface);
-  box-shadow: var(--tt-shadow-sm);
-  color: var(--tt-primary);
-}
-
-/* The active page is also marked on the rail's outer edge. */
-.app-navigation__link[aria-current='page']::before {
-  position: absolute;
-  top: 11px;
-  bottom: 11px;
-  left: -10px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--tt-primary);
-  content: '';
-}
-
-/* The session dot: a small microphone ring at the foot of the rail whose
-   colour says what the machine is doing. The words are read aloud only. */
-.app-navigation__status {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  margin-top: auto;
-  place-items: center;
-  border: 1px solid var(--tt-border-faint);
-  border-radius: 50%;
   color: var(--tt-text-faint);
 }
 
-.app-navigation__status > span:first-child {
-  position: relative;
-  display: grid;
-  place-items: center;
+.app-controls .tt-button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--tt-text);
 }
 
-.app-navigation__status > span:first-child::after {
-  position: absolute;
-  right: -5px;
-  top: -3px;
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid var(--tt-side);
-  border-radius: 50%;
-  background: var(--tt-activity);
-  content: '';
+.app-controls .tt-button:focus-visible {
+  outline-offset: -3px;
 }
 
-.app-navigation__status[data-tone='listening'] {
-  border-color: var(--tt-activity);
-  color: var(--tt-activity);
-}
-
-.app-navigation__status[data-tone='listening'] > span:first-child::after {
-  background: var(--tt-activity);
-}
-
-.app-navigation__status[data-tone='processing'] {
-  border-color: var(--tt-warning);
-  color: var(--tt-warning);
-}
-
-.app-navigation__status[data-tone='processing'] > span:first-child::after {
-  background: var(--tt-warning);
-}
-
-.app-navigation__status[data-tone='attention'] {
-  border-color: var(--tt-error);
-  color: var(--tt-error);
-}
-
-.app-navigation__status[data-tone='attention'] > span:first-child::after {
-  background: var(--tt-error);
-}
-
-.app-navigation__status > span:last-child {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
-/* ---- the stage: deck strip above the scrolling page ---- */
-
-.app-stage {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.app-content {
+/* The room. Pages lay themselves out inside it; it is the one scrollport. */
+.app-room {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .management-view {
@@ -1141,7 +1020,6 @@ textarea.tt-input {
   min-width: 0;
 }
 
-.home-view,
 .help-view {
   flex: 0 0 auto;
   padding: 20px 24px 28px;
@@ -1153,141 +1031,183 @@ textarea.tt-input {
   min-height: 0;
 }
 
-/* ---- the dictation deck ---- */
-
-.dictation-strip {
-  position: relative;
+.app-footer {
   display: flex;
-  min-height: 56px;
+  min-width: 0;
   align-items: center;
-  gap: 18px;
-  border-bottom: 1px solid var(--tt-hairline);
-  background: var(--tt-side);
-  padding: 10px 20px;
-  overflow: hidden;
+  gap: 22px;
+  border-top: 1px solid var(--tt-hairline);
+  padding: 0 22px;
+  color: var(--tt-text-faint);
+  font-size: 13px;
+  user-select: none;
 }
 
-/* A teal wash floods in from the left while a session is live; success and
-   attention keep the same gesture in their own colour. */
-.dictation-strip::before {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, var(--tt-activity-wash), transparent 45%);
-  content: '';
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 400ms ease;
-}
-
-.dictation-strip[data-active='true']::before {
-  opacity: 1;
-}
-
-.dictation-strip[data-tone='success']::before {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--tt-success) 12%, transparent), transparent 45%);
-  opacity: 1;
-}
-
-.dictation-strip[data-tone='error']::before {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--tt-error) 12%, transparent), transparent 45%);
-  opacity: 1;
-}
-
-.dictation-strip > * {
-  position: relative;
-}
-
-.dictation-strip__buttons {
+.app-footer nav {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 8px;
+  gap: 22px;
 }
 
-.dictation-strip__buttons .tt-button--primary {
-  min-height: 34px;
-  padding: 0 14px;
+.app-footer__link {
+  border-radius: 3px;
+  color: var(--tt-text-2);
+  text-decoration: none;
 }
 
-.dictation-strip .voice-wave {
-  --wave-w: 4px;
-  --wave-gap: 4px;
-  --wave-rest: 6px;
-  --wave-peak: 26px;
-}
-
-.dictation-strip__timer {
-  min-width: 44px;
+.app-footer__link:hover,
+.app-footer__link[aria-current='page'] {
   color: var(--tt-text);
-  font-family: var(--tt-font-mono);
-  font-size: 15px;
-  font-weight: 500;
 }
 
-.dictation-strip[data-stage='idle'] .dictation-strip__timer {
-  color: var(--tt-text-faint);
+.app-footer__link:focus-visible {
+  outline-offset: 4px;
 }
 
-.dictation-strip__state {
-  display: flex;
+.app-footer__status {
   min-width: 0;
-  align-items: center;
-  gap: 8px;
   margin-left: auto;
-  color: var(--tt-text-muted);
-  font-size: 12.5px;
-  text-align: right;
-}
-
-.dictation-strip__state h2 {
-  display: inline;
-  margin: 0;
-  color: var(--tt-text);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.dictation-strip__state h2::after {
-  content: '.';
-}
-
-.dictation-strip__state p {
-  display: inline;
-  margin: 0;
-}
-
-.dictation-strip__copy {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Recovery guidance is worth a second line; every other state stays on one. */
-.dictation-strip[data-tone='error'] .dictation-strip__copy {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: normal;
+/* ---- the dictate room ----
+
+   One centred column: the wave at hero size, one sentence, one pill, then the
+   last transcript at reading size on a hairline. The column hangs from the
+   bottom of the room so the wave sits in the upper half and the transcript
+   row keeps a fixed distance from the footer. */
+
+.dictate {
+  display: grid;
+  flex: 1 0 auto;
+  min-height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 0 24px 8px;
 }
 
-.dictation-strip__icon {
+/* The hero fills the space above the transcript row and centres in it, sitting
+   a little high of true centre so the wave reads as the room's focal point. */
+.dictate__hero {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 22px;
+  padding-bottom: 36px;
+  text-align: center;
+}
+
+.dictate__hero .voice-wave {
+  margin-bottom: -10px;
+}
+
+.dictate__hero .voice-wave__bar {
+  border-radius: var(--tt-radius-pill);
+  transition: height 300ms ease;
+}
+
+.dictate__state {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+
+.dictate__sentence {
+  margin: 0;
+  font-size: 44px;
+  font-variation-settings: 'opsz' 96;
+  font-weight: 500;
+  letter-spacing: -1.2px;
+  line-height: 1.05;
+}
+
+.dictate__sentence time {
+  margin-left: 14px;
+  color: var(--tt-text-faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.dictate__detail {
+  max-width: 560px;
+  margin: 0;
+  color: var(--tt-text-faint);
+  font-size: 14px;
+}
+
+.dictate__actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--tt-text-faint);
+  font-size: 14px;
+}
+
+.dictate__actions .tt-button--primary {
+  min-height: 46px;
+  padding: 0 24px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Stop is the same pill turned inside out: black with a hairline. */
+.dictate[data-status='listening'] .dictate__actions .tt-button--primary {
+  border-color: var(--tt-hairline);
+  background: transparent;
+  color: var(--tt-text);
+}
+
+.dictate[data-status='listening'] .dictate__actions .tt-button--primary:hover:not(:disabled) {
+  border-color: var(--tt-text-faint);
+  filter: none;
+}
+
+.dictate__hint {
   display: inline-flex;
-  flex: none;
-  color: var(--tt-activity);
+  align-items: center;
+  gap: 6px;
 }
 
-.dictation-strip__icon svg {
-  width: 15px;
-  height: 15px;
+.dictate__last {
+  display: grid;
+  width: min(720px, 100%);
+  align-items: start;
+  border-top: 1px solid var(--tt-hairline);
+  gap: 0 22px;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  justify-self: center;
+  padding: 22px 0 18px;
 }
 
-.dictation-strip[data-tone='success'] .dictation-strip__icon {
-  color: var(--tt-success);
+.dictate__when {
+  padding-top: 4px;
+  color: var(--tt-text-faint);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.dictation-strip[data-tone='error'] .dictation-strip__icon {
-  color: var(--tt-error);
+.dictate__when b {
+  display: block;
+  color: var(--tt-text-2);
+  font-weight: 500;
+}
+
+.dictate__text {
+  display: -webkit-box;
+  margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-variation-settings: 'opsz' 20;
+  letter-spacing: -0.1px;
+  line-height: 1.5;
+}
+
+.dictate__last .tt-button {
+  align-self: start;
 }
 
 /* ---- update prompt ---- */
@@ -1398,176 +1318,6 @@ textarea.tt-input {
 
 .tt-panel__header .tt-button {
   min-height: 26px;
-  padding: 0 8px;
-  font-size: 12px;
-}
-
-/* ---- home ---- */
-
-.home-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 280px;
-  gap: 16px;
-}
-
-.home-grid > .home-week {
-  grid-column: 1 / 3;
-}
-
-.home-figures {
-  display: flex;
-  gap: 22px;
-  color: var(--tt-text-muted);
-  font-size: 12.5px;
-}
-
-.home-figures b {
-  margin-right: 4px;
-  color: var(--tt-text);
-  font-family: var(--tt-font-mono);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.home-chart {
-  position: relative;
-  display: grid;
-  height: 170px;
-  grid-template-columns: repeat(7, 1fr);
-  align-items: end;
-  gap: 14px;
-  padding: 18px 16px 10px;
-}
-
-.home-chart::before {
-  position: absolute;
-  top: 50%;
-  right: 16px;
-  left: 16px;
-  border-top: 1px dashed var(--tt-hairline);
-  content: '';
-}
-
-.home-chart__day {
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-}
-
-.home-chart__bar {
-  display: block;
-  width: 100%;
-  border-radius: 3px 3px 0 0;
-  background: var(--tt-border-faint);
-}
-
-.home-chart__day:last-child .home-chart__bar {
-  background: var(--tt-activity);
-}
-
-.home-chart__label {
-  color: var(--tt-text-faint);
-  font-size: 11.5px;
-}
-
-.home-status {
-  margin: 0;
-  padding: 4px 0;
-}
-
-.home-status > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 16px;
-  color: var(--tt-text-muted);
-  font-size: 12.5px;
-}
-
-.home-status > div + div {
-  border-top: 1px solid var(--tt-hairline);
-}
-
-.home-status dt {
-  margin: 0;
-}
-
-.home-status dd {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--tt-text);
-  font-weight: 500;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-recent {
-  margin-top: 16px;
-}
-
-.home-recent > p {
-  margin: 0;
-  padding: 18px 16px;
-  color: var(--tt-text-muted);
-  font-size: 12.5px;
-}
-
-.home-recent table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-  table-layout: fixed;
-}
-
-.home-recent th {
-  border-bottom: 1px solid var(--tt-hairline);
-  padding: 8px 16px;
-  color: var(--tt-text-faint);
-  font-size: 11.5px;
-  font-weight: 600;
-  text-align: left;
-}
-
-.home-recent td {
-  border-bottom: 1px solid var(--tt-hairline);
-  padding: 8px 16px;
-  vertical-align: middle;
-}
-
-.home-recent tr:last-child td {
-  border-bottom: 0;
-}
-
-.home-recent th.tt-numeric,
-.home-recent td.tt-numeric {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.home-recent td.tt-numeric,
-.home-recent time {
-  color: var(--tt-text-muted);
-  font-family: var(--tt-font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.home-recent td.home-recent__text {
-  overflow: hidden;
-  color: var(--tt-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-recent td.home-recent__action {
-  text-align: right;
-}
-
-.home-recent td.home-recent__action .tt-button {
-  min-height: 24px;
   padding: 0 8px;
   font-size: 12px;
 }
@@ -2416,7 +2166,7 @@ textarea.tt-input {
   font-size: 13px;
 }
 
-/* ---- wave and deck motion overrides ----
+/* ---- wave motion overrides ----
 
    Mirrors widget.css: both the media query and the app's own override have to
    answer. The bars then hold the level-driven height written inline, so the
@@ -2427,11 +2177,6 @@ textarea.tt-input {
     animation: none;
     transition: none;
   }
-
-  .dictation-strip::before {
-    animation: none;
-    transition: none;
-  }
 }
 
 :root[data-reduced-motion='on'] .voice-wave .voice-wave__bar {
@@ -2439,43 +2184,15 @@ textarea.tt-input {
   transition: none;
 }
 
-:root[data-reduced-motion='on'] .dictation-strip::before {
-  animation: none;
-  transition: none;
-}
-
 /* ---- compact layouts ---- */
 
 @media (max-width: 820px) {
-  .app-titlebar__page {
-    display: none;
-  }
-
-  .app-titlebar__search {
-    width: 200px;
-    flex-basis: 200px;
-  }
-
-  .dictation-strip {
-    gap: 12px;
-    padding-inline: 14px;
-  }
-
-  .dictation-strip__state {
-    display: none;
-  }
-
-  .home-view,
   .help-view {
     padding: 16px 16px 24px;
   }
 
-  .home-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .home-grid > .home-week {
-    grid-column: auto;
+  .dictate__last {
+    grid-template-columns: 80px minmax(0, 1fr) auto;
   }
 
   .history-split {
@@ -2510,12 +2227,7 @@ textarea.tt-input {
 }
 
 @media (max-width: 560px) {
-  .app-titlebar__search {
-    display: none;
-  }
-
-  .dictation-strip__timer,
-  .dictation-strip .tt-shortcut {
+  .dictate__hint {
     display: none;
   }
 
@@ -2581,7 +2293,7 @@ textarea.tt-input {
 .help-topics__group {
   margin: 0;
   padding: 12px 16px 4px;
-  border-top: 1px solid var(--tt-line);
+  border-top: 1px solid var(--tt-hairline);
 }
 
 .help-topics__group:first-child {
