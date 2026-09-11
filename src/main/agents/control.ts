@@ -11,6 +11,13 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentReasoner } from './reasoning'
+import type { ActiveTurn, TurnRecorder } from './turns'
+
+const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
+  'utterance', 'compose', 'send', 'answer', 'create-thread', 'create-project', 'select-project',
+  'select-thread', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
+  'cancel-draft', 'cancel-request',
+])
 
 const savedSchema = z.object({
   configuration: z.preprocess(value => typeof value === 'object' && value !== null
@@ -49,9 +56,11 @@ export class AgentControl {
   private presentedQueueId: string | null = null
   private queueSelectionPinned = false
   private contextActivityAt = Date.now()
+  private activeTurn: ActiveTurn | undefined
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     historyEnabled?: () => boolean
+    turns?: TurnRecorder
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -193,10 +202,31 @@ export class AgentControl {
       this.state.busy = true
       this.state.error = null
       this.publish()
+      const turn = this.dependencies.turns && RECORDED_COMMAND_TYPES.has(command.type)
+        ? this.dependencies.turns.begin({
+          source: command.type === 'utterance' ? 'utterance' : 'command',
+          commandType: command.type,
+          text: command.type === 'utterance' || command.type === 'compose' ? command.text
+            : command.type === 'send' ? this.state.draft : '',
+          threadId: ('threadId' in command ? command.threadId : this.state.activeThreadId) ?? null,
+          projectId: this.state.activeProjectId,
+          speechEndedAt: null,
+        })
+        : undefined
+      this.activeTurn = turn
       try { await this.execute(command) } catch (error) {
         this.state.error = error instanceof Error ? error.message : 'Sotto could not complete this action.'
         this.say(this.state.error)
       }
+      try {
+        if (turn && this.dependencies.turns) {
+          if (turn.threadId === null) turn.threadId = this.state.activeThreadId
+          if (turn.projectId === null) turn.projectId = this.state.activeProjectId
+          const outcome = this.state.error !== null ? 'failed' : turn.clarified ? 'clarified' : 'completed'
+          await this.dependencies.turns.finish(turn, outcome, this.state.error ?? undefined)
+        }
+      } catch { /* recording must never throw into the command path */ }
+      this.activeTurn = undefined
       this.state.busy = false
       this.updateCredentials()
       await this.persist().catch(() => { this.state.error = 'Could not save agent state. Pause management until storage is available.'; this.state.assignments.forEach(a => { a.paused = true }) })
@@ -386,10 +416,18 @@ export class AgentControl {
     })
     await this.persist()
     let result
+    const delegatedAt = Date.now()
     try { result = await this.dependencies.host.execute(command) } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       await this.persist()
       throw error
+    } finally {
+      if (this.activeTurn) {
+        this.activeTurn.delegationMs += Date.now() - delegatedAt
+        if ((command.type === 'send' || command.type === 'answer') && this.activeTurn.contextTokenEstimate === 0) {
+          this.activeTurn.contextTokenEstimate = Math.ceil((command.type === 'send' ? command.text : command.answer).length / 4)
+        }
+      }
     }
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('T3 did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
@@ -431,6 +469,7 @@ export class AgentControl {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
   private async utterance(text: string): Promise<void> {
+    if (this.activeTurn) this.activeTurn.contextTokenEstimate = Math.ceil(text.length / 4)
     const normalized = text.toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim()
     if (normalized === 'send it') { await this.sendDraft(); return }
     if (normalized === 'cancel draft' || normalized === 'clear draft') { await this.execute({ type: 'cancel-draft' }); return }
@@ -474,7 +513,13 @@ export class AgentControl {
     const request = this.state.pendingRequest ? `${this.state.pendingRequest}\nUser clarification: ${text}` : text
     if (request.length > 18_000) throw new Error('This request is too long. Clear it and start a shorter command; use the prompt editor for project instructions.')
     this.canAct()
+    const intentStarted = Date.now()
     const intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId)
+    if (this.activeTurn) {
+      this.activeTurn.intentMs = Date.now() - intentStarted
+      this.activeTurn.contextTokenEstimate = Math.ceil(request.length / 4)
+      if (intent.type === 'clarify') this.activeTurn.clarified = true
+    }
     if (intent.type === 'clarify') {
       this.state.pendingRequest = `${request}\nSotto clarification: ${intent.text}`.slice(0, 20_000)
       this.say(intent.text)

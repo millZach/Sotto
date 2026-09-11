@@ -21,7 +21,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, rename, stat } from 'node:fs/promises'
+import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
@@ -126,6 +126,7 @@ import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
+import { TurnRecorder } from './agents/turns'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
 import { GrokSubscriptionClient } from './agents/subscriptionGrok'
@@ -471,8 +472,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
+  const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new SottoThreadHost('t3',
-    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), new ThreadRegistry(userDataPath))
+    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!)
+  const turns = new TurnRecorder({
+    directory: userDataPath,
+    historyEnabled: () => agentHistoryEnabled,
+    resolveSession: id => {
+      const b = threadRegistry?.byThread(id)
+      return b ? { provider: b.provider, sessionId: b.sessionId } : undefined
+    },
+  })
   const membership = new AgentMembershipClient({
     configuration: () => agentControl.get().configuration,
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
@@ -480,6 +490,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const agentControl: AgentControl = new AgentControl({
     directory: userDataPath, host: agentHost, credentials, membership,
     historyEnabled: () => agentHistoryEnabled,
+    turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
       claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
       codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex')),
@@ -499,6 +510,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     includeDeveloperTools: !app.isPackaged,
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+    },
+    onShowTurnRecords: () => {
+      void (async () => {
+        await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
+        shell.showItemInFolder(turns.path())
+        for (const record of await turns.recent(20)) console.log(JSON.stringify(record))
+      })().catch(error => console.error('[Sotto] turn-records-unavailable', error))
     },
   })
   if (applicationMenuTemplate !== null) {

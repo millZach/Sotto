@@ -44,6 +44,8 @@ The native process encrypts T3, reasoning, Grok speech, membership and formattin
 
 Sotto persists assignment IDs, ownership, counters and dispatch IDs for recovery. It stores bounded assignment context for up to seven days without activity. Turning off **Keep local history** prevents saving supervision text or clarification context. An **unsent draft is the explicit exception**: it remains local until sent or cleared so a restart cannot lose work. Background audio and full host conversations are not saved by agent control.
 
+Every coordinator turn appends one JSON line to `turns.jsonl` in the user data folder (timings, Sotto thread ID, provider session ID, context-token estimate, retrieved memory IDs, outcome). The file stays local, is trimmed to the newest 1000 records when it exceeds about 2 MB, and with **Keep local history** off the utterance/draft text and error message are stored as empty strings while timings, IDs and outcome remain. A developer menu item **Show recent turn records** (macOS developer builds, View menu) reveals the file and prints the newest 20 records to the main-process console.
+
 If a host acknowledgement is lost, Sotto checks the existing action against host state and does not automatically send it again. A definite rejection leaves the draft available for correction. An unresolved action stays blocked until the host can confirm its state. Restarting or reconnecting never silently changes a manually controlled assignment back to managed.
 
 ## Development and release status
