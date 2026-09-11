@@ -1,120 +1,55 @@
-/* Sotto management-window palette — "Rail".
+/* Sotto management-window palette — "Crossing".
 
-   A cool, neutral workspace: a slightly darker side rail, white (or near-black)
-   panels on a soft canvas, hairline dividers, and one teal for anything live.
-   Dark and light are the same layout with the lights flipped, not two designs.
+   One black room. Three text tiers on black, a hairline for every rule, one
+   teal for anything live (the dictation wave), and a white pill for the one
+   action on a page. There is no light theme and no theme choice: the window is
+   black whatever the system says, and `theme` in settings is kept only so old
+   files and the widget snapshot still load.
 
    The floating widget does NOT read this file. It keeps its own frozen copy in
    `widget/widget-tokens.css`.
 
-   Text tones are held at WCAG AA against every surface they are used on, and
-   `--tt-border` (the strong control border) clears 3:1 against every surface.
-   The faintest greys (`--tt-hairline`, `--tt-border-faint`) draw dividers and
-   resting chart bars only, never text. */
+   Contrast on black: --tt-text 19:1, --tt-text-2 12:1, --tt-text-muted 6.1:1,
+   --tt-activity 8.7:1, --tt-border 4.3:1 (the control boundary), and the two
+   faint greys (--tt-hairline, --tt-border-faint) draw rules only, never text. */
 
-:root,
-:root[data-theme='light'] {
-  color-scheme: light;
-  --tt-canvas: #eef0f2;
-  --tt-side: #e2e5e9;
-  --tt-surface: #ffffff;
-  --tt-surface-elevated: #ffffff;
-  --tt-surface-sunken: #f4f5f7;
-  --tt-text: #17191c;
-  --tt-text-muted: #5a616a;
-  --tt-text-faint: #6f7680;
-  --tt-border: #767d86;
-  --tt-border-faint: #c0c6cd;
-  --tt-hairline: #d6dadf;
-  --tt-hover: rgb(0 0 0 / 5%);
-  /* Teal text and icons sit at #237c74 so they clear AA on white and on the
-     rail; the filled primary control keeps the widget's exact #2c7a72. */
-  --tt-primary: #237c74;
-  --tt-primary-hover: #1d6a63;
-  --tt-primary-contrast: #ffffff;
-  --tt-primary-fill: #2c7a72;
-  --tt-primary-fill-hover: #33877e;
-  --tt-activity: #2c7a72;
-  --tt-activity-wash: rgb(35 124 116 / 10%);
-  --tt-success: #8c5810;
-  --tt-warning: #7a5a2a;
-  --tt-error: #b7433b;
-  --tt-error-contrast: #ffffff;
-  --tt-focus-ring: #1f6961;
-  --tt-overlay: rgb(23 25 28 / 46%);
-  --tt-shadow-sm: 0 1px 2px rgb(23 25 28 / 6%);
-  --tt-shadow-lg: 0 18px 44px rgb(23 25 28 / 16%);
+:root {
+  color-scheme: dark;
+  --tt-canvas: #000000;
+  --tt-surface: #0c0e0d;
+  --tt-surface-elevated: #121514;
+  --tt-surface-sunken: #0c0e0d;
+  --tt-text: #f3f4f3;
+  --tt-text-2: #c3c9c6;
+  --tt-text-muted: #858c88;
+  --tt-text-faint: #858c88;
+  --tt-border: #6b7370;
+  --tt-border-faint: #2a2e2c;
+  --tt-hairline: #1a1d1b;
+  --tt-hover: rgb(255 255 255 / 6%);
+  --tt-pill: #f3f4f3;
+  --tt-pill-ink: #000000;
+  --tt-primary: #47b8a9;
+  --tt-primary-hover: #7fd6ca;
+  --tt-primary-contrast: #000000;
+  --tt-activity: #47b8a9;
+  --tt-activity-wash: rgb(71 184 169 / 14%);
+  --tt-success: #7fd6ca;
+  --tt-warning: #f0b45c;
+  --tt-error: #f0a89c;
+  --tt-error-contrast: #2a1112;
+  --tt-focus-ring: #9fe3d9;
+  --tt-overlay: rgb(0 0 0 / 72%);
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 65%);
   --tt-radius-sm: 6px;
-  --tt-radius-md: 8px;
-  --tt-radius-lg: 8px;
+  --tt-radius-md: 10px;
+  --tt-radius-lg: 14px;
+  --tt-radius-pill: 999px;
   --tt-font-ui:
-    Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', sans-serif;
+    'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --tt-font-mono:
     'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
     Consolas, 'Liberation Mono', monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --tt-canvas: #1a1c1f;
-    --tt-side: #131518;
-    --tt-surface: #212428;
-    --tt-surface-elevated: #282b30;
-    --tt-surface-sunken: #282b30;
-    --tt-text: #e7e9ec;
-    --tt-text-muted: #969ca4;
-    --tt-text-faint: #8a9099;
-    --tt-border: #767d86;
-    --tt-border-faint: #3c4147;
-    --tt-hairline: #2d3136;
-    --tt-hover: rgb(255 255 255 / 6%);
-    --tt-primary: #4cc2b5;
-    --tt-primary-hover: #6fd0c5;
-    --tt-primary-contrast: #08201e;
-    --tt-primary-fill: #2c7a72;
-    --tt-primary-fill-hover: #33877e;
-    --tt-activity: #4cc2b5;
-    --tt-activity-wash: rgb(76 194 181 / 12%);
-    --tt-success: #f0a03c;
-    --tt-warning: #e0b070;
-    --tt-error: #ef8079;
-    --tt-error-contrast: #2a1112;
-    --tt-focus-ring: #9fe3d9;
-    --tt-overlay: rgb(6 5 5 / 72%);
-    --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
-    --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
-  }
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --tt-canvas: #1a1c1f;
-  --tt-side: #131518;
-  --tt-surface: #212428;
-  --tt-surface-elevated: #282b30;
-  --tt-surface-sunken: #282b30;
-  --tt-text: #e7e9ec;
-  --tt-text-muted: #969ca4;
-  --tt-text-faint: #8a9099;
-  --tt-border: #767d86;
-  --tt-border-faint: #3c4147;
-  --tt-hairline: #2d3136;
-  --tt-hover: rgb(255 255 255 / 6%);
-  --tt-primary: #4cc2b5;
-  --tt-primary-hover: #6fd0c5;
-  --tt-primary-contrast: #08201e;
-  --tt-primary-fill: #2c7a72;
-  --tt-primary-fill-hover: #33877e;
-  --tt-activity: #4cc2b5;
-  --tt-activity-wash: rgb(76 194 181 / 12%);
-  --tt-success: #f0a03c;
-  --tt-warning: #e0b070;
-  --tt-error: #ef8079;
-  --tt-error-contrast: #2a1112;
-  --tt-focus-ring: #9fe3d9;
-  --tt-overlay: rgb(6 5 5 / 72%);
-  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
-  --tt-shadow-lg: 0 20px 48px rgb(0 0 0 / 46%);
 }

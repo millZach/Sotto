@@ -2,19 +2,29 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
+import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
+// Codex's previous policy is auto-accept-edits; preserve it for old aliases and
+// creation without an explicit selection. Shapes verified with generated 0.154 schemas.
+function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
+  if (mode === 'approval-required') return { approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'read-only' }
+  if (mode === 'full-access') return { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access' }
+  return { approvalPolicy: 'on-request', approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user', sandbox: 'workspace-write' }
+}
 const configArguments = Object.entries({ model_provider: 'openai', approval_policy: threadPolicy.approvalPolicy,
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional() })
-const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(), origins: z.array(originSchema).default([]) })
+const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(),
+  pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema }).optional(),
+  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]) })
 const aliasesSchema = z.record(z.string(), aliasSchema)
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
@@ -25,6 +35,8 @@ const itemSchema = z.object({ id: z.string(), type: z.string(), clientId: z.stri
 const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish() })
 const threadSchema = z.object({ id: z.string(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
 const threadResponse = z.object({ thread: threadSchema })
+const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
+  approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional() })
 class Uncertain extends Error {}
 class Rejected extends Error {}
@@ -63,7 +75,7 @@ export class CodexAppServerHost implements AgentHost {
   private nextId = 0
   private generation = 0
   private state: AgentHostSnapshot = { connected: false, name: 'Codex', version: '', projects: [], models: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
@@ -126,8 +138,14 @@ export class CodexAppServerHost implements AgentHost {
       this.write({ method: 'initialized' })
       this.state.models = []; delete this.state.error
       await this.rpc('model/list', { limit: 100, includeHidden: false }, value => {
-        const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional() })) }).parse(value)
-        const models = result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true }))
+        const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
+          supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(),
+        })) }).parse(value)
+        const models = result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true,
+          reasoningEfforts: m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? [],
+          ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
+          runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: false,
+        }))
         this.state.models = models; delete this.state.error
       }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
@@ -139,7 +157,8 @@ export class CodexAppServerHost implements AgentHost {
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId, status: 'idle', messages: [], requests: [] })
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId,
+      runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', messages: [], requests: [] })
     return this.threads.get(id)!
   }
   private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
@@ -153,6 +172,10 @@ export class CodexAppServerHost implements AgentHost {
   async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
   async snapshot(): Promise<AgentHostSnapshot> {
     await this.pollSessionLogs()
+    if (this.state.connected) await Promise.all(Object.entries(this.aliases).filter(([, alias]) => alias.pendingSettings).map(async ([id, alias]) => {
+      // Read back an uncertain save without replaying any configuration override.
+      await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: false }, value => this.applySettings(id, value)).catch(() => undefined)
+    }))
     if (this.state.connected) await Promise.all([...this.unconfirmedDispatchSessionIds].map(async id => {
       await this.rpc('thread/read', { threadId: this.aliases[id]!.codexThreadId, includeTurns: true }, value => this.applyThread(id, threadResponse.parse(value).thread)).catch(() => undefined)
     }))
@@ -167,8 +190,9 @@ export class CodexAppServerHost implements AgentHost {
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
-    const operation = this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      ...threadPolicy, excludeTurns: false }, value => {
+    const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
+      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, value => {
+      if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id); this.emit()
     }).finally(() => { this.resuming.delete(id) })
     this.resuming.set(id, operation); return operation
@@ -222,6 +246,21 @@ export class CodexAppServerHost implements AgentHost {
       if (thread.turns.at(-1)?.status !== 'failed') this.ensureThread(id).status = 'idle'
     }
   }
+  private async applySettings(id: string, value: unknown): Promise<void> {
+    const alias = this.aliases[id]!
+    const desired = alias.pendingSettings
+    if (!desired) return
+    const response = settingsResponse.parse(value)
+    const policy = runtimePolicy(desired.runtimeMode)
+    const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
+    if (response.model !== desired.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer || response.sandbox.type !== sandboxType
+      || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) throw new Error('Codex did not confirm the selected thread settings.')
+    alias.modelId = response.model; alias.runtimeMode = desired.runtimeMode; alias.reasoningEffort = response.reasoningEffort ?? undefined
+    delete alias.pendingSettings
+    const thread = this.ensureThread(id)
+    thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode; thread.reasoningEffort = alias.reasoningEffort
+    this.applyThread(id, response.thread); this.live.add(id); await this.persist(); this.emit()
+  }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (!this.state.connected) throw new Error('Connect to Codex before sending a command.')
     if (command.type === 'create-project') {
@@ -237,12 +276,19 @@ export class CodexAppServerHost implements AgentHost {
         const project = this.state.projects.find(p => p.id === command.projectId)
         if (!project) throw new Error('Choose a known Codex project.')
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
+        validateThreadOptions(this.state, command)
         this.creating.add(command.threadId)
         await this.rpc('thread/start', { cwd: project.path, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
-          ...threadPolicy, ephemeral: false, historyMode: 'legacy' }, async value => {
-          const response = threadResponse.parse(value)
+          ...runtimePolicy(command.runtimeMode), ...(command.reasoningEffort ? { config: { model_reasoning_effort: command.reasoningEffort } } : {}), ephemeral: false, historyMode: 'legacy' }, async value => {
+          const response = settingsResponse.parse(value)
+          const policy = runtimePolicy(command.runtimeMode)
+          const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
+          if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
+            || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd: project.path,
-            title: command.title, modelId: command.modelId, createdAt: new Date().toISOString(), origins: [] }
+            title: command.title, modelId: command.modelId,
+            runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
+            createdAt: new Date().toISOString(), origins: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
@@ -250,7 +296,23 @@ export class CodexAppServerHost implements AgentHost {
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
-        if (command.type === 'answer') {
+        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer') return { accepted: false, uncertain: true }
+        if (command.type === 'configure-thread') {
+          const thread = this.ensureThread(id)
+          if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the thread and resolve pending requests before changing settings.')
+          validateThreadOptions(this.state, command, alias.modelId)
+          const modelId = command.modelId ?? alias.modelId
+          const reasoningEffort = command.reasoningEffort ?? (command.modelId !== undefined
+            ? this.state.models.find(model => model.id === modelId)?.defaultReasoningEffort : alias.reasoningEffort)
+          const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
+          const policy = runtimePolicy(mode)
+          alias.pendingSettings = { modelId, reasoningEffort, runtimeMode: mode }
+          await this.persist()
+          await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, model: modelId, modelProvider: 'openai',
+            ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: false }, value => this.applySettings(id, value), async () => {
+            delete alias.pendingSettings; await this.persist()
+          })
+        } else if (command.type === 'answer') {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
           const result = answerRequest(pending, command.answer, command.approved)
@@ -262,6 +324,9 @@ export class CodexAppServerHost implements AgentHost {
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           })
         } else {
+          // Image rollout origins need a separate authority-safe reconciliation
+          // contract. Until supported, reject explicitly rather than drop images.
+          validatePromptAttachments(this.state, alias.modelId, command.attachments)
           await this.resume(id); await this.pollSessionLogs()
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(m => m.role === 'user')?.id ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
@@ -272,7 +337,9 @@ export class CodexAppServerHost implements AgentHost {
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
             await this.rpc('turn/start', { threadId: alias.codexThreadId, clientUserMessageId: command.messageId,
-              input: [{ type: 'text', text: command.text }], approvalPolicy: threadPolicy.approvalPolicy, approvalsReviewer: threadPolicy.approvalsReviewer }, value => {
+              input: [{ type: 'text', text: command.text }], approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+              approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
+              ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
               origin.turnId = turn.id
               this.applyTurn(id, turn)

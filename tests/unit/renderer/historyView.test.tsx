@@ -1,10 +1,15 @@
-import React from 'react'
+import React, { useState, type ReactNode } from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HistoryView } from '../../../src/renderer/src/features/history/HistoryView'
+import { HistoryView as HistoryContent, HistoryFooter, type HistoryViewProps } from '../../../src/renderer/src/features/history/HistoryView'
 import type { HistoryEntry } from '../../../src/shared/history'
+
+function HistoryView(props: HistoryViewProps): ReactNode {
+  const [clearOpen, setClearOpen] = useState(false)
+  return <><HistoryContent {...props} clearOpen={clearOpen} onClearOpenChange={setClearOpen} /><HistoryFooter enabled={props.enabled} status={props.status} count={props.entries.length} onClear={() => setClearOpen(true)} /></>
+}
 
 afterEach(cleanup)
 
@@ -43,6 +48,7 @@ describe('HistoryView', () => {
     const remove = vi.fn(async () => true)
     render(<HistoryView {...baseProps} onDelete={remove} />)
 
+    await user.click(screen.getAllByRole('button', { name: /^Transcript from/ })[0]!)
     const trigger = screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!
     await user.click(trigger)
     expect(screen.getByRole('dialog', { name: /delete transcript/i })).toBeVisible()
@@ -58,7 +64,7 @@ describe('HistoryView', () => {
     const rows = screen.getAllByRole('listitem')
     for (const row of rows) {
       expect(within(row).getByRole('button', { name: 'Copy transcript' })).toBeVisible()
-      expect(within(row).getByRole('button', { name: 'Delete saved transcript' })).toBeVisible()
+      expect(within(row).getByRole('button', { name: /^Transcript from/ })).toBeVisible()
     }
     expect(screen.queryByRole('button', { name: /alpha note|beta note/i })).not.toBeInTheDocument()
   })
@@ -70,6 +76,7 @@ describe('HistoryView', () => {
     const user = userEvent.setup()
     render(<HistoryView {...baseProps} onDelete={vi.fn(async () => false)} onClear={vi.fn(async () => false)} />)
     if (operation === 'delete') {
+      await user.click(screen.getAllByRole('button', { name: /^Transcript from/ })[0]!)
       await user.click(screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!)
       await user.click(screen.getByRole('button', { name: 'Delete transcript' }))
     } else {
@@ -87,6 +94,7 @@ describe('HistoryView', () => {
       rerender(<HistoryView {...baseProps} entries={entries.slice(1)} />)
       return true
     }} />)
+    await user.click(screen.getAllByRole('button', { name: /^Transcript from/ })[0]!)
     await user.click(screen.getAllByRole('button', { name: 'Delete saved transcript' })[0]!)
     await user.click(screen.getByRole('button', { name: 'Delete transcript' }))
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'History' })).toHaveFocus())
@@ -119,41 +127,35 @@ describe('HistoryView', () => {
   })
 
   it.each([
-    ['loading', true, /loading transcript history/i],
+    ['loading', true, /loading history/i],
     ['degraded', true, /history could not be loaded/i],
-    ['ready', false, /history is turned off/i],
+    ['ready', false, /^History is off\.$/i],
   ] as const)('renders the %s state without unsafe controls', (status, enabled, message) => {
     render(<HistoryView {...baseProps} status={status} enabled={enabled} entries={[]} />)
-    expect(screen.getByText(message)).toBeVisible()
+    expect(screen.getByRole('heading', { name: message })).toBeVisible()
     expect(screen.queryByRole('button', { name: /clear history/i })).not.toBeInTheDocument()
   })
 
   it('distinguishes empty history from a search with no matches', async () => {
     const user = userEvent.setup()
     const rendered = render(<HistoryView {...baseProps} entries={[]} />)
-    expect(screen.getByText(/no saved transcripts yet/i)).toBeVisible()
+    expect(screen.getByText(/nothing here yet/i)).toBeVisible()
     rendered.rerender(<HistoryView {...baseProps} />)
     await user.type(screen.getByRole('searchbox'), 'missing')
-    expect(screen.getByText(/no transcripts match/i)).toBeVisible()
+    expect(screen.getByText(/nothing matches/i)).toBeVisible()
   })
 
-  it('stacks the log stamp into date and clock lines without dropping the full date from the accessible name', () => {
+  it('groups the day and keeps the full timestamp in the row action name', () => {
     const createdAt = new Date(2026, 7, 27, 14, 1, 42).valueOf()
     render(<HistoryView {...baseProps} entries={[{ ...entries[0]!, createdAt }]} />)
-
-    const stamp = document.querySelector('.history-entry__meta time')
-    expect(stamp).not.toBeNull()
-    const lines = [...stamp!.querySelectorAll('span')].map((span) => span.textContent)
-    expect(lines).toHaveLength(2)
-    expect(lines[1]).toBe('14:01')
-    expect(stamp!.getAttribute('datetime')).toBe(new Date(createdAt).toISOString())
-    // The short stamp is decoration; assistive tech still hears the whole date.
-    expect(stamp!.getAttribute('aria-label')).toBe(new Date(createdAt).toLocaleString())
+    const stamp = document.querySelector('.history-entry__when time')
+    expect(stamp?.getAttribute('datetime')).toBe(new Date(createdAt).toISOString())
+    expect(screen.getByRole('button', { name: `Transcript from ${new Date(createdAt).toLocaleString()}, 2 words` })).toBeVisible()
   })
 
   it('keeps existing local entries visible and clearable after new history is disabled', () => {
     render(<HistoryView {...baseProps} enabled={false} />)
-    expect(screen.getByText(/existing local transcripts remain available/i)).toBeVisible()
+    expect(screen.getByText(/older transcripts are still here/i)).toBeVisible()
     expect(screen.getAllByText('Alpha note')[0]).toBeVisible()
     expect(screen.getByRole('button', { name: /clear history/i })).toBeEnabled()
   })

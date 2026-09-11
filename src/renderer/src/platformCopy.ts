@@ -10,7 +10,6 @@ export interface PlatformCopy {
   readonly homeRequestingPermissionDetail: string
   readonly onboardingMicrophoneDenied: string
   readonly onboardingMicrophoneMissing: string
-  readonly settingsThemeDescription: string
   readonly settingsReducedMotionDescription: string
   readonly settingsMicrophoneUnavailable: string
   readonly settingsMicrophoneDefaultOption: string
@@ -41,7 +40,6 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
       'Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again.',
     onboardingMicrophoneMissing:
       'Connect or enable an input device in Windows Settings > System > Sound, then try again.',
-    settingsThemeDescription: 'Follow Windows or force a complete light or dark theme.',
     settingsReducedMotionDescription: 'Follow Windows or minimize non-essential motion.',
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check Windows privacy settings.',
     settingsMicrophoneDefaultOption: 'Windows default',
@@ -69,7 +67,6 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
       'Open System Settings > Privacy & Security > Microphone, allow Sotto, then try again.',
     onboardingMicrophoneMissing:
       'Connect or enable an input device in System Settings > Sound, then try again.',
-    settingsThemeDescription: 'Follow macOS or force a complete light or dark theme.',
     settingsReducedMotionDescription: 'Follow macOS or minimize non-essential motion.',
     settingsMicrophoneUnavailable:
       'Microphones are unavailable. Check System Settings > Privacy & Security > Microphone.',

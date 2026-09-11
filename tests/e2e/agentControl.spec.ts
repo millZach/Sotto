@@ -33,8 +33,9 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await page.getByRole('link', { name: 'Agents', exact: true }).click()
+  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+  await page.getByRole('link', { name: 'Threads', exact: true }).click()
 }
 
 test('creates real folders using configured and explicit locations, rejects conflicts and unavailable models', async () => {
@@ -111,8 +112,8 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     await command(launched.page, { type: 'compose', text: 'A draft that must survive a restart.' })
     await closeSotto(launched)
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Agents', exact: true }).click()
-    await expect(launched.page.getByLabel('Prompt')).toHaveValue('A draft that must survive a restart.')
+    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A draft that must survive a restart.')
     const snapshot = await state(launched.page)
     expect(snapshot.assignments[0]?.mode).toBe('manual')
     expect(snapshot.draftThreadId).toBe('workshop')
@@ -163,7 +164,7 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Retry this only after I ask.')
     expect((await state(page)).host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
 
-    await page.getByRole('button', { name: 'Refresh T3 Code', exact: true }).click()
+    await command(page, { type: 'refresh' })
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
     const snapshot = await state(page)
@@ -206,6 +207,7 @@ test('uses a folder clarification with the original spoken project request', asy
   const { page } = launched
   try {
     await onboard(page)
+    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await command(page, { type: 'utterance', text: 'Create a project called Clarified Project.' })
     await expect(page.getByRole('status')).toContainText('Which folder should contain Clarified Project?')
     expect((await state(page)).host.projects).toHaveLength(1)
@@ -216,7 +218,8 @@ test('uses a folder clarification with the original spoken project request', asy
     expect(snapshot.host.projects.filter(project => project.title === 'Clarified Project').map(project => project.path)).toEqual([path])
     expect((await stat(path)).isDirectory()).toBe(true)
     expect(snapshot.pendingRequest).toBe('')
-    await expect(page.getByRole('button', { name: 'Clarified Project', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'New session', exact: true }).click()
+    await expect(page.getByRole('button', { name: /Clarified Project/ })).toBeVisible()
   } finally { await closeSotto(launched) }
 })
 
@@ -276,7 +279,7 @@ test('expires dormant context after seven days without forgetting manual ownersh
     await writeFile(path, JSON.stringify(saved), 'utf8')
 
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
     const snapshot = await state(launched.page)
     const dormant = snapshot.assignments.find(assignment => assignment.threadId === 'workshop')!
     expect(dormant.instruction).toBe('')

@@ -8,6 +8,10 @@ const child = spawn(process.execPath, [cli, 'test', 'tests/e2e/design-capture.sp
   cwd: process.cwd(),
   env: {
     ...process.env,
+    // The design baselines were captured in America/Los_Angeles with the en-US
+    // locale; the Playwright suite pins the same zone and locale on the Electron
+    // windows (design-capture.spec.ts) so time labels never depend on the machine.
+    TZ: 'America/Los_Angeles',
     SOTTO_DESIGN_CAPTURE: '1',
     SOTTO_UPDATE_DESIGN_BASELINES: update ? '1' : '0',
   },

@@ -28,11 +28,11 @@ export interface WorkAreaRect {
 }
 
 const EXPECTED_WIDGET_SIZES = {
-  'agents-compact': {
-    horizontal: Object.freeze({ width: 320, height: 72 }),
-    vertical: Object.freeze({ width: 320, height: 72 }),
+  'pill-controls': {
+    horizontal: Object.freeze({ width: 320, height: 88 }),
+    vertical: Object.freeze({ width: 88, height: 320 }),
   },
-  'agents-expanded': {
+  'threads-expanded': {
     horizontal: Object.freeze({ width: 420, height: 560 }),
     vertical: Object.freeze({ width: 420, height: 560 }),
   },

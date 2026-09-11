@@ -45,6 +45,14 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('tolerates persisted theme values and defaults an unknown value', () => {
+    for (const theme of ['system', 'light', 'dark'] as const) {
+      expect(() => parseSettings({ theme })).not.toThrow()
+      expect(parseSettings({ theme }).theme).toBe(theme)
+    }
+    expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
+  })
+
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, ChevronDown, FolderPlus, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
+import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
 import { VoiceSettings } from './VoiceSettings'
+import { ScreenshotInput } from './ScreenshotInput'
 
 type Command = AgentConnection['command']
 
@@ -20,35 +21,52 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   </section>
 }
 
-export function AgentComposer({ state, command, compact = false }: {
-  readonly state: AgentState; readonly command: Command; readonly compact?: boolean
+export function AgentComposer({ state, command, compact = false, footerControls }: {
+  readonly state: AgentState; readonly command: Command; readonly compact?: boolean; readonly footerControls?: ReactNode
 }): ReactNode {
   const [draft, setDraft] = useState(state.draft)
+  const [attachments, setAttachments] = useState<AgentAttachment[]>(state.draftAttachments ?? [])
+  const [readingImages, setReadingImages] = useState(false)
   const writes = useRef(0)
   const version = useRef(0)
+  const sourceKey = JSON.stringify([state.draft, state.draftThreadId, state.draftRequestId, (state.draftAttachments ?? []).map(image => image.id)])
+  const lastSource = useRef(sourceKey)
   const target = state.host.threads.find((entry) => entry.id === (state.draftThreadId ?? state.activeThreadId))
   const project = state.host.projects.find((entry) => entry.id === target?.projectId)
   const questionId = state.draftRequestId ?? (!state.composing ? state.queue.find((entry) => entry.threadId === target?.id && entry.kind === 'question')?.requestId : undefined)
   const answering = questionId !== undefined && questionId !== null
   const assigned = state.assignments.some((entry) => entry.threadId === target?.id)
-  const hasDraft = state.composing || state.draftThreadId !== null || draft.length > 0
+  const hasDraft = state.composing || state.draftThreadId !== null || draft.length > 0 || attachments.length > 0
   useEffect(() => {
-    if (writes.current === 0) setDraft(state.draft)
-  }, [state.draft, state.draftThreadId])
+    if (writes.current === 0 && lastSource.current !== sourceKey) {
+      lastSource.current = sourceKey
+      setDraft(state.draft); setAttachments(state.draftAttachments ?? [])
+    }
+  }, [sourceKey, state.draft, state.draftAttachments])
   const update = (value: string): void => {
     setDraft(value)
     ++writes.current
     const writeVersion = ++version.current
     void command({ type: 'compose', text: value }).then((result) => {
       --writes.current
-      if (writeVersion === version.current && result !== null) setDraft(result.draft)
+      if (writeVersion === version.current && result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
+    })
+  }
+  const updateImages = (value: AgentAttachment[]): void => {
+    setAttachments(value)
+    ++writes.current
+    const writeVersion = ++version.current
+    void command({ type: 'compose', text: draft, attachments: value }).then(result => {
+      --writes.current
+      if (writeVersion === version.current && result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
     })
   }
   const send = async (): Promise<void> => {
-    const composed = await command({ type: 'compose', text: draft })
+    if (readingImages) return
+    const composed = await command({ type: 'compose', text: draft, attachments })
     if (composed === null || composed.error !== null) return
     const result = await command({ type: 'send' })
-    if (result !== null) setDraft(result.draft)
+    if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
   }
   if ((target === undefined || !assigned) && !hasDraft) return null
   return <section className="agent-composer">
@@ -56,13 +74,16 @@ export function AgentComposer({ state, command, compact = false }: {
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
     {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}
     {!assigned ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || state.connection !== 'connected' || !supportsAgentSupervision(state.host.capabilities)} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
+    <ScreenshotInput key={target?.id ?? 'no-thread'} attachments={attachments} onChange={updateImages} onReadingChange={setReadingImages}
+      disabled={state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
       rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : answering ? 'Dictate or type your answer. It stays saved until you send or clear it.' : 'Dictate or type your prompt. Pauses won’t send it.'}
       disabled={target === undefined || !assigned} spellCheck />
-    <div className="agent-composer__footer"><span>Say “send it” when you’re ready.</span>
+    </ScreenshotInput>
+    <div className="agent-composer__footer">{footerControls ?? <span>Say “send it” when you’re ready.</span>}
       <div className="agent-actions">
-        {hasDraft ? <Button variant="ghost" onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) setDraft(result.draft) }) }}>Clear</Button> : null}
-        <Button disabled={state.busy || target === undefined || !assigned || draft.trim().length === 0 || state.connection !== 'connected'} onClick={() => void send()}>
+        {hasDraft ? <Button variant="ghost" disabled={readingImages || state.busy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
+        <Button disabled={state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || state.connection !== 'connected'} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
       </div>
@@ -95,8 +116,8 @@ function AgentReadyUpdate({ text, compact }: { readonly text: string; readonly c
   </>
 }
 
-export function AgentQueue({ state, command, compact = false }: {
-  readonly state: AgentState; readonly command: Command; readonly compact?: boolean
+export function AgentQueue({ state, command, compact = false, approvalLabel = 'Approve', onLater, onNext }: {
+  readonly state: AgentState; readonly command: Command; readonly compact?: boolean; readonly approvalLabel?: string; readonly onLater?: () => void; readonly onNext?: () => void
 }): ReactNode {
   const active = state.queue.find((entry) => entry.threadId === state.activeThreadId)
   const thread = state.host.threads.find((entry) => entry.id === active?.threadId)
@@ -108,8 +129,8 @@ export function AgentQueue({ state, command, compact = false }: {
   }
   return <section className="agent-queue" aria-label="Ready threads">
     <div className="agent-section-title"><h2>Needs your attention <span className="agent-count">{state.queue.length}</span></h2>
-      <div className="agent-actions"><Button variant="ghost" disabled={state.queue.length === 0} onClick={() => void command({ type: 'later' })}>Later</Button>
-        <Button variant="secondary" disabled={state.queue.length === 0} onClick={() => void command({ type: 'next' })}>Next <ArrowRight size={13} aria-hidden="true" /></Button></div>
+      <div className="agent-actions"><Button variant="ghost" disabled={state.queue.length === 0} onClick={() => { if (onLater) onLater(); else void command({ type: 'later' }) }}>Later</Button>
+        <Button variant="secondary" disabled={state.queue.length === 0 || Boolean(onNext && state.busy)} onClick={() => { if (onNext) onNext(); else void command({ type: 'next' }) }}>Next <ArrowRight size={13} aria-hidden="true" /></Button></div>
     </div>
     {state.queue.length === 0 ? <p className="agent-muted">Assigned threads will appear here when they need you.</p> : <>
       {!compact ? <div className="agent-queue__tabs">{state.queue.map((item) => {
@@ -123,7 +144,7 @@ export function AgentQueue({ state, command, compact = false }: {
         <span className="agent-eyebrow">{active.kind === 'permission' ? 'Permission requested' : active.kind === 'question' ? 'Your decision' : 'Ready for you'}</span>
         {active.kind === 'ready' ? <AgentReadyUpdate key={active.id} text={active.text} compact={compact} /> : <p>{active.text}</p>}
         {active.requestId === undefined ? null : request?.kind === 'permission' || active.kind === 'permission'
-          ? <div className="agent-actions"><Button variant="secondary" onClick={() => reply('Denied', false)}>Deny</Button><Button onClick={() => reply('Approved', true)}>Approve</Button></div>
+          ? <div className="agent-actions"><Button variant="secondary" onClick={() => reply('Denied', false)}>Deny</Button><Button onClick={() => reply('Approved', true)}>{approvalLabel}</Button></div>
           : request?.options.length ? <div className="agent-actions">{request.options.map((option) =>
             <Button key={option.id} variant="secondary" disabled={state.busy || state.connection !== 'connected'} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
       </div>}
@@ -131,7 +152,7 @@ export function AgentQueue({ state, command, compact = false }: {
   </section>
 }
 
-function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
+export function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
   const [configuration, setConfiguration] = useState(state.configuration)
   const [token, setToken] = useState('')
   const [reasoningKey, setReasoningKey] = useState('')
@@ -249,7 +270,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
   </section>
 }
 
-function AgentNewProject({ state, command, onCreated }: { readonly state: AgentState; readonly command: Command; readonly onCreated: () => void }): ReactNode {
+export function AgentNewProject({ state, command, onCreated }: { readonly state: AgentState; readonly command: Command; readonly onCreated: () => void }): ReactNode {
   const [title, setTitle] = useState('')
   const [path, setPath] = useState('')
   const [existing, setExisting] = useState(false)
@@ -273,7 +294,7 @@ function AgentNewProject({ state, command, onCreated }: { readonly state: AgentS
   </form>
 }
 
-function AgentNewThread({ state, command, project }: { readonly state: AgentState; readonly command: Command; readonly project: AgentProject }): ReactNode {
+export function AgentNewThread({ state, command, project, onCreated }: { readonly state: AgentState; readonly command: Command; readonly project: AgentProject; readonly onCreated?: () => void }): ReactNode {
   const [threadName, setThreadName] = useState('')
   const [modelOverride, setModelOverride] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -287,17 +308,18 @@ function AgentNewThread({ state, command, project }: { readonly state: AgentStat
       if (result !== null && result.error === null) {
         setThreadName(''); setModelOverride('')
         if (details.current !== null) details.current.open = false
+        onCreated?.()
       }
     } finally { setSubmitting(false) }
   }
-  return <details ref={details} className="agent-new-thread"><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
+  return <details ref={details} className="agent-new-thread" open={onCreated === undefined ? undefined : true}><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
     <label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label>
-    <label>Agent model<select value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
+    <label>Agent model<select aria-label="Agent model" value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
     <Button type="submit" disabled={state.busy || submitting || !modelId || state.connection !== 'connected' || !state.host.capabilities.threads}><Plus size={14} aria-hidden="true" />Open thread</Button>
   </form></details>
 }
 
-export function AgentView(): ReactNode {
+export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the room's list of every thread. */ readonly onOpenThreads: () => void }): ReactNode {
   const agents = useAgents()
   const { state, command } = agents
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -326,7 +348,8 @@ export function AgentView(): ReactNode {
   }[agents.voice.status]
   return <div className="management-view agent-view">
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
-      <div className="agent-actions"><Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
+      <div className="agent-actions"><Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button>
+        <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
         <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect T3 Code' : state.connection === 'connecting' ? 'Connecting…' : 'Connect T3 Code'}</Button></div>
     </header>
     <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{connected ? 'T3 Code connected' : 'T3 Code disconnected'}{state.host.version ? ` · ${state.host.version}` : ''}</span>

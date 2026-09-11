@@ -12,7 +12,7 @@ async function setup(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await page.getByRole('link', { name: 'Agents', exact: true }).click()
+  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
 }
 
 test('selects each native subscription with its available model and reasoning effort without an API key', async () => {
@@ -155,7 +155,7 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   }
 })
 
-test('keeps dark agent settings and widget prompts usable at the minimum window size', async () => {
+test('keeps agent settings and widget prompts usable at the minimum window size', async () => {
   const launched = await launchSotto()
   const { page } = launched
   try {
@@ -172,7 +172,6 @@ test('keeps dark agent settings and widget prompts usable at the minimum window 
     await page.getByRole('button', { name: 'Connect T3 Code' }).click()
     await page.getByRole('button', { name: 'Manage Workshop', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await page.getByLabel('Default projects directory').fill('D:\\Builder projects')
     await page.getByRole('button', { name: 'Save connection settings' }).click()
@@ -183,13 +182,14 @@ test('keeps dark agent settings and widget prompts usable at the minimum window 
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await page.getByLabel('Prompt').fill('Review this small-screen prompt.')
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
-    await expect(widget.getByRole('button', { name: 'Expand agent controls' })).toBeVisible()
-    await widget.getByRole('button', { name: 'Expand agent controls' }).click()
+    await widget.getByTestId('widget-sliver').hover()
+    await expect(widget.getByRole('button', { name: 'Expand threads' })).toBeVisible()
+    await widget.getByRole('button', { name: 'Expand threads' }).click()
     await expect(widget.getByLabel('Prompt')).toHaveValue('Review this small-screen prompt.')
     await widget.getByRole('button', { name: 'Send it', exact: true }).scrollIntoViewIfNeeded()
     await widget.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-dark-prompt.png' })
     await widget.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Prompt')).toHaveValue('')
-    expect(await widget.locator('.agent-widget__body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await widget.locator('.widget-threads').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   } finally { await closeSotto(launched) }
 })

@@ -2,9 +2,14 @@ import {
   AlertCircle,
   Check,
   CircleEllipsis,
+  ChevronDown,
+  ChevronUp,
   Mic,
+  MicOff,
   ShieldAlert,
   Square,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react'
 import {
@@ -31,24 +36,13 @@ import type {
   WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
-import { SEGMENT_SILENCE_RMS, SEGMENT_SILENCE_SECONDS } from '../audio/audioRecorder'
+import { ListeningBars } from '../components/ListeningBars'
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
-import { useAgentConnection } from '../agents/AgentContext'
-import { AgentWidget } from '../agents/AgentWidget'
+import { useAgentConnection, type AgentConnection } from '../agents/AgentContext'
+import { WidgetThreads } from './WidgetThreads'
 
-/** The listening visualizer's fixed column count; CSS staggers their motion. */
-const LISTENING_BAR_COUNT = 7
-/**
- * Voice gating for the visualizer, derived from the recorder's own silence
- * segmentation so the wave and the recorder agree on what counts as a pause:
- * the silence floor releases the gate, twice it attacks, and the hold sits
- * just past the gap the recorder treats as a real pause.
- */
-const SPEAKING_ON_LEVEL = SEGMENT_SILENCE_RMS * 2
-const SPEAKING_OFF_LEVEL = SEGMENT_SILENCE_RMS
-const SPEAKING_HOLD_MS = SEGMENT_SILENCE_SECONDS * 1_000 + 20
 const IDLE_HOVER_SETTLE_MS = 220
 const PREVIEW_NOW = 13_340
 
@@ -159,6 +153,7 @@ export interface WidgetAppProps {
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
   readonly visibilityGeneration?: number
+  readonly agents?: AgentConnection | undefined
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -247,80 +242,20 @@ function stopPointerPropagation(event: ReactPointerEvent<HTMLElement>): void {
   event.stopPropagation()
 }
 
-function safeLevel(level: number): number {
-  return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
-}
-
-/**
- * The recording visualizer: seven bars that rise and fall on a staggered CSS
- * loop while the microphone is actually registering the voice, so the motion
- * reads as "I hear you" rather than merely "a session is open". Silence settles
- * the bars to their resting height.
- *
- * The gate is hysteretic — it opens above SPEAKING_ON_LEVEL and only closes
- * below the lower SPEAKING_OFF_LEVEL, then only after SPEAKING_HOLD_MS of quiet
- * — so a voice wavering at the boundary and the ordinary gaps between words
- * both leave the wave running. Only the container carries the decision, as one
- * data attribute; the bars themselves stay purely CSS-driven.
- *
- * The visualizer stays out of the accessibility tree: the live regions already
- * announce the listening state.
- */
-function ListeningBars({ level }: { readonly level: number }): ReactNode {
-  const bounded = safeLevel(level)
-  const [speaking, setSpeaking] = useState(() => bounded >= SPEAKING_ON_LEVEL)
-  const settleTimerRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (bounded >= SPEAKING_ON_LEVEL) {
-      if (settleTimerRef.current !== null) {
-        window.clearTimeout(settleTimerRef.current)
-        settleTimerRef.current = null
-      }
-      setSpeaking(true)
-      return
-    }
-    // Inside the hysteresis band the current state simply holds, and one
-    // pending settle is never restarted: the hold measures from the last
-    // voiced frame, not from the latest quiet one.
-    if (bounded > SPEAKING_OFF_LEVEL || !speaking || settleTimerRef.current !== null) return
-    settleTimerRef.current = window.setTimeout(() => {
-      settleTimerRef.current = null
-      setSpeaking(false)
-    }, SPEAKING_HOLD_MS)
-  }, [bounded, speaking])
-
-  useEffect(() => () => {
-    if (settleTimerRef.current === null) return
-    window.clearTimeout(settleTimerRef.current)
-    settleTimerRef.current = null
-  }, [])
-
-  return (
-    <span
-      className="widget-bars"
-      data-testid="listening-bars"
-      data-speaking={speaking || undefined}
-      aria-hidden="true"
-    >
-      {Array.from({ length: LISTENING_BAR_COUNT }, (_unused, index) => (
-        // The stable index represents one fixed visualizer column.
-        <span key={index} className="widget-bars__bar" />
-      ))}
-    </span>
-  )
-}
-
 function WidgetAction({
   children,
   label,
   onClick,
   tone = 'neutral',
+  pressed,
+  expanded,
 }: {
   readonly children: ReactNode
   readonly label: string
   readonly onClick?: (() => void) | undefined
   readonly tone?: 'neutral' | 'stop'
+  readonly pressed?: boolean | undefined
+  readonly expanded?: boolean | undefined
 }): ReactNode {
   return (
     <button
@@ -328,6 +263,9 @@ function WidgetAction({
       className="widget-action"
       data-tone={tone}
       aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      aria-expanded={expanded}
       tabIndex={-1}
       onMouseDown={preventFocus}
       onPointerDown={stopPointerPropagation}
@@ -353,9 +291,17 @@ export function WidgetApp({
   onDrag,
   dragCancellationVersion,
   visibilityGeneration = 0,
+  agents,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const orientation = useWidgetOrientation()
+  const agentState = agents?.state?.configuration.enabled ? agents.state : null
+  const dictationUsesMicrophone = snapshot.status === 'listening' || snapshot.status === 'requesting-permission'
+  const microphoneMuted = agentState?.voice.status === 'muted' && !dictationUsesMicrophone
+  const [threadsExpanded, setThreadsExpanded] = useState(false)
+  const showThreads = threadsExpanded && agentState !== null
+  useEffect(() => { setThreadsExpanded(false) }, [dragCancellationVersion])
+  useEffect(() => { if (agentState === null) setThreadsExpanded(false) }, [agentState])
   // Hovering the idle sliver expands it in place into a small pill carrying
   // the click-to-dictate affordance. Native resize/re-centering can briefly
   // synthesize leave/enter events, so collapse waits beyond the CSS transition.
@@ -406,8 +352,8 @@ export function WidgetApp({
     isIdle ? () => setExpanded(false) : undefined,
     dragCancellationVersion,
   )
-  const presentation: WidgetPresentation = !isIdle
-    ? 'active'
+  const presentation: WidgetPresentation = showThreads ? 'threads-expanded' : !isIdle
+    ? agentState !== null ? 'pill-controls' : 'active'
     : expanded || surface.dragging
       ? 'idle-hovered'
       : 'idle-resting'
@@ -416,6 +362,33 @@ export function WidgetApp({
     onPresentationChange?.(presentation)
   }, [onPresentationChange, presentation, visibilityGeneration])
 
+  const agentActions = agentState !== null && agents !== undefined ? (
+    <span className="widget-agent-actions">
+      <WidgetAction label={microphoneMuted ? 'Unmute microphone' : 'Mute microphone'}
+        pressed={microphoneMuted}
+        onClick={() => {
+          if (dictationUsesMicrophone) onCancel?.()
+          void agents.command({ type: 'voice', action: microphoneMuted ? 'unmute' : 'mute' })
+        }}>
+        {microphoneMuted ? <MicOff size={13} /> : <Mic size={13} />}
+      </WidgetAction>
+      <WidgetAction label={agentState.configuration.speak ? 'Mute voice' : 'Unmute voice'}
+        pressed={!agentState.configuration.speak}
+        onClick={() => {
+          void agents.command({ type: 'voice', action: 'stop-speaking' })
+          void agents.command({ type: 'configure', patch: { speak: !agentState.configuration.speak } })
+        }}>
+        {agentState.configuration.speak ? <Volume2 size={13} /> : <VolumeX size={13} />}
+      </WidgetAction>
+      <WidgetAction label={showThreads ? 'Collapse threads' : 'Expand threads'} expanded={showThreads}
+        onClick={() => setThreadsExpanded(!showThreads)}>
+        {showThreads ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+      </WidgetAction>
+    </span>
+  ) : null
+  const threadPanel = showThreads && agents !== undefined && agentState !== null
+    ? <WidgetThreads state={agentState} command={agents.command} /> : null
+
   if (snapshot.status === 'idle') {
     return (
       <aside
@@ -423,13 +396,16 @@ export function WidgetApp({
         aria-label="Sotto dictation status"
         data-status="idle"
         data-tone="idle"
-        data-orientation={orientation}
+        data-orientation={showThreads ? 'horizontal' : orientation}
+        data-threads-expanded={showThreads || undefined}
+        data-agent-controls={agentState !== null || undefined}
         data-dragging={surface.dragging || undefined}
       >
+        {threadPanel}
         <div
           className="widget-sliver"
           data-testid="widget-sliver"
-          data-expanded={expanded || undefined}
+          data-expanded={expanded || showThreads || undefined}
           tabIndex={-1}
           onMouseEnter={() => {
             hoverInsideRef.current = true
@@ -454,9 +430,10 @@ export function WidgetApp({
               and reveals the click-to-dictate prompt overlaid on it. */}
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
-            <span className="widget-sliver__prompt-keys">
+            {agentState === null && <span className="widget-sliver__prompt-keys">
               {formatAccelerator(snapshot.shortcut, platform, 'display')}
-            </span>
+            </span>}
+            {agentActions}
           </span>
         </div>
       </aside>
@@ -519,9 +496,12 @@ export function WidgetApp({
       aria-label="Sotto dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
-      data-orientation={orientation}
+      data-orientation={showThreads ? 'horizontal' : orientation}
+      data-threads-expanded={showThreads || undefined}
+      data-agent-controls={agentState !== null || undefined}
       data-dragging={surface.dragging || undefined}
     >
+      {threadPanel}
       <div
         className="widget-capsule"
         tabIndex={-1}
@@ -549,6 +529,7 @@ export function WidgetApp({
         {progressBar}
         {stopAction}
         {escAction}
+        {agentActions}
       </div>
     </aside>
   )
@@ -627,12 +608,9 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
   return (
     <>
       <WidgetAnnouncements snapshot={snapshot} platform={platform} />
-      {snapshot === null ? null : snapshot.status === 'idle' && agents.state !== null
-        && agents.state.configuration.enabled ? (
-        <AgentWidget state={agents.state} command={agents.command} onPresentationChange={actions.onPresentationChange}
-          onToggle={actions.onToggle} onDrag={actions.onDrag} visibilityGeneration={visibilityGeneration} dragCancellationVersion={dragCancellationVersion} />
-      ) : (
+      {snapshot === null ? null : (
         <WidgetApp
+          agents={agents}
           snapshot={snapshot}
           platform={platform}
           now={now}

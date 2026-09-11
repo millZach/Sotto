@@ -32,6 +32,41 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   return control
 }
 describe('Codex App Server provider adapter', () => {
+  it('reads supported reasoning levels and preserves selected thread settings through real RPCs and restart', async () => {
+    const f = await fixture()
+    expect((await f.host.snapshot()).models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: false })
+    const threadId = randomUUID()
+    expect(await f.host.execute({ type: 'create-thread', commandId: 'create', threadId, projectId: f.projectId, title: 'Configured', modelId: f.modelId,
+      reasoningEffort: 'high', runtimeMode: 'approval-required' })).toEqual({ accepted: true })
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'approval-required' })
+    await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, reasoningEffort: 'low', runtimeMode: 'full-access' })
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
+    const rpc = (await f.driver.requests()).findLast(request => request.method === 'thread/resume')!
+    expect(rpc.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', config: { model_reasoning_effort: 'low' } })
+    f.host.disconnect(); await f.adapter.closed()
+    await f.host.connect(f.connection)
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
+    await f.host.execute({ type: 'send', commandId: 'send', threadId, messageId: 'message', text: 'Fixture prompt' })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
+  })
+  it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
+    const f = await fixture(false, 100); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'thread/resume', ms: 1000 } })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
+    f.host.disconnect(); await f.adapter.closed()
+    await f.host.connect(f.connection)
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ runtimeMode: 'full-access' })
+    const resumes = (await f.driver.requests()).filter(request => request.method === 'thread/resume')
+    expect(resumes.filter(request => request.params?.sandbox !== undefined)).toHaveLength(1)
+    expect(resumes.at(-1)?.params).not.toHaveProperty('approvalPolicy')
+  })
+  it('rejects unsupported images and model reasoning without silently sending text or falling back', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await expect(f.host.execute({ type: 'configure-thread', commandId: 'bad', threadId, reasoningEffort: 'invented' })).rejects.toThrow(/reasoning/)
+    await expect(f.host.execute({ type: 'send', commandId: 'image', threadId, messageId: 'image-message', text: 'Do not drop this image',
+      attachments: [{ id: 'shot', name: 'shot.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YWJj' }] })).rejects.toThrow(/image support/)
+    expect((await f.driver.requests()).filter(request => request.method === 'turn/start')).toEqual([])
+  })
   it('reports model listing failure without inventing an available model', async () => {
     const f = await codexFixture(); fixtures.push(f)
     await f.script({ reject: 'model/list' })

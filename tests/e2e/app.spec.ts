@@ -9,6 +9,7 @@ import {
   type E2ESnapshot,
   type SottoE2EBridge,
 } from '../../src/shared/e2e'
+import type { SottoBridge } from '../../src/shared/contracts'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
 import { closeSotto, e2eEnvironment, launchSotto } from './support/sottoLaunch'
 
@@ -23,7 +24,7 @@ async function reachFinalOnboardingStep(page: Page): Promise<void> {
 
 async function finishOnboarding(page: Page): Promise<void> {
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
 }
 
 async function completeOnboarding(page: Page): Promise<void> {
@@ -33,7 +34,7 @@ async function completeOnboarding(page: Page): Promise<void> {
 
 async function dictateWithButton(page: Page): Promise<void> {
   await page.getByRole('button', { name: /start dictation/i }).click()
-  await page.getByRole('button', { name: /stop and transcribe/i }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
 }
 
 async function snapshot(page: Page): Promise<E2ESnapshot> {
@@ -140,26 +141,27 @@ test('keeps history disabled without blocking private dictation', async () => {
     await launched.page.getByRole('link', { name: 'Settings' }).click()
     await launched.page.getByRole('switch', { name: 'Keep local history' }).click()
     await expect(launched.page.getByText('Setting saved.')).toBeVisible()
-    await launched.page.getByRole('link', { name: 'Home' }).click()
+    await launched.page.getByRole('tab', { name: 'Dictate', exact: true }).click()
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: 'Text pasted' })).toBeVisible()
+    await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
     await launched.page.getByRole('link', { name: 'History' }).click()
-    await expect(launched.page.getByRole('heading', { name: 'History is turned off' })).toBeVisible()
+    await expect(launched.page.getByRole('heading', { name: 'History is off.' })).toBeVisible()
   } finally {
     await closeSotto(launched)
   }
 })
 
-test('persists the dark theme across a renderer reload', async () => {
+test('tolerates a persisted light theme', async () => {
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('link', { name: 'Settings' }).click()
-    await launched.page.getByLabel('Theme').selectOption('dark')
-    await expect.poll(() => launched.page.locator('html').getAttribute('data-theme')).toBe('dark')
+    await launched.page.evaluate(async () => {
+      const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto
+      await bridge.updateSettings({ theme: 'light' })
+    })
     await launched.page.reload()
-    await expect(launched.page.getByRole('heading', { name: 'Home' })).toBeVisible()
-    await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+    await expect(launched.page.locator('html')).not.toHaveAttribute('data-theme')
   } finally {
     await closeSotto(launched)
   }
@@ -173,7 +175,7 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
     const shortcut = launched.page.getByLabel('Global shortcut')
     const previous = await shortcut.inputValue()
     await shortcut.fill(E2E_CONFLICTING_HOTKEY)
-    await launched.page.getByRole('button', { name: 'Apply shortcut' }).click()
+    await launched.page.getByLabel('Global shortcut').press('Tab')
     await expect(launched.page.getByRole('alert')).toContainText(/another application is already using/i)
     await expect(shortcut).toHaveValue(previous)
 
@@ -217,7 +219,7 @@ test('silence preserves the clipboard and creates no history', async () => {
       pasteAttempts: 0,
     })
     await launched.page.getByRole('link', { name: 'History' }).click()
-    await expect(launched.page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
+    await expect(launched.page.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
   } finally {
     await closeSotto(launched)
   }
@@ -228,7 +230,7 @@ test('paste rejection falls back to a durable copied result', async () => {
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: 'Text copied' })).toBeVisible()
+    await expect(launched.page.getByRole('heading', { name: 'Copied.' })).toBeVisible()
     expect(await snapshot(launched.page)).toMatchObject({
       clipboardText: DETERMINISTIC_TRANSCRIPT,
       pasteAttempts: 1,
@@ -245,7 +247,7 @@ test('persists settings through reload', async () => {
     await launched.page.getByRole('link', { name: 'Settings' }).click()
     const delay = launched.page.getByLabel('Paste delay')
     await delay.fill('275')
-    await launched.page.getByRole('button', { name: 'Save paste delay' }).click()
+    await launched.page.getByLabel('Paste delay').press('Tab')
     await expect(launched.page.getByText('Paste delay saved.')).toBeVisible()
     await launched.page.reload()
     await launched.page.getByRole('link', { name: 'Settings' }).click()
@@ -255,7 +257,7 @@ test('persists settings through reload', async () => {
   }
 })
 
-test('keeps the real main window frameless with one title bar before and after onboarding', async () => {
+test('keeps the real main window frameless with one app strip before and after onboarding', async () => {
   const launched = await launchSotto()
   try {
     const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
@@ -271,11 +273,11 @@ test('keeps the real main window frameless with one title bar before and after o
 
     expect(geometry).not.toBeNull()
     expect(geometry?.contentBounds).toEqual(geometry?.bounds)
-    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+    await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
 
     await completeOnboarding(launched.page)
 
-    expect(await launched.page.locator('.app-titlebar').count()).toBe(1)
+    await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
   } finally {
     await closeSotto(launched)
   }
@@ -484,7 +486,7 @@ test('transcription failure is finite and leaves clipboard and history untouched
       pasteAttempts: 0,
     })
     await launched.page.getByRole('link', { name: 'History' }).click()
-    await expect(launched.page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
+    await expect(launched.page.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
   } finally {
     await closeSotto(launched)
   }

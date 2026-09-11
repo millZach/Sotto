@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import type { SottoE2EBridge } from '../../shared/e2e'
+import { EMPTY_AGENT_HOST, agentRuntimeModeSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
+import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../agents/host'
 import type { AgentReasoner } from '../agents/reasoning'
 
@@ -13,10 +13,19 @@ export class E2EAgentHost implements AgentHost {
   private connectRejection: string | null = null
   private state: AgentHostSnapshot = {
     ...structuredClone(EMPTY_AGENT_HOST), version: '0.0.38',
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-    models: [{ id: 'claude:test', provider: 'Claude', name: 'Claude Test', ready: true }],
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
+    models: [{ id: 'claude:test', provider: 'Claude', name: 'Claude Test', ready: true,
+      reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }],
     projects: [{ id: 'project', title: 'Sotto test', path: 'C:/sotto-test' }],
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
+  }
+  constructor(scenario: E2EScenario = 'success') {
+    if (scenario === 'design-threads' || scenario === 'design-threads-empty') {
+      const fixture = designThreadsFixture()
+      this.state.models = structuredClone([...fixture.models])
+      this.state.projects = structuredClone([...fixture.projects])
+      this.state.threads = scenario === 'design-threads' ? structuredClone([...fixture.threads]) : []
+    }
   }
   async connect(): Promise<AgentHostSnapshot> {
     if (this.connectRejection !== null) {
@@ -40,13 +49,20 @@ export class E2EAgentHost implements AgentHost {
     }
     this.commands.add(command.commandId)
     if (command.type === 'create-project') this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
-    else if (command.type === 'create-thread') this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId, status: 'idle', messages: [], requests: [] })
+    else if (command.type === 'create-thread') this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId,
+      runtimeMode: command.runtimeMode ?? 'approval-required', reasoningEffort: command.reasoningEffort ?? 'low', status: 'idle', messages: [], requests: [] })
     else {
       const thread = this.state.threads.find(t => t.id === command.threadId)
       if (!thread) return { accepted: false }
-      if (command.type === 'send') {
+      if (command.type === 'configure-thread') {
+        if (command.modelId !== undefined) { thread.modelId = command.modelId; thread.reasoningEffort = 'low' }
+        if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
+        if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
+      } else if (command.type === 'send') {
         if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) return { accepted: false }
-        thread.messages.push({ id: command.messageId, role: 'user', text: command.text, createdAt: new Date().toISOString(), commandId: command.commandId }); thread.status = 'running'
+        thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()
+        thread.messages.push({ id: command.messageId, role: 'user', text: command.text, createdAt: new Date().toISOString(), commandId: command.commandId,
+          ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachmentSizeBytes(attachment.dataUrl) })) } : {}) }); thread.status = 'running'
       } else if (command.type === 'answer') { thread.requests = thread.requests.filter(r => r.id !== command.requestId); thread.status = 'running' }
       else thread.status = 'idle'
     }

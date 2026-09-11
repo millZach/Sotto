@@ -2,14 +2,11 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 
 import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
 import type { AppSettings, ModelPreset } from '../../shared/settings'
-import { AppShell, type AppStatusTone } from './components/AppShell'
-import { AppTitlebar } from './components/AppTitlebar'
+import { AppShell } from './components/AppShell'
 import { Card } from './components/Card'
-import { TitlebarSearch } from './components/TitlebarSearch'
-import { DictationStrip } from './features/dictation/DictationStrip'
+import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
-import { HistoryView } from './features/history/HistoryView'
-import { HomeView } from './features/home/HomeView'
+import { HistoryFooter, HistoryView } from './features/history/HistoryView'
 import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
 import { UpdateBanner } from './features/updates/UpdateBanner'
 import { updatePromptKey } from './features/updates/updatePrompt'
@@ -18,11 +15,16 @@ import {
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
-import { useApp } from './state/AppContext'
+import { useApp, type AppNavigation } from './state/AppContext'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
-import { AgentProvider } from './agents/AgentContext'
-import { AgentView } from './agents/AgentView'
+import { AgentProvider, useAgents } from './agents/AgentContext'
+import { MODEL_CATALOG } from '../../shared/modelCatalog'
+import { languageLabel } from './languages'
+import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
+import { ThreadsView } from './agents/ThreadsView'
+import { lookingAfterSentence } from './agents/threadFacts'
+import { E2E_THREADS_NOW } from '../../shared/e2e'
 
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
@@ -34,14 +36,35 @@ export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
 }
 
+/**
+ * The main window is black whatever `theme` says (the field is kept for old
+ * settings files and the widget snapshot), so only reduced motion reaches the
+ * root; a stale theme attribute from an earlier build is cleared.
+ */
 export function applyDocumentPreferences(settings: AppSettings | null, root: HTMLElement = document.documentElement): void {
-  if (settings?.theme === 'light' || settings?.theme === 'dark') {
-    root.dataset.theme = settings.theme
-  } else {
-    delete root.dataset.theme
-  }
+  delete root.dataset.theme
   if (settings?.reducedMotion === 'on') root.dataset.reducedMotion = 'on'
   else delete root.dataset.reducedMotion
+}
+
+/** The footer's one sentence: what this page keeps, or what the machine is looking after. */
+function FooterStatus({ navigation, settings }: {
+  readonly navigation: Exclude<AppNavigation, 'onboarding'>
+  readonly settings: AppSettings
+}): ReactNode {
+  const agents = useAgents()
+  switch (navigation) {
+    case 'agents': return <AgentAppearance />
+    case 'threads':
+      return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
+    case 'history': return settings.historyEnabled ? 'Kept on this computer only. Nothing leaves it.' : 'History is off.'
+    case 'settings': return 'Changes save as you make them.'
+    case 'help': return 'Shortcuts, privacy, and troubleshooting.'
+    default: {
+      const model = MODEL_CATALOG[settings.modelPreset].label
+      return `${model} model, ${languageLabel(settings.language)}. ${settings.autoPaste ? 'Pastes automatically.' : 'Copies to the clipboard.'}`
+    }
+  }
 }
 
 function toModelState(status: ModelStatus | undefined): OnboardingModelState {
@@ -58,6 +81,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const [modelState, setModelState] = useState<OnboardingModelState>('checking')
   const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | undefined>()
   const [historyQuery, setHistoryQuery] = useState('')
+  const [historyClearOpen, setHistoryClearOpen] = useState(false)
+  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | null>(null)
+  const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
   const microphoneMountedRef = useRef(false)
@@ -70,6 +96,22 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   useEffect(() => {
     applyDocumentPreferences(app.settings)
   }, [app.settings])
+
+  useEffect(() => {
+    const search = (event: KeyboardEvent): void => {
+      if (!app.settings?.onboardingComplete || document.querySelector('dialog[open], [role="dialog"]')) return
+      if (event.key.toLowerCase() !== 'k' || !(app.platform === 'darwin' ? event.metaKey : event.ctrlKey)) return
+      event.preventDefault()
+      app.actions.navigate('history')
+      setHistorySearchRequest(value => value + 1)
+    }
+    window.addEventListener('keydown', search)
+    return () => window.removeEventListener('keydown', search)
+  }, [app.actions, app.platform, app.settings?.onboardingComplete])
+
+  useEffect(() => {
+    if (historySearchRequest > 0 && app.navigation === 'history') document.querySelector<HTMLInputElement>('.history-find__input')?.focus()
+  }, [historySearchRequest, app.navigation])
 
   const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
     const existing = microphoneReleasesRef.current.get(controller)
@@ -243,24 +285,17 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     )
   } else {
     const navigation = app.navigation
-    const statusTone: AppStatusTone = app.failure !== null
-      ? 'attention'
-      : app.dictation.status === 'listening'
-        ? 'listening'
-        : app.dictation.status === 'processing'
-          ? 'processing'
-          : 'ready'
-    const statusText = {
-      ready: 'Ready · Local & private',
-      listening: 'Listening',
-      processing: 'Transcribing locally',
-      attention: 'Needs attention',
-    }[statusTone]
 
     let view: ReactNode
     switch (navigation) {
       case 'agents':
-        view = <AgentView />
+        view = <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
+        break
+      case 'threads':
+        view = <ThreadsView
+          onOpenAgents={() => { setAgentSheet('session'); app.actions.navigate('agents') }}
+          now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
+        />
         break
       case 'history':
         view = <HistoryView
@@ -269,6 +304,10 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           status={app.historyStatus}
           query={historyQuery}
           onQueryChange={setHistoryQuery}
+          clearOpen={historyClearOpen}
+          onClearOpenChange={setHistoryClearOpen}
+          onOpenDictate={() => app.actions.navigate('home')}
+          onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
           onDelete={app.actions.deleteHistory}
           onClear={app.actions.clearHistory}
@@ -299,13 +338,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} />
         break
       default:
-        view = <HomeView
+        view = <DictateRoom
           settings={app.settings}
+          platform={app.platform}
+          dictation={app.dictation}
           modelStatus={app.modelStatuses[app.settings.modelPreset]}
           entries={app.history}
           historyStatus={app.historyStatus}
-          version={app.update?.currentVersion}
-          onOpenHistory={() => app.actions.navigate('history')}
+          onStart={app.actions.start}
+          onStop={app.actions.stop}
+          onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
         />
     }
@@ -320,26 +362,15 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
       : null
 
-    const deck = (
-      <DictationStrip
-        settings={app.settings}
-        platform={app.platform}
-        dictation={app.dictation}
-        modelStatus={app.modelStatuses[app.settings.modelPreset]}
-        onStart={app.actions.start}
-        onStop={app.actions.stop}
-        onOpenSettings={() => app.actions.navigate('settings')}
-      />
-    )
-
     content = (
       <>
         <AppShell
           navigation={navigation}
-          statusText={statusText}
-          statusTone={statusTone}
-          deck={deck}
-          onNavigate={app.actions.navigate}
+          platform={app.platform}
+          statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
+          onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
+          onMinimize={app.actions.minimizeApp}
+          onClose={app.actions.hideApp}
         >
           {updatePrompt}
           {view}
@@ -357,22 +388,16 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   return (
     <AgentProvider settings={app.settings} dictation={app.dictation}>
-    <div className="app-frame">
-      <AppTitlebar
-        onMinimize={app.actions.minimizeApp}
-        onClose={app.actions.hideApp}
-      >
-        {management ? (
-          <TitlebarSearch
-            value={historyQuery}
-            platform={app.platform}
-            onChange={setHistoryQuery}
-            onActivate={() => { if (app.navigation !== 'history') app.actions.navigate('history') }}
-          />
-        ) : null}
-      </AppTitlebar>
-      <div className="app-frame__body">{content}</div>
-    </div>
+      {management ? content : (
+        <AppShell
+          navigation={null}
+          platform={app.platform}
+          onMinimize={app.actions.minimizeApp}
+          onClose={app.actions.hideApp}
+        >
+          {content}
+        </AppShell>
+      )}
     </AgentProvider>
   )
 }

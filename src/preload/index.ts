@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
 import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
@@ -186,6 +187,7 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     ...(role === 'main' ? {
+    chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, z.string().min(1).max(4_096).nullable()),
     synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
     cancelSpeech: () => invokeParsed(renderer, AGENT_SPEECH_CANCEL, voidSchema),
     grokVoices: () => invokeParsed(renderer, AGENT_GROK_VOICES, agentSpeechVoicesSchema),

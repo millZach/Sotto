@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
+import type { WidgetPresentation } from '../../../src/shared/contracts'
 import {
   parseDevelopmentRendererSources,
   RendererLoadError,
@@ -31,6 +32,7 @@ class FakeWindow implements BrowserWindowLike {
   readonly hide = vi.fn()
   readonly show = vi.fn()
   readonly focus = vi.fn()
+  readonly setFocusable = vi.fn()
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
@@ -195,7 +197,7 @@ function currentWidgetVisibilityGeneration(manager: WindowManager): number {
 
 function setWidgetPresentation(
   manager: WindowManager,
-  presentation: 'idle-resting' | 'idle-hovered' | 'active',
+  presentation: WidgetPresentation,
   generation = currentWidgetVisibilityGeneration(manager),
 ): void {
   manager.setWidgetPresentation({ presentation, generation })
@@ -229,7 +231,7 @@ function reportWidgetDrag(
 
 interface GenerationBoundWindowManager {
   setWidgetPresentation(report: {
-    readonly presentation: 'idle-resting' | 'idle-hovered' | 'active'
+    readonly presentation: WidgetPresentation
     readonly generation: number
   }): void
   reportWidgetDrag(report: {
@@ -296,7 +298,7 @@ describe('WindowManager construction', () => {
         minHeight: 560,
         show: false,
         title: 'Sotto',
-        backgroundColor: '#1b1917',
+        backgroundColor: '#000000',
         autoHideMenuBar: true,
         frame: false,
         webPreferences: {
@@ -436,7 +438,7 @@ describe('WindowManager construction', () => {
       minHeight: 560,
       show: false,
       title: 'Sotto',
-      backgroundColor: '#1b1917',
+      backgroundColor: '#000000',
       autoHideMenuBar: true,
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: platformProfile('darwin').trafficLightPosition,
@@ -519,6 +521,14 @@ describe('WindowManager cursor monitor following', () => {
 
   it('follows the cursor monitor in every widget presentation', async () => {
     const presentations = [
+      {
+        presentation: 'pill-controls' as const,
+        bounds: { x: 1_440, y: 896, width: 320, height: 88 },
+      },
+      {
+        presentation: 'threads-expanded' as const,
+        bounds: { x: 1_390, y: 424, width: 420, height: 560 },
+      },
       {
         presentation: 'idle-resting' as const,
         bounds: { x: 1_538, y: 930, width: 124, height: 54 },
@@ -1397,6 +1407,69 @@ describe('WindowManager lifecycle', () => {
     ])
     expect(widget.setPosition).not.toHaveBeenCalled()
     expect(widget.setSize).not.toHaveBeenCalled()
+  })
+
+  it.each(['win32', 'darwin'] as const)(
+    'expands threads and restores the vertical pill footprint and focus policy on %s',
+    async (platform) => {
+      const chrome = platformProfile(platform)
+      const { manager, onWidgetMoved, windows } = createHarness({
+        platform,
+        chrome,
+        getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+      })
+      await manager.showWidget()
+      const widget = windows[0]!
+
+      setWidgetPresentation(manager, 'pill-controls')
+      expect(widget.bounds).toEqual({ x: 1_016, y: 390, width: 88, height: 320 })
+      expect(widget.setFocusable).not.toHaveBeenCalled()
+
+      setWidgetPresentation(manager, 'threads-expanded')
+      expect(widget.bounds).toEqual({ x: 1_016, y: 270, width: 420, height: 560 })
+      expect(widget.setFocusable).toHaveBeenLastCalledWith(true)
+
+      setWidgetPresentation(manager, 'pill-controls')
+      expect(widget.bounds).toEqual({ x: 1_016, y: 390, width: 88, height: 320 })
+      expect(widget.setFocusable).toHaveBeenLastCalledWith(chrome.widgetFocusable)
+      expect(widget.focus).not.toHaveBeenCalled()
+      expect(onWidgetMoved).not.toHaveBeenCalled()
+      manager.dispose()
+    },
+  )
+
+  it('does not deactivate another app by resetting an unchanged pill focus policy', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    for (const presentation of ['idle-hovered', 'pill-controls', 'pill-controls', 'active', 'idle-resting'] as const) {
+      setWidgetPresentation(manager, presentation)
+    }
+    // Electron's setFocusable(false) deactivates the native window, even if
+    // it is already nonfocusable. Geometry/status changes must not call it.
+    expect(widget.setFocusable).not.toHaveBeenCalled()
+    setWidgetPresentation(manager, 'threads-expanded')
+    setWidgetPresentation(manager, 'threads-expanded')
+    expect(widget.setFocusable.mock.calls).toEqual([[true]])
+    setWidgetPresentation(manager, 'idle-resting')
+    setWidgetPresentation(manager, 'pill-controls')
+    expect(widget.setFocusable.mock.calls).toEqual([[true], [false]])
+    manager.dispose()
+  })
+
+  it('restores a hidden thread panel to a nonfocusable pill before revealing it', async () => {
+    const { manager, windows } = createHarness()
+    await manager.showWidget()
+    const widget = windows[0]!
+    setWidgetPresentation(manager, 'threads-expanded')
+    manager.hideWidget()
+    setWidgetPresentation(manager, 'idle-resting')
+    await manager.showWidget()
+    expect(widget.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(widget.setFocusable.mock.invocationCallOrder[1]).toBeLessThan(widget.showInactive.mock.invocationCallOrder[1]!)
+    setWidgetPresentation(manager, 'pill-controls')
+    expect(widget.setFocusable).toHaveBeenCalledTimes(2)
+    manager.dispose()
   })
 
   it('preserves the selected edge and center while presentation changes', async () => {

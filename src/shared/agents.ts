@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const AGENT_GET = 'sotto:agents:get'
+export const AGENT_CHOOSE_PROJECT_DIRECTORY = 'sotto:agents:choose-project-directory'
 export const AGENT_COMMAND = 'sotto:agents:command'
 export const AGENT_STATE = 'sotto:agents:state'
 export const AGENT_E2E = 'sotto:e2e:agents'
@@ -21,7 +22,38 @@ export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
 
 const id = z.string().min(1).max(512)
 const text = z.string().max(100_000)
-export const agentModelSchema = z.object({ id, provider: id, name: id, ready: z.boolean() })
+export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+export const AGENT_MAX_ATTACHMENTS = 8
+export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+export const agentRuntimeModeSchema = z.enum(['approval-required', 'auto-accept-edits', 'auto', 'full-access'])
+export type AgentRuntimeMode = z.infer<typeof agentRuntimeModeSchema>
+export function attachmentSizeBytes(dataUrl: string): number {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  return base64.length / 4 * 3 - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
+}
+export const agentAttachmentSchema = z.object({
+  id: z.string().min(1).max(128).regex(/^[a-z0-9_-]+$/iu), name: z.string().trim().min(1).max(255),
+  mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), dataUrl: z.string().max(14_000_000),
+}).strict().refine(attachment => {
+  const prefix = `data:${attachment.mimeType};base64,`
+  if (!attachment.dataUrl.startsWith(prefix)) return false
+  const base64 = attachment.dataUrl.slice(prefix.length)
+  return base64.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/u.test(base64)
+    && attachmentSizeBytes(attachment.dataUrl) > 0 && attachmentSizeBytes(attachment.dataUrl) <= AGENT_MAX_IMAGE_BYTES
+}, 'Choose a valid PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
+export const agentAttachmentsSchema = z.array(agentAttachmentSchema).max(AGENT_MAX_ATTACHMENTS)
+  .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
+  .refine(items => items.reduce((size, item) => size + attachmentSizeBytes(item.dataUrl), 0) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
+export type AgentAttachment = z.infer<typeof agentAttachmentSchema>
+export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative() })
+export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
+export const agentThreadOptionsSchema = z.object({ modelId: id.optional(), reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional() })
+export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
+export const agentModelSchema = z.object({ id, provider: id, name: id, ready: z.boolean(),
+  reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
+})
 export const agentProjectSchema = z.object({ id, title: id, path: z.string().max(4_096) })
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
@@ -30,16 +62,26 @@ export const agentRequestSchema = z.object({
 export const agentMessageSchema = z.object({
   id, role: z.enum(['user', 'assistant']), text, createdAt: z.string(),
   commandId: z.string().optional(),
+  attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
 export const agentThreadSchema = z.object({
   id, projectId: id, title: id, modelId: z.string(),
+  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
+  /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
+  updatedAt: z.string().optional(),
+  /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
+  settledAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
+  settledOverride: z.enum(['settled', 'active']).nullable().optional(),
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
+  /** Omitted by providers that already supply history; absence means ready. */
+  historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
 })
 export const agentCapabilitiesSchema = z.object({
   projects: z.boolean(), threads: z.boolean(), submit: z.boolean(),
   observe: z.boolean(), questions: z.boolean(), permissions: z.boolean(),
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
+  configureThread: z.boolean().optional(),
 })
 export const agentHostSnapshotSchema = z.object({
   connected: z.boolean(), name: z.string(), version: z.string(),
@@ -77,8 +119,12 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 
 export const providerIdSchema = z.enum(['t3', 'codex'])
 export type ProviderId = z.infer<typeof providerIdSchema>
+export const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
+export const orbColorSchema = z.enum(ORB_COLORS)
+export type OrbColor = z.infer<typeof orbColorSchema>
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('t3'),
+  orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   endpoint: z.string().max(2_048),
   projectsDirectory: z.string().max(4_096),
@@ -98,6 +144,7 @@ export const agentConfigurationSchema = z.object({
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 't3',
+  orbColor: 'teal',
   enabled: false, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: '',
   followupLimit: 5, speak: true, speechProvider: 'natural', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
 })
@@ -108,6 +155,14 @@ export const agentAssignmentSchema = z.object({
   seenMessageIds: z.array(z.string()), ownMessageIds: z.array(z.string()),
   handledRequestIds: z.array(z.string()), lastFailure: z.string(),
   contextUpdatedAt: z.number().default(0),
+  /** ISO time the assignment began (assign or create-thread). Empty for assignments saved before it was recorded. */
+  startedAt: z.string().default(''),
+  /** How the current instruction reached the thread: a spoken "send it", a typed Send, or not yet known. */
+  origin: z.enum(['voice', 'typed', 'unknown']).default('unknown'),
+  /** Why Sotto stopped managing on its own; 'none' while managing or after a user pause. Cleared by resume. */
+  stopReason: z.enum(['none', 'limit', 'repeat', 'error']).default('none'),
+  /** ISO time of that stop; empty when stopReason is 'none'. */
+  stoppedAt: z.string().default(''),
 })
 export type AgentAssignment = z.infer<typeof agentAssignmentSchema>
 export const agentQueueItemSchema = z.object({
@@ -115,6 +170,8 @@ export const agentQueueItemSchema = z.object({
   text, requestId: z.string().optional(), createdAt: z.string(), deferred: z.boolean(),
 })
 export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
+export const MAX_DELIVERED_DRAFTS = 128
+export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
@@ -122,6 +179,8 @@ export const agentStateSchema = z.object({
   assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
+  draftAttachments: agentAttachmentsSchema.optional(),
+  deliveredDrafts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
@@ -136,8 +195,8 @@ export const agentStateSchema = z.object({
 })
 export type AgentState = z.infer<typeof agentStateSchema>
 export const agentCommandSchema = z.discriminatedUnion('type', [
-  // Re-extend provider so a patch omitting it does not apply the default and reset it to 't3'.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system', 'grok']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
+  // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system', 'grok']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['t3', 'reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),
@@ -147,14 +206,19 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('utterance'), text }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
-  z.object({ type: z.literal('compose'), text }).strict(),
+  z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
   z.object({ type: z.literal('send') }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: id }).strict(),
-  z.object({ type: z.literal('create-thread'), projectId: id, title: id, modelId: id }).strict(),
+  z.object({ type: z.literal('create-thread'), projectId: id, title: id, modelId: id,
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
+  agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
+    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
   z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional() }).strict(),
   z.object({ type: z.literal('unassign'), threadId: id }).strict(),
   z.object({ type: z.literal('resume'), threadId: id }).strict(),
@@ -166,6 +230,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 export interface AgentBridge {
+  chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>
   releaseWake?(): Promise<AgentWakeDetection>

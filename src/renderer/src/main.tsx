@@ -5,6 +5,10 @@ import { App } from './App'
 import { AppProvider } from './state/AppContext'
 import { createE2EControllerFactory, createE2EMicrophoneTest } from './e2e/deterministicAdapters'
 import './styles/global.css'
+import './agents/threads.css'
+import './agents/room.css'
+import './features/history/history.css'
+import './styles/crossing-settings.css'
 
 const rootElement = document.getElementById('root')
 

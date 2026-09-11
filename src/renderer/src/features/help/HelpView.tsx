@@ -36,11 +36,11 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
 
   const gettingStarted: Topic[] = [
     { title: 'Start and stop', body: <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
-    { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings and apply it again.</p> },
+    { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
     { title: 'Optional models', body: <p>Standard is included and works offline. Installing Multi-lingual contacts Hugging Face, which receives ordinary network metadata such as your IP address and request time. Audio and transcripts are not sent. Standard is English-only.</p> },
   ]
   const privacy: Topic[] = [
-    { title: 'Offline privacy', body: <p>Speech and transcripts stay on this computer. Sotto has no account, analytics, cloud transcription, or per-use fee.</p> },
+    { title: 'Offline privacy', body: <p>Local dictation keeps audio and transcripts on this computer, without an account or per-use fee. If you enable a transcription server, audio goes to that server. AI cleanup sends transcript text to your configured provider. Agent prompts go to the connected coding provider.</p> },
   ]
   const troubleshooting: Topic[] = [
     { title: 'Microphone access', body: <p>{copy.helpMicrophoneAccess}</p> },
@@ -51,7 +51,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
 
   return (
     <div className="management-view help-view">
-      <h1 className="tt-visually-hidden">Help</h1>
+      <h1>Help</h1>
       <div className="help-grid">
         <div className="tt-panel help-topics">
           <p className="tt-instrument help-topics__group">Getting started</p>

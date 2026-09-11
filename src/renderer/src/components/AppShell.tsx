@@ -1,74 +1,150 @@
-import React, { type MouseEvent, type ReactNode } from 'react'
-import { CircleHelp, Clock3, Home, Mic, Settings, Workflow } from 'lucide-react'
+import React, { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { Minus, X } from 'lucide-react'
 
+import type { SottoPlatform } from '../../../shared/platform'
 import type { AppNavigation } from '../state/AppContext'
+import { Button } from './Button'
+import { SottoMark } from './SottoMark'
+import { VoiceWave } from './VoiceWave'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
-export type AppStatusTone = 'ready' | 'listening' | 'processing' | 'attention'
+/** The two rooms the switch flips between. */
+export type AppRoom = 'dictate' | 'agents'
 
 export interface AppShellProps {
-  readonly navigation: ManagementNavigation
-  readonly statusText: string
-  readonly statusTone: AppStatusTone
-  readonly onNavigate: (destination: ManagementNavigation) => void
-  /** The dictation deck, pinned above the page on every tab. */
-  readonly deck?: ReactNode
+  /** The open page, or `null` while the window is loading, unavailable or onboarding (strip only). */
+  readonly navigation: ManagementNavigation | null
+  readonly platform: SottoPlatform
+  /** One sentence for the footer's right-hand end. */
+  readonly statusText?: ReactNode
+  readonly onNavigate?: ((destination: ManagementNavigation) => void) | undefined
+  readonly onMinimize: () => Promise<void> | void
+  readonly onClose: () => Promise<void> | void
   readonly children: ReactNode
 }
 
-const destinations = [
-  { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'history' as const, label: 'History', icon: Clock3 },
-  { id: 'agents' as const, label: 'Agents', icon: Workflow },
-  { id: 'settings' as const, label: 'Settings', icon: Settings },
-  { id: 'help' as const, label: 'Help', icon: CircleHelp },
+const rooms: ReadonlyArray<{ id: AppRoom; label: string; destination: ManagementNavigation }> = [
+  { id: 'dictate', label: 'Dictate', destination: 'home' },
+  { id: 'agents', label: 'Agents', destination: 'agents' },
 ]
 
+const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
+  { id: 'threads', label: 'Threads' },
+  { id: 'history', label: 'History' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'help', label: 'Help' },
+]
+
+/** Which switch tab a page lights: Threads is the Agents room's list, so it counts as Agents. */
+export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
+  if (navigation === 'home') return 'dictate'
+  if (navigation === 'agents' || navigation === 'threads') return 'agents'
+  return null
+}
+
 /**
- * The rail: a 60px column of icon links with the session dot at its foot,
- * beside a stage that holds the dictation deck and the scrolling page.
+ * The Crossing shell: a thin strip (mark, the Dictate/Agents switch, window
+ * controls) over one black room, with the page links and one sentence of
+ * status in a footer line. The strip is the frameless window's drag region.
+ * macOS paints its own traffic lights over the strip's left end and closes to
+ * the tray through the same intercepted close, so it gets no custom controls.
  */
 export function AppShell({
   navigation,
+  platform,
   statusText,
-  statusTone,
   onNavigate,
-  deck,
+  onMinimize,
+  onClose,
   children,
 }: AppShellProps): ReactNode {
-  const navigate = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
+  const nativeWindowControls = platform === 'darwin'
+  const management = navigation !== null
+  const room = roomFor(navigation)
+  const focusableRoom = room ?? 'dictate'
+
+  const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
+
+  const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()
-    onNavigate(destination)
+    go(destination)
+  }
+
+  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    let next: number | null = null
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % rooms.length
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + rooms.length) % rooms.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = rooms.length - 1
+    if (next === null) return
+    event.preventDefault()
+    const target = rooms[next]!
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    tabs?.[next]?.focus()
+    go(target.destination)
   }
 
   return (
-    <div className="app-shell">
-      <aside className="app-navigation">
-        <nav aria-label="Primary navigation">
-          {destinations.map(({ id, label, icon: Icon }) => (
-            <a
-              key={id}
-              href={`#${id}`}
-              className="app-navigation__link tt-focusable"
-              aria-current={navigation === id ? 'page' : undefined}
-              title={label}
-              onClick={(event) => navigate(event, id)}
-            >
-              <Icon size={18} aria-hidden="true" />
-              <span className="tt-visually-hidden">{label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="app-navigation__status" data-tone={statusTone} title={statusText}>
-          <span aria-hidden="true"><Mic size={15} /></span>
-          <span aria-live="polite" aria-atomic="true">{statusText}</span>
+    <div className={management ? 'app-shell' : 'app-shell app-shell--bare'}>
+      <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
+        <div className="app-mark" aria-label="Sotto application">
+          <SottoMark className="app-mark__glyph" />
+          <span>Sotto</span>
         </div>
-      </aside>
-      <div className="app-stage">
-        {deck}
-        <main className="app-content" id="main-content">{children}</main>
-      </div>
+        {management ? (
+          <div className="app-switch" role="tablist" aria-label="Mode">
+            {rooms.map(({ id, label, destination }, index) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                className="app-switch__tab tt-focusable"
+                aria-selected={room === id}
+                tabIndex={focusableRoom === id ? 0 : -1}
+                onClick={() => go(destination)}
+                onKeyDown={(event) => onTabKey(event, index)}
+              >
+                {id === 'dictate'
+                  ? <VoiceWave stage="idle" value={0} label="" size="switch" />
+                  : <span className="app-switch__orb" aria-hidden="true" />}
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : <span />}
+        {nativeWindowControls ? <span /> : (
+          <div className="app-controls">
+            <Button iconOnly variant="ghost" aria-label="Minimize Sotto" onClick={() => void onMinimize()}>
+              <Minus size={18} />
+            </Button>
+            <Button iconOnly variant="ghost" aria-label="Close Sotto to tray" onClick={() => void onClose()}>
+              <X size={18} />
+            </Button>
+          </div>
+        )}
+      </header>
+      <main className="app-room" id="main-content">{children}</main>
+      {management ? (
+        <footer className="app-footer">
+          <nav aria-label="Pages">
+            {footerLinks.map(({ id, label }) => (
+              <a
+                key={id}
+                href={`#${id}`}
+                className="app-footer__link tt-focusable"
+                aria-current={navigation === id ? 'page' : undefined}
+                onClick={(event) => followLink(event, id)}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="app-footer__status" aria-live="polite" aria-atomic="true" title={typeof statusText === 'string' ? statusText : undefined}>
+            {statusText}
+          </div>
+        </footer>
+      ) : null}
     </div>
   )
 }

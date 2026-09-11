@@ -22,6 +22,7 @@ type MaxRecordingSeconds = 30 | 60 | 120 | 300
 
 export interface AppSettings {
   version: typeof SETTINGS_VERSION
+  // The black-only main window ignores this; tolerate persisted values for the widget snapshot and old settings files.
   theme: Theme
   reducedMotion: ReducedMotion
   microphoneId: string | null

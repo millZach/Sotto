@@ -41,6 +41,10 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Assignment.** Sotto's authority to reply automatically on a thread. Modes are `managed` (Sotto may send follow-ups within its limits) and `manual` (the user replied in the provider directly, so Sotto only watches). Selecting or reading a thread never creates an assignment. Avoid: "subscription", "watch".
 
+**Assignment facts.** What the coordinator records on an assignment so the app can say how it started and why it stopped: `startedAt`, `origin` (`voice`, `typed` or `unknown`), `stopReason` (`none`, `limit`, `repeat` or `error`) and `stoppedAt`. A takeover clears the stop facts; a save failure only stamps `error` when nothing else stopped the assignment first.
+
+**Threads page.** The management-window view that lists every thread the active provider knows, grouped as needs you, running, finished today and earlier days. Groups, states and the one-sentence summary derive only from the attention queue, assignments and thread status, never from provider-specific fields. Rows waiting on a decision carry the request inline with Allow and Deny; nothing else on the page answers a request. Attention rows are never hidden by search, and an open row's card shows the user's latest prompt. Avoid: "inbox", "dashboard".
+
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
 **Draft.** The one prompt or answer the user is composing, bound to a thread and optionally to a question request. A draft survives a restart.
@@ -85,8 +89,26 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Backend.** The memory system under test in SottoMemEval: it observes history events and answers questions, and never sees ground-truth labels. The `none` backend remembers nothing and always abstains; it is the required baseline. This is the one place "backend" is the right word; a provider adapter is never a backend.
 
+## Main window
+
+**Crossing.** The main window's shell since redesign round 3: one black room under a thin strip, black only, set in Bricolage Grotesque. There is no light theme and no appearance setting; a persisted theme value is tolerated and ignored. The floating widget keeps its own look. Avoid: "dark mode" (there is no other mode).
+
+**Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
+
+**Switch.** The two-state control in the strip that flips the room between Dictate and Agents. It is a tablist; arrow keys move between the two. Avoid: "tabs" in prose.
+
+**Room.** The single content area under the strip. The switch chooses the Dictate room or the Agents room; the footer links open the other pages (Threads, History, Dictionary, Settings, Help) in the same area.
+
+**Dictate room.** The Dictate side of the switch: the large seven-bar wave, one sentence for the current state, one button with the shortcut, then the last transcript at reading size with Copy.
+
+**Footer status.** The one-line status text on the right of the footer links, supplied by whichever page is open (for example the model and paste mode in the Dictate room, the thread count on the Threads page).
+
 ## Where things live
 
+- `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links and footer status.
+- `src/renderer/src/features/dictate/DictateRoom.tsx` — the Dictate room.
+- `src/renderer/src/styles/tokens.css` and `global.css` — the black token set and shared styles; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
+- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (one theme, scales, motion, focus).
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.
@@ -96,7 +118,8 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
 - `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which picks the active provider adapter at connect.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
-- `docs/agent-control.md` — user-facing behaviour of agent control.
+- `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state.
+- `docs/agent-control.md` — user-facing behaviour of agent control, including the Threads page.
 - `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.

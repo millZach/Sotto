@@ -249,7 +249,7 @@ export class AgentVoiceSession {
     if (!this.enabled) status = 'off'
     else if (this.muted) status = 'muted'
     else if (this.dictationActive) status = 'dictation'
-    else if (this.speechPending > 0 || this.echoSuppressed) status = 'speaking'
+    else if (this.speechPending > 0) status = 'speaking'
     else if (this.starting) status = 'starting'
     else if (this.capture === null && this.inputError !== undefined) status = 'error'
     else status = this.conversation ? 'listening' : 'wake'

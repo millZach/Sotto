@@ -1,3 +1,4 @@
+import { version as appVersion } from '../../package.json'
 import {
   app,
   BrowserWindow,
@@ -491,7 +492,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
     },
   })
-  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
+  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new ConfiguredProviderHost({
     hosts: {
@@ -653,7 +654,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && platform === 'win32'
   const updates = new UpdateService({
-    currentVersion: app.getVersion(),
+    currentVersion: appVersion,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {
