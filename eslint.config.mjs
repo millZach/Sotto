@@ -16,6 +16,10 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
+  {
+    files: ['tests/fixtures/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', setTimeout: 'readonly', setInterval: 'readonly' } },
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

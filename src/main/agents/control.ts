@@ -261,14 +261,15 @@ export class AgentControl {
       case 'voice-state': this.state.voice.status = command.status; this.state.voice.error = command.error; return
       case 'configure': {
         const next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
-        if (next.endpoint !== this.state.configuration.endpoint && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the T3 server.')
+        const providerChanged = next.provider !== this.state.configuration.provider || next.endpoint !== this.state.configuration.endpoint
+        if (providerChanged && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the provider or its server.')
         // Delete the old route's key durably before exposing the new route. If
         // either write fails, the old credential cannot reach another provider.
         if (next.reasoning !== this.state.configuration.reasoning) await this.dependencies.credentials.set('reasoning', '')
         if (next.endpoint !== this.state.configuration.endpoint) {
           await this.dependencies.credentials.set('t3', '')
-          this.disconnect()
         }
+        if (providerChanged) this.disconnect()
         this.state.configuration = next
         if (!next.enabled) this.disconnect()
         return

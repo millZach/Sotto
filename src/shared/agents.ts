@@ -43,6 +43,7 @@ export const agentCapabilitiesSchema = z.object({
 })
 export const agentHostSnapshotSchema = z.object({
   connected: z.boolean(), name: z.string(), version: z.string(),
+  error: z.string().optional(),
   capabilities: agentCapabilitiesSchema,
   models: z.array(agentModelSchema), projects: z.array(agentProjectSchema),
   threads: z.array(agentThreadSchema),
@@ -74,7 +75,10 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
   return provider === 'codex' || provider === 'claude' || provider === 'grok'
 }
 
+export const providerIdSchema = z.enum(['t3', 'codex'])
+export type ProviderId = z.infer<typeof providerIdSchema>
 export const agentConfigurationSchema = z.object({
+  provider: providerIdSchema.default('t3'),
   enabled: z.boolean(),
   endpoint: z.string().max(2_048),
   projectsDirectory: z.string().max(4_096),
@@ -93,6 +97,7 @@ export const agentConfigurationSchema = z.object({
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
+  provider: 't3',
   enabled: false, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: '',
   followupLimit: 5, speak: true, speechProvider: 'natural', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
 })
@@ -131,7 +136,8 @@ export const agentStateSchema = z.object({
 })
 export type AgentState = z.infer<typeof agentStateSchema>
 export const agentCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system', 'grok']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
+  // Re-extend provider so a patch omitting it does not apply the default and reset it to 't3'.
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system', 'grok']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['t3', 'reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),

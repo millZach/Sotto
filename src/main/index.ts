@@ -124,6 +124,8 @@ import { z } from 'zod'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
+import { CodexAppServerHost } from './agents/codex'
+import { ConfiguredProviderHost } from './agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
 import { TurnRecorder } from './agents/turns'
@@ -491,8 +493,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost()
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
-  const agentHost = testAgentHost ?? new SottoThreadHost('t3',
-    new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!)
+  const agentHost = testAgentHost ?? new ConfiguredProviderHost({
+    hosts: {
+      t3: new SottoThreadHost('t3', new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!),
+      codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
+    },
+    provider: () => agentControl.get().configuration.provider,
+  })
   const turns = new TurnRecorder({
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
