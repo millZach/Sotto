@@ -479,8 +479,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
     resolveSession: id => {
-      const b = threadRegistry?.byThread(id)
-      return b ? { provider: b.provider, sessionId: b.sessionId } : undefined
+      const binding = threadRegistry?.byThread(id)
+      return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined
     },
   })
   const membership = new AgentMembershipClient({
@@ -504,6 +504,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
   app.on('will-quit', () => { unsubscribeAgents(); agentControl.dispose() })
+  const showTurnRecords = (): void => {
+    void (async () => {
+      await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
+      shell.showItemInFolder(turns.path())
+      console.log(`[Sotto] ${(await turns.recent(20)).length} recent turn records`)
+    })().catch(() => console.error('[Sotto] turn-records-unavailable'))
+  }
   const applicationMenuTemplate = buildApplicationMenuTemplate({
     platform,
     appName: APP_NAME,
@@ -511,13 +518,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    onShowTurnRecords: () => {
-      void (async () => {
-        await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
-        shell.showItemInFolder(turns.path())
-        for (const record of await turns.recent(20)) console.log(JSON.stringify(record))
-      })().catch(error => console.error('[Sotto] turn-records-unavailable', error))
-    },
+    onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
     // Windows keeps Electron's default menu: installing null would also drop the
@@ -710,6 +711,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const trayController = new TrayController(trayAdapter, {
+    ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
     setAutoPaste(enabled): void {
       void settingsCoordinator

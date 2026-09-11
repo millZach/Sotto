@@ -7,13 +7,15 @@ export const turnRecordSchema = z.object({
   id: z.string(),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime(),
-  source: z.enum(['utterance', 'command']),
+  source: z.enum(['utterance', 'command', 'supervision']),
   commandType: z.string(),
   threadId: z.string().nullable(),
   providerSessionId: z.string().nullable(),
   projectId: z.string().nullable(),
   timings: z.object({
     speechEndedAt: z.string().datetime().nullable(),
+    speechToIntentMs: z.number().int().nonnegative().nullable().default(null),
+    speechToFirstFeedbackMs: z.number().int().nonnegative().nullable().default(null),
     intentMs: z.number().int().nonnegative(),
     retrievalMs: z.number().int().nonnegative(),
     delegationMs: z.number().int().nonnegative(),
@@ -28,7 +30,7 @@ export const turnRecordSchema = z.object({
 export type TurnRecord = z.infer<typeof turnRecordSchema>
 
 export interface ActiveTurn {
-  source: 'utterance' | 'command'
+  source: TurnRecord['source']
   commandType: string
   startedAt: string
   startedAtMs: number
@@ -37,12 +39,18 @@ export interface ActiveTurn {
   retrievalMs: number
   delegationMs: number
   contextTokenEstimate: number
-  threadId: string | null
-  projectId: string | null
+  contextCharacters: number
+  threadId: string | null | undefined
+  projectId: string | null | undefined
   text: string
   clarified: boolean
-  outcome: 'completed' | 'clarified' | 'failed'
-  error: string
+}
+
+/** A local estimate: one token per four characters across all turn context. */
+export function addTurnContext(turn: ActiveTurn | undefined, text: string): void {
+  if (!turn) return
+  turn.contextCharacters += text.length
+  turn.contextTokenEstimate = Math.ceil(turn.contextCharacters / 4)
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -76,38 +84,43 @@ export class TurnRecorder {
   }
 
   begin(input: {
-    source: 'utterance' | 'command'
+    source: TurnRecord['source']
     commandType: string
     text: string
-    threadId: string | null
-    projectId: string | null
+    threadId?: string | null
+    projectId?: string | null
     speechEndedAt?: string | null
-  }): ActiveTurn {
-    const startedAtMs = Date.now()
-    return {
-      source: input.source,
-      commandType: input.commandType,
-      startedAt: new Date(startedAtMs).toISOString(),
-      startedAtMs,
-      speechEndedAt: input.speechEndedAt ?? null,
-      intentMs: 0,
-      retrievalMs: 0,
-      delegationMs: 0,
-      contextTokenEstimate: 0,
-      threadId: input.threadId,
-      projectId: input.projectId,
-      text: input.text,
-      clarified: false,
-      outcome: 'completed',
-      error: '',
+  }): ActiveTurn | undefined {
+    try {
+      const startedAtMs = Date.now()
+      return {
+        source: input.source,
+        commandType: input.commandType,
+        startedAt: new Date(startedAtMs).toISOString(),
+        startedAtMs,
+        speechEndedAt: input.speechEndedAt ?? null,
+        intentMs: 0,
+        retrievalMs: 0,
+        delegationMs: 0,
+        contextTokenEstimate: 0,
+        contextCharacters: 0,
+        threadId: input.threadId,
+        projectId: input.projectId,
+        text: input.text,
+        clarified: false,
+      }
+    } catch {
+      // Clock or instrumentation failures must not prevent coordinator work.
+      return undefined
     }
   }
 
-  async finish(turn: ActiveTurn, outcome: TurnRecord['outcome'], error?: string): Promise<void> {
+  async finish(turn: ActiveTurn | undefined, outcome: TurnRecord['outcome'], error?: string): Promise<void> {
+    if (!turn) return
     try {
       const finishedAtMs = Date.now()
       const retain = this.historyEnabled()
-      const threadId = turn.threadId
+      const threadId = turn.threadId ?? null
       const record: TurnRecord = {
         id: randomUUID(),
         startedAt: turn.startedAt,
@@ -116,9 +129,12 @@ export class TurnRecorder {
         commandType: turn.commandType,
         threadId,
         providerSessionId: (threadId ? this.resolveSession(threadId)?.sessionId : undefined) ?? null,
-        projectId: turn.projectId,
+        projectId: turn.projectId ?? null,
         timings: {
           speechEndedAt: turn.speechEndedAt,
+          // The voice pipeline currently supplies text without a speech-end timestamp.
+          speechToIntentMs: null,
+          speechToFirstFeedbackMs: null,
           intentMs: turn.intentMs,
           retrievalMs: turn.retrievalMs,
           delegationMs: turn.delegationMs,

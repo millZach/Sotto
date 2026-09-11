@@ -11,10 +11,10 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentReasoner } from './reasoning'
-import type { ActiveTurn, TurnRecorder } from './turns'
+import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
-  'utterance', 'compose', 'send', 'answer', 'create-thread', 'create-project', 'select-project',
+  'utterance', 'connect', 'refresh', 'send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
   'cancel-draft', 'cancel-request',
 ])
@@ -56,7 +56,6 @@ export class AgentControl {
   private presentedQueueId: string | null = null
   private queueSelectionPinned = false
   private contextActivityAt = Date.now()
-  private activeTurn: ActiveTurn | undefined
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     historyEnabled?: () => boolean
@@ -202,41 +201,56 @@ export class AgentControl {
       this.state.busy = true
       this.state.error = null
       this.publish()
-      const turn = this.dependencies.turns && RECORDED_COMMAND_TYPES.has(command.type)
-        ? this.dependencies.turns.begin({
+      const turn = RECORDED_COMMAND_TYPES.has(command.type)
+        ? this.beginTurn({
           source: command.type === 'utterance' ? 'utterance' : 'command',
           commandType: command.type,
-          text: command.type === 'utterance' || command.type === 'compose' ? command.text
-            : command.type === 'send' ? this.state.draft : '',
-          threadId: ('threadId' in command ? command.threadId : this.state.activeThreadId) ?? null,
-          projectId: this.state.activeProjectId,
-          speechEndedAt: null,
-        })
-        : undefined
-      this.activeTurn = turn
-      try { await this.execute(command) } catch (error) {
-        this.state.error = error instanceof Error ? error.message : 'Sotto could not complete this action.'
-        this.say(this.state.error)
+          text: command.type === 'utterance' ? command.text
+            : command.type === 'send' ? this.state.draft : command.type === 'answer' ? command.answer : '',
+        }) : undefined
+      let failure: string | undefined
+      try { await this.execute(command, turn) } catch (error) {
+        failure = error instanceof Error ? error.message : 'Sotto could not complete this action.'
+        this.state.error = failure
+        this.say(failure)
       }
-      try {
-        if (turn && this.dependencies.turns) {
-          if (turn.threadId === null) turn.threadId = this.state.activeThreadId
-          if (turn.projectId === null) turn.projectId = this.state.activeProjectId
-          const outcome = this.state.error !== null ? 'failed' : turn.clarified ? 'clarified' : 'completed'
-          await this.dependencies.turns.finish(turn, outcome, this.state.error ?? undefined)
-        }
-      } catch { /* recording must never throw into the command path */ }
-      this.activeTurn = undefined
       this.state.busy = false
       this.updateCredentials()
-      await this.persist().catch(() => { this.state.error = 'Could not save agent state. Pause management until storage is available.'; this.state.assignments.forEach(a => { a.paused = true }) })
+      await this.persist().catch(error => {
+        // The user sees the fixed guidance; the raw storage error goes to the turn record only.
+        failure = error instanceof Error ? error.message : 'Could not save agent state.'
+        this.state.error = 'Could not save agent state. Pause management until storage is available.'
+        this.state.assignments.forEach(a => { a.paused = true })
+      })
+      if (turn) {
+        if (turn.threadId === undefined) turn.threadId = this.state.activeThreadId
+        if (turn.projectId === undefined) turn.projectId = this.state.activeProjectId
+      }
+      await this.finishTurn(turn, failure)
       this.publish()
       return this.get()
     })
     this.serial = task.catch(() => undefined)
     return task
   }
-  private async execute(command: AgentCommand): Promise<void> {
+  private beginTurn(input: Parameters<TurnRecorder['begin']>[0]): ActiveTurn | undefined {
+    try { return this.dependencies.turns?.begin(input) } catch { return undefined }
+  }
+  private async finishTurn(turn: ActiveTurn | undefined, error?: string): Promise<void> {
+    if (!turn) return
+    try {
+      await this.dependencies.turns?.finish(turn, error !== undefined ? 'failed' : turn.clarified ? 'clarified' : 'completed', error)
+    } catch { /* recording must never throw into the command path */ }
+  }
+  private async execute(command: AgentCommand, turn?: ActiveTurn): Promise<void> {
+    // Explicit targets survive host observations and queue-driven selection changes.
+    if (turn && 'threadId' in command) {
+      turn.threadId = command.threadId
+      turn.projectId = this.state.host.threads.find(thread => thread.id === command.threadId)?.projectId ?? null
+    } else if (turn && 'projectId' in command) {
+      turn.threadId = null
+      turn.projectId = command.projectId
+    }
     if (['utterance', 'compose', 'assign', 'send', 'answer'].includes(command.type)) this.contextActivityAt = Date.now()
     switch (command.type) {
       case 'preview-voice': this.say('Hi, I’m Sotto. Your agents are ready when you are.', true); return
@@ -280,13 +294,13 @@ export class AgentControl {
       case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected. T3 work continues.'); return
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot()); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
-      case 'utterance': await this.utterance(command.text.trim()); return
+      case 'utterance': await this.utterance(command.text.trim(), turn); return
       case 'compose':
         if (!this.state.composing) this.startDraft()
         this.state.draft = command.text
         return
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
-      case 'send': await this.sendDraft(); return
+      case 'send': await this.sendDraft(turn); return
       case 'create-project': {
         this.canCreate()
         if (!this.state.host.capabilities.projects) throw new Error('This T3 version does not support creating projects.')
@@ -298,10 +312,11 @@ export class AgentControl {
         if (existing && (!existing.isDirectory() || !command.useExisting)) throw new Error('That folder already exists. Select “Use existing folder” to attach it without overwriting its contents.')
         if (!existing) await mkdir(path, { recursive: true })
         const projectId = randomUUID()
+        if (turn) { turn.threadId = null; turn.projectId = projectId }
         const previousSelectionPinned = this.queueSelectionPinned
         this.queueSelectionPinned = true
         try {
-          await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path })
+          await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path }, turn)
         } catch (error) { this.queueSelectionPinned = previousSelectionPinned; throw error }
         this.state.activeProjectId = projectId; this.state.activeThreadId = null
         this.presentedQueueId = null
@@ -322,10 +337,11 @@ export class AgentControl {
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!this.state.host.models.some(m => m.id === command.modelId && m.ready)) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
         const threadId = randomUUID()
+        if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         const previousSelectionPinned = this.queueSelectionPinned
         this.queueSelectionPinned = true
         try {
-          await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId })
+          await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId }, turn)
         } catch (error) { this.queueSelectionPinned = previousSelectionPinned; throw error }
         this.presentedQueueId = null
         this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
@@ -371,7 +387,7 @@ export class AgentControl {
         return
       }
       case 'pause': this.assignment(command.threadId).paused = true; this.say(`Paused management of ${this.thread(command.threadId).title}. T3 work continues.`); return
-      case 'interrupt': this.canAct(); this.assignment(command.threadId).paused = true; await this.dispatch({ type: 'interrupt', commandId: randomUUID(), threadId: command.threadId }); return
+      case 'interrupt': this.canAct(); this.assignment(command.threadId).paused = true; await this.dispatch({ type: 'interrupt', commandId: randomUUID(), threadId: command.threadId }, turn); return
       case 'later': case 'next': {
         if (this.state.composing && this.state.draft.trim()) throw new Error('Send or clear your draft before moving to another queued thread.')
         if (this.state.composing) this.clearDraft()
@@ -386,7 +402,7 @@ export class AgentControl {
         const request = thread.requests.find(r => r.id === command.requestId)
         if (!request) throw new Error('This request is no longer pending. Refresh the thread.')
         if (request.kind === 'permission' && command.approved === undefined) throw new Error('Choose Allow or Deny for this permission request.')
-        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }) })
+        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }) }, turn)
         assignment.handledRequestIds.push(command.requestId)
         this.state.queue = this.state.queue.filter(q => q.requestId !== command.requestId)
         if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId) this.clearDraft()
@@ -405,7 +421,7 @@ export class AgentControl {
       seenMessageIds: thread.messages.map(m => m.id), ownMessageIds: [], handledRequestIds: [], lastFailure: '' })
     this.state.activeThreadId = threadId; this.state.activeProjectId = thread.projectId
   }
-  private async dispatch(command: AgentHostCommand): Promise<void> {
+  private async dispatch(command: AgentHostCommand, turn?: ActiveTurn): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
     if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
@@ -416,18 +432,14 @@ export class AgentControl {
     })
     await this.persist()
     let result
+    if (command.type === 'send' || command.type === 'answer') addTurnContext(turn, command.type === 'send' ? command.text : command.answer)
     const delegatedAt = Date.now()
     try { result = await this.dependencies.host.execute(command) } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       await this.persist()
       throw error
     } finally {
-      if (this.activeTurn) {
-        this.activeTurn.delegationMs += Date.now() - delegatedAt
-        if ((command.type === 'send' || command.type === 'answer') && this.activeTurn.contextTokenEstimate === 0) {
-          this.activeTurn.contextTokenEstimate = Math.ceil((command.type === 'send' ? command.text : command.answer).length / 4)
-        }
-      }
+      if (turn) turn.delegationMs += Date.now() - delegatedAt
     }
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('T3 did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
@@ -435,7 +447,11 @@ export class AgentControl {
     if (!result.accepted && !result.uncertain) throw new Error('T3 rejected this action. Check its current permissions and account status.')
     this.acceptSnapshot(await this.dependencies.host.snapshot())
   }
-  private async sendDraft(): Promise<void> {
+  private async sendDraft(turn?: ActiveTurn): Promise<void> {
+    if (turn) {
+      turn.threadId = this.state.draftThreadId
+      turn.projectId = this.state.host.threads.find(thread => thread.id === this.state.draftThreadId)?.projectId ?? null
+    }
     this.canAct()
     const thread = this.thread(this.state.draftThreadId)
     if (!this.state.draft.trim()) throw new Error('There is no prompt to send.')
@@ -444,7 +460,7 @@ export class AgentControl {
     if (this.state.draftRequestId) {
       const requestId = this.state.draftRequestId
       if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
-      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text })
+      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn)
       return
     }
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
@@ -452,7 +468,7 @@ export class AgentControl {
     assignment.ownMessageIds.push(messageId)
     assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
     assignment.contextUpdatedAt = Date.now()
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text })
+    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text }, turn)
     this.clearDraft()
     this.state.queue = this.state.queue.filter(q => q.threadId !== thread.id || q.kind === 'permission' || q.kind === 'question')
     this.say(`Sent to ${thread.title}.`)
@@ -468,26 +484,26 @@ export class AgentControl {
   private clearDraft(): void {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
-  private async utterance(text: string): Promise<void> {
-    if (this.activeTurn) this.activeTurn.contextTokenEstimate = Math.ceil(text.length / 4)
+  private async utterance(text: string, turn?: ActiveTurn): Promise<void> {
+    addTurnContext(turn, text)
     const normalized = text.toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim()
-    if (normalized === 'send it') { await this.sendDraft(); return }
-    if (normalized === 'cancel draft' || normalized === 'clear draft') { await this.execute({ type: 'cancel-draft' }); return }
-    if (normalized === 'next' || normalized === 'later') { await this.execute({ type: normalized }); return }
+    if (normalized === 'send it') { await this.sendDraft(turn); return }
+    if (normalized === 'cancel draft' || normalized === 'clear draft') { await this.execute({ type: 'cancel-draft' }, turn); return }
+    if (normalized === 'next' || normalized === 'later') { await this.execute({ type: normalized }, turn); return }
     const resume = /^(resume managing|pause managing|manage|select|open) (.+)$/iu.exec(normalized)
     if (resume && !(this.state.pendingRequest && ['select', 'open'].includes(resume[1]!))) {
       const matches = this.state.host.threads.filter(t => t.title.toLocaleLowerCase() === resume[2])
       if (matches.length > 0) {
         if (resume[1] === 'manage' && matches.length === 1 && matches[0]!.id === this.state.draftThreadId
           && !this.state.assignments.some(assignment => assignment.threadId === matches[0]!.id)) {
-          await this.execute({ type: 'assign', threadId: matches[0]!.id })
+          await this.execute({ type: 'assign', threadId: matches[0]!.id }, turn)
           this.say(`Managing ${matches[0]!.title}. Your draft is ready; say send it when you are ready.`)
           return
         }
         if (this.state.composing && this.state.draft.trim()) throw new Error('Send or clear your draft before using thread management controls.')
         if (matches.length > 1) throw new Error('More than one thread has that name. Select the thread using the controls.')
         if (this.state.composing) this.clearDraft()
-        await this.execute({ type: resume[1] === 'resume managing' ? 'resume' : resume[1] === 'pause managing' ? 'pause' : resume[1] === 'manage' ? 'assign' : 'select-thread', threadId: matches[0]!.id })
+        await this.execute({ type: resume[1] === 'resume managing' ? 'resume' : resume[1] === 'pause managing' ? 'pause' : resume[1] === 'manage' ? 'assign' : 'select-thread', threadId: matches[0]!.id }, turn)
         return
       }
     }
@@ -502,7 +518,7 @@ export class AgentControl {
     if (activeQuestion?.requestId) {
       if (activeQuestion.kind === 'permission') {
         if (!['allow', 'deny', 'approve', 'reject'].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
-        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: ['allow', 'approve'].includes(normalized) })
+        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: ['allow', 'approve'].includes(normalized) }, turn)
       } else {
         this.startDraft()
         this.state.draft = text
@@ -513,13 +529,15 @@ export class AgentControl {
     const request = this.state.pendingRequest ? `${this.state.pendingRequest}\nUser clarification: ${text}` : text
     if (request.length > 18_000) throw new Error('This request is too long. Clear it and start a shorter command; use the prompt editor for project instructions.')
     this.canAct()
+    if (this.state.pendingRequest) addTurnContext(turn, `${this.state.pendingRequest}\nUser clarification: `)
     const intentStarted = Date.now()
-    const intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId)
-    if (this.activeTurn) {
-      this.activeTurn.intentMs = Date.now() - intentStarted
-      this.activeTurn.contextTokenEstimate = Math.ceil(request.length / 4)
-      if (intent.type === 'clarify') this.activeTurn.clarified = true
+    let intent
+    try {
+      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId)
+    } finally {
+      if (turn) turn.intentMs += Date.now() - intentStarted
     }
+    if (turn && intent.type === 'clarify') turn.clarified = true
     if (intent.type === 'clarify') {
       this.state.pendingRequest = `${request}\nSotto clarification: ${intent.text}`.slice(0, 20_000)
       this.say(intent.text)
@@ -527,12 +545,12 @@ export class AgentControl {
       try {
         if (intent.type === 'compose') {
           if (this.state.draft.trim()) throw new Error('Send or clear your existing draft before preparing another prompt.')
-          await this.execute({ type: 'select-thread', threadId: intent.threadId })
+          await this.execute({ type: 'select-thread', threadId: intent.threadId }, turn)
           this.clearDraft(); this.startDraft(); this.state.draft = intent.text
           this.say(this.state.assignments.some(assignment => assignment.threadId === intent.threadId)
             ? `Prompt for ${this.thread(intent.threadId).title}. ${intent.text ? 'Review or keep speaking, then say send it.' : 'Tell me your prompt, then say send it.'}`
             : `Prompt for ${this.thread(intent.threadId).title}. Manage this thread before sending; your draft is saved.`)
-        } else await this.execute(intent)
+        } else await this.execute(intent, turn)
         this.state.pendingRequest = ''
       } catch (error) {
         const failure = error instanceof Error ? error.message : 'Sotto could not complete this action.'
@@ -640,6 +658,8 @@ export class AgentControl {
   private async supervise(thread: AgentThread, assignment: AgentAssignment, key: string, requestId?: string): Promise<void> {
     if (this.deciding.has(thread.id)) return
     this.deciding.add(thread.id); this.considered.set(thread.id, key)
+    let turn: ActiveTurn | undefined
+    let failure: string | undefined
     try {
       if (assignment.followups >= this.state.configuration.followupLimit) {
         assignment.paused = true; this.enqueue(thread, 'blocked', `The ${this.state.configuration.followupLimit} follow-up limit is reached. Review the thread and resume management to authorize more.`); return
@@ -659,6 +679,7 @@ export class AgentControl {
       if (!failure || failureFingerprint === assignment.lastFailure) {
         assignment.paused = true; this.enqueue(thread, 'blocked', 'The agent is repeating a failure without progress. Review the thread before resuming.'); return
       }
+      turn = this.beginTurn({ source: 'supervision', commandType: 'send', text: decision.text, threadId: thread.id, projectId: thread.projectId })
       this.canAct()
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()
@@ -666,17 +687,23 @@ export class AgentControl {
       this.acceptSnapshot(await this.dependencies.host.snapshot())
       if (assignment.mode !== 'managed' || assignment.paused || !this.state.assignments.includes(assignment)) return
       if (requestId) {
-        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: thread.id, requestId, answer: decision.text })
+        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: thread.id, requestId, answer: decision.text }, turn)
         assignment.handledRequestIds.push(requestId)
       } else {
         const messageId = randomUUID(); assignment.ownMessageIds.push(messageId)
-        await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text: decision.text, expectedLastUserMessageId: latest.messages.findLast(m => m.role === 'user')?.id ?? null })
+        await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text: decision.text, expectedLastUserMessageId: latest.messages.findLast(m => m.role === 'user')?.id ?? null }, turn)
       }
     } catch (error) {
       assignment.paused = true
-      this.enqueue(thread, 'blocked', error instanceof Error ? error.message : 'Sotto needs your attention to continue.')
+      failure = error instanceof Error ? error.message : 'Sotto needs your attention to continue.'
+      this.enqueue(thread, 'blocked', failure)
     } finally {
-      await this.persist().catch(() => { assignment.paused = true })
+      await this.persist().catch(error => {
+        assignment.paused = true
+        failure = error instanceof Error ? error.message : 'Could not save agent state.'
+        this.enqueue(thread, 'blocked', failure)
+      })
+      await this.finishTurn(turn, failure)
       this.deciding.delete(thread.id)
       // A newer event may have arrived while this lane awaited reasoning,
       // dispatch, or persistence. Reconsider current state once the lane is free.
