@@ -9,7 +9,8 @@ import sharp from 'sharp'
 import {
   DESIGN_CAPTURE_REQUIREMENTS,
   DESIGN_CAPTURE_SCALES,
-  DESIGN_CAPTURE_THEMES,
+  DESIGN_CAPTURE_THEME,
+  DESIGN_CAPTURE_WIDGET_THEMES,
   designCaptureTupleKey,
 } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -33,16 +34,18 @@ const repositoryRoot = process.cwd()
 const baselineRoot = resolve(repositoryRoot, 'artifacts/design/app-review/baseline')
 const manifestPath = resolve(repositoryRoot, 'artifacts/design/app-review/manifest.json')
 const actualRoot = resolve(repositoryRoot, 'test-results/design-capture/actual')
-const themes = DESIGN_CAPTURE_THEMES
+/** The application is black only; the untouched widget still follows the system scheme. */
+const widgetThemes = DESIGN_CAPTURE_WIDGET_THEMES
 const scales = DESIGN_CAPTURE_SCALES
 const externalWidgetStates = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
-type CaptureTheme = (typeof themes)[number]
+type WidgetTheme = (typeof widgetThemes)[number]
+type CaptureTheme = typeof DESIGN_CAPTURE_THEME | WidgetTheme
 type CaptureScale = (typeof scales)[number]
 type CaptureMotion = 'normal' | 'reduced'
-type CaptureFocusTarget = 'none' | 'navigation' | 'input' | 'switch' | 'destructive'
+type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'home' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget'
+  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -127,7 +130,6 @@ function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown
 }
 
 async function createProfile(
-  theme: CaptureTheme,
   options: {
     readonly onboardingComplete: boolean
     readonly history?: readonly HistoryEntry[]
@@ -138,7 +140,6 @@ async function createProfile(
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
   const settings = {
     ...DEFAULT_SETTINGS,
-    theme,
     reducedMotion: options.motion === 'reduced' ? 'on' : 'system',
     onboardingComplete: options.onboardingComplete,
     successDisplayMs: 5_000,
@@ -150,7 +151,6 @@ async function createProfile(
 }
 
 async function withSotto(
-  theme: CaptureTheme,
   options: {
     readonly onboardingComplete: boolean
     readonly history?: readonly HistoryEntry[]
@@ -161,7 +161,7 @@ async function withSotto(
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
-  const profile = await createProfile(theme, options)
+  const profile = await createProfile(options)
   let launched: LaunchedSotto | undefined
   try {
     const scaleFactor = (options.scalePercent ?? 100) / 100
@@ -180,8 +180,9 @@ async function withSotto(
     }
     launched = await launchSotto(options.scenario ?? 'success', profile, dependencies)
     const motion = options.motion ?? 'normal'
-    await launched.page.emulateMedia({ colorScheme: theme, reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
-    await expect(launched.page.locator('html')).toHaveAttribute('data-theme', theme)
+    await launched.page.emulateMedia({ reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
+    // The window is black whatever the system says; nothing ever themes the root.
+    await expect(launched.page.locator('html')).not.toHaveAttribute('data-theme')
     await expect.poll(() => launched!.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches")).toBe(motion === 'reduced')
     if (motion === 'reduced') await expect(launched.page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     else await expect(launched.page.locator('html')).not.toHaveAttribute('data-reduced-motion')
@@ -201,7 +202,7 @@ async function waitForStableFrame(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
   await page.evaluate(`(async () => {
     await document.fonts.ready
-    // Infinite animations (the deck wave's keyframes) would be
+    // Infinite animations (the hero wave's keyframes) would be
     // captured at whatever phase the screenshot happens to land on, so pin
     // them all to the start of their cycle; finite ones are awaited below.
     for (const animation of document.getAnimations()) {
@@ -233,10 +234,10 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
     if (documentRoot.scrollWidth > documentRoot.clientWidth + tolerance) problems.push('document-horizontal-overflow')
     if (document.body.scrollWidth > document.body.clientWidth + tolerance) problems.push('body-horizontal-overflow')
 
-    const content = document.querySelector('.app-content')
-    if (content !== null && content.scrollWidth > content.clientWidth + tolerance) problems.push('content-horizontal-overflow')
+    const content = document.querySelector('.app-room')
+    if (content !== null && content.scrollWidth > content.clientWidth + tolerance) problems.push('room-horizontal-overflow')
 
-    for (const selector of ['.app-shell', '.app-titlebar', '.app-navigation', '.app-content', '.onboarding-shell']) {
+    for (const selector of ['.app-shell', '.app-strip', '.app-room', '.app-footer', '.onboarding-shell']) {
       const element = document.querySelector(selector)
       if (element === null) continue
       const bounds = element.getBoundingClientRect()
@@ -283,14 +284,13 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
       if (shortcut.scrollWidth > shortcut.clientWidth + tolerance) problems.push('shortcut-horizontal-overflow')
     }
 
-    const activeDictationBar = document.querySelector('.dictation-strip[data-active="true"]')
-    const homeRecent = document.querySelector('.home-recent')
+    // The Dictate room's last-transcript row must sit inside the room, not scroll away.
+    const lastTranscript = document.querySelector('.dictate__last')
     const contentBounds = content?.getBoundingClientRect()
-    if (activeDictationBar !== null && homeRecent !== null && contentBounds !== undefined) {
-      const recentBounds = homeRecent.getBoundingClientRect()
-      const visibleHeight = Math.min(recentBounds.bottom, contentBounds.bottom) - Math.max(recentBounds.top, contentBounds.top)
-      if (visibleHeight < Math.min(120, recentBounds.height) - tolerance) {
-        problems.push('home-recent-not-materially-visible')
+    if (lastTranscript !== null && contentBounds !== undefined) {
+      const rowBounds = lastTranscript.getBoundingClientRect()
+      if (rowBounds.bottom > contentBounds.bottom + tolerance || rowBounds.top < contentBounds.top - tolerance) {
+        problems.push('dictate-last-transcript-not-fully-visible')
       }
     }
     return [...new Set(problems)]
@@ -314,27 +314,10 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
   expect(outline.color).not.toBe('rgba(0, 0, 0, 0)')
 }
 
-async function assertDictationBarTone(page: Page, tone: 'success' | 'error'): Promise<void> {
-  const bar = page.locator('.dictation-strip')
-  await expect(bar).toHaveAttribute('data-tone', tone)
-  const colors = await bar.evaluate((element: unknown, toneName: unknown) => {
-    const target = element as {
-      querySelector: (selector: string) => unknown
-      appendChild: (node: unknown) => unknown
-    }
-    const globals = globalThis as unknown as {
-      document: { createElement: (tag: string) => { style: { color: string }; remove: () => void } }
-      getComputedStyle: (candidate: unknown) => { color: string }
-    }
-    const icon = target.querySelector('.dictation-strip__icon')
-    const probe = globals.document.createElement('span')
-    probe.style.color = `var(--tt-${toneName as string})`
-    target.appendChild(probe)
-    const expected = globals.getComputedStyle(probe).color
-    probe.remove()
-    return { expected, icon: icon === null ? '' : globals.getComputedStyle(icon).color }
-  }, tone)
-  expect(colors.icon, `dictation bar icon must render the ${tone} tone`).toBe(colors.expected)
+/** The Dictate room says its state in the one sentence and marks the section for styling. */
+async function assertDictateState(page: Page, status: string, sentence: RegExp): Promise<void> {
+  await expect(page.locator('.dictate')).toHaveAttribute('data-status', status)
+  await expect(page.getByRole('heading', { level: 1, name: sentence })).toBeVisible()
 }
 
 interface PixelDifference {
@@ -515,24 +498,21 @@ async function captureFullSurface(
 ): Promise<void> {
   await expect(surface).toHaveCount(1)
   await expect(surface.getByText(requiredText).first()).toBeVisible()
-  await page.evaluate("document.querySelector('.app-content')?.scrollTo(0, 0)")
+  await page.evaluate("document.querySelector('.app-room')?.scrollTo(0, 0)")
   await waitForStableFrame(page)
   expect(await pageBoundProblems(page), `${fileName} has overlap, wrapping, or clipping defects`).toEqual([])
   await page.evaluate(`(() => {
     const shell = document.querySelector('.app-shell')
-    const stage = document.querySelector('.app-stage')
-    const content = document.querySelector('.app-content')
-    if (!(shell instanceof HTMLElement) || !(stage instanceof HTMLElement) || !(content instanceof HTMLElement)) throw new Error('management scroll surface is unavailable')
-    // The rail shell is one row of two columns (rail | stage); the stage stacks
-    // the deck over the scrolling content. Let all three grow to their content.
+    const room = document.querySelector('.app-room')
+    if (!(shell instanceof HTMLElement) || !(room instanceof HTMLElement)) throw new Error('management scroll surface is unavailable')
+    // The shell is three rows (strip | room | footer) pinned to the viewport;
+    // let it and the room grow to the page so the whole surface is in frame.
     shell.style.setProperty('height', 'auto')
     shell.style.setProperty('min-height', '0')
     shell.style.setProperty('overflow', 'visible')
-    shell.style.setProperty('grid-template-rows', 'auto')
-    stage.style.setProperty('height', 'auto')
-    stage.style.setProperty('grid-template-rows', 'auto auto')
-    content.style.setProperty('overflow', 'visible')
-    content.style.setProperty('height', 'auto')
+    shell.style.setProperty('grid-template-rows', 'auto auto auto')
+    room.style.setProperty('overflow', 'visible')
+    room.style.setProperty('height', 'auto')
   })()`)
   try {
     await waitForStableFrame(page)
@@ -552,9 +532,9 @@ async function captureFullSurface(
   } finally {
     await page.evaluate(`(() => {
       const shell = document.querySelector('.app-shell')
-      const content = document.querySelector('.app-content')
+      const room = document.querySelector('.app-room')
       if (shell instanceof HTMLElement) for (const property of ['height', 'min-height', 'overflow', 'grid-template-rows']) shell.style.removeProperty(property)
-      if (content instanceof HTMLElement) for (const property of ['overflow', 'height']) content.style.removeProperty(property)
+      if (room instanceof HTMLElement) for (const property of ['overflow', 'height']) room.style.removeProperty(property)
     })()`)
   }
 }
@@ -615,17 +595,20 @@ async function captureWidget(
   await recordCapture(image, fileName, metadata)
 }
 
-async function widgetPage(launched: LaunchedSotto): Promise<Page> {
+/** The widget still themes itself from the system scheme, so the scheme is emulated on its window alone. */
+async function widgetPage(launched: LaunchedSotto, theme: WidgetTheme, motion: CaptureMotion = 'normal'): Promise<Page> {
   await expect.poll(() => launched.app.windows().some((candidate) => candidate.url().endsWith('/widget.html'))).toBe(true)
   const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
   if (widget === undefined) throw new Error('Widget renderer was not created')
   await widget.waitForLoadState('domcontentloaded')
+  await widget.emulateMedia({ colorScheme: theme, reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
+  await expect.poll(() => widget.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")).toBe(theme === 'dark')
   return widget
 }
 
 async function externalWidgetEntries(): Promise<CaptureEntry[]> {
   const entries: CaptureEntry[] = []
-  for (const theme of themes) {
+  for (const theme of widgetThemes) {
     for (const state of externalWidgetStates) {
       const path = resolve(repositoryRoot, `artifacts/design/baseline/${state}-${theme}.png`)
       const image = await readFile(path)
@@ -649,211 +632,223 @@ test.describe('authoritative design-review captures', () => {
   test.skip(!captureEnabled, 'Run through npm run design:capture or npm run design:verify')
   test.describe.configure({ mode: 'serial', timeout: 10 * 60_000 })
 
-  for (const theme of themes) {
-    test(`${theme} onboarding, management, focus, and feedback matrix`, async () => {
-      await withSotto(theme, { onboardingComplete: false }, async ({ page }) => {
-        const onboarding = page.locator('.onboarding-shell')
-        const onboardingHeading = page.getByRole('heading', { name: /private dictation/i })
-        await expect(onboardingHeading).toBeVisible()
-        expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === heading)).toBe(true)
-        expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineStyle: string } }).getComputedStyle(heading).outlineStyle)).toBe('none')
-        await captureSection(page, onboarding, `onboarding-step-1-welcome-${theme}.png`, { category: 'onboarding', state: 'welcome', theme })
+  test('onboarding, dictate, focus, and feedback matrix', async () => {
+    await withSotto({ onboardingComplete: false }, async ({ page }) => {
+      const onboarding = page.locator('.onboarding-shell')
+      const onboardingHeading = page.getByRole('heading', { name: /private dictation/i })
+      await expect(onboardingHeading).toBeVisible()
+      expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === heading)).toBe(true)
+      expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineStyle: string } }).getComputedStyle(heading).outlineStyle)).toBe('none')
+      await captureSection(page, onboarding, 'onboarding-step-1-welcome.png', { category: 'onboarding', state: 'welcome' })
 
-        const continueButton = page.getByRole('button', { name: 'Continue' })
-        await assertFocusPresentation(continueButton)
-        await continueButton.click()
+      const continueButton = page.getByRole('button', { name: 'Continue' })
+      await assertFocusPresentation(continueButton)
+      await continueButton.click()
+      await page.getByRole('button', { name: /test microphone/i }).click()
+      await expect(page.getByText(/microphone ready/i)).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-2-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
+
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-3-model.png', { category: 'onboarding', state: 'model-ready' })
+
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(page.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-4-shortcut.png', { category: 'onboarding', state: 'shortcut-paste' })
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await assertDictateState(page, 'idle', /ready when you are/i)
+      await expect(page.locator('.app-strip')).toHaveCount(1)
+      await expect(page.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
+      await capturePage(page, 'dictate-ready.png', { category: 'dictate', state: 'ready' })
+
+      const agentsTab = page.getByRole('tab', { name: 'Agents' })
+      await assertFocusPresentation(agentsTab)
+      await capturePage(page, 'focus-switch-tab.png', { focusTarget: 'tab', focus: true })
+
+      const historyNavigation = page.getByRole('link', { name: 'History' })
+      await assertFocusPresentation(historyNavigation)
+      await capturePage(page, 'focus-navigation.png', { focusTarget: 'navigation', focus: true })
+
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await assertDictateState(page, 'listening', /^listening\./i)
+      await capturePage(page, 'dictate-listening.png', { category: 'dictate', state: 'listening' })
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await assertDictateState(page, 'success', /^pasted\.$/i)
+      await capturePage(page, 'dictate-pasted.png', { category: 'dictate', state: 'success-pasted' })
+    })
+
+    await withSotto({ onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await assertDictateState(page, 'processing', /turning speech into text/i)
+      await capturePage(page, 'dictate-processing.png', { category: 'dictate', state: 'processing' })
+    })
+
+    await withSotto({ onboardingComplete: true, scenario: 'transcription-failure' }, async ({ page }) => {
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await assertDictateState(page, 'error', /dictation needs attention/i)
+      await capturePage(page, 'dictate-error.png', { category: 'dictate', state: 'error' })
+    })
+
+    await withSotto({ onboardingComplete: true, motion: 'reduced' }, async ({ page }) => {
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+      await assertDictateState(page, 'listening', /^listening\./i)
+      await capturePage(page, 'dictate-reduced-motion.png', { category: 'dictate', state: 'listening-reduced-motion', reducedMotion: true })
+    })
+
+    await withSotto({ onboardingComplete: true }, async ({ page }) => {
+      await page.getByRole('tab', { name: 'Agents' }).click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Agents' })).toBeVisible()
+      await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
+      await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await page.getByRole('link', { name: 'History' }).click()
+      await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
+      const historySearch = page.getByRole('searchbox', { name: 'Search transcripts' })
+      await assertFocusPresentation(historySearch)
+      await capturePage(page, 'focus-input.png', { focusTarget: 'input', focus: true })
+      const clearHistory = page.getByRole('button', { name: 'Clear history' })
+      await assertFocusPresentation(clearHistory)
+      await capturePage(page, 'focus-destructive.png', { focusTarget: 'destructive', focus: true })
+      await page.getByRole('button', { name: 'Copy transcript' }).first().click()
+      await expect(page.getByRole('status')).toContainText('Transcript copied')
+      await capturePage(page, 'history-populated.png', { category: 'history', state: 'populated-feedback' })
+
+      await page.getByRole('button', { name: 'Clear history' }).click()
+      await page.getByRole('button', { name: 'Clear all transcripts' }).click()
+      await expect(page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
+      await capturePage(page, 'history-empty.png', { category: 'history', state: 'empty-feedback' })
+
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+      const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
+      await pasteSwitch.scrollIntoViewIfNeeded()
+      await assertFocusPresentation(pasteSwitch)
+      await capturePage(page, 'focus-switch.png', { focusTarget: 'switch', focus: true })
+      await page.getByRole('switch', { name: 'Sound cues' }).click()
+      await expect(page.getByRole('status')).toHaveText('Setting saved.')
+      await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
+
+      const settingsSections = [
+        ['Appearance', 'appearance'],
+        ['Capture', 'capture'],
+        ['Transcription', 'transcription'],
+        ['Output', 'output'],
+        ['Application and privacy', 'application-privacy'],
+      ] as const
+      for (const [heading, state] of settingsSections) {
+        const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+        await expect(section).toHaveCount(1)
+        await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
+      }
+
+      await page.getByLabel('Paste delay').fill('10')
+      await page.getByRole('button', { name: 'Save paste delay' }).click()
+      await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
+      await capturePage(page, 'settings-validation-error.png', { category: 'settings', state: 'validation-error' })
+
+      await page.getByRole('link', { name: 'Help' }).click()
+      await expect(page.getByRole('heading', { name: 'Help' })).toBeVisible()
+      await captureFullSurface(page, page.locator('.help-view'), 'help.png', /Reset safely/i)
+    })
+  })
+
+  test('threads page states', async () => {
+    await withSotto({ onboardingComplete: true, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
+      await page.getByRole('link', { name: 'Threads' }).click()
+      await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
+      await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
+      await expect(page.getByText('3 active, 9 this week')).toBeVisible()
+      // The coordinator queues the fixture's permission request once it has connected.
+      await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
+      await expect(page.getByText('Waiting on you')).toBeVisible()
+      const open = async (title: string): Promise<void> => {
+        const toggle = page.getByRole('button', { name: title })
+        await toggle.click()
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        await toggle.scrollIntoViewIfNeeded()
+      }
+      await open('Visual gate flake')
+      await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
+      await capturePage(page, 'threads-populated.png', { category: 'threads', state: 'populated' })
+
+      await open('Footer links')
+      await expect(page.getByText(/Started .* from a voice prompt\./u)).toBeVisible()
+      await capturePage(page, 'threads-open-running.png', { category: 'threads', state: 'open-running' })
+
+      await open('Streaming WAV stall')
+      await expect(page.getByText(/Sotto stopped it at the follow-up limit/u)).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
+      await capturePage(page, 'threads-stopped.png', { category: 'threads', state: 'stopped-open' })
+
+      await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
+      await expect(page.getByText('3 of 9')).toBeVisible()
+      // The attention queue stays listed whatever the query; a Codex-only result set follows it.
+      await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Weekly note' })).toHaveCount(0)
+      await page.evaluate("document.querySelector('.app-room')?.scrollTo(0, 0)")
+      await capturePage(page, 'threads-search.png', { category: 'threads', state: 'search' })
+    })
+
+    await withSotto({ onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
+      await page.getByRole('link', { name: 'Threads' }).click()
+      await expect(page.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
+      await capturePage(page, 'threads-empty.png', { category: 'threads', state: 'empty' })
+    })
+  })
+
+  test('dense scaling matrix remains bounded', async () => {
+    for (const scalePercent of scales) {
+      await withSotto({ onboardingComplete: false, scalePercent }, async ({ page }) => {
+        await page.getByRole('button', { name: 'Continue' }).click()
         await page.getByRole('button', { name: /test microphone/i }).click()
         await expect(page.getByText(/microphone ready/i)).toBeVisible()
-        await captureSection(page, onboarding, `onboarding-step-2-microphone-ready-${theme}.png`, { category: 'onboarding', state: 'microphone-ready', theme })
-
         await page.getByRole('button', { name: 'Continue' }).click()
         await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
-        await captureSection(page, onboarding, `onboarding-step-3-model-${theme}.png`, { category: 'onboarding', state: 'model-ready', theme })
-
-        await page.getByRole('button', { name: 'Continue' }).click()
-        await expect(page.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
-        await captureSection(page, onboarding, `onboarding-step-4-shortcut-${theme}.png`, { category: 'onboarding', state: 'shortcut-paste', theme })
+        await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)
       })
 
-      await withSotto(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
-        await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
-        await capturePage(page, `home-ready-${theme}.png`, { category: 'home', state: 'ready', theme })
+      await withSotto({ onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {
+        const { page } = launched
+        await assertDictateState(page, 'idle', /ready when you are/i)
+        await capturePage(page, `scale-${scalePercent}-dictate.png`)
 
-        const historyNavigation = page.getByRole('link', { name: 'History' })
-        await assertFocusPresentation(historyNavigation)
-        await capturePage(page, `focus-navigation-${theme}.png`)
-
-        const start = page.getByRole('button', { name: 'Start dictation' })
-        await start.click()
-        await expect(page.getByRole('heading', { name: 'Listening' })).toBeVisible()
-        await capturePage(page, `home-listening-${theme}.png`, { category: 'home', state: 'listening', theme })
-        await page.getByRole('button', { name: 'Stop and transcribe' }).click()
-        await expect(page.getByRole('heading', { name: 'Text pasted' })).toBeVisible()
-        await assertDictationBarTone(page, 'success')
-        await capturePage(page, `home-success-${theme}.png`, { category: 'home', state: 'success-pasted', theme })
-      })
-
-      await withSotto(theme, { onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {
         await page.getByRole('button', { name: 'Start dictation' }).click()
-        await page.getByRole('button', { name: 'Stop and transcribe' }).click()
-        await expect(page.getByRole('heading', { name: 'Turning speech into text' })).toBeVisible()
-        await capturePage(page, `home-processing-${theme}.png`, { category: 'home', state: 'processing', theme })
-      })
+        for (const theme of widgetThemes) {
+          const liveWidget = await widgetPage(launched, theme)
+          await expect(liveWidget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
+          await captureWidget(liveWidget, `scale-${scalePercent}-widget-${theme}.png`, { theme })
+        }
+        const liveWidget = await widgetPage(launched, 'dark')
+        await liveWidget.getByRole('button', { name: 'Cancel dictation' }).click()
 
-      await withSotto(theme, { onboardingComplete: true, scenario: 'transcription-failure' }, async ({ page }) => {
-        await page.getByRole('button', { name: 'Start dictation' }).click()
-        await page.getByRole('button', { name: 'Stop and transcribe' }).click()
-        await expect(page.getByRole('heading', { name: 'Dictation needs attention' })).toBeVisible()
-        await assertDictationBarTone(page, 'error')
-        await capturePage(page, `home-error-${theme}.png`, { category: 'home', state: 'error', theme })
-      })
-
-      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async ({ page }) => {
-        await page.getByRole('button', { name: 'Start dictation' }).click()
-        await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-        await capturePage(page, `home-reduced-motion-${theme}.png`, { category: 'home', state: 'listening-reduced-motion', theme, reducedMotion: true })
-      })
-
-      await withSotto(theme, { onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
         await page.getByRole('link', { name: 'History' }).click()
-        await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
-        const historySearch = page.getByRole('searchbox', { name: 'Search transcripts' })
-        await assertFocusPresentation(historySearch)
-        await capturePage(page, `focus-input-${theme}.png`)
-        const clearHistory = page.getByRole('button', { name: 'Clear history' })
-        await assertFocusPresentation(clearHistory)
-        await capturePage(page, `focus-destructive-${theme}.png`)
-        await page.getByRole('button', { name: 'Copy transcript' }).first().click()
-        await expect(page.getByRole('status')).toContainText('Transcript copied')
-        await capturePage(page, `history-populated-${theme}.png`, { category: 'history', state: 'populated-feedback', theme })
-
-        await page.getByRole('button', { name: 'Clear history' }).click()
-        await page.getByRole('button', { name: 'Clear all transcripts' }).click()
-        await expect(page.getByRole('heading', { name: 'No saved transcripts yet' })).toBeVisible()
-        await capturePage(page, `history-empty-${theme}.png`, { category: 'history', state: 'empty-feedback', theme })
+        await captureFullSurface(page, page.locator('.history-view'), `scale-${scalePercent}-history.png`, /Draft the launch summary/i)
 
         await page.getByRole('link', { name: 'Settings' }).click()
-        await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-        const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
-        await pasteSwitch.scrollIntoViewIfNeeded()
-        await assertFocusPresentation(pasteSwitch)
-        await capturePage(page, `focus-switch-${theme}.png`)
-        await page.getByRole('switch', { name: 'Sound cues' }).click()
-        await expect(page.getByRole('status')).toHaveText('Setting saved.')
-        await capturePage(page, `settings-feedback-${theme}.png`, { category: 'settings', state: 'saved-feedback', theme })
-
-        const settingsSections = [
-          ['Appearance', 'appearance'],
-          ['Capture', 'capture'],
-          ['Transcription', 'transcription'],
-          ['Output', 'output'],
-          ['Application and privacy', 'application-privacy'],
-        ] as const
-        for (const [heading, state] of settingsSections) {
-          const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
-          await expect(section).toHaveCount(1)
-          await captureSection(page, section, `settings-${state}-${theme}.png`, { category: 'settings', state, theme })
-        }
-
-        await page.getByLabel('Paste delay').fill('10')
-        await page.getByRole('button', { name: 'Save paste delay' }).click()
-        await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
-        await capturePage(page, `settings-validation-error-${theme}.png`, { category: 'settings', state: 'validation-error', theme })
+        await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings.png`, /Application and privacy/i)
 
         await page.getByRole('link', { name: 'Help' }).click()
-        await expect(page.getByRole('heading', { name: 'Help' })).toBeVisible()
-        await captureFullSurface(page, page.locator('.help-view'), `help-${theme}.png`, /Reset safely/i)
+        await captureFullSurface(page, page.locator('.help-view'), `scale-${scalePercent}-help.png`, /Reset safely/i)
       })
-    })
+    }
+  })
 
-    test(`${theme} threads page states`, async () => {
-      await withSotto(theme, { onboardingComplete: true, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
-        await page.getByRole('link', { name: 'Agents' }).click()
-        await page.getByRole('button', { name: 'All threads' }).click()
-        await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
-        await expect(page.getByText('3 active, 9 this week')).toBeVisible()
-        // The coordinator queues the fixture's permission request once it has connected.
-        await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
-        await expect(page.getByText('Waiting on you')).toBeVisible()
-        const open = async (title: string): Promise<void> => {
-          const toggle = page.getByRole('button', { name: title })
-          await toggle.click()
-          await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-          await toggle.scrollIntoViewIfNeeded()
-        }
-        await open('Visual gate flake')
-        await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
-        await capturePage(page, `threads-populated-${theme}.png`, { category: 'threads', state: 'populated', theme })
-
-        await open('Footer links')
-        await expect(page.getByText(/Started .* from a voice prompt\./u)).toBeVisible()
-        await capturePage(page, `threads-open-running-${theme}.png`, { category: 'threads', state: 'open-running', theme })
-
-        await open('Streaming WAV stall')
-        await expect(page.getByText(/Sotto stopped it at the follow-up limit/u)).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
-        await capturePage(page, `threads-stopped-${theme}.png`, { category: 'threads', state: 'stopped-open', theme })
-
-        await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
-        await expect(page.getByText('3 of 9')).toBeVisible()
-        // The attention queue stays listed whatever the query; a Codex-only result set follows it.
-        await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Weekly note' })).toHaveCount(0)
-        await page.evaluate("document.querySelector('.app-content')?.scrollTo(0, 0)")
-        await capturePage(page, `threads-search-${theme}.png`, { category: 'threads', state: 'search', theme })
-      })
-
-      await withSotto(theme, { onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
-        await page.getByRole('link', { name: 'Agents' }).click()
-        await page.getByRole('button', { name: 'All threads' }).click()
-        await expect(page.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-        await capturePage(page, `threads-empty-${theme}.png`, { category: 'threads', state: 'empty', theme })
-      })
-    })
-
-    test(`${theme} dense scaling matrix remains bounded`, async () => {
-      for (const scalePercent of scales) {
-        await withSotto(theme, { onboardingComplete: false, scalePercent }, async ({ page }) => {
-          await page.getByRole('button', { name: 'Continue' }).click()
-          await page.getByRole('button', { name: /test microphone/i }).click()
-          await expect(page.getByText(/microphone ready/i)).toBeVisible()
-          await page.getByRole('button', { name: 'Continue' }).click()
-          await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
-          await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding-${theme}.png`)
-        })
-
-        await withSotto(theme, { onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {
-          const { page } = launched
-          await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
-          await capturePage(page, `scale-${scalePercent}-home-${theme}.png`)
-
-          await page.getByRole('button', { name: 'Start dictation' }).click()
-          const liveWidget = await widgetPage(launched)
-          await liveWidget.emulateMedia({ colorScheme: theme, reducedMotion: 'no-preference' })
-          await expect(liveWidget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
-          await captureWidget(liveWidget, `scale-${scalePercent}-widget-${theme}.png`)
-          await liveWidget.getByRole('button', { name: 'Cancel dictation' }).click()
-
-          await page.getByRole('link', { name: 'History' }).click()
-          await captureFullSurface(page, page.locator('.history-view'), `scale-${scalePercent}-history-${theme}.png`, /Draft the launch summary/i)
-
-          await page.getByRole('link', { name: 'Settings' }).click()
-          await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings-${theme}.png`, /Application and privacy/i)
-
-          await page.getByRole('link', { name: 'Help' }).click()
-          await captureFullSurface(page, page.locator('.help-view'), `scale-${scalePercent}-help-${theme}.png`, /Reset safely/i)
-        })
-      }
-    })
-
+  for (const theme of widgetThemes) {
     test(`${theme} widget states missing from the established widget baseline are captured`, async () => {
-      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+      await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
         // The renderer publishes its first widget snapshot from a dictation
         // session, so cancel one and wait for the automatic reset back to the
         // resting idle sliver before capturing it.
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
-        const widget = await widgetPage(launched)
+        const widget = await widgetPage(launched, theme, 'reduced')
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
@@ -866,16 +861,16 @@ test.describe('authoritative design-review captures', () => {
         )
       })
 
-      await withSotto(theme, { onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
+      await withSotto({ onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
-        const widget = await widgetPage(launched)
+        const widget = await widgetPage(launched, theme, 'reduced')
         await expect(widget.getByText('Waiting for microphone', { exact: true })).toBeVisible()
         await captureWidget(widget, `widget-permission-${theme}.png`, { category: 'widget', state: 'requesting-permission', theme, reducedMotion: true })
       })
 
-      await withSotto(theme, { onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+      await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
-        const widget = await widgetPage(launched)
+        const widget = await widgetPage(launched, theme, 'reduced')
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.getByText('Cancelled', { exact: true })).toBeVisible()
@@ -905,6 +900,7 @@ test.describe('authoritative design-review captures', () => {
         'The idle widget renders the resting click-to-dictate sliver; idle captures are recorded after a completed session returns to idle.',
         'Established Task 12 widget baselines are referenced in place; they are not duplicated.',
         'Every tuple records explicit normal or reduced motion; normal launches emulate no-preference and reduced launches are separately asserted.',
+        'The application is black only, so every application tuple carries the theme black; the untouched widget follows the system scheme, emulated on its own window, so widget tuples keep light and dark.',
         'Full Settings and Help surfaces include content outside the management scrollport, including every Settings section and Reset safely help.',
         'Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.',
         'Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta.',
