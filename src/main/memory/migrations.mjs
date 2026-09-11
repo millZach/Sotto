@@ -11,8 +11,8 @@ export const migrations = [{
       evidenceCount INTEGER NOT NULL CHECK (evidenceCount >= 0),
       importance REAL NOT NULL CHECK (importance BETWEEN 0 AND 1),
       createdAt TEXT NOT NULL,
-      lastConfirmedAt TEXT NOT NULL,
-      lastUsedAt TEXT NOT NULL,
+      lastConfirmedAt TEXT,
+      lastUsedAt TEXT,
       validFrom TEXT NOT NULL,
       validTo TEXT,
       supersededBy TEXT REFERENCES memories(id),
@@ -41,7 +41,15 @@ export const migrations = [{
   `,
 }]
 
-// Shared by the TypeScript store and the packaged-runtime probe.
+const memoryColumns = [
+  'id', 'type', 'scope', 'content', 'sourceClass', 'confidence', 'evidenceCount', 'importance',
+  'createdAt', 'lastConfirmedAt', 'lastUsedAt', 'validFrom', 'validTo', 'supersededBy',
+  'provenance', 'tags', 'state', 'authority', 'embedding',
+]
+export const memoryInsertSql = `INSERT INTO memories (${memoryColumns.join(', ')})
+  VALUES (${memoryColumns.map(() => '?').join(', ')})`
+
+// Shared by the TypeScript store and the direct runtime probe.
 export function migrateDatabase(db) {
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;')
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (

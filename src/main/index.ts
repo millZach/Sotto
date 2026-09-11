@@ -22,7 +22,7 @@ import {
 } from 'electron'
 import { spawn } from 'node:child_process'
 import { appendFile, rename, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import {
   bootstrapSotto,
@@ -136,9 +136,20 @@ import { NaturalSpeechModels } from './agents/speechModels'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { e2eGrokSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
+import { openRuntimeMemory } from './memory/runtime'
+import { probeMemoryStore } from './memory/probe'
 
+const memoryProbeMode = process.env.SOTTO_MEMORY_PROBE === '1'
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
-if (e2eConfiguration === null) {
+if (memoryProbeMode) {
+  const directory = process.env.SOTTO_MEMORY_PROBE_USER_DATA
+  if (!directory || !isAbsolute(directory)) {
+    console.error('[Sotto] memory-store-probe-profile-invalid')
+    app.exit(1)
+    throw new Error('Memory probe requires an absolute isolated user-data directory')
+  }
+  app.setPath('userData', directory)
+} else if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E
   delete process.env.SOTTO_E2E_SCENARIO
   delete process.env.SOTTO_E2E_USER_DATA
@@ -163,6 +174,7 @@ type NativeDiagnostic =
   | 'native-widget-show-failed'
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
+  | 'memory-store-open-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -396,6 +408,10 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
+  const memoryStore = e2eConfiguration === null
+    ? openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
+    : undefined
+  app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
   // Packaged builds get the brand icon stamped onto the executable by
@@ -901,7 +917,26 @@ app.setAppUserModelId(APP_ID)
 // Electron's unhandled default does exactly that.
 app.on('window-all-closed', () => undefined)
 
-void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
-  logOperational('bootstrap-terminal-failed')
-  app.quit()
-})
+if (memoryProbeMode) {
+  // Wait for the verifier to attach stdout/exit listeners before running. This
+  // handshake avoids racing Playwright's main-process debugger attachment.
+  const timeout = setTimeout(() => app.exit(1), 60_000)
+  void app.whenReady().then(() => {
+    app.once('before-quit', (event) => {
+      event.preventDefault()
+      clearTimeout(timeout)
+      try {
+        const evidence = probeMemoryStore(join(app.getPath('userData'), 'memory.sqlite'))
+        process.stdout.write(`${JSON.stringify(evidence)}\n`, () => app.exit(0))
+      } catch (error) {
+        console.error('[Sotto] memory-store-probe-failed', error)
+        app.exit(1)
+      }
+    })
+  })
+} else {
+  void bootstrapSotto({ app, initialize: createRuntime, log: logOperational }).catch(() => {
+    logOperational('bootstrap-terminal-failed')
+    app.quit()
+  })
+}

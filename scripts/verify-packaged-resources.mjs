@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
@@ -6,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
-import { promisify } from 'node:util'
 
 import { _electron as electron } from '@playwright/test'
 
@@ -22,7 +20,6 @@ import {
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const profile = releasePlatformProfile()
-const execFileAsync = promisify(execFile)
 
 function fail(message) {
   throw new Error(`Packaged release verification failed: ${message}`)
@@ -80,31 +77,57 @@ function productionModuleRoots(entries) {
   return [...roots].sort()
 }
 
-async function verifyPackagedMemoryStore(target) {
-  let stdout
+export async function verifyPackagedMemoryStore(target) {
+  const probeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-memory-'))
+  let application
+  let timeout
+  let stdout = ''
+  let stderr = ''
   try {
-    ({ stdout } = await execFileAsync(profile.executablePath(target), [
-      resolve(repositoryRoot, 'scripts/probe-memory-store.mjs'),
-    ], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      windowsHide: true,
-      timeout: 60_000,
-      maxBuffer: 1024 * 1024,
-    }))
+    const smokeEnvironment = await profile.smokeEnvironment(probeRoot)
+    application = await electron.launch({
+      executablePath: profile.executablePath(target),
+      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`],
+      env: Object.fromEntries(Object.entries({
+        ...process.env,
+        ...smokeEnvironment,
+        SOTTO_MEMORY_PROBE: '1',
+        SOTTO_MEMORY_PROBE_USER_DATA: join(probeRoot, 'user-data'),
+      }).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)),
+      timeout: 45_000,
+    })
+    const child = application.process()
+    child.stdout.on('data', chunk => { stdout = (stdout + String(chunk)).slice(-64 * 1024) })
+    child.stderr.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-4000) })
+    const exited = new Promise((resolveExit, rejectExit) => {
+      child.once('close', (code, signal) => {
+        if (code === 0 && signal === null) resolveExit()
+        else rejectExit(new Error(`packaged app exited with code ${code}, signal ${signal}`))
+      })
+      timeout = globalThis.setTimeout(() => rejectExit(new Error('packaged app probe timed out')), 60_000)
+    })
+    // The startup flag installs this one-shot handler only in probe mode. The
+    // process may exit before evaluate's reply; its exit code/output are decisive.
+    void application.evaluate(({ app }) => app.quit()).catch(() => undefined)
+    await exited
+    let result
+    try {
+      result = JSON.parse(stdout.trim())
+    } catch {
+      throw new Error('invalid JSON evidence')
+    }
+    if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
+        result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
+      throw new Error('invalid store evidence')
+    }
+    return result
   } catch (error) {
-    fail(`memory store probe failed: ${error.message}; stderr=${String(error.stderr ?? '').slice(-4000)}; stdout=${String(error.stdout ?? '').slice(-4000)}`)
+    fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
+  } finally {
+    globalThis.clearTimeout(timeout)
+    await application?.close().catch(() => undefined)
+    await rm(probeRoot, { recursive: true, force: true })
   }
-  let result
-  try {
-    result = JSON.parse(stdout.trim())
-  } catch {
-    fail(`memory store probe returned invalid JSON: ${stdout.slice(-4000)}`)
-  }
-  if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
-      result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
-    fail(`memory store probe returned invalid evidence: ${stdout.slice(-4000)}`)
-  }
-  return result
 }
 
 async function verifyNormalPackagedLaunch(target, asarPath, entries) {

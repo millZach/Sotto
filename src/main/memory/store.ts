@@ -4,7 +4,7 @@ import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 
 import { z } from 'zod'
 
-import { migrateDatabase } from './migrations.mjs'
+import { memoryInsertSql, migrateDatabase } from './migrations.mjs'
 
 const timestampSchema = z.iso.datetime()
 
@@ -19,13 +19,13 @@ export const memorySchema = z.object({
   evidenceCount: z.number().int().min(0),
   importance: z.number().min(0).max(1),
   createdAt: timestampSchema,
-  lastConfirmedAt: timestampSchema,
-  lastUsedAt: timestampSchema,
+  lastConfirmedAt: timestampSchema.nullable(),
+  lastUsedAt: timestampSchema.nullable(),
   validFrom: timestampSchema,
   validTo: timestampSchema.nullable(),
   supersededBy: z.string().min(1).nullable(),
   provenance: z.array(z.object({
-    threadId: z.string(), sessionId: z.string(), provider: z.string(), ref: z.string(),
+    threadId: z.string().describe('Sotto thread ID'), ref: z.string(),
   })),
   tags: z.array(z.string()),
   state: z.enum(['active', 'superseded', 'disputed', 'temporary', 'archived']),
@@ -38,6 +38,7 @@ export type Memory = z.infer<typeof memorySchema>
 const searchOptionsSchema = z.object({
   limit: z.number().int().min(1),
   projectId: z.string().min(1).optional(),
+  at: timestampSchema.optional(),
 })
 
 function parseRow(row: Record<string, SQLOutputValue>): Memory {
@@ -51,8 +52,7 @@ function parseRow(row: Record<string, SQLOutputValue>): Memory {
 export class MemoryStore {
   private db: DatabaseSync | undefined
 
-  // The caller supplies a path under app.getPath('userData'); Electron wiring
-  // belongs to the feature that consumes this store.
+  // The main runtime supplies a path under app.getPath('userData').
   constructor(private readonly path: string) {}
 
   open(): void {
@@ -71,11 +71,7 @@ export class MemoryStore {
   insert(input: Memory): void {
     const db = this.requireOpen()
     const memory = memorySchema.parse(input)
-    db.prepare(`INSERT INTO memories (
-      id, type, scope, content, sourceClass, confidence, evidenceCount, importance,
-      createdAt, lastConfirmedAt, lastUsedAt, validFrom, validTo, supersededBy,
-      provenance, tags, state, authority, embedding
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    db.prepare(memoryInsertSql)
       .run(
         memory.id, memory.type, memory.scope, memory.content, memory.sourceClass,
         memory.confidence, memory.evidenceCount, memory.importance, memory.createdAt,
@@ -91,9 +87,9 @@ export class MemoryStore {
     return row === undefined ? undefined : parseRow(row)
   }
 
-  search(query: string, options: { limit: number; projectId?: string }): Memory[] {
+  search(query: string, options: { limit: number; projectId?: string; at?: string }): Memory[] {
     const db = this.requireOpen()
-    const { limit, projectId } = searchOptionsSchema.parse(options)
+    const { limit, projectId, at = new Date().toISOString() } = searchOptionsSchema.parse(options)
     const terms = z.string().parse(query).replaceAll('"', '').split(/\s+/u).filter(Boolean)
     if (terms.length === 0) return []
     // Bind SQL parameters and quote each FTS term separately: user input is text,
@@ -102,35 +98,15 @@ export class MemoryStore {
     const statement = db.prepare(`
       SELECT memories.* FROM memories_fts
       JOIN memories ON memories.rowid = memories_fts.rowid
-      WHERE memories_fts MATCH ? AND memories.state = 'active'
+      WHERE memories_fts MATCH ? AND memories.state IN ('active', 'temporary')
+      AND memories.validFrom <= ? AND (memories.validTo IS NULL OR memories.validTo > ?)
       ${projectId === undefined ? '' : 'AND memories.scope = ?'}
       ORDER BY bm25(memories_fts), memories.id LIMIT ?
     `)
     const rows = projectId === undefined
-      ? statement.all(match, limit)
-      : statement.all(match, projectId, limit)
+      ? statement.all(match, at, at, limit)
+      : statement.all(match, at, at, projectId, limit)
     return rows.map(parseRow)
-  }
-
-  supersede(id: string, byId: string): void {
-    const db = this.requireOpen()
-    z.string().min(1).parse(id)
-    z.string().min(1).parse(byId)
-    if (id === byId) throw new Error('A memory cannot supersede itself')
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      for (const candidate of [id, byId]) {
-        if (!db.prepare('SELECT id FROM memories WHERE id = ?').get(candidate)) {
-          throw new Error(`Missing memory: ${candidate}`)
-        }
-      }
-      db.prepare("UPDATE memories SET validTo = ?, state = 'superseded', supersededBy = ? WHERE id = ?")
-        .run(new Date().toISOString(), byId, id)
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
   }
 
   close(): void {

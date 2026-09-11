@@ -2,15 +2,16 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import { MemoryStore, memorySchema, type Memory } from '../../../src/main/memory/store'
 
-let root: string
+let root: string | undefined
 let path: string
 let store: MemoryStore
 
@@ -18,24 +19,26 @@ function memory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'memory-1', type: 'preference', scope: 'project-a', content: 'Use concise explanations',
     sourceClass: 'explicit', confidence: 1, evidenceCount: 1, importance: 0.8,
-    createdAt: '2026-09-10T12:00:00.000Z', lastConfirmedAt: '2026-09-10T12:00:00.000Z',
-    lastUsedAt: '2026-09-10T12:00:00.000Z', validFrom: '2026-09-10T12:00:00.000Z',
+    createdAt: '2026-09-01T12:00:00.000Z', lastConfirmedAt: '2026-09-01T12:00:00.000Z',
+    lastUsedAt: '2026-09-01T12:00:00.000Z', validFrom: '2026-09-01T12:00:00.000Z',
     validTo: null, supersededBy: null,
-    provenance: [{ threadId: 'thread-1', sessionId: 'session-1', provider: 'codex', ref: 'turn-1' }],
+    provenance: [],
     tags: ['communication'], state: 'active', authority: 'preference', embedding: null,
     ...overrides,
   }
 }
 
 beforeEach(async () => {
-  root = await mkdtemp(join(process.cwd(), '.memory-store-test-'))
+  root = await mkdtemp(join(tmpdir(), 'sotto-memory-store-test-'))
   path = join(root, 'user-data', 'memory.sqlite')
   store = new MemoryStore(path)
 })
 
 afterEach(async () => {
-  store.close()
-  await rm(root, { recursive: true, force: true })
+  vi.useRealTimers()
+  store?.close()
+  if (root !== undefined) await rm(root, { recursive: true, force: true })
+  root = undefined
 })
 
 describe('MemoryStore', () => {
@@ -99,30 +102,48 @@ describe('MemoryStore', () => {
     expect(store.search('  ""  ', { limit: 10 })).toEqual([])
   })
 
-  it('supersedes atomically while retaining history and excluding all inactive states from search', () => {
+  it('filters validity at an explicit time before limiting, including current temporary memories', () => {
     store.open()
-    store.insert(memory())
-    store.insert(memory({ id: 'replacement' }))
-    for (const state of ['disputed', 'temporary', 'archived'] as const) {
+    const at = '2026-09-10T12:00:00.000Z'
+    store.insert(memory({ id: 'future', validFrom: '2026-09-11T00:00:00.000Z' }))
+    store.insert(memory({ id: 'expired', state: 'temporary', validTo: at }))
+    store.insert(memory({ id: 'current', state: 'temporary', validFrom: at, validTo: '2026-09-11T00:00:00.000Z' }))
+    for (const state of ['superseded', 'disputed', 'archived'] as const) {
       store.insert(memory({ id: state, state }))
     }
-    const before = new Date().toISOString()
-    store.supersede('memory-1', 'replacement')
-    const old = store.get('memory-1')
-    expect(old).toMatchObject({ state: 'superseded', supersededBy: 'replacement' })
-    const validTo = z.iso.datetime().parse(old?.validTo)
-    expect(validTo >= before).toBe(true)
-    expect(validTo <= new Date().toISOString()).toBe(true)
-    expect(store.search('concise', { limit: 10 }).map((row) => row.id)).toEqual(['replacement'])
+    expect(store.search('concise', { limit: 10, at }).map((row) => row.id)).toEqual(['current'])
+    expect(store.search('concise', { limit: 1, projectId: 'project-a', at }).map((row) => row.id)).toEqual(['current'])
   })
 
-  it('rejects missing supersession ids and self-supersession without changing the original', () => {
+  it('defaults validity filtering to the current time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-09-10T12:00:00.000Z')
     store.open()
-    store.insert(memory())
-    expect(() => store.supersede('memory-1', 'missing')).toThrow(/missing/i)
-    expect(() => store.supersede('missing', 'memory-1')).toThrow(/missing/i)
-    expect(() => store.supersede('memory-1', 'memory-1')).toThrow()
-    expect(store.get('memory-1')).toEqual(memory())
+    store.insert(memory({ id: 'future', validFrom: '2026-09-11T00:00:00.000Z' }))
+    store.insert(memory({ id: 'current', state: 'temporary' }))
+    expect(store.search('concise', { limit: 10 }).map((row) => row.id)).toEqual(['current'])
+  })
+
+  it('persists an inferred memory without invented confirmation or use timestamps', () => {
+    store.open()
+    const input = memory({ sourceClass: 'inferred', lastConfirmedAt: null, lastUsedAt: null })
+    store.insert(input)
+    store.close()
+    store.open()
+    expect(store.get(input.id)).toEqual(input)
+  })
+
+  it('persists only Sotto thread IDs and references in provenance', () => {
+    store.open()
+    const input = { ...memory(), provenance: [{ threadId: 'thread-1', ref: 'turn-1', sessionId: 'private', provider: 'codex' }] }
+    store.insert(input)
+    const db = new DatabaseSync(path)
+    try {
+      expect(JSON.parse(String(db.prepare('SELECT provenance FROM memories').get()?.provenance)))
+        .toEqual([{ threadId: 'thread-1', ref: 'turn-1' }])
+    } finally {
+      db.close()
+    }
   })
 
   it('keeps FTS synchronized when SQL updates or deletes the external content', () => {
