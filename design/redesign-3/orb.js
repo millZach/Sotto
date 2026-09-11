@@ -1,4 +1,4 @@
-/* global window, document, requestAnimationFrame */
+/* global window, document, requestAnimationFrame, Path2D */
 // The agent orb, second pass.
 //
 // A subdivided icosphere (uniform triangle mesh, no poles) displaced by three
