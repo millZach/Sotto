@@ -10,7 +10,7 @@
 //   node scripts/asr-bench/bench-stt.mjs --smoke
 //   node scripts/asr-bench/bench-stt.mjs --screen                 # default
 //   node scripts/asr-bench/bench-stt.mjs --full --runs 30         # opt-in
-//   node scripts/asr-bench/bench-stt.mjs --only mai,mai+hints --budget 2
+//   node scripts/asr-bench/bench-stt.mjs --only mai,mai+hints,mai+hints+cleanup --budget 2
 //   node scripts/asr-bench/bench-stt.mjs --forge-url http://host:5092
 //
 // Writes stt-<stamp>.json + .md in results. Warmups and hint probes are
@@ -42,9 +42,9 @@ const MODELS = {
   gpt: { model: 'openai/gpt-transcribe', minute: 0.0045 },
 }
 const CONFIGS = Object.entries(MODELS).flatMap(([base, spec]) =>
-  ['', ...(base === 'forge-parakeet' ? [] : ['+hints']), '+cleanup'].map((suffix) => ({
-    id: base + suffix, base, ...spec, hints: suffix === '+hints', cleanup: suffix === '+cleanup',
-    requestForm: suffix === '+hints' ? 'json/input_audio/wav' : 'multipart/file/wav',
+  ['', ...(base === 'forge-parakeet' ? [] : ['+hints']), '+cleanup', ...(base === 'forge-parakeet' ? [] : ['+hints+cleanup'])].map((suffix) => ({
+    id: base + suffix, base, ...spec, hints: suffix.includes('+hints'), cleanup: suffix.includes('+cleanup'),
+    requestForm: suffix.includes('+hints') ? 'json/input_audio/wav' : 'multipart/file/wav',
   })))
 const CLEANUP = [
   { model: 'amazon/nova-2-lite-v1', reasoning: { enabled: false } },
@@ -383,16 +383,27 @@ async function main() {
           save()
           throw new Error('Hint verification blocked by an inconclusive invalid probe')
         }
+        // OpenRouter's STT guide: some integrations forward fields as-is and an
+        // invalid option "surfaces as a provider error"; others forward an
+        // allowlist and drop the rest silently. OpenRouter masks the upstream
+        // message ("Provider returned 400"), so the rejection itself, not its
+        // wording, is the evidence. Silent acceptance is inconclusive: the
+        // configuration still runs and its exact-name delta against the raw
+        // route is the behavioral evidence recorded in the report.
         const field = config.base === 'mai' ? /phrase|list/iu : config.base === 'voxtral' ? /context_bias/iu : /prompt/iu
-        const forwarded = valid.ok && !invalid.ok && field.test(invalid.error ?? '') && /400|422/u.test(invalid.error ?? '')
+        const rejected = valid.ok && !invalid.ok && [400, 422].includes(invalid.httpStatus)
+        const status = !valid.ok ? 'hints not forwarded' : rejected ? 'forwarding-verified' : 'forwarding-unverified'
         result.hints[config.id] = {
-          status: forwarded ? 'forwarding-verified' : 'hints not forwarded',
-          evidence: forwarded ? 'Valid dictionary accepted; invalid field type rejected with field-specific HTTP 400/422 error.' : 'No field-specific rejection of invalid option (or valid hints rejected); forwarding unverified, skipped conservatively. Acceptance alone is not proof of forwarding.',
+          status,
+          evidence: !valid.ok ? 'Valid dictionary rejected; configuration skipped.'
+            : rejected ? `Valid dictionary accepted; invalid field type rejected upstream with HTTP ${invalid.httpStatus}${field.test(invalid.error ?? '') ? ' naming the field' : ' (message masked by OpenRouter)'}.`
+              : 'Valid dictionary and invalid field type both accepted; the integration either drops unknown fields silently or the provider ignores them. Forwarding unverified; compare exact names against the raw route.',
           validStatus: valid.httpStatus, invalidStatus: invalid.httpStatus, invalidError: invalid.error,
           options: hintOptions(config.base, result.setup.endpoints[config.base]),
         }
         save()
-        if (!forwarded) { console.log('  hints not forwarded (see probe evidence)'); continue }
+        console.log(`  ${status}`)
+        if (status === 'hints not forwarded') continue
       }
       if (args.mode !== 'smoke') {
         // Short activates cleanup, so both legs really receive two warmups.
@@ -448,7 +459,8 @@ function summarize(result, fixtures) {
     const asrRates = good.map((r) => r.asrCost / fixtures.find((f) => f.clip === r.clip).seconds)
     const asrCost1000 = asrRates.length ? average(asrRates) * 3 * 1000 : config.minute * 50
     const cleanupCost1000 = config.cleanup ? (short.length ? average(short.map((r) => r.cleanupCost)) * 1000 : null) : 0
-    return { configuration: config.id, state: result.hints[config.id]?.status === 'hints not forwarded' ? 'hints not forwarded' : `${good.length}/${measured.length}`,
+    const hintStatus = result.hints[config.id]?.status
+    return { configuration: config.id, state: hintStatus === 'hints not forwarded' ? 'hints not forwarded' : `${good.length}/${measured.length}${hintStatus === 'forwarding-unverified' ? ' (hints unverified)' : ''}`,
       meanWer: perClip.every((p) => p.samples > 0) ? average(perClip.map((p) => p.wer)) : null,
       nameAccuracy: total ? matched / total : null, nameMatched: matched, nameTotal: total, perClip,
       failures: measured.filter((r) => !r.ok).length, retries: sum(measured.map((r) => r.retries)),
@@ -491,7 +503,7 @@ function markdown(result, fixtures) {
     `Cleanup: ${JSON.stringify(CLEANUP)}. ${result.setup.cleanupPolicy}`, '',
     `Dictionary: ${DICTIONARY.join(', ')}. Current prompt SHA256: ${result.setup.cleanupPromptSha256}; full prompt in JSON.`, '',
     result.setup.networkRoute, '', 'WAV validation: 16 kHz mono PCM16; data-chunk durations and file SHA256 stored in JSON. Every request serial. Two short-clip warmups per configuration (both cleanup legs exercised when needed), none in smoke. Hint validation calls are separate excluded probes; all phases count toward spend.', '',
-    '[OpenRouter option contract](https://openrouter.ai/docs/guides/overview/multimodal/stt): provider endpoint tags are discovered live. Invalid-type probes test forwarding; successful valid requests alone do not establish it. No provider pinning is assumed.', '',
+    '[OpenRouter option contract](https://openrouter.ai/docs/guides/overview/multimodal/stt): provider endpoint tags are discovered live. An invalid-type probe rejected upstream (HTTP 400/422) verifies forwarding even though OpenRouter masks the message; a probe accepted silently leaves forwarding unverified, and those configurations are marked "(hints unverified)" so their exact-name delta against the raw route is the evidence. No provider pinning is assumed.', '',
     '```json', JSON.stringify(result.hints, null, 2), '```', '',
     '| Configuration | All-phase HTTP statuses | Failed requests (includes intentional probes) | Retries |', '|---|---|---:|---:|')
   for (const s of result.summary) lines.push(`| ${s.configuration} | ${JSON.stringify(s.httpStatuses)} | ${s.requestFailures} | ${s.allRetries} |`)

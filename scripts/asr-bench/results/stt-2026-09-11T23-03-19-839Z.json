@@ -1,0 +1,1725 @@
+{
+  "date": "2026-09-11T23:03:19.840Z",
+  "args": {
+    "mode": "smoke",
+    "runs": 1,
+    "budget": 2,
+    "only": null,
+    "forgeUrl": "http://forge.tail5728ca.ts.net:5092"
+  },
+  "status": "complete",
+  "configs": [
+    {
+      "id": "forge-parakeet",
+      "base": "forge-parakeet",
+      "model": "parakeet-tdt-0.6b",
+      "minute": 0,
+      "hints": false,
+      "cleanup": false,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "forge-parakeet+cleanup",
+      "base": "forge-parakeet",
+      "model": "parakeet-tdt-0.6b",
+      "minute": 0,
+      "hints": false,
+      "cleanup": true,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "mai",
+      "base": "mai",
+      "model": "microsoft/mai-transcribe-2",
+      "minute": 0.001667,
+      "hints": false,
+      "cleanup": false,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "mai+hints",
+      "base": "mai",
+      "model": "microsoft/mai-transcribe-2",
+      "minute": 0.001667,
+      "hints": true,
+      "cleanup": false,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "id": "mai+cleanup",
+      "base": "mai",
+      "model": "microsoft/mai-transcribe-2",
+      "minute": 0.001667,
+      "hints": false,
+      "cleanup": true,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "voxtral",
+      "base": "voxtral",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "minute": 0.0033,
+      "hints": false,
+      "cleanup": false,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "voxtral+hints",
+      "base": "voxtral",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "minute": 0.0033,
+      "hints": true,
+      "cleanup": false,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "id": "voxtral+cleanup",
+      "base": "voxtral",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "minute": 0.0033,
+      "hints": false,
+      "cleanup": true,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "gpt",
+      "base": "gpt",
+      "model": "openai/gpt-transcribe",
+      "minute": 0.0045,
+      "hints": false,
+      "cleanup": false,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "id": "gpt+hints",
+      "base": "gpt",
+      "model": "openai/gpt-transcribe",
+      "minute": 0.0045,
+      "hints": true,
+      "cleanup": false,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "id": "gpt+cleanup",
+      "base": "gpt",
+      "model": "openai/gpt-transcribe",
+      "minute": 0.0045,
+      "hints": false,
+      "cleanup": true,
+      "requestForm": "multipart/file/wav"
+    }
+  ],
+  "runs": [
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 95.97080000000005,
+        "cleanupMs": 0,
+        "totalMs": 96.15660000000003
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "forge-parakeet+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 87.26980000000003,
+        "cleanupMs": 0,
+        "totalMs": 87.7782000000002
+      },
+      "cleanupOutcome": "skipped",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "mai",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 657.8565000000001,
+        "cleanupMs": 0,
+        "totalMs": 657.9446
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005555555555555556,
+      "asrCost": 0.00005555555555555556,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "mai+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 533.2087000000001,
+        "cleanupMs": 0,
+        "totalMs": 533.2369000000001
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005555555555555556,
+      "asrCost": 0.00005555555555555556,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "mai+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "ok": false,
+      "interrupted": false,
+      "error": "http-400: {\"message\":\"Provider returned 400\",\"code\":400}",
+      "transcript": null,
+      "rawTranscript": null,
+      "normalizedTranscript": null,
+      "wer": null,
+      "nameAccuracy": null,
+      "missedWords": null,
+      "timings": {
+        "asrMs": 175.61439999999993,
+        "cleanupMs": 0,
+        "totalMs": 175.63059999999996
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 400,
+      "httpStatuses": [
+        400
+      ],
+      "retries": 0,
+      "cost": 0,
+      "asrCost": 0,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "mai+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 830.8862000000004,
+        "cleanupMs": 0,
+        "totalMs": 830.9259000000002
+      },
+      "cleanupOutcome": "skipped",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005555555555555556,
+      "asrCost": 0.00005555555555555556,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "voxtral",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 374.7666000000004,
+        "cleanupMs": 0,
+        "totalMs": 374.8047999999999
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005,
+      "asrCost": 0.00005,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "voxtral+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 366.7231999999999,
+        "cleanupMs": 0,
+        "totalMs": 366.75779999999986
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005,
+      "asrCost": 0.00005,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "voxtral+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 342.3689999999997,
+        "cleanupMs": 0,
+        "totalMs": 342.5019999999995
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005,
+      "asrCost": 0.00005,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "voxtral+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 449.46389999999974,
+        "cleanupMs": 0,
+        "totalMs": 449.52800000000025
+      },
+      "cleanupOutcome": "skipped",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00005,
+      "asrCost": 0.00005,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "gpt",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 628.3195999999998,
+        "cleanupMs": 0,
+        "totalMs": 628.3455000000004
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00015,
+      "asrCost": 0.00015,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    },
+    {
+      "configuration": "gpt+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 517.8342999999995,
+        "cleanupMs": 0,
+        "totalMs": 517.8546999999999
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00015,
+      "asrCost": 0.00015,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "gpt+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 573.6485000000002,
+        "cleanupMs": 0,
+        "totalMs": 573.6570999999994
+      },
+      "cleanupOutcome": "not-requested",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00015,
+      "asrCost": 0.00015,
+      "cleanupCost": 0,
+      "requestForm": "json/input_audio/wav"
+    },
+    {
+      "configuration": "gpt+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "ok": true,
+      "interrupted": false,
+      "error": null,
+      "transcript": "Send the email now.",
+      "rawTranscript": "Send the email now.",
+      "normalizedTranscript": "send the email now",
+      "wer": 0,
+      "nameAccuracy": {
+        "matched": 0,
+        "total": 0,
+        "accuracy": null,
+        "spans": []
+      },
+      "missedWords": [],
+      "timings": {
+        "asrMs": 681.2842,
+        "cleanupMs": 0,
+        "totalMs": 681.3150999999998
+      },
+      "cleanupOutcome": "skipped",
+      "httpStatus": 200,
+      "httpStatuses": [
+        200
+      ],
+      "retries": 0,
+      "cost": 0.00015,
+      "asrCost": 0.00015,
+      "cleanupCost": 0,
+      "requestForm": "multipart/file/wav"
+    }
+  ],
+  "requests": [
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 62.9041
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 15.29509999999999
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 235.16219999999998
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 91.08239999999995
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 477.02690000000007
+    },
+    {
+      "phase": "setup",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 162.74130000000002
+    },
+    {
+      "configuration": "forge-parakeet",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 95.94320000000016
+    },
+    {
+      "configuration": "forge-parakeet+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "parakeet-tdt-0.6b",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0,
+      "costSource": "none",
+      "usage": null,
+      "retryAfterMs": 500,
+      "ms": 87.25520000000006
+    },
+    {
+      "configuration": "mai",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "microsoft/mai-transcribe-2",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005555555555555556,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005555555555555556,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 657.7264,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "mai+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "microsoft/mai-transcribe-2",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005555555555555556,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005555555555555556,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 533.1740000000002,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "mai+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "microsoft/mai-transcribe-2",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 400,
+      "cost": 0,
+      "costSource": "HTTP-rejected-no-usage",
+      "usage": null,
+      "error": "http-400: {\"message\":\"Provider returned 400\",\"code\":400}",
+      "retryAfterMs": 500,
+      "ms": 175.5920000000001,
+      "audioSeconds": 1.97
+    },
+    {
+      "configuration": "mai+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "microsoft/mai-transcribe-2",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005555555555555556,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005555555555555556,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 830.8650000000002,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "voxtral",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005,
+        "seconds": 1,
+        "total_tokens": 384
+      },
+      "retryAfterMs": 500,
+      "ms": 374.7368999999999,
+      "audioSeconds": 1
+    },
+    {
+      "configuration": "voxtral+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005,
+        "seconds": 1,
+        "total_tokens": 384
+      },
+      "retryAfterMs": 500,
+      "ms": 366.6935000000003,
+      "audioSeconds": 1
+    },
+    {
+      "configuration": "voxtral+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005,
+        "seconds": 1,
+        "total_tokens": 384
+      },
+      "retryAfterMs": 500,
+      "ms": 342.3559000000005,
+      "audioSeconds": 1
+    },
+    {
+      "configuration": "voxtral+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "mistralai/voxtral-mini-transcribe",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00005,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00005,
+        "seconds": 1,
+        "total_tokens": 384
+      },
+      "retryAfterMs": 500,
+      "ms": 449.4429999999993,
+      "audioSeconds": 1
+    },
+    {
+      "configuration": "gpt",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "openai/gpt-transcribe",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00015,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00015,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 628.3006999999998,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "gpt+hints",
+      "clip": "tiny",
+      "phase": "hint-valid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "openai/gpt-transcribe",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00015,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00015,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 517.8096999999998,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "gpt+hints",
+      "clip": "tiny",
+      "phase": "hint-invalid-probe",
+      "run": 0,
+      "leg": "asr",
+      "model": "openai/gpt-transcribe",
+      "requestForm": "json",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00015,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00015,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 573.6322,
+      "audioSeconds": 2
+    },
+    {
+      "configuration": "gpt+cleanup",
+      "clip": "tiny",
+      "phase": "measured",
+      "run": 0,
+      "leg": "asr",
+      "model": "openai/gpt-transcribe",
+      "requestForm": "multipart",
+      "attempt": 1,
+      "httpStatus": 200,
+      "cost": 0.00015,
+      "costSource": "usage.cost",
+      "usage": {
+        "cost": 0.00015,
+        "seconds": 2
+      },
+      "retryAfterMs": 500,
+      "ms": 681.2682999999997,
+      "audioSeconds": 2
+    }
+  ],
+  "hints": {
+    "mai+hints": {
+      "status": "hints not forwarded",
+      "evidence": "No field-specific rejection of invalid option (or valid hints rejected); forwarding unverified, skipped conservatively. Acceptance alone is not proof of forwarding.",
+      "validStatus": 200,
+      "invalidStatus": 400,
+      "invalidError": "http-400: {\"message\":\"Provider returned 400\",\"code\":400}",
+      "options": {
+        "azure": {
+          "phraseList": {
+            "phrases": [
+              "Sotto",
+              "Moonshine",
+              "Whisper",
+              "Wispr Flow",
+              "Superwhisper",
+              "Zache",
+              "Electron",
+              "ONNX",
+              "Kubernetes",
+              "Anthropic",
+              "Priya",
+              "Sowmya",
+              "Otter",
+              "Descript"
+            ]
+          }
+        }
+      }
+    },
+    "voxtral+hints": {
+      "status": "hints not forwarded",
+      "evidence": "No field-specific rejection of invalid option (or valid hints rejected); forwarding unverified, skipped conservatively. Acceptance alone is not proof of forwarding.",
+      "validStatus": 200,
+      "invalidStatus": 200,
+      "invalidError": null,
+      "options": {
+        "mistral": {
+          "context_bias": [
+            "Sotto",
+            "Moonshine",
+            "Whisper",
+            "Wispr Flow",
+            "Superwhisper",
+            "Zache",
+            "Electron",
+            "ONNX",
+            "Kubernetes",
+            "Anthropic",
+            "Priya",
+            "Sowmya",
+            "Otter",
+            "Descript"
+          ]
+        },
+        "mistral/eu": {
+          "context_bias": [
+            "Sotto",
+            "Moonshine",
+            "Whisper",
+            "Wispr Flow",
+            "Superwhisper",
+            "Zache",
+            "Electron",
+            "ONNX",
+            "Kubernetes",
+            "Anthropic",
+            "Priya",
+            "Sowmya",
+            "Otter",
+            "Descript"
+          ]
+        }
+      }
+    },
+    "gpt+hints": {
+      "status": "hints not forwarded",
+      "evidence": "No field-specific rejection of invalid option (or valid hints rejected); forwarding unverified, skipped conservatively. Acceptance alone is not proof of forwarding.",
+      "validStatus": 200,
+      "invalidStatus": 200,
+      "invalidError": null,
+      "options": {
+        "openai": {
+          "prompt": "Sotto, Moonshine, Whisper, Wispr Flow, Superwhisper, Zache, Electron, ONNX, Kubernetes, Anthropic, Priya, Sowmya, Otter, Descript"
+        }
+      }
+    }
+  },
+  "summary": [
+    {
+      "configuration": "forge-parakeet",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 95.97080000000005,
+              "p95": 95.97080000000005
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 96.15660000000003,
+              "p95": 96.15660000000003
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "not-requested": 1
+      },
+      "cost": 0,
+      "asrCost1000": 0,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0
+    },
+    {
+      "configuration": "forge-parakeet+cleanup",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 87.26980000000003,
+              "p95": 87.26980000000003
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 87.7782000000002,
+              "p95": 87.7782000000002
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "skipped": 1
+      },
+      "cost": 0,
+      "asrCost1000": 0,
+      "cleanupCost1000": null,
+      "totalCost1000": null
+    },
+    {
+      "configuration": "mai",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 657.8565000000001,
+              "p95": 657.8565000000001
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 657.9446,
+              "p95": 657.9446
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "not-requested": 1
+      },
+      "cost": 0.00005555555555555556,
+      "asrCost1000": 0.08460236886632827,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.08460236886632827
+    },
+    {
+      "configuration": "mai+hints",
+      "state": "hints not forwarded",
+      "meanWer": null,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 0,
+          "wer": null,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": null,
+              "p95": null
+            },
+            "cleanupMs": {
+              "p50": null,
+              "p95": null
+            },
+            "totalMs": {
+              "p50": null,
+              "p95": null
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 1,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1,
+        "400": 1
+      },
+      "cleanupOutcomes": {},
+      "cost": 0.00005555555555555556,
+      "asrCost1000": 0.08335000000000001,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.08335000000000001
+    },
+    {
+      "configuration": "mai+cleanup",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 830.8862000000004,
+              "p95": 830.8862000000004
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 830.9259000000002,
+              "p95": 830.9259000000002
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "skipped": 1
+      },
+      "cost": 0.00005555555555555556,
+      "asrCost1000": 0.08460236886632827,
+      "cleanupCost1000": null,
+      "totalCost1000": null
+    },
+    {
+      "configuration": "voxtral",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 374.7666000000004,
+              "p95": 374.7666000000004
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 374.8047999999999,
+              "p95": 374.8047999999999
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "not-requested": 1
+      },
+      "cost": 0.00005,
+      "asrCost1000": 0.07614213197969545,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.07614213197969545
+    },
+    {
+      "configuration": "voxtral+hints",
+      "state": "hints not forwarded",
+      "meanWer": null,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 0,
+          "wer": null,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": null,
+              "p95": null
+            },
+            "cleanupMs": {
+              "p50": null,
+              "p95": null
+            },
+            "totalMs": {
+              "p50": null,
+              "p95": null
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 2
+      },
+      "cleanupOutcomes": {},
+      "cost": 0.0001,
+      "asrCost1000": 0.165,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.165
+    },
+    {
+      "configuration": "voxtral+cleanup",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 449.46389999999974,
+              "p95": 449.46389999999974
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 449.52800000000025,
+              "p95": 449.52800000000025
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "skipped": 1
+      },
+      "cost": 0.00005,
+      "asrCost1000": 0.07614213197969545,
+      "cleanupCost1000": null,
+      "totalCost1000": null
+    },
+    {
+      "configuration": "gpt",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 628.3195999999998,
+              "p95": 628.3195999999998
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 628.3455000000004,
+              "p95": 628.3455000000004
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "not-requested": 1
+      },
+      "cost": 0.00015,
+      "asrCost1000": 0.2284263959390863,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.2284263959390863
+    },
+    {
+      "configuration": "gpt+hints",
+      "state": "hints not forwarded",
+      "meanWer": null,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 0,
+          "wer": null,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": null,
+              "p95": null
+            },
+            "cleanupMs": {
+              "p50": null,
+              "p95": null
+            },
+            "totalMs": {
+              "p50": null,
+              "p95": null
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 2
+      },
+      "cleanupOutcomes": {},
+      "cost": 0.0003,
+      "asrCost1000": 0.22499999999999998,
+      "cleanupCost1000": 0,
+      "totalCost1000": 0.22499999999999998
+    },
+    {
+      "configuration": "gpt+cleanup",
+      "state": "1/1",
+      "meanWer": 0,
+      "nameAccuracy": null,
+      "nameMatched": 0,
+      "nameTotal": 0,
+      "perClip": [
+        {
+          "clip": "tiny",
+          "seconds": 1.97,
+          "samples": 1,
+          "wer": 0,
+          "nameAccuracy": null,
+          "latency": {
+            "asrMs": {
+              "p50": 681.2842,
+              "p95": 681.2842
+            },
+            "cleanupMs": {
+              "p50": 0,
+              "p95": 0
+            },
+            "totalMs": {
+              "p50": 681.3150999999998,
+              "p95": 681.3150999999998
+            }
+          }
+        }
+      ],
+      "failures": 0,
+      "retries": 0,
+      "requestFailures": 0,
+      "allRetries": 0,
+      "httpStatuses": {
+        "200": 1
+      },
+      "cleanupOutcomes": {
+        "skipped": 1
+      },
+      "cost": 0.00015,
+      "asrCost1000": 0.2284263959390863,
+      "cleanupCost1000": null,
+      "totalCost1000": null
+    }
+  ],
+  "spend": {
+    "reported": 0.0009666666666666666,
+    "estimated": 0,
+    "accounted": 0.0009666666666666666
+  },
+  "setup": {
+    "node": "v24.14.1",
+    "platform": "win32",
+    "dictionary": [
+      "Sotto",
+      "Moonshine",
+      "Whisper",
+      "Wispr Flow",
+      "Superwhisper",
+      "Zache",
+      "Electron",
+      "ONNX",
+      "Kubernetes",
+      "Anthropic",
+      "Priya",
+      "Sowmya",
+      "Otter",
+      "Descript"
+    ],
+    "cleanupModels": [
+      {
+        "model": "amazon/nova-2-lite-v1",
+        "reasoning": {
+          "enabled": false
+        }
+      },
+      {
+        "model": "google/gemini-3.1-flash-lite",
+        "reasoning": {
+          "effort": "minimal"
+        }
+      }
+    ],
+    "cleanupSystemPrompt": "You clean up raw speech-to-text transcripts for dictation. Rewrite the transcript as polished written text while staying faithful to the speaker's meaning.\n\nRules:\n- Add punctuation, capitalization, and sentence and paragraph breaks.\n- Always remove: \"um\", \"uh\", stutters, and immediate word repetitions (\"the the report\" becomes \"the report\").\n- Remove \"like\", \"you know\", \"I mean\", and thought-starting \"so\"/\"okay so\"/\"well\"/\"anyway\" ONLY when they are pure verbal tics the sentence reads identically without. Keep \"like\" in comparisons (\"looks like\"), approximations (\"like eighty percent\"), and as a verb (\"I like it\").\n- NEVER remove hedges, qualifiers, or emphasis — \"kind of\", \"sort of\", \"maybe\", \"probably\", \"actually\", \"honestly\", \"basically\", \"really\" express the speaker's degree of confidence and must survive. \"kind of cluttered\" stays \"kind of cluttered\", never just \"cluttered\".\n- When unsure whether a word is filler, keep it.\n- Fix obvious speech-recognition errors using context.\n- Resolve self-corrections: \"meet at 3 no wait make that 4\" becomes \"meet at 4\".\n- When the speaker enumerates parallel items (\"first... second...\", \"we need X, we need Y, we need Z\"), format them as a list: one item per line, each starting with \"- \".\n- When the speaker announces a list (\"I need a list of...\", \"here's what we need\", \"things to get:\"), the enumerated items ALWAYS become a \"- \" list, even if they were spoken as a plain comma-separated sentence.\n- Interpret the spoken commands \"new line\" and \"new paragraph\" as literal line/paragraph breaks.\n- Do not summarize, add content, or change the meaning. Light restructuring for readability (paragraph breaks, lists) is allowed, but never drop information.\n- Words the speaker may use (correct misspellings toward these): Sotto, Moonshine, Whisper, Wispr Flow, Superwhisper, Zache, Electron, ONNX, Kubernetes, Anthropic, Priya, Sowmya, Otter, Descript.\n\nOutput ONLY the cleaned text. No preamble, no quotes, no explanation.\n\nExamples:\n\nTranscript:\num can we move the meeting to tuesday no wait wednesday works better new line also bring the uh q3 numbers\nCleaned:\nCan we move the meeting to Tuesday — Wednesday works better.\nAlso bring the Q3 numbers.\n\nTranscript:\ntell dave i'll have the draft done by five no scratch that by end of day\nCleaned:\nTell Dave I'll have the draft done by end of day.\n\nTranscript:\nso um i was thinking we could you know maybe push the the release to friday because honestly the tests are like not done yet and the docs are kind of rough\nCleaned:\nI was thinking we could maybe push the release to Friday because honestly the tests are not done yet and the docs are kind of rough.\n\nTranscript:\nokay so before we launch there's three things we still need to do first we need to finish the onboarding flow second fix the mic permissions bug and then third update the readme oh and one more thing we should double check the installer\nCleaned:\nBefore we launch there are three things we still need to do:\n- Finish the onboarding flow\n- Fix the mic permissions bug\n- Update the README\n- Double check the installer\n\nTranscript:\ni want to make a list of things i need from the store i need apples oranges turkey bread and um cat litter and a couple other things i can't think of right now\nCleaned:\nThings I need from the store:\n- Apples\n- Oranges\n- Turkey\n- Bread\n- Cat litter\n\nAnd a couple other things I can't think of right now.\n\nNotice: late additions (\"oh and one more thing\", \"also\") join the list as items; the connector phrase itself never appears.\n\nNotice: when the speaker corrects themselves (\"no wait\", \"no scratch that\"), keep ONLY the corrected version; the correction phrase itself never appears in the output. Verbal tics (um, uh, stray \"you know\") vanish, but hedges and emphasis (\"maybe\", \"honestly\", \"kind of\") always stay. Enumerations become \"- \" lists.",
+    "cleanupPromptSha256": "7dd967e21d5dd71036537321722c407fd3842b9cb55317ab92aca33194351149",
+    "cleanupPolicy": "Production deadline: max(user llmTimeoutMs 2500, medium tier floor 7000) + min(9000, 30 * inputWords) ms; fallback reserve min(6000, 1200 + 15 * inputWords) ms; minimum fallback budget 500ms. Fewer than five whitespace words skips cleanup. Production prompts, reasoning, max_tokens=4000 and output guards mirrored. One network/429 retry within each leg deadline is a benchmark requirement.",
+    "fixtures": [
+      {
+        "clip": "tiny",
+        "reference": "Send the email now.",
+        "names": [],
+        "seconds": 1.97,
+        "sha256": "6dfabcf5a2cdf8ec17cb2395fc7e15157e9d18f978f5c50c8b9084d9bf8218a1",
+        "bytes": 63086
+      },
+      {
+        "clip": "short",
+        "reference": "The quick brown fox jumps over the lazy dog near the river bank.",
+        "names": [],
+        "seconds": 4.38,
+        "sha256": "89db937fe94a8428076485a211d1cca1056575216fc92dfcfce0287bdab1fc23",
+        "bytes": 140206
+      },
+      {
+        "clip": "long",
+        "reference": "Dictation software converts spoken words into written text in real time. People use it to write emails, documents, and messages without touching the keyboard. The best systems feel instant, accurate, and completely effortless to use every single day.",
+        "names": [],
+        "seconds": 16.615,
+        "sha256": "6b60ad33a76c00eb2d029c5fab5b5896f71585765d73e77bd1c166fece15967c",
+        "bytes": 531726
+      },
+      {
+        "clip": "technical",
+        "reference": "Sotto runs the Moonshine encoder through ONNX Runtime inside the Electron main process, so transcription never leaves the device. Whisper pads every clip to a thirty second window, which is why latency stays flat regardless of how short the utterance is.",
+        "names": [
+          "Sotto",
+          "Moonshine",
+          "ONNX",
+          "Electron",
+          "Whisper"
+        ],
+        "seconds": 16.79,
+        "sha256": "d65c01aa0636151f1be0f4fd06a2f73325149adbf64adacd39c2aa1761c6710c",
+        "bytes": 537326
+      },
+      {
+        "clip": "numbers",
+        "reference": "Transfer four thousand two hundred and seventeen dollars on March third, twenty twenty six. The invoice number is A B 4 7 dash 9 0 2, and the meeting moved from 2:15 to 4:45 p.m.",
+        "names": [],
+        "seconds": 14.62,
+        "sha256": "2cf1b82c9e5397b0a791c5cf31969d63c37fc73273c160c63b92abbc2369e671",
+        "bytes": 467886
+      },
+      {
+        "clip": "propernoun",
+        "reference": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+        "names": [
+          "Zache",
+          "Wispr Flow",
+          "Superwhisper",
+          "Otter",
+          "Descript",
+          "Priya",
+          "Sowmya",
+          "Anthropic",
+          "Kubernetes"
+        ],
+        "seconds": 11.885,
+        "sha256": "5c427b26652a6583157470da65bbf2db5c9df8bed0c78390a8336b847ee36d24",
+        "bytes": 380366
+      },
+      {
+        "clip": "homophone",
+        "reference": "They are going to accept the new principle, not the interest rate principal. Their advice affects the effect we expected, and it is too late to buy two more.",
+        "names": [],
+        "seconds": 10.305,
+        "sha256": "80ff871f9694bd4dc2c47165ebad3afabed12a855aa70104d4fbd274c3267ccf",
+        "bytes": 329806
+      }
+    ],
+    "networkRoute": "Windows host to Forge: pong from forge (100.68.194.68) via 192.168.1.160:41641 in 6ms. Cloud: this machine's normal Internet route to openrouter.ai; no proxy configured by harness. Upload and full body parsing included; no encoding/IPC/paste timing.",
+    "forge": {
+      "/health": {
+        "httpStatus": 200,
+        "response": {
+          "status": "ok"
+        },
+        "error": null
+      },
+      "/v1/models": {
+        "httpStatus": 200,
+        "response": {
+          "object": "list",
+          "data": [
+            {
+              "id": "parakeet-tdt-0.6b",
+              "object": "model",
+              "created": 1700000000,
+              "owned_by": "nvidia"
+            },
+            {
+              "id": "whisper-1",
+              "object": "model",
+              "created": 1700000000,
+              "owned_by": "nvidia"
+            }
+          ]
+        },
+        "error": null
+      }
+    },
+    "endpoints": {
+      "mai": [
+        {
+          "tag": "azure",
+          "name": "Azure | microsoft/mai-transcribe-2-20260903",
+          "pricing": {
+            "prompt": "0.1",
+            "completion": "0",
+            "discount": 0
+          }
+        }
+      ],
+      "voxtral": [
+        {
+          "tag": "mistral",
+          "name": "Mistral | mistralai/voxtral-mini-transcribe-2602",
+          "pricing": {
+            "prompt": "0.003",
+            "completion": "0",
+            "discount": 0
+          }
+        },
+        {
+          "tag": "mistral/eu",
+          "name": "Mistral | mistralai/voxtral-mini-transcribe-2602",
+          "pricing": {
+            "prompt": "0.0033",
+            "completion": "0",
+            "discount": 0
+          }
+        }
+      ],
+      "gpt": [
+        {
+          "tag": "openai",
+          "name": "OpenAI | openai/gpt-transcribe-20260805",
+          "pricing": {
+            "prompt": "0.0045",
+            "completion": "0",
+            "discount": 0
+          }
+        }
+      ]
+    },
+    "cleanupPricing": {
+      "amazon/nova-2-lite-v1": {
+        "prompt": 3e-7,
+        "completion": 0.0000025
+      },
+      "google/gemini-3.1-flash-lite": {
+        "prompt": 2.5e-7,
+        "completion": 0.0000015
+      }
+    },
+    "priceSource": "docs/research/2026-09-11-stt-bench-candidates.md; Voxtral estimate uses conservative EU $0.0033/min (default $0.003). usage.cost wins.",
+    "hintSource": "https://openrouter.ai/docs/guides/overview/multimodal/stt"
+  },
+  "finishedAt": "2026-09-11T23:03:27.316Z"
+}
