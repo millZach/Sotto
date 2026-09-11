@@ -91,6 +91,12 @@ describe('release contract', () => {
     expect(viteConfig).toContain("externalDependencyInventory('preload')")
     expect(verifier).toContain('out/main/external-dependencies.json')
     expect(verifier).toContain('out/preload/external-dependencies.json')
+    expect(verifier).toContain('scripts/probe-memory-store.mjs')
+    expect(verifier).toContain("ELECTRON_RUN_AS_NODE: '1'")
+    expect(verifier).toContain('const memoryStore = await verifyPackagedMemoryStore(target)')
+    expect(verifier.indexOf('const memoryStore =')).toBeLessThan(
+      verifier.indexOf('const smoke = await verifyNormalPackagedLaunch'),
+    )
     expect(verifier).not.toContain('.matchAll(')
   })
 

@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
@@ -5,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
+import { promisify } from 'node:util'
 
 import { _electron as electron } from '@playwright/test'
 
@@ -20,6 +22,7 @@ import {
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const profile = releasePlatformProfile()
+const execFileAsync = promisify(execFile)
 
 function fail(message) {
   throw new Error(`Packaged release verification failed: ${message}`)
@@ -75,6 +78,33 @@ function productionModuleRoots(entries) {
     if (match?.[1]) roots.add(match[1])
   }
   return [...roots].sort()
+}
+
+async function verifyPackagedMemoryStore(target) {
+  let stdout
+  try {
+    ({ stdout } = await execFileAsync(profile.executablePath(target), [
+      resolve(repositoryRoot, 'scripts/probe-memory-store.mjs'),
+    ], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024,
+    }))
+  } catch (error) {
+    fail(`memory store probe failed: ${error.message}; stderr=${String(error.stderr ?? '').slice(-4000)}; stdout=${String(error.stdout ?? '').slice(-4000)}`)
+  }
+  let result
+  try {
+    result = JSON.parse(stdout.trim())
+  } catch {
+    fail(`memory store probe returned invalid JSON: ${stdout.slice(-4000)}`)
+  }
+  if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
+      result.migrationVersion !== 1 || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
+    fail(`memory store probe returned invalid evidence: ${stdout.slice(-4000)}`)
+  }
+  return result
 }
 
 async function verifyNormalPackagedLaunch(target, asarPath, entries) {
@@ -289,6 +319,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const installer = options.installer === undefined
     ? undefined
     : await verifyInstallerAppAsar(options.installer, asarPath)
+  const memoryStore = await verifyPackagedMemoryStore(target)
   const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
   const asarInfo = await stat(asarPath)
   const executableInfo = await stat(profile.executablePath(target))
@@ -305,6 +336,7 @@ export async function verifyPackagedResources(input, options = {}) {
       artifactCount: provenance.artifacts.length,
     },
     ...(installer === undefined ? {} : { installer }),
+    memoryStore,
     smoke,
   }
 }
