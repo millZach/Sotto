@@ -297,7 +297,7 @@ function AgentNewThread({ state, command, project }: { readonly state: AgentStat
   </form></details>
 }
 
-export function AgentView({ onOpenThreads }: { readonly onOpenThreads?: (() => void) | undefined } = {}): ReactNode {
+export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the room's list of every thread. */ readonly onOpenThreads: () => void }): ReactNode {
   const agents = useAgents()
   const { state, command } = agents
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -326,7 +326,7 @@ export function AgentView({ onOpenThreads }: { readonly onOpenThreads?: (() => v
   }[agents.voice.status]
   return <div className="management-view agent-view">
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
-      <div className="agent-actions">{onOpenThreads !== undefined ? <Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button> : null}
+      <div className="agent-actions"><Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button>
         <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
         <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect T3 Code' : state.connection === 'connecting' ? 'Connecting…' : 'Connect T3 Code'}</Button></div>
     </header>

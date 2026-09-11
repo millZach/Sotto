@@ -25,6 +25,9 @@ import {
 } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
+/** Pinned for every launch in this suite; scripts/capture-design.mjs sets the same zone for the Node side. */
+const CAPTURE_TIMEZONE = 'America/Los_Angeles'
+const CAPTURE_LOCALE = 'en-US'
 const updateBaselines = process.env.SOTTO_UPDATE_DESIGN_BASELINES === '1'
 const repositoryRoot = process.cwd()
 const baselineRoot = resolve(repositoryRoot, 'artifacts/design/app-review/baseline')
@@ -164,9 +167,13 @@ async function withSotto(
     const scaleFactor = (options.scalePercent ?? 100) / 100
     const dependencies: LaunchDependencies = {
       createProfile: async () => { throw new Error('Design capture supplies an owned profile') },
+      // Every capture reads the same clock and language whatever machine runs it:
+      // the zone and locale the committed baselines were captured with.
       launch: (launchOptions = {}) => electron.launch({
         ...launchOptions,
         args: ['--disable-gpu', `--force-device-scale-factor=${scaleFactor}`, ...(launchOptions.args ?? [])],
+        timezoneId: CAPTURE_TIMEZONE,
+        locale: CAPTURE_LOCALE,
       }),
       firstWindow: firstSottoWindow,
       removeProfile: async () => undefined,
@@ -789,7 +796,10 @@ test.describe('authoritative design-review captures', () => {
 
         await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
         await expect(page.getByText('3 of 9')).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Visual gate flake' })).toHaveCount(0)
+        // The attention queue stays listed whatever the query; a Codex-only result set follows it.
+        await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Weekly note' })).toHaveCount(0)
         await page.evaluate("document.querySelector('.app-content')?.scrollTo(0, 0)")
         await capturePage(page, `threads-search-${theme}.png`, { category: 'threads', state: 'search', theme })
       })

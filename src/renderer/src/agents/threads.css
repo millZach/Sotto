@@ -1,5 +1,24 @@
 /* ---- threads: every thread Sotto is looking after, grouped by what you need to know ---- */
 
+/* Provider badge tints, the mockup's hues on each theme: peach for Claude, slate for Codex, lavender for Grok. */
+.threads-view {
+  --tt-badge-claude: #efc9a6; --tt-badge-claude-ink: #4a2c10;
+  --tt-badge-codex: #dde1e6; --tt-badge-codex-ink: #23282e;
+  --tt-badge-grok: #d9d3ff; --tt-badge-grok-ink: #2f2670;
+}
+:root[data-theme='dark'] .threads-view {
+  --tt-badge-claude: #e2b28a; --tt-badge-claude-ink: #1f1206;
+  --tt-badge-codex: #d3d7dd; --tt-badge-codex-ink: #14181c;
+  --tt-badge-grok: #c9c2ff; --tt-badge-grok-ink: #1b1540;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .threads-view {
+    --tt-badge-claude: #e2b28a; --tt-badge-claude-ink: #1f1206;
+    --tt-badge-codex: #d3d7dd; --tt-badge-codex-ink: #14181c;
+    --tt-badge-grok: #c9c2ff; --tt-badge-grok-ink: #1b1540;
+  }
+}
+
 .threads-view { box-sizing: border-box; flex: 0 0 auto; width: 100%; max-width: 768px; margin-inline: auto; padding: 22px 24px 48px; display: grid; align-content: start; }
 .threads-view p { line-height: 1.55; }
 .threads-muted { color: var(--tt-text-muted); font-size: 12.5px; }
@@ -23,6 +42,9 @@
 .thread-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; padding: 15px 0; border-top: 1px solid var(--tt-hairline); cursor: pointer; }
 .thread-row[aria-current='true'] { cursor: default; padding: 18px 0 20px; }
 .thread-row__agent { grid-column: 1; grid-row: 1; display: grid; place-items: center; box-sizing: border-box; width: 26px; height: 26px; margin-top: 1px; border: 1px solid var(--tt-border-faint); border-radius: 50%; background: var(--tt-surface); color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 11px; font-weight: 700; letter-spacing: -.5px; }
+.thread-row__agent[data-provider='claude'] { border-color: transparent; background: var(--tt-badge-claude); color: var(--tt-badge-claude-ink); }
+.thread-row__agent[data-provider='codex'] { border-color: transparent; background: var(--tt-badge-codex); color: var(--tt-badge-codex-ink); }
+.thread-row__agent[data-provider='grok'] { border-color: transparent; background: var(--tt-badge-grok); color: var(--tt-badge-grok-ink); }
 .thread-row__title { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .thread-row__toggle { min-width: 0; overflow: hidden; margin: 0; border: 0; padding: 0; background: none; color: var(--tt-text); font: inherit; font-size: 15px; font-weight: 600; letter-spacing: -.15px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .thread-row__toggle:focus-visible { outline-offset: 3px; border-radius: 3px; }

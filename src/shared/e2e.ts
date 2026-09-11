@@ -52,7 +52,7 @@ export interface SottoE2EBridge {
  */
 export const E2E_THREADS_NOW = Date.UTC(2026, 6, 12, 19, 41)
 
-// Kept between 14:00 and 20:00 UTC so day grouping holds from UTC-6 to UTC+3.
+// Kept between 14:00 and 20:00 UTC so day grouping holds from UTC-7 (the pinned capture zone) to UTC+3.
 const fixtureAt = (dayOffset: number, hour: number, minute: number): string =>
   new Date(Date.UTC(2026, 6, 12 + dayOffset, hour, minute)).toISOString()
 

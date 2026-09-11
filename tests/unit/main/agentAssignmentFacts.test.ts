@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -118,6 +118,58 @@ describe('assignment facts', () => {
     expect(resumed.assignments[0]).toMatchObject({ mode: 'managed', paused: false, followups: 0, lastFailure: '', stopReason: 'none', stoppedAt: '' })
     expect(resumed.queue.some(item => item.kind === 'blocked')).toBe(false)
     await expect.poll(() => f.savedAssignment()).toMatchObject({ paused: false, followups: 0, stopReason: 'none', stoppedAt: '' })
+  })
+
+  it('clears stop facts when the user takes over', async () => {
+    const f = await fixture()
+    await f.supervise(1)
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
+    await expect.poll(() => f.control.get().host.threads[0]?.status).toBe('running')
+    expect(f.control.get().assignments[0]?.followups).toBe(1)
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'Second test failed.', status: 'idle' })
+    await expect.poll(() => f.control.get().assignments[0]?.paused).toBe(true)
+    const stopped = f.control.get().assignments[0]!
+    expect(stopped.stopReason).toBe('limit')
+    expectIso(stopped.stoppedAt)
+    await expect.poll(() => f.savedAssignment()).toEqual(stopped)
+
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'I will handle the failing test.' })
+    const message = f.control.get().host.threads[0]!.messages.at(-1)!
+    expect(message.role).toBe('user')
+    expect(stopped.ownMessageIds).not.toContain(message.id)
+    await expect.poll(() => f.control.get().assignments[0]).toMatchObject({ mode: 'manual', stopReason: 'none', stoppedAt: '' })
+    const manual = f.control.get().assignments[0]!
+    expect(manual).toEqual({ ...stopped, mode: 'manual', stopReason: 'none', stoppedAt: '',
+      contextUpdatedAt: manual.contextUpdatedAt, seenMessageIds: [...stopped.seenMessageIds, message.id] })
+    await expect.poll(() => f.savedAssignment()).toEqual(manual)
+  })
+
+  it('preserves a limit stop when saving fails', async () => {
+    const f = await fixture()
+    await f.supervise(1)
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
+    await expect.poll(() => f.control.get().host.threads[0]?.status).toBe('running')
+    expect(f.control.get().assignments[0]?.followups).toBe(1)
+    await f.control.privacyChanged()
+
+    const path = join(f.root, 'agents.json')
+    await unlink(path)
+    await mkdir(path)
+    try {
+      f.host.event({ type: 'ready', threadId: 'workshop', text: 'Second test failed.', status: 'idle' })
+      // The limit is recorded synchronously, before the atomic save can reject.
+      const stopped = f.control.get().assignments[0]!
+      expect(stopped.stopReason).toBe('limit')
+      expectIso(stopped.stoppedAt)
+      await expect.poll(() => f.control.get().queue).toContainEqual(expect.objectContaining({
+        threadId: 'workshop', kind: 'blocked', text: expect.stringContaining('agents.json'),
+      }))
+      expect(f.control.get().assignments[0]).toMatchObject({ paused: true, stopReason: 'limit', stoppedAt: stopped.stoppedAt })
+    } finally {
+      // Drain queued writes before restoring the path for the existing teardown.
+      await f.control.privacyChanged().catch(() => undefined)
+      await rmdir(path)
+    }
   })
 
   it('records a repeated identical failure as a repeat stop', async () => {

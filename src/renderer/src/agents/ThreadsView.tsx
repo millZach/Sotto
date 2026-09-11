@@ -4,16 +4,13 @@ import { Search, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
-import {
-  clockLabel, describeThreads, elapsedLabel, groupThreads, matchesThreadQuery, providerGlyph, threadCounts, threadFacts,
-  type ThreadRow,
-} from './threadFacts'
+import { clockLabel, describeThreads, groupThreads, listThreads, providerGlyph, threadCounts, type ThreadRow } from './threadFacts'
 import './threads.css'
 
 type Command = AgentConnection['command']
 
 export interface ThreadsViewProps {
-  /** Opens the Agents room, optionally with a thread selected first. */
+  /** Navigates to the Agents room. When a thread should be selected first, the page sends `select-thread` before calling this. */
   readonly onOpenAgents: () => void
   /** A fixed clock for deterministic captures; the page otherwise ticks on real time. */
   readonly now?: number | undefined
@@ -57,28 +54,27 @@ function ThreadRequest({ row, command, busy, onAnswerInAgents }: {
   </div>
 }
 
-function ThreadArticle({ row, open, now, followupLimit, command, busy, onToggle, onOpenThread }: {
-  readonly row: ThreadRow; readonly open: boolean; readonly now: number; readonly followupLimit: number
+function ThreadArticle({ row, open, command, busy, onToggle, onOpenThread }: {
+  readonly row: ThreadRow; readonly open: boolean
   readonly command: Command; readonly busy: boolean
   readonly onToggle: () => void; readonly onOpenThread: (threadId: string) => void
 }): ReactNode {
-  const { thread, assignment } = row
-  const facts = threadFacts(row, followupLimit, now)
-  const side = row.state === 'working' ? elapsedLabel(row.activityAt, now) : clockLabel(row.activityAt)
+  const { thread, assignment, facts } = row
   const toggleFromRow = (event: MouseEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest('button, a, input, code')) return
     onToggle()
   }
   const managing = row.management === 'managed'
   return <article className="thread-row" data-state={row.state} aria-current={open ? 'true' : undefined} onClick={toggleFromRow}>
-    <span className="thread-row__agent" aria-hidden="true">{providerGlyph(row.provider)}</span>
+    <span className="thread-row__agent" data-provider={row.providerKey} aria-hidden="true">{providerGlyph(row.provider)}</span>
     <div className="thread-row__title">
       <button type="button" className="thread-row__toggle tt-focusable" aria-expanded={open} onClick={onToggle}>{thread.title}</button>
       <small>{row.provider}{row.project !== undefined ? `, in ${row.project.title}` : ''}</small>
     </div>
     <div className="thread-row__side tt-tabular">
-      <span className="thread-row__state" data-state={row.state}><i aria-hidden="true" />{row.stateLabel}</span>
-      <span>{side}</span>
+      {/* A finished thread has nothing to signal, so Done carries no dot. */}
+      <span className="thread-row__state" data-state={row.state}>{row.state === 'done' ? null : <i aria-hidden="true" />}{row.stateLabel}</span>
+      <span>{row.when}</span>
     </div>
     <p className="thread-row__now">{row.sentence}</p>
     <ThreadRequest row={row} command={command} busy={busy} onAnswerInAgents={() => onOpenThread(thread.id)} />
@@ -115,8 +111,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [openId, setOpenId] = useState<string | null>(null)
   const state: AgentState | null = agents.state
   const rows = useMemo(() => state === null ? [] : describeThreads(state, now), [state, now])
-  const matching = useMemo(() => rows.filter(row => matchesThreadQuery(row, query)), [rows, query])
-  const groups = useMemo(() => groupThreads(matching, now), [matching, now])
+  const { matching, listed } = useMemo(() => listThreads(rows, query), [rows, query])
+  const groups = useMemo(() => groupThreads(listed, now), [listed, now])
   const counts = threadCounts(rows, now)
   const trimmed = query.trim()
 
@@ -133,7 +129,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
     return <div className="management-view threads-view" data-empty="none">
       <div className="threads-empty">
         <h2>No threads yet.</h2>
-        <p>Say “Hey Sotto, open a thread in workshop” or start one here. Sotto keeps every thread on this computer.</p>
+        <p>Say “Hey Sotto, open a thread” or start one from the Agents room. The provider keeps every thread; Sotto lists the ones it can see.</p>
         <Button onClick={onOpenAgents}>New thread</Button>
       </div>
     </div>
@@ -152,16 +148,18 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
       <Button variant="secondary" onClick={onOpenAgents}>New thread</Button>
     </header>
     {agents.error !== null || state.error !== null ? <p className="agent-error" role="alert">{state.error ?? agents.error}</p> : null}
-    {groups.length === 0
+    {groups.map((group, index) => <section key={group.id} className="threads-group" data-first={index === 0 ? '1' : undefined} aria-label={group.label}>
+      <h2 className="threads-group__label" data-tone={group.tone}>{group.label}</h2>
+      {group.rows.map(row => <ThreadArticle key={row.thread.id} row={row} open={openId === row.thread.id}
+        command={agents.command} busy={state.busy}
+        onToggle={() => setOpenId(openId === row.thread.id ? null : row.thread.id)} onOpenThread={openThread} />)}
+    </section>)}
+    {/* The attention queue above stays put; this only says the search itself found nothing. */}
+    {trimmed && matching.length === 0
       ? <div className="threads-empty" data-empty="search">
         <h2>Nothing matches “{trimmed}”.</h2>
         <p>Try a project or thread name, or clear the search.</p>
       </div>
-      : groups.map((group, index) => <section key={group.id} className="threads-group" data-first={index === 0 ? '1' : undefined} aria-label={group.label}>
-        <h2 className="threads-group__label" data-tone={group.tone}>{group.label}</h2>
-        {group.rows.map(row => <ThreadArticle key={row.thread.id} row={row} open={openId === row.thread.id} now={now}
-          followupLimit={state.configuration.followupLimit} command={agents.command} busy={state.busy}
-          onToggle={() => setOpenId(openId === row.thread.id ? null : row.thread.id)} onOpenThread={openThread} />)}
-      </section>)}
+      : null}
   </div>
 }

@@ -51,7 +51,7 @@ describe('AgentView user workflows', () => {
     state.reasoningAccounts = [{ provider: 'claude', label: 'Claude', installed: true, ready: true, detail: 'Connected', models: [{ id: 'available', name: 'Available model' }] }]
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.getByLabelText('Reasoning effort')).toBeEnabled()
     fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: '' } })
@@ -65,7 +65,7 @@ describe('AgentView user workflows', () => {
     state.reasoningAccounts = [{ provider: 'codex', label: 'ChatGPT', installed: true, ready: true, detail: 'Connected',
       models: [{ id: 'first', name: 'First model', reasoningEfforts: ['high'] }] }]
     vi.mocked(useAgents).mockReturnValue(connection(state))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.queryByRole('option', { name: 'Default (First model)' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Reasoning effort')).toBeDisabled()
@@ -82,7 +82,7 @@ describe('AgentView user workflows', () => {
       ] }]
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.getByRole('option', { name: 'Default (GPT-6 Astra)' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Reasoning model'), { target: { value: 'gpt-6-astra' } })
@@ -100,7 +100,7 @@ describe('AgentView user workflows', () => {
     const state = stateFixture()
     const command = vi.fn().mockResolvedValueOnce({ ...state, error: 'Folder is unavailable' }).mockResolvedValue(state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'New project' }))
     fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'New workspace' } })
     fireEvent.change(screen.getByLabelText('Project folder'), { target: { value: 'D:\\New workspace' } })
@@ -120,7 +120,7 @@ describe('AgentView user workflows', () => {
     const state = stateFixture()
     const command = vi.fn().mockResolvedValueOnce({ ...state, error: 'Could not open thread' }).mockResolvedValue(state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     const summary = screen.getByText('Open a new thread in Workshop')
     fireEvent.click(summary)
     fireEvent.change(screen.getByLabelText('Thread name'), { target: { value: 'Gameplay' } })
@@ -140,7 +140,7 @@ describe('AgentView user workflows', () => {
     const state = stateFixture()
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     const search = screen.getByRole('searchbox', { name: 'Search projects and threads' })
     fireEvent.change(search, { target: { value: 'guide' } })
     expect(screen.getByRole('button', { name: 'Select Write guide' })).toBeInTheDocument()
@@ -157,7 +157,7 @@ describe('AgentView user workflows', () => {
     const state = { ...stateFixture(), activeThreadId: 'unassigned' }
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     expect(screen.queryByLabelText('Prompt')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop agent' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Manage this thread' }))
@@ -168,7 +168,7 @@ describe('AgentView user workflows', () => {
     const state = { ...stateFixture(), activeThreadId: 'unassigned', draftThreadId: 'thread', composing: true, draft: 'Keep this target' }
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     expect(screen.getByLabelText('Prompt')).toHaveValue('Keep this target')
     expect(screen.getByText('This draft stays with Build game.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Return to draft thread' }))
@@ -179,7 +179,7 @@ describe('AgentView user workflows', () => {
     const state = stateFixture()
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     expect(screen.getByText(/Creating projects and threads by voice and automatic follow-ups need/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Set up reasoning' }))
     expect(screen.getByLabelText('Sotto reasoning')).toHaveFocus()
@@ -190,7 +190,7 @@ describe('AgentView user workflows', () => {
   it('offers an existing subscription for Sotto reasoning', () => {
     const state = stateFixture()
     vi.mocked(useAgents).mockReturnValue(connection(state))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.getByRole('option', { name: 'ChatGPT subscription · Codex' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Claude subscription · Claude Code' })).toBeInTheDocument()
@@ -202,7 +202,7 @@ describe('AgentView user workflows', () => {
     state.configuration.reasoning = 'openrouter'
     state.credentials.reasoning = true
     vi.mocked(useAgents).mockReturnValue(connection(state))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     expect(screen.getByLabelText('Reasoning API key')).toHaveAttribute('placeholder', expect.stringContaining('Saved securely'))
     fireEvent.change(screen.getByLabelText('Reasoning API key'), { target: { value: 'unsaved-openrouter-key' } })
@@ -219,7 +219,7 @@ describe('AgentView user workflows', () => {
       detail: 'Uses the subscription signed into Claude Code.', models: [{ id: 'sonnet', name: 'Sonnet' }] }]
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     fireEvent.change(screen.getByLabelText('Reasoning API key'), { target: { value: 'unsaved-api-key' } })
     fireEvent.change(screen.getByLabelText('Sotto reasoning'), { target: { value: 'claude' } })
@@ -239,10 +239,10 @@ describe('AgentView user workflows', () => {
     state.configuration.reasoning = 'codex'
     state.reasoningAccounts = [{ provider: 'codex', label: 'ChatGPT', installed: true, ready: true, detail: 'Connected', models: [] }]
     vi.mocked(useAgents).mockReturnValue(connection(state))
-    const view = render(<AgentView />)
+    const view = render(<AgentView onOpenThreads={() => undefined} />)
     expect(screen.queryByLabelText('Reasoning setup')).not.toBeInTheDocument()
     state.reasoningAccounts[0]!.ready = false
-    view.rerender(<AgentView />)
+    view.rerender(<AgentView onOpenThreads={() => undefined} />)
     expect(screen.getByLabelText('Reasoning setup')).toBeInTheDocument()
   })
 
@@ -252,7 +252,7 @@ describe('AgentView user workflows', () => {
     state.reasoningAccounts = [{ provider: 'claude', label: 'Claude', installed: true, ready: false, detail: 'Sign in again.', models: [] }]
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    render(<AgentView />)
+    render(<AgentView onOpenThreads={() => undefined} />)
     fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
     fireEvent.change(screen.getByLabelText('Default projects directory'), { target: { value: 'D:\\New projects' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))

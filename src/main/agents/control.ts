@@ -614,6 +614,7 @@ export class AgentControl {
       }
       if (fresh.some(m => m.role === 'user' && !assignment.ownMessageIds.includes(m.id))) {
         if (assignment.mode !== 'manual') {
+          assignment.stopReason = 'none'; assignment.stoppedAt = ''
           this.say(`You're controlling ${thread.title}. I'll keep watching. Say “resume managing ${thread.title}” when you want me to take over again.`)
           announcedManualControl = true
         }
@@ -723,7 +724,9 @@ export class AgentControl {
     } finally {
       await this.persist().catch(error => {
         assignment.paused = true
-        assignment.stopReason = 'error'; assignment.stoppedAt = new Date().toISOString()
+        if (assignment.stopReason === 'none') {
+          assignment.stopReason = 'error'; assignment.stoppedAt = new Date().toISOString()
+        }
         failure = error instanceof Error ? error.message : 'Could not save agent state.'
         this.enqueue(thread, 'blocked', failure)
       })

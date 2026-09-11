@@ -34,6 +34,7 @@ for (const theme of DESIGN_CAPTURE_THEMES) {
     ['settings-application-privacy', 'settings', 'application-privacy'],
     ['settings-validation-error', 'settings', 'validation-error'],
     ['help', 'help', 'overview'],
+    // Threads captures show clock times; the capture run pins America/Los_Angeles and en-US.
     ['threads-populated', 'threads', 'populated'],
     ['threads-open-running', 'threads', 'open-running'],
     ['threads-stopped', 'threads', 'stopped-open'],
