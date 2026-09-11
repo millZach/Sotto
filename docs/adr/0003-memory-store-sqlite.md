@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-09-10
+Accepted — 2026-09-10 (Windows x64 verified; Mac arm64 deferred)
 
 ## Context
 
@@ -44,4 +44,4 @@ ELECTRON_RUN_AS_NODE=1 release/mac-arm64/Sotto.app/Contents/MacOS/Sotto scripts/
 - Synchronous database work is acceptable for the small alpha store. Large scans must be bounded and timed by the future retriever; measured latency can justify moving work off the main thread or adopting a vector extension.
 - WAL creates adjacent `-wal` and `-shm` files. Backups and future deletion/export flows must account for an open database; tests and the probe close connections before deleting their temporary directory.
 - The packaged probe verifies the store and SQL in the shipped main-process graph. Semantic retrieval and temporal supersession remain follow-on memory work.
-- Windows x64 verification passed in this worktree with `npm run package:dir` on 2026-09-10. The packaged main-process probe reported SQLite 3.53.1, migration 1, matched ID `memory-probe` and FTS5 true; the normal packaged launch smoke also passed. Mac arm64 remains deferred. Status stays Proposed pending the orchestrator's acceptance.
+- Windows x64 verification passed in this worktree with `npm run package:dir` on 2026-09-10. The packaged main-process probe reported SQLite 3.53.1, migration 1, matched ID `memory-probe` and FTS5 true; the normal packaged launch smoke also passed. Mac arm64 remains deferred. The integrated branch passed the same check from the main checkout.
