@@ -8,14 +8,14 @@
 
 Sotto is a private, offline-first dictation app for Windows and Apple silicon Macs. Press the global shortcut, speak, press it again, and Sotto copies the local transcript and optionally pastes it at the active cursor. Raw audio stays in memory and is discarded after transcription.
 
-[![Latest release](https://img.shields.io/github/v/release/millZach/Sotto?label=release&color=e8833a)](https://github.com/millZach/Sotto/releases/latest)
-[![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%C2%B7%20macOS%20arm64-2f6f6a)](https://github.com/millZach/Sotto/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/millZach/Sotto-releases?label=release&color=e8833a)](https://github.com/millZach/Sotto-releases/releases/latest)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%C2%B7%20macOS%20arm64-2f6f6a)](https://github.com/millZach/Sotto-releases/releases/latest)
 [![Transcription](https://img.shields.io/badge/transcription-100%25%20on--device-2f6f6a)](#privacy-and-cost)
 [![License](https://img.shields.io/badge/license-freeware-555)](LICENSE.md)
 
 <img src="artifacts/design/baseline/listening-dark.png" alt="Sotto recording widget while listening" width="260" />
 
-**[⬇ Download the latest installer or disk image](https://github.com/millZach/Sotto/releases/latest)**
+**[⬇ Download the latest installer or disk image](https://github.com/millZach/Sotto-releases/releases/latest)**
 
 </div>
 

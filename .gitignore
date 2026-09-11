@@ -27,3 +27,6 @@ resources/runtime/*.wasm
 # LLM formatting benchmark — never commit the key or raw results
 scripts/llm-bench/.openrouter-key
 scripts/llm-bench/results/
+
+# scratch prompts and logs for delegated model runs
+.claude/tmp/
