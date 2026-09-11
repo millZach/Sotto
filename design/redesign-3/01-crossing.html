@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Direction 1: Crossing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&display=swap" rel="stylesheet">
+<style>
+  /* Day room (dictation). Night room (agents) is set on the window below. */
+  /* One room now: black on both screens. The wave keeps the dictation teal
+     and the orb defaults to the same teal so the two pages read as one app. */
+  :root {
+    --bg: #000; --ink: #f3f4f3; --ink-2: #c3c9c6; --ink-3: #858c88; --rule: #1a1d1b; --pill: #f3f4f3; --pill-ink: #000;
+    --wave: #47b8a9; --wave-soft: rgb(71 184 169 / 14%); --field: #0c0e0d;
+    --sans: 'Bricolage Grotesque', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { display: grid; place-items: center; background: #7a807c; font: 400 14px/1.5 var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  svg { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  .ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  .window { position: relative; width: 1100px; height: 720px; display: grid; grid-template-rows: 60px minmax(0, 1fr) 44px; background: var(--bg); color: var(--ink); overflow: hidden; border-radius: 14px; outline: 1px solid rgb(255 255 255 / 8%); outline-offset: -1px; box-shadow: 0 30px 80px rgb(0 0 0 / 45%); transition: background .35s; }
+
+  /* ---- top strip: mark, the crossing, window controls ---- */
+  .strip { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 0 0 20px; }
+  .mark { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: -.1px; }
+  .mark svg { width: 20px; height: 20px; }
+  .crossing { display: inline-flex; padding: 4px; border-radius: 999px; border: 1px solid var(--rule); background: rgb(255 255 255 / 3%); }
+  .crossing button { display: inline-flex; align-items: center; gap: 9px; height: 34px; padding: 0 16px 0 12px; border-radius: 999px; color: var(--ink-2); font-weight: 500; font-size: 13.5px; }
+  .crossing button[aria-pressed='true'] { background: var(--pill); color: var(--pill-ink); }
+  .crossing .wave { --wave-w: 2px; --wave-gap: 2px; --wave-rest: 4px; --wave-peak: 14px; }
+  .crossing .wave i { background: currentColor; }
+  .crossing .glyph { width: 16px; height: 16px; border-radius: 50%; border: 1.7px solid currentColor; position: relative; }
+  .crossing .glyph::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1.2px dashed currentColor; opacity: .7; }
+  .controls { justify-self: end; display: flex; align-self: stretch; }
+  .controls button { width: 46px; color: var(--ink-3); display: grid; place-items: center; }
+  .controls button:hover { color: var(--ink); }
+
+  /* ---- shared wave: the widget's rhythm ---- */
+  .wave { display: inline-flex; align-items: center; gap: var(--wave-gap, 3px); height: var(--wave-peak, 17px); flex: none; }
+  .wave i { width: var(--wave-w, 3px); height: var(--wave-rest, 5px); border-radius: 999px; background: var(--wave); flex: none; transition: height .18s ease; }
+  [data-state='listening'] .wave i { animation: wave .9s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: .12s } .wave i:nth-child(3) { animation-delay: .24s } .wave i:nth-child(4) { animation-delay: .36s }
+  .wave i:nth-child(5) { animation-delay: .48s } .wave i:nth-child(6) { animation-delay: .6s } .wave i:nth-child(7) { animation-delay: .72s }
+  @keyframes wave { 0%, 100% { height: var(--wave-rest, 5px); } 50% { height: var(--wave-peak, 17px); } }
+  /* resting silhouette: the widget's centred hump */
+  [data-state='ready'] .wave i:nth-child(4) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .28); }
+  [data-state='ready'] .wave i:nth-child(3), [data-state='ready'] .wave i:nth-child(5) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .2); }
+  [data-state='ready'] .wave i:nth-child(2), [data-state='ready'] .wave i:nth-child(6) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .1); }
+
+  .pill { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 24px; border-radius: 999px; background: var(--pill); color: var(--pill-ink); font-weight: 600; font-size: 15px; }
+  .pill:hover { filter: brightness(1.12); }
+  .pill.quiet { background: transparent; color: var(--ink-2); border: 1px solid var(--rule); height: 38px; padding: 0 16px; font-size: 13.5px; font-weight: 500; }
+  .pill.quiet:hover { color: var(--ink); border-color: var(--ink-3); filter: none; }
+  .keys { display: inline-flex; gap: 4px; }
+  .keys span { padding: 2px 7px; border-radius: 6px; border: 1px solid var(--rule); color: var(--ink-2); font-size: 12px; font-weight: 500; }
+
+  /* Thin, dark scrollbars everywhere something scrolls. */
+  .view-history, .stream { scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; scrollbar-gutter: stable both-edges; }
+  .view-history::-webkit-scrollbar, .stream::-webkit-scrollbar { width: 6px; }
+  .view-history::-webkit-scrollbar-track, .stream::-webkit-scrollbar-track { background: transparent; }
+  .view-history::-webkit-scrollbar-thumb, .stream::-webkit-scrollbar-thumb { background: #262a28; border-radius: 999px; }
+  .view-history::-webkit-scrollbar-thumb:hover, .stream::-webkit-scrollbar-thumb:hover { background: #3a3f3c; }
+  .view-history::-webkit-scrollbar-button, .stream::-webkit-scrollbar-button { display: none; height: 0; }
+
+  .view { display: none; min-height: 0; }
+  .window[data-view='dictate'] .view-dictate { display: grid; }
+  .window[data-view='agents'] .view-agents { display: block; }
+
+  /* ---- dictate room ---- */
+  .view-dictate { grid-template-rows: 1fr auto; align-items: end; padding: 0 0 8px; }
+  .hero { display: grid; justify-items: center; align-content: center; gap: 22px; text-align: center; padding-bottom: 40px; }
+  .hero .wave { margin-bottom: -10px; }
+  .hero .wave { --wave-w: 14px; --wave-gap: 12px; --wave-rest: 14px; --wave-peak: 130px; }
+  .hero .wave i { transition: height .3s ease; }
+  .hero h1 { font-size: 44px; font-weight: 500; letter-spacing: -1.2px; line-height: 1.05; font-variation-settings: 'opsz' 96; }
+  .hero h1 time { display: none; color: var(--ink-3); font-variant-numeric: tabular-nums; font-weight: 400; margin-left: 14px; }
+  [data-state='listening'] .hero h1 time { display: inline; }
+  .hero .actions { display: flex; align-items: center; gap: 18px; color: var(--ink-3); }
+  [data-state='listening'] .hero [data-toggle] { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+
+  .last { width: 720px; justify-self: center; display: grid; grid-template-columns: 96px 1fr auto; gap: 0 22px; padding: 22px 0 18px; border-top: 1px solid var(--rule); align-items: start; }
+  .last .when { color: var(--ink-3); font-size: 13px; line-height: 1.4; padding-top: 4px; }
+  .last .when b { display: block; color: var(--ink-2); font-weight: 500; }
+  .last p { font-size: 17px; line-height: 1.5; letter-spacing: -.1px; font-variation-settings: 'opsz' 20; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .last .pill { align-self: start; }
+
+  /* ---- footer line ---- */
+  .foot { display: flex; align-items: center; gap: 22px; padding: 0 22px; color: var(--ink-3); font-size: 13px; border-top: 1px solid var(--rule); }
+  .foot a { color: var(--ink-2); text-decoration: none; }
+  .foot a:hover { color: var(--ink); }
+  .foot .status { margin-left: auto; }
+  .foot .tune { margin-left: auto; display: none; align-items: center; gap: 14px; }
+  .window[data-view='agents'] .foot .status { display: none; }
+  .window[data-view='agents'] .foot .tune { display: flex; }
+  .swatches { display: flex; gap: 8px; align-items: center; }
+  .swatches button { width: 14px; height: 14px; border-radius: 50%; background: var(--sw); outline: 2px solid transparent; outline-offset: 2px; }
+  .swatches button[aria-pressed='true'] { outline-color: var(--ink-3); }
+  .foot .voice { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .foot .voice:hover { color: var(--ink); }
+
+  /* ---- night room ---- */
+  .view-agents { position: relative; height: 100%; }
+  .night { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; justify-items: center; }
+  .night canvas { height: 100%; max-height: 560px; aspect-ratio: 1; width: auto; min-height: 0; cursor: pointer; align-self: center; }
+  .said { text-align: center; display: grid; gap: 6px; padding: 8px 40px 18px; }
+  .said h1 { font-size: 34px; font-weight: 500; letter-spacing: -.8px; font-variation-settings: 'opsz' 96; }
+  .said p { color: var(--ink-2); font-size: 14px; max-width: 560px; margin: 0 auto; }
+  .said .try { color: var(--ink-3); font-size: 13px; }
+  .sessions { display: flex; gap: 8px; align-items: center; padding-bottom: 20px; }
+  .session { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px 0 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink); font-weight: 500; background: rgb(255 255 255 / 3%); }
+  .session:hover, .session[aria-current] { border-color: #3a3f3c; background: rgb(255 255 255 / 6%); }
+  .agent { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #000; }
+  .agent.claude { background: #e2b28a; } .agent.codex { background: #d3d7dd; } .agent.grok { background: #c9c2ff; }
+  .session small { color: var(--ink-3); font-weight: 400; }
+  .session .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .dot.working { background: #4cc2b5; box-shadow: 0 0 8px #4cc2b5; animation: blink 1.6s ease-in-out infinite; }
+  .dot.ready { background: #f0a03c; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .session.new { color: var(--ink-2); border-style: dashed; padding-left: 14px; }
+  .session.all { color: var(--ink-3); border-color: transparent; background: none; padding: 0 10px; }
+  .session.all:hover { color: var(--ink); }
+  .mic { position: absolute; top: 18px; right: 22px; display: flex; gap: 4px; }
+  .mic button { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule); color: var(--ink-2); display: grid; place-items: center; }
+  .mic button:hover { color: var(--ink); border-color: #3a3f3c; }
+
+  .attention { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: 560px; padding: 16px 16px 16px 18px; border-radius: 18px; border: 1px solid #2a2e2c; background: rgb(12 14 13 / 86%); backdrop-filter: blur(14px); box-shadow: 0 24px 60px rgb(0 0 0 / 65%); display: none; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: center; }
+  .window[data-attention='1'] .attention { display: grid; }
+  .attention .agent { width: 34px; height: 34px; font-size: 14px; }
+  .attention strong { display: block; font-size: 14.5px; font-weight: 600; letter-spacing: -.1px; }
+  .attention code { font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12.5px; color: var(--ink-2); }
+  .attention .actions { display: flex; gap: 8px; }
+  .attention .actions .pill { height: 36px; padding: 0 16px; font-size: 13.5px; }
+  .attention .say { grid-column: 2 / -1; color: var(--ink-3); font-size: 12.5px; }
+
+  .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 440px; border-left: 1px solid var(--rule); background: rgb(0 0 0 / 82%); backdrop-filter: blur(18px); display: none; grid-template-rows: auto 1fr auto; }
+  .window[data-drawer='1'] .sheet { display: grid; }
+  .window[data-drawer='1'] .night { right: 440px; }
+  .window[data-drawer='1'] .mic { right: 462px; }
+  .sheet header { padding: 20px 22px 14px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--rule); }
+  .sheet header strong { font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
+  .sheet header small { display: block; color: var(--ink-3); font-size: 12.5px; }
+  .sheet header button { margin-left: auto; color: var(--ink-3); }
+  .stream { overflow: auto; padding: 18px 22px; display: grid; gap: 16px; align-content: start; }
+  .msg { display: grid; gap: 5px; }
+  .msg .who { color: var(--ink-3); font-size: 12.5px; }
+  .msg p { line-height: 1.55; font-size: 14px; }
+  .msg.user p { color: var(--ink-2); }
+  .tool { display: flex; gap: 9px; align-items: center; color: var(--ink-2); font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12px; padding: 7px 11px; border-radius: 8px; background: rgb(255 255 255 / 4%); }
+  .tool .ic { width: 13px; height: 13px; }
+  .tool.ok { color: #7fd6ca; }
+  .composer { padding: 14px 18px 18px; border-top: 1px solid var(--rule); display: grid; gap: 10px; }
+  .composer textarea { width: 100%; min-height: 66px; resize: none; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font: inherit; line-height: 1.5; }
+  .composer textarea::placeholder { color: var(--ink-3); }
+  .composer .row { display: flex; align-items: center; color: var(--ink-3); font-size: 12.5px; }
+  .composer .row .pill { margin-left: auto; height: 36px; padding: 0 18px; font-size: 13.5px; }
+
+  /* ---- history: the reading column from the dictate room, continued ---- */
+  .view-history { overflow: auto; justify-content: center; align-content: start; padding: 26px 0 40px; }
+  .window[data-view='history'] .view-history { display: grid; }
+  .window[data-view='history'] .crossing [data-nav] { color: var(--ink-2); }
+  .roll { width: 720px; display: grid; align-content: start; }
+  .roll .head { display: flex; align-items: baseline; gap: 18px; padding-bottom: 18px; }
+  .roll h1 { font-size: 30px; font-weight: 500; letter-spacing: -.7px; font-variation-settings: 'opsz' 96; }
+  .roll .head small { color: var(--ink-3); font-size: 13.5px; }
+  .find { margin-left: auto; display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 14px 0 12px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-3); width: 280px; }
+  .find:focus-within { border-color: var(--ink-3); color: var(--ink-2); }
+  .find input { flex: 1; min-width: 0; background: none; border: 0; color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
+  .find input::placeholder { color: var(--ink-3); }
+  .find input::-webkit-search-cancel-button { display: none; }
+  .find button { display: none; color: var(--ink-3); }
+  .find button:hover { color: var(--ink); }
+  .find[data-filled='1'] button { display: grid; }
+  .day { color: var(--ink-3); font-size: 13px; padding: 26px 0 6px; }
+  .day:first-of-type { padding-top: 4px; }
+  .entry { display: grid; grid-template-columns: 96px 1fr auto; gap: 0 22px; padding: 18px 0; border-top: 1px solid var(--rule); align-items: start; cursor: pointer; }
+  .entry .when { color: var(--ink-3); font-size: 13px; line-height: 1.4; padding-top: 3px; }
+  .entry .when b { display: block; color: var(--ink-2); font-weight: 500; }
+  .entry p { font-size: 16px; line-height: 1.5; letter-spacing: -.1px; font-variation-settings: 'opsz' 20; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .entry:hover p { color: var(--ink); }
+  .entry .pill { align-self: start; visibility: hidden; }
+  .entry:hover .pill { visibility: visible; }
+  .entry[aria-current] { cursor: default; padding: 22px 0 24px; }
+  .entry[aria-current] p { color: var(--ink); font-size: 17px; -webkit-line-clamp: unset; display: block; }
+  .entry[aria-current] .pill { visibility: visible; }
+  .entry .facts { grid-column: 2; display: none; color: var(--ink-3); font-size: 13px; line-height: 1.5; padding-top: 12px; }
+  .entry .facts b { color: var(--ink-2); font-weight: 500; }
+  .entry[aria-current] .facts { display: block; }
+  .entry .more { grid-column: 3; display: none; gap: 6px; padding-top: 10px; justify-self: end; }
+  .entry[aria-current] .more { display: flex; }
+  .entry .more .pill.quiet { height: 32px; padding: 0 12px; font-size: 13px; }
+  .entry .more .danger { color: #f0a89c; border-color: transparent; }
+  .entry .more .danger:hover { color: #ffbcb0; border-color: #4a2a25; }
+  .roll .empty { padding: 120px 0; text-align: center; display: none; gap: 8px; }
+  .roll .empty h2 { font-size: 24px; font-weight: 500; letter-spacing: -.5px; font-variation-settings: 'opsz' 96; }
+  .roll .empty p { color: var(--ink-3); font-size: 14px; }
+  .roll .empty .pill { justify-self: center; margin-top: 10px; }
+  .roll[data-empty] .head, .roll[data-empty] .day, .roll[data-empty] .entry { display: none; }
+  .roll[data-empty='none'] .empty-none, .roll[data-empty='off'] .empty-off { display: grid; }
+  .roll[data-empty='search'] .head { display: flex; }
+  .roll[data-empty='search'] .empty-search { display: grid; }
+  .foot .keep { margin-left: auto; display: none; align-items: center; gap: 18px; }
+  .foot .keep a { color: var(--ink-3); }
+  .foot .keep a:hover { color: #ffbcb0; }
+  .window[data-view='history'] .foot .status { display: none; }
+  .window[data-view='history'] .foot .keep { display: flex; }
+  .window[data-view='history'] .foot a[data-nav='history'] { color: var(--ink); }
+  .window[data-view='history'] .foot .keep a { color: var(--ink-3); }
+  .window[data-hist='none'] .foot .keep a, .window[data-hist='off'] .foot .keep a { display: none; }
+  .day[data-first] { padding-top: 4px; }
+
+  /* ---- threads: every session Sotto is looking after, grouped by what you need to know ---- */
+  .view-threads { overflow: auto; justify-content: center; align-content: start; padding: 26px 0 40px; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; scrollbar-gutter: stable both-edges; }
+  .view-threads::-webkit-scrollbar { width: 6px; }
+  .view-threads::-webkit-scrollbar-track { background: transparent; }
+  .view-threads::-webkit-scrollbar-thumb { background: #262a28; border-radius: 999px; }
+  .view-threads::-webkit-scrollbar-button { display: none; height: 0; }
+  .window[data-view='threads'] .view-threads { display: grid; }
+  .window[data-view='threads'] .crossing [data-nav] { color: var(--ink-2); }
+  .window[data-view='threads'] .foot a[data-nav='threads'] { color: var(--ink); }
+  .window[data-view='threads'] .foot .status { display: none; }
+  .window[data-view='threads'] .foot .looking { display: inline; margin-left: auto; }
+  .foot .looking { display: none; }
+  .board { width: 720px; display: grid; align-content: start; }
+  .board .head { display: flex; align-items: center; gap: 14px; padding-bottom: 18px; }
+  .board h1 { font-size: 30px; font-weight: 500; letter-spacing: -.7px; font-variation-settings: 'opsz' 96; }
+  .board .head small { color: var(--ink-3); font-size: 13.5px; }
+  .board .head .find { width: 240px; }
+  .board .head .pill.quiet { flex: none; }
+  .group { color: var(--ink-3); font-size: 13px; padding: 26px 0 6px; display: flex; align-items: baseline; gap: 8px; }
+  .group[data-first] { padding-top: 4px; }
+  .group.needs { color: #f0b45c; }
+  .thread { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 4px 16px; padding: 16px 0; border-top: 1px solid var(--rule); align-items: start; cursor: pointer; }
+  .thread .agent { grid-column: 1; grid-row: 1; margin-top: 1px; }
+  .thread .title { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .thread .title b { font-weight: 500; font-size: 15.5px; letter-spacing: -.15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread .title small { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+  .thread .now { grid-column: 2; grid-row: 2; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .thread:hover .now { color: var(--ink); }
+  .thread .side { grid-column: 3; grid-row: 1 / span 2; display: grid; justify-items: end; gap: 6px; color: var(--ink-3); font-size: 13px; padding-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .thread .side .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); display: inline-block; margin-right: 8px; vertical-align: 1px; }
+  .thread .side .state { display: inline-flex; align-items: center; }
+  .thread .side .state.working { color: #7fd6ca; }
+  .thread .side .state.needs { color: #f0b45c; }
+  .thread .side .state.stopped { color: #f0a89c; }
+  .thread .ask { grid-column: 2 / -1; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 14px; margin-top: 8px; padding: 12px 14px 12px 16px; border-radius: 14px; border: 1px solid #2a2e2c; background: rgb(255 255 255 / 3%); }
+  .thread .ask strong { display: block; font-size: 14px; font-weight: 600; letter-spacing: -.1px; }
+  .thread .ask code { font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12.5px; color: var(--ink-2); }
+  .thread .ask .actions { display: flex; gap: 8px; }
+  .thread .ask .actions .pill { height: 34px; padding: 0 15px; font-size: 13px; }
+  .thread .ask .say { grid-column: 1 / -1; color: var(--ink-3); font-size: 12.5px; }
+  .thread[aria-current] { cursor: default; padding: 20px 0 22px; }
+  .thread[aria-current] .now { -webkit-line-clamp: unset; display: block; color: var(--ink); font-size: 15px; }
+  .thread .facts { grid-column: 2; display: none; color: var(--ink-3); font-size: 13px; line-height: 1.5; padding-top: 10px; }
+  .thread .facts b { color: var(--ink-2); font-weight: 500; }
+  .thread[aria-current] .facts { display: block; }
+  .thread .recent { grid-column: 2; width: auto; display: none; grid-template-columns: 1fr; gap: 6px; padding: 12px 14px; margin-top: 12px; border: 1px solid var(--rule); border-radius: 14px; }
+  .thread[aria-current] .recent { display: grid; }
+  .thread .recent .who { color: var(--ink-3); font-size: 12.5px; }
+  .thread .recent p { color: var(--ink-2); font-size: 14px; line-height: 1.55; display: block; -webkit-line-clamp: unset; letter-spacing: 0; font-variation-settings: normal; }
+  .thread .more { grid-column: 2 / -1; display: none; gap: 6px; padding-top: 12px; }
+  .thread[aria-current] .more { display: flex; }
+  .thread .more .pill.quiet { height: 32px; padding: 0 12px; font-size: 13px; }
+  .thread .more .danger { color: #f0a89c; border-color: transparent; margin-left: auto; }
+  .thread .more .danger:hover { color: #ffbcb0; border-color: #4a2a25; }
+  .board .empty { padding: 120px 0; text-align: center; display: none; gap: 8px; }
+  .board .empty h2 { font-size: 24px; font-weight: 500; letter-spacing: -.5px; font-variation-settings: 'opsz' 96; }
+  .board .empty p { color: var(--ink-3); font-size: 14px; max-width: 440px; margin: 0 auto; }
+  .board .empty .pill { justify-self: center; margin-top: 10px; }
+  .board[data-empty] .group, .board[data-empty] .thread { display: none; }
+  .board[data-empty='none'] .head { display: none; }
+  .board[data-empty='none'] .empty-none, .board[data-empty='search'] .empty-search { display: grid; }
+
+  /* ---- settings: the reading column with an index beside it ---- */
+  .view-settings { overflow: auto; padding: 26px 0 60px; justify-content: center; align-content: start; grid-template-columns: 200px 720px; column-gap: 40px; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; scrollbar-gutter: stable both-edges; }
+  .view-settings::-webkit-scrollbar { width: 6px; }
+  .view-settings::-webkit-scrollbar-track { background: transparent; }
+  .view-settings::-webkit-scrollbar-thumb { background: #262a28; border-radius: 999px; }
+  .view-settings::-webkit-scrollbar-button { display: none; height: 0; }
+  .window[data-view='settings'] .view-settings { display: grid; }
+  .window[data-view='settings'] .crossing [data-nav] { color: var(--ink-2); }
+  .window[data-view='settings'] .foot a[data-nav='settings'] { color: var(--ink); }
+  .index { position: sticky; top: 0; align-self: start; display: grid; gap: 2px; padding-top: 14px; }
+  .index a { color: var(--ink-3); text-decoration: none; font-size: 14px; padding: 6px 0; }
+  .index a:hover { color: var(--ink-2); }
+  .index a[aria-current] { color: var(--ink); }
+  .index .ver { color: var(--ink-3); font-size: 12.5px; margin-top: 22px; line-height: 1.5; }
+  .prefs { display: grid; gap: 54px; }
+  .prefs section { display: grid; gap: 0; scroll-margin-top: 20px; }
+  .prefs h2 { font-size: 30px; font-weight: 500; letter-spacing: -.7px; font-variation-settings: 'opsz' 96; }
+  .prefs .read { color: var(--ink-2); font-size: 15px; line-height: 1.5; margin: 6px 0 16px; max-width: 600px; }
+  .prefs .read b { color: var(--ink); font-weight: 500; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 28px; align-items: center; padding: 15px 0; border-top: 1px solid var(--rule); }
+  .row .lab b { display: block; font-weight: 500; font-size: 15px; letter-spacing: -.1px; }
+  .row .lab span { display: block; color: var(--ink-3); font-size: 13px; line-height: 1.45; margin-top: 2px; max-width: 460px; }
+  .row .ctl { display: flex; align-items: center; gap: 8px; justify-self: end; }
+  .row.wide { grid-template-columns: 1fr; }
+  .row.wide .ctl { justify-self: stretch; margin-top: 8px; }
+  .row.wide .ctl .field { flex: 1; }
+  .row[data-off] .lab b { color: var(--ink-2); }
+  .row[data-off] .ctl { opacity: .45; pointer-events: none; }
+  .sub { padding-left: 22px; }
+  .sub .lab b { font-size: 14px; }
+  .switch { width: 36px; height: 21px; border-radius: 999px; background: #2a2e2c; position: relative; flex: none; transition: background .2s; }
+  .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #9aa19d; transition: transform .2s, background .2s; }
+  .switch[aria-checked='true'] { background: var(--ink); }
+  .switch[aria-checked='true']::after { transform: translateX(15px); background: #000; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--rule); }
+  .seg button { height: 28px; padding: 0 12px; border-radius: 999px; color: var(--ink-3); font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .seg button:hover { color: var(--ink-2); }
+  .seg button[aria-pressed='true'] { background: var(--ink); color: #000; }
+  .select { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 14px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .select:hover { border-color: var(--ink-3); }
+  .select .ic { width: 14px; height: 14px; color: var(--ink-3); }
+  .field { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 13.5px; }
+  .field:focus-within { border-color: var(--ink-3); }
+  .field input { flex: 1; min-width: 0; width: 100%; background: none; border: 0; color: var(--ink); font: inherit; font-size: 13.5px; outline: none; }
+  .field input::placeholder { color: var(--ink-3); }
+  .field.num { width: 92px; }
+  .field.num input { text-align: right; font-variant-numeric: tabular-nums; }
+  .field .unit { color: var(--ink-3); font-size: 12.5px; }
+  .field.path input { font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12.5px; }
+  .field.secret input { letter-spacing: 2px; }
+  .field.secret input::placeholder { letter-spacing: 0; }
+  .field .saved { color: #7fd6ca; font-size: 12.5px; white-space: nowrap; }
+  .prefs textarea { width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font: inherit; font-size: 13.5px; line-height: 1.5; outline: none; }
+  .prefs textarea:focus { border-color: var(--ink-3); }
+  .prefs textarea::placeholder { color: var(--ink-3); }
+  .prefs .keys span { font-size: 12.5px; padding: 4px 9px; border-radius: 7px; color: var(--ink); }
+  .pill.sm { height: 32px; padding: 0 13px; font-size: 13px; }
+  .tag { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+  .tag.on { color: #7fd6ca; }
+  .tag.warn { color: #f0c27c; }
+  .pill.quiet.danger { color: #f0a89c; }
+  .pill.quiet.danger:hover { color: #ffbcb0; border-color: #4a2a25; }
+  .row .swatches { gap: 10px; }
+  .row .swatches button { width: 18px; height: 18px; }
+  .prefs .disclose { color: var(--ink-3); font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; padding: 14px 0 0; }
+  .prefs .disclose .ic { width: 14px; height: 14px; transition: transform .2s; }
+  .prefs .disclose[aria-expanded='true'] .ic { transform: rotate(90deg); }
+  .prefs .disclose + .adv { display: none; }
+  .prefs .disclose[aria-expanded='true'] + .adv { display: block; }
+  .prefs .adv .row:first-child { border-top: 0; }
+  .prefs .voice-try { color: var(--ink-3); font-size: 13px; }
+  .foot .save { margin-left: auto; display: none; }
+  .window[data-view='settings'] .foot .status { display: none; }
+  .window[data-view='settings'] .foot .save { display: inline; }
+
+  /* ---- transcription server walkthrough ---- */
+  .guide { position: absolute; top: 60px; right: 0; bottom: 44px; width: 470px; border-left: 1px solid var(--rule); background: rgb(0 0 0 / 88%); backdrop-filter: blur(18px); display: none; grid-template-rows: auto 1fr auto; z-index: 3; }
+  .window[data-guide='1'] .guide { display: grid; }
+  .guide header { padding: 22px 24px 16px; border-bottom: 1px solid var(--rule); display: flex; align-items: start; gap: 12px; }
+  .guide header strong { display: block; font-size: 18px; font-weight: 500; letter-spacing: -.3px; }
+  .guide header small { display: block; color: var(--ink-3); font-size: 13px; margin-top: 2px; }
+  .guide header button { margin-left: auto; color: var(--ink-3); }
+  .guide .steps { overflow: auto; min-width: 0; padding: 8px 24px 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-content: start; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; }
+  .guide .steps::-webkit-scrollbar { width: 6px; } .guide .steps::-webkit-scrollbar-thumb { background: #262a28; border-radius: 999px; } .guide .steps::-webkit-scrollbar-button { display: none; height: 0; }
+  .step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 6px 14px; padding: 18px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
+  .step > * { min-width: 0; }
+  .step:last-child { border-bottom: 0; }
+  .step .n { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--rule); display: grid; place-items: center; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .step[data-done] .n { background: var(--ink); color: #000; border-color: var(--ink); }
+  .step strong { font-size: 15px; font-weight: 500; letter-spacing: -.1px; align-self: center; }
+  .step p { grid-column: 2; color: var(--ink-3); font-size: 13px; line-height: 1.5; }
+  .step .cmd { grid-column: 2; margin-top: 8px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: rgb(255 255 255 / 4%); font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12px; color: var(--ink-2); }
+  .step .cmd code { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step .cmd button { color: var(--ink-3); flex: none; }
+  .step .cmd button:hover { color: var(--ink); }
+  .step .ctl { grid-column: 2; margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  .step .ctl .field { flex: 1; }
+  .step .ok { grid-column: 2; margin-top: 8px; display: flex; gap: 8px; align-items: center; color: #7fd6ca; font-size: 13px; }
+  .step .ok .ic { width: 15px; height: 15px; }
+  .guide footer { padding: 14px 24px 18px; border-top: 1px solid var(--rule); display: flex; align-items: center; gap: 14px; color: var(--ink-3); font-size: 12.5px; }
+  .guide footer .pill { margin-left: auto; height: 36px; padding: 0 18px; font-size: 13.5px; }
+
+  /* ---- dictionary: words and snippets, one column ---- */
+  .view-dictionary { overflow: auto; justify-content: center; align-content: start; padding: 26px 0 60px; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; scrollbar-gutter: stable both-edges; }
+  .view-dictionary::-webkit-scrollbar { width: 6px; } .view-dictionary::-webkit-scrollbar-thumb { background: #262a28; border-radius: 999px; } .view-dictionary::-webkit-scrollbar-button { display: none; height: 0; }
+  .window[data-view='dictionary'] .view-dictionary { display: grid; }
+  .window[data-view='dictionary'] .crossing [data-nav] { color: var(--ink-2); }
+  .window[data-view='dictionary'] .foot a[data-nav='dictionary'] { color: var(--ink); }
+  .book { width: 720px; display: grid; align-content: start; }
+  .book .head { display: flex; align-items: baseline; gap: 18px; }
+  .book h1 { font-size: 30px; font-weight: 500; letter-spacing: -.7px; font-variation-settings: 'opsz' 96; }
+  .book .head small { color: var(--ink-3); font-size: 13.5px; }
+  .book .lede { color: var(--ink-2); font-size: 15px; line-height: 1.5; margin: 6px 0 34px; max-width: 600px; }
+  .book h2 { font-size: 20px; font-weight: 500; letter-spacing: -.4px; margin-top: 44px; }
+  .book h2:first-of-type { margin-top: 0; }
+  .book .how { color: var(--ink-3); font-size: 13.5px; line-height: 1.5; margin: 4px 0 14px; max-width: 560px; }
+  .book .add { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .book .add .field { flex: 1; }
+  .book .add .field.short { flex: 0 0 220px; }
+  .book .noticed { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13.5px; padding: 12px 14px; border-radius: 12px; background: rgb(255 255 255 / 3%); margin-bottom: 6px; }
+  .book .noticed .ic { width: 15px; height: 15px; color: var(--ink-3); }
+  .book .noticed .pill { margin-left: auto; height: 28px; padding: 0 11px; font-size: 12.5px; }
+  .word { display: grid; grid-template-columns: 200px 1fr auto auto; gap: 0 18px; align-items: center; padding: 13px 0; border-top: 1px solid var(--rule); }
+  .word b { font-weight: 500; font-size: 15px; letter-spacing: -.1px; }
+  .word .heard { color: var(--ink-3); font-size: 13px; }
+  .word .heard em { font-style: normal; color: var(--ink-2); }
+  .word .uses { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .word .x, .snip .x { color: var(--ink-3); visibility: hidden; }
+  .word:hover .x, .snip:hover .x { visibility: visible; }
+  .word .x:hover, .snip .x:hover { color: #ffbcb0; }
+  .snip { display: grid; grid-template-columns: 200px 1fr auto; gap: 4px 18px; align-items: start; padding: 15px 0; border-top: 1px solid var(--rule); }
+  .snip b { font-weight: 500; font-size: 15px; letter-spacing: -.1px; display: block; }
+  .snip .say { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 3px; }
+  .snip p { color: var(--ink-2); font-size: 14px; line-height: 1.5; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .snip .uses { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; }
+  .foot .dict { margin-left: auto; display: none; }
+  .window[data-view='dictionary'] .foot .status { display: none; }
+  .window[data-view='dictionary'] .foot .dict { display: inline; }
+
+  .view-other { display: none; place-items: center; color: var(--ink-3); }
+  .window[data-view='help'] .view-other { display: grid; }
+</style>
+</head>
+<body>
+<div class="window" data-view="dictate" data-state="ready" data-attention="0" data-drawer="0">
+  <header class="strip">
+    <div class="mark"><svg viewBox="0 0 96 96"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9df0e3"/><stop offset="1" stop-color="#2c7a72"/></linearGradient></defs><rect width="96" height="96" rx="22" fill="url(#g1)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="#03201c"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#03201c" stroke-width="7.5" stroke-linecap="round" fill="none"/></svg>Sotto</div>
+    <nav class="crossing" aria-label="Mode">
+      <button data-nav="dictate" aria-pressed="true"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Dictate</button>
+      <button data-nav="agents"><span class="glyph" aria-hidden="true"></span>Agents</button>
+    </nav>
+    <div class="controls">
+      <button title="Minimize"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button title="Close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ===== Day room ===== -->
+  <main class="view view-dictate">
+    <section class="hero">
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <h1><span data-status>Ready when you are.</span><time data-timer>00:12</time></h1>
+      <div class="actions">
+        <button class="pill" data-toggle><span data-toggle-label>Start dictation</span></button>
+        <span>or press <span class="keys"><span>Ctrl</span><span>Shift</span><span>Space</span></span> in any app</span>
+      </div>
+    </section>
+    <section class="last" aria-label="Last transcript">
+      <div class="when"><b>2:32 pm</b>84 words, pasted</div>
+      <p>Move the onboarding copy about optional downloads into the model card itself so it reads once, next to the consent checkbox, and drop the repeated sentence from the lead paragraph. Keep the Hugging Face disclosure exactly as it is.</p>
+      <button class="pill quiet">Copy</button>
+    </section>
+  </main>
+
+  <!-- ===== Night room ===== -->
+  <main class="view view-agents">
+    <div class="night">
+      <canvas id="orb"></canvas>
+      <div class="said">
+        <h1 data-orb-title>Say “Hey Sotto”</h1>
+        <p data-orb-sub>Claude is working in workshop. Two more sessions are waiting.</p>
+        <p class="try">Try “open a Codex session in sotto-site and fix the footer links”</p>
+      </div>
+      <div class="sessions">
+        <button class="session" aria-current="true" data-open-drawer><span class="agent claude">C</span>workshop<span class="dot working"></span></button>
+        <button class="session"><span class="agent codex">›_</span>sotto-site<span class="dot ready"></span></button>
+        <button class="session"><span class="agent grok">X</span>notes<small>idle</small><span class="dot"></span></button>
+        <button class="session new">New session</button>
+        <button class="session all" data-nav="threads">All threads</button>
+      </div>
+    </div>
+    <div class="mic">
+      <button title="Mute listening"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <button title="Stop speaking"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16 9l5 6M21 9l-5 6"/></svg></button>
+    </div>
+
+    <aside class="attention" role="dialog" aria-label="Permission request">
+      <span class="agent claude">C</span>
+      <div><strong>Claude wants to run a command in workshop</strong><code>npm test -- --run tests/unit/agents</code></div>
+      <div class="actions"><button class="pill quiet">Deny</button><button class="pill">Allow</button></div>
+      <span class="say">Say “allow” or “deny”, or choose here.</span>
+    </aside>
+
+    <aside class="sheet" aria-label="Session">
+      <header><span class="agent claude">C</span><div><strong>workshop</strong><small>Claude, sonnet-4.5, in ~/projects/workshop</small></div><button data-close-drawer title="Close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+      <div class="stream">
+        <div class="msg user"><span class="who">You, 2:40 pm</span><p>Find why the visual gate flakes on the widget listening capture and fix it.</p></div>
+        <div class="tool ok"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg>read tests/e2e/design-capture.spec.ts</div>
+        <div class="tool ok"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg>edit src/renderer/src/widget/widget.css</div>
+        <div class="msg"><span class="who">Claude</span><p>The bars animate from a CSS loop, so the listening frame depends on when the screenshot lands in the 0.9 s cycle. I pinned the capture to the reduced-motion branch, which holds the bars at 11px, and the diff is now zero across three runs. Running the unit suite next.</p></div>
+        <div class="tool"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></svg>npm test -- --run tests/unit/agents (waiting for permission)</div>
+      </div>
+      <div class="composer">
+        <textarea placeholder="Dictate or type a prompt. Pauses won’t send it."></textarea>
+        <div class="row"><span>Say “send it” when you’re ready</span><button class="pill">Send it</button></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ===== History ===== -->
+  <main class="view view-history">
+    <section class="roll" aria-label="Transcript history">
+      <div class="head">
+        <h1>History</h1><small data-count>132 transcripts</small>
+        <label class="find" data-filled="0"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg><input type="search" placeholder="Search transcripts" data-find><button title="Clear search" data-find-clear><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label>
+      </div>
+
+      <p class="day">Today</p>
+      <article class="entry" aria-current="true">
+        <div class="when"><b>2:32 pm</b>84 words</div>
+        <p>Move the onboarding copy about optional downloads into the model card itself so it reads once, next to the consent checkbox, and drop the repeated sentence from the lead paragraph. Keep the Hugging Face disclosure exactly as it is, and make sure the link to the model licence opens in the browser rather than inside the app.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>48 seconds, 84 words at 105 wpm.</b> English, Standard model on this device. Pasted into Notion. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+      <article class="entry">
+        <div class="when"><b>11:08 am</b>31 words</div>
+        <p>Reply to Priya: yes to Thursday, but can we push it to three so I can finish the release notes first. I’ll bring the Mac build.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>17 seconds, 31 words at 109 wpm.</b> English, Standard model on this device. Pasted into Mail. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+      <article class="entry">
+        <div class="when"><b>9:41 am</b>52 words</div>
+        <p>Note to self. The widget should keep the seven bars, but the wave in the main window can be much bigger, more like a signature than an indicator. Try it at full hero size before deciding.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>29 seconds, 52 words at 108 wpm.</b> English, Standard model on this device. Copied. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+
+      <p class="day">Yesterday</p>
+      <article class="entry">
+        <div class="when"><b>6:15 pm</b>118 words</div>
+        <p>Release notes for 1.4. Grok voices are in, with credentials stored in the system keychain and a preview button next to each voice. Streaming playback no longer stalls on the WAV length marker. Voice activation in the widget is more forgiving of quiet rooms. The Mac build is still Apple silicon only and ad-hoc signed.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>1 min 6 s, 118 words at 107 wpm.</b> English, Standard model on this device. Pasted into GitHub. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+      <article class="entry">
+        <div class="when"><b>3:02 pm</b>24 words</div>
+        <p>Open a Codex session in sotto-site and fix the footer links, they point at the old docs path and the help page is a 404.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>12 seconds, 24 words at 120 wpm.</b> English, Standard model on this device. Sent to Agents. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+      <article class="entry">
+        <div class="when"><b>10:20 am</b>67 words</div>
+        <p>Groceries for the week. Oat milk, two lemons, the good bread from the place on Fourth, coffee beans, eggs, spinach, a bag of the small potatoes, and whatever fruit looks decent. Also batteries for the kitchen scale.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>36 seconds, 67 words at 112 wpm.</b> English, Standard model on this device. Pasted into Notes. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+
+      <p class="day">Monday, September 8</p>
+      <article class="entry">
+        <div class="when"><b>4:48 pm</b>93 words</div>
+        <p>Thinking about the agent screen. The orb should feel like the thing you are talking to, not a status light. When it is listening it should lean in. When it is speaking it should breathe. Sessions are just pills underneath it, and anything that needs a decision floats up over the orb rather than living in a sidebar.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>52 seconds, 93 words at 107 wpm.</b> English, Standard model on this device. Copied. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+      <article class="entry">
+        <div class="when"><b>9:05 am</b>19 words</div>
+        <p>Dentist moved to the 23rd at two. Cancel the standup that day or move it to the morning.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>10 seconds, 19 words at 114 wpm.</b> English, Standard model on this device. Pasted into Calendar. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+
+      <p class="day">Friday, September 5</p>
+      <article class="entry">
+        <div class="when"><b>5:30 pm</b>41 words</div>
+        <p>Weekly wrap. Shipped the native subscription accounts, fixed thread routing, and got the local speech path feeling natural again. Next week is the control center, starting with the design round.</p>
+        <button class="pill quiet">Copy</button>
+        <p class="facts"><b>23 seconds, 41 words at 107 wpm.</b> English, Standard model on this device. Pasted into Slack. Kept on this computer only.</p>
+        <div class="more"><button class="pill quiet danger">Delete</button></div>
+      </article>
+
+      <div class="empty empty-none"><h2>Nothing here yet.</h2><p>Dictate something and it will be kept here, on this computer.</p><button class="pill" data-nav="dictate">Start dictation</button></div>
+      <div class="empty empty-off"><h2>History is off.</h2><p>New transcripts are not being stored. Turn history back on in Settings.</p><button class="pill quiet" data-nav="settings">Open settings</button></div>
+      <div class="empty empty-search"><h2>Nothing matches “<span data-find-echo></span>”.</h2><p>Try another word, or clear the search.</p></div>
+    </section>
+  </main>
+
+  <!-- ===== Threads ===== -->
+  <main class="view view-threads">
+    <section class="board" aria-label="Threads">
+      <div class="head">
+        <h1>Threads</h1><small data-tcount>3 active, 11 this week</small>
+        <label class="find" data-filled="0" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg><input type="search" placeholder="Search threads" data-tfind><button title="Clear search" data-tfind-clear><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></label>
+        <button class="pill quiet">New thread</button>
+      </div>
+
+      <p class="group needs" data-first>Needs you</p>
+      <article class="thread" aria-current="true" data-state="needs">
+        <span class="agent claude">C</span>
+        <div class="title"><b>Visual gate flake</b><small>Claude, in workshop</small></div>
+        <div class="side"><span class="state needs"><i class="dot ready"></i>Waiting on you</span><span>2:41 pm</span></div>
+        <p class="now">Found the cause. The listening bars animate from a CSS loop, so the frame depended on where the screenshot landed. Pinned the capture to the reduced-motion branch. Wants to run the unit suite before calling it fixed.</p>
+        <div class="ask"><div><strong>Run a command in workshop</strong><code>npm test -- --run tests/unit/agents</code></div><div class="actions"><button class="pill quiet">Deny</button><button class="pill">Allow</button></div><span class="say">Say “allow” or “deny”, or choose here.</span></div>
+        <p class="facts"><b>Started 2:32 pm from a voice prompt.</b> Sotto is managing it, 2 of 5 follow-ups used. Sonnet 4.5 through your Claude subscription. Two files changed so far.</p>
+        <div class="recent"><span class="who">You, 2:32 pm</span><p>Find why the visual gate flakes on the widget listening capture and fix it.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Pause managing</button><button class="pill quiet danger">Stop managing</button></div>
+      </article>
+
+      <p class="group">Running</p>
+      <article class="thread" data-state="working">
+        <span class="agent codex">›_</span>
+        <div class="title"><b>Footer links</b><small>Codex, in sotto-site</small></div>
+        <div class="side"><span class="state working"><i class="dot working"></i>Working</span><span>4 min</span></div>
+        <p class="now">Fixing the footer links that point at the old docs path. Editing site/help.html now; the 404 on the help page is next.</p>
+        <p class="facts"><b>Started 2:38 pm from a voice prompt.</b> Sotto is managing it, 0 of 5 follow-ups used. GPT-5.4 through your ChatGPT subscription.</p>
+        <div class="recent"><span class="who">You, 2:38 pm</span><p>Open a Codex session in sotto-site and fix the footer links, they point at the old docs path and the help page is a 404.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Pause managing</button><button class="pill quiet danger">Stop managing</button></div>
+      </article>
+      <article class="thread" data-state="working">
+        <span class="agent grok">X</span>
+        <div class="title"><b>Weekly note</b><small>Grok, in notes</small></div>
+        <div class="side"><span class="state working"><i class="dot working"></i>Working</span><span>11 min</span></div>
+        <p class="now">Summarising this week’s dictations into the Friday note. Reading history from Monday onward.</p>
+        <p class="facts"><b>Started 2:31 pm on a schedule you set.</b> Sotto is managing it, 1 of 5 follow-ups used. Grok 4.6 through your Grok subscription.</p>
+        <div class="recent"><span class="who">Sotto, 2:31 pm</span><p>It is Friday. Write the weekly wrap from this week’s dictations and put it in notes/weekly.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Pause managing</button><button class="pill quiet danger">Stop managing</button></div>
+      </article>
+
+      <p class="group">Finished today</p>
+      <article class="thread" data-state="done">
+        <span class="agent codex">›_</span>
+        <div class="title"><b>Release notes 1.4</b><small>Codex, in workshop</small></div>
+        <div class="side"><span class="state">Done</span><span>11:32 am</span></div>
+        <p class="now">Drafted the 1.4 release notes from the changelog and your dictation. 118 words, pasted into the GitHub release.</p>
+        <p class="facts"><b>Started 11:08 am from a voice prompt, finished in 24 minutes.</b> 3 follow-ups. One file changed.</p>
+        <div class="recent"><span class="who">Codex, 11:32 am</span><p>Release notes are in the draft release. I kept the Gatekeeper instructions and the Apple silicon note from the README, as you asked last time.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Continue</button></div>
+      </article>
+      <article class="thread" data-state="done">
+        <span class="agent claude">C</span>
+        <div class="title"><b>Grok voice previews</b><small>Claude, in workshop</small></div>
+        <div class="side"><span class="state">Done</span><span>9:58 am</span></div>
+        <p class="now">Added a preview button beside each Grok voice and moved the key into the system keychain. Tests green.</p>
+        <p class="facts"><b>Started 9:05 am from a typed prompt, finished in 53 minutes.</b> 4 follow-ups. Six files changed.</p>
+        <div class="recent"><span class="who">Claude, 9:58 am</span><p>Done. The preview plays a two-second sample through the selected voice, and the key never touches settings.json.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Continue</button></div>
+      </article>
+
+      <p class="group">Yesterday</p>
+      <article class="thread" data-state="stopped">
+        <span class="agent codex">›_</span>
+        <div class="title"><b>Streaming WAV stall</b><small>Codex, in workshop</small></div>
+        <div class="side"><span class="state stopped">Stopped</span><span>6:02 pm</span></div>
+        <p class="now">Stopped after five follow-ups without progress. The length marker fix kept failing the same playback test.</p>
+        <p class="facts"><b>Started 4:40 pm from a voice prompt.</b> Sotto stopped it at the follow-up limit. You fixed it by hand at 6:15 pm; that thread is closed.</p>
+        <div class="recent"><span class="who">Sotto, 6:02 pm</span><p>Stopping here. The same test failed three times in a row and I do not want to guess further. The diff is in the transcript if you want to pick it up.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Resume managing</button></div>
+      </article>
+      <article class="thread" data-state="done">
+        <span class="agent claude">C</span>
+        <div class="title"><b>Thread routing</b><small>Claude, in workshop</small></div>
+        <div class="side"><span class="state">Done</span><span>3:20 pm</span></div>
+        <p class="now">Fixed voice activation and routed thread replies to the right session. Merged.</p>
+        <p class="facts"><b>Started 1:02 pm from a voice prompt, finished in 2 hours 18 minutes.</b> 5 follow-ups. Eleven files changed.</p>
+        <div class="recent"><span class="who">Claude, 3:20 pm</span><p>Merged to the feature branch. The wake phrase now survives a quiet room and replies land on the thread that asked.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Continue</button></div>
+      </article>
+
+      <p class="group">Monday, September 8</p>
+      <article class="thread" data-state="done">
+        <span class="agent grok">X</span>
+        <div class="title"><b>Benchmark rerun</b><small>Grok, in workshop</small></div>
+        <div class="side"><span class="state">Done</span><span>5:44 pm</span></div>
+        <p class="now">Ran the polish-pass bench again with your usual settings. GLM-5.3 Flash still wins on cost; results are in scripts/llm-bench/results.</p>
+        <p class="facts"><b>Started 5:10 pm when you said “do that benchmark again”.</b> Sotto used your saved benchmark workflow. 1 follow-up.</p>
+        <div class="recent"><span class="who">Grok, 5:44 pm</span><p>Same eleven fixtures, two runs each. Nothing moved more than a point. Table is in the results folder.</p></div>
+        <div class="more"><button class="pill quiet" data-nav="agents">Open transcript</button><button class="pill quiet">Continue</button></div>
+      </article>
+
+      <div class="empty empty-none"><h2>No threads yet.</h2><p>Say “Hey Sotto, open a Codex session in sotto-site” or start one here. Sotto keeps every thread on this computer.</p><button class="pill">New thread</button></div>
+      <div class="empty empty-search"><h2>Nothing matches “<span data-tfind-echo></span>”.</h2><p>Try a project or thread name, or clear the search.</p></div>
+    </section>
+  </main>
+
+  <!-- ===== Settings ===== -->
+  <main class="view view-settings">
+    <nav class="index" aria-label="Settings sections">
+      <a href="#s-dictation" aria-current="true">Dictation</a>
+      <a href="#s-transcription">Transcription</a>
+      <a href="#s-account">AI account</a>
+      <a href="#s-cleanup">Cleanup</a>
+      <a href="#s-output">Output</a>
+      <a href="#s-application">Application</a>
+      <a href="#s-agents">Agents</a>
+      <p class="ver">Sotto 3.6.0<br>Windows</p>
+    </nav>
+    <div class="prefs">
+    <section id="s-dictation">
+      <h2>Dictation</h2>
+      <p class="read">Sotto listens on the <b>Windows default</b> microphone when you press <b>Ctrl Shift Space</b> anywhere, and stops on its own after <b>one minute</b>.</p>
+      <div class="row"><div class="lab"><b>Microphone</b><span>Used for the next recording. The widget shows which one is live.</span></div><div class="ctl"><button class="select">Windows default<svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div></div>
+      <div class="row"><div class="lab"><b>Shortcut</b><span>Starts and stops dictation from any app.</span></div><div class="ctl"><span class="keys"><span>Ctrl</span><span>Shift</span><span>Space</span></span><button class="pill quiet sm">Change</button></div></div>
+      <div class="row"><div class="lab"><b>Stop after</b><span>Sotto ends the recording at this limit.</span></div><div class="ctl"><div class="seg"><button aria-pressed="false">30 s</button><button aria-pressed="true">1 min</button><button aria-pressed="false">2 min</button><button aria-pressed="false">5 min</button></div></div></div>
+      <div class="row"><div class="lab"><b>Sound cues</b><span>A short local sound when recording starts and stops.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row"><div class="lab"><b>Transcribe while you speak</b><span>Long dictations finish almost as soon as you stop.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+    </section>
+    <section id="s-transcription">
+      <h2>Transcription</h2>
+      <p class="read">Speech becomes text on this computer with <b>Parakeet v2</b>, and the language is <b>detected automatically</b>.</p>
+      <div class="row"><div class="lab"><b>Standard</b><span>Parakeet v2, included. Near-instant, English.</span></div><div class="ctl"><span class="tag on">In use</span></div></div>
+      <div class="row"><div class="lab"><b>Multilingual</b><span>Parakeet v3. Twenty-five European languages, about 600 MB. Downloads from Hugging Face.</span></div><div class="ctl"><button class="pill quiet sm">Download</button></div></div>
+      <div class="row"><div class="lab"><b>Language</b><span>Automatic uses English. Choose a language for the multilingual model.</span></div><div class="ctl"><button class="select">Detect automatically<svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div></div>
+      <div class="row"><div class="lab"><b>Tidy spacing</b><span>Trim and collapse repeated spaces without changing words.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row"><div class="lab"><b>Transcription server</b><span>Send audio to a faster computer on your network instead. About five minutes to set up.</span></div><div class="ctl"><button class="pill quiet sm" data-open-guide>Set up</button><button class="switch" role="switch" aria-checked="false"></button></div></div>
+      <div class="row sub"><div class="lab"><b>Server</b><span>desktop.local, last answered 2 minutes ago.</span></div><div class="ctl"><label class="field path"><input value="http://desktop.local:5092" placeholder="http://desktop.local:5092"></label><button class="pill quiet sm">Test</button></div></div>
+    </section>
+    <section id="s-account">
+      <h2>AI account</h2>
+      <p class="read">Cleanup and voice commands think with your <b>Claude subscription</b>, using <b>Claude Haiku 4.5</b> with reasoning <b>off</b>.</p>
+      <div class="row"><div class="lab"><b>Account</b><span>Sotto found Claude Code, Codex and Grok Build signed in on this computer. Subscriptions need no key.</span></div><div class="ctl"><button class="select">Claude subscription<svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div></div>
+      <div class="row sub"><div class="lab"><b>Model</b><span>Recommended is the fastest model that passed Sotto’s cleanup benchmark for this account.</span></div><div class="ctl"><button class="select">Recommended, Claude Haiku 4.5<svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div></div>
+      <div class="row sub"><div class="lab"><b>Reasoning</b><span>Off keeps cleanup near-instant. Higher settings think longer and cost more of your plan.</span></div><div class="ctl"><div class="seg"><button aria-pressed="true">Off</button><button aria-pressed="false">Low</button><button aria-pressed="false">Medium</button><button aria-pressed="false">High</button></div></div></div>
+      <div class="row wide" data-off><div class="lab"><b>OpenRouter API key</b><span>Used only when the account above is OpenRouter. Kept in settings on this computer.</span></div><div class="ctl"><label class="field secret"><input value="" placeholder="sk-or-…"></label></div></div>
+    </section>
+    <section id="s-cleanup">
+      <h2>Cleanup</h2>
+      <p class="read">Transcripts are pasted <b>exactly as heard</b>. Turn on cleanup to fix punctuation, self-corrections and names using your AI account. Text is sent, never audio.</p>
+      <div class="row"><div class="lab"><b>Clean up with AI</b><span>Runs after transcription. If the network is slow or offline, the raw transcript is used instead.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="false"></button></div></div>
+      <div class="row" data-off><div class="lab"><b>Quality</b><span>How much cleanup does. Light fixes punctuation. Full also rewrites self-corrections.</span></div><div class="ctl"><div class="seg"><button aria-pressed="true">Light</button><button aria-pressed="false">Standard</button><button aria-pressed="false">Full</button></div></div></div>
+      <div class="row" data-off><div class="lab"><b>Skip short dictations</b><span>Transcripts under this many words are pasted as heard.</span></div><div class="ctl"><label class="field num"><input value="5"><span class="unit">words</span></label></div></div>
+      <div class="row" data-off><div class="lab"><b>Give up after</b><span>Falls back to the raw transcript past this wait.</span></div><div class="ctl"><label class="field num"><input value="2.5"><span class="unit">s</span></label></div></div>
+      <div class="row"><div class="lab"><b>Dictionary</b><span>14 words and 3 snippets. Words are spelled your way during cleanup. Snippets always work.</span></div><div class="ctl"><button class="pill quiet sm" data-nav="dictionary">Open dictionary</button></div></div>
+    </section>
+    <section id="s-output">
+      <h2>Output</h2>
+      <p class="read">Every transcript is <b>copied</b> to the clipboard, then <b>pasted</b> into the app you were using after a <b>150 ms</b> pause.</p>
+      <div class="row"><div class="lab"><b>Paste automatically</b><span>Ctrl V into the previously focused app. The clipboard copy always happens first, so nothing is lost if paste fails.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row sub"><div class="lab"><b>Paste delay</b><span>How long to wait for the other app to take focus back. 50 to 1000.</span></div><div class="ctl"><label class="field num"><input value="150"><span class="unit">ms</span></label></div></div>
+      <div class="row"><div class="lab"><b>Show “pasted” for</b><span>How long the widget holds the success state. 500 to 5000.</span></div><div class="ctl"><label class="field num"><input value="1400"><span class="unit">ms</span></label></div></div>
+    </section>
+    <section id="s-application">
+      <h2>Application</h2>
+      <p class="read">Sotto <b>opens in the tray</b> when you sign in, keeps the last <b>100 transcripts</b> on this computer, and checks GitHub for updates <b>on its own</b>.</p>
+      <div class="row"><div class="lab"><b>Launch when Windows starts</b></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row sub"><div class="lab"><b>Start in the tray</b><span>Open to the widget without showing this window.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row"><div class="lab"><b>Widget between dictations</b><span>Keep the small wave on screen. Click it to dictate.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row"><div class="lab"><b>Reduce motion</b><span>Follow Windows, or keep the orb and wave still.</span></div><div class="ctl"><div class="seg"><button aria-pressed="true">Follow Windows</button><button aria-pressed="false">Reduce</button></div></div></div>
+      <div class="row"><div class="lab"><b>Keep history</b><span>Store transcript text on this computer for search and reuse. Nothing is sent anywhere.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row sub"><div class="lab"><b>Keep the last</b></div><div class="ctl"><div class="seg"><button aria-pressed="false">25</button><button aria-pressed="true">100</button><button aria-pressed="false">500</button><button aria-pressed="false">All</button></div></div></div>
+      <div class="row"><div class="lab"><b>Updates</b><span>Sotto 3.6.0 is current. Checked 20 minutes ago.</span></div><div class="ctl"><button class="pill quiet sm">Check now</button></div></div>
+      <div class="row sub"><div class="lab"><b>Check on your own</b><span>Asks GitHub for a version number and nothing else.</span></div><div class="ctl"><button class="switch" role="switch" aria-checked="true"></button></div></div>
+      <div class="row"><div class="lab"><b>Clear history</b><span>Removes every saved transcript. Settings and models stay.</span></div><div class="ctl"><button class="pill quiet sm danger">Clear history</button></div></div>
+      <div class="row"><div class="lab"><b>Reset settings</b><span>Back to defaults, and setup runs again. Models and history stay.</span></div><div class="ctl"><button class="pill quiet sm danger">Reset</button></div></div>
+    </section>
+    <section id="s-agents">
+      <h2>Agents</h2>
+      <p class="read">Agent control is part of <b>Sotto Pro</b> and has its own settings on the Agents screen: connection, reasoning, voice and wake word.</p>
+      <div class="row"><div class="lab"><b>Sotto Pro</b><span>Active. Renews 10 October.</span></div><div class="ctl"><span class="tag on">Active</span><button class="pill quiet sm">Manage plan</button></div></div>
+      <div class="row"><div class="lab"><b>Agent settings</b><span>Where threads run, how Sotto thinks about them, and how it sounds.</span></div><div class="ctl"><button class="pill quiet sm" data-nav="agents">Open agent settings</button></div></div>
+    </section>
+    </div>
+  </main>
+
+  <!-- ===== Dictionary ===== -->
+  <main class="view view-dictionary">
+    <section class="book" aria-label="Dictionary">
+      <div class="head"><h1>Dictionary</h1><small>14 words, 3 snippets</small></div>
+      <p class="lede">Names and words Sotto should spell your way, and snippets it pastes whole when you say their name.</p>
+
+      <h2>Words</h2>
+      <p class="how">Add anything Sotto keeps getting wrong. If it is usually mis-heard the same way, say how, and cleanup will correct it every time.</p>
+      <div class="add"><label class="field"><input placeholder="A word or name"></label><label class="field short"><input placeholder="Sounds like, if it helps"></label><button class="pill sm">Add</button></div>
+      <div class="noticed"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>You fixed “Priya” by hand twice this week.<button class="pill quiet">Add Priya</button></div>
+      <div class="word"><b>sherpa-onnx</b><span class="heard">heard as <em>“sherpa on x”</em></span><span class="uses">used 12 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>Sotto</b><span class="heard">heard as <em>“sotto, soto”</em></span><span class="uses">used 41 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>Zach</b><span class="heard">heard as <em>“Zack”</em></span><span class="uses">used 9 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>T3 Code</b><span class="heard">heard as <em>“tea three code”</em></span><span class="uses">used 7 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>Parakeet</b><span class="heard"></span><span class="uses">used 3 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>OpenRouter</b><span class="heard">heard as <em>“open router”</em></span><span class="uses">used 5 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="word"><b>electron-builder</b><span class="heard"></span><span class="uses">used 2 times</span><button class="x" title="Remove"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <p class="how">And 7 more.</p>
+
+      <h2>Snippets</h2>
+      <p class="how">Say “insert” and a snippet’s name while dictating and Sotto pastes the text in its place. Snippets work with or without cleanup.</p>
+      <div class="add"><label class="field short"><input placeholder="Name, like “my address”"></label><label class="field"><input placeholder="What to paste"></label><button class="pill sm">Add</button></div>
+      <div class="snip"><div><b>my address</b><span class="say">Say “insert my address”</span></div><p>742 Evergreen Terrace
+Springfield, OR 97477</p><span class="uses">used 4 times</span></div>
+      <div class="snip"><div><b>sign off</b><span class="say">Say “insert sign off”</span></div><p>Thanks,
+Zach</p><span class="uses">used 26 times</span></div>
+      <div class="snip"><div><b>meeting link</b><span class="say">Say “insert meeting link”</span></div><p>https://meet.google.com/abc-defg-hij</p><span class="uses">used 11 times</span></div>
+    </section>
+  </main>
+
+  <main class="view view-other"><p>Help is not part of this round.</p></main>
+
+  <!-- ===== Transcription server walkthrough ===== -->
+  <aside class="guide" role="dialog" aria-label="Set up a transcription server">
+    <header><div><strong>Transcription server</strong><small>Run transcription on a faster computer. About five minutes.</small></div><button data-close-guide title="Close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+    <div class="steps">
+      <div class="step" data-done><span class="n">1</span><strong>Start a speech server on the fast computer</strong>
+        <p>Any server that speaks the OpenAI audio API works. On a machine with a GPU, this runs one with the same Parakeet model Sotto uses:</p>
+        <div class="cmd"><code>docker run -d -p 5092:8000 --gpus all ghcr.io/speaches-ai/speaches:latest-cuda</code><button title="Copy"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div>
+      </div>
+      <div class="step" data-done><span class="n">2</span><strong>Tell Sotto where it is</strong>
+        <p>The computer’s name or address on your network, and the port from the command above.</p>
+        <div class="ctl"><label class="field path"><input value="http://desktop.local:5092"></label><button class="pill quiet sm">Test</button></div>
+        <div class="ok"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg>desktop.local answered in 41 ms with parakeet-tdt-0.6b-v2.</div>
+      </div>
+      <div class="step"><span class="n">3</span><strong>Turn it on</strong>
+        <p>While the server is on, audio goes to that computer and nothing else changes. If it stops answering, Sotto goes back to transcribing here on its own. Turn it off any time.</p>
+      </div>
+    </div>
+    <footer><span>Sotto never sends audio anywhere else.</span><button class="pill" data-close-guide>Use this server</button></footer>
+  </aside>
+
+
+  <footer class="foot">
+    <a href="#" data-nav="threads">Threads</a><a href="#" data-nav="history">History</a><a href="#" data-nav="dictionary">Dictionary</a><a href="#" data-nav="settings">Settings</a><a href="#" data-nav="help">Help</a>
+    <span class="status">Standard model, English. Pastes automatically.</span>
+    <span class="dict">Kept on this computer. Words apply during cleanup, snippets always.</span>
+    <span class="save">Changes save as you make them.</span>
+    <span class="looking">Sotto is looking after 3 threads. Say “Hey Sotto” to talk to any of them.</span>
+    <span class="keep">Kept on this computer only. Nothing leaves it.<a href="#">Clear history</a></span>
+    <div class="tune">
+      <div class="swatches" role="group" aria-label="Orb colour">
+        <button data-color="teal" style="--sw: linear-gradient(#9df0e3, #2c7a72)" aria-pressed="true"></button>
+        <button data-color="violet" style="--sw: linear-gradient(#4f7dff, #e04cff)"></button>
+        <button data-color="ice" style="--sw: linear-gradient(#bff4ff, #5cc8ff)"></button>
+        <button data-color="amber" style="--sw: linear-gradient(#ffd08a, #cf6c0d)"></button>
+        <button data-color="mono" style="--sw: linear-gradient(#f2f3f5, #6c727b)"></button>
+      </div>
+      <button class="voice"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16 8a5 5 0 0 1 0 8M18.5 5.5a9 9 0 0 1 0 13"/></svg>Aria, natural voice</button>
+    </div>
+  </footer>
+</div>
+
+<script src="orb.js?v=4"></script>
+<script>
+  const win = document.querySelector('.window');
+  const params = new URLSearchParams(location.search);
+  const setView = (v) => {
+    win.dataset.view = v;
+    document.querySelectorAll('.crossing [data-nav]').forEach(a => a.setAttribute('aria-pressed', a.dataset.nav === v));
+  };
+  let tick = null, seconds = 0;
+  const setState = (s) => {
+    win.dataset.state = s;
+    clearInterval(tick);
+    seconds = s === 'listening' ? 12 : 0;
+    const paint = () => document.querySelectorAll('[data-timer]').forEach(t => t.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
+    paint();
+    document.querySelector('[data-status]').textContent = s === 'listening' ? 'Listening.' : 'Ready when you are.';
+    document.querySelector('[data-toggle-label]').textContent = s === 'listening' ? 'Stop' : 'Start dictation';
+    if (s === 'listening') tick = setInterval(() => { seconds++; paint(); }, 1000);
+  };
+  const orbCopy = {
+    wake: ['Say “Hey Sotto”', 'Claude is working in workshop. Two more sessions are waiting.'],
+    listening: ['Listening', 'Say “send it” when your prompt is ready.'],
+    speaking: ['Sotto is speaking', '“Workshop is ready. The gate passes and the unit suite is green.”'],
+    working: ['Working', 'Claude is running the test suite in workshop.'],
+    idle: ['Voice is off', 'Turn on agent control to talk to your sessions.'],
+  };
+  const orb = SottoOrb(document.getElementById('orb'), { colors: params.get('color') || 'teal', state: params.get('orb') || 'wake', still: params.get('still') === '1' });
+  const setOrb = (s) => { win.dataset.orb = s; orb.setState(s); const c = orbCopy[s] || orbCopy.wake; document.querySelector('[data-orb-title]').textContent = c[0]; document.querySelector('[data-orb-sub]').textContent = c[1]; };
+  setView(params.get('view') || 'dictate');
+  setState(params.get('state') || 'ready');
+  setOrb(params.get('orb') || 'wake');
+  win.dataset.attention = params.get('attention') || '0';
+  win.dataset.drawer = params.get('drawer') || '0';
+  document.documentElement.dataset.theme = 'dark';
+  document.querySelectorAll('.swatches button').forEach(b => { b.setAttribute('aria-pressed', b.dataset.color === (params.get('color') || 'teal')); b.addEventListener('click', () => { orb.setColors(b.dataset.color); document.querySelectorAll('.swatches button').forEach(x => x.setAttribute('aria-pressed', x === b)); }); });
+  document.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.nav); }));
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => setState(win.dataset.state === 'listening' ? 'ready' : 'listening')));
+  document.querySelector('[data-open-drawer]').addEventListener('click', () => win.dataset.drawer = win.dataset.drawer === '1' ? '0' : '1');
+  document.querySelector('[data-close-drawer]').addEventListener('click', () => win.dataset.drawer = '0');
+  document.getElementById('orb').addEventListener('click', () => { const order = ['wake', 'listening', 'speaking', 'working']; setOrb(order[(order.indexOf(win.dataset.orb) + 1) % order.length]); });
+  // ---- history ----
+  const roll = document.querySelector('.roll');
+  const find = document.querySelector('[data-find]');
+  const entries = [...document.querySelectorAll('.entry')];
+  const applyFind = () => {
+    const q = find.value.trim().toLowerCase();
+    find.closest('.find').dataset.filled = q ? '1' : '0';
+    document.querySelector('[data-find-echo]').textContent = find.value.trim();
+    let shown = 0;
+    entries.forEach(e => { const hit = !q || e.querySelector('p').textContent.toLowerCase().includes(q); e.style.display = hit ? '' : 'none'; if (hit) shown++; });
+    let first = true;
+    document.querySelectorAll('.day').forEach(d => { let n = d.nextElementSibling, any = false; while (n && n.classList.contains('entry')) { if (n.style.display !== 'none') any = true; n = n.nextElementSibling; } d.style.display = any ? '' : 'none'; if (any && first) { d.dataset.first = '1'; first = false; } else delete d.dataset.first; });
+    document.querySelector('[data-count]').textContent = q ? `${shown} of 132` : '132 transcripts';
+    if (params.get('hist') === 'none' || params.get('hist') === 'off') return;
+    if (q && shown === 0) roll.dataset.empty = 'search'; else delete roll.dataset.empty;
+  };
+  if (params.get('hist') === 'none' || params.get('hist') === 'off') { roll.dataset.empty = params.get('hist'); win.dataset.hist = params.get('hist'); }
+  if (params.get('q')) find.value = params.get('q');
+  find.addEventListener('input', applyFind);
+  document.querySelector('[data-find-clear]').addEventListener('click', () => { find.value = ''; applyFind(); find.focus(); });
+  entries.forEach(e => e.addEventListener('click', ev => { if (ev.target.closest('button')) return; entries.forEach(x => x.removeAttribute('aria-current')); e.setAttribute('aria-current', 'true'); }));
+  applyFind();
+  // ---- threads ----
+  const board = document.querySelector('.board');
+  const tfind = document.querySelector('[data-tfind]');
+  const threads = [...document.querySelectorAll('.thread')];
+  const applyTFind = () => {
+    const q = tfind.value.trim().toLowerCase();
+    tfind.closest('.find').dataset.filled = q ? '1' : '0';
+    document.querySelector('[data-tfind-echo]').textContent = tfind.value.trim();
+    let shown = 0;
+    threads.forEach(t => { const hit = !q || t.textContent.toLowerCase().includes(q); t.style.display = hit ? '' : 'none'; if (hit) shown++; });
+    let first = true;
+    document.querySelectorAll('.group').forEach(g => { let n = g.nextElementSibling, any = false; while (n && n.classList.contains('thread')) { if (n.style.display !== 'none') any = true; n = n.nextElementSibling; } g.style.display = any ? '' : 'none'; if (any && first) { g.dataset.first = '1'; first = false; } else delete g.dataset.first; });
+    document.querySelector('[data-tcount]').textContent = q ? `${shown} of 11` : '3 active, 11 this week';
+    if (params.get('thr') === 'none') return;
+    if (q && shown === 0) board.dataset.empty = 'search'; else delete board.dataset.empty;
+  };
+  if (params.get('thr') === 'none') { board.dataset.empty = 'none'; document.querySelector('.foot .looking').textContent = 'Nothing is running. Say “Hey Sotto” to start a thread.'; }
+  if (params.get('tq')) tfind.value = params.get('tq');
+  tfind.addEventListener('input', applyTFind);
+  document.querySelector('[data-tfind-clear]').addEventListener('click', () => { tfind.value = ''; applyTFind(); tfind.focus(); });
+  threads.forEach(t => t.addEventListener('click', ev => { if (ev.target.closest('button, input')) return; if (t.hasAttribute('aria-current')) { t.removeAttribute('aria-current'); return; } threads.forEach(x => x.removeAttribute('aria-current')); t.setAttribute('aria-current', 'true'); }));
+  if (params.get('open')) { threads.forEach(x => x.removeAttribute('aria-current')); const t = threads[Number(params.get('open'))]; if (t) { t.setAttribute('aria-current', 'true'); t.scrollIntoView({ block: 'center' }); } }
+  applyTFind();
+  // ---- settings ----
+  const prefs = document.querySelector('.view-settings');
+  const links = [...document.querySelectorAll('.index a')];
+  const spy = () => { let cur = links[0]; for (const a of links) { const el = document.querySelector(a.getAttribute('href')); if (el.getBoundingClientRect().top - prefs.getBoundingClientRect().top <= 120) cur = a; } links.forEach(a => a === cur ? a.setAttribute('aria-current', 'true') : a.removeAttribute('aria-current')); };
+  prefs.addEventListener('scroll', spy);
+  links.forEach(a => a.addEventListener('click', e => { e.preventDefault(); document.querySelector(a.getAttribute('href')).scrollIntoView({ block: 'start', behavior: params.get('still') === '1' ? 'auto' : 'smooth' }); }));
+  document.querySelectorAll('.switch').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-checked', b.getAttribute('aria-checked') !== 'true')));
+  document.querySelectorAll('.seg').forEach(g => g.querySelectorAll('button').forEach(b => b.addEventListener('click', () => g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)))));
+  document.querySelectorAll('.disclose').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-expanded', b.getAttribute('aria-expanded') !== 'true')));
+  if (params.get('sec')) { const el = document.getElementById('s-' + params.get('sec')); if (el) { el.scrollIntoView({ block: 'start' }); spy(); } }
+  if (params.get('adv') === '1') document.querySelector('.disclose').setAttribute('aria-expanded', 'true');
+  document.querySelectorAll('[data-open-guide]').forEach(b => b.addEventListener('click', () => win.dataset.guide = '1'));
+  document.querySelectorAll('[data-close-guide]').forEach(b => b.addEventListener('click', () => win.dataset.guide = '0'));
+  win.dataset.guide = params.get('guide') || '0';
+  addEventListener('keydown', e => { if (e.key === 'a') win.dataset.attention = win.dataset.attention === '1' ? '0' : '1'; });
+</script>
+</body>
+</html>

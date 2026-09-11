@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Direction 2: Harbor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #edf1ee; --paper: #f7f9f7; --ink: #0f1a17; --ink-2: #4d5c57; --ink-3: #8b9995; --rule: #d5ddd9; --rule-2: #b9c5c0;
+    --wave: #2c7a72; --wave-soft: rgb(44 122 114 / 12%); --btn: #0f1a17; --btn-ink: #f7f9f7;
+    --serif: 'Instrument Serif', Georgia, serif; --sans: 'Instrument Sans', system-ui, sans-serif;
+  }
+  [data-theme='dark'] {
+    --bg: #0f1a17; --paper: #15221e; --ink: #edf1ee; --ink-2: #a9b6b1; --ink-3: #66746f; --rule: #223330;
+    --rule-2: #344742; --wave: #5fbdb2; --wave-soft: rgb(95 189 178 / 14%); --btn: #edf1ee; --btn-ink: #0f1a17;
+  }
+  .window[data-view='agents'] { --bg: #000; --paper: #0a0c0b; --ink: #f1f3f2; --ink-2: #9aa5a1; --ink-3: #59635f; --rule: #191d1b; --rule-2: #2a302d; --btn: #f1f3f2; --btn-ink: #000; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { display: grid; place-items: center; background: #6c7874; font: 400 13.5px/1.5 var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  svg { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  .ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  .window { position: relative; width: 1100px; height: 720px; display: grid; grid-template-rows: 44px minmax(0, 1fr) 84px; background: var(--bg); color: var(--ink); overflow: hidden; box-shadow: 0 30px 80px rgb(0 0 0 / 45%); transition: background .35s; }
+
+  /* ---- thin top: wordmark and window controls only ---- */
+  .top { display: flex; align-items: center; padding-left: 20px; }
+  .top .word { font: 400 19px var(--serif); letter-spacing: .2px; display: flex; align-items: center; gap: 8px; }
+  .top .word svg { width: 18px; height: 18px; }
+  .top .word small { font: 400 13px var(--sans); color: var(--ink-3); margin-left: 6px; }
+  .controls { margin-left: auto; display: flex; align-self: stretch; }
+  .controls button { width: 44px; color: var(--ink-3); display: grid; place-items: center; }
+  .controls button:hover { color: var(--ink); }
+
+  /* ---- the dock: two berths, one for each thing Sotto is ---- */
+  .dock { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 22px; border-top: 1px solid var(--rule); }
+  .berths { display: flex; gap: 10px; }
+  .berth { display: flex; align-items: center; gap: 14px; width: 236px; height: 56px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--rule); background: var(--paper); text-align: left; }
+  .berth[aria-current] { border-color: var(--rule-2); box-shadow: 0 0 0 3px var(--wave-soft); }
+  .berth b { display: block; font-weight: 600; font-size: 13.5px; }
+  .berth small { display: block; color: var(--ink-3); font-size: 12px; }
+  .berth .wave { --wave-w: 3px; --wave-gap: 3px; --wave-rest: 5px; --wave-peak: 22px; }
+  .berth canvas { width: 34px; height: 34px; flex: none; }
+  .dock .side { display: flex; gap: 18px; color: var(--ink-3); font-size: 13px; }
+  .dock .side a { color: var(--ink-2); text-decoration: none; }
+  .dock .side a:hover { color: var(--ink); }
+  .dock .side.right { justify-self: end; }
+  .dock .side .mute { display: none; gap: 8px; }
+  .window[data-view='agents'] .dock .side .mute { display: flex; }
+  .dock .side .mute button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--rule); color: var(--ink-2); display: grid; place-items: center; }
+  .dock .side .mute button:hover { color: var(--ink); border-color: var(--rule-2); }
+
+  /* ---- wave ---- */
+  .wave { display: inline-flex; align-items: center; gap: var(--wave-gap, 3px); height: var(--wave-peak, 17px); flex: none; }
+  .wave i { width: var(--wave-w, 3px); height: var(--wave-rest, 5px); border-radius: 999px; background: var(--wave); flex: none; transition: height .18s ease; }
+  [data-state='listening'] .wave i { animation: wave .9s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: .12s } .wave i:nth-child(3) { animation-delay: .24s } .wave i:nth-child(4) { animation-delay: .36s }
+  .wave i:nth-child(5) { animation-delay: .48s } .wave i:nth-child(6) { animation-delay: .6s } .wave i:nth-child(7) { animation-delay: .72s }
+  @keyframes wave { 0%, 100% { height: var(--wave-rest, 5px); } 50% { height: var(--wave-peak, 17px); } }
+  [data-state='ready'] .wave i:nth-child(4) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .28); }
+  [data-state='ready'] .wave i:nth-child(3), [data-state='ready'] .wave i:nth-child(5) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .2); }
+  [data-state='ready'] .wave i:nth-child(2), [data-state='ready'] .wave i:nth-child(6) { height: calc(var(--wave-rest) + (var(--wave-peak) - var(--wave-rest)) * .1); }
+
+  .btn { display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 18px; border-radius: 10px; background: var(--btn); color: var(--btn-ink); font-weight: 600; }
+  .btn:hover { filter: brightness(1.15); }
+  .btn.quiet { background: transparent; color: var(--ink-2); border: 1px solid var(--rule-2); font-weight: 500; }
+  .btn.quiet:hover { color: var(--ink); filter: none; }
+  .btn.sm { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 8px; }
+  kbd { font: 500 12px var(--sans); padding: 2px 6px; border: 1px solid var(--rule-2); border-radius: 5px; color: var(--ink-2); }
+
+  .view { display: none; min-height: 0; }
+  .window[data-view='dictate'] .view-dictate { display: grid; }
+  .window[data-view='agents'] .view-agents { display: grid; }
+
+  /* ---- dictate: the "now" and the "today" ---- */
+  .view-dictate { grid-template-columns: 1.15fr 1fr; grid-template-rows: minmax(0, 1fr); }
+  .now { display: grid; align-content: center; justify-items: start; gap: 26px; padding: 0 56px 40px 64px; border-right: 1px solid var(--rule); }
+  .now .wave { --wave-w: 12px; --wave-gap: 11px; --wave-rest: 12px; --wave-peak: 120px; }
+  .now .wave i { transition: height .3s ease; }
+  .now h1 { font: 400 52px/1.02 var(--serif); letter-spacing: -.5px; }
+  .now h1 em { font-style: italic; color: var(--ink-2); }
+  .now h1 time { display: none; font: 400 44px var(--serif); color: var(--ink-3); font-variant-numeric: tabular-nums; margin-left: 12px; }
+  [data-state='listening'] .now h1 time { display: inline; }
+  .now .actions { display: flex; align-items: center; gap: 16px; color: var(--ink-3); }
+  [data-state='listening'] .now [data-toggle] { background: transparent; color: var(--ink); border: 1px solid var(--rule-2); }
+  .now .facts { color: var(--ink-3); font-size: 12.5px; }
+
+  .today { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .today header { display: flex; align-items: baseline; gap: 12px; padding: 26px 40px 10px; }
+  .today header h2 { font: 400 26px var(--serif); }
+  .today header span { color: var(--ink-3); }
+  .today header a { margin-left: auto; color: var(--ink-2); font-size: 12.5px; text-decoration: none; }
+  .today ol { list-style: none; padding: 0 22px 0 40px; overflow: auto; }
+  .today li { display: grid; grid-template-columns: 62px 1fr auto; gap: 14px; padding: 14px 0; border-top: 1px solid var(--rule); align-items: start; }
+  .today li:first-child { border-top: 0; }
+  .today time { color: var(--ink-3); font-size: 12.5px; padding-top: 3px; font-variant-numeric: tabular-nums; }
+  .today p { font: 400 16px/1.45 var(--serif); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .today li:first-child p { -webkit-line-clamp: 4; font-size: 18px; }
+  .today .btn { opacity: 0; }
+  .today li:hover .btn, .today li:first-child .btn { opacity: 1; }
+
+  /* ---- agents: the orb and the console ---- */
+  .view-agents { grid-template-columns: 1fr 460px; grid-template-rows: minmax(0, 1fr); }
+  .presence { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; justify-items: center; }
+  .presence canvas { height: 100%; max-height: 520px; aspect-ratio: 1; width: auto; min-height: 0; align-self: center; cursor: pointer; }
+  .presence .said { text-align: center; padding: 0 40px 14px; display: grid; gap: 6px; }
+  .presence h1 { font: 400 40px/1.05 var(--serif); letter-spacing: -.3px; }
+  .presence h1 em { font-style: italic; color: var(--ink-2); }
+  .presence p { color: var(--ink-2); max-width: 480px; margin: 0 auto; }
+  .presence .tune { justify-self: start; padding: 0 26px 18px; display: flex; align-items: center; gap: 14px; color: var(--ink-3); font-size: 12.5px; }
+  .swatches { display: flex; gap: 7px; }
+  .swatches button { width: 14px; height: 14px; border-radius: 50%; background: var(--sw); outline: 2px solid transparent; outline-offset: 2px; }
+  .swatches button[aria-pressed='true'] { outline-color: var(--ink-3); }
+  .tune .voice { color: var(--ink-2); display: inline-flex; gap: 7px; align-items: center; white-space: nowrap; }
+  .tune .voice:hover { color: var(--ink); }
+
+  .console { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; border-left: 1px solid var(--rule); background: var(--paper); }
+  .sessions { padding: 14px 14px 6px; display: grid; gap: 4px; }
+  .session { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 10px; text-align: left; }
+  .session:hover { background: rgb(255 255 255 / 4%); }
+  .session[aria-current] { background: rgb(255 255 255 / 7%); }
+  .agent { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #000; }
+  .agent.claude { background: #e2b28a; } .agent.codex { background: #d3d7dd; } .agent.gemini { background: #8db6ff; }
+  .session b { display: block; font-weight: 600; font-size: 13.5px; }
+  .session small { display: block; color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session .state { font-size: 12px; color: var(--ink-3); display: inline-flex; gap: 7px; align-items: center; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .dot.working { background: #4cc2b5; box-shadow: 0 0 8px #4cc2b5; animation: blink 1.6s ease-in-out infinite; }
+  .dot.ready { background: #f0a03c; } .dot.attention { background: #f0a03c; box-shadow: 0 0 8px #f0a03c; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .session.new { grid-template-columns: 1fr; color: var(--ink-3); padding-block: 8px; }
+  .stream { overflow: auto; padding: 14px 22px; display: grid; gap: 14px; align-content: start; border-top: 1px solid var(--rule); }
+  .msg { display: grid; gap: 4px; }
+  .msg .who { color: var(--ink-3); font-size: 12px; }
+  .msg p { line-height: 1.55; font-size: 13.5px; }
+  .msg.user p { color: var(--ink-2); }
+  .tool { display: flex; gap: 9px; align-items: center; color: var(--ink-2); font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 11.5px; padding: 7px 10px; border-radius: 7px; background: rgb(255 255 255 / 4%); }
+  .tool .ic { width: 13px; height: 13px; }
+  .tool.ok { color: #7fd6ca; }
+  .ask { display: grid; gap: 10px; margin: 0 14px 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid #3a3020; background: rgb(240 160 60 / 8%); }
+  .ask strong { font-size: 13px; }
+  .ask code { display: block; font-family: ui-monospace, 'Cascadia Mono', monospace; font-size: 12px; color: var(--ink-2); }
+  .ask .actions { display: flex; gap: 8px; align-items: center; color: var(--ink-3); font-size: 12px; }
+  .ask .actions .btn { height: 30px; }
+  .ask .actions span { margin-left: auto; }
+  .window:not([data-attention='1']) .ask { display: none; }
+  .composer { padding: 12px 14px 16px; border-top: 1px solid var(--rule); display: grid; gap: 8px; }
+  .composer textarea { width: 100%; min-height: 60px; resize: none; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); font: inherit; line-height: 1.5; }
+  .composer textarea::placeholder { color: var(--ink-3); }
+  .composer .row { display: flex; align-items: center; color: var(--ink-3); font-size: 12px; }
+  .composer .row .btn { margin-left: auto; height: 34px; padding: 0 14px; font-size: 13px; }
+
+  .view-other { display: none; place-items: center; color: var(--ink-3); }
+  .window[data-view='history'] .view-other, .window[data-view='settings'] .view-other, .window[data-view='help'] .view-other { display: grid; }
+</style>
+</head>
+<body>
+<div class="window" data-view="dictate" data-state="ready" data-attention="0">
+  <header class="top">
+    <div class="word"><svg viewBox="0 0 96 96"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cf6c0d"/><stop offset="1" stop-color="#8f4404"/></linearGradient></defs><rect width="96" height="96" rx="22" fill="url(#g1)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="#fff"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/></svg>Sotto<small id="page-sub">Wednesday, September 10</small></div>
+    <div class="controls">
+      <button title="Minimize"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button title="Close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ===== Dictate ===== -->
+  <main class="view view-dictate">
+    <section class="now">
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <h1><span data-status>Ready when you are.</span><time data-timer>00:12</time></h1>
+      <div class="actions">
+        <button class="btn" data-toggle><span data-toggle-label>Start dictation</span></button>
+        <span>or <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> anywhere</span>
+      </div>
+      <p class="facts">Standard model, English. Text is copied, then pasted where your cursor is.</p>
+    </section>
+    <section class="today" aria-label="Today">
+      <header><h2>Today</h2><span>6 transcripts</span><a href="#" data-nav="history">All history</a></header>
+      <ol>
+        <li><time>2:32 pm</time><p>Move the onboarding copy about optional downloads into the model card itself so it reads once, next to the consent checkbox, and drop the repeated sentence from the lead paragraph. Keep the Hugging Face disclosure exactly as it is.</p><button class="btn quiet sm">Copy</button></li>
+        <li><time>1:58 pm</time><p>Reply to Dana: yes to Thursday, but let’s keep it to forty minutes and skip the slides.</p><button class="btn quiet sm">Copy</button></li>
+        <li><time>11:20 am</time><p>Note to self, the mac build still needs the Gatekeeper paragraph in the release notes before the DMG goes up.</p><button class="btn quiet sm">Copy</button></li>
+        <li><time>10:04 am</time><p>Rename the two presets in the README, it still says three.</p><button class="btn quiet sm">Copy</button></li>
+        <li><time>9:41 am</time><p>Draft for the site: Sotto is dictation that stays on your computer. No account, no cloud, one shortcut.</p><button class="btn quiet sm">Copy</button></li>
+      </ol>
+    </section>
+  </main>
+
+  <!-- ===== Agents ===== -->
+  <main class="view view-agents">
+    <section class="presence">
+      <canvas id="orb"></canvas>
+      <div class="said">
+        <h1 data-orb-title>Say “Hey Sotto”</h1>
+        <p data-orb-sub>Claude is working in workshop. Codex is ready in sotto-site.</p>
+      </div>
+      <div class="tune">
+        <div class="swatches" role="group" aria-label="Orb colour">
+          <button data-color="violet" style="--sw: linear-gradient(#6f7cff, #e24fff)" aria-pressed="true"></button>
+          <button data-color="ice" style="--sw: linear-gradient(#d6f7ff, #3fb8ff)"></button>
+          <button data-color="teal" style="--sw: linear-gradient(#8ff0e2, #2c7a72)"></button>
+          <button data-color="amber" style="--sw: linear-gradient(#ffd08a, #cf6c0d)"></button>
+          <button data-color="mono" style="--sw: linear-gradient(#f2f3f5, #6c727b)"></button>
+        </div>
+        <button class="voice"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16 8a5 5 0 0 1 0 8M18.5 5.5a9 9 0 0 1 0 13"/></svg>Aria, natural voice</button>
+      </div>
+    </section>
+    <aside class="console" aria-label="Sessions">
+      <div class="sessions">
+        <button class="session" aria-current="true"><span class="agent claude">C</span><span><b>workshop</b><small>Claude, running the unit suite</small></span><span class="state"><i class="dot working"></i>working</span></button>
+        <button class="session"><span class="agent codex">›_</span><span><b>sotto-site</b><small>Codex, footer links fixed, ready for you</small></span><span class="state"><i class="dot ready"></i>ready</span></button>
+        <button class="session"><span class="agent gemini">G</span><span><b>notes</b><small>Gemini, idle since yesterday</small></span><span class="state"><i class="dot"></i>idle</span></button>
+        <button class="session new">New session: say “open Claude in a folder”, or choose one</button>
+      </div>
+      <div class="stream">
+        <div class="msg user"><span class="who">You, 2:40 pm</span><p>Find why the visual gate flakes on the widget listening capture and fix it.</p></div>
+        <div class="tool ok"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg>read tests/e2e/design-capture.spec.ts</div>
+        <div class="tool ok"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg>edit src/renderer/src/widget/widget.css</div>
+        <div class="msg"><span class="who">Claude</span><p>The bars animate from a CSS loop, so the listening frame depends on when the screenshot lands in the 0.9 s cycle. I pinned the capture to the reduced-motion branch and the diff is now zero across three runs. Running the unit suite next.</p></div>
+        <div class="tool"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></svg>npm test -- --run tests/unit/agents (waiting for permission)</div>
+      </div>
+        <div class="ask" role="dialog"><strong>Claude wants to run a command</strong><code>npm test -- --run tests/unit/agents</code><div class="actions"><button class="btn sm">Allow</button><button class="btn quiet sm">Deny</button><span>or say “allow”</span></div></div>
+      <div class="composer">
+        <textarea placeholder="Dictate or type for workshop. Pauses won’t send it."></textarea>
+        <div class="row"><span>Say “send it” when you’re ready</span><button class="btn">Send it</button></div>
+      </div>
+    </aside>
+  </main>
+
+  <main class="view view-other"><p>History, Settings and Help are not part of this round.</p></main>
+
+  <footer class="dock">
+    <div class="side"><a href="#" data-nav="history">History</a><a href="#" data-nav="settings">Settings</a><a href="#" data-nav="help">Help</a></div>
+    <div class="berths">
+      <button class="berth" data-nav="dictate" aria-current="true"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span><b>Dictate</b><small data-berth-dictate>Ready</small></span></button>
+      <button class="berth" data-nav="agents"><canvas id="orb-mini"></canvas><span><b>Agents</b><small>3 sessions, 1 ready for you</small></span></button>
+    </div>
+    <div class="side right">
+      <div class="mute">
+        <button title="Mute listening"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button title="Stop speaking"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16 9l5 6M21 9l-5 6"/></svg></button>
+      </div>
+      <span>Yeti Nano</span>
+    </div>
+  </footer>
+</div>
+
+<script src="orb.js?v=4"></script>
+<script>
+  const win = document.querySelector('.window');
+  const params = new URLSearchParams(location.search);
+  const subs = { dictate: 'Wednesday, September 10', agents: 'Agents', history: 'History', settings: 'Settings', help: 'Help' };
+  const setView = (v) => {
+    win.dataset.view = v;
+    document.querySelectorAll('.berth').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === v));
+    document.getElementById('page-sub').textContent = subs[v];
+  };
+  let tick = null, seconds = 0;
+  const setState = (s) => {
+    win.dataset.state = s;
+    clearInterval(tick);
+    seconds = s === 'listening' ? 12 : 0;
+    const paint = () => document.querySelectorAll('[data-timer]').forEach(t => t.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
+    paint();
+    document.querySelector('[data-status]').innerHTML = s === 'listening' ? 'Listening.' : 'Ready when you are.';
+    document.querySelector('[data-toggle-label]').textContent = s === 'listening' ? 'Stop' : 'Start dictation';
+    document.querySelector('[data-berth-dictate]').textContent = s === 'listening' ? 'Listening' : 'Ready';
+    if (s === 'listening') tick = setInterval(() => { seconds++; paint(); }, 1000);
+  };
+  const orbCopy = {
+    wake: ['Say “Hey Sotto”', 'Claude is working in workshop. Codex is ready in sotto-site.'],
+    listening: ['Listening', 'Say “send it” when your prompt is ready.'],
+    speaking: ['Sotto is speaking', '“Workshop is ready. The gate passes and the unit suite is green.”'],
+    working: ['Working', 'Claude is running the test suite in workshop.'],
+    idle: ['Voice is off', 'Turn on agent control to talk to your sessions.'],
+  };
+  const still = params.get('still') === '1';
+  const color = params.get('color') || 'teal';
+  const orb = SottoOrb(document.getElementById('orb'), { colors: color, state: params.get('orb') || 'wake', still });
+  const mini = SottoOrb(document.getElementById('orb-mini'), { colors: color, state: 'idle', still });
+  const setOrb = (s) => { win.dataset.orb = s; orb.setState(s); const c = orbCopy[s] || orbCopy.wake; document.querySelector('[data-orb-title]').innerHTML = c[0]; document.querySelector('[data-orb-sub]').textContent = c[1]; };
+  setView(params.get('view') || 'dictate');
+  setState(params.get('state') || 'ready');
+  setOrb(params.get('orb') || 'wake');
+  win.dataset.attention = params.get('attention') || '0';
+  document.documentElement.dataset.theme = params.get('theme') || 'light';
+  document.querySelectorAll('.swatches button').forEach(b => { b.setAttribute('aria-pressed', b.dataset.color === color); b.addEventListener('click', () => { orb.setColors(b.dataset.color); mini.setColors(b.dataset.color); document.querySelectorAll('.swatches button').forEach(x => x.setAttribute('aria-pressed', x === b)); }); });
+  document.querySelectorAll('[data-nav]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.nav); }));
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => setState(win.dataset.state === 'listening' ? 'ready' : 'listening')));
+  document.getElementById('orb').addEventListener('click', () => { const order = ['wake', 'listening', 'speaking', 'working']; setOrb(order[(order.indexOf(win.dataset.orb) + 1) % order.length]); });
+  addEventListener('keydown', e => { if (e.key === 't') document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; if (e.key === 'a') win.dataset.attention = win.dataset.attention === '1' ? '0' : '1'; });
+</script>
+</body>
+</html>
