@@ -14,7 +14,6 @@ interface ClaudeSubscriptionOptions {
   completionTimeoutMs?: number
   outputLimitBytes?: number
 }
-
 const REQUIRED_FLAGS = ['--safe-mode', '--tools', '--permission-prompts', '--no-session-persistence', '--input-format', '--output-format', '--system-prompt', '--model', '--effort', '--verbose']
 const MODEL_ID = z.string().max(160).regex(/^[a-z0-9][a-z0-9._:/-]*(?:\[[a-z0-9]+\])?$/iu)
 const NATIVE_MODEL = z.object({
@@ -119,7 +118,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     throw new Error('Claude Code did not report an available model catalog.')
   }
 
-  private async findExecutable(): Promise<string | null> {
+  async findExecutable(): Promise<string | null> {
     const environment = this.options.environment ?? process.env
     const path = Object.entries(environment).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? ''
     const filename = process.platform === 'win32' ? 'claude.exe' : 'claude'
@@ -138,7 +137,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     return null
   }
 
-  private environment(): NodeJS.ProcessEnv {
+  environment(): NodeJS.ProcessEnv {
     const filtered: NodeJS.ProcessEnv = {}
     for (const [key, value] of Object.entries(this.options.environment ?? process.env)) {
       if (ENVIRONMENT_KEYS.has(key.toLowerCase()) && value !== undefined) filtered[key] = value
@@ -197,3 +196,4 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     })
   }
 }
+
