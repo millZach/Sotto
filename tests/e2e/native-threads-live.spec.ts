@@ -80,16 +80,17 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       await dialog.getByRole('button', { name: /Local folder/ }).click()
       await expect(dialog).toContainText(project)
       await dialog.getByRole('textbox', { name: 'Thread name' }).fill(title)
-      await dialog.getByRole('combobox', { name: 'Thread permissions' }).selectOption('approval-required')
+      await dialog.getByRole('combobox', { name: 'Thread permissions' }).selectOption(provider === 'codex' ? 'full-access' : 'approval-required')
       await page.screenshot({ path: join(artifacts, 'create.png') })
       await dialog.getByRole('button', { name: 'Create thread' }).click()
       await expect(dialog).toHaveCount(0, { timeout: 45_000 })
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
       const before = await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
-        return { id: state.activeThreadId, assignments: state.assignments, count: state.host.threads.length }
+        return { id: state.activeThreadId, assignments: state.assignments, count: state.host.threads.length, error: state.error }
       })
       expect(before.assignments).toHaveLength(0)
+      expect(before.error).toBeNull()
       expect(before.count).toBe(1)
       evidence.created = before
       // Observe actual rendered changes without slowing or replacing provider acknowledgements.

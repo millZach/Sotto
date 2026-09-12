@@ -92,7 +92,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const reply = result => setTimeout(() => emit({ id, result }), delay)
-  if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
   if (method === 'initialize') reply({ userAgent: 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })
   else if (method === 'model/list') reply({ data: [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })
@@ -107,6 +107,12 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (method === 'thread/resume' || method === 'thread/read') {
     const thread = state.threads[params.threadId]
     if (thread) {
+      // typeInProvider also materializes a thread through the fixture's native session log.
+      const hasNativeLog = existsSync(join(process.env.CODEX_HOME, 'sessions', '2026', '09', '10', `rollout-2026-09-10-${thread.id}.jsonl`))
+      if (method === 'thread/read' && params.includeTurns && thread.turns.length === 0 && !hasNativeLog) {
+        setTimeout(() => emit({ id, error: { code: -32600, message: `thread ${thread.id} is not materialized yet; includeTurns is unavailable before first user message` } }), delay)
+        return
+      }
       if (method === 'thread/resume') {
         for (const key of ['model', 'approvalPolicy', 'approvalsReviewer', 'sandbox']) if (params[key] !== undefined) thread[key] = params[key]
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'

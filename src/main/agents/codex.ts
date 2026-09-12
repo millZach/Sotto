@@ -39,7 +39,19 @@ const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEff
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional() })
 class Uncertain extends Error {}
-class Rejected extends Error {}
+class Rejected extends Error {
+  readonly unmaterializedThreadId: string | undefined
+  readonly missingThreadId: string | undefined
+  constructor(value: unknown) {
+    super('Codex rejected the operation. Review the thread before retrying.')
+    const error = z.object({ code: z.literal(-32600), message: z.string() }).safeParse(value)
+    this.unmaterializedThreadId = error.success
+      ? /^thread (\S+) is not materialized yet; includeTurns is unavailable before first user message$/.exec(error.data.message)?.[1]
+      : undefined
+    this.missingThreadId = error.success ? /^no rollout found for thread id (\S+)$/.exec(error.data.message)?.[1] : undefined
+    if (this.missingThreadId) this.message = 'Codex could not find this thread’s saved session. Create a new thread to continue.'
+  }
+}
 type Waiter = { resolve: () => void; reject: (error: Error) => void; apply: (value: unknown) => Promise<void> | void;
   onRejected: (() => Promise<void> | void) | undefined; timer: ReturnType<typeof setTimeout> }
 
@@ -152,7 +164,11 @@ export class CodexAppServerHost implements AgentHost {
       }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
-      await Promise.all(Object.keys(this.aliases).map(id => this.resume(id)))
+      await Promise.all(Object.keys(this.aliases).map(id => this.resume(id).catch(error => {
+        if (!(error instanceof Rejected) || error.missingThreadId !== this.aliases[id]!.codexThreadId) throw error
+        // An unavailable saved thread must not take the whole provider offline.
+        // Its alias remains intact; never replace the native session implicitly.
+      })))
       await this.watcher.poll(); this.watcher.start()
       this.emit(); return this.snapshot()
     } catch (error) { if (this.child === child) this.disconnect(); throw error }
@@ -192,11 +208,19 @@ export class CodexAppServerHost implements AgentHost {
         const revision = this.revisions.get(id)
         let current = true
         try {
-          await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, value => {
+          const apply = (value: unknown): void => {
             // A late read must not overwrite streamed text, a completion, or a permission.
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
             this.applyThread(id, threadResponse.parse(value).thread); applied = true
-          })
+          }
+          try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
+          catch (error) {
+            // Codex has live metadata but no transcript before the first message.
+            // Read that metadata only for this exact response on a pristine thread.
+            if (!(error instanceof Rejected) || error.unmaterializedThreadId !== alias.codexThreadId
+              || this.ensureThread(id).messages.length || this.runningTurns.has(id)) throw error
+            await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: false }, apply)
+          }
         } finally { current = false }
       }
       if (!applied) throw new Error('The Codex thread changed while reading it. Review its current state before replying.')
@@ -220,7 +244,16 @@ export class CodexAppServerHost implements AgentHost {
     const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
       ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
-      this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id); this.emit()
+      this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id)
+      const thread = this.ensureThread(id); delete thread.historyStatus; delete thread.historyError
+      this.emit()
+    }).catch(error => {
+      if (error instanceof Rejected && error.missingThreadId === alias.codexThreadId) {
+        const thread = this.ensureThread(id)
+        thread.status = 'error'; thread.historyStatus = 'error'; thread.historyError = error.message
+        this.emit()
+      }
+      throw error
     }).finally(() => { this.resuming.delete(id) })
     this.resuming.set(id, operation); return operation
   }
@@ -411,7 +444,7 @@ export class CodexAppServerHost implements AgentHost {
       if (!waiter) return
       clearTimeout(waiter.timer); this.waiters.delete(key)
       try {
-        if (frame.error !== undefined) { await waiter.onRejected?.(); waiter.reject(new Rejected('Codex rejected the operation. Review the thread before retrying.')) }
+        if (frame.error !== undefined) { await waiter.onRejected?.(); waiter.reject(new Rejected(frame.error)) }
         else { await waiter.apply(frame.result); waiter.resolve() }
       } catch { waiter.reject(new Uncertain('Codex response could not be applied.')); this.lostChild() }
       return
