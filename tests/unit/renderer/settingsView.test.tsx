@@ -3,8 +3,10 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
+import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
   UPDATE_CHECK_PRIVACY_NOTICE,
@@ -13,9 +15,15 @@ import {
 } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
+vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(),
+  useOptionalAgents: vi.fn(),
+}))
+
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
+  vi.mocked(useOptionalAgents).mockReset()
 })
 
 function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'> {
@@ -506,5 +514,34 @@ describe('SettingsView', () => {
     await user.tab()
 
     expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
+  })
+
+  it('places Agents immediately after Providers and exposes Reasoning account inline', () => {
+    const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
+    const state: AgentState = {
+      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
+      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+      draftRequestId: null, pendingRequest: '', busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      voice: { status: 'off', error: null, action: 'none', revision: 0 },
+      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+      membership: { status: 'beta', label: 'Test', expiresAt: null },
+    }
+    vi.mocked(useOptionalAgents).mockReturnValue({
+      state, command: vi.fn(async () => state), error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(),
+      attention: { items: [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) },
+    })
+    const { container } = render(<SettingsView {...baseProps()} />)
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' })
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Application',
+    ])
+    expect([...container.querySelectorAll('.settings-scroll > .settings-section')].map((section) => section.id)).toEqual([
+      'settings-capture', 'settings-transcription', 'settings-formatting', 'settings-providers', 'settings-agents', 'settings-output', 'settings-privacy',
+    ])
+    const agents = container.querySelector('#settings-agents') as HTMLElement
+    expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
+    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
+    expect(screen.queryByRole('dialog', { name: 'Agent configuration' })).toBeNull()
   })
 })

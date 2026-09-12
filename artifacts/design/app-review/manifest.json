@@ -16,7 +16,7 @@
     "Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.",
     "Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta."
   ],
-  "count": 83,
+  "count": 84,
   "entries": [
     {
       "theme": "black",
@@ -114,7 +114,7 @@
       "relativePath": "artifacts/design/app-review/baseline/dictate-listening.png",
       "width": 1080,
       "height": 720,
-      "sha256": "d58aeeb121a0d20b743711b010d0cce0d1c74c4309478dbb522b9795f0804d21"
+      "sha256": "6d927b2615fe497cb29282ee538c1a0bb141c3ebc5f91c2cc87e64fc52031730"
     },
     {
       "theme": "black",
@@ -128,7 +128,7 @@
       "relativePath": "artifacts/design/app-review/baseline/dictate-pasted.png",
       "width": 1080,
       "height": 720,
-      "sha256": "757a957181704b23cccef4daf98c9d772f1d5234c1068d457ce9db4f310f3a59"
+      "sha256": "c8f96289ac2ca657ef3c3e183391de8ca25f1be929eacd3cf5e31339fc0daa93"
     },
     {
       "theme": "black",
@@ -212,7 +212,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-navigation.png",
       "width": 1080,
       "height": 720,
-      "sha256": "4f9f5bdcee7ba6aed1821cdb974ac1d8eb0233de2331407b8a1453c5d8d1cfea"
+      "sha256": "8c1c93df046c9b7bac5163f7a5eba49706086e56af9a5b92ff14cd298a70da31"
     },
     {
       "theme": "black",
@@ -226,7 +226,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-switch.png",
       "width": 1080,
       "height": 720,
-      "sha256": "c41fee5febc5e65229d87a80b4ee9694f2a99a0b30f94942640c028619c46c7a"
+      "sha256": "6d277988a5ac6fd1f4b52a91729f9ca137367e80efcdd5f27b727cb9b18bada9"
     },
     {
       "theme": "black",
@@ -240,7 +240,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-switch-tab.png",
       "width": 1080,
       "height": 720,
-      "sha256": "dce69ad041d7f602084111e83623e240ea6294f2df2809328010d59246c2848e"
+      "sha256": "d2dc9debbe53b586df902396fbe3e61e0ed889c5aa14f3a976e6ab5a5e01e906"
     },
     {
       "theme": "black",
@@ -338,7 +338,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-2-microphone-ready.png",
       "width": 1070,
       "height": 660,
-      "sha256": "9b37a37028663bfc976e7687a7b0b0b777492b201a7f9f92467c300a0bac9f21"
+      "sha256": "229039ec320a19feb5a77a311e00e813db688a2b2d6d34568f7086e31e5b6eae"
     },
     {
       "theme": "black",
@@ -435,8 +435,8 @@
       "state": "settings-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-100-settings.png",
       "width": 1070,
-      "height": 4028,
-      "sha256": "83aa8ba7167ab1b58b9f3219bd91dca5691b77046e5c9f8d8f6251a631abd2b9"
+      "height": 4869,
+      "sha256": "47ed713162195da95036d0aff5b6c2406f6d96adcea3fad1bd9a079d6df171db"
     },
     {
       "theme": "dark",
@@ -533,8 +533,8 @@
       "state": "settings-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-125-settings.png",
       "width": 1340,
-      "height": 5029,
-      "sha256": "8f9ff4acd4f637a4c481437029280a449484cf2ece472a8349a87abbfc9e4133"
+      "height": 6079,
+      "sha256": "31b88f68ac21e1cda8e67c4c6bee767e684ef0b772ce5f58bf2a1bc22a630fe9"
     },
     {
       "theme": "dark",
@@ -631,8 +631,8 @@
       "state": "settings-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-150-settings.png",
       "width": 1605,
-      "height": 6029,
-      "sha256": "f22539d91c82ba2976a19a1cab9e992e98b4d307a3af9c286f44cfc7a475bf64"
+      "height": 7287,
+      "sha256": "d40324b3b1a74f35489cf195dfeb4c66931cf022d3c49f5a1548f58de077fd4c"
     },
     {
       "theme": "dark",
@@ -729,8 +729,8 @@
       "state": "settings-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-200-settings.png",
       "width": 2138,
-      "height": 8056,
-      "sha256": "dc75e396662dcaf147332e8bafacb6a3f601b5af5628555ab5e7041c90c0c8fb"
+      "height": 9738,
+      "sha256": "62d24f72efc5a77b62a1d9fc2d5eff62f9a99f358723c618bb92502110ae6add"
     },
     {
       "theme": "dark",
@@ -766,13 +766,27 @@
       "motion": "normal",
       "focusTarget": "none",
       "source": "app-review",
+      "id": "settings-agents",
+      "category": "settings",
+      "state": "agents",
+      "relativePath": "artifacts/design/app-review/baseline/settings-agents.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "92275d53951a4c9c48bdf62ebe9345ecae109b17495a7cdda53e000ecb35f1fa"
+    },
+    {
+      "theme": "black",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
       "id": "settings-application-privacy",
       "category": "settings",
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy.png",
       "width": 710,
       "height": 1020,
-      "sha256": "33d1565cea890e96d3a7e0973d20701a80210e92d054b2da95c43a73db4dc098"
+      "sha256": "0d2d241c47c43c95325b45487d41caba303b48bc71ee0697422a74fa958f9fb8"
     },
     {
       "theme": "black",
@@ -814,7 +828,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-feedback.png",
       "width": 1080,
       "height": 720,
-      "sha256": "64a59393bd48f6a3cd9ce390ff850daced2ca2a5409d9856837a9bc4c568c68a"
+      "sha256": "7a087121909de106f7b16f0a25d06e834581a92051ca5b4f239d6f1878df2a7f"
     },
     {
       "theme": "black",
@@ -828,7 +842,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-key-verified.png",
       "width": 1080,
       "height": 720,
-      "sha256": "d24a3f12e47f0f624ddb41187fc83cf10da09774876ab228dfb18c848bbc1c63"
+      "sha256": "eeca72526e7f6cff8ce98829bb351633081efbcf8ede8077ac637b6f602a4835"
     },
     {
       "theme": "black",
@@ -884,7 +898,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-validation-error.png",
       "width": 1080,
       "height": 720,
-      "sha256": "efbb0fe30ba1669dbebc51620764b076c83654b875ba117a8befeaf2c4ec588b"
+      "sha256": "5622173d61fd3c59eb92424a844db4887a29cb9bc423d1d891a1cc0758d7e2c2"
     },
     {
       "theme": "black",

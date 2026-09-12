@@ -50,7 +50,7 @@ describe('independent provider settings', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
     expect(state.host.providers![0]!.connection).toBe('connected')
   })
-  it('shows only the selected provider catalog and keeps coordinator choices in Configure agents', () => {
+  it('shows only the selected provider catalog and keeps coordinator choices in Agents settings', () => {
     provide()
     const view = render(<ProvidersSettings />)
     fireEvent.click(screen.getByRole('button', { name: 'Claude Code', exact: true }))

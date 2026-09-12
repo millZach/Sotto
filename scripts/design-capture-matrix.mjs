@@ -43,6 +43,7 @@ for (const [id, category, state] of [
   ['settings-cleanup', 'settings', 'cleanup'],
   ['settings-feedback', 'settings', 'saved-feedback'],
   ['settings-providers', 'settings', 'providers'],
+  ['settings-agents', 'settings', 'agents'],
   ['settings-capture', 'settings', 'capture'],
   ['settings-transcription', 'settings', 'transcription'],
   ['settings-output', 'settings', 'output'],

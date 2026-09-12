@@ -1,7 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { isSubscriptionReasoning, type AgentConfiguration, type AgentCommand } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import { SideSheet } from '../components/SideSheet'
 import { useOptionalAgents } from './AgentContext'
 import { VoiceSettings } from './VoiceSettings'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
@@ -65,9 +64,4 @@ export function AgentSetupFields(): ReactNode {
   </div><VoiceSettings configuration={configuration} command={command} change={(key, value) => { void save({ [key]: value }) }} grokKeySaved={state.credentials.grokSpeech} voiceError={state.voice.error} />
   <div className="agent-billing"><p><b>{state.membership.label}</b></p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>{configuration.membershipEndpoint ? <div className="agent-actions"><Button variant="secondary" onClick={() => void command({ type: 'membership', action: 'signin' })}>Sign in to Sotto</Button><Button variant="secondary" onClick={() => void command({ type: 'membership', action: state.membership.status === 'active' ? 'portal' : 'checkout' })}>{state.membership.status === 'active' ? 'Manage subscription' : 'Get Sotto Pro'}</Button><Button variant="ghost" onClick={() => void command({ type: 'membership', action: 'refresh' })}>Refresh membership</Button></div> : <p>Hosted sign-in and checkout are not available in this private development beta.</p>}</div>
   </div>
-}
-
-export function AgentSettingsLink(): ReactNode {
-  const [open, setOpen] = useState(false)
-  return <><Button variant="secondary" onClick={() => setOpen(true)}>Configure agents</Button>{open ? <SideSheet title="Agent configuration" onClose={() => setOpen(false)}><AgentSetupFields /></SideSheet> : null}</>
 }

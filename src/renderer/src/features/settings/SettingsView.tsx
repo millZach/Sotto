@@ -27,7 +27,7 @@ import { Toggle } from '../../components/Toggle'
 import { KNOWN_LANGUAGES } from '../../languages'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
-import { AgentSettingsLink } from '../../agents/AgentAccountSettings'
+import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
@@ -61,9 +61,9 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-transcription', label: 'Transcription' },
   { id: 'settings-formatting', label: 'Cleanup' },
   { id: 'settings-providers', label: 'Providers' },
+  { id: 'settings-agents', label: 'Agents' },
   { id: 'settings-output', label: 'Output' },
   { id: 'settings-privacy', label: 'Application' },
-  { id: 'settings-agents', label: 'Agents' },
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
@@ -328,7 +328,7 @@ export function SettingsView({
       }
     }
     if (scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
-      current = 'settings-agents'
+      current = SETTINGS_SECTIONS.at(-1)?.id ?? current
     }
     setActiveSection(current)
   }, [])
@@ -462,6 +462,8 @@ export function SettingsView({
 
           <Card className="settings-section" id="settings-providers"><div className="settings-section__heading"><h2>Providers</h2></div><ProvidersSettings /></Card>
 
+          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2></div><AgentSetupFields /></Card>
+
           <Card className="settings-section" id="settings-output">
             <div className="settings-section__heading"><h2>Output</h2><p>{settings.autoPaste ? 'Sotto copies your words and pastes them at your cursor.' : 'Sotto copies your words so you can paste them yourself.'}</p></div>
             <div className="settings-rows">
@@ -513,7 +515,6 @@ export function SettingsView({
               <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
             </div>
           </Card>
-          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2><p>Choose Sotto’s coordinator for deep reasoning and thread management.</p></div><AgentSettingsLink /></Card>
         </div>
       </div>
 

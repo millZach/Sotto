@@ -231,8 +231,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
 
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('link', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
-    const configuration = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
+    const configuration = page.locator('#settings-agents')
     for (const coordinator of ['codex', 'claude'] as const) {
       await configuration.getByRole('combobox', { name: 'Reasoning account', exact: true }).selectOption(coordinator)
       await expect.poll(async () => (await state(page!)).configuration.reasoning).toBe(coordinator)
@@ -243,7 +242,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       expect(await registry(profile)).toEqual(bindingBefore)
     }
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
-    await configuration.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
 
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()

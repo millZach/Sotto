@@ -34,4 +34,16 @@ Within the scoped panel, the five non-control text purposes are the Providers he
 
 ## Dev handoff
 
+### Inline Agents follow-up
+
+Settings now configures the coordinator directly in Agents, immediately below Providers in both navigation and content. The Settings launcher and dialog are removed; the Agents-room gear still opens its existing sheet. Provider enablement remains independent.
+
+The running development renderer needed a reload to pick up this change. After reload, the real profile was verified at Settings → Agents with inline fields and no launcher; its account preferences were preserved.
+
+Verified after this correction: typecheck, focused lint, 42 settings unit tests, production build, and 8 mock Electron journeys passed. An isolated Electron check changed the coordinator account/model/effort and confirmed persistence after reload, correct section navigation, and no horizontal overflow at 1080px and 760px. [Desktop](../../artifacts/inline-agents/agents-1080.png) and [narrow window](../../artifacts/inline-agents/agents-760.png) were visually inspected. The design capture matrix now includes the inline Agents viewport (84 required captures). No paid native provider runs were repeated for this layout correction.
+
+The reported Codex-only picker was traced to an existing Codex conversation with two messages: all three providers were connected and present in the catalog. New-thread selection includes all three; existing-thread selection filters to the bound provider. The inspected T3 source also locks started conversations to their original provider. Cross-provider continuation remains a pending product decision for the Threads discussion.
+
+### Original provider-panel handoff
+
 The previous dev instance had no running threads or unsent composer text before it was closed. The new watcher runs this implementation on `work/thread-providers` with the normal Sotto profile, and the visible app was verified on Settings → Providers. Existing preferences were retained: Codex connected, Claude and Grok disabled until selected. All three provider controls are present and the application reports no connection error. Changes are committed locally; this correction has not been pushed or merged.

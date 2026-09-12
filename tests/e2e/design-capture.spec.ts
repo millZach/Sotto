@@ -753,6 +753,7 @@ test.describe('authoritative design-review captures', () => {
 
       const settingsSections = [
         ['Providers', 'providers'],
+        ['Agents', 'agents'],
         ['Dictation', 'capture'],
         ['Transcription', 'transcription'],
         ['Cleanup', 'cleanup'],
@@ -762,6 +763,15 @@ test.describe('authoritative design-review captures', () => {
       for (const [heading, state] of settingsSections) {
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
         await expect(section).toHaveCount(1)
+        if (state === 'agents') {
+          await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true }).click()
+          await expect(section.getByLabel('Reasoning account', { exact: true })).toBeVisible()
+          // The navigation sets aria-current before native smooth scrolling ends.
+          await page.waitForTimeout(700)
+          await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true })).toHaveAttribute('aria-current', 'true')
+          await capturePage(page, 'settings-agents.png', { category: 'settings', state })
+          continue
+        }
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
