@@ -30,8 +30,8 @@ describe('AppShell', () => {
     expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
     expect(screen.getByText('Sotto')).toBeInTheDocument()
     const links = screen.getByRole('navigation', { name: 'Pages' })
-    expect(links.querySelectorAll('a')).toHaveLength(4)
-    for (const name of ['Threads', 'History', 'Settings', 'Help']) {
+    expect(links.querySelectorAll('a')).toHaveLength(5)
+    for (const name of ['Threads', 'History', 'Memory', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name })).not.toHaveAttribute('aria-current')
     }
     expect(screen.queryByRole('link', { name: /home|dictionary|agents|dictate/i })).not.toBeInTheDocument()

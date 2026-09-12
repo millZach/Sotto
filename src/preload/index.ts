@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
+import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
 import {
@@ -221,6 +222,11 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    memory: Object.freeze<MemoryBridge>({
+      get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
+      command: command => invokeParsed(renderer, MEMORY_COMMAND, memorySnapshotSchema, memoryCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, MEMORY_CHANGED, memorySnapshotSchema, listener),
+    }),
     agents: createAgentBridge(renderer, 'main'),
     platform,
 

@@ -32,6 +32,7 @@ const rooms: ReadonlyArray<{ id: AppRoom; label: string; destination: Management
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
   { id: 'history', label: 'History' },
+  { id: 'memory', label: 'Memory' },
   { id: 'settings', label: 'Settings' },
   { id: 'help', label: 'Help' },
 ]
@@ -39,7 +40,7 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = 
 /** Which switch tab a page lights: Threads is the Agents room's list, so it counts as Agents. */
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
-  if (navigation === 'agents' || navigation === 'threads') return 'agents'
+  if (navigation === 'agents' || navigation === 'threads' || navigation === 'memory') return 'agents'
   return null
 }
 

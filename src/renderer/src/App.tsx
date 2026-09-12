@@ -22,6 +22,7 @@ import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadsView } from './agents/ThreadsView'
 import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
+import { MemorySurface } from './features/memory/MemorySurface'
 
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
@@ -55,6 +56,7 @@ function FooterStatus({ navigation, settings }: {
     case 'threads':
       return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : 'History is off.'
+    case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
     default: return settings.llmApiKey.length > 0
@@ -231,6 +233,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
     let view: ReactNode
     switch (navigation) {
+      case 'memory':
+        view = null
+        break
       case 'agents':
         view = <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
         break
@@ -310,7 +315,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onClose={app.actions.hideApp}
         >
           {updatePrompt}
-          {view}
+          <MemorySurface navigation={navigation}>{view}</MemorySurface>
         </AppShell>
         <ToastRegion messages={app.recoveryNotices.map((notice) => ({
           id: notice.code,

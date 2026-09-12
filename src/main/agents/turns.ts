@@ -37,6 +37,7 @@ export interface ActiveTurn {
   speechEndedAt: string | null
   intentMs: number
   retrievalMs: number
+  retrievedMemoryIds: string[]
   delegationMs: number
   contextTokenEstimate: number
   contextCharacters: number
@@ -101,6 +102,7 @@ export class TurnRecorder {
         speechEndedAt: input.speechEndedAt ?? null,
         intentMs: 0,
         retrievalMs: 0,
+        retrievedMemoryIds: [],
         delegationMs: 0,
         contextTokenEstimate: 0,
         contextCharacters: 0,
@@ -140,7 +142,7 @@ export class TurnRecorder {
           delegationMs: turn.delegationMs,
           totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
         },
-        retrievedMemoryIds: [],
+        retrievedMemoryIds: turn.retrievedMemoryIds,
         contextTokenEstimate: turn.contextTokenEstimate,
         outcome,
         text: retain ? turn.text : '',
