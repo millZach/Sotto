@@ -118,6 +118,13 @@ export class SottoThreadHost implements AgentHost {
     return this.read(() => this.inner.snapshot())
   }
 
+  async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (!binding || binding.provider !== this.provider) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+    return this.read(() => this.inner.refreshThread?.(binding.sessionId) ?? this.inner.snapshot())
+  }
+
   /** Bindings for newly discovered threads reach disk before the coordinator can persist a reference to them. */
   private async read(source: () => Promise<AgentHostSnapshot>): Promise<AgentHostSnapshot> {
     const snapshot = this.mapSnapshot(await source())

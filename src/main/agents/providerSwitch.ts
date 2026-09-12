@@ -15,6 +15,12 @@ export class ConfiguredProviderHost implements AgentHost {
     return this.options.hosts[this.active].connect()
   }
   snapshot(): Promise<AgentHostSnapshot> { return this.options.hosts[this.active].snapshot() }
+  async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
+    const provider = this.active; const host = this.options.hosts[provider]
+    const snapshot = await (host.refreshThread?.(threadId) ?? host.snapshot())
+    if (provider !== this.active) throw new Error('The active provider changed while reading the thread.')
+    return snapshot
+  }
   execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.options.hosts[this.active].execute(command) }
   observeThreads(ids: readonly string[]): void { this.observed = [...ids]; this.options.hosts[this.active].observeThreads?.(ids) }
   disconnect(): void { this.options.hosts[this.active].disconnect() }

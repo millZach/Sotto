@@ -75,6 +75,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.pollTimer.unref(); this.emit(); return this.view()
   }
   async snapshot(): Promise<AgentHostSnapshot> { await this.pollSessionLogs(); return this.view() }
+  async refreshThread(id: string): Promise<AgentHostSnapshot> {
+    if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')
+    const generation = this.generation
+    await this.log(id).poll()
+    if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
+    return this.view()
+  }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   observeThreads(ids: readonly string[]): void {
     this.observed.clear(); for (const id of ids) this.observed.add(id)
@@ -122,10 +129,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const checkLatestUserMessage = (): void => {
         if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
       }
-      await this.pollSessionLogs()
+      await this.refreshThread(id)
       checkLatestUserMessage()
       if (alias.origins.some(origin => origin.messageId === command.messageId)) return thread.messages.some(message => message.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
       if (this.dispatching.has(id) || thread.status === 'running') throw new Error('Claude is already running a turn.')
+      if (thread.requests.length) throw new Error('Answer the pending Claude request before sending another prompt.')
       this.dispatching.add(id)
       try {
         if (this.staleContexts.delete(id)) {
@@ -142,7 +150,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
         ] : command.text
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
-        try { await this.pollSessionLogs(); checkLatestUserMessage() }
+        try {
+          await this.refreshThread(id); checkLatestUserMessage()
+          if (thread.requests.length || this.threads.get(id)?.status === 'running') throw new Error('The Claude thread started working or needs an answer before another prompt.')
+        }
         catch (error) {
           alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
           await this.persist(); throw error
@@ -283,7 +294,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let log = this.logs.get(id)
     if (!log) {
       const alias = this.aliases[id]!
-      log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => { this.message(id, frame, true); this.emit() })
+      const generation = this.generation
+      log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
+        if (generation === this.generation) { this.message(id, frame, true); this.emit() }
+      })
       this.logs.set(id, log)
     }
     return log

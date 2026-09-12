@@ -593,6 +593,10 @@ export class AgentControl {
     const at = new Date().toISOString()
     for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
   }
+  private readThread(threadId?: string): Promise<AgentHostSnapshot> {
+    const host = this.dependencies.host
+    return threadId && host.refreshThread ? host.refreshThread(threadId) : host.snapshot()
+  }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
@@ -622,7 +626,7 @@ export class AgentControl {
     }
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || command.type === 'send') && result.accepted) {
-      this.acceptSnapshot(await this.dependencies.host.snapshot())
+      this.acceptSnapshot(await this.readThread(threadId))
       await this.persist()
       if (this.outbox.some(item => item.id === command.commandId)) throw new Error(command.type === 'send'
         ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
@@ -632,7 +636,7 @@ export class AgentControl {
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
     if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
-    this.acceptSnapshot(await this.dependencies.host.snapshot())
+    this.acceptSnapshot(await this.readThread(threadId))
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
@@ -642,7 +646,7 @@ export class AgentControl {
       // never a new dispatch and must not replace an edited or recovered draft.
       this.canAct()
       this.observe(threadId)
-      this.acceptSnapshot(await this.dependencies.host.snapshot())
+      this.acceptSnapshot(await this.readThread(threadId))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
       this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
       this.observe()
@@ -662,7 +666,7 @@ export class AgentControl {
     }
     this.canAct()
     this.observe(threadId)
-    this.acceptSnapshot(await this.dependencies.host.snapshot())
+    this.acceptSnapshot(await this.readThread(threadId))
     const validate = (): void => {
       this.canAct()
       const latest = this.thread(threadId)
@@ -689,7 +693,7 @@ export class AgentControl {
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === this.state.draftThreadId)?.id
     if (pendingId) {
       this.canAct()
-      this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot())
+      this.observe(); this.acceptSnapshot(await this.readThread(this.state.draftThreadId ?? undefined))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
       this.say('Reconciled the earlier action. No new prompt was sent.')
       return
@@ -699,6 +703,8 @@ export class AgentControl {
       turn.projectId = this.state.host.threads.find(thread => thread.id === this.state.draftThreadId)?.projectId ?? null
     }
     this.canAct()
+    this.observe()
+    this.acceptSnapshot(await this.readThread(this.state.draftThreadId ?? undefined))
     const thread = this.thread(this.state.draftThreadId)
     if (!this.hasDraft()) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, this.state.draftAttachments)
@@ -719,7 +725,7 @@ export class AgentControl {
     assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
     assignment.stopReason = 'none'; assignment.stoppedAt = ''
     assignment.contextUpdatedAt = Date.now()
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(attachments.length ? { attachments } : {}) }, turn)
+    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: thread.messages.findLast(message => message.role === 'user')?.id ?? null }, turn)
     this.clearDraft()
     this.state.queue = this.state.queue.filter(q => q.threadId !== thread.id || q.kind === 'permission' || q.kind === 'question')
     this.say(`Sent to ${thread.title}.`)

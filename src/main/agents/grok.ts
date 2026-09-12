@@ -52,6 +52,7 @@ export class GrokAcpHost implements AgentHost {
   private stopping = Promise.resolve()
   private writing = Promise.resolve()
   private polling: Promise<void> | undefined
+  private readonly historyReads = new Map<string, Promise<void>>()
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private generation = 0
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: false } }
@@ -110,6 +111,17 @@ export class GrokAcpHost implements AgentHost {
   }
   observeThreads(_ids: readonly string[]): void { void _ids /* Known aliases are loaded at connect. Foreign sessions are never discovered. */ }
   async snapshot(): Promise<AgentHostSnapshot> { if (this.state.connected) await this.pollHistory(); return this.current() }
+  async refreshThread(id: string): Promise<AgentHostSnapshot> {
+    if (!this.aliases[id]?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session.')
+    const generation = this.generation
+    const work = (this.historyReads.get(id) ?? Promise.resolve()).catch(() => undefined).then(() => {
+      if (generation !== this.generation || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
+      return this.readHistory(id)
+    })
+    this.historyReads.set(id, work)
+    try { await work; return this.current() }
+    finally { if (this.historyReads.get(id) === work) this.historyReads.delete(id) }
+  }
   /** Native history query includes CLI-authored input and filters rewound branches. */
   pollHistory(): Promise<void> {
     if (this.polling) return this.polling
@@ -118,70 +130,74 @@ export class GrokAcpHost implements AgentHost {
   }
   private async readHistories(): Promise<void> {
     if (!this.state.connected || !this.rpc) return
-    for (const [id, alias] of Object.entries(this.aliases)) {
-      if (!alias.grokSessionId) continue
-      const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false
-      const persistedStatusEvents = new Set<string>()
-      let assistant: AgentMessage | undefined
-      while (more) {
-        await this.rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: 100 }, value => {
-          const page = historySchema.parse(value)
-          if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
-          more = page.hasMore
-          for (const entry of page.updates) {
-            const ordinal = offset++
-            const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
-            const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
-            const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
-            const update = parsed.data.update
-            if (entry.method === 'session/update' && update.content?.type === 'text' && typeof update.content.text === 'string') {
-              if (update.sessionUpdate === 'user_message_chunk') {
-                persistedStatusEvents.add(eventKey(parsed.data, 0))
-                assistant = undefined; status = 'running'
-                const text = update.content.text
-                const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
-                if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-                messages.push({ id: origin?.messageId ?? key, role: 'user', text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
-                if (origin) this.deliveries.get(origin.messageId)?.resolve()
-              } else if (update.sessionUpdate === 'agent_message_chunk') {
-                if (!assistant) { assistant = { id: key, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
-                assistant.text += update.content.text
-              }
+    for (const [id, alias] of Object.entries(this.aliases)) if (alias.grokSessionId) await this.refreshThread(id)
+  }
+  private async readHistory(id: string): Promise<void> {
+    const generation = this.generation; const rpc = this.rpc!; const alias = this.aliases[id]!
+    const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false
+    const persistedStatusEvents = new Set<string>()
+    let assistant: AgentMessage | undefined
+    while (more) {
+      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: 100 }, value => {
+        if (generation !== this.generation || rpc !== this.rpc) { more = false; return }
+        const page = historySchema.parse(value)
+        if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
+        more = page.hasMore
+        for (const entry of page.updates) {
+          const ordinal = offset++
+          const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
+          const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
+          const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
+          const update = parsed.data.update
+          if (entry.method === 'session/update' && update.content?.type === 'text' && typeof update.content.text === 'string') {
+            if (update.sessionUpdate === 'user_message_chunk') {
+              persistedStatusEvents.add(eventKey(parsed.data, 0))
+              assistant = undefined; status = 'running'
+              const text = update.content.text
+              const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
+              if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
+              messages.push({ id: origin?.messageId ?? key, role: 'user', text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              if (origin) this.deliveries.get(origin.messageId)?.resolve()
+            } else if (update.sessionUpdate === 'agent_message_chunk') {
+              if (!assistant) { assistant = { id: key, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
+              assistant.text += update.content.text
             }
-            if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); assistant = undefined }
           }
-        })
-      }
-      if (changed) await this.persist()
-      const thread = this.thread(id)
-      // A live native turn may belong to the CLI, not activePrompts. Older durable
-      // status cannot supersede it until its event has entered the persisted timeline.
-      const liveStatus = this.liveStatus.get(id)
-      if (liveStatus) {
-        if (persistedStatusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
-        else status = liveStatus.status
-      }
-      // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
-      for (const live of [...[...this.authored.values()].filter(entry => entry.threadId === id).map(entry => entry.message), ...[...this.streams.values()].filter(stream => stream.threadId === id).map(stream => stream.message)]) {
-        if (live.role === 'user') {
-          if (!messages.some(message => message.id === live.id)) messages.push(live)
-          else this.authored.delete(live.id)
+          if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); assistant = undefined }
         }
-        if (live.role === 'assistant' && live.id.startsWith('grok-stream-')) {
-          const userId = live.id.slice('grok-stream-'.length)
-          const userIndex = messages.findIndex(message => message.id === userId)
-          if (userIndex < 0) continue
-          const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
-          const tail = messages.slice(userIndex + 1, nextUserIndex < 0 ? undefined : nextUserIndex).filter(message => message.role === 'assistant')
-          if (!tail.some(message => message.text.includes(live.text))) {
-            const partial = tail.at(-1)
-            if (partial && live.text.startsWith(partial.text)) partial.text = live.text
-            else messages.splice(nextUserIndex < 0 ? messages.length : nextUserIndex, 0, live)
-          } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(live.id)
-        }
-      }
-      thread.messages = messages; thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
+      })
     }
+    if (generation !== this.generation || rpc !== this.rpc || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
+    if (changed) await this.persist()
+    if (generation !== this.generation || rpc !== this.rpc || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
+    const thread = this.thread(id)
+    // A live native turn may belong to the CLI, not activePrompts. Older durable
+    // status cannot supersede it until its event has entered the persisted timeline.
+    const liveStatus = this.liveStatus.get(id)
+    if (liveStatus) {
+      if (persistedStatusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
+      else status = liveStatus.status
+    }
+    // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
+    for (const live of [...[...this.authored.values()].filter(entry => entry.threadId === id).map(entry => entry.message), ...[...this.streams.values()].filter(stream => stream.threadId === id).map(stream => stream.message)]) {
+      if (live.role === 'user') {
+        if (!messages.some(message => message.id === live.id)) messages.push(live)
+        else this.authored.delete(live.id)
+      }
+      if (live.role === 'assistant' && live.id.startsWith('grok-stream-')) {
+        const userId = live.id.slice('grok-stream-'.length)
+        const userIndex = messages.findIndex(message => message.id === userId)
+        if (userIndex < 0) continue
+        const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
+        const tail = messages.slice(userIndex + 1, nextUserIndex < 0 ? undefined : nextUserIndex).filter(message => message.role === 'assistant')
+        if (!tail.some(message => message.text.includes(live.text))) {
+          const partial = tail.at(-1)
+          if (partial && live.text.startsWith(partial.text)) partial.text = live.text
+          else messages.splice(nextUserIndex < 0 ? messages.length : nextUserIndex, 0, live)
+        } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(live.id)
+      }
+    }
+    thread.messages = messages; thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
     this.emit()
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
@@ -213,12 +229,14 @@ export class GrokAcpHost implements AgentHost {
         if (command.type === 'send') {
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
-          await this.pollHistory()
+          try { await this.refreshThread(command.threadId) }
+          catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error }
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
           const previous = alias.origins.find(origin => origin.messageId === command.messageId || origin.commandId === command.commandId)
           if (previous) return previous.entryKey ? { accepted: true } : { accepted: false, uncertain: true }
           if (this.activePrompts.has(command.threadId) || thread.status === 'running') throw new Error('Grok is already running a prompt in this thread.')
+          if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
           const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(command.text), createdAt: new Date().toISOString() }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
@@ -226,12 +244,14 @@ export class GrokAcpHost implements AgentHost {
           try {
             await this.persist()
             // Saving the origin is an async boundary at which native CLI input can revoke authority.
-            await this.pollHistory()
+            await this.refreshThread(command.threadId)
             if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
+            if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
             if (generation !== this.generation || !this.state.connected || !this.activePrompts.has(command.threadId)) throw new Error('The Grok prompt was cancelled before dispatch.')
           } catch (error) {
             // No prompt was written. Rolling back this reserved origin cannot duplicate native work.
-            alias.origins = alias.origins.filter(item => item !== origin); this.activePrompts.delete(command.threadId); await this.persist(); throw error
+            alias.origins = alias.origins.filter(item => item !== origin); this.activePrompts.delete(command.threadId); await this.persist()
+            throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error
           }
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
@@ -244,7 +264,7 @@ export class GrokAcpHost implements AgentHost {
             this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error); this.thread(command.threadId).status = 'error'; this.emit()
           }).catch(() => this.disconnect())
           try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
-          await this.pollHistory()
+          await this.refreshThread(command.threadId)
         } else if (command.type === 'answer') {
           const pending = this.pending.get(command.requestId)
           if (!pending || pending.threadId !== command.threadId) throw new Error('That Grok request is no longer pending.')
@@ -339,5 +359,5 @@ export class GrokAcpHost implements AgentHost {
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))
     this.deliveries.clear(); this.rpc?.close(); this.state.connected = false; this.emit()
   }
-  async closed(): Promise<void> { await this.stopping; await this.polling?.catch(() => undefined); await this.writing }
+  async closed(): Promise<void> { await this.stopping; await this.polling?.catch(() => undefined); await Promise.allSettled(this.historyReads.values()); await this.writing }
 }
