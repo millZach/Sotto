@@ -25,3 +25,11 @@ test('failed playback and invalid stop observations do not count toward percenti
   assert.equal(rows.find(r => r.metric === 'Grok request to first loopback audio' && r.phase === 'warm').p95, 600)
 })
 
+test('fresh cold/warm speech replaces historical playback and includes input-to-silence gates', () => {
+  const trial = { provider: 'grok', ok: true, stopValid: true, stopMs: 70, inputToSilenceMs: 71, timestampErrors: 0, discontinuities: 0, clockUncertaintyMs: .3 }
+  const rows = summarizeVoice({ playback: { trials: [{ ...trial, phase: 'screen', onsetMs: 9999 }] },
+    speech: { trials: [{ ...trial, phase: 'cold', onsetMs: 1200 }, { ...trial, phase: 'warm', onsetMs: 800 }] } }).rows
+  assert.equal(rows.find(r => r.metric === 'Grok request to first loopback audio' && r.phase === 'cold').p95, 1200)
+  assert.equal(rows.find(r => r.metric === 'Grok request to first loopback audio' && r.phase === 'warm').p95, 800)
+  assert.equal(rows.find(r => r.metric === 'Grok injected Stop button input to loopback silence' && r.phase === 'warm').status, 'PASS')
+})

@@ -1,6 +1,6 @@
 {
   "provenance": {
-    "generatedAt": "2026-09-12T16:10:17.343Z",
+    "generatedAt": "2026-09-12T16:17:34.264Z",
     "retrievalEnvironment": {
       "platform": "win32",
       "release": "10.0.26200",
@@ -12,11 +12,13 @@
     },
     "captureGeneratedAt": "2026-09-12T16:05:45.568Z",
     "captureFixtureSha256": "6dfabcf5a2cdf8ec17cb2395fc7e15157e9d18f978f5c50c8b9084d9bf8218a1",
+    "freshSpeechGeneratedAt": "2026-09-12T16:16:00.275Z",
+    "freshSpeechSourceSha256": "5cb29aa3c458e633c8bf9de89886084384fd41d2fecb7db6df3f8d8284be480e",
     "historicalPlaybackRun": "2026-09-12T04:49:09.120Z",
     "historicalPlaybackSha256": "f28ebecfad14a43c4a57821abed409c5d7fe9cd1f1e518b814c40d406e9094c1",
     "transcription": "microsoft/mai-transcribe-2 via OpenRouter; fixture dictionary empty",
     "speech": "Grok default / Kokoro economical",
-    "command": "npm run perf:voice (15 at-most-5s uploads, each at most one retry; at most 150 billed audio seconds, about $0.005 at recorded MAI rate)"
+    "command": "npm run perf:voice (15 at-most-5s uploads, each at most one retry; at most 150 billed audio seconds, about $0.005 at recorded MAI rate; plus 24 fixed replies on Grok/Kokoro, about $0.015 at recorded speech rates)"
   },
   "rows": [
     {
@@ -84,50 +86,76 @@
     {
       "metric": "Grok request to first loopback audio",
       "phase": "cold",
-      "n": 0,
-      "p50": null,
-      "p95": null,
-      "max": null,
+      "n": 3,
+      "p50": 1154.0117000043392,
+      "p95": 1209.4029333293438,
+      "max": 1209.4029333293438,
       "target": null,
-      "status": "UNMEASURED",
-      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+      "status": "MEASURED",
+      "source": "Fresh production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
     },
     {
       "metric": "Grok playback interrupt to loopback silence",
       "phase": "cold",
-      "n": 0,
-      "p50": null,
-      "p95": null,
-      "max": null,
+      "n": 3,
+      "p50": 71.02003335952759,
+      "p95": 72.71959999203682,
+      "max": 72.71959999203682,
       "target": {
         "max": 100
       },
-      "status": "UNMEASURED",
-      "source": "Historical production player stop; active-source/observed-silence validation"
+      "status": "PASS",
+      "source": "Fresh production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Grok injected Stop button input to loopback silence",
+      "phase": "cold",
+      "n": 3,
+      "p50": 71.96283334493637,
+      "p95": 73.42629998922348,
+      "max": 73.42629998922348,
+      "target": {
+        "max": 150
+      },
+      "status": "PASS",
+      "source": "Fresh Electron mouse input -> trusted benchmark button click -> AgentVoiceSession.stopSpeaking -> NativeSystemSpeech -> Windows output silence; physical switch delay excluded"
     },
     {
       "metric": "Kokoro request to first loopback audio",
       "phase": "cold",
-      "n": 0,
-      "p50": null,
-      "p95": null,
-      "max": null,
+      "n": 3,
+      "p50": 1770.3441333174706,
+      "p95": 2163.458099991083,
+      "max": 2163.458099991083,
       "target": null,
-      "status": "UNMEASURED",
-      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+      "status": "MEASURED",
+      "source": "Fresh production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
     },
     {
       "metric": "Kokoro playback interrupt to loopback silence",
       "phase": "cold",
-      "n": 0,
-      "p50": null,
-      "p95": null,
-      "max": null,
+      "n": 3,
+      "p50": 68.02553337812424,
+      "p95": 68.59413331747055,
+      "max": 68.59413331747055,
       "target": {
         "max": 100
       },
-      "status": "UNMEASURED",
-      "source": "Historical production player stop; active-source/observed-silence validation"
+      "status": "PASS",
+      "source": "Fresh production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Kokoro injected Stop button input to loopback silence",
+      "phase": "cold",
+      "n": 3,
+      "p50": 68.9866333603859,
+      "p95": 69.64263334870338,
+      "max": 69.64263334870338,
+      "target": {
+        "max": 150
+      },
+      "status": "PASS",
+      "source": "Fresh Electron mouse input -> trusted benchmark button click -> AgentVoiceSession.stopSpeaking -> NativeSystemSpeech -> Windows output silence; physical switch delay excluded"
     },
     {
       "metric": "Acoustic end to shipping UI feedback",
@@ -200,54 +228,80 @@
     {
       "metric": "Grok request to first loopback audio",
       "phase": "warm",
-      "n": 72,
-      "p50": 1044.28,
-      "p95": 1732.51,
-      "max": 2963.47,
+      "n": 9,
+      "p50": 820.5209333598614,
+      "p95": 870.8308166563511,
+      "max": 870.8308166563511,
       "target": {
         "p95": 300
       },
       "status": "FAIL",
-      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+      "source": "Fresh production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
     },
     {
       "metric": "Grok playback interrupt to loopback silence",
       "phase": "warm",
-      "n": 69,
-      "p50": 65.07,
-      "p95": 70.34,
-      "max": 72.08,
+      "n": 9,
+      "p50": 68.9423833489418,
+      "p95": 72.80848333239555,
+      "max": 72.80848333239555,
       "target": {
         "max": 100
       },
       "status": "PASS",
-      "source": "Historical production player stop; active-source/observed-silence validation"
+      "source": "Fresh production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Grok injected Stop button input to loopback silence",
+      "phase": "warm",
+      "n": 9,
+      "p50": 69.55513334274292,
+      "p95": 73.3888333439827,
+      "max": 73.3888333439827,
+      "target": {
+        "max": 150
+      },
+      "status": "PASS",
+      "source": "Fresh Electron mouse input -> trusted benchmark button click -> AgentVoiceSession.stopSpeaking -> NativeSystemSpeech -> Windows output silence; physical switch delay excluded"
     },
     {
       "metric": "Kokoro request to first loopback audio",
       "phase": "warm",
-      "n": 72,
-      "p50": 1093.87,
-      "p95": 1947.73,
-      "max": 5579.59,
+      "n": 9,
+      "p50": 972.0101833343506,
+      "p95": 2804.046266645193,
+      "max": 2804.046266645193,
       "target": {
         "p95": 300
       },
       "status": "FAIL",
-      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+      "source": "Fresh production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
     },
     {
       "metric": "Kokoro playback interrupt to loopback silence",
       "phase": "warm",
-      "n": 72,
-      "p50": 65.1,
-      "p95": 70.88,
-      "max": 71.86,
+      "n": 9,
+      "p50": 65.87513333559036,
+      "p95": 71.82173332571983,
+      "max": 71.82173332571983,
       "target": {
         "max": 100
       },
       "status": "PASS",
-      "source": "Historical production player stop; active-source/observed-silence validation"
+      "source": "Fresh production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Kokoro injected Stop button input to loopback silence",
+      "phase": "warm",
+      "n": 9,
+      "p50": 66.7086333334446,
+      "p95": 72.56693333387375,
+      "max": 72.56693333387375,
+      "target": {
+        "max": 150
+      },
+      "status": "PASS",
+      "source": "Fresh Electron mouse input -> trusted benchmark button click -> AgentVoiceSession.stopSpeaking -> NativeSystemSpeech -> Windows output silence; physical switch delay excluded"
     }
   ]
 }
