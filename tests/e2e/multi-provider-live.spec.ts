@@ -247,7 +247,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
 
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     const agentControl = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
     if (!(await state(page)).configuration.enabled) {
       await agentControl.getByRole('button', { name: 'Enable agent control', exact: true }).click()
