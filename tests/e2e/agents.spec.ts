@@ -61,7 +61,8 @@ test('chooses and previews a natural voice without changing subscription reasoni
   try {
     await setup(page)
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
-    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('natural')
+    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
+    await page.getByLabel('Speech voice', { exact: true }).selectOption('natural')
     await page.getByLabel('Voice', { exact: true }).selectOption('M3')
     await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
@@ -69,7 +70,7 @@ test('chooses and previews a natural voice without changing subscription reasoni
     })))).toEqual({ provider: 'natural', voice: 'M3', reasoning: 'none', preview: true })
     await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: 'artifacts/agent-control-smoke/natural-voice-settings-e2e.png' })
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('M3')
   } finally { await closeSotto(launched) }
@@ -92,7 +93,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.voice.error))).toContain('rejected the API key')
     await page.getByLabel('Grok speech API key', { exact: true }).fill('fixture-valid-grok-key')
     await page.getByRole('button', { name: 'Replace API key', exact: true }).click()
-    await expect(page.getByLabel('Grok voice', { exact: true }).locator('option')).toHaveCount(3)
+    await expect(page.getByLabel('Grok voice', { exact: true }).locator('option')).toHaveCount(4)
     await page.getByLabel('Grok voice', { exact: true }).selectOption('fixture-custom-voice')
     await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
@@ -107,7 +108,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
     await page.screenshot({ path: 'artifacts/agent-control-smoke/grok-tts-settings-e2e.png' })
     expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
     expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
     await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('fixture-custom-voice')
@@ -115,6 +116,42 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
     await page.getByRole('button', { name: 'Remove API key', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.credentials.grokSpeech))).toBe(false)
+  } finally { await closeSotto(launched) }
+})
+
+test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRouter key', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await setup(page)
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
+    await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('altair')
+    await page.getByLabel('Speech voice', { exact: true }).selectOption('kokoro')
+    await expect(page.getByText(/Add your OpenRouter API key in Settings/u)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
+    await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.updateSettings({ llmApiKey: 'fixture-invalid-openrouter-key' }))
+    await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.voice.error))).toMatch(/OpenRouter.*key/iu)
+    await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.updateSettings({ llmApiKey: 'fixture-valid-openrouter-key' }))
+    await page.getByRole('button', { name: 'Use and preview voice', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => ({
+      provider: state.configuration.speechProvider, grokVoice: state.configuration.grokSpeechVoice,
+      reasoning: state.configuration.reasoning, error: state.voice.error,
+    })))).toEqual({ provider: 'kokoro', grokVoice: 'altair', reasoning: 'none', error: null })
+    await page.getByRole('button', { name: 'Stop speech', exact: true }).click()
+    await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/agent-control-smoke/kokoro-voice-settings-e2e.png' })
+    expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
+    expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
+    await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('kokoro')
+    await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.updateSettings({ llmApiKey: '' }))
+    await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
+    await page.getByLabel('Speech voice', { exact: true }).selectOption('grok')
+    await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('altair')
   } finally { await closeSotto(launched) }
 })
 

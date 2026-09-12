@@ -36,7 +36,7 @@ function deferred<T>() {
 }
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve() }
 
-function setup(configuration: AgentConfiguration = defaultAgentConfiguration()) {
+function setup(configuration: AgentConfiguration = { ...defaultAgentConfiguration(), speechProvider: 'natural' }) {
   const model = vi.fn<NonNullable<AgentBridge['voiceModel']>>(async () => ready)
   const system = vi.fn<NonNullable<AgentBridge['synthesizeSpeech']>>(async () => ({ audioBase64: 'UklGRg==', mimeType: 'audio/wav' }))
   const bridge = { voiceModel: model, synthesizeSpeech: system }
@@ -121,7 +121,7 @@ describe('natural speech output', () => {
     await second
   })
 
-  it('routes the default to local synthesis and forwards stop while its status check is still pending', async () => {
+  it('routes a saved natural selection to local synthesis and forwards stop while its status check is still pending', async () => {
     const f = setup()
     const status = deferred<AgentVoiceModelStatus>()
     f.model.mockReturnValueOnce(status.promise)
@@ -162,10 +162,10 @@ describe('natural speech output', () => {
     await expect(f.output.speak('Another preview')).rejects.toThrow('Install a system voice')
   })
 
-  it('routes Grok speech through native IPC and cancels pending audio without loading local models', async () => {
+  it.each(['grok', 'kokoro'] as const)('routes %s speech through native IPC and cancels pending audio without loading local models', async speechProvider => {
     const pending = deferred<{ audioBase64: string; mimeType: 'audio/wav' }>()
     const bridge = { synthesizeSpeech: vi.fn(async () => pending.promise), cancelSpeech: vi.fn(async () => undefined), voiceModel: vi.fn(async () => ready) }
-    const f = createConfiguredSpeech(bridge, () => ({ ...defaultAgentConfiguration(), speechProvider: 'grok' }))
+    const f = createConfiguredSpeech(bridge, () => ({ ...defaultAgentConfiguration(), speechProvider }))
     disposables.push(f)
     const spoken = f.output.speak('Grok preview')
     expect(bridge.synthesizeSpeech).toHaveBeenCalledWith('Grok preview')

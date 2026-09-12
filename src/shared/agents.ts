@@ -122,6 +122,7 @@ export type ProviderId = z.infer<typeof providerIdSchema>
 export const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 export const orbColorSchema = z.enum(ORB_COLORS)
 export type OrbColor = z.infer<typeof orbColorSchema>
+export const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('t3'),
   orbColor: orbColorSchema.default('teal'),
@@ -131,9 +132,9 @@ export const agentConfigurationSchema = z.object({
   defaultModelId: z.string().max(512),
   followupLimit: z.number().int().min(0).max(100),
   speak: z.boolean(),
-  speechProvider: z.enum(['natural', 'system', 'grok']).default('natural'),
+  speechProvider: speechProviderSchema.default('grok'),
   speechVoice: z.enum(NATURAL_VOICES).default('F1'),
-  grokSpeechVoice: grokSpeechVoiceSchema.default('ara'),
+  grokSpeechVoice: grokSpeechVoiceSchema.default('altair'),
   wakeModelDirectory: z.string().max(4_096),
   wakeRuntimeDirectory: z.string().max(4_096),
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
@@ -146,7 +147,7 @@ export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 't3',
   orbColor: 'teal',
   enabled: false, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, speechProvider: 'natural', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
+  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
 })
 
 export const agentAssignmentSchema = z.object({
@@ -196,7 +197,7 @@ export const agentStateSchema = z.object({
 export type AgentState = z.infer<typeof agentStateSchema>
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: z.enum(['natural', 'system', 'grok']).optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['t3', 'reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),

@@ -6,18 +6,19 @@ import { VoiceSettings } from '../../../src/renderer/src/agents/VoiceSettings'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-function harness(ready = false, options: { configuration?: Partial<AgentConfiguration>; keySaved?: boolean; voices?: Array<{ id: string; name: string }>; voiceError?: string } = {}) {
+function harness(ready = false, options: { configuration?: Partial<AgentConfiguration>; keySaved?: boolean; openRouterKeySaved?: boolean; voices?: Array<{ id: string; name: string }>; voiceError?: string } = {}) {
   const voiceModel = vi.fn(async (action: string) => { if (action === 'download') ready = true; return { ready, completedBytes: ready ? 100 : 0, totalBytes: 100 } })
   const grokVoices = vi.fn(async () => options.voices ?? [{ id: 'ara', name: 'Ara' }])
-  vi.stubGlobal('sotto', { agents: { voiceModel, grokVoices } })
+  const getSettings = vi.fn(async () => ({ llmApiKey: options.openRouterKeySaved ? 'saved-placeholder' : '' }))
+  vi.stubGlobal('sotto', { agents: { voiceModel, grokVoices }, getSettings })
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ error: null } as AgentState))
   function View() {
-    const [configuration, setConfiguration] = useState({ ...defaultAgentConfiguration(), ...options.configuration })
+    const [configuration, setConfiguration] = useState({ ...defaultAgentConfiguration(), speechProvider: 'natural' as const, ...options.configuration })
     const change = <K extends keyof AgentConfiguration>(key: K, value: AgentConfiguration[K]): void => { setConfiguration(current => ({ ...current, [key]: value })) }
     return <VoiceSettings configuration={configuration} change={change} command={command} grokKeySaved={options.keySaved} voiceError={options.voiceError} />
   }
   render(<View />)
-  return { command, voiceModel, grokVoices }
+  return { command, voiceModel, grokVoices, getSettings }
 }
 
 describe('natural voice setup', () => {
@@ -51,12 +52,47 @@ describe('natural voice setup', () => {
     ])
   })
 
-  it('keeps the optional system voice usable without downloading a model', async () => {
-    const h = harness()
-    fireEvent.change(screen.getByLabelText('Speech voice'), { target: { value: 'system' } })
+  it('preserves a legacy system selection without offering it as a new choice', async () => {
+    const h = harness(false, { configuration: { speechProvider: 'system' } })
     expect(screen.getByRole('button', { name: 'Use and preview voice' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Download natural voices' })).not.toBeInTheDocument()
     expect(h.voiceModel).not.toHaveBeenCalledWith('download')
+    fireEvent.change(screen.getByLabelText('Speech voice'), { target: { value: 'natural' } })
+    expect(screen.queryByRole('option', { name: /System voice/u })).not.toBeInTheDocument()
+  })
+})
+
+describe('Grok default and Kokoro option', () => {
+  it('starts with Grok Altair for a fresh configuration', () => {
+    harness(false, { configuration: defaultAgentConfiguration() })
+    expect(screen.getByLabelText('Speech voice')).toHaveValue('grok')
+    expect(screen.getByLabelText('Grok voice')).toHaveValue('altair')
+    expect(screen.getByRole('option', { name: 'Grok voice · default' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Kokoro Heart · lower cost' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use and preview voice' })).toBeDisabled()
+  })
+
+  it('uses the shared OpenRouter key for Heart without changing Grok voice or reasoning', async () => {
+    const h = harness(false, { configuration: { speechProvider: 'kokoro', grokSpeechVoice: 'custom-voice', reasoning: 'codex' }, openRouterKeySaved: true })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Use and preview voice' })).toBeEnabled())
+    expect(h.getSettings).toHaveBeenCalledOnce()
+    expect(h.voiceModel).not.toHaveBeenCalled()
+    expect(h.grokVoices).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Grok speech API key')).not.toBeInTheDocument()
+    expect(screen.getByText(/same saved key as transcription/u)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Use and preview voice' }))
+    await waitFor(() => expect(h.command).toHaveBeenCalledTimes(2))
+    expect(h.command.mock.calls).toEqual([
+      [{ type: 'configure', patch: { speechProvider: 'kokoro', speak: true } }],
+      [{ type: 'preview-voice' }],
+    ])
+  })
+
+  it('explains where to save a missing shared key and disables paid previews', async () => {
+    const h = harness(false, { configuration: { speechProvider: 'kokoro' } })
+    expect(await screen.findByText(/Add your OpenRouter API key in Settings/u)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use and preview voice' })).toBeDisabled()
+    expect(h.command).not.toHaveBeenCalled()
   })
 })
 
@@ -82,7 +118,7 @@ describe('Grok speech API setup', () => {
     expect(screen.getByLabelText('Grok speech API key')).toHaveValue('')
     expect(screen.getByLabelText('Grok speech API key')).toHaveAttribute('placeholder', 'Saved securely · enter to replace')
     for (const voice of voices) expect(screen.getByRole('option', { name: voice.name })).toHaveValue(voice.id)
-    expect(screen.getByRole('option', { name: 'ara · saved voice' })).toHaveValue('ara')
+    expect(screen.getByRole('option', { name: 'altair · saved voice' })).toHaveValue('altair')
     expect(screen.getByRole('button', { name: 'Use and preview voice' })).toBeEnabled()
     fireEvent.change(screen.getByLabelText('Grok voice'), { target: { value: 'catalog-voice-11' } })
     expect(screen.getByLabelText('Grok voice')).toHaveValue('catalog-voice-11')

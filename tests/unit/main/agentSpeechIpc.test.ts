@@ -26,12 +26,13 @@ function fixture() {
     synthesize: vi.fn<(text: string, voice: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'grok-fixture', mimeType: 'audio/wav' })),
     voices: vi.fn(async () => [{ id: 'custom-voice', name: 'Custom' }]), cancel: vi.fn(),
   }
+  const kokoro = { synthesize: vi.fn<(text: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'kokoro-fixture', mimeType: 'audio/wav' })), cancel: vi.fn() }
   disposables.push(registerAgentIpc(ipc, control, () => [main, widget], 'win32', {
     status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-  }, grok))
+  }, grok, kokoro))
   const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => listeners.get(channel)!({ sender: source.webContents, senderFrame: frame }, payload)
-  return { state, control, grok, invoke, main, widget }
+  return { state, control, grok, kokoro, invoke, main, widget }
 }
 
 describe('agent command IPC authorization', () => {
@@ -99,6 +100,25 @@ describe('agent command IPC authorization', () => {
 })
 
 describe('native speech IPC', () => {
+  it('routes Kokoro using saved configuration, never falls back on failure, and cancels across a provider change', async () => {
+    const f = fixture()
+    f.state.configuration.speechProvider = 'kokoro'
+    await expect(f.invoke(AGENT_SPEECH, 'Heart preview')).resolves.toMatchObject({ audioBase64: 'kokoro-fixture' })
+    expect(f.kokoro.synthesize).toHaveBeenCalledExactlyOnceWith('Heart preview')
+    f.kokoro.synthesize.mockRejectedValueOnce(new Error('Save your OpenRouter key.'))
+    await expect(f.invoke(AGENT_SPEECH, 'No key')).rejects.toThrow('OpenRouter key')
+    expect(f.grok.synthesize).not.toHaveBeenCalled()
+    expect(synthesizeAgentSpeech).not.toHaveBeenCalled()
+    let release!: (value: { audioBase64: string; mimeType: 'audio/wav' }) => void
+    f.kokoro.synthesize.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const old = f.invoke(AGENT_SPEECH, 'Old Kokoro reply')
+    f.state.configuration.speechProvider = 'grok'
+    await f.invoke(AGENT_SPEECH_CANCEL)
+    expect(f.kokoro.cancel).toHaveBeenCalledOnce()
+    await expect(f.invoke(AGENT_SPEECH, 'Fresh Grok reply')).resolves.toMatchObject({ audioBase64: 'grok-fixture' })
+    release({ audioBase64: 'late', mimeType: 'audio/wav' }); await old
+    await expect(f.invoke(AGENT_SPEECH, 'Next Grok reply')).resolves.toMatchObject({ audioBase64: 'grok-fixture' })
+  })
   it('uses only the saved provider and its exact voice, with no system fallback on Grok errors', async () => {
     const f = fixture()
     await expect(f.invoke(AGENT_SPEECH, 'Read this reply')).resolves.toMatchObject({ audioBase64: 'grok-fixture' })

@@ -18,7 +18,7 @@ export function AgentAppearance(): ReactNode {
   const [voiceOpen, setVoiceOpen] = useState(false)
   if (!state) return null
   const configuration = state.configuration
-  const voice = configuration.speechProvider === 'natural' ? `${configuration.speechVoice}, natural voice` : configuration.speechProvider === 'grok' ? `${configuration.grokSpeechVoice}, Grok voice` : 'System voice'
+  const voice = configuration.speechProvider === 'natural' ? `${configuration.speechVoice}, natural voice` : configuration.speechProvider === 'grok' ? `${configuration.grokSpeechVoice}, Grok voice` : configuration.speechProvider === 'kokoro' ? 'Heart, Kokoro voice' : 'System voice'
   return <div className="agent-appearance">
     <div className="orb-swatches" role="group" aria-label="Orb color">{ORB_COLORS.map(color => <button key={color} type="button" aria-label={`${color} orb`} title={`${color} orb`} aria-pressed={configuration.orbColor === color} style={{ background: `linear-gradient(${ORB_PRESETS[color].join(',')})` }} onClick={() => void command({ type: 'configure', patch: { orbColor: color } })} />)}</div>
     <button type="button" className="agent-voice-chip tt-focusable" onClick={() => setVoiceOpen(true)}><Volume2 size={15} />{voice}</button>
