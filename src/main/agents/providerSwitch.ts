@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { join, resolve } from 'node:path'
@@ -19,6 +20,9 @@ type Slot = { snapshot: AgentHostSnapshot; status: AgentProviderStatus; wanted: 
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
 export class ConfiguredProviderHost implements AgentHost {
+  readonly concurrentProviders = true
+  private legacyProjectProvider: ProviderId | undefined
+  private identityLoad: Promise<void> | undefined
   private readonly registrations = new Set<string>()
   private readonly registrationStore: AtomicJsonStore<string[]> | undefined
   private registrationLoad: Promise<void> | undefined
@@ -43,6 +47,25 @@ export class ConfiguredProviderHost implements AgentHost {
       })
     }
   }
+  /** Capture the restored legacy project scope before UI configuration can change the default. */
+  initialize(): Promise<void> {
+    this.identityLoad ??= (async () => {
+      if (!this.options.directory) { this.legacyProjectProvider = this.options.provider(); return }
+      const schema = z.object({ legacyProjectProvider: providerIdSchema })
+      const store = new AtomicJsonStore(join(this.options.directory, 'provider-project-identity.json'), schema.parse,
+        () => ({ legacyProjectProvider: this.options.provider() }))
+      const identity = await readFile(join(this.options.directory, 'provider-project-identity.json'), 'utf8')
+        .then(contents => schema.parse(JSON.parse(contents)))
+        .catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return { legacyProjectProvider: this.options.provider() }; throw error })
+      await store.write(identity)
+      this.legacyProjectProvider = identity.legacyProjectProvider
+    })().catch(error => { this.identityLoad = undefined; throw error })
+    return this.identityLoad
+  }
+  private projectId(provider: ProviderId, id: string): string {
+    return provider === this.legacyProjectProvider ? id : providerEntityId(provider, 'project', id)
+  }
+  createProjectId(provider: ProviderId): string { return this.projectId(provider, randomUUID()) }
   private accept(id: ProviderId, snapshot: AgentHostSnapshot): void {
     const slot = this.slots.get(id)!
     // A transport disappearing must not discard the identities and recovery material it already supplied.
@@ -72,9 +95,9 @@ export class ConfiguredProviderHost implements AgentHost {
     for (const [provider, slot] of this.slots) {
       result.models.push(...slot.snapshot.models.map(model => ({ ...model, providerId: provider,
         id: providerEntityId(provider, 'model', model.id), ready: model.ready && slot.status.connection === 'connected' })))
-      result.projects.push(...slot.snapshot.projects.map(project => ({ ...project, providerId: provider, id: providerEntityId(provider, 'project', project.id) })))
+      result.projects.push(...slot.snapshot.projects.map(project => ({ ...project, providerId: provider, id: this.projectId(provider, project.id) })))
       result.threads.push(...slot.snapshot.threads.map(thread => ({ ...thread, providerId: provider,
-        projectId: providerEntityId(provider, 'project', thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '' })))
+        projectId: this.projectId(provider, thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '' })))
     }
     if (!result.connected) {
       const error = providers.find(provider => provider.error)?.error
@@ -84,7 +107,9 @@ export class ConfiguredProviderHost implements AgentHost {
   }
   private publish(): void { const snapshot = this.aggregate(); for (const listener of this.listeners) listener(snapshot) }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
-    await Promise.all((provider ? [provider] : this.options.enabledProviders?.() ?? [this.options.provider()]).map(id => this.connectOne(id)))
+    const requested = (provider ? [provider] : this.options.enabledProviders?.() ?? [this.options.provider()]).map(id => ({ id, epoch: this.slots.get(id)!.epoch }))
+    await this.initialize()
+    await Promise.all(requested.filter(({ id, epoch }) => this.slots.get(id)!.epoch === epoch).map(({ id }) => this.connectOne(id)))
     return this.aggregate()
   }
   private async connectOne(id: ProviderId): Promise<void> {
@@ -141,7 +166,7 @@ export class ConfiguredProviderHost implements AgentHost {
   providerForThread(threadId: string): ProviderId | undefined {
     try { return this.owner(threadId) } catch { return undefined }
   }
-  resolveProjectId(id: string): string { return this.resolveEntityId(id, 'project') }
+  resolveProjectId(id: string): string { return id }
   resolveModelId(id: string): string { return this.resolveEntityId(id, 'model') }
   private resolveEntityId(id: string, kind: 'project' | 'model'): string {
     if (!id || id.startsWith('native:')) return id
@@ -151,7 +176,7 @@ export class ConfiguredProviderHost implements AgentHost {
     if (command.type === 'create-project') {
       const id = command.provider ?? this.options.provider(); this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.projects) throw new Error('This provider does not support creating projects.')
-      const nativeId = command.projectId.startsWith('native:') ? nativeEntityId(id, 'project', command.projectId) : command.projectId
+      const nativeId = id === this.legacyProjectProvider ? command.projectId : nativeEntityId(id, 'project', command.projectId)
       return this.options.hosts[id].execute({ ...command, projectId: nativeId })
     }
     if (command.type === 'create-thread') {
@@ -164,7 +189,12 @@ export class ConfiguredProviderHost implements AgentHost {
       const slot = this.slots.get(id)!; const epoch = slot.epoch
       let target = slot.snapshot.projects.find(candidate => folderKey(candidate.path) === folderKey(project.path))
       const projectId = createHash('sha256').update(JSON.stringify([id, folderKey(project.path)])).digest('hex')
-      this.registrationLoad ??= (async () => { for (const key of await this.registrationStore?.read() ?? []) this.registrations.add(key) })()
+      this.registrationLoad ??= (async () => {
+        const saved = this.options.directory ? await readFile(join(this.options.directory, 'provider-project-registrations.json'), 'utf8')
+          .then(contents => z.array(z.string()).parse(JSON.parse(contents)))
+          .catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error }) : []
+        for (const key of saved) this.registrations.add(key)
+      })().catch(error => { this.registrationLoad = undefined; throw error })
       await this.registrationLoad
       const key = JSON.stringify([id, projectId])
       if (!target) {

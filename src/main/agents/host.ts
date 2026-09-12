@@ -13,6 +13,9 @@ export interface AgentHostResult { readonly accepted: boolean; readonly uncertai
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  readonly concurrentProviders?: boolean
+  initialize?(): Promise<void>
+  createProjectId?(provider: ProviderId): string
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>
   snapshot(provider?: ProviderId): Promise<AgentHostSnapshot>
   /** Refresh only this thread's authoritative history/status, returning the full cached snapshot.

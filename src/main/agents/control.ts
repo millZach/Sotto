@@ -7,7 +7,6 @@ import {
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema,
   type ProviderId, type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
-import { providerEntityId } from './providerSwitch'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
 import type { AgentCredentials } from './credentials'
@@ -113,6 +112,7 @@ export class AgentControl {
     const { outbox, contextSavedAt, manualDraftId, ...restored } = saved
     this.manualDraftId = manualDraftId
     Object.assign(this.state, restored)
+    await this.dependencies.host.initialize?.()
     const cutoff = Date.now() - 7 * 86_400_000
     const historyDisabled = this.dependencies.historyEnabled?.() === false
     for (const assignment of this.state.assignments) {
@@ -154,7 +154,12 @@ export class AgentControl {
     }
     this.observe()
     this.unsubscribe = this.dependencies.host.subscribe(snapshot => this.acceptSnapshot(snapshot))
-    if (this.state.configuration.enabled) await this.command({ type: 'connect' })
+    if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
+      const connection = this.command({ type: 'connect' })
+      if (!this.dependencies.host.concurrentProviders) await connection
+      // Independent native discovery must not delay constructing the desktop IPC surface.
+      else void connection
+    }
   }
   get(): AgentState { return structuredClone(this.state) }
   subscribe(listener: (state: AgentState) => void): () => void {
@@ -237,7 +242,7 @@ export class AgentControl {
   command(command: AgentCommand): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
-    if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && command.provider) return this.providerCommand(command)
+    if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
     const selectionRevision = this.selectionRevision
@@ -379,7 +384,7 @@ export class AgentControl {
         }
         if (speechRevision !== this.speechPreferenceRevision) next.speak = this.state.configuration.speak
         this.state.configuration = next
-        if (command.patch.enabled === false) this.disconnect()
+        if (command.patch.enabled === false && !this.dependencies.host.concurrentProviders) this.disconnect()
         return
       }
       case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); return
@@ -390,7 +395,7 @@ export class AgentControl {
       case 'connect': {
         if (command.provider) {
           this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]
-          this.state.configuration.enabled = true
+          if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           await this.persist()
         }
         if (!this.state.host.connected) this.state.connection = 'connecting'
@@ -401,7 +406,7 @@ export class AgentControl {
           const requested = command.provider && snapshot.providers?.find(provider => provider.id === command.provider)
           if (requested && requested.connection !== 'connected') throw new Error(requested.error || `${requested.name} did not confirm the connection.`)
           if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
-          this.state.configuration.enabled = true
+          if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
         } catch (error) {
           if (!this.state.host.providers) this.disconnect()
@@ -415,7 +420,11 @@ export class AgentControl {
           this.dependencies.host.disconnect(command.provider)
           this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider))
           this.say(`${PROVIDER_LABELS[command.provider]} disconnected.`)
-        } else { this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected.') }
+        } else {
+          if (this.dependencies.host.concurrentProviders) this.state.configuration.enabledProviders = []
+          else this.state.configuration.enabled = false
+          this.disconnect(); this.say('Sotto disconnected.')
+        }
         return
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider)); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
@@ -451,7 +460,7 @@ export class AgentControl {
         const existing = await stat(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return null })
         if (existing && (!existing.isDirectory() || !command.useExisting)) throw new Error('That folder already exists. Select “Use existing folder” to attach it without overwriting its contents.')
         if (!existing) await mkdir(path, { recursive: true })
-        const projectId = this.state.host.providers ? providerEntityId(provider, 'project', randomUUID()) : randomUUID()
+        const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
         const previousSelectionPinned = this.queueSelectionPinned
         if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = true
@@ -995,7 +1004,7 @@ export class AgentControl {
         if (!recovered.size) this.recoveredQueueIds.delete(thread.id)
       }
       if (key && (question || (thread.status !== 'running' && last && Date.parse(last.createdAt) > Date.now() - 7 * 86_400_000)) && this.considered.get(thread.id) !== key) {
-        if (assignment.mode === 'manual' || assignment.paused || !assignment.instruction || this.state.configuration.reasoning === 'none') {
+        if (assignment.mode === 'manual' || assignment.paused || !assignment.instruction || this.state.configuration.reasoning === 'none' || !this.state.configuration.enabled) {
           this.enqueue(thread, question ? 'question' : 'ready', question?.text ?? last?.text ?? 'Ready for your next prompt.', question?.id)
           this.considered.set(thread.id, key)
         } else void this.supervise(thread, assignment, key, question?.id)
@@ -1041,7 +1050,7 @@ export class AgentControl {
     this.attentionNarration = key
   }
   private async supervise(thread: AgentThread, assignment: AgentAssignment, key: string, requestId?: string): Promise<void> {
-    if (this.deciding.has(thread.id)) return
+    if (this.deciding.has(thread.id) || !this.state.configuration.enabled) return
     this.deciding.add(thread.id); this.considered.set(thread.id, key)
     let turn: ActiveTurn | undefined
     let failure: string | undefined
@@ -1059,7 +1068,7 @@ export class AgentControl {
         .finally(() => { if (turn) turn.intentMs = Date.now() - intentStarted })
       const current = this.state.assignments.find(a => a.threadId === thread.id)
       const latest = this.state.host.threads.find(t => t.id === thread.id)
-      if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !isThreadProviderConnected(this.state.host, latest)) return
+      if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !isThreadProviderConnected(this.state.host, latest) || !this.state.configuration.enabled) return
       const latestKey = latest.requests.find(r => r.kind === 'question' && !current.handledRequestIds.includes(r.id))?.id ?? latest.messages.at(-1)?.id
       if (latestKey !== key || (!requestId && latest.status === 'running')) return
       if (decision.decision !== 'followup') {
@@ -1083,7 +1092,7 @@ export class AgentControl {
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
-        if (this.disposed || current !== assignment || current.mode !== 'managed' || current.paused || !live || isThreadClosed(live)
+        if (this.disposed || !this.state.configuration.enabled || current !== assignment || current.mode !== 'managed' || current.paused || !live || isThreadClosed(live)
           || !isThreadProviderConnected(this.state.host, live) || !supportsAgentSupervision(capabilitiesForThread(this.state.host, live))) throw new SupersededSupervision('Management authority changed before dispatch.')
         if (requestId && live.requests.some(request => request.id === requestId && request.kind === 'permission')) {
           throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
