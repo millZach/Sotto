@@ -60,6 +60,8 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Explain the next small change.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
+    // Visible pending text precedes native confirmation; wait for the matching receipt to clear the draft.
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
