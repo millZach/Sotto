@@ -808,15 +808,18 @@ export class AgentControl {
   }
   private acceptSnapshot(snapshot: AgentHostSnapshot): void {
     if (this.disposed) return
+    const connecting = this.state.connection === 'connecting'
     this.state.host = snapshot
-    this.state.connection = snapshot.connected ? 'connected' : 'disconnected'
+    this.state.connection = snapshot.connected ? 'connected' : connecting ? 'connecting' : 'disconnected'
     if (!snapshot.connected) {
-      if (this.state.configuration.enabled && !this.reconnect) this.reconnect = setTimeout(() => {
+      if (!connecting && this.state.configuration.enabled && !this.reconnect) this.reconnect = setTimeout(() => {
         this.reconnect = null
         void this.command({ type: 'connect' }).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...s.host, connected: false }) })
       }, 5000)
       this.publish(); return
     }
+    if (this.reconnect) clearTimeout(this.reconnect)
+    this.reconnect = null
     this.state.queue = this.state.queue.filter(item => isLiveAttention(item, snapshot.threads))
     if (this.attentionNarration && !this.state.queue.some(item => attentionItemKey(item) === this.attentionNarration)) {
       this.attentionNarration = null

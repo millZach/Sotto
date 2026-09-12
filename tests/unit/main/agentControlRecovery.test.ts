@@ -134,6 +134,22 @@ it('preserves the native account sign-in guidance when the adapter cannot connec
   expect(result).toMatchObject({ connection: 'disconnected', error: 'Sign in through Claude Code, then reconnect.' })
 })
 
+it('does not reconnect again after a native adapter replaces its process while connecting', async () => {
+  const f = await fixture()
+  const originalConnect = f.host.connect.bind(f.host)
+  const connect = vi.spyOn(f.host, 'connect').mockImplementation(async () => {
+    f.host.event({ type: 'disconnect', threadId: '' })
+    return originalConnect()
+  })
+  vi.useFakeTimers()
+  try {
+    expect((await f.control.command({ type: 'connect' })).connection).toBe('connected')
+    await vi.advanceTimersByTimeAsync(5100)
+    expect(connect).toHaveBeenCalledOnce()
+    expect(f.control.get().connection).toBe('connected')
+  } finally { vi.useRealTimers() }
+})
+
 describe('reasoning account route isolation', () => {
   it('defaults to Grok Altair and preserves an explicit Kokoro selection across restart', async () => {
     const f = await fixture()
