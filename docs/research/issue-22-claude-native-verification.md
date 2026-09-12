@@ -40,6 +40,8 @@ The explicit opt-in probe is `tests/fixtures/claudeLiveProbe.ts`. Bundle it with
 
 ## Limits
 
+The independent spec review found that IDE context followed by an authored prompt was being filtered as metadata. The filter now follows the native session reader's complete-entry IDE pattern; regression tests cover both opened-file and selection context, preserve metadata-only filtering, and reject a stale automatic reply after the mixed-content takeover.
+
 Permission/question/cancel error paths are validated against the primary-source protocol fake, not a live coding tool invocation. The live takeover used a separate headless native CLI with `--resume`, not the interactive terminal UI. Parent integration owns rendered Sotto UI verification and provider selection.
 
 Takeover detection is limited to the known native transcript format. A missing/locked log can delay observation. Identical external text can be indistinguishable from a pending same-text dispatch or consecutive native duplicate entries; UUID matching is preferred. The adapter reports its own process status and cannot reconstruct a separate CLI's running process solely from transcript entries. Existing user-defined native hooks, permissions and account settings continue to apply. The native version field is populated when the CLI emits its system/init frame; a resumed metadata-only runtime may not emit that frame before the next prompt.

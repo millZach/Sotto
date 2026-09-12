@@ -40,6 +40,14 @@ describe('Claude recovery and safety', () => {
     id = randomUUID(); await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId })
   })
   afterEach(async () => { vi.restoreAllMocks(); await f.cleanup() })
+  it.each(['ide_opened_file', 'ide_selection'])('detects authored takeover after %s IDE metadata', async tag => {
+    const metadata = `<${tag}>Synthetic editor context</${tag}>`
+    expect(authoredClaudeUser({ type: 'user', message: { content: metadata } })).toBe(false)
+    const text = `${metadata}\nPlease fix this crash.`
+    await f.driver.typeInProvider(id, text)
+    expect((await thread()).messages).toContainEqual(expect.objectContaining({ role: 'user', text }))
+    await expect(f.host.execute({ type: 'send', commandId: 'stale-ide', messageId: 'stale-ide', threadId: id, text: 'Stale automatic reply', expectedLastUserMessageId: null })).rejects.toThrow('changed')
+  })
   it.each([false, true])('waits for observed-thread initialization before sending (failed=%s)', async fail => {
     f.host.disconnect(); await f.adapter.closed()
     f = await claudeFixture(f.root, 1000); await f.host.connect(f.connection)

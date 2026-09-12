@@ -13,7 +13,7 @@ export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isCompactSummary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
   const content = object(frame.message)?.content
   if (Array.isArray(content) && content.some(block => object(block)?.type === 'tool_result')) return false
-  return !/^(?:<local-command-stdout>|<session-start-hook>|<tick>|<goal>|\[Request interrupted by user|\s*<ide_opened_file>|\s*<ide_selection>)/u.test(claudeText(content))
+  return !/^(?:<local-command-stdout>|<session-start-hook>|<tick>|<goal>|\[Request interrupted by user|\s*<ide_opened_file>[\s\S]*<\/ide_opened_file>\s*$|\s*<ide_selection>[\s\S]*<\/ide_selection>\s*$)/u.test(claudeText(content))
 }
 
 /** Reads only a Sotto-created UUID in its known project; never discovers foreign history. */
