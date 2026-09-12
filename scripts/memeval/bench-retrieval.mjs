@@ -30,6 +30,16 @@ try {
   database.exec('COMMIT')
   const queries = ['verification', 'communication focused tests', 'workflow unrelated edits', 'git component 73',
     'privacy', 'absent database', 'verification compiler database networking', 'focused tests']
+  // A new SQLite connection's first query; Windows file cache is deliberately not flushed.
+  const coldConnectionSamplesMs = []
+  for (let i = 0; i < 20; i++) {
+    const connection = new DatabaseSync(path)
+    try {
+      const started = performance.now()
+      retrieveExplicitMemories(connection, { query: queries[i % queries.length], projectId: 'project-a', threadId: 'thread-a', at })
+      coldConnectionSamplesMs.push(performance.now() - started)
+    } finally { connection.close() }
+  }
   const samples = []
   let maxContextCharacters = 0
   for (let i = 0; i < warmupRuns + measuredRuns; i++) {
@@ -49,10 +59,11 @@ try {
       electron: process.versions.electron ?? null, sqlite: database.prepare('SELECT sqlite_version() AS version').get().version,
       cpu: cpus()[0]?.model },
     storeRows, warmupRuns, measuredRuns, queries,
+    coldConnection: { definition: 'First query on each of 20 new SQLite connections; excludes connection open; OS disk cache not flushed', samplesMs: coldConnectionSamplesMs },
     scopeOrder: ['thread', 'project', 'global'], candidatesPerScope: RETRIEVAL_CANDIDATES_PER_SCOPE,
     minCoverage: RETRIEVAL_MIN_COVERAGE, contextBudgetCharacters: RETRIEVAL_CONTEXT_CHARACTERS, maxContextCharacters,
     latencyMs: { p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99), max: sorted.at(-1) },
-    targetP95Ms: 100, passes: percentile(0.95) < 100, samplesMs: samples,
+    targetP95Ms: 100, passes: percentile(0.95) <= 100, samplesMs: samples,
   }
   if (process.argv[2]) writeFileSync(resolve(process.argv[2]), JSON.stringify(report, null, 2) + '\n')
   console.log(JSON.stringify({ ...report, samplesMs: undefined }, null, 2))

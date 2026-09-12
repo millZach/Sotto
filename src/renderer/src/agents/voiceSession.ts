@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../../shared/settings'
-import type { AgentWakeDetection } from '../../../shared/agents'
+import type { AgentWakeDetection, AgentVoiceTiming } from '../../../shared/agents'
 import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge, type LoadOptions, type TranscribeOptions } from '../transcription/openRouterTranscriber'
 import { BrowserVoiceCapture, type VoiceCapture, type VoiceCaptureOptions } from './voiceCapture'
 import { LocalSystemSpeech, type VoiceSpeechOutput } from './voiceSpeech'
@@ -21,7 +21,7 @@ export interface AgentVoiceOptions {
   readonly onState: (state: AgentVoiceState) => void
   readonly onWake?: () => void | Promise<void>
   /** Receives activated speech only. Caller owns prompt composition and send-it semantics. */
-  readonly onUtterance: (text: string) => void | Promise<void>
+  readonly onUtterance: (text: string, timing?: AgentVoiceTiming) => void | Promise<void>
   readonly onLevel?: (level: number) => void
   /** Zero keeps the conversation open; expiry never submits or clears a draft. */
   readonly conversationTimeoutMs?: number
@@ -121,8 +121,9 @@ export class AgentVoiceSession {
   private captureGeneration = 0
   private audioGeneration = 0
   private recognitionId: string | null = null
-  private queue: Array<{ audio: Float32Array; generation: number }> = []
+  private queue: Array<{ audio: Float32Array; generation: number; timing?: AgentVoiceTiming }> = []
   private draining = false
+  private transcriptionRequests = 0
   private speechGeneration = 0
   private speechPending = 0
   private speechTail: Promise<void> = Promise.resolve()
@@ -280,8 +281,8 @@ export class AgentVoiceSession {
       if (generation !== this.captureGeneration || !this.canCapture()) return
       const capture = this.dependencies.createCapture({
         ...(settings.microphoneId === null ? {} : { selectedDeviceId: settings.microphoneId }),
-        onUtterance: (audio) => {
-          if (generation === this.captureGeneration) this.enqueue(audio)
+        onUtterance: (audio, timing) => {
+          if (generation === this.captureGeneration) this.enqueue(audio, timing)
         },
         ...(this.options.onLevel === undefined ? {} : { onLevel: this.options.onLevel }),
         onError: (error) => {
@@ -319,7 +320,7 @@ export class AgentVoiceSession {
     try { await capture?.stop() } catch { /* the input is already invalidated */ }
   }
 
-  private enqueue(audio: Float32Array): void {
+  private enqueue(audio: Float32Array, timing?: Pick<AgentVoiceTiming, 'speechEndedAt' | 'basis'>): void {
     if (!this.canCapture() || this.speechPending > 0 || this.echoSuppressed || this.local === null) return
     if (this.queue.length >= MAX_PENDING_UTTERANCES) {
       if (this.conversation) {
@@ -331,7 +332,7 @@ export class AgentVoiceSession {
       // Background observations have no destination and need no retained transcript.
       this.queue.shift()
     }
-    this.queue.push({ audio, generation: this.audioGeneration })
+    this.queue.push({ audio, generation: this.audioGeneration, ...(timing ? { timing: { ...timing, phase: 'cold' } as AgentVoiceTiming } : {}) })
     void this.drain()
   }
 
@@ -355,14 +356,17 @@ export class AgentVoiceSession {
             audio = audio.slice(Math.floor(detection.endSeconds * 16_000))
           }
           const settings = this.options.getSettings()
-          const result = audio.length < 1 || (activated && calculateRms(audio) < 0.004) ? { text: '' } : await local.transcribe({
+          const transcribe = audio.length >= 1 && !(activated && calculateRms(audio) < 0.004)
+          if (transcribe && pending.timing) pending.timing.phase = this.transcriptionRequests === 0 ? 'cold' : 'warm'
+          if (transcribe) this.transcriptionRequests += 1
+          const result = !transcribe ? { text: '' } : await local.transcribe({
             audio,
             sessionId: id,
             language: settings.language,
           })
           if (pending.generation !== this.audioGeneration || !this.canCapture()) continue
           this.recognitionId = null
-          await this.receiveText(result.text, activated)
+          await this.receiveText(result.text, activated, pending.timing)
         } catch (error: unknown) {
           if (pending.generation !== this.audioGeneration) continue
           this.inputError = voiceFailure(error, 'Local voice transcription failed. Retry to reconnect.')
@@ -378,7 +382,7 @@ export class AgentVoiceSession {
     }
   }
 
-  private async receiveText(input: string, activated = false): Promise<void> {
+  private async receiveText(input: string, activated = false, timing?: AgentVoiceTiming): Promise<void> {
     let text = input.trim()
     if (text.length === 0 && !activated) return
     const suffix = afterWake(text)
@@ -401,7 +405,7 @@ export class AgentVoiceSession {
     } else if (words === 'mute microphone' || words === 'mute listening') {
       await this.setMuted(true)
     } else if (text.length > 0) {
-      await this.options.onUtterance(text)
+      await this.options.onUtterance(text, timing)
     }
   }
 

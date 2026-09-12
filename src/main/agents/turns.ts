@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
+import type { AgentVoiceTiming } from '../../shared/agents'
 
 export const turnRecordSchema = z.object({
   id: z.string(),
@@ -14,6 +15,10 @@ export const turnRecordSchema = z.object({
   projectId: z.string().nullable(),
   timings: z.object({
     speechEndedAt: z.string().datetime().nullable(),
+    voicePhase: z.enum(['cold', 'warm']).nullable().default(null),
+    speechEndBasis: z.literal('detector-frame-received').nullable().default(null),
+    feedbackBasis: z.literal('main-state-published').nullable().default(null),
+    retrievalCount: z.number().int().nonnegative().default(0),
     speechToIntentMs: z.number().int().nonnegative().nullable().default(null),
     speechToFirstFeedbackMs: z.number().int().nonnegative().nullable().default(null),
     intentMs: z.number().int().nonnegative(),
@@ -35,6 +40,10 @@ export interface ActiveTurn {
   startedAt: string
   startedAtMs: number
   speechEndedAt: string | null
+  voiceTiming?: AgentVoiceTiming
+  intentResolvedAtMs?: number
+  firstFeedbackAtMs?: number
+  retrievalCount: number
   intentMs: number
   retrievalMs: number
   retrievedMemoryIds: string[]
@@ -52,6 +61,13 @@ export function addTurnContext(turn: ActiveTurn | undefined, text: string): void
   if (!turn) return
   turn.contextCharacters += text.length
   turn.contextTokenEstimate = Math.ceil(turn.contextCharacters / 4)
+}
+
+/** Clock reversal or a missing milestone is missing evidence, never a zero-ms pass. */
+function speechElapsed(speechEndedAt: string | null, milestone: number | undefined): number | null {
+  if (speechEndedAt === null || milestone === undefined) return null
+  const elapsed = milestone - Date.parse(speechEndedAt)
+  return Number.isFinite(elapsed) && elapsed >= 0 ? Math.round(elapsed) : null
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -90,6 +106,7 @@ export class TurnRecorder {
     text: string
     threadId?: string | null
     projectId?: string | null
+    voiceTiming?: AgentVoiceTiming
     speechEndedAt?: string | null
   }): ActiveTurn | undefined {
     try {
@@ -99,7 +116,9 @@ export class TurnRecorder {
         commandType: input.commandType,
         startedAt: new Date(startedAtMs).toISOString(),
         startedAtMs,
-        speechEndedAt: input.speechEndedAt ?? null,
+        speechEndedAt: input.voiceTiming?.speechEndedAt ?? input.speechEndedAt ?? null,
+        ...(input.voiceTiming ? { voiceTiming: input.voiceTiming } : {}),
+        retrievalCount: 0,
         intentMs: 0,
         retrievalMs: 0,
         retrievedMemoryIds: [],
@@ -134,9 +153,12 @@ export class TurnRecorder {
         projectId: turn.projectId ?? null,
         timings: {
           speechEndedAt: turn.speechEndedAt,
-          // The voice pipeline currently supplies text without a speech-end timestamp.
-          speechToIntentMs: null,
-          speechToFirstFeedbackMs: null,
+          voicePhase: turn.voiceTiming?.phase ?? null,
+          speechEndBasis: turn.voiceTiming?.basis ?? null,
+          feedbackBasis: turn.firstFeedbackAtMs === undefined ? null : 'main-state-published',
+          retrievalCount: turn.retrievalCount,
+          speechToIntentMs: speechElapsed(turn.speechEndedAt, turn.intentResolvedAtMs),
+          speechToFirstFeedbackMs: speechElapsed(turn.speechEndedAt, turn.firstFeedbackAtMs),
           intentMs: turn.intentMs,
           retrievalMs: turn.retrievalMs,
           delegationMs: turn.delegationMs,

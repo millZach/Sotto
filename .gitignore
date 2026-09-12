@@ -33,3 +33,6 @@ scripts/memeval/results/*.json
 
 # scratch prompts and logs for delegated model runs
 .claude/tmp/
+
+# Isolated voice measurement bundles, audio and temporary reports
+artifacts/voice-perf/

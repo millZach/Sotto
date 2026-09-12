@@ -125,7 +125,7 @@ export function AgentProvider({ children, settings, dictation }: {
       onWake: () => {
         if (settingsRef.current?.soundCues) playWakeCue()
       },
-      onUtterance: async (text) => { await connection.command({ type: 'utterance', text }) },
+      onUtterance: async (text, voiceTiming) => { await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) }) },
       // A long composition must keep accepting speech after the user pauses to think.
       conversationTimeoutMs: 0,
     }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects({

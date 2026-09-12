@@ -1,5 +1,13 @@
 import { z } from 'zod'
 
+/** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
+export const agentVoiceTimingSchema = z.object({
+  speechEndedAt: z.string().datetime(),
+  phase: z.enum(['cold', 'warm']),
+  basis: z.literal('detector-frame-received'),
+}).strict()
+export type AgentVoiceTiming = z.infer<typeof agentVoiceTimingSchema>
+
 export const AGENT_GET = 'sotto:agents:get'
 export const AGENT_CHOOSE_PROJECT_DIRECTORY = 'sotto:agents:choose-project-directory'
 export const AGENT_COMMAND = 'sotto:agents:command'
@@ -208,7 +216,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('refresh') }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('preview-voice') }).strict(),
-  z.object({ type: z.literal('utterance'), text }).strict(),
+  z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),

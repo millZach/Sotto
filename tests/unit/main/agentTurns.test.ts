@@ -95,6 +95,33 @@ afterEach(async () => {
 })
 
 describe('coordinator turn records', () => {
+  it('propagates voice timing and records useful state publication without inventing acoustic timing', async () => {
+    const f = await fixture()
+    await f.account()
+    const speechEndedAt = new Date(Date.now() - 800).toISOString()
+    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
+      speechEndedAt, phase: 'cold', basis: 'detector-frame-received',
+    } })
+    const [record] = await f.recorder.recent(1)
+    expect(record?.timings).toMatchObject({ speechEndedAt, voicePhase: 'cold', speechEndBasis: 'detector-frame-received', feedbackBasis: 'main-state-published' })
+    expect(record?.timings.speechToIntentMs).toBeGreaterThanOrEqual(800)
+    expect(record?.timings.speechToFirstFeedbackMs).toBeGreaterThanOrEqual(record!.timings.speechToIntentMs!)
+    expect(record?.timings.retrievalCount).toBe(0)
+  })
+
+  it('keeps unavailable and invalid milestone durations null', async () => {
+    const f = await fixture()
+    const turn = f.recorder.begin({ source: 'utterance', commandType: 'utterance', text: '', voiceTiming: {
+      speechEndedAt: new Date(Date.now() + 60_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })!
+    turn.intentResolvedAtMs = Date.now()
+    turn.firstFeedbackAtMs = Date.now()
+    await f.recorder.finish(turn, 'completed')
+    const [record] = await f.recorder.recent(1)
+    expect(record!.timings.speechToIntentMs).toBeNull()
+    expect(record!.timings.speechToFirstFeedbackMs).toBeNull()
+  })
+
   it('writes a completed utterance turn with Sotto thread ID and provider session ID', async () => {
     const f = await fixture()
     await f.account()

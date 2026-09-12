@@ -10,6 +10,7 @@ export default tseslint.config(
       'artifacts/agent-control-smoke/**',
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
+      'artifacts/voice-perf/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

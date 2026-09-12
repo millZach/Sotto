@@ -13,7 +13,8 @@
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    "scripts/voice-perf/main.ts"
   ],
   "exclude": ["tests/integration/widgetSync.test.ts"]
 }

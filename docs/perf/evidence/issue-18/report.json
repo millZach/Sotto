@@ -1,0 +1,253 @@
+{
+  "provenance": {
+    "generatedAt": "2026-09-12T16:10:17.343Z",
+    "retrievalEnvironment": {
+      "platform": "win32",
+      "release": "10.0.26200",
+      "arch": "x64",
+      "node": "v24.18.0",
+      "electron": "43.1.0",
+      "sqlite": "3.53.1",
+      "cpu": "Intel(R) Core(TM) Ultra 9 275HX"
+    },
+    "captureGeneratedAt": "2026-09-12T16:05:45.568Z",
+    "captureFixtureSha256": "6dfabcf5a2cdf8ec17cb2395fc7e15157e9d18f978f5c50c8b9084d9bf8218a1",
+    "historicalPlaybackRun": "2026-09-12T04:49:09.120Z",
+    "historicalPlaybackSha256": "f28ebecfad14a43c4a57821abed409c5d7fe9cd1f1e518b814c40d406e9094c1",
+    "transcription": "microsoft/mai-transcribe-2 via OpenRouter; fixture dictionary empty",
+    "speech": "Grok default / Kokoro economical",
+    "command": "npm run perf:voice (15 at-most-5s uploads, each at most one retry; at most 150 billed audio seconds, about $0.005 at recorded MAI rate)"
+  },
+  "rows": [
+    {
+      "metric": "Acoustic end to shipping UI feedback",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "p50": 1200,
+        "p95": 2000
+      },
+      "status": "UNMEASURED",
+      "source": "Requires a physical input/output + shipping UI trial"
+    },
+    {
+      "metric": "Detector frame to main useful state",
+      "phase": "cold",
+      "n": 3,
+      "p50": 1634,
+      "p95": 5527,
+      "max": 5527,
+      "target": null,
+      "status": "MEASURED",
+      "source": "Fresh production capture/MAI/coordinator turn records; software reference"
+    },
+    {
+      "metric": "Detector frame to benchmark DOM feedback",
+      "phase": "cold",
+      "n": 3,
+      "p50": 1671,
+      "p95": 5551,
+      "max": 5551,
+      "target": null,
+      "status": "MEASURED",
+      "source": "Diagnostic only: hidden benchmark DOM, not shipping UI; frame throttling may apply"
+    },
+    {
+      "metric": "Memory retrieval",
+      "phase": "cold",
+      "n": 20,
+      "p50": 4.993799999999965,
+      "p95": 7.463999999999999,
+      "max": 19.450400000000002,
+      "target": {
+        "p95": 100
+      },
+      "status": "PASS",
+      "source": "Fresh first-query/new SQLite connection, OS cache not flushed"
+    },
+    {
+      "metric": "Physical hotkey/button to silence",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "max": 150
+      },
+      "status": "UNMEASURED",
+      "source": "No physical input-device timestamp; programmatic playback stop is separate"
+    },
+    {
+      "metric": "Grok request to first loopback audio",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": null,
+      "status": "UNMEASURED",
+      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+    },
+    {
+      "metric": "Grok playback interrupt to loopback silence",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "max": 100
+      },
+      "status": "UNMEASURED",
+      "source": "Historical production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Kokoro request to first loopback audio",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": null,
+      "status": "UNMEASURED",
+      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+    },
+    {
+      "metric": "Kokoro playback interrupt to loopback silence",
+      "phase": "cold",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "max": 100
+      },
+      "status": "UNMEASURED",
+      "source": "Historical production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Acoustic end to shipping UI feedback",
+      "phase": "warm",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "p50": 1200,
+        "p95": 2000
+      },
+      "status": "UNMEASURED",
+      "source": "Requires a physical input/output + shipping UI trial"
+    },
+    {
+      "metric": "Detector frame to main useful state",
+      "phase": "warm",
+      "n": 12,
+      "p50": 1014,
+      "p95": 2412,
+      "max": 2412,
+      "target": {
+        "p50": 1200,
+        "p95": 2000
+      },
+      "status": "FAIL",
+      "source": "Fresh production capture/MAI/coordinator turn records; software reference"
+    },
+    {
+      "metric": "Detector frame to benchmark DOM feedback",
+      "phase": "warm",
+      "n": 12,
+      "p50": 2785,
+      "p95": 3441,
+      "max": 3441,
+      "target": {
+        "p50": 1200,
+        "p95": 2000
+      },
+      "status": "FAIL",
+      "source": "Diagnostic only: hidden benchmark DOM, not shipping UI; frame throttling may apply"
+    },
+    {
+      "metric": "Memory retrieval",
+      "phase": "warm",
+      "n": 1000,
+      "p50": 4.247499999999945,
+      "p95": 13.923999999999978,
+      "max": 21.056400000000394,
+      "target": {
+        "p95": 100
+      },
+      "status": "PASS",
+      "source": "Fresh 10,000-row synthetic store after 100 warmups"
+    },
+    {
+      "metric": "Physical hotkey/button to silence",
+      "phase": "warm",
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "target": {
+        "max": 150
+      },
+      "status": "UNMEASURED",
+      "source": "No physical input-device timestamp; programmatic playback stop is separate"
+    },
+    {
+      "metric": "Grok request to first loopback audio",
+      "phase": "warm",
+      "n": 72,
+      "p50": 1044.28,
+      "p95": 1732.51,
+      "max": 2963.47,
+      "target": {
+        "p95": 300
+      },
+      "status": "FAIL",
+      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+    },
+    {
+      "metric": "Grok playback interrupt to loopback silence",
+      "phase": "warm",
+      "n": 69,
+      "p50": 65.07,
+      "p95": 70.34,
+      "max": 72.08,
+      "target": {
+        "max": 100
+      },
+      "status": "PASS",
+      "source": "Historical production player stop; active-source/observed-silence validation"
+    },
+    {
+      "metric": "Kokoro request to first loopback audio",
+      "phase": "warm",
+      "n": 72,
+      "p50": 1093.87,
+      "p95": 1947.73,
+      "max": 5579.59,
+      "target": {
+        "p95": 300
+      },
+      "status": "FAIL",
+      "source": "Historical production playback/WASAPI; 300 ms is former on-device reference, not a new hosted release gate"
+    },
+    {
+      "metric": "Kokoro playback interrupt to loopback silence",
+      "phase": "warm",
+      "n": 72,
+      "p50": 65.1,
+      "p95": 70.88,
+      "max": 71.86,
+      "target": {
+        "max": 100
+      },
+      "status": "PASS",
+      "source": "Historical production player stop; active-source/observed-silence validation"
+    }
+  ]
+}

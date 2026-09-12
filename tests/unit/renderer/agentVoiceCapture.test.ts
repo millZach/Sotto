@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { BrowserVoiceCapture } from '../../../src/renderer/src/agents/voiceCapture'
+import type { AgentVoiceTiming } from '../../../src/shared/agents'
 import type { AudioNodeAdapter } from '../../../src/renderer/src/audio/audioRecorder'
 
 const captures: BrowserVoiceCapture[] = []
@@ -12,10 +13,12 @@ const captures: BrowserVoiceCapture[] = []
 afterEach(async () => {
   await Promise.all(captures.splice(0).map((capture) => capture.stop()))
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 async function microphone(sampleRate: number) {
   const utterances: Float32Array[] = []
+  const timings: Array<Pick<AgentVoiceTiming, 'speechEndedAt' | 'basis'> | undefined> = []
   const onError = vi.fn()
   const port = { onmessage: null as ((event: { data: unknown }) => void) | null }
   class Node implements AudioNodeAdapter {
@@ -48,12 +51,13 @@ async function microphone(sampleRate: number) {
   })
   if (ProcessorClass === undefined) throw new Error('Capture worklet did not register.')
   const processor = new ProcessorClass()
-  const capture = new BrowserVoiceCapture({ onUtterance: (audio) => utterances.push(audio), onError })
+  const capture = new BrowserVoiceCapture({ onUtterance: (audio, timing) => { utterances.push(audio); timings.push(timing) }, onError })
   captures.push(capture)
   await capture.start()
   return {
     setWakeMode: (wake: boolean) => capture.setWakeMode(wake),
     utterances,
+    timings,
     onError,
     feed(seconds: number, sample: (time: number) => number) {
       // Chromium currently delivers microphone render quanta of 128 frames.
@@ -69,6 +73,23 @@ function peak(audio: Float32Array): number {
 }
 
 describe('agent microphone PCM boundary', () => {
+  it('retains the last voiced frame timestamp across endpoint silence and resets between utterances', async () => {
+    let now = Date.parse('2026-09-12T12:00:00Z')
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const capture = await microphone(16_000)
+    capture.feed(0.2, () => 0.2)
+    const ended = new Date(now).toISOString()
+    now += 700
+    capture.feed(0.7, () => 0)
+    expect(capture.timings).toEqual([{ speechEndedAt: ended, basis: 'detector-frame-received' }])
+    now += 1000
+    capture.feed(0.2, () => 0.2)
+    const nextEnded = new Date(now).toISOString()
+    now += 700
+    capture.feed(0.7, () => 0)
+    expect(capture.timings[1]?.speechEndedAt).toBe(nextEnded)
+  })
+
   it.each([16_000, 48_000])('keeps the first quiet phrase at %i Hz without changing its captured volume', async sampleRate => {
     const capture = await microphone(sampleRate)
     capture.feed(0.5, () => 0)
@@ -125,6 +146,7 @@ describe('agent microphone PCM boundary', () => {
 
     expect(capture.utterances).toHaveLength(1)
     const audio = capture.utterances[0]!
+    expect(capture.timings[0]).toBeUndefined()
     expect(audio.length).toBeGreaterThanOrEqual(8 * 16_000)
     expect(audio.length).toBeLessThanOrEqual(Math.ceil((8 + 128 / sampleRate) * 16_000))
     expect(audio.length).toBeLessThanOrEqual(132_000)

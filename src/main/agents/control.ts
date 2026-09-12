@@ -262,6 +262,7 @@ export class AgentControl {
         ? this.beginTurn({
           source: command.type === 'utterance' ? 'utterance' : 'command',
           commandType: command.type,
+          ...(command.type === 'utterance' && command.voiceTiming ? { voiceTiming: command.voiceTiming } : {}),
           text: command.type === 'utterance' ? command.text
             : command.type === 'manual-send' ? command.text : command.type === 'send' ? this.state.draft : command.type === 'answer' ? command.answer : '',
         }) : undefined
@@ -286,8 +287,9 @@ export class AgentControl {
         if (turn.threadId === undefined) turn.threadId = this.state.activeThreadId
         if (turn.projectId === undefined) turn.projectId = this.state.activeProjectId
       }
-      await this.finishTurn(turn, failure)
       this.publish()
+      if (turn) turn.firstFeedbackAtMs = Date.now()
+      await this.finishTurn(turn, failure)
       return this.get()
     })
     this.serial = task.catch(() => undefined)
@@ -757,7 +759,7 @@ export class AgentControl {
       this.recordPreferences(turn, preferences)
       return preferences
     } finally {
-      if (turn) turn.retrievalMs += Date.now() - started
+      if (turn) { turn.retrievalMs += Date.now() - started; turn.retrievalCount += 1 }
     }
   }
   private recordPreferences(turn: ActiveTurn | undefined, preferences: AgentPreference[]): void {
@@ -818,7 +820,7 @@ export class AgentControl {
     try {
       intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId, preferences)
     } finally {
-      if (turn) turn.intentMs += Date.now() - intentStarted
+      if (turn) { turn.intentMs += Date.now() - intentStarted; turn.intentResolvedAtMs = Date.now() }
     }
     if (turn && intent.type === 'clarify') turn.clarified = true
     if (intent.type === 'clarify') {
