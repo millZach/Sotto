@@ -14,7 +14,7 @@ function stateFixture(): AgentState {
     configuration: { ...defaultAgentConfiguration(), defaultModelId: 'model', projectsDirectory: 'D:\\Projects' },
     connection: 'connected',
     host: {
-      connected: true, name: 'T3 Code', version: 'test',
+      connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [{ id: 'model', name: 'Available model', provider: 'provider', ready: true }],
       projects: [{ id: 'project', title: 'Workshop', path: 'D:\\Workshop' }, { id: 'docs', title: 'Documentation', path: 'D:\\Docs' }],
@@ -29,7 +29,7 @@ function stateFixture(): AgentState {
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
-    credentials: { t3: true, reasoning: false, grokSpeech: false, secure: true },
+    credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },
   }

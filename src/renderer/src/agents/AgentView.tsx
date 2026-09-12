@@ -154,7 +154,6 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
 
 export function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
   const [configuration, setConfiguration] = useState(state.configuration)
-  const [token, setToken] = useState('')
   const [reasoningKey, setReasoningKey] = useState('')
   const [saved, setSaved] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -181,7 +180,6 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
   }
   const save = async (): Promise<void> => {
     const result = await command({ type: 'configure', patch: {
-      endpoint: configuration.endpoint,
       projectsDirectory: configuration.projectsDirectory,
       defaultModelId: configuration.defaultModelId,
       followupLimit: configuration.followupLimit,
@@ -196,11 +194,6 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
       reasoningEffort: configuration.reasoningEffort,
     } })
     if (result === null || result.error !== null) return
-    if (token.trim()) {
-      const stored = await command({ type: 'credential', slot: 't3', value: token.trim() })
-      if (stored === null || stored.error !== null) return
-      setToken('')
-    }
     if (api && reasoningKey.trim()) {
       const stored = await command({ type: 'credential', slot: 'reasoning', value: reasoningKey.trim() })
       if (stored === null || stored.error !== null) return
@@ -210,8 +203,6 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
   }
   return <section className="agent-settings" aria-label="Agent connection settings">
     <div className="agent-fields">
-      {configuration.provider === 't3' ? <><label>T3 Code address<input value={configuration.endpoint} onChange={(event) => change('endpoint', event.target.value)} placeholder="http://127.0.0.1:3773" /></label>
-      <label>T3 access token<input type="password" autoComplete="off" value={token} onChange={(event) => { setToken(event.target.value); setSaved(false) }} placeholder={state.credentials.t3 ? 'Saved securely · enter to replace' : 'Token from T3 connection settings'} /></label></> : null}
       <label className="agent-field-wide">Default projects directory<input value={configuration.projectsDirectory} onChange={(event) => change('projectsDirectory', event.target.value)} placeholder="D:\Projects" /></label>
       <label>Default agent model<select value={configuration.defaultModelId} onChange={(event) => change('defaultModelId', event.target.value)}>
         <option value="">Choose a model after connecting</option>
@@ -379,7 +370,7 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
         <label className="tt-visually-hidden" htmlFor="agent-thread-search">Search projects and threads</label>
         <input id="agent-thread-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search projects and threads" />
         <div className="agent-project-list">
-        {state.host.projects.length === 0 ? <p className="agent-muted">Connect T3 to see your projects and threads.</p> : visibleProjects.length === 0 ? <p className="agent-muted">No matching projects or threads.</p> : visibleProjects.map(({ project, threads }) => <div className="agent-project" key={project.id}>
+        {state.host.projects.length === 0 ? <p className="agent-muted">Connect your provider to see your projects and threads.</p> : visibleProjects.length === 0 ? <p className="agent-muted">No matching projects or threads.</p> : visibleProjects.map(({ project, threads }) => <div className="agent-project" key={project.id}>
           <button className="agent-project__title" type="button" aria-pressed={activeProject?.id === project.id} onClick={() => void command({ type: 'select-project', projectId: project.id })}><ChevronDown size={13} aria-hidden="true" />{project.title}</button>
           {threads.map((thread) => {
             const managed = state.assignments.find((entry) => entry.threadId === thread.id)
@@ -397,7 +388,7 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
         {activeProject !== undefined ? <AgentNewThread state={state} command={command} project={activeProject} /> : null}
         <AgentQueue state={state} command={command} />
         <AgentManualNotice state={state} command={command} />
-        {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or open one in your selected project.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working in T3' : assignment === undefined ? 'Unassigned · manage this thread to send prompts' : 'Ready for a prompt'}</p></div>
+        {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or open one in your selected project.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working' : assignment === undefined ? 'Unassigned · manage this thread to send prompts' : 'Ready for a prompt'}</p></div>
           <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.busy || !connected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
             <span>{assignment.followups}/{state.configuration.followupLimit} follow-ups</span>
             {assignment.mode === 'managed' ? <Button variant="ghost" onClick={() => void command({ type: assignment.paused ? 'resume' : 'pause', threadId: active.id })}>{assignment.paused ? 'Resume management' : 'Pause management'}</Button> : null}

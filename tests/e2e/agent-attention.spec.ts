@@ -15,7 +15,7 @@ test('saved attention does not cover the room while its provider is disconnected
   const launched = await launchSotto('success', profile)
   try {
     await launched.page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await expect(launched.page.getByRole('button', { name: 'Connect T3 Code', exact: true })).toBeVisible()
+    await expect(launched.page.getByRole('button', { name: 'Connect Codex', exact: true })).toBeVisible()
     await expect(launched.page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).queue)).toEqual(savedQueue)
     await launched.page.screenshot({ path: 'artifacts/crossing/attention-disconnected.png' })

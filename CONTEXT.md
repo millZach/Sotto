@@ -8,13 +8,15 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The system that runs the agent for a thread: T3 Code (the default), Codex, Claude Code or Grok Build. One provider is active at a time; its installed client retains its own sign-in.
+**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. One provider is active at a time and retains its own sign-in; new installations initially select Codex.
 
-**Provider session.** The provider's own identifier for the same thread, for example a T3 thread ID or a Codex thread ID. Provider session IDs exist only inside the provider adapter and in the thread registry. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
+**Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
-**Thread binding.** The persisted record `Sotto thread ID → provider → provider session ID → project ID`. The **thread registry** stores bindings in `threads.json` in the user data folder, so the mapping survives a restart. Bindings are never deleted by Sotto; a provider that forgets a session leaves an orphan binding, which is harmless. On the first run after upgrading from a build without the registry (the saved coordinator state already refers to threads and the registry file does not exist), the provider's own IDs are adopted as Sotto thread IDs so saved assignments, drafts and queue items keep resolving.
+**Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
+
+**Provider retirement.** An upgrade that stops using an old thread provider while retaining recovery evidence and the user's draft. Old assignments, answers and uncertain actions are not transferred or replayed through a native client.
 
 **Thread interface.** The verbs the coordinator uses for any provider, with no provider identifiers in their signatures:
 

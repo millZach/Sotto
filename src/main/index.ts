@@ -120,7 +120,6 @@ import { AGENT_STATE, AGENT_E2E } from '../shared/agents'
 import { z } from 'zod'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
-import { T3CodeHost } from './agents/t3'
 import { CodexAppServerHost } from './agents/codex'
 import { ClaudeStreamJsonHost } from './agents/claude'
 import { GrokAcpHost } from './agents/grok'
@@ -498,7 +497,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new ConfiguredProviderHost({
     hosts: {
-      t3: new SottoThreadHost('t3', new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!),
       codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
       claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
       grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),

@@ -64,9 +64,9 @@ Optional AI cleanup is off by default. When you enable it, the finished transcri
 
 ## Agent control center (development beta)
 
-The **Agents** view connects to an existing local T3 Code installation, creates projects and threads, collects prompts until you say **“send it,”** and supervises only the threads you assign. It queues questions one at a time and yields a thread to manual control when you send directly in T3. The floating widget retains click-to-dictate and dragging.
+The **Agents** view connects directly to installed Codex, Claude Code or Grok Build clients, creates projects and threads, collects prompts until you say **“send it,”** and supervises only the threads you assign. It queues questions one at a time and yields a thread to manual control when you send directly in the native client. Choose the client in Connection settings. The floating widget retains click-to-dictate and dragging.
 
-This is an unreleased development feature. The first adapter is verified against **T3 Code 0.0.38** and rejects other versions until their contract is checked. Wake control requires separately supplied compatible local model/runtime files; their distribution, real microphone acceptance, and macOS live checks remain release gates. Production sign-in, checkout, and billing webhooks are not deployed. Unpackaged builds label access **Private development beta**; packaged builds without a membership service retain free dictation and do not grant agent actions.
+This is an unreleased development feature. Native clients retain their own subscription sign-in and model catalogs. Wake control requires separately supplied compatible local model/runtime files; their distribution, real microphone acceptance, and macOS live checks remain release gates. Production sign-in, checkout, and billing webhooks are not deployed. Unpackaged builds label access **Private development beta**; packaged builds without a membership service retain free dictation and do not grant agent actions.
 
 Read the [agent setup and behavior guide](docs/agent-control.md), [implementation evidence and remaining gates](docs/verification/issue-9-implementation.md), and [membership service contract](docs/verification/issue-9-membership-service.md) before using or distributing this feature.
 

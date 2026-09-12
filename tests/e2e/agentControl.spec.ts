@@ -34,7 +34,7 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-  await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+  await page.getByRole('button', { name: 'Connect Codex' }).click()
   await page.getByRole('link', { name: 'Threads', exact: true }).click()
 }
 
@@ -158,9 +158,9 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
     await onboard(page)
     await command(page, { type: 'assign', threadId: 'workshop' })
     await page.getByLabel('Prompt', { exact: true }).fill('Retry this only after I ask.')
-    await event(page, { type: 'reject', threadId: 'workshop', text: 'T3 rejected the request before starting a turn.' })
+    await event(page, { type: 'reject', threadId: 'workshop', text: 'The provider rejected the request before starting a turn.' })
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect(page.getByRole('alert')).toContainText('T3 rejected the request')
+    await expect(page.getByRole('alert')).toContainText('The provider rejected the request')
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Retry this only after I ask.')
     expect((await state(page)).host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
 

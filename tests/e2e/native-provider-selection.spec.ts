@@ -11,11 +11,11 @@ test('selects native thread providers through the existing configuration control
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     const picker = page.getByRole('combobox', { name: 'Thread provider', exact: true })
-    await expect(picker.locator('option')).toHaveText(['T3 Code', 'Codex', 'Claude Code', 'Grok Build'])
-    for (const [provider, label] of [['claude', 'Claude Code'], ['grok', 'Grok Build'], ['codex', 'Codex'], ['t3', 'T3 Code']] as const) {
+    await expect(picker.locator('option')).toHaveText(['Codex', 'Claude Code', 'Grok Build'])
+    for (const [provider, label] of [['claude', 'Claude Code'], ['grok', 'Grok Build'], ['codex', 'Codex']] as const) {
       await picker.selectOption(provider)
       await expect(picker).toHaveValue(provider)
-      await expect(page.getByRole('textbox', { name: 'T3 Code address', exact: true })).toHaveCount(provider === 't3' ? 1 : 0)
+      await expect(page.getByRole('textbox', { name: /address|access token/i })).toHaveCount(0)
       if (provider === 'claude' || provider === 'grok') {
         await page.screenshot({ animations: 'disabled', path: `artifacts/native-providers/${provider}-configuration.png` })
       }

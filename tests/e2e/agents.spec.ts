@@ -160,8 +160,8 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connect T3 Code' }).click()
-    await expect(page.getByText('T3 Code connected', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Connect Codex' }).click()
+    await expect(page.getByText('Codex connected', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Manage Workshop', exact: true }).click()
     await page.getByRole('button', { name: 'Manage Docs', exact: true }).click()
     await page.getByRole('button', { name: 'Select Workshop', exact: true }).click()
@@ -206,7 +206,7 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
       const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       main.setBounds({ ...main.getBounds(), width: 820, height: 560 })
     })
-    await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+    await page.getByRole('button', { name: 'Connect Codex' }).click()
     await page.getByRole('button', { name: 'Manage Workshop', exact: true }).click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')

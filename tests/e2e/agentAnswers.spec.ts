@@ -46,7 +46,7 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
   await page.getByRole('link', { name: 'Agents', exact: true }).click()
-  await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+  await page.getByRole('button', { name: 'Connect Codex' }).click()
   await command(page, { type: 'assign', threadId: 'workshop' })
   await command(page, { type: 'assign', threadId: 'docs' })
 }

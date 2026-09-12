@@ -120,7 +120,7 @@ type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
 function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown> {
   const fixture = designThreadsFixture()
   return {
-    configuration: { provider: 't3', enabled: true, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: 'claude:sonnet',
+    configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
       followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
       reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
     assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],

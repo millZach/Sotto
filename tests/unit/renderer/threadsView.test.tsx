@@ -20,7 +20,7 @@ function stateFixture(): AgentState {
     configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
     connection: 'connected',
     host: {
-      connected: true, name: 'T3 Code', version: 'test',
+      connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
@@ -30,7 +30,7 @@ function stateFixture(): AgentState {
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { t3: true, reasoning: false, grokSpeech: false, secure: true },
+    credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },
   }
@@ -86,7 +86,7 @@ describe('thread grouping and states from Sotto state', () => {
     expect(providerKey('OpenAI')).toBe('codex')
     expect(providerKey('Grok')).toBe('grok')
     expect(providerKey('xAI')).toBe('grok')
-    expect(providerKey('T3 Code')).toBe('other')
+    expect(providerKey('Unknown provider')).toBe('other')
     expect(providerKey('')).toBe('other')
     const state = stateFixture()
     state.host.models = state.host.models.map(model => model.id === 'claude:sonnet' ? { ...model, provider: 'Acme', name: 'Claude-ish 9' } : model)
@@ -143,6 +143,34 @@ describe('thread grouping and states from Sotto state', () => {
 })
 
 describe('ThreadsView workspace', () => {
+  it('shows a pending manual message immediately and reconciles only its matching delivery receipt', async () => {
+    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    let finish!: (value: AgentState) => void
+    let draftId = ''
+    const command = vi.fn((...args: unknown[]) => {
+      const request = args[0] as AgentCommand
+      if (request.type === 'manual-send') draftId = request.draftId!
+      return new Promise<AgentState>(resolve => { finish = resolve })
+    })
+    const { rerender } = renderThreads(state, command)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Show this pending message immediately.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Show this pending message immediately.')
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sending…')
+    finish({ ...state, error: 'Delivery is uncertain.' })
+    await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Not confirmed'))
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Show this pending message immediately.')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep my replacement draft.' } })
+    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId: crypto.randomUUID() }]
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByLabelText('Pending message')).toBeVisible()
+    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep my replacement draft.')
+    expect(command).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps an unmanaged composer available when another thread owns the saved draft', () => {
     const state = stateFixture()
     state.assignments = []; state.activeThreadId = 'grok-previews'

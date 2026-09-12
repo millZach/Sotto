@@ -3,8 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { agentAttachmentsSchema, agentCommandSchema, agentHostSnapshotSchema, type AgentAttachment, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { T3CodeHost } from '../../../src/main/agents/t3'
+import { agentAttachmentsSchema, agentCommandSchema, type AgentAttachment, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -16,46 +15,15 @@ import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 const image: AgentAttachment = { id: 'shot-1', name: 'Screenshot.png', mimeType: 'image/png',
   dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZ0AAAAASUVORK5CYII=' }
 const roots: string[] = []
-const disposers: (() => void)[] = []
+const disposers: (() => void | Promise<void>)[] = []
 afterEach(async () => {
-  disposers.splice(0).forEach(dispose => dispose()); vi.restoreAllMocks()
+  for (const dispose of disposers.splice(0)) await dispose()
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-options-')) throw new Error('Unexpected fixture directory')
     await rm(root, { recursive: true, force: true })
   }
 })
-
-function t3Fixture() {
-  const host = new T3CodeHost(); disposers.push(() => host.disconnect())
-  const thread = { id: 'thread', projectId: 'project', title: 'Thread',
-    modelSelection: { instanceId: 'account', model: 'model', options: [{ id: 'effort', value: 'low' as string | boolean }, { id: 'fastMode', value: true }] },
-    runtimeMode: 'approval-required', interactionMode: 'default', latestTurn: null, session: null,
-    messages: [] as unknown[], activities: [] as unknown[] }
-  const payloads: Record<string, unknown>[] = []
-  const transport = host as unknown as { request(path: string, init?: { body?: string }): Promise<unknown>; rpc(tag: string, payload: unknown): Promise<unknown> }
-  let unknown = false
-  vi.spyOn(transport, 'request').mockImplementation(async (path, init) => {
-    if (path === '/api/orchestration/shell') return { snapshotSequence: 1, projects: [{ id: 'project', title: 'Project', workspaceRoot: 'C:/fixture' }], threads: [thread] }
-    if (path.startsWith('/api/orchestration/threads/')) return { thread }
-    if (path === '/api/orchestration/dispatch') {
-      const payload = JSON.parse(init!.body!)
-      payloads.push(payload)
-      if (payload.type === 'thread.meta.update') thread.modelSelection = payload.modelSelection
-      if (payload.type === 'thread.runtime-mode.set') thread.runtimeMode = payload.runtimeMode
-      if (payload.type === 'thread.turn.start') thread.messages.push({ id: payload.message.messageId, role: 'user', text: payload.message.text, createdAt: payload.createdAt,
-        attachments: payload.message.attachments.map((a: { name: string; mimeType: string; sizeBytes: number }) => ({ type: 'image', id: 'persisted-provider-id', name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes })) })
-      if (unknown) throw new Error('Fixture lost acknowledgment')
-      return {}
-    }
-    throw new Error(`Unexpected fixture request: ${path}`)
-  })
-  vi.spyOn(transport, 'rpc').mockResolvedValue({ providers: [{ instanceId: 'account', driver: 'codex', installed: true, enabled: true, status: 'ready', auth: { status: 'authenticated' },
-    models: [{ slug: 'model', name: 'Model', capabilities: { optionDescriptors: [{ id: 'effort', type: 'select', options: [{ id: 'low', label: 'Low', isDefault: true }, { id: 'high', label: 'High' }] }] } },
-      { slug: 'plain', name: 'Plain', capabilities: null }] }] })
-  host['connected'] = true
-  host.observeThreads(['thread'])
-  return { host, payloads, setUnknown: () => { unknown = true }, permission: () => { thread.activities.push({ id: 'permission', kind: 'approval.requested', summary: 'Publish?', payload: { requestId: 'request' }, createdAt: new Date().toISOString() }) } }
-}
 
 class FixtureHost extends E2EAgentHost {
   attempts: AgentHostCommand[] = []
@@ -80,7 +48,7 @@ async function controlFixture() {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
   const create = () => new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
-  let control = create(); disposers.push(() => control.dispose())
+  let control = create(); disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await control.command({ type: 'connect' })
   return { root, host, get control() { return control }, async restart() { control.dispose(); control = create(); await control.start() } }
 }
@@ -96,44 +64,8 @@ describe('bounded image contract', () => {
     }
   })
   it('rejects a disguised non-image before sending', async () => {
-    const f = t3Fixture(); const snapshot = await f.host.snapshot()
-    expect(() => validatePromptAttachments(snapshot, 'account:model', [{ ...image, dataUrl: 'data:image/png;base64,YWJj' }])).toThrow(/content/)
-  })
-})
-
-describe('T3 shipped option and attachment protocol', () => {
-  it('advertises actual model reasoning descriptors and reads persisted selections', async () => {
-    const f = t3Fixture(); const snapshot = agentHostSnapshotSchema.parse(await f.host.snapshot())
-    expect(snapshot.models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: true,
-      runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] })
-    expect(snapshot.models[1]?.reasoningEfforts).toEqual([])
-    expect(snapshot.threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'approval-required' })
-  })
-  it('dispatches actual metadata/runtime commands, preserving unrelated options and rejecting unsupported reasoning', async () => {
-    const f = t3Fixture(); await f.host.snapshot()
-    await expect(f.host.execute({ type: 'configure-thread', commandId: 'bad', threadId: 'thread', reasoningEffort: 'invented' })).rejects.toThrow(/reasoning/)
-    await f.host.execute({ type: 'configure-thread', commandId: 'settings', threadId: 'thread', reasoningEffort: 'high' })
-    expect(f.payloads[0]).toEqual({ type: 'thread.meta.update', commandId: 'settings', threadId: 'thread', modelSelection: { instanceId: 'account', model: 'model', options: [{ id: 'fastMode', value: true }, { id: 'effort', value: 'high' }] } })
-    await f.host.execute({ type: 'configure-thread', commandId: 'runtime', threadId: 'thread', runtimeMode: 'full-access' })
-    expect(f.payloads[1]).toMatchObject({ type: 'thread.runtime-mode.set', commandId: 'runtime', runtimeMode: 'full-access' })
-    expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'full-access' })
-    await f.host.execute({ type: 'configure-thread', commandId: 'model', threadId: 'thread', modelId: 'account:plain' })
-    expect((await f.host.snapshot()).threads[0]).not.toHaveProperty('reasoningEffort')
-  })
-  it('sends an image in one turn-start request and retains provider transcript references after an uncertain response', async () => {
-    const f = t3Fixture(); await f.host.snapshot(); f.setUnknown()
-    expect(await f.host.execute({ type: 'send', commandId: 'once', threadId: 'thread', messageId: 'message', text: '', attachments: [image] })).toEqual({ accepted: false, uncertain: true })
-    expect(f.payloads).toHaveLength(1)
-    expect(f.payloads[0]).toMatchObject({ type: 'thread.turn.start', commandId: 'once', message: { messageId: 'message', text: '', attachments: [{ type: 'image', name: image.name, dataUrl: image.dataUrl }] } })
-    const message = (await f.host.snapshot()).threads[0]?.messages[0]
-    expect(message).toMatchObject({ id: 'message', commandId: 'once', attachments: [{ id: 'persisted-provider-id', name: image.name, mimeType: 'image/png' }] })
-    expect(message?.attachments?.[0]).not.toHaveProperty('dataUrl')
-  })
-  it('rejects settings and images when a permission is pending', async () => {
-    const f = t3Fixture(); await f.host.snapshot(); f.permission()
-    await expect(f.host.execute({ type: 'configure-thread', commandId: 'config', threadId: 'thread', runtimeMode: 'full-access' })).rejects.toThrow(/pending requests/)
-    await expect(f.host.execute({ type: 'send', commandId: 'send', threadId: 'thread', messageId: 'message', text: '', attachments: [image] })).rejects.toThrow(/permission/)
-    expect(f.payloads).toEqual([])
+    const snapshot = await new E2EAgentHost().snapshot()
+    expect(() => validatePromptAttachments(snapshot, 'claude:test', [{ ...image, dataUrl: 'data:image/png;base64,YWJj' }])).toThrow(/content/)
   })
 })
 
@@ -142,9 +74,9 @@ describe('coordinator images, authority and durable settings', () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-options-')); roots.push(root)
     const provider = new FixtureHost()
     const registry = new ThreadRegistry(root)
-    const host = new ConfiguredProviderHost({ provider: () => 't3', hosts: { t3: new SottoThreadHost('t3', provider, registry), codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost() } })
+    const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: { codex: new SottoThreadHost('codex', provider, registry), claude: new E2EAgentHost(), grok: new E2EAgentHost() } })
     disposers.push(() => host.disconnect())
-    const initial = await host.connect({ endpoint: '', credential: '' })
+    const initial = await host.connect()
     const threadId = initial.threads[0]!.id
     expect(threadId).not.toBe('workshop')
     await host.execute({ type: 'configure-thread', commandId: 'configure', threadId, reasoningEffort: 'high' })

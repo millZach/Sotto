@@ -11,6 +11,13 @@ import { ThreadOptions } from './ThreadOptions'
 import { ScreenshotInput } from './ScreenshotInput'
 
 type Command = AgentConnection['command']
+interface PendingSubmission {
+  draftId: string; threadId: string; text: string; attachments: { id: string; name: string }[]; pending: boolean
+}
+interface SubmissionFeedback {
+  onSubmit: (submission: PendingSubmission) => void
+  onSettle: (draftId: string, confirmed: boolean) => void
+}
 export interface ThreadsViewProps {
   readonly onOpenAgents: () => void
   readonly now?: number | undefined
@@ -53,7 +60,7 @@ function ThreadRequest({ row, command, busy, onAnswer, voiceAvailable }: {
   </div>
 }
 
-function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command }): ReactNode {
+function ThreadPrompt({ row, state, command, onSubmit, onSettle }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command } & SubmissionFeedback): ReactNode {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [sending, setSending] = useState(false)
   const [images, setImages] = useState<Record<string, AgentAttachment[]>>({})
@@ -64,12 +71,13 @@ function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readon
     for (const receipt of receipts ?? []) {
       if (submitted.current.get(receipt.draftId) !== receipt.threadId) continue
       submitted.current.delete(receipt.draftId)
+      onSettle(receipt.draftId, true)
       if (revisions.current[receipt.threadId] !== receipt.draftId) continue
       delete revisions.current[receipt.threadId]
       setDrafts(previous => ({ ...previous, [receipt.threadId]: '' }))
       setImages(previous => ({ ...previous, [receipt.threadId]: [] }))
     }
-  }, [])
+  }, [onSettle])
   useEffect(() => { receiveDeliveries(state.deliveredDrafts) }, [state.deliveredDrafts, receiveDeliveries])
   const attachments = images[row.thread.id] ?? (state.draftThreadId === row.thread.id ? state.draftAttachments ?? [] : [])
   const text = drafts[row.thread.id] ?? (state.draftThreadId === row.thread.id ? state.draft : '')
@@ -86,6 +94,7 @@ function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readon
     if (!question?.requestId) {
       submitted.current.set(draftId, threadId)
       while (submitted.current.size > MAX_DELIVERED_DRAFTS) submitted.current.delete(submitted.current.keys().next().value!)
+      onSubmit({ draftId, threadId, text: text.trim(), attachments: attachments.map(({ id, name }) => ({ id, name })), pending: true })
     }
     setSending(true)
     try {
@@ -106,7 +115,10 @@ function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readon
           setImages(previous => ({ ...previous, [threadId]: [] }))
         }
       }
-    } finally { setSending(false) }
+    } finally {
+      if (!question?.requestId) onSettle(draftId, false)
+      setSending(false)
+    }
   }
   return <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void send() }}>
     <label className="tt-visually-hidden" htmlFor="thread-workspace-prompt">{question ? 'Your answer' : 'Prompt'}</label>
@@ -130,6 +142,14 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [settledOpen, setSettledOpen] = useState(false)
   const [newThreadOpen, setNewThreadOpen] = useState(false)
   const [messageLimit, setMessageLimit] = useState(80)
+  const [submissions, setSubmissions] = useState<PendingSubmission[]>([])
+  const onSubmit = useCallback((submission: PendingSubmission): void => {
+    setSubmissions(previous => [...previous.filter(item => item.draftId !== submission.draftId), submission].slice(-MAX_DELIVERED_DRAFTS))
+  }, [])
+  const onSettle = useCallback((draftId: string, confirmed: boolean): void => {
+    setSubmissions(previous => confirmed ? previous.filter(item => item.draftId !== draftId)
+      : previous.map(item => item.draftId === draftId ? { ...item, pending: false } : item))
+  }, [])
   const onNewThread = (): void => setNewThreadOpen(true)
   const transcript = useRef<HTMLDivElement>(null)
   const state = agents.state
@@ -141,7 +161,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const selected = rows.find(row => row.thread.id === state?.activeThreadId)
   const lastMessageId = selected?.thread.messages.at(-1)?.id
   useEffect(() => { setMessageLimit(80) }, [selected?.thread.id])
-  useEffect(() => { transcript.current?.scrollTo?.({ top: transcript.current.scrollHeight }) }, [selected?.thread.id, lastMessageId])
+  useEffect(() => { transcript.current?.scrollTo?.({ top: transcript.current.scrollHeight }) }, [selected?.thread.id, lastMessageId, submissions.length])
   if (state === null) return <div className="threads-view"><p role="status">{agents.error ?? 'Preparing agent controls...'}</p></div>
   const openThread = async (threadId: string): Promise<void> => {
     await agents.command({ type: 'select-thread', threadId })
@@ -160,6 +180,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
     id: `${selected.thread.id}:${pending.id}`, threadId: selected.thread.id, requestId: pending.id,
     kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
   } } : selected
+  const displayedSubmissions = submissions.filter(item => item.threadId === selected?.thread.id && !state.deliveredDrafts?.some(receipt => receipt.threadId === item.threadId && receipt.draftId === item.draftId))
   const assigned = selected?.assignment
   const managed = assigned?.mode === 'managed' && selected !== undefined && !isThreadClosed(selected.thread)
   const canManage = connected && !state.busy && supportsAgentSupervision(state.host.capabilities) && selected !== undefined && !isThreadClosed(selected.thread)
@@ -195,11 +216,15 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
           {selected.thread.messages.length ? selected.thread.messages.slice(-messageLimit).map(message => <article className="thread-message" key={message.id} data-role={message.role}>
             <header>{message.role === 'user' ? 'You' : message.role === 'assistant' ? selected.provider : 'System'}<time>{clockLabel(Date.parse(message.createdAt))}</time></header><p>{message.text}</p>
             {!!message.attachments?.length && <div className="thread-message__attachments" aria-label="Message screenshots">{message.attachments.map(attachment => <span key={attachment.id}><Image size={14} />{attachment.name}</span>)}</div>}
-          </article>) : selected.thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div> : selected.thread.historyStatus === 'error' ? null : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} /><h3>{selected.thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{selected.thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
+          </article>) : selected.thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div> : selected.thread.historyStatus === 'error' || displayedSubmissions.length ? null : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} /><h3>{selected.thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{selected.thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
+          {displayedSubmissions.map(item => <article className="thread-message" key={item.draftId} data-role="user" aria-label="Pending message">
+            <header>You<span role="status">{item.pending ? 'Sending…' : 'Not confirmed · draft kept'}</span></header><p>{item.text}</p>
+            {!!item.attachments.length && <div className="thread-message__attachments">{item.attachments.map(attachment => <span key={attachment.id}><Image size={14} />{attachment.name}</span>)}</div>}
+          </article>)}
           <ThreadRequest row={workspaceRow!} voiceAvailable={state.queue.some(item => item.threadId === selected.thread.id && item.requestId === workspaceRow?.request?.requestId)} command={agents.command} busy={state.busy || !connected} onAnswer={() => document.getElementById(managed ? 'agent-prompt' : 'thread-workspace-prompt')?.focus()} />
         </div>
         <div className="thread-workspace__compose">
-          {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} />}
+          {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} />}
         </div>
       </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{state.draft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{state.draft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{state.draft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
     </section>

@@ -39,7 +39,7 @@ test('routes activated voice through the real controller, retains paused prompts
     await page.getByRole('button', { name: /finish setup/i }).click()
     await page.getByRole('link', { name: 'Agents', exact: true }).click()
     await command(page, { type: 'configure', patch: { speak: false } })
-    await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+    await page.getByRole('button', { name: 'Connect Codex' }).click()
     await page.getByRole('button', { name: 'Manage Workshop', exact: true }).click()
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
 
