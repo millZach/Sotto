@@ -10,6 +10,8 @@ Factories and methods may be synchronous or asynchronous; the harness awaits the
 The backend handles project scope and the query's `asOf` date; it never receives ground-truth labels.
 Register the factory under its CLI name in `backends/index.mjs`; adding a backend needs no harness changes.
 The `none` backend ignores history and always abstains.
+The `explicit` backend uses the production scoped lexical retriever against isolated SQLite. Its `explicit-v1.json` cases supply optional `acceptedMemory` metadata on history events to model already accepted questionnaire/inspector memories; raw history is not extracted. Optional `threadId` on a case scopes the query to a Sotto thread. The extractive answer is the included memory text, not an LLM response. Expected labels never enter the adapter. Use `node scripts/memeval/bench-memeval.mjs --backend explicit --cases scripts/memeval/cases/explicit-v1.json` and compare `--backend none` on the same cases. See [the ticket #17 report](../../docs/perf/2026-09-11-explicit-memory-retrieval.md) for budgets, scope conventions, measurements and limits.
+Backends may implement `dispose()`; the harness calls it in a finally block after the case loop, including on failure.
 Schema validation and scoring share `PATTERN_FLAGS = 'is'`: regexes ignore case and dots match newlines, including in lookaheads. Temporal and exception answers must match the current pattern without matching the stale pattern.
 Leak checks accept abstention or an answer that does not match the forbidden pattern; they do not prove semantic safety or deletion from storage.
 

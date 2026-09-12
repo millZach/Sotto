@@ -3,6 +3,7 @@ import { createBackend as createNoneBackend } from './none.mjs'
 
 const factories = new Map([
   ['none', createNoneBackend],
+  ['explicit', async () => (await import('./explicit.mjs')).createBackend()],
 ])
 
 export function createBackend(name) {

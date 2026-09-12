@@ -76,7 +76,7 @@ export class AgentControl {
     historyEnabled?: () => boolean
     turns?: TurnRecorder
     authority?: Authority
-    preferences?: Pick<MemoryProfile, 'preferences'>
+    preferences?: Pick<MemoryProfile, 'retrieve'>
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -712,11 +712,12 @@ export class AgentControl {
   private promptDigest(text: string, attachments: AgentAttachment[] = []): string {
     return createHash('sha256').update(JSON.stringify([text.trim(), attachments])).digest('hex')
   }
-  private readPreferences(projectId: string | null, turn?: ActiveTurn): AgentPreference[] {
+  private readPreferences(query: string, projectId: string | null, threadId: string | null, turn?: ActiveTurn): AgentPreference[] {
     if (!this.dependencies.preferences) return []
     const started = Date.now()
     try {
-      const preferences = this.dependencies.preferences.preferences(projectId ?? undefined)
+      const preferences = this.dependencies.preferences.retrieve({ query,
+        ...(projectId === null ? {} : { projectId }), ...(threadId === null ? {} : { threadId }) })
       this.recordPreferences(turn, preferences)
       return preferences
     } finally {
@@ -775,7 +776,7 @@ export class AgentControl {
     if (request.length > 18_000) throw new Error('This request is too long. Clear it and start a shorter command; use the prompt editor for project instructions.')
     this.canAct()
     if (this.state.pendingRequest) addTurnContext(turn, `${this.state.pendingRequest}\nUser clarification: `)
-    const preferences = this.readPreferences(this.state.activeProjectId, turn)
+    const preferences = this.readPreferences(request, this.state.activeProjectId, this.state.activeThreadId, turn)
     const intentStarted = Date.now()
     let intent
     try {
@@ -936,12 +937,12 @@ export class AgentControl {
         assignment.paused = true; this.enqueue(thread, 'blocked', `The ${this.state.configuration.followupLimit} follow-up limit is reached. Review the thread and resume management to authorize more.`); return
       }
       this.canAct()
+      turn = this.beginTurn({ source: 'supervision', commandType: 'decide', text: assignment.instruction, threadId: thread.id, projectId: thread.projectId })
       const retrievalStarted = Date.now()
-      const preferences = this.readPreferences(thread.projectId)
-      const retrievalMs = this.dependencies.preferences ? Date.now() - retrievalStarted : 0
+      const preferences = this.readPreferences(assignment.instruction, thread.projectId, thread.id, turn)
       const intentStarted = Date.now()
       const decision = await this.dependencies.reasoner.decide(assignment.instruction, structuredClone(thread), preferences)
-      const intentMs = Date.now() - intentStarted
+        .finally(() => { if (turn) turn.intentMs = Date.now() - intentStarted })
       const current = this.state.assignments.find(a => a.threadId === thread.id)
       const latest = this.state.host.threads.find(t => t.id === thread.id)
       if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !this.state.host.connected) return
@@ -956,12 +957,10 @@ export class AgentControl {
         assignment.stopReason = 'repeat'; assignment.stoppedAt = new Date().toISOString()
         assignment.paused = true; this.enqueue(thread, 'blocked', 'The agent is repeating a failure without progress. Review the thread before resuming.'); return
       }
-      turn = this.beginTurn({ source: 'supervision', commandType: 'send', text: decision.text, threadId: thread.id, projectId: thread.projectId })
       if (turn) {
         turn.startedAtMs = retrievalStarted; turn.startedAt = new Date(retrievalStarted).toISOString()
-        turn.retrievalMs = retrievalMs; turn.intentMs = intentMs
+        turn.commandType = 'send'; turn.text = decision.text
       }
-      this.recordPreferences(turn, preferences)
       this.canAct()
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()

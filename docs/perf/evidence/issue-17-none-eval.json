@@ -1,0 +1,222 @@
+{
+  "backend": "none",
+  "caseSet": {
+    "path": "D:\\Talk to Text Application\\.worktrees\\issue-17\\scripts\\memeval\\cases\\explicit-v1.json",
+    "version": "explicit-v1"
+  },
+  "generatedAt": "2026-09-12T06:04:54.187Z",
+  "cases": [
+    {
+      "id": "explicit-communication",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-autonomy",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-verification",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-git",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-agents",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-workflow",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "explicit-privacy",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "thread-preference",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "project-preference",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "no-match",
+      "category": "abstain",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "below-bar",
+      "category": "abstain",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "empty-query",
+      "category": "abstain",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "other-project",
+      "category": "project-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "other-thread",
+      "category": "project-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "same-thread-other-project",
+      "category": "project-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "scoped-with-distractor",
+      "category": "recall",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "authority-permission-explicit",
+      "category": "authority-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "authority-policy-explicit",
+      "category": "authority-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "authority-preference-imported",
+      "category": "authority-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "authority-preference-agent-confirmed",
+      "category": "authority-leak",
+      "pass": true,
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "changed-preference",
+      "category": "temporal",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    },
+    {
+      "id": "expired-exception",
+      "category": "exception",
+      "pass": false,
+      "reason": "Expected an answer",
+      "answer": null,
+      "memoryIds": []
+    }
+  ],
+  "table": [
+    {
+      "category": "recall",
+      "cases": 10,
+      "passed": 0,
+      "rate": 0,
+      "meanMemoryIds": 0
+    },
+    {
+      "category": "abstain",
+      "cases": 3,
+      "passed": 3,
+      "rate": 1
+    },
+    {
+      "category": "temporal",
+      "cases": 1,
+      "passed": 0,
+      "rate": 0,
+      "meanMemoryIds": 0
+    },
+    {
+      "category": "exception",
+      "cases": 1,
+      "passed": 0,
+      "rate": 0,
+      "meanMemoryIds": 0
+    },
+    {
+      "category": "project-leak",
+      "cases": 3,
+      "passed": 3,
+      "rate": 1
+    },
+    {
+      "category": "authority-leak",
+      "cases": 4,
+      "passed": 4,
+      "rate": 1
+    }
+  ],
+  "totals": {
+    "cases": 22,
+    "passed": 10,
+    "rate": 0.45454545454545453
+  }
+}
