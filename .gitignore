@@ -16,6 +16,8 @@ Thumbs.db
 handoff/
 artifacts/agent-control-smoke/
 artifacts/natural-voice-qa/
+artifacts/native-threads-live/
+artifacts/provider-recovery/
 
 # Generated local inference payloads (locks remain versioned).
 resources/runtime/*.wasm
