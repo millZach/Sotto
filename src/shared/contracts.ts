@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
@@ -248,8 +249,8 @@ export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema
 export const TRANSCRIPTION_MODEL = 'microsoft/mai-transcribe-2' as const
 export const TRANSCRIPTION_PRIVACY_NOTICE = 'The audio you dictate is uploaded to OpenRouter and transcribed by Microsoft. Your dictionary words are sent with it as spelling hints, and text comes back. Nothing is transcribed on this computer.' as const
 
-/** Five minutes of 16 kHz mono PCM16 WAV, including its header. */
-const MAX_TRANSCRIPTION_AUDIO_BYTES = 16_000 * 2 * 300 + 44
+/** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
+const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
 export function transcriptionTimeoutMs(audioSeconds: number): number {
   return Math.min(30_000, Math.max(8_000, 8_000 + 300 * audioSeconds))

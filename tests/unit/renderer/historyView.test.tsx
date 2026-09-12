@@ -31,8 +31,8 @@ describe('HistoryView', () => {
   it('labels new MAI transcripts and preserves legacy model facts and local storage copy', () => {
     const entry = entries[0]!
     expect(transcriptFacts({ ...entry, modelPreset: 'mai' }).rest).toContain('MAI-Transcribe-2 model. Kept on this computer only.')
-    expect(transcriptFacts({ ...entry, modelPreset: 'instant' }).rest).toContain('Moonshine')
-    expect(transcriptFacts(entry).rest).toContain('Whisper')
+    expect(transcriptFacts({ ...entry, modelPreset: 'instant' }).rest).toContain('an earlier model.')
+    expect(transcriptFacts(entry).rest).toContain('an earlier model.')
   })
 
   it('searches locally with trimmed case-insensitive matching and copies through its safe action', async () => {

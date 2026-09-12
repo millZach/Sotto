@@ -104,11 +104,11 @@ export function Onboarding({
           <section>
             <p className="onboarding-eyebrow">Welcome to Sotto</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Dictation, ready when you are</h1>
-            <p className="onboarding-lead">Sotto turns your speech into text through OpenRouter. Bring your OpenRouter API key to get started.</p>
+            <p className="onboarding-lead">Press a shortcut, speak, and your words arrive as text wherever you were typing. You will need an OpenRouter API key.</p>
             <div className="onboarding-assurances">
-              <p><Check aria-hidden="true" size={18} /> Microsoft MAI-Transcribe-2 through OpenRouter</p>
-              <p><Check aria-hidden="true" size={18} /> Audio is uploaded only while you dictate</p>
-              <p><Check aria-hidden="true" size={18} /> No account with Sotto, no telemetry</p>
+              <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
+              <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
+              <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
             </div>
           </section>
         ) : null}
@@ -152,8 +152,9 @@ export function Onboarding({
           <section aria-label="Connect OpenRouter">
             <p className="onboarding-eyebrow">Transcription</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Connect your OpenRouter key</h1>
-            <p className="onboarding-lead">Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter. Paste an API key from openrouter.ai/keys; you can also add it later in Settings.</p>
+            <p className="onboarding-lead">Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter. Paste a key from openrouter.ai/keys, then verify it.</p>
             <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
+            <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
           </section>
         ) : null}
 

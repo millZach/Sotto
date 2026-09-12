@@ -68,7 +68,6 @@ Notice: when the speaker corrects themselves ("no wait", "no scratch that"), kee
 
 const OUTPUT_RULE = 'Output ONLY the cleaned text. No preamble, no quotes, no explanation.'
 
-export { parseDictionary } from '../../shared/dictionary'
 
 export function buildPolishSystemPrompt(dictionary: string): string {
   const words = parseDictionary(dictionary)

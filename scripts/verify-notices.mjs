@@ -134,14 +134,22 @@ export async function verifyThirdPartyNotices(options = {}) {
     if (!names.has(dependency)) fail(`declared browser dependency is not inventoried: ${dependency}`)
   }
 
+  // The renderer and its workers are built in separate rollup passes, and both
+  // land in app.asar, so the evidence is the union of the two inventories.
   const bundleInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.json')
+  const workerInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.worker.json')
   if (existsSync(bundleInventoryPath)) {
-    const bundleInventory = JSON.parse(await readFile(bundleInventoryPath, 'utf8'))
-    for (const packageName of bundleInventory.packages ?? []) {
+    const readPackages = async (path) =>
+      existsSync(path) ? JSON.parse(await readFile(path, 'utf8')).packages ?? [] : []
+    const bundled = new Set([
+      ...(await readPackages(bundleInventoryPath)),
+      ...(await readPackages(workerInventoryPath)),
+    ])
+    for (const packageName of bundled) {
       if (!names.has(packageName)) fail(`rendered bundle dependency is not inventoried: ${packageName}`)
     }
     for (const required of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom', 'scheduler', 'zod']) {
-      if (!bundleInventory.packages?.includes(required)) fail(`bundle evidence is missing ${required}`)
+      if (!bundled.has(required)) fail(`bundle evidence is missing ${required}`)
     }
   }
 

@@ -344,9 +344,10 @@ describe('SettingsView', () => {
     const section = container.querySelector('#settings-transcription') as HTMLElement
     expect(within(section).getByLabelText('OpenRouter API key')).toHaveAttribute('type', 'password')
     expect(within(section).getByRole('button', { name: 'Verify key' })).toBeVisible()
-    expect(container.querySelectorAll('.settings-model-card')).toHaveLength(1)
+    expect(within(section).getByText(/cannot transcribe until you add your OpenRouter API key/i)).toBeVisible()
+    expect(container.querySelectorAll('.settings-model-statement')).toHaveLength(1)
+    expect(container.querySelectorAll('.settings-model-card')).toHaveLength(0)
     expect(within(section).getByRole('heading', { name: 'MAI-Transcribe-2' })).toBeVisible()
-    expect(within(section).getByText('Selected')).toBeVisible()
     expect(within(section).getByText(TRANSCRIPTION_PRIVACY_NOTICE)).toBeVisible()
     expect(within(container.querySelector('#settings-formatting') as HTMLElement).queryByLabelText('OpenRouter API key')).toBeNull()
     expect(screen.queryByRole('button', { name: /install.*model|test connection/i })).toBeNull()
@@ -389,7 +390,9 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const stored = 'Saved in your operating system credential store'
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, llmApiKey: stored }, onUpdateSettings: update })} />)
-    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(stored)
+    // The saved key shows as a state, never as the placeholder sentence itself.
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue('')
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveAttribute('placeholder', 'Key saved')
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
     expect(await screen.findByText('Key verified.')).toBeVisible()
     expect(update).not.toHaveBeenCalled()
@@ -397,7 +400,7 @@ describe('SettingsView', () => {
     await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
     expect(await screen.findByText('Key verified.')).toBeVisible()
-    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(stored)
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveAttribute('placeholder', 'Key saved')
   })
 
   it('preserves newer typing and suppresses a stale verification result during a save', async () => {

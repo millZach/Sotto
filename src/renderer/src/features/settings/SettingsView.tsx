@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -428,30 +427,28 @@ export function SettingsView({
           </Card>
 
           <Card className="settings-section" id="settings-transcription">
-            <div className="settings-section__heading"><h2>Transcription</h2><p><b>MAI-Transcribe-2</b> turns your speech into text through OpenRouter.</p></div>
-            <article className="settings-model-card" data-selected={true}>
-              <div className="settings-model-card__heading">
-                <div><h3>MAI-Transcribe-2</h3><p>Microsoft's hosted model. Uses your personal dictionary as spelling hints.</p></div>
-                <span className="settings-selected-badge"><Check size={14} />Selected</span>
-              </div>
-            </article>
+            <div className="settings-section__heading"><h2>Transcription</h2><p>{settings.llmApiKey ? 'Sotto transcribes with the key you saved. Speech goes out to OpenRouter and text comes back.' : 'Sotto cannot transcribe until you add your OpenRouter API key below.'}</p></div>
             <div className="settings-rows">
+              <div className="settings-model-statement">
+                <h3>MAI-Transcribe-2</h3>
+                <p>Microsoft's speech model, and the only one Sotto uses.</p>
+              </div>
               <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
               <Field label="Language" description="Choose a language or let the transcription model detect it."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{KNOWN_LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
               <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
+              <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
             </div>
-            <p>{TRANSCRIPTION_PRIVACY_NOTICE}</p>
           </Card>
 
           <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
 
           <Card className="settings-section" id="settings-formatting">
-            <div className="settings-section__heading"><h2>Cleanup</h2><p>{settings.llmFormatting ? 'AI cleanup is on. Transcript text is sent to OpenRouter with the same key.' : 'AI cleanup is off. Your words stay as you dictated them.'}</p></div>
+            <div className="settings-section__heading"><h2>Cleanup</h2><p>{settings.llmFormatting ? 'AI cleanup is on. Transcript text goes to OpenRouter with your API key.' : 'AI cleanup is off. Your words stay as you dictated them.'}</p></div>
             <div className="settings-rows">
               <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
               <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
               <div className="settings-input-action">
-                <Field label="Personal dictionary" description="One word or name per line. The AI corrects mis-heard words toward these.">
+                <Field label="Personal dictionary" description="One word or name per line. Sent with your audio as spelling hints, and used to fix mis-heard words during cleanup.">
                   <textarea className="tt-input" rows={5} value={llmDictionaryDraft} onBlur={() => { if (llmDictionaryDraft !== settings.llmDictionary) void save({ llmDictionary: llmDictionaryDraft }, 'Dictionary saved.') }} onChange={(event) => setLlmDictionaryDraft(event.currentTarget.value)} />
                 </Field>
 

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi } from 'vitest'
 
 import { QUALITY_TIERS, TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
-import { buildPolishSystemPrompt, parseDictionary } from '../../../src/main/llm/prompt'
+import { buildPolishSystemPrompt } from '../../../src/main/llm/prompt'
+import { parseDictionary } from '../../../src/shared/dictionary'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const ENABLED: AppSettings = {

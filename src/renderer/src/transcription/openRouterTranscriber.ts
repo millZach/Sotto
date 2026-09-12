@@ -7,6 +7,20 @@ import { encodeWavPcm16 } from '../../../shared/wav'
 import { TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { transcriptionTimeoutMs } from '../../../shared/contracts'
 import type { DictationTranscriber } from '../features/dictation/dictationController'
+
+/**
+ * Stands in for a window that was built without a transcription bridge. It
+ * fails the way a missing key does, because from where the user sits that is
+ * the same thing: nothing is set up to reach OpenRouter.
+ */
+export function createUnconfiguredTranscriber() {
+  return {
+    async load() {},
+    async transcribe(): Promise<never> { throw new TranscriptionError('unconfigured') },
+    cancel() {},
+    dispose() {},
+  } satisfies DictationTranscriber
+}
 export interface TranscriptionProgress {
   readonly stage: 'loading-model' | 'transcribing'
   readonly progress: number
@@ -85,7 +99,8 @@ export class OpenRouterTranscriber implements DictationTranscriber {
   load(): Promise<void> { return Promise.resolve() }
 
   transcribe(options: TranscribeOptions): Promise<TranscriptionResult> {
-    if (this.disposed) return Promise.reject(new TranscriptionError('unconfigured'))
+    // A disposed transcriber is a teardown, not a missing key: say so honestly.
+    if (this.disposed) return Promise.reject(new TranscriptionError('cancelled'))
 
     let wav: Uint8Array
     try {

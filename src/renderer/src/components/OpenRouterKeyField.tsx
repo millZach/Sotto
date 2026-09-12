@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, CircleAlert } from 'lucide-react'
 
 import type { TranscriptionKeyCheck } from '../../../shared/contracts'
-import type { SettingsPatch } from '../../../shared/settings'
+import { STORED_CREDENTIAL_PLACEHOLDER, type SettingsPatch } from '../../../shared/settings'
 import { Button } from './Button'
 import { Field } from './Field'
 
@@ -65,10 +65,14 @@ export function OpenRouterKeyField({ apiKey, onUpdateSettings, onCheckTranscript
     } finally { setBusy(false) }
   }
 
-  return <>
+  return <div className="key-field">
     <div className="settings-input-action">
       <Field label="OpenRouter API key" description="Used for transcription and AI cleanup. Stored in your operating system credential store.">
-        <input className="tt-input" type="password" autoComplete="off" value={draft}
+        {/* An already-saved key is a state, not 47 characters of prose to show
+            as dots in a field the user is meant to be able to read. */}
+        <input className="tt-input" type="password" autoComplete="off"
+          value={draft === STORED_CREDENTIAL_PLACEHOLDER ? '' : draft}
+          placeholder={draft === STORED_CREDENTIAL_PLACEHOLDER ? 'Key saved' : undefined}
           onBlur={() => { void save() }}
           onChange={(event) => { editVersion.current += 1; setStatus(null); setDraft(event.currentTarget.value) }} />
       </Field>
@@ -77,5 +81,5 @@ export function OpenRouterKeyField({ apiKey, onUpdateSettings, onCheckTranscript
     {status === null ? null : <p className={`settings-remote-status${status.error ? ' settings-remote-status--error' : ''}`} role="status">
       {status.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{status.text}
     </p>}
-  </>
+  </div>
 }

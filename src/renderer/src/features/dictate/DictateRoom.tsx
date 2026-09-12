@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import type { DictationState } from '../../../../shared/dictation'
+import { TRANSCRIPTION_ERROR_DETAIL, type DictationState } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
@@ -58,10 +58,10 @@ function errorDetail(code: string, copy: PlatformCopy): string {
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your text could not be delivered. Try again, then paste from the clipboard manually.'
-    case 'TRANSCRIPTION_UNCONFIGURED': return 'Add your OpenRouter API key in Settings to transcribe.'
-    case 'TRANSCRIPTION_UNAUTHORIZED': return 'OpenRouter rejected the API key. Check it in Settings.'
-    case 'TRANSCRIPTION_OFFLINE': return 'Sotto could not reach OpenRouter. Check your connection and try again.'
-    default: return 'Transcription failed. Try again.'
+    case 'TRANSCRIPTION_UNCONFIGURED':
+    case 'TRANSCRIPTION_UNAUTHORIZED':
+    case 'TRANSCRIPTION_OFFLINE': return TRANSCRIPTION_ERROR_DETAIL[code]
+    default: return TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED
   }
 }
 

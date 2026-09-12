@@ -1,5 +1,5 @@
 import type { SottoBridge } from '../../../shared/contracts'
-import type { AppSettings } from '../../../shared/settings'
+import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
 import type { MicrophoneTestController } from '../features/onboarding/microphoneTest'
@@ -77,7 +77,7 @@ export function createE2EControllerFactory(scenario: E2EScenario): AppController
 export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): SottoBridge {
   if (!enabled) return bridge
   const configured = (settings: AppSettings): AppSettings => ({
-    ...settings, llmApiKey: 'Saved in your operating system credential store',
+    ...settings, llmApiKey: STORED_CREDENTIAL_PLACEHOLDER,
   })
   return {
     ...bridge,

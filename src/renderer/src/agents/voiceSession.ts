@@ -1,6 +1,6 @@
 import type { AppSettings } from '../../../shared/settings'
 import type { AgentWakeDetection } from '../../../shared/agents'
-import { OpenRouterTranscriber, TranscriptionError, type TranscriptionBridge, type LoadOptions, type TranscribeOptions } from '../transcription/openRouterTranscriber'
+import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge, type LoadOptions, type TranscribeOptions } from '../transcription/openRouterTranscriber'
 import { BrowserVoiceCapture, type VoiceCapture, type VoiceCaptureOptions } from './voiceCapture'
 import { LocalSystemSpeech, type VoiceSpeechOutput } from './voiceSpeech'
 import { calculateRms } from '../audio/audioMath'
@@ -64,7 +64,7 @@ function productionDependencies(bridge: TranscriptionBridge | undefined): AgentV
     }),
     createCapture: (options) => new BrowserVoiceCapture(options),
     createTranscriber: () => bridge === undefined
-      ? { async load() {}, async transcribe() { throw new TranscriptionError('unconfigured') }, cancel() {}, dispose() {} }
+      ? createUnconfiguredTranscriber()
       : new OpenRouterTranscriber({ bridge }),
     speech: new LocalSystemSpeech(),
     createId: () => crypto.randomUUID(),

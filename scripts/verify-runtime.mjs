@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+﻿import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import {
   RUNTIME_FILE_ALLOWLIST,
   validateRuntimeManifest,
-} from './model-catalog.mjs'
+} from './runtime-manifest.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const runtimeRoot = join(root, 'resources', 'runtime')

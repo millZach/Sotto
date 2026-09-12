@@ -35,7 +35,7 @@ import {
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { updatePromptKey } from '../features/updates/updatePrompt'
-import { OpenRouterTranscriber, TranscriptionError, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
+import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
@@ -83,15 +83,8 @@ export interface ProductionControllerFactories {
 function createProductionTranscriber(
   bindings: AppControllerFactoryBindings,
 ): DictationTranscriber {
-  if (bindings.transcription !== undefined) {
-    return new OpenRouterTranscriber({ bridge: bindings.transcription })
-  }
-  return {
-    async load() {},
-    async transcribe() { throw new TranscriptionError('unconfigured') },
-    cancel() {},
-    dispose() {},
-  }
+  if (bindings.transcription === undefined) return createUnconfiguredTranscriber()
+  return new OpenRouterTranscriber({ bridge: bindings.transcription })
 }
 
 const productionFactories: ProductionControllerFactories = {

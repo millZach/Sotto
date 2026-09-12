@@ -1,11 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto'
+﻿import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
-import { RUNTIME_FILE_ALLOWLIST } from './model-catalog.mjs'
+import { RUNTIME_FILE_ALLOWLIST } from './runtime-manifest.mjs'
 import { verifyPreparedAssets } from './verify-runtime.mjs'
 
 const projectRoot = resolve(import.meta.dirname, '..')

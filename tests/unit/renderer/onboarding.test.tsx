@@ -37,8 +37,8 @@ describe('first-run onboarding', () => {
     )
 
     expect(screen.getByText(/Microsoft MAI-Transcribe-2 through OpenRouter/i)).toBeVisible()
-    expect(screen.getByText(/Audio is uploaded only while you dictate/i)).toBeVisible()
-    expect(screen.getByText(/no account/i)).toBeVisible()
+    expect(screen.getByText(/Audio leaves this computer only while you dictate/i)).toBeVisible()
+    expect(screen.getByText(/no Sotto account/i)).toBeVisible()
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
   })
 

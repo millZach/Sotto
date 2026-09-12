@@ -36,9 +36,15 @@ function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
   }
 }
 
-function bundledDependencyInventory(): Plugin {
+/**
+ * Vite builds workers in their own rollup pass, so a library reachable only
+ * from a worker never appears in the renderer's own inventory. The natural
+ * speech worker is the only importer of transformers now, and app.asar still
+ * redistributes it, so the worker pass writes an inventory of its own.
+ */
+function bundledDependencyInventory(fileName = 'bundled-dependencies.json'): Plugin {
   return {
-    name: 'sotto-bundled-dependency-inventory',
+    name: `sotto-bundled-dependency-inventory-${fileName}`,
     generateBundle(_options, bundle) {
       const packages = new Set<string>()
       for (const output of Object.values(bundle)) {
@@ -57,7 +63,7 @@ function bundledDependencyInventory(): Plugin {
       }
       this.emitFile({
         type: 'asset',
-        fileName: 'bundled-dependencies.json',
+        fileName,
         source: `${JSON.stringify({ version: 1, packages: [...packages].sort() }, null, 2)}\n`,
       })
     },
@@ -88,6 +94,9 @@ export default defineConfig({
   },
   renderer: {
     plugins: [bundledDependencyInventory()],
+    worker: {
+      plugins: () => [bundledDependencyInventory('bundled-dependencies.worker.json')],
+    },
     define: {
       'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },

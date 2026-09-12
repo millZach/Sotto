@@ -53,10 +53,9 @@ export function clockLabel(createdAt: number): { dateTime?: string; time: string
   }
 }
 
-/** Older entries may carry presets the catalog no longer lists. */
+/** Entries kept from before the move to MAI name a model Sotto no longer has. */
 function modelLabel(preset: HistoryEntry['modelPreset']): string {
-  if (preset === 'mai') return 'MAI-Transcribe-2'
-  return preset === 'instant' ? 'Moonshine' : 'Whisper'
+  return preset === 'mai' ? 'MAI-Transcribe-2 model' : 'an earlier model'
 }
 
 export function lengthLabel(durationMs: number): string {
@@ -84,7 +83,7 @@ export function transcriptFacts(entry: HistoryEntry): { lead: string; rest: stri
   const lead = entry.durationMs > 0
     ? `${lengthLabel(entry.durationMs)}, ${wordsLabel(words)}${pace}.`
     : `${wordsLabel(words)}.`
-  return { lead, rest: `${languageLabel(entry.language)}, ${modelLabel(entry.modelPreset)} model. Kept on this computer only.` }
+  return { lead, rest: `${languageLabel(entry.language)}, ${modelLabel(entry.modelPreset)}. Kept on this computer only.` }
 }
 
 export interface HistoryFooterProps {

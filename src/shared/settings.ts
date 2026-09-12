@@ -9,6 +9,13 @@ export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 export const SETTINGS_VERSION = 1 as const
 
+/**
+ * What a renderer receives in place of a saved API key. The key itself stays in
+ * the operating system credential store, so every surface that shows the field
+ * has to recognize this stand-in rather than treat it as a key the user typed.
+ */
+export const STORED_CREDENTIAL_PLACEHOLDER = 'Saved in your operating system credential store'
+
 type MaxRecordingSeconds = 30 | 60 | 120 | 300
 
 export interface AppSettings {

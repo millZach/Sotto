@@ -1,5 +1,18 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-09-11 — The design gate caught what neither review pass did
+Two review passes over the MAI conversion, one on standards and one on spec,
+found ten and five things between them, all in the code. The thing a user
+would actually have hit was found by the screenshot gate: the settings field
+for a saved API key was being handed the 47-character sentence "Saved in your
+operating system credential store" as its value, so a password box showed 47
+dots and clipped them. The gate flags any control whose scrollWidth exceeds
+its clientWidth, which is how it surfaced as `input-control-content-clipped`
+rather than as a screenshot someone had to look at. Fixed by treating a saved
+key as a state: the field is empty with a "Key saved" placeholder. Worth
+remembering that the reviews read the diff and the gate ran the app, and only
+the second one was looking at what the thing does.
+
 ## 2026-09-11 — The phrase list, not the model, won the transcription bench
 Benched MAI-Transcribe-2, Voxtral Mini Transcribe 2 and GPT Transcribe through
 OpenRouter against Parakeet on Forge plus the cleanup pass. Raw MAI was no

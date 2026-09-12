@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
+﻿import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { RUNTIME_FILE_ALLOWLIST, validateRuntimeManifest } from '../../../scripts/model-catalog.mjs'
+import { RUNTIME_FILE_ALLOWLIST, validateRuntimeManifest } from '../../../scripts/runtime-manifest.mjs'
 import { replaceDirectory } from '../../../scripts/prepare-runtime.mjs'
 import { verifyPreparedAssets } from '../../../scripts/verify-runtime.mjs'
 

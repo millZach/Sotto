@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+﻿import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { relative, resolve, sep } from 'node:path'
@@ -21,7 +21,7 @@ const BUILD_INPUT_PATHS = Object.freeze([
   'src',
   'resources/runtime',
   'scripts/asar-entries.mjs',
-  'scripts/model-catalog.mjs',
+  'scripts/runtime-manifest.mjs',
   'scripts/release-external-dependencies.mjs',
   'scripts/release-platform-profile.mjs',
   'scripts/release-provenance.mjs',
