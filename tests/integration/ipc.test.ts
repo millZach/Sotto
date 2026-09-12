@@ -46,15 +46,13 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
-  MODEL_INSTALL,
-  MODEL_LIST_DISCLOSURES,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
   SETTINGS_CHANGED,
-  REMOTE_ASR_CANCEL,
-  REMOTE_ASR_CHECK,
-  REMOTE_ASR_TRANSCRIBE,
+  TRANSCRIPTION_CANCEL,
+  TRANSCRIPTION_CHECK_KEY,
+  TRANSCRIPTION_TRANSCRIBE,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -72,8 +70,6 @@ import {
   WIDGET_VISIBILITY,
 } from '../../src/shared/channels'
 import {
-  MODEL_DOWNLOAD_PRIVACY_NOTICE,
-  type ModelDisclosureCatalog,
   type OutputDeliveryRequest,
   type SottoBridge,
 } from '../../src/shared/contracts'
@@ -300,28 +296,6 @@ function createIpcHarness() {
   }
 }
 
-const disclosureRevisions = {
-  fast: '5332fcc35e32a33b86612b9a57a89be7906102b1',
-  instant: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
-} as const
-
-const disclosureCatalog: ModelDisclosureCatalog = Object.freeze({
-  models: Object.freeze(([
-    ['instant', 'onnx-community/moonshine-base-ONNX', true, 63, 'MIT'],
-    ['fast', 'Xenova/whisper-tiny', false, 42, 'Apache-2.0'],
-  ] as const).map(([preset, repository, bundled, totalBytes, license]) => Object.freeze({
-    preset,
-    repository,
-    sourceProvider: 'Hugging Face' as const,
-    sourceHost: 'huggingface.co' as const,
-    revision: disclosureRevisions[preset],
-    totalBytes,
-    license,
-    bundled,
-  }))),
-  optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
-})
-
 const idleWidgetSnapshot = {
   status: 'idle',
   theme: 'system',
@@ -344,27 +318,23 @@ describe('typed preload bridge', () => {
       [
         'addHistory',
         'agents',
-        'cancelRemoteTranscription',
+        'cancelTranscription',
         'checkForUpdates',
-        'checkRemoteAsr',
+        'checkTranscriptionKey',
         'clearHistory',
         'downloadUpdate',
         'deleteHistory',
         'deliverOutput',
         'getHotkey',
-        'getModelStatus',
         'getSettings',
         'getStartup',
         'getUpdateStatus',
         'hideApp',
-        'installModel',
         'installUpdate',
-        'listModelDisclosures',
         'listHistory',
         'listRecoveryNotices',
         'minimizeApp',
         'onDictationCommand',
-        'onModelStatus',
         'onRecoveryNotice',
         'onSettingsChanged',
         'onUpdateStatus',
@@ -372,14 +342,13 @@ describe('typed preload bridge', () => {
         'polishTranscript',
         'publishWidgetState',
         'quitApp',
-        'removeModel',
         'replaceHotkey',
         'requestDictation',
         'resetSettings',
         'searchHistory',
         'setStartup',
         'showApp',
-        'transcribeRemote',
+        'transcribe',
         'updateSettings',
       ].sort(),
     )
@@ -810,23 +779,7 @@ describe('typed preload bridge', () => {
     )
   })
 
-  it('strictly parses and freezes the no-payload model disclosure response', async () => {
-    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
-    electronMock.ipcRenderer.invoke.mockResolvedValueOnce(disclosureCatalog)
 
-    const result = await bridge.listModelDisclosures()
-
-    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(MODEL_LIST_DISCLOSURES)
-    expect(result).toEqual(disclosureCatalog)
-    expect(Object.isFrozen(result)).toBe(true)
-    if ('models' in result) {
-      expect(Object.isFrozen(result.models)).toBe(true)
-      expect(result.models.every(Object.isFrozen)).toBe(true)
-    }
-
-    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ...disclosureCatalog, injected: true })
-    await expect(bridge.listModelDisclosures()).rejects.toThrow()
-  })
 })
 
 describe('IPC validation and lifecycle', () => {
@@ -837,7 +790,9 @@ describe('IPC validation and lifecycle', () => {
     APP_QUIT,
     WIDGET_PUBLISH,
     OUTPUT_DELIVER,
-    MODEL_LIST_DISCLOSURES,
+    TRANSCRIPTION_TRANSCRIBE,
+    TRANSCRIPTION_CANCEL,
+    TRANSCRIPTION_CHECK_KEY,
   ])(
     'denies widget renderer invocation of main-only channel %s',
     async (channel) => {
@@ -875,42 +830,15 @@ describe('IPC validation and lifecycle', () => {
     },
   )
 
-  it('returns disclosure without installation and keeps consented install separate', async () => {
+
+
+  it('forwards hosted transcription over dedicated channels and rejects oversized or malformed audio', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
-    const listDisclosures = vi.fn(() => disclosureCatalog)
-    const install = vi.fn(async () => undefined)
-    registerIpc(harness.ipc, {
-      settings: harness.settings,
-      history: harness.history,
-      startup: harness.startup,
-      hotkeys: harness.hotkeys,
-      app: harness.app,
-      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
-      models: {
-        listDisclosures,
-        getStatus: vi.fn(async () => ({ preset: 'fast' as const, state: 'missing' as const })),
-        install,
-        remove: vi.fn(),
-      },
-    })
-
-    await expect(harness.ipc.invokeArgs(MODEL_LIST_DISCLOSURES, [])).resolves.toBe(disclosureCatalog)
-    expect(listDisclosures).toHaveBeenCalledOnce()
-    expect(install).not.toHaveBeenCalled()
-    await expect(harness.ipc.invokeArgs(MODEL_LIST_DISCLOSURES, [{ injected: true }])).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
-    await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: false })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
-    await expect(harness.ipc.invoke(MODEL_INSTALL, { preset: 'fast', consent: true })).resolves.toEqual({ ok: true })
-    expect(install).toHaveBeenCalledOnce()
-  })
-
-  it('forwards remote transcription over dedicated channels and rejects oversized or malformed audio', async () => {
-    const harness = createIpcHarness()
-    harness.cleanup()
-    const remoteAsr = {
-      transcribe: vi.fn(async () => ({ ok: true as const, text: 'remote text' })),
+    const transcription = {
+      transcribe: vi.fn(async () => ({ ok: true as const, text: 'hosted text' })),
       cancel: vi.fn(),
-      check: vi.fn(async () => ({ ok: true as const })),
+      checkKey: vi.fn(async () => ({ ok: true as const })),
     }
     registerIpc(harness.ipc, {
       settings: harness.settings,
@@ -919,31 +847,31 @@ describe('IPC validation and lifecycle', () => {
       hotkeys: harness.hotkeys,
       app: harness.app,
       trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
-      remoteAsr,
+      transcription,
     })
 
     const wav = new ArrayBuffer(1_024)
-    await expect(harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r1', wav, timeoutMs: 4_000 }))
-      .resolves.toEqual({ ok: true, text: 'remote text' })
-    expect(remoteAsr.transcribe).toHaveBeenCalledWith({ requestId: 'r1', wav, timeoutMs: 4_000 })
+    await expect(harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, { requestId: 'r1', wav, timeoutMs: 4_000 }))
+      .resolves.toEqual({ ok: true, text: 'hosted text' })
+    expect(transcription.transcribe).toHaveBeenCalledWith({ requestId: 'r1', wav, timeoutMs: 4_000 })
 
-    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, 'r1')).resolves.toEqual({ ok: true })
-    expect(remoteAsr.cancel).toHaveBeenCalledWith('r1')
-    await expect(harness.ipc.invokeArgs(REMOTE_ASR_CHECK, [])).resolves.toEqual({ ok: true })
+    await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({ ok: true })
+    expect(transcription.cancel).toHaveBeenCalledWith('r1')
+    await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({ ok: true })
 
     // A header-only buffer, an unbounded one, and a non-buffer payload are all
     // rejected before the service ever sees them.
     for (const wavPayload of [new ArrayBuffer(44), new ArrayBuffer(16_000 * 2 * 301), 'audio']) {
       await expect(
-        harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r2', wav: wavPayload, timeoutMs: 4_000 }),
+        harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, { requestId: 'r2', wav: wavPayload, timeoutMs: 4_000 }),
       ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     }
-    await expect(harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, { requestId: 'r2', wav, timeoutMs: 60_000 }))
+    await expect(harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, { requestId: 'r2', wav, timeoutMs: 60_000 }))
       .rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
-    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, '')).rejects.toMatchObject({
+    await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, '')).rejects.toMatchObject({
       code: 'INVALID_IPC_PAYLOAD',
     })
-    expect(remoteAsr.transcribe).toHaveBeenCalledOnce()
+    expect(transcription.transcribe).toHaveBeenCalledOnce()
   })
 
   it('forwards every update operation and rejects a payload on any of them', async () => {
@@ -993,21 +921,21 @@ describe('IPC validation and lifecycle', () => {
     harness.cleanup()
   })
 
-  it('reports remote transcription as disabled when no service is wired', async () => {
+  it('reports transcription as unconfigured when no service is wired', async () => {
     const harness = createIpcHarness()
 
     await expect(
-      harness.ipc.invoke(REMOTE_ASR_TRANSCRIBE, {
+      harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, {
         requestId: 'r1',
         wav: new ArrayBuffer(1_024),
         timeoutMs: 4_000,
       }),
-    ).resolves.toEqual({ ok: false, reason: 'disabled' })
-    await expect(harness.ipc.invokeArgs(REMOTE_ASR_CHECK, [])).resolves.toEqual({
+    ).resolves.toEqual({ ok: false, reason: 'unconfigured' })
+    await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({
       ok: false,
-      reason: 'disabled',
+      reason: 'unconfigured',
     })
-    await expect(harness.ipc.invoke(REMOTE_ASR_CANCEL, 'r1')).resolves.toEqual({
+    await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({
       ok: false,
       reason: 'unavailable',
     })

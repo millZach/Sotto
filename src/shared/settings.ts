@@ -4,19 +4,17 @@ import { DEFAULT_HOTKEY } from './constants'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type ReducedMotion = 'system' | 'on'
-/**
- * 'instant' is the bundled default ("Standard" in the UI); 'fast' is the
- * downloadable multilingual Whisper option ("Multi-lingual"). Legacy stored
- * values ('balanced', 'accurate') fail schema parsing and fall back to the
- * default, which migrates old installs automatically.
- */
-export type ModelPreset = 'fast' | 'instant'
-/** Inference always runs on CPU/WASM; the WebGPU/auto options were removed. */
-export type InferencePreference = 'wasm'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 export const SETTINGS_VERSION = 1 as const
+
+/**
+ * What a renderer receives in place of a saved API key. The key itself stays in
+ * the operating system credential store, so every surface that shows the field
+ * has to recognize this stand-in rather than treat it as a key the user typed.
+ */
+export const STORED_CREDENTIAL_PLACEHOLDER = 'Saved in your operating system credential store'
 
 type MaxRecordingSeconds = 30 | 60 | 120 | 300
 
@@ -29,9 +27,7 @@ export interface AppSettings {
   hotkey: string
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
-  modelPreset: ModelPreset
   language: string
-  inferencePreference: InferencePreference
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -44,14 +40,13 @@ export interface AppSettings {
   historyRetention: HistoryRetention
   onboardingComplete: boolean
   llmFormatting: boolean
+  /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
   llmDictionary: string
   llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
   streamingAsr: boolean
-  remoteAsr: boolean
-  remoteAsrUrl: string
   autoUpdateCheck: boolean
 }
 
@@ -67,9 +62,7 @@ const fieldSchemas = {
   hotkey: z.string().min(1),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  modelPreset: z.enum(['fast', 'instant']),
   language: z.string().min(1),
-  inferencePreference: z.literal('wasm'),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -93,8 +86,6 @@ const fieldSchemas = {
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   streamingAsr: z.boolean(),
-  remoteAsr: z.boolean(),
-  remoteAsrUrl: z.string().max(512),
   autoUpdateCheck: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
@@ -108,9 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hotkey: DEFAULT_HOTKEY,
   maxRecordingSeconds: 60,
   soundCues: true,
-  modelPreset: 'instant',
   language: 'auto',
-  inferencePreference: 'wasm',
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -129,10 +118,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   streamingAsr: true,
-  // Off with no address: an install that never opts in behaves exactly as it
-  // did before remote transcription existed, and never contacts a server.
-  remoteAsr: false,
-  remoteAsrUrl: '',
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
@@ -171,9 +156,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     hotkey: parseField(persisted, 'hotkey', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
-    modelPreset: parseField(persisted, 'modelPreset', defaults),
     language: parseField(persisted, 'language', defaults),
-    inferencePreference: parseField(persisted, 'inferencePreference', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -192,8 +175,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
-    remoteAsr: parseField(persisted, 'remoteAsr', defaults),
-    remoteAsrUrl: parseField(persisted, 'remoteAsrUrl', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
   }
 }

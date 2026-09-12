@@ -146,7 +146,7 @@ describe('speech interruption from the renderer', () => {
     external.dependencies = {
       createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: false, endSeconds: 0 }), dispose() {} }),
       createCapture: () => ({ start: async () => undefined, stop: async () => undefined, setSuppressed() {} }),
-      createLocalTranscriber: () => ({ load: async () => undefined, transcribe: async () => ({ text: '', language: 'en' }), cancel() {}, dispose() {} }),
+      createTranscriber: () => ({ load: async () => undefined, transcribe: async () => ({ text: '', language: 'en' }), cancel() {}, dispose() {} }),
       speech: { speak, stop }, createId: () => 'test', setTimer: (callback, delay) => setTimeout(callback, delay), clearTimer: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
     }
     vi.stubGlobal('sottoE2E', {})

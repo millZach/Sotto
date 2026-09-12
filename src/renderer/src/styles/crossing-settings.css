@@ -26,13 +26,11 @@
 .settings-input-action:has(> .tt-button) { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .settings-input-action .tt-field { flex: 1; min-width: 0; }
 .settings-rows > .server-guide-link { padding: 10px 0; border: 0; justify-content: start; color: var(--tt-text-2); }
-.settings-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
-.settings-model-card { padding: 16px; border-color: var(--tt-hairline); border-radius: 14px; background: none; }
-.settings-model-card[data-selected='true'] { border-color: #4a514d; background: #0c0e0d; box-shadow: none; }
-.settings-model-card__heading { align-items: start; flex-wrap: wrap; }
-.settings-model-card__actions { flex-wrap: wrap; }
-.settings-model-card h3 { font-size: 16px; }
-.settings-selected-badge { border: 0; color: var(--tt-text-2); background: none; }
+.settings-model-statement h3 { font-size: 15px; font-weight: 500; }
+.settings-model-statement p { margin-top: 3px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.settings-rows > .settings-disclosure { max-width: 68ch; font-size: 13px; line-height: 1.65; }
+.key-field { gap: 10px; }
+.key-field .settings-remote-status { font-size: 13px; }
 .settings-updates { margin-top: 32px; }
 .settings-updates .settings-section__heading h2 { font-size: 20px; }
 .settings-notice { border-radius: 10px; margin: 0 0 18px; }
@@ -70,7 +68,7 @@
   .settings-scroll { padding-top: 24px; }
   .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .settings-rows .tt-field > .tt-input, .settings-rows .tt-field > .tt-select { grid-column: 1; grid-row: auto; }
-  .settings-model-grid, .help-aside, .account-rows > label { grid-template-columns: 1fr; }
+  .help-aside, .account-rows > label { grid-template-columns: 1fr; }
 }
 
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 999px; gap: 2px; }

@@ -5,38 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import {
-  MODEL_DOWNLOAD_PRIVACY_NOTICE,
-  type ModelDisclosureCatalog,
-} from '../../../src/shared/contracts'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 afterEach(cleanup)
 
-const disclosures: ModelDisclosureCatalog = Object.freeze({
-  models: Object.freeze([
-    Object.freeze({
-      preset: 'fast' as const,
-      repository: 'Xenova/whisper-tiny',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: '5332fcc35e32a33b86612b9a57a89be7906102b1',
-      totalBytes: 42_000_000,
-      license: 'Apache-2.0' as const,
-      bundled: false,
-    }),
-    Object.freeze({
-      preset: 'instant' as const,
-      repository: 'onnx-community/moonshine-base-ONNX',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
-      totalBytes: 67_000_000,
-      license: 'MIT' as const,
-      bundled: true,
-    }),
-  ]),
-  optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
-})
+const keyProps = { settings: DEFAULT_SETTINGS, onUpdateSettings: vi.fn(async () => true), onCheckTranscriptionKey: vi.fn(async () => ({ ok: true as const })) }
 
 async function goToStep(user: ReturnType<typeof userEvent.setup>, step: number): Promise<void> {
   for (let current = 1; current < step; current += 1) {
@@ -52,11 +25,10 @@ function deferred<Value>() {
 }
 
 describe('first-run onboarding', () => {
-  it('states the offline privacy promise without implying an account, fee, or telemetry', () => {
+  it('states the hosted transcription privacy boundary', () => {
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="idle"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -64,9 +36,9 @@ describe('first-run onboarding', () => {
       />,
     )
 
-    expect(screen.getByText(/speech stays on this computer/i)).toBeVisible()
-    expect(screen.getByText(/free/i)).toBeVisible()
-    expect(screen.getByText(/no account/i)).toBeVisible()
+    expect(screen.getByText(/Microsoft MAI-Transcribe-2 through OpenRouter/i)).toBeVisible()
+    expect(screen.getByText(/Audio leaves this computer only while you dictate/i)).toBeVisible()
+    expect(screen.getByText(/no Sotto account/i)).toBeVisible()
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
   })
 
@@ -74,10 +46,9 @@ describe('first-run onboarding', () => {
     const user = userEvent.setup()
     const request = vi.fn()
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="denied"
         microphoneLevel={0.42}
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={request}
@@ -95,66 +66,25 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(platformCopy('win32').onboardingMicrophoneDenied)).toBeVisible()
   })
 
-  it('discloses optional download metadata and requires explicit consent', async () => {
+  it('offers the key step and can advance and finish without a key', async () => {
     const user = userEvent.setup()
-    const install = vi.fn()
-    render(
-      <Onboarding
-        microphoneState="ready"
-        modelState="ready"
-        shortcut="Ctrl+Shift+Space"
-        platform="win32"
-        disclosures={disclosures}
-        onRequestMicrophone={vi.fn()}
-        onInstallModel={install}
-        onComplete={vi.fn()}
-      />,
-    )
+    const complete = vi.fn()
+    render(<Onboarding {...keyProps} microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={complete} />)
     await goToStep(user, 3)
-
-    expect(screen.getByText(/standard model is included and ready/i)).toBeVisible()
-    expect(screen.getByText(/ip address and request time/i)).toBeVisible()
-    const installFast = screen.getByRole('button', { name: /install multi-lingual/i })
-    expect(installFast).toBeDisabled()
-    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
-    await user.click(installFast)
-    expect(install).toHaveBeenCalledWith('fast')
-  })
-
-  it('prevents duplicate optional downloads and reports a finite start failure', async () => {
-    const user = userEvent.setup()
-    const start = deferred<void>()
-    const install = vi.fn(() => start.promise)
-    render(
-      <Onboarding
-        microphoneState="ready"
-        modelState="ready"
-        shortcut="Ctrl+Shift+Space"
-        platform="win32"
-        disclosures={disclosures}
-        onRequestMicrophone={vi.fn()}
-        onInstallModel={install}
-        onComplete={vi.fn()}
-      />,
-    )
-    await goToStep(user, 3)
-    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
-    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
-
-    expect(screen.getByRole('button', { name: /starting multi-lingual/i })).toBeDisabled()
-    expect(install).toHaveBeenCalledOnce()
-
-    start.reject(new Error('private network detail'))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/download could not start/i))
-    expect(document.body).not.toHaveTextContent('private network detail')
+    expect(screen.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeVisible()
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(await screen.findByText('Key verified.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: 'Finish setup' }))
+    expect(complete).toHaveBeenCalledOnce()
   })
 
   it('retains progress when navigating back and offers a safe paste test field', async () => {
     const user = userEvent.setup()
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="ready"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -171,13 +101,12 @@ describe('first-run onboarding', () => {
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
   })
 
-  it('disables Finish until both microphone and bundled model are ready', async () => {
+  it('disables Finish until the microphone is ready', async () => {
     const user = userEvent.setup()
     const complete = vi.fn()
     const { rerender } = render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="denied"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -188,9 +117,8 @@ describe('first-run onboarding', () => {
     expect(screen.getByRole('button', { name: /finish setup/i })).toBeDisabled()
 
     rerender(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="ready"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -204,9 +132,8 @@ describe('first-run onboarding', () => {
   it('focuses each step heading and announces progress after keyboard navigation', async () => {
     const user = userEvent.setup()
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="ready"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -221,78 +148,13 @@ describe('first-run onboarding', () => {
     expect(screen.getByText('Step 2 of 4')).toHaveAttribute('aria-live', 'polite')
   })
 
-  it.each(['missing', 'error', 'unavailable'] as const)(
-    'blocks completion and offers a model retry when Standard is %s',
-    async (modelState) => {
-      const user = userEvent.setup()
-      const retry = vi.fn()
-      render(
-        <Onboarding
-          microphoneState="ready"
-          modelState={modelState}
-          shortcut="Ctrl+Shift+Space"
-        platform="win32"
-          onRequestMicrophone={vi.fn()}
-          onRetryModel={retry}
-          onComplete={vi.fn()}
-        />,
-      )
-      await goToStep(user, 3)
-      await user.click(screen.getByRole('button', { name: /retry model check/i }))
-      expect(retry).toHaveBeenCalledOnce()
-      await user.click(screen.getByRole('button', { name: /continue/i }))
-      expect(screen.getByRole('button', { name: /finish setup/i })).toBeDisabled()
-    },
-  )
-
-  it('keeps optional installs disabled when no trusted install handler is supplied', async () => {
-    const user = userEvent.setup()
-    render(
-      <Onboarding
-        microphoneState="ready"
-        modelState="ready"
-        shortcut="Ctrl+Shift+Space"
-        platform="win32"
-        disclosures={disclosures}
-        onRequestMicrophone={vi.fn()}
-        onComplete={vi.fn()}
-      />,
-    )
-    await goToStep(user, 3)
-    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
-    expect(screen.getByRole('button', { name: /install multi-lingual/i })).toBeDisabled()
-    expect(screen.getByText('Xenova/whisper-tiny')).toBeVisible()
-  })
-
-  it.each(['checking', 'missing', 'error', 'unavailable'] as const)(
-    'does not claim Standard is usable when disclosures are unavailable and the model is %s',
-    async (modelState) => {
-      const user = userEvent.setup()
-      render(
-        <Onboarding
-          microphoneState="ready"
-          modelState={modelState}
-          shortcut="Ctrl+Shift+Space"
-        platform="win32"
-          onRequestMicrophone={vi.fn()}
-          onComplete={vi.fn()}
-        />,
-      )
-      await goToStep(user, 3)
-
-      expect(screen.queryByText(/standard remains local and usable/i)).not.toBeInTheDocument()
-      expect(screen.getByText(/optional download details are unavailable/i)).toBeVisible()
-    },
-  )
-
   it('awaits completion persistence and preserves the setup when saving fails', async () => {
     const user = userEvent.setup()
     const save = deferred<boolean>()
     const complete = vi.fn(() => save.promise)
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState="ready"
-        modelState="ready"
         shortcut="Ctrl+Shift+Space"
         platform="win32"
         onRequestMicrophone={vi.fn()}
@@ -311,9 +173,8 @@ describe('first-run onboarding', () => {
     const user = userEvent.setup()
     const copy = platformCopy('darwin')
     render(
-      <Onboarding
+      <Onboarding {...keyProps}
         microphoneState={microphoneState}
-        modelState="ready"
         shortcut="Control+Shift+Space"
         platform="darwin"
         onRequestMicrophone={vi.fn()}

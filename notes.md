@@ -1,5 +1,33 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-09-11 — The design gate caught what neither review pass did
+Two review passes over the MAI conversion, one on standards and one on spec,
+found ten and five things between them, all in the code. The thing a user
+would actually have hit was found by the screenshot gate: the settings field
+for a saved API key was being handed the 47-character sentence "Saved in your
+operating system credential store" as its value, so a password box showed 47
+dots and clipped them. The gate flags any control whose scrollWidth exceeds
+its clientWidth, which is how it surfaced as `input-control-content-clipped`
+rather than as a screenshot someone had to look at. Fixed by treating a saved
+key as a state: the field is empty with a "Key saved" placeholder. Worth
+remembering that the reviews read the diff and the gate ran the app, and only
+the second one was looking at what the thing does.
+
+## 2026-09-11 — The phrase list, not the model, won the transcription bench
+Benched MAI-Transcribe-2, Voxtral Mini Transcribe 2 and GPT Transcribe through
+OpenRouter against Parakeet on Forge plus the cleanup pass. Raw MAI was no
+better on names than raw Parakeet (both 55.6% exact). Passing the dictionary as
+`provider.options.azure.phraseList.phrases` took MAI to 100% exact names and 0%
+WER on every screen clip, including "Zache" and "Wispr Flow", which nothing else
+spelled right. Two traps in the harness: my forwarding classifier demanded a
+field-specific error message, but OpenRouter masks upstream errors as "Provider
+returned 400", so the rejection status alone has to count; and Voxtral's
+`context_bias` was accepted silently and produced a transcript identical to the
+raw route, so silent acceptance means nothing. Outcome: MAI is now the only
+transcription route (ADR-0006), Parakeet is stopped on Forge, and Moonshine and
+the Whisper download are gone. Supertonic still needs the ONNX WASM runtime and
+the asset protocols, so those stayed.
+
 ## 2026-08-29 — Made the visual gate deterministic instead of refreshing it again
 Third sub-perceptual gate failure in one day broke my patience with baseline
 refreshes. Root causes found: the scripted E2E dictation stamped its history

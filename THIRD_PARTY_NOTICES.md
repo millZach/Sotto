@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
+Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and natural speech worker, the ONNX Web runtime used by Transformers.js for local natural speech, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the runtime lock manifest.
 
 Electron additionally ships its exact upstream `LICENSE.electron.txt` and comprehensive `LICENSES.chromium.html` beside `Sotto.exe` in the Windows installation, and inside `Sotto.app/Contents/Resources` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -48,14 +48,11 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `@protobufjs/path` | `1.1.2` | BSD-3-Clause | Daniel Wirtz |
 | `@protobufjs/pool` | `1.1.0` | BSD-3-Clause | Daniel Wirtz |
 | `@protobufjs/utf8` | `1.1.2` | BSD-3-Clause | Daniel Wirtz |
-| `onnx-community/moonshine-base-ONNX` | `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad` | MIT | Useful Sensors (Moonshine), converted by the Hugging Face ONNX community |
 | `Manrope` (font, latin + latin-ext woff2 subsets) | `v20 (Google Fonts static serving)` | OFL-1.1 | The Manrope Project Authors |
 | `Spline Sans Mono` (font, latin woff2 subset) | `v13 (Google Fonts static serving)` | OFL-1.1 | The Spline Sans Mono Project Authors |
 | `Bricolage Grotesque` (font, latin + latin-ext woff2 subsets) | `v9 (Google Fonts static serving)` | OFL-1.1 | The Bricolage Grotesque Project Authors |
 
 `electron-updater` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from `node_modules` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
-
-The bundled Standard model is `onnx-community/moonshine-base-ONNX` revision `b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, `Xenova/whisper-tiny` revision `5332fcc35e32a33b86612b9a57a89be7906102b1` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 
 ## Sotto brand asset provenance
 
@@ -685,32 +682,6 @@ Apache License
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-```
-
-## Moonshine MIT license
-
-```text
-MIT License
-
-Copyright (c) 2024 Useful Sensors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ## Manrope SIL Open Font License 1.1

@@ -51,19 +51,14 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     onDictationCommand: vi.fn(() => () => undefined),
     onSettingsChanged: vi.fn(() => () => undefined),
     publishWidgetState: vi.fn(async () => OK),
-    getModelStatus: vi.fn(async (preset) => ({ preset, state: 'ready' as const })),
-    listModelDisclosures: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
-    installModel: vi.fn(async () => OK),
-    removeModel: vi.fn(async () => OK),
-    onModelStatus: vi.fn(() => () => undefined),
     deliverOutput: vi.fn(async () => 'copied' as const),
     polishTranscript: vi.fn(async (request: { text: string }) => ({
       text: request.text,
       applied: false,
     })),
-    transcribeRemote: vi.fn(async () => ({ ok: false as const, reason: 'disabled' as const })),
-    cancelRemoteTranscription: vi.fn(async () => OK),
-    checkRemoteAsr: vi.fn(async () => ({ ok: false as const, reason: 'disabled' as const })),
+    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    cancelTranscription: vi.fn(async () => OK),
+    checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     downloadUpdate: vi.fn(async () => OK),
@@ -132,29 +127,7 @@ function mountProvider(bridge: SottoBridge, createController: AppControllerFacto
 }
 
 describe('AppProvider dictation integration', () => {
-  it('does not let an older explicit model-status response overwrite a newer event', async () => {
-    const requested = deferred<Awaited<ReturnType<SottoBridge['getModelStatus']>>>()
-    const listeners: Array<Parameters<SottoBridge['onModelStatus']>[0]> = []
-    const bridge = createBridge({
-      getModelStatus: vi.fn(() => requested.promise),
-      onModelStatus: vi.fn((listener) => {
-        listeners.push(listener)
-        return () => undefined
-      }),
-    })
-    const harness = createControllerFactory()
-    const view = mountProvider(bridge, harness.factory)
-    await waitFor(() => expect(currentContext?.status).toBe('ready'))
 
-    let request!: ReturnType<AppContextValue['actions']['getModelStatus']>
-    act(() => { request = currentContext!.actions.getModelStatus('instant') })
-    act(() => listeners[0]?.({ preset: 'instant', state: 'ready' }))
-    requested.resolve({ preset: 'instant', state: 'missing' })
-    await act(async () => { await request })
-
-    expect(currentContext?.modelStatuses.instant).toEqual({ preset: 'instant', state: 'ready' })
-    view.unmount()
-  })
 
   it('loads settings and history in parallel, then replays every buffered command exactly once', async () => {
     const settings = deferred<AppSettings>()
@@ -482,7 +455,7 @@ describe('AppProvider dictation integration', () => {
 })
 
 describe('production controller seam', () => {
-  it('constructs the recorder, transcription worker client, and sound cue player through injectable factories', async () => {
+  it('constructs the recorder, hosted transcriber, and sound cue player through injectable factories', async () => {
     const recorder = { start: vi.fn(async () => undefined), stop: vi.fn(async () => null), cancel: vi.fn(async () => undefined) }
     const transcriber = { transcribe: vi.fn(), cancel: vi.fn(), dispose: vi.fn() }
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }

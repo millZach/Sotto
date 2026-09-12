@@ -54,7 +54,6 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@protobufjs/path', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
   packageComponent('@protobufjs/pool', '1.1.0', 'BSD-3-Clause', 'Daniel Wirtz'),
   packageComponent('@protobufjs/utf8', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  Object.freeze({ name: 'onnx-community/moonshine-base-ONNX', version: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', attribution: 'Useful Sensors (Moonshine), converted by the Hugging Face ONNX community' }),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
   Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
   Object.freeze({ name: 'Bricolage Grotesque', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Bricolage Grotesque Project Authors' }),
@@ -135,14 +134,22 @@ export async function verifyThirdPartyNotices(options = {}) {
     if (!names.has(dependency)) fail(`declared browser dependency is not inventoried: ${dependency}`)
   }
 
+  // The renderer and its workers are built in separate rollup passes, and both
+  // land in app.asar, so the evidence is the union of the two inventories.
   const bundleInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.json')
+  const workerInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.worker.json')
   if (existsSync(bundleInventoryPath)) {
-    const bundleInventory = JSON.parse(await readFile(bundleInventoryPath, 'utf8'))
-    for (const packageName of bundleInventory.packages ?? []) {
+    const readPackages = async (path) =>
+      existsSync(path) ? JSON.parse(await readFile(path, 'utf8')).packages ?? [] : []
+    const bundled = new Set([
+      ...(await readPackages(bundleInventoryPath)),
+      ...(await readPackages(workerInventoryPath)),
+    ])
+    for (const packageName of bundled) {
       if (!names.has(packageName)) fail(`rendered bundle dependency is not inventoried: ${packageName}`)
     }
     for (const required of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom', 'scheduler', 'zod']) {
-      if (!bundleInventory.packages?.includes(required)) fail(`bundle evidence is missing ${required}`)
+      if (!bundled.has(required)) fail(`bundle evidence is missing ${required}`)
     }
   }
 
@@ -157,11 +164,6 @@ export async function verifyThirdPartyNotices(options = {}) {
     for (const required of ['builder-util-runtime', 'electron-updater']) {
       if (!mainInventory.packages?.includes(required)) fail(`main bundle evidence is missing ${required}`)
     }
-  }
-
-  const modelManifest = JSON.parse(await readFile(join(root, 'resources', 'models', 'manifest.lock.json'), 'utf8'))
-  if (!notices.includes(modelManifest.revision) || modelManifest.repository !== 'onnx-community/moonshine-base-ONNX') {
-    fail('bundled model notice drift')
   }
 
   for (const requiredText of [
@@ -182,11 +184,6 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## Spline Sans Mono SIL Open Font License 1.1',
     '## Bricolage Grotesque SIL Open Font License 1.1',
     'Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)',
-    '## Moonshine MIT license',
-    'Copyright (c) 2024 Useful Sensors',
-    'onnx-community/moonshine-base-ONNX',
-    'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
-    'Xenova/whisper-tiny',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 
   if (options.licenseRoot) {

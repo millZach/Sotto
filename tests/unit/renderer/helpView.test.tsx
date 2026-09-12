@@ -8,13 +8,13 @@ import { platformCopy } from '../../../src/renderer/src/platformCopy'
 afterEach(cleanup)
 
 describe('HelpView', () => {
-  it('documents operation, privacy, optional network metadata, and paste limitations honestly', () => {
+  it('documents operation, privacy, and paste limitations honestly', () => {
     const copy = platformCopy('win32')
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" />)
     expect(screen.getByRole('heading', { level: 1, name: 'Help' })).toBeVisible()
     expect(screen.getByText(/press escape to cancel/i)).toBeVisible()
-    expect(screen.getByText(/local dictation keeps audio and transcripts on this computer/i)).toBeVisible()
-    expect(screen.getByText(/ip address and request time/i)).toBeVisible()
+    expect(screen.getByText(/Audio you dictate is sent to OpenRouter for transcription/i)).toBeVisible()
+    expect(screen.getByText(/Add your OpenRouter API key in Settings/i)).toBeVisible()
     expect(screen.getByText(copy.helpMicrophoneAccess)).toBeVisible()
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.getByText(/previous working shortcut active/i)).toBeVisible()

@@ -1,5 +1,5 @@
 export const KNOWN_LANGUAGES = [
-  { value: 'auto', label: 'Automatic (English default)' },
+  { value: 'auto', label: 'Automatic (detect language)' },
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Spanish' },
   { value: 'fr', label: 'French' },
@@ -12,7 +12,7 @@ export const KNOWN_LANGUAGES = [
 
 /** A short human name for a saved language code, for status lines. */
 export function languageLabel(code: string): string {
-  if (code === 'auto') return 'English default'
+  if (code === 'auto') return 'Automatic language'
   const known = KNOWN_LANGUAGES.find((language) => language.value === code)
   return known === undefined ? code.slice(0, 12).toUpperCase() : known.label
 }

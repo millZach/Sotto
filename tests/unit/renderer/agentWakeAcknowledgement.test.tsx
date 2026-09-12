@@ -37,7 +37,7 @@ describe('wake acknowledgement in the real application voice session', () => {
     external.dependencies = {
       createCapture: (options) => { captureOptions = options; return capture },
       createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: true, endSeconds: 0 }), dispose() {} }),
-      createLocalTranscriber: () => ({ load: async () => undefined, transcribe, cancel() {}, dispose() {} }),
+      createTranscriber: () => ({ load: async () => undefined, transcribe, cancel() {}, dispose() {} }),
       speech: { speak, stop() {} }, createId: () => 'utterance',
       setTimer: (callback, delay) => setTimeout(callback, delay),
       clearTimer: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),

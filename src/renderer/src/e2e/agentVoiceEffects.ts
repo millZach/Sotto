@@ -30,7 +30,7 @@ export function createE2EAgentVoiceEffects(speech?: VoiceSpeechOutput): AgentVoi
         setSuppressed(value) { suppressed = value },
       }
     },
-    createLocalTranscriber: () => ({
+    createTranscriber: () => ({
       async load() {},
       async transcribe({ audio }) {
         const id = audio[0] ?? 0

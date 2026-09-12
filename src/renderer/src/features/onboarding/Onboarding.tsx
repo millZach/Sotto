@@ -1,4 +1,4 @@
-﻿import { Check, Download, HardDrive, Keyboard, Mic2, ShieldCheck } from 'lucide-react'
+﻿import { Check, KeyRound, Keyboard, Mic2, ShieldCheck } from 'lucide-react'
 import React, {
   useEffect,
   useRef,
@@ -6,10 +6,10 @@ import React, {
   type ReactNode,
 } from 'react'
 
-import type { ModelDisclosure, ModelDisclosureCatalog } from '../../../../shared/contracts'
-import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
+import type { TranscriptionKeyCheck } from '../../../../shared/contracts'
 import type { SottoPlatform } from '../../../../shared/platform'
-import type { ModelPreset } from '../../../../shared/settings'
+import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
+import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
@@ -18,96 +18,40 @@ import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
 import type { MicrophoneTestState } from './microphoneTest'
 
-export type OnboardingModelState = 'checking' | 'ready' | 'missing' | 'error' | 'unavailable'
-
 export interface OnboardingProps {
+  readonly settings: AppSettings
+  readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
+  readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
   readonly microphoneState: MicrophoneTestState
   readonly microphoneLevel?: number
-  readonly modelState: OnboardingModelState
   readonly shortcut: string
   readonly platform: SottoPlatform
-  readonly disclosures?: ModelDisclosureCatalog
   readonly onRequestMicrophone: () => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
-  readonly onRetryModel?: () => void | Promise<void>
-  readonly onInstallModel?: (preset: Exclude<ModelPreset, 'instant'>) => void | Promise<void>
   readonly onComplete: () => boolean | void | Promise<boolean | void>
 }
 
 const STEP_COUNT = 4
 
-function formatBytes(bytes: number): string {
-  const megabytes = bytes / 1_000_000
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
-}
-
 function StepIcon({ step }: { readonly step: number }): ReactNode {
-  const Icon = [ShieldCheck, Mic2, HardDrive, Keyboard][step - 1] ?? ShieldCheck
+  const Icon = [ShieldCheck, Mic2, KeyRound, Keyboard][step - 1] ?? ShieldCheck
   return <Icon aria-hidden="true" size={24} strokeWidth={1.8} />
 }
 
-function OptionalModelCard({
-  disclosure,
-  consent,
-  downloadsBusy,
-  installing,
-  onConsent,
-  onInstall,
-}: {
-  readonly disclosure: ModelDisclosure
-  readonly consent: boolean
-  readonly downloadsBusy: boolean
-  readonly installing: boolean
-  readonly onConsent: (consent: boolean) => void
-  readonly onInstall?: (() => void) | undefined
-}): ReactNode {
-  const name = MODEL_CATALOG[disclosure.preset].label
-  const consentId = `optional-${disclosure.preset}-consent`
-  return (
-    <article className="onboarding-model-card">
-      <div>
-        <h3>{name}</h3>
-        <p>{disclosure.repository}</p>
-        <p>{formatBytes(disclosure.totalBytes)} / {disclosure.license} / {disclosure.sourceProvider}</p>
-      </div>
-      <label className="onboarding-consent" htmlFor={consentId}>
-        <input
-          id={consentId}
-          type="checkbox"
-          checked={consent}
-          onChange={(event) => onConsent(event.currentTarget.checked)}
-        />
-        <span>Allow the {name} model download from {disclosure.sourceHost}</span>
-      </label>
-      <Button
-        variant="secondary"
-        disabled={!consent || downloadsBusy || onInstall === undefined}
-        onClick={onInstall}
-      >
-        <Download aria-hidden="true" size={17} /> {installing ? `Starting ${name}...` : `Install ${name}`}
-      </Button>
-    </article>
-  )
-}
-
 export function Onboarding({
+  settings,
+  onUpdateSettings,
+  onCheckTranscriptionKey,
   microphoneState,
   microphoneLevel = 0,
-  modelState,
   shortcut,
   platform,
-  disclosures,
   onRequestMicrophone,
   onStopMicrophone,
-  onRetryModel,
-  onInstallModel,
   onComplete,
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
   const [pasteTest, setPasteTest] = useState('')
-  const [consent, setConsent] = useState({ fast: false })
-  const [installingPreset, setInstallingPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
-  const [installationError, setInstallationError] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -128,7 +72,7 @@ export function Onboarding({
   const goBack = (): void => setStep((current) => Math.max(1, current - 1))
 
   const finish = async (): Promise<void> => {
-    if (finishing || microphoneState !== 'ready' || modelState !== 'ready') return
+    if (finishing || microphoneState !== 'ready') return
     setFinishing(true)
     setCompletionError(false)
     try {
@@ -140,24 +84,6 @@ export function Onboarding({
       setFinishing(false)
     }
   }
-
-  const installOptionalModel = async (preset: Exclude<ModelPreset, 'instant'>): Promise<void> => {
-    if (!consent[preset] || installingPreset !== null || onInstallModel === undefined) return
-    setInstallingPreset(preset)
-    setInstallationError(null)
-    try {
-      await onInstallModel(preset)
-    } catch {
-      setInstallationError(preset)
-    } finally {
-      setInstallingPreset(null)
-    }
-  }
-
-  const optionalModels = disclosures?.models.filter(
-    (model): model is ModelDisclosure & { preset: Exclude<ModelPreset, 'instant'> } =>
-      model.preset !== 'instant',
-  ) ?? []
 
   return (
     <main className="onboarding-shell" aria-labelledby="onboarding-heading">
@@ -177,12 +103,12 @@ export function Onboarding({
         {step === 1 ? (
           <section>
             <p className="onboarding-eyebrow">Welcome to Sotto</p>
-            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Private dictation, ready when you are</h1>
-            <p className="onboarding-lead">Speech stays on this computer during transcription. Sotto is free, needs no account, and includes no telemetry.</p>
+            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Dictation, ready when you are</h1>
+            <p className="onboarding-lead">Press a shortcut, speak, and your words arrive as text wherever you were typing. You will need an OpenRouter API key.</p>
             <div className="onboarding-assurances">
-              <p><Check aria-hidden="true" size={18} /> Standard speech model included</p>
-              <p><Check aria-hidden="true" size={18} /> Transcription happens on your hardware, never a third-party cloud</p>
-              <p><Check aria-hidden="true" size={18} /> Optional model downloads are always disclosed first</p>
+              <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
+              <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
+              <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
             </div>
           </section>
         ) : null}
@@ -223,51 +149,12 @@ export function Onboarding({
         ) : null}
 
         {step === 3 ? (
-          <section>
-            <p className="onboarding-eyebrow">Speech model</p>
-            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Your local model</h1>
-            {modelState === 'ready' ? (
-              <div className="onboarding-ready"><Check aria-hidden="true" size={20} /><strong>The Standard model is included and ready.</strong></div>
-            ) : (
-              <div className="onboarding-model-problem" role="status">
-                <strong>{modelState === 'checking' ? 'Checking the bundled Standard model...' : 'The bundled Standard model is not ready.'}</strong>
-                {modelState === 'checking' ? null : <Button variant="secondary" onClick={() => void onRetryModel?.()}>Retry model check</Button>}
-              </div>
-            )}
-            <p className="onboarding-lead">Standard is the fast English default. You can add the Multi-lingual model for non-English speech later.</p>
-            {disclosures === undefined ? (
-              <p className="onboarding-muted">
-                Optional download details are unavailable. {modelState === 'ready'
-                  ? 'Standard remains local and usable.'
-                  : modelState === 'checking'
-                    ? 'Standard availability is still being checked.'
-                    : 'Standard must pass the model check before it can be used.'}
-              </p>
-            ) : (
-              <div className="onboarding-download-disclosure">
-                <p>{disclosures.optionalDownloadNotice}</p>
-                <div className="onboarding-model-list">
-                  {optionalModels.map((model) => (
-                    <OptionalModelCard
-                      key={model.preset}
-                      disclosure={model}
-                      consent={consent[model.preset]}
-                      downloadsBusy={installingPreset !== null}
-                      installing={installingPreset === model.preset}
-                      onConsent={(allowed) => setConsent((current) => ({ ...current, [model.preset]: allowed }))}
-                      {...(onInstallModel === undefined ? {} : {
-                        onInstall: () => void installOptionalModel(model.preset),
-                      })}
-                    />
-                  ))}
-                </div>
-                {installationError === null ? null : (
-                  <p className="onboarding-completion-error" role="alert">
-                    The {MODEL_CATALOG[installationError].label} download could not start. The included Standard model is unchanged.
-                  </p>
-                )}
-              </div>
-            )}
+          <section aria-label="Connect OpenRouter">
+            <p className="onboarding-eyebrow">Transcription</p>
+            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Connect your OpenRouter key</h1>
+            <p className="onboarding-lead">Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter. Paste a key from openrouter.ai/keys, then verify it.</p>
+            <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
+            <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
           </section>
         ) : null}
 
@@ -294,7 +181,7 @@ export function Onboarding({
           {step < STEP_COUNT ? <Button onClick={advance}>Continue</Button> : (
             <Button
               onClick={() => void finish()}
-              disabled={microphoneState !== 'ready' || modelState !== 'ready' || finishing}
+              disabled={microphoneState !== 'ready' || finishing}
             >
               {finishing ? 'Saving setup...' : 'Finish setup'}
             </Button>

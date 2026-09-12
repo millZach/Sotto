@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
+import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import type { WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
-import type { AppSettings, ModelPreset, SettingsPatch } from './settings'
+import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
 import type { SottoPlatform } from './platform'
@@ -10,7 +11,6 @@ import type { SottoPlatform } from './platform'
 export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
-const modelPresetSchema = z.enum(['fast', 'instant'])
 const widgetErrorCodeSchema = z.enum([
   'MIC_PERMISSION_DENIED',
   'MIC_DEVICE_NOT_FOUND',
@@ -18,6 +18,9 @@ const widgetErrorCodeSchema = z.enum([
   'RECORDING_FAILED',
   'NO_SPEECH',
   'TRANSCRIPTION_FAILED',
+  'TRANSCRIPTION_UNCONFIGURED',
+  'TRANSCRIPTION_UNAUTHORIZED',
+  'TRANSCRIPTION_OFFLINE',
   'OUTPUT_UNAVAILABLE',
   'OUTPUT_FAILED',
   'HISTORY_FAILED',
@@ -243,58 +246,40 @@ export type TranscriptPolishAsrContext = z.infer<typeof transcriptPolishAsrConte
 export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
 export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
 
-export const REMOTE_ASR_PRIVACY_NOTICE = 'Uploads the audio you dictate to the transcription server, which then hears everything you say to Sotto. Nothing leaves this computer while this is off, and any segment the server does not answer is transcribed on-device instead.' as const
+export const TRANSCRIPTION_MODEL = 'microsoft/mai-transcribe-2' as const
+export const TRANSCRIPTION_PRIVACY_NOTICE = 'The audio you dictate is uploaded to OpenRouter and transcribed by Microsoft. Your dictionary words are sent with it as spelling hints, and text comes back. Nothing is transcribed on this computer.' as const
 
-/**
- * The renderer encodes each segment as a PCM16 WAV and the main process owns
- * the upload, because the renderer CSP allows no cross-origin `connect-src`.
- * The bound is the longest recording the capture limit permits (5 minutes of
- * 16 kHz mono PCM16) plus its header.
- */
-const MAX_REMOTE_AUDIO_BYTES = 16_000 * 2 * 300 + 44
+/** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
+const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
-export const remoteTranscriptionRequestSchema = z
-  .object({
-    requestId: z.string().min(1).max(128),
-    wav: z.custom<ArrayBuffer>(
-      (value) =>
-        value instanceof ArrayBuffer &&
-        value.byteLength > 44 &&
-        value.byteLength <= MAX_REMOTE_AUDIO_BYTES,
-    ),
-    timeoutMs: z.number().int().min(250).max(30_000),
-  })
-  .strict()
+export function transcriptionTimeoutMs(audioSeconds: number): number {
+  return Math.min(30_000, Math.max(8_000, 8_000 + 300 * audioSeconds))
+}
 
-/**
- * Every remote outcome is a value, never a thrown IPC error: the caller treats
- * any `ok: false` the same way (fall back to the local model) and the reason
- * only shapes the settings "test connection" copy.
- */
-export const remoteAsrFailureReasonSchema = z.enum([
-  'disabled',
-  'unconfigured',
-  'timeout',
-  'http',
-  'network',
-  'cancelled',
-  'malformed',
+export const transcriptionRequestSchema = z.object({
+  requestId: z.string().min(1).max(128),
+  wav: z.custom<ArrayBuffer>((value) => value instanceof ArrayBuffer && value.byteLength > 44 && value.byteLength <= MAX_TRANSCRIPTION_AUDIO_BYTES),
+  timeoutMs: z.number().int().min(250).max(30_000),
+}).strict()
+
+export const transcriptionFailureReasonSchema = z.enum([
+  'unconfigured', 'unauthorized', 'billing', 'rate-limited', 'timeout', 'http', 'network', 'cancelled', 'malformed',
 ])
 
-export const remoteTranscriptionResultSchema = z.discriminatedUnion('ok', [
+export const transcriptionResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), text: z.string().max(200_000) }).strict(),
-  z.object({ ok: z.literal(false), reason: remoteAsrFailureReasonSchema }).strict(),
+  z.object({ ok: z.literal(false), reason: transcriptionFailureReasonSchema }).strict(),
 ])
 
-export const remoteAsrHealthSchema = z.discriminatedUnion('ok', [
+export const transcriptionKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
-  z.object({ ok: z.literal(false), reason: remoteAsrFailureReasonSchema }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
-export type RemoteAsrFailureReason = z.infer<typeof remoteAsrFailureReasonSchema>
-export type RemoteTranscriptionRequest = z.infer<typeof remoteTranscriptionRequestSchema>
-export type RemoteTranscriptionResult = z.infer<typeof remoteTranscriptionResultSchema>
-export type RemoteAsrHealth = z.infer<typeof remoteAsrHealthSchema>
+export type TranscriptionFailureReason = z.infer<typeof transcriptionFailureReasonSchema>
+export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
+export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
+export type TranscriptionKeyCheck = z.infer<typeof transcriptionKeyCheckSchema>
 
 export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.' as const
 
@@ -331,60 +316,6 @@ export const updateStatusSchema = z
 export type UpdatePhase = z.infer<typeof updatePhaseSchema>
 export type UpdateStatus = z.infer<typeof updateStatusSchema>
 
-export const modelStatusSchema = z
-  .object({
-    preset: modelPresetSchema,
-    state: z.enum(['bundled', 'missing', 'downloading', 'ready', 'error']),
-    progress: z.number().finite().min(0).max(1).optional(),
-  })
-  .strict()
-
-export const MODEL_DOWNLOAD_PRIVACY_NOTICE = 'Downloading an optional model contacts Hugging Face, which receives ordinary network metadata such as your IP address and request time. Audio and transcripts are not sent.' as const
-
-const approvedDisclosureModels = {
-  instant: { repository: 'onnx-community/moonshine-base-ONNX', revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', license: 'MIT', bundled: true },
-  fast: { repository: 'Xenova/whisper-tiny', revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', license: 'Apache-2.0', bundled: false },
-} as const
-
-export const modelDisclosureSchema = z
-  .object({
-    preset: modelPresetSchema,
-    repository: z.string().min(1).max(128),
-    sourceProvider: z.literal('Hugging Face'),
-    sourceHost: z.literal('huggingface.co'),
-    revision: z.string().regex(/^[a-f0-9]{40}$/),
-    totalBytes: z.number().int().positive().safe(),
-    license: z.enum(['Apache-2.0', 'MIT']),
-    bundled: z.boolean(),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    const expected = approvedDisclosureModels[value.preset]
-    if (value.repository !== expected.repository || value.revision !== expected.revision || value.license !== expected.license || value.bundled !== expected.bundled) {
-      context.addIssue({ code: 'custom', message: 'Model disclosure does not match the approved catalog' })
-    }
-  })
-  .transform((value) => Object.freeze(value))
-
-export const modelDisclosureCatalogSchema = z
-  .object({
-    models: z.array(modelDisclosureSchema).length(2),
-    optionalDownloadNotice: z.literal(MODEL_DOWNLOAD_PRIVACY_NOTICE),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.models.map((model) => model.preset).join() !== 'instant,fast') {
-      context.addIssue({ code: 'custom', message: 'Model disclosure order is invalid' })
-    }
-  })
-  .transform((value) => Object.freeze({
-    models: Object.freeze(value.models),
-    optionalDownloadNotice: value.optionalDownloadNotice,
-  }))
-
-export type ModelDisclosure = z.infer<typeof modelDisclosureSchema>
-export type ModelDisclosureCatalog = z.infer<typeof modelDisclosureCatalogSchema>
-
 export type UnavailableResult = Readonly<{ ok: false; reason: 'unavailable' }>
 export type CommandResult = Readonly<{ ok: true }> | UnavailableResult
 
@@ -398,17 +329,6 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
-}
-
-export interface ModelStatus {
-  readonly preset: ModelPreset
-  readonly state: 'bundled' | 'missing' | 'downloading' | 'ready' | 'error'
-  readonly progress?: number | undefined
-}
-
-export interface ModelInstallRequest {
-  readonly preset: ModelPreset
-  readonly consent: boolean
 }
 
 export type OutputOutcome = 'pasted' | 'copied' | 'empty'
@@ -441,19 +361,13 @@ export interface SottoBridge {
 
   publishWidgetState(state: WidgetSnapshot): Promise<CommandResult>
 
-  getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
-  listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
-  installModel(request: ModelInstallRequest): Promise<CommandResult>
-  removeModel(preset: ModelPreset): Promise<CommandResult>
-  onModelStatus(listener: (status: ModelStatus) => void): Unsubscribe
-
   deliverOutput(request: OutputDeliveryRequest): Promise<OutputResult>
 
   polishTranscript(request: TranscriptPolishRequest): Promise<TranscriptPolishResult>
 
-  transcribeRemote(request: RemoteTranscriptionRequest): Promise<RemoteTranscriptionResult>
-  cancelRemoteTranscription(requestId: string): Promise<CommandResult>
-  checkRemoteAsr(): Promise<RemoteAsrHealth>
+  transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
+  cancelTranscription(requestId: string): Promise<CommandResult>
+  checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>

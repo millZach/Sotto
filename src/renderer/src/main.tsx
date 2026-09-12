@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 
 import { App } from './App'
 import { AppProvider } from './state/AppContext'
-import { createE2EControllerFactory, createE2EMicrophoneTest } from './e2e/deterministicAdapters'
+import { createE2EControllerFactory, createE2EMicrophoneTest, createE2ESettingsBridge } from './e2e/deterministicAdapters'
 import './styles/global.css'
 import './agents/threads.css'
 import './agents/room.css'
@@ -17,11 +17,12 @@ if (!rootElement) {
 }
 
 const e2e = window.sottoE2E
+const settingsBridge = window.sotto === undefined ? undefined : createE2ESettingsBridge(window.sotto, e2e !== undefined)
 const controllerFactory = e2e === undefined ? undefined : createE2EControllerFactory(e2e.scenario)
 
 createRoot(rootElement).render(
   <StrictMode>
-    <AppProvider {...(controllerFactory === undefined ? {} : { createController: controllerFactory })}>
+    <AppProvider {...(settingsBridge === undefined ? {} : { bridge: settingsBridge })} {...(controllerFactory === undefined ? {} : { createController: controllerFactory })}>
       <App {...(e2e === undefined ? {} : { createMicrophoneTest: () => createE2EMicrophoneTest(e2e.scenario) })} />
     </AppProvider>
   </StrictMode>,

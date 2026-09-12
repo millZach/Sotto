@@ -1,8 +1,8 @@
-import type { AppSettings } from '../../shared/settings'
+import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../shared/settings'
 import type { NativeSettingsRepository } from '../settings/nativeSettingsCoordinator'
 import type { AgentCredentials } from './credentials'
 
-const STORED_KEY = 'Saved in your operating system credential store'
+const STORED_KEY = STORED_CREDENTIAL_PLACEHOLDER
 
 /** Keeps the legacy settings UI compatible without returning decrypted API keys to renderers. */
 export class SecureSettings implements NativeSettingsRepository {

@@ -18,9 +18,6 @@ artifacts/agent-control-smoke/
 artifacts/natural-voice-qa/
 
 # Generated local inference payloads (locks remain versioned).
-resources/models/**
-!resources/models/catalog.lock.json
-!resources/models/manifest.lock.json
 resources/runtime/*.wasm
 !resources/runtime/manifest.lock.json
 

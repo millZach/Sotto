@@ -309,6 +309,12 @@ textarea.tt-input {
   font-weight: 400;
 }
 
+/* Keys are monospaced; the note standing in for a saved one is prose. */
+.tt-input[type='password']::placeholder {
+  font-family: var(--tt-font-ui);
+  font-size: 13px;
+}
+
 .tt-input[inputmode='numeric'] {
   text-align: right;
 }
@@ -663,6 +669,23 @@ textarea.tt-input {
 .onboarding-assurances svg {
   flex: 0 0 auto;
   color: var(--tt-activity);
+}
+
+/* The key step has no settings rows to lie in, so the verify button lines up
+   with the input rather than with the middle of the label block. */
+.onboarding-card section .settings-input-action {
+  align-items: end;
+}
+
+.onboarding-card section .key-field {
+  gap: 10px;
+}
+
+/* The way out of the step, present but quieter than the task itself. */
+.onboarding-aside {
+  margin: 20px 0 0;
+  color: var(--tt-text-muted);
+  font-size: 13px;
 }
 
 .onboarding-ready svg {
@@ -1324,7 +1347,6 @@ textarea.tt-input {
 
 /* ---- shared view furniture ---- */
 
-.settings-inline-warning,
 .history-privacy-notice {
   display: flex;
   align-items: center;
@@ -1835,80 +1857,41 @@ textarea.tt-input {
   flex: none;
 }
 
-.settings-model-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  padding: 14px 16px;
-}
-
-.settings-model-card {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
-  padding: 14px;
-}
-
-.settings-model-card[data-selected='true'] {
-  border-color: color-mix(in srgb, var(--tt-primary) 55%, transparent);
-  background: color-mix(in srgb, var(--tt-primary) 7%, var(--tt-surface-sunken));
-}
-
-.settings-model-card__heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-model-card h3,
-.settings-model-card p {
+/* There is one transcription model, so it is stated as a fact in the row
+   rhythm rather than offered as a card to choose between. */
+.settings-model-statement h3,
+.settings-model-statement p {
   margin: 0;
 }
 
-.settings-model-card h3 {
+.settings-model-statement h3 {
   font-size: 13px;
   font-weight: 600;
 }
 
-.settings-model-card p {
+.settings-model-statement p {
   color: var(--tt-text-muted);
   font-size: 12px;
 }
 
-.settings-model-card__status {
-  min-height: 0;
+/* The privacy disclosure closes the section as its own row, so it reads as
+   part of the settings rather than as small print left underneath them. */
+.settings-rows > .settings-disclosure {
+  margin: 0;
+  max-width: 66ch;
+  color: var(--tt-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
-.settings-model-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
-  margin-top: auto;
+/* The key and its verdict are one thing wherever they appear: inside the
+   settings rows, and inside the onboarding card that has no rows at all. */
+.key-field {
+  display: grid;
+  gap: 6px;
 }
 
-.settings-selected-badge {
-  display: inline-flex;
-  min-height: 22px;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid color-mix(in srgb, var(--tt-primary) 45%, transparent);
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: var(--tt-primary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.settings-rows > .settings-inline-warning {
-  min-height: 0;
-  padding-left: 13px;
-}
-
-.settings-rows > .settings-remote-status {
+.settings-remote-status {
   display: flex;
   min-height: 0;
   align-items: center;
@@ -2215,10 +2198,6 @@ textarea.tt-input {
 
   .settings-subnav {
     display: none;
-  }
-
-  .settings-model-grid {
-    grid-template-columns: 1fr;
   }
 
   .help-grid {

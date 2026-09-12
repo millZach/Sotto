@@ -17,17 +17,12 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
-  MODEL_GET_STATUS,
-  MODEL_INSTALL,
-  MODEL_LIST_DISCLOSURES,
-  MODEL_REMOVE,
-  MODEL_STATUS,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
-  REMOTE_ASR_CANCEL,
-  REMOTE_ASR_CHECK,
-  REMOTE_ASR_TRANSCRIBE,
+  TRANSCRIPTION_CANCEL,
+  TRANSCRIPTION_CHECK_KEY,
+  TRANSCRIPTION_TRANSCRIBE,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -48,10 +43,8 @@ import {
 } from '../shared/channels'
 import {
   dictationCommandSchema,
-  modelDisclosureCatalogSchema,
-  modelStatusSchema,
-  remoteAsrHealthSchema,
-  remoteTranscriptionResultSchema,
+  transcriptionKeyCheckSchema,
+  transcriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
   transcriptPolishResultSchema,
@@ -104,9 +97,7 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
 ])
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
-const modelResponseSchema = z.union([modelStatusSchema, unavailableSchema])
 const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
-const modelDisclosureResponseSchema = z.union([modelDisclosureCatalogSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean() }).strict()
 const voidSchema = z.undefined()
@@ -258,27 +249,17 @@ export function createSottoBridge(
 
     publishWidgetState: (state) =>
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
-    getModelStatus: (preset) =>
-      invokeParsed(renderer, MODEL_GET_STATUS, modelResponseSchema, preset),
-    listModelDisclosures: () =>
-      invokeParsed(renderer, MODEL_LIST_DISCLOSURES, modelDisclosureResponseSchema),
-    installModel: (request) =>
-      invokeParsed(renderer, MODEL_INSTALL, commandResultSchema, request),
-    removeModel: (preset) =>
-      invokeParsed(renderer, MODEL_REMOVE, commandResultSchema, preset),
-    onModelStatus: (listener) => subscribe(renderer, MODEL_STATUS, modelStatusSchema, listener),
-
     deliverOutput: (request) =>
       invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, request),
 
     polishTranscript: (request) =>
       invokeParsed(renderer, TRANSCRIPT_POLISH, transcriptPolishResultSchema, request),
 
-    transcribeRemote: (request) =>
-      invokeParsed(renderer, REMOTE_ASR_TRANSCRIBE, remoteTranscriptionResultSchema, request),
-    cancelRemoteTranscription: (requestId) =>
-      invokeParsed(renderer, REMOTE_ASR_CANCEL, commandResultSchema, requestId),
-    checkRemoteAsr: () => invokeParsed(renderer, REMOTE_ASR_CHECK, remoteAsrHealthSchema),
+    transcribe: (request) =>
+      invokeParsed(renderer, TRANSCRIPTION_TRANSCRIBE, transcriptionResultSchema, request),
+    cancelTranscription: (requestId) =>
+      invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
+    checkTranscriptionKey: () => invokeParsed(renderer, TRANSCRIPTION_CHECK_KEY, transcriptionKeyCheckSchema),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),

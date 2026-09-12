@@ -1,7 +1,7 @@
 {
   "name": "sotto",
   "version": "3.6.0",
-  "description": "Offline-first Windows dictation",
+  "description": "Hosted dictation through OpenRouter",
   "author": "Sotto",
   "private": true,
   "main": "./out/main/index.js",
@@ -17,13 +17,13 @@
     "design:capture": "npm run build && node scripts/capture-design.mjs --update && node scripts/verify-design-captures.mjs",
     "design:verify": "npm run build && node scripts/capture-design.mjs && node scripts/verify-design-captures.mjs",
     "design:contact-sheets": "node scripts/create-design-contact-sheets.mjs",
-    "model:prepare": "node scripts/prepare-model.mjs",
-    "model:verify": "node scripts/verify-model.mjs",
+    "runtime:prepare": "node scripts/prepare-runtime.mjs",
+    "runtime:verify": "node scripts/verify-runtime.mjs",
     "notices:verify": "node scripts/verify-notices.mjs",
-    "package:dir": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked",
-    "package:win": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 3.6.0.exe\"",
-    "package:dir:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
-    "package:mac": "npm run model:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-3.6.0-arm64.dmg\""
+    "package:dir": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked",
+    "package:win": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 3.6.0.exe\"",
+    "package:dir:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
+    "package:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-3.6.0-arm64.dmg\""
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",

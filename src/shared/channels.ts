@@ -24,19 +24,14 @@ export const WIDGET_VISIBILITY = 'sotto:widget:visibility' as const
 export const WIDGET_PRESENTATION = 'sotto:widget:presentation' as const
 export const WIDGET_DRAG = 'sotto:widget:drag' as const
 
-export const MODEL_GET_STATUS = 'sotto:model:get-status' as const
-export const MODEL_LIST_DISCLOSURES = 'sotto:model:list-disclosures' as const
-export const MODEL_INSTALL = 'sotto:model:install' as const
-export const MODEL_REMOVE = 'sotto:model:remove' as const
-export const MODEL_STATUS = 'sotto:model:status' as const
 
 export const OUTPUT_DELIVER = 'sotto:output:deliver' as const
 
 export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 
-export const REMOTE_ASR_TRANSCRIBE = 'sotto:remote-asr:transcribe' as const
-export const REMOTE_ASR_CANCEL = 'sotto:remote-asr:cancel' as const
-export const REMOTE_ASR_CHECK = 'sotto:remote-asr:check' as const
+export const TRANSCRIPTION_TRANSCRIBE = 'sotto:transcription:transcribe' as const
+export const TRANSCRIPTION_CANCEL = 'sotto:transcription:cancel' as const
+export const TRANSCRIPTION_CHECK_KEY = 'sotto:transcription:check-key' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const
 export const UPDATE_CHECK = 'sotto:update:check' as const
@@ -73,16 +68,11 @@ export const IPC_CHANNELS = Object.freeze({
   widgetVisibility: WIDGET_VISIBILITY,
   widgetPresentation: WIDGET_PRESENTATION,
   widgetDrag: WIDGET_DRAG,
-  modelGetStatus: MODEL_GET_STATUS,
-  modelListDisclosures: MODEL_LIST_DISCLOSURES,
-  modelInstall: MODEL_INSTALL,
-  modelRemove: MODEL_REMOVE,
-  modelStatus: MODEL_STATUS,
   outputDeliver: OUTPUT_DELIVER,
   transcriptPolish: TRANSCRIPT_POLISH,
-  remoteAsrTranscribe: REMOTE_ASR_TRANSCRIBE,
-  remoteAsrCancel: REMOTE_ASR_CANCEL,
-  remoteAsrCheck: REMOTE_ASR_CHECK,
+  transcriptionTranscribe: TRANSCRIPTION_TRANSCRIBE,
+  transcriptionCancel: TRANSCRIPTION_CANCEL,
+  transcriptionCheckKey: TRANSCRIPTION_CHECK_KEY,
   updateGetStatus: UPDATE_GET_STATUS,
   updateCheck: UPDATE_CHECK,
   updateDownload: UPDATE_DOWNLOAD,

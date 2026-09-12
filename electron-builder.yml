@@ -21,8 +21,6 @@ publish:
     repo: Sotto-releases
 
 extraResources:
-  - from: resources/models
-    to: models
   - from: resources/runtime
     to: runtime
   - from: LICENSE.md
@@ -80,7 +78,7 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: >-
       Sotto records your microphone while dictating or when you enable agent voice control.
-      Wake detection and transcription run locally on this Mac. Background audio is discarded.
+      Audio is sent to OpenRouter for transcription only while you dictate. Background audio is discarded.
     NSAppleEventsUsageDescription: >-
       Sotto asks System Events to press Command-V so your dictation lands in the app you were
       typing in. Declining leaves the text on your clipboard to paste yourself.

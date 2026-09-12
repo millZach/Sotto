@@ -30,10 +30,11 @@ import type {
   WidgetPresentation,
 } from '../../../shared/contracts'
 import { formatAccelerator } from '../../../shared/accelerator'
-import type {
-  WidgetErrorCode,
-  WidgetProcessingStage,
-  WidgetSnapshot,
+import {
+  TRANSCRIPTION_ERROR_DETAIL,
+  type WidgetErrorCode,
+  type WidgetProcessingStage,
+  type WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
 import { ListeningBars } from '../components/ListeningBars'
@@ -48,8 +49,8 @@ const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
   'preparing-audio': 'Preparing audio',
-  'loading-model': 'Loading local model',
-  transcribing: 'Transcribing locally',
+  'loading-model': 'Preparing transcription',
+  transcribing: 'Transcribing',
   'delivering-output': 'Delivering text',
 }
 
@@ -77,9 +78,21 @@ function errorCopyFor(
       title: 'No speech detected',
       detail: 'Speak closer to the microphone and try again.',
     },
+    TRANSCRIPTION_UNCONFIGURED: {
+      title: 'API key needed',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_UNCONFIGURED,
+    },
+    TRANSCRIPTION_UNAUTHORIZED: {
+      title: 'API key rejected',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_UNAUTHORIZED,
+    },
+    TRANSCRIPTION_OFFLINE: {
+      title: 'Connection unavailable',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_OFFLINE,
+    },
     TRANSCRIPTION_FAILED: {
       title: 'Couldn’t transcribe',
-      detail: 'Try again or choose the Standard model.',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED,
     },
     OUTPUT_UNAVAILABLE: {
       title: 'Output unavailable',

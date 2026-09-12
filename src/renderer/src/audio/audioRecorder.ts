@@ -1,3 +1,4 @@
+import { TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { calculateRms, resampleMono } from './audioMath'
 
 export const AUDIO_CAPTURE_PROCESSOR_NAME = 'sotto-audio-capture'
@@ -437,7 +438,7 @@ export class AudioRecorder {
       let result: AudioRecordingResult | null = null
       try {
         if (includeAudio) {
-          const sampleRate = session.context?.sampleRate ?? 16_000
+          const sampleRate = session.context?.sampleRate ?? TRANSCRIPTION_SAMPLE_RATE
           const joined = new Float32Array(session.sourceFrames)
           let offset = 0
           for (const chunk of session.chunks) {

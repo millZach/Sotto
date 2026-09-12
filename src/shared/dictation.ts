@@ -21,11 +21,30 @@ export type WidgetErrorCode =
   | 'MIC_START_FAILED'
   | 'RECORDING_FAILED'
   | 'NO_SPEECH'
+  | 'TRANSCRIPTION_UNCONFIGURED'
+  | 'TRANSCRIPTION_UNAUTHORIZED'
+  | 'TRANSCRIPTION_OFFLINE'
   | 'TRANSCRIPTION_FAILED'
   | 'OUTPUT_UNAVAILABLE'
   | 'OUTPUT_FAILED'
   | 'HISTORY_FAILED'
   | 'SETTINGS_UNAVAILABLE'
+
+export type TranscriptionErrorCode = Extract<WidgetErrorCode, `TRANSCRIPTION_${string}`>
+
+/**
+ * What went wrong reaching OpenRouter, in the one wording every surface uses.
+ * The dictate room, the widget and the controller's error state all say the
+ * same sentence, so a failure reads the same wherever the user happens to see
+ * it, and the recovery it names is only ever changed in one place.
+ */
+export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
+  Object.freeze({
+    TRANSCRIPTION_UNCONFIGURED: 'Add your OpenRouter API key in Settings to transcribe.',
+    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. Check it in Settings.',
+    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Check your connection and try again.',
+    TRANSCRIPTION_FAILED: 'Transcription failed. Try again.',
+  })
 
 interface WidgetSnapshotMetadata {
   readonly theme: Theme

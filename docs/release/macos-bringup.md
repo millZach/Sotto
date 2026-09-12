@@ -16,7 +16,7 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 git clone https://github.com/millZach/Sotto.git && cd Sotto
 git checkout <branch-or-tag>
 npm ci
-npm run model:prepare && npm run model:verify
+npm run runtime:prepare && npm run runtime:verify
 npm run lint && npm run typecheck && npm test
 npm run package:dir:mac
 ```

@@ -100,6 +100,7 @@ export function AgentProvider({ children, settings, dictation }: {
     const agentBridge = window.sotto.agents
     const speech = createConfiguredSpeech(agentBridge, () => stateRef.current?.configuration)
     const session = new AgentVoiceSession({
+      transcriptionBridge: window.sotto,
       wakeDetector: {
         async load() {
           if (agentBridge.prepareWake === undefined) throw new Error('Local wake detection is unavailable in this build.')
@@ -151,7 +152,7 @@ export function AgentProvider({ children, settings, dictation }: {
       else await session.stop()
     })()
     return () => { current = false; void session.stop() }
-  }, [voiceEnabled, dictationActive, settings?.microphoneId, settings?.modelPreset, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory])
+  }, [voiceEnabled, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory])
 
   useEffect(() => {
     const request = connection.state?.voice

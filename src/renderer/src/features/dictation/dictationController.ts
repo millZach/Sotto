@@ -1,6 +1,7 @@
 import {
   initialDictationState,
   reduceDictation,
+  TRANSCRIPTION_ERROR_DETAIL,
   type DictationEvent,
   type DictationState,
   type WidgetProcessingStage,
@@ -28,7 +29,8 @@ import type {
   TranscribeOptions,
   TranscriptionProgress,
   TranscriptionResult,
-} from '../../transcription/client'
+} from '../../transcription/openRouterTranscriber'
+import { TranscriptionError } from '../../transcription/openRouterTranscriber'
 
 export interface DictationRecorder {
   start(): Promise<void>
@@ -106,7 +108,7 @@ const ERROR_MESSAGES = Object.freeze({
   MIC_START_FAILED: 'The microphone could not be started.',
   RECORDING_FAILED: 'The recording could not be completed.',
   NO_SPEECH: 'No speech was detected.',
-  TRANSCRIPTION_FAILED: 'Local transcription failed.',
+  ...TRANSCRIPTION_ERROR_DETAIL,
   OUTPUT_UNAVAILABLE: 'Output is unavailable.',
   OUTPUT_FAILED: 'The transcript could not be delivered.',
   HISTORY_FAILED: 'The transcript was delivered but history could not be updated.',
@@ -138,6 +140,18 @@ function historyDuration(value: number): number {
 
 function isTerminal(state: DictationState): boolean {
   return state.status === 'success' || state.status === 'cancelled' || state.status === 'error'
+}
+
+function transcriptionFailureCode(error: unknown): WidgetErrorCode {
+  if (error instanceof TranscriptionError) {
+    switch (error.reason) {
+      case 'unconfigured': return 'TRANSCRIPTION_UNCONFIGURED'
+      case 'unauthorized': return 'TRANSCRIPTION_UNAUTHORIZED'
+      case 'network':
+      case 'timeout': return 'TRANSCRIPTION_OFFLINE'
+    }
+  }
+  return 'TRANSCRIPTION_FAILED'
 }
 
 function classifyStartFailure(error: unknown): ControllerErrorCode {
@@ -183,19 +197,9 @@ export class DictationController {
     const load = this.dependencies.transcriber.load
     if (load === undefined) return Promise.resolve()
 
-    let settings: Readonly<AppSettings>
-    try {
-      settings = this.dependencies.getSettings()
-    } catch {
-      return Promise.resolve()
-    }
-
     try {
       return Promise.resolve(
-        this.dependencies.transcriber.load?.({
-          preset: settings.modelPreset,
-          inferencePreference: settings.inferencePreference,
-        }),
+        this.dependencies.transcriber.load?.({}),
       ).then(
         () => undefined,
         () => undefined,
@@ -407,9 +411,7 @@ export class DictationController {
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
       audio: segment.samples,
-      preset: session.settings.modelPreset,
       language: session.settings.language,
-      inferencePreference: session.settings.inferencePreference,
     })
     session.segmentResults.push(result)
     // Rejections are re-observed when processRecording awaits the batch.
@@ -434,9 +436,7 @@ export class DictationController {
         this.dependencies.transcriber.transcribe({
           sessionId: session.id,
           audio: recording.samples,
-          preset: session.settings.modelPreset,
           language: session.settings.language,
-          inferencePreference: session.settings.inferencePreference,
           onProgress: (progress) => this.handleProgress(session, progress),
         }),
       )
@@ -458,14 +458,14 @@ export class DictationController {
                 .join(' '),
               language: results.at(-1)?.language ?? session.settings.language,
             }
-    } catch {
-      if (this.isCurrent(session)) this.fail(session, 'TRANSCRIPTION_FAILED')
+    } catch (error) {
+      if (this.isCurrent(session)) this.fail(session, transcriptionFailureCode(error))
       return
     }
     if (!this.isCurrent(session)) return
     session.acceptProgress = false
 
-    // Local ASR decoders occasionally loop on one word/phrase; collapse those
+    // Transcription decoders occasionally loop on one word/phrase; collapse those
     // runs before the text reaches formatting, cleanup, history, or paste.
     const repairedText = collapseRepeatedPhrases(result.text)
 
@@ -530,7 +530,7 @@ export class DictationController {
           createdAt: Math.round(finiteTimestamp(this.now())),
           durationMs: historyDuration(recording.durationMs),
           language: result.language,
-          modelPreset: session.settings.modelPreset,
+          modelPreset: 'mai',
         })
       } catch {
         if (this.isCurrent(session)) this.fail(session, 'HISTORY_FAILED')

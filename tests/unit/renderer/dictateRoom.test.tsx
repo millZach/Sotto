@@ -28,10 +28,9 @@ const entries: readonly HistoryEntry[] = [
 ]
 
 const baseProps = {
-  settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
+  settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, llmApiKey: crypto.randomUUID() },
   platform: 'win32' as const,
   dictation: { status: 'idle' as const },
-  modelStatus: { preset: DEFAULT_SETTINGS.modelPreset, state: 'bundled' as const },
   entries,
   historyStatus: 'ready' as const,
   onStart: vi.fn(async () => undefined),
@@ -142,11 +141,11 @@ describe('DictateRoom', () => {
     expect(alert).not.toHaveTextContent('internal')
   })
 
-  it('names the missing model and sends people to Settings instead of a dead pill', async () => {
+  it('names the missing key and sends people to Settings instead of a dead pill', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()
-    render(<DictateRoom {...baseProps} modelStatus={{ preset: 'balanced', state: 'missing' }} onOpenSettings={onOpenSettings} />)
-    expect(screen.getByRole('button', { name: 'Model required' })).toBeDisabled()
+    render(<DictateRoom {...baseProps} settings={{ ...DEFAULT_SETTINGS }} onOpenSettings={onOpenSettings} />)
+    expect(screen.getByRole('button', { name: 'API key required' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()
