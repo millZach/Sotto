@@ -39,7 +39,7 @@ function fixture() {
   const parent = { isDestroyed: () => false }
   native.fromWebContents.mockReturnValue(parent)
   native.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\Existing Folder\\project'] })
-  const dispose = registerAgentIpc(ipc, control, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() })
+  const dispose = registerAgentIpc(ipc, control, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() })
   disposables.push(dispose)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (source = event, ...args: unknown[]) => handlers.get(AGENT_CHOOSE_PROJECT_DIRECTORY)!(source, ...args)

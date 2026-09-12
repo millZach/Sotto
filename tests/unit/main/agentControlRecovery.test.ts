@@ -113,6 +113,13 @@ afterEach(async () => {
 })
 
 describe('reasoning account route isolation', () => {
+  it('defaults to Grok Altair and preserves an explicit Kokoro selection across restart', async () => {
+    const f = await fixture()
+    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'altair' })
+    await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' } }))
+    await f.restart()
+    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' })
+  })
   it('persists Grok speech credentials separately and preserves both voices through unrelated settings and restart', async () => {
     const f = await fixture()
     await f.account()

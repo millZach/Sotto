@@ -12,8 +12,9 @@ import type { AgentControl } from './control'
 import { AgentWakeService } from './wake'
 import type { NaturalSpeechModels } from './speechModels'
 import type { GrokSpeechService } from './grokSpeech'
+import type { KokoroSpeechService } from './kokoroSpeech'
 
-export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>): () => void {
   ipc.handle(AGENT_CHOOSE_PROJECT_DIRECTORY, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     z.tuple([]).or(z.tuple([z.undefined()])).parse(args)
@@ -58,6 +59,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     z.undefined().parse(payload)
     grokSpeech.cancel()
+    kokoroSpeech.cancel()
     if (remoteSpeech) speechOperation = null
   })
   ipc.handle(AGENT_SPEECH, async (event, payload) => {
@@ -68,9 +70,11 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     if (configuration.speechProvider === 'natural') throw new Error('Natural speech uses the local voice worker. Reopen Sotto and retry.')
     const operation = Symbol('speech')
     speechOperation = operation
-    remoteSpeech = configuration.speechProvider === 'grok'
+    remoteSpeech = configuration.speechProvider === 'grok' || configuration.speechProvider === 'kokoro'
     try {
-      return remoteSpeech ? await grokSpeech.synthesize(text, configuration.grokSpeechVoice) : await synthesizeAgentSpeech(text, platform)
+      if (configuration.speechProvider === 'grok') return await grokSpeech.synthesize(text, configuration.grokSpeechVoice)
+      if (configuration.speechProvider === 'kokoro') return await kokoroSpeech.synthesize(text)
+      return await synthesizeAgentSpeech(text, platform)
     } finally { if (speechOperation === operation) speechOperation = null }
   })
   ipc.handle(AGENT_GET, event => {
@@ -84,5 +88,5 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     if (!speakOnly && ['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     return control.command(command)
   })
-  return () => { grokSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
+  return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

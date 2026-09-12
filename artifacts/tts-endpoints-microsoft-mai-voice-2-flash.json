@@ -1,0 +1,57 @@
+﻿{
+    "data":  {
+                 "id":  "microsoft/mai-voice-2-flash",
+                 "name":  "Microsoft AI: MAI-Voice-2-Flash",
+                 "created":  1784822080,
+                 "description":  "MAI-Voice-2-Flash is a low-latency text-to-speech model from Microsoft AI for voice agents, assistants, call centers, accessibility, narration, and other interactive applications. It generates expressive 24 kHz mono speech across 15...",
+                 "architecture":  {
+                                      "tokenizer":  "Other",
+                                      "instruct_type":  null,
+                                      "modality":  "text-\u003espeech",
+                                      "input_modalities":  [
+                                                               "text"
+                                                           ],
+                                      "output_modalities":  [
+                                                                "speech"
+                                                            ]
+                                  },
+                 "endpoints":  [
+                                   {
+                                       "name":  "Azure | microsoft/mai-voice-2-flash-20260723",
+                                       "model_id":  "microsoft/mai-voice-2-flash",
+                                       "model_name":  "Microsoft AI: MAI-Voice-2-Flash",
+                                       "context_length":  0,
+                                       "pricing":  {
+                                                       "prompt":  "0.000015",
+                                                       "completion":  "0",
+                                                       "discount":  0
+                                                   },
+                                       "provider_name":  "Azure",
+                                       "tag":  "azure",
+                                       "quantization":  "unknown",
+                                       "max_completion_tokens":  0,
+                                       "max_prompt_tokens":  null,
+                                       "supported_parameters":  [
+                                                                    "max_tokens",
+                                                                    "temperature",
+                                                                    "top_p",
+                                                                    "max_completion_tokens"
+                                                                ],
+                                       "supports_tool_choice":  {
+                                                                    "none":  true,
+                                                                    "auto":  true,
+                                                                    "required":  true,
+                                                                    "function":  true
+                                                                },
+                                       "status":  0,
+                                       "uptime_last_30m":  null,
+                                       "uptime_last_5m":  null,
+                                       "uptime_last_1d":  100,
+                                       "supports_implicit_caching":  false,
+                                       "supports_voice_cloning":  false,
+                                       "latency_last_30m":  null,
+                                       "throughput_last_30m":  null
+                                   }
+                               ]
+             }
+}

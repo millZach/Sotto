@@ -27,8 +27,27 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
   const [loadingVoices, setLoadingVoices] = useState(false)
   const [voiceListError, setVoiceListError] = useState('')
   const [voiceListRevision, setVoiceListRevision] = useState(0)
+  const [openRouterKeySaved, setOpenRouterKeySaved] = useState<boolean | null>(null)
   const natural = configuration.speechProvider === 'natural'
   const grok = configuration.speechProvider === 'grok'
+  const kokoro = configuration.speechProvider === 'kokoro'
+  useEffect(() => {
+    if (!kokoro) return
+    let active = true
+    let changed = false
+    setOpenRouterKeySaved(null)
+    const bridge = window.sotto
+    if (!bridge?.getSettings) { setError('Voice account settings are unavailable. Reopen the updated app.'); return }
+    const unsubscribe = bridge.onSettingsChanged?.(settings => {
+      changed = true
+      if (active) setOpenRouterKeySaved(Boolean(settings.llmApiKey))
+    })
+    // Main returns only a saved-key placeholder, never the decrypted key.
+    void bridge.getSettings().then(settings => {
+      if (active && !changed) setOpenRouterKeySaved(Boolean(settings.llmApiKey))
+    }).catch(() => { if (active) setError('Could not check the OpenRouter key. Reopen voice settings and try again.') })
+    return () => { active = false; unsubscribe?.() }
+  }, [kokoro])
   useEffect(() => { setKeySaved(grokKeySaved) }, [grokKeySaved])
   useEffect(() => {
     if (!natural) return
@@ -73,7 +92,7 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
   const preview = async (): Promise<void> => {
     setPreviewing(true); setError(''); setNotice('')
     try {
-      const patch = { speechProvider: configuration.speechProvider, ...(grok ? { grokSpeechVoice: configuration.grokSpeechVoice } : { speechVoice: configuration.speechVoice }), speak: true }
+      const patch = { speechProvider: configuration.speechProvider, ...(grok ? { grokSpeechVoice: configuration.grokSpeechVoice } : natural ? { speechVoice: configuration.speechVoice } : {}), speak: true }
       const saved = await command({ type: 'configure', patch })
       if (!saved || saved.error) { setError(saved?.error ?? 'The voice settings could not be saved.'); return }
       change('speak', true)
@@ -89,9 +108,10 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
     <label className="agent-checkbox"><input type="checkbox" checked={configuration.speak} onChange={event => change('speak', event.target.checked)} />Spoken replies</label>
     <div className="agent-fields">
       <label>Speech voice<select aria-label="Speech voice" value={configuration.speechProvider} onChange={event => { change('speechProvider', event.target.value as AgentConfiguration['speechProvider']); setError(''); setNotice('') }}>
+        <option value="grok">Grok voice · default</option>
+        <option value="kokoro">Kokoro Heart · lower cost</option>
         <option value="natural">Natural voice · on this computer</option>
-        <option value="grok">Grok voice · xAI API</option>
-        <option value="system">System voice</option>
+        {configuration.speechProvider === 'system' ? <option value="system">System voice · previously selected</option> : null}
       </select></label>
       {natural ? <label>Voice<select aria-label="Voice" value={configuration.speechVoice} onChange={event => { change('speechVoice', event.target.value as AgentConfiguration['speechVoice']); setNotice('') }}>
         {NATURAL_VOICES.map(voice => <option key={voice} value={voice}>{voice.startsWith('F') ? 'Female' : 'Male'} {voice.slice(1)}</option>)}
@@ -102,7 +122,8 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
         {voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
       </select></label> : null}
     </div>
-    <p className="agent-hint">{natural ? 'AI-generated voices by Supertonic. Replies stay on this computer. One 263 MB download, with no usage charges.' : grok ? 'Reply text is sent to xAI for speech. $15 per million characters, including previews. Billed separately from your Grok subscription. Your reasoning model stays the same.' : 'Uses the voice installed with your operating system.'}</p>
+    <p className="agent-hint">{natural ? 'AI-generated voices by Supertonic. Replies stay on this computer. One 263 MB download, with no usage charges.' : grok ? 'Reply text is sent to xAI for speech. $15 per million characters, including previews. Billed separately from your Grok subscription. Your reasoning model stays the same.' : kokoro ? 'Heart by Kokoro. Reply text is sent to OpenRouter using your saved OpenRouter key. $0.62–$4 per million characters, depending on provider, including previews.' : 'Uses the voice installed with your operating system.'}</p>
+    {kokoro ? <p className="agent-hint">{openRouterKeySaved === null ? 'Checking your OpenRouter key…' : openRouterKeySaved ? 'Uses the same saved key as transcription and AI cleanup.' : 'Add your OpenRouter API key in Settings → AI account to enable Kokoro.'}</p> : null}
     {natural ? <details className="agent-voice-license"><summary>Voice model terms · OpenRAIL-M</summary><p>Downloading and using these voices is subject to these model terms, including the use restrictions in Attachment A.</p><pre>{voiceLicense}</pre></details> : null}
     {grok ? <>
       <div className="agent-fields"><label className="agent-field-wide">Grok speech API key<input aria-label="Grok speech API key" type="password" autoComplete="off" spellCheck={false} value={key} onChange={event => { setKey(event.target.value); setNotice('') }} placeholder={keySaved ? 'Saved securely · enter to replace' : 'API key from console.x.ai'} /></label></div>
@@ -116,7 +137,7 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
     </> : null}
     <div className="agent-voice-actions">
       {natural && !model?.ready ? <Button variant="secondary" disabled={downloading} onClick={() => void download()}>{downloading ? `Downloading voices · ${Math.floor((model?.completedBytes ?? 0) / 1_000_000)} MB` : 'Download natural voices'}</Button> : null}
-      <Button variant="secondary" disabled={previewing || downloading || savingKey || (natural && !model?.ready) || (grok && (!keySaved || !configuration.grokSpeechVoice.trim() || Boolean(key.trim())))} onClick={() => void preview()}>Use and preview voice</Button>
+      <Button variant="secondary" disabled={previewing || downloading || savingKey || (natural && !model?.ready) || (kokoro && openRouterKeySaved !== true) || (grok && (!keySaved || !configuration.grokSpeechVoice.trim() || Boolean(key.trim())))} onClick={() => void preview()}>Use and preview voice</Button>
       <Button variant="ghost" onClick={() => { setNotice(''); void command({ type: 'voice', action: 'stop-speaking' }) }}>Stop speech</Button>
     </div>
     {downloading ? <progress aria-label="Natural voice download" max={model?.totalBytes || 263_304_827} value={model?.completedBytes ?? 0} /> : null}

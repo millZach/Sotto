@@ -1,0 +1,58 @@
+﻿{
+    "data":  {
+                 "id":  "google/gemini-3.1-flash-tts-preview",
+                 "name":  "Google: Gemini 3.1 Flash TTS Preview",
+                 "created":  1776999308,
+                 "description":  "Gemini 3.1 Flash TTS Preview is a text-to-speech model from Google, and a substantial generational step up from Gemini 2.5 Flash TTS. It takes text input and produces audio output...",
+                 "architecture":  {
+                                      "tokenizer":  "Gemini",
+                                      "instruct_type":  null,
+                                      "modality":  "text-\u003espeech",
+                                      "input_modalities":  [
+                                                               "text"
+                                                           ],
+                                      "output_modalities":  [
+                                                                "speech"
+                                                            ]
+                                  },
+                 "endpoints":  [
+                                   {
+                                       "name":  "Google | google/gemini-3.1-flash-tts-preview",
+                                       "model_id":  "google/gemini-3.1-flash-tts-preview",
+                                       "model_name":  "Google: Gemini 3.1 Flash TTS Preview",
+                                       "context_length":  32768,
+                                       "pricing":  {
+                                                       "prompt":  "0.000001",
+                                                       "completion":  "0.00002",
+                                                       "discount":  0
+                                                   },
+                                       "provider_name":  "Google",
+                                       "tag":  "google-vertex",
+                                       "quantization":  "unknown",
+                                       "max_completion_tokens":  16384,
+                                       "max_prompt_tokens":  8192,
+                                       "supported_parameters":  [
+                                                                    "max_tokens",
+                                                                    "temperature",
+                                                                    "top_p",
+                                                                    "seed",
+                                                                    "response_format"
+                                                                ],
+                                       "supports_tool_choice":  {
+                                                                    "none":  true,
+                                                                    "auto":  true,
+                                                                    "required":  true,
+                                                                    "function":  true
+                                                                },
+                                       "status":  0,
+                                       "uptime_last_30m":  100,
+                                       "uptime_last_5m":  100,
+                                       "uptime_last_1d":  100,
+                                       "supports_implicit_caching":  false,
+                                       "supports_voice_cloning":  false,
+                                       "latency_last_30m":  null,
+                                       "throughput_last_30m":  null
+                                   }
+                               ]
+             }
+}
