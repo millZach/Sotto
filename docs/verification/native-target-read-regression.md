@@ -73,3 +73,17 @@ Verification after this separate fix:
 - Node typechecking, ESLint on both changed TypeScript files, and `git diff --check` passed.
 
 No full suite was run for the storage follow-up. The bounded retry addresses temporary replacement denials; permanent filesystem failure still reaches the caller rather than being reported as durable success.
+
+## Confirmed delivery during continuous output
+
+The independent spec critic identified a post-send interaction between Codex's stale-read guard and coordinator reconciliation. A deterministic native-fixture test reproduced both forms: the exact user-message echo arrives before the post-send read, or it arrives while that read is running. Each attempted read is gated on an actual native text delta, invalidating all three read attempts without depending on timer timing. In both red cases, the draft was already empty and the exact delivered-draft receipt existed, but the command returned `The Codex thread changed while reading it` as a send error. The two-case red run took 1.85 seconds.
+
+Ranked hypotheses recorded before the fix:
+
+1. The redundant post-confirmation read causes a false failure. Skipping that read after exact outbox reconciliation should leave the send successful.
+2. An echo can settle the outbox during an initially required read. A subsequent read failure must not revoke that newly established confirmation.
+3. Acceptance without an exact visible user message remains insufficient. A command still present in the outbox must continue to fail or remain uncertain when reconciliation cannot establish its result.
+
+The coordinator now persists and returns once the exact native message has already reconciled a send. If reconciliation is still required, it performs the targeted read; a read failure is ignored only when the exact send has meanwhile reconciled. This does not catch persistence failures or change native reads, the Codex revision guard, pre-dispatch validation, or stale-reply protection. Live output continues through the existing subscription.
+
+Validation: **39 tests passed across 4 files** in 9.52 seconds: `confirmedNativeDelivery.test.ts`, `nativeTargetRefresh.test.ts`, `agentTargetRefresh.test.ts`, and `threadNavigationDelivery.test.ts`. The two new cases check the exact receipt, cleared draft, successful command, one native prompt, and continued lossless text updates. Existing cases verify that an accepted response without a user message stays pending, unrelated/assistant identities cannot reconcile a send, and retries do not duplicate native commands. Node typechecking and changed-file ESLint passed. No full suite or real-provider UI run was performed for this follow-up.

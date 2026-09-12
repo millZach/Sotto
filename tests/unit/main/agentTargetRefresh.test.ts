@@ -43,7 +43,7 @@ it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting fo
     expect(result.error).toBeNull()
     if (mode === 'manual') expect(result.deliveredDrafts).toContainEqual({ threadId: 'workshop', draftId: 'selected-draft' })
     expect(result.draft).toBe('')
-    expect(host.reads).toEqual(['workshop', 'workshop'])
+    expect(host.reads).toEqual(['workshop'])
     release(); await background
   } finally { release?.(); await sending; control.dispose(); await rm(root, { recursive: true, force: true }) }
 })

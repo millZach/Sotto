@@ -626,9 +626,20 @@ export class AgentControl {
     } finally {
       if (turn) turn.delegationMs += Date.now() - delegatedAt
     }
+    // An exact native message already reconciled this outbox item. Delivery is
+    // settled even if its running turn prevents a later display/history read.
+    if (command.type === 'send' && !this.outbox.some(item => item.id === command.commandId)) {
+      await this.persist()
+      return
+    }
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || command.type === 'send') && result.accepted) {
-      this.acceptSnapshot(await this.readThread(threadId))
+      try { this.acceptSnapshot(await this.readThread(threadId)) }
+      catch (error) {
+        // The exact echo can arrive while this required reconciliation read is
+        // in flight. Keep its receipt; an unconfirmed command still fails here.
+        if (command.type !== 'send' || this.outbox.some(item => item.id === command.commandId)) throw error
+      }
       await this.persist()
       if (this.outbox.some(item => item.id === command.commandId)) throw new Error(command.type === 'send'
         ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
