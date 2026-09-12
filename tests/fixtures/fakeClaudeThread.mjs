@@ -22,6 +22,7 @@ const persist = frame => { mkdirSync(folder, { recursive: true }); appendFileSyn
 const pending = new Map()
 const violation = reason => appendFileSync(join(root, 'violations.jsonl'), reason + '\n')
 let lastAction = ''
+let initialized = false
 const timer = setInterval(() => {
   const control = join(root, `control-${session}.json`)
   if (!existsSync(control)) return
@@ -45,12 +46,26 @@ const lines = createInterface({ input: process.stdin })
 lines.on('line', line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
   if (frame.type === 'control_request') {
-    if (frame.request.subtype === 'initialize') output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: { models, session_state: 'idle' } } })
+    if (frame.request.subtype === 'initialize') {
+      const scriptPath = join(root, 'initialize-script.json')
+      const script = !metadata && existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+      const respond = () => {
+        initialized = !script.fail
+        output({ type: 'control_response', response: script.fail
+          ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
+          : { subtype: 'success', request_id: frame.request_id, response: { models, session_state: 'idle' } } })
+      }
+      if (script.gate) {
+        writeFileSync(join(root, 'initialize-waiting'), session)
+        const gate = setInterval(() => { if (existsSync(join(root, 'initialize-release'))) { clearInterval(gate); respond() } }, 5)
+      } else respond()
+    }
     else if (frame.request.subtype === 'interrupt') {
       output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: {} } })
       output({ type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
+    if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
     persist(frame)
     const scriptPath = join(root, 'script.json')

@@ -1,8 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 
 export type ClaudeFrame = Record<string, unknown>
 export class ClaudeUncertain extends Error {}
+// Native user replay and transcript entries include base64 image data. Honor the
+// shared aggregate attachment limit plus room for prompt/protocol metadata.
+export const CLAUDE_MAX_FRAME_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
 
 /** Native newline-framed control channel. Deadlines never resend a mutation. */
 export class ClaudeProtocol {
@@ -19,7 +23,7 @@ export class ClaudeProtocol {
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
       buffer += chunk
-      if (Buffer.byteLength(buffer) > 1024 * 1024) { this.abort(); return }
+      if (Buffer.byteLength(buffer) > CLAUDE_MAX_FRAME_BYTES) { this.abort(); return }
       let newline: number
       while ((newline = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1)

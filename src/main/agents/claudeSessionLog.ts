@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { object, type ClaudeFrame } from './claudeProtocol'
+import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
@@ -54,13 +54,13 @@ export class ClaudeSessionLog {
         let newline: number
         while ((newline = this.remainder.indexOf('\n')) >= 0) {
           const line = this.remainder.slice(0, newline); this.remainder = this.remainder.slice(newline + 1)
-          if (Buffer.byteLength(line) > 1024 * 1024) continue
+          if (Buffer.byteLength(line) > CLAUDE_MAX_FRAME_BYTES) continue
           try {
             const entry = object(JSON.parse(line))
             if (entry && (!entry.sessionId || entry.sessionId === this.sessionId)) this.onEntry(entry)
           } catch { /* Unrelated/malformed native metadata is not user input. */ }
         }
-        if (Buffer.byteLength(this.remainder) > 1024 * 1024) throw new Error('Claude transcript entry exceeds the supported size.')
+        if (Buffer.byteLength(this.remainder) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
       }
     } finally { await handle.close() }
   }

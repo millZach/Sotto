@@ -1,4 +1,4 @@
-# Claude native thread adapter — issue #22 verification
+# Claude native thread adapter â€” issue #22 verification
 
 Verified September 11, 2026 with the installed native Claude Code **2.1.268**. The implementation is `ClaudeStreamJsonHost` in `src/main/agents/claude.ts`, wrapped by the existing `SottoThreadHost` in production.
 
@@ -30,7 +30,7 @@ Saved threads hydrate from native history without spawning a CLI for every threa
 ## Verification performed
 
 - Shared adapter contract: **9/9 passed**, no skipped cases, against a real child process speaking the scripted native protocol.
-- Focused safety/recovery suite: **10/10 passed**. Includes malformed requests, explicit-only approval, multiple questions, takeover filtering, image-only prompt acknowledgement/restart with references, uncertain-message deduplication, stale-context resume, unsupported modes, and SottoThreadHost registry identity across restart.
+- Focused safety/recovery suite: **13/13 passed**. Includes malformed requests, explicit-only approval, multiple questions, takeover filtering, image-only prompt acknowledgement/restart with references, uncertain-message deduplication, stale-context resume, unsupported modes, and SottoThreadHost registry identity across restart.
 - `npx tsc --noEmit -p tsconfig.node.json` and focused ESLint passed.
 - Live native metadata initialization succeeded without a user prompt.
 - Live synthetic CLI turn returned `SOTTO_SYNTHETIC_OK`; observed native replay, streaming events, assistant result and synthetic session-log entry shapes.
@@ -43,3 +43,11 @@ The explicit opt-in probe is `tests/fixtures/claudeLiveProbe.ts`. Bundle it with
 Permission/question/cancel error paths are validated against the primary-source protocol fake, not a live coding tool invocation. The live takeover used a separate headless native CLI with `--resume`, not the interactive terminal UI. Parent integration owns rendered Sotto UI verification and provider selection.
 
 Takeover detection is limited to the known native transcript format. A missing/locked log can delay observation. Identical external text can be indistinguishable from a pending same-text dispatch or consecutive native duplicate entries; UUID matching is preferred. The adapter reports its own process status and cannot reconstruct a separate CLI's running process solely from transcript entries. Existing user-defined native hooks, permissions and account settings continue to apply. The native version field is populated when the CLI emits its system/init frame; a resumed metadata-only runtime may not emit that frame before the next prompt.
+
+## Independent-review follow-up
+
+Three regression scenarios reproduced before their fixes: observed-thread initialization could be bypassed by an immediate send (both delayed and rejected initialization), an external user message arriving during origin persistence did not stop a guarded send, and a valid image replay larger than 1 MiB disconnected the native protocol.
+
+The adapter now shares the pending initialization promise before returning a runtime, repeats log polling and the latest-user guard immediately before dispatch, and durably removes only the rejected undispatched origin. The retry regression confirms no native user frame or origin survives the rejected dispatch and a deliberate retry against the new user message succeeds. Native stdout and transcript frame limits now derive from the shared 20 MiB aggregate attachment allowance after base64 expansion, plus 1 MiB for protocol/prompt metadata. Stderr retains its separate 1 MiB cap. The image-only regression replays and restores a native frame larger than 1 MiB without storing image data in Sotto recovery metadata.
+
+After these fixes: shared contract 9/9, focused regressions 13/13, Node typecheck and focused ESLint passed. No additional live paid turn was needed; native protocol fields were unchanged.

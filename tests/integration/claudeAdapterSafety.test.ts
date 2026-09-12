@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { claudeAnswer, claudePending } from '../../src/main/agents/claudeRequests'
 import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 
 describe('Claude native request mapping', () => {
   it('rejects malformed permissions and questions', () => {
@@ -38,15 +39,58 @@ describe('Claude recovery and safety', () => {
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     id = randomUUID(); await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId })
   })
-  afterEach(async () => f.cleanup())
-  it('reconciles image-only prompts and restores references without persisting image bytes', async () => {
-    const attachment = { id: 'image', name: 'image.png', mimeType: 'image/png' as const, dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }
+  afterEach(async () => { vi.restoreAllMocks(); await f.cleanup() })
+  it.each([false, true])('waits for observed-thread initialization before sending (failed=%s)', async fail => {
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root, 1000); await f.host.connect(f.connection)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true, fail }))
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => readFile(join(f.root, 'initialize-waiting'), 'utf8').catch(() => '')).not.toBe('')
+    let settled = false
+    const sending = f.host.execute({ type: 'send', commandId: 'initializing', messageId: 'initializing', threadId: id, text: 'Wait for initialization' })
+      .then(result => { settled = true; return { result } }, error => { settled = true; return { error: error as Error } })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(settled).toBe(false)
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
+    await writeFile(join(f.root, 'initialize-release'), '')
+    const outcome = await sending
+    if (fail) {
+      expect(outcome).toMatchObject({ error: expect.any(Error) })
+      expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
+    } else expect(outcome).toEqual({ result: { accepted: true } })
+  })
+  it('rejects takeover during origin persistence and durably removes the undispatched origin', async () => {
+    let release!: () => void; let entered!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    const reached = new Promise<void>(resolve => { entered = resolve })
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      await write.call(this, value)
+      const aliases = value as Record<string, { origins?: { messageId: string }[] }>
+      if (aliases[id]?.origins?.some(origin => origin.messageId === 'stale-persist')) { entered(); await blocked }
+    })
+    const command = { type: 'send' as const, commandId: 'stale-persist', messageId: 'stale-persist', threadId: id, text: 'Must not send', expectedLastUserMessageId: null }
+    const sending = f.host.execute(command).then(result => ({ result }), error => ({ error: error as Error }))
+    await reached; await f.driver.typeInProvider(id, 'External takeover while persisting')
+    release()
+    expect(await sending).toMatchObject({ error: expect.objectContaining({ message: expect.stringContaining('changed') }) })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
+    const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
+    expect(aliases[id].origins).toEqual([])
+    vi.restoreAllMocks()
+    const latest = (await thread()).messages.filter(message => message.role === 'user').at(-1)!.id
+    expect(await f.host.execute({ ...command, expectedLastUserMessageId: latest })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
+  it('reconciles image-only native frames over 1 MiB and restores references without persisting image bytes', async () => {
+    const image = Buffer.alloc(1024 * 1024); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(image)
+    const attachment = { id: 'image', name: 'image.png', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${image.toString('base64')}` }
     expect(await f.host.execute({ type: 'send', commandId: 'image-command', messageId: 'image-message', threadId: id, text: '', attachments: [attachment] })).toEqual({ accepted: true })
-    expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', text: '', attachments: [{ id: 'image', sizeBytes: 8 }] })
+    expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', text: '', attachments: [{ id: 'image', sizeBytes: image.length }] })
     const stored = await readFile(join(f.root, 'claude-threads.json'), 'utf8')
-    expect(stored).not.toContain('iVBORw0KGgo=')
+    expect(stored).not.toContain(image.toString('base64'))
     f = await f.driver.restart() as typeof f; await f.host.connect(f.connection)
-    expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', commandId: 'image-command', attachments: [{ id: 'image', sizeBytes: 8 }] })
+    expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', commandId: 'image-command', attachments: [{ id: 'image', sizeBytes: image.length }] })
   })
   it('does not resend a repeated uncertain message', async () => {
     await f.driver.delayNextAck('user')

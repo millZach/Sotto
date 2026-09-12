@@ -120,8 +120,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'send') {
       validatePromptAttachments(this.state, alias.modelId, command.attachments)
+      const checkLatestUserMessage = (): void => {
+        if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
+      }
       await this.pollSessionLogs()
-      if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
+      checkLatestUserMessage()
       if (alias.origins.some(origin => origin.messageId === command.messageId)) return thread.messages.some(message => message.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
       if (this.dispatching.has(id) || thread.status === 'running') throw new Error('Claude is already running a turn.')
       this.dispatching.add(id)
@@ -134,17 +137,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(command.text), createdAt: new Date().toISOString(),
           ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachmentSizeBytes(attachment.dataUrl) })) } : {}) }
         alias.origins.push(origin)
-        try { await this.persist() } catch (error) { alias.origins.pop(); throw error }
+        try { await this.persist() } catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); throw error }
+        const content: unknown = command.attachments?.length ? [
+          { type: 'text', text: command.text }, ...command.attachments.map(image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.dataUrl.slice(image.dataUrl.indexOf(',') + 1) } })),
+        ] : command.text
+        // Resume and durable origin writes can yield while the user takes over.
+        // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
+        try { await this.pollSessionLogs(); checkLatestUserMessage() }
+        catch (error) {
+          alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
+          await this.persist(); throw error
+        }
         let timer: ReturnType<typeof setTimeout> | undefined
         const acknowledged = new Promise<boolean>(resolve => {
           timer = setTimeout(() => { this.acknowledgements.delete(origin.uuid); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
           this.acknowledgements.set(origin.uuid, () => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); resolve(true) })
         })
-        const content: unknown = command.attachments?.length ? [
-          { type: 'text', text: command.text }, ...command.attachments.map(image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.dataUrl.slice(image.dataUrl.indexOf(',') + 1) } })),
-        ] : command.text
-        thread.status = 'running'; this.emit()
-        try { await runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } }) }
+        thread.status = 'running'
+        try {
+          const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
+          this.emit(); await delivery
+        }
         catch { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); return { accepted: false, uncertain: true } }
         return await acknowledged ? { accepted: true } : { accepted: false, uncertain: true }
       } finally { this.dispatching.delete(id) }
@@ -176,8 +189,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async closed(): Promise<void> { await Promise.all(this.closures); this.closures = [] }
   private async start(id: string): Promise<Runtime> {
-    const runtime = this.runtimes.get(id); if (runtime) return runtime
     const pending = this.starting.get(id); if (pending) return pending
+    const runtime = this.runtimes.get(id); if (runtime) return runtime
     const work = this.launch(id); this.starting.set(id, work)
     try { return await work } finally { this.starting.delete(id) }
   }
