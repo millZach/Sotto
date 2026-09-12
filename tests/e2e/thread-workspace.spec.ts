@@ -8,6 +8,43 @@ import { designThreadsFixture } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
 
+test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
+      await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
+    })
+    await page.reload()
+    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('A separate manual message.')
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('A separate manual message.')
+    await expect(prompt).toHaveValue('')
+    await prompt.fill('Prepare the next message while Docs runs.')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    await prompt.press('Control+Enter')
+    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-foreign-draft.png' })
+    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: 'workshop', assignments: [] })
+    expect(state.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await expect(prompt).toHaveValue('Keep this saved draft in Workshop.')
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await expect(prompt).toHaveValue('Prepare the next message while Docs runs.')
+    await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Ready for the next message.' }))
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('Prepare the next message while Docs runs.')
+  } finally { await closeSotto(launched) }
+})
+
 test('workspace sends a manual prompt to the selected thread without granting management', async () => {
   const launched = await launchSotto()
   const { page } = launched

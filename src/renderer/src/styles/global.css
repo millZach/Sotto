@@ -43,6 +43,18 @@ textarea {
   font: inherit;
 }
 
+/* Native Windows popups can use a light background even for a dark select.
+   Keep the option surface and text paired instead of inheriting only the ink. */
+select option,
+select optgroup {
+  color: var(--tt-text);
+  background-color: var(--tt-surface-elevated);
+}
+
+select option:disabled {
+  color: var(--tt-text-muted);
+}
+
 button,
 select,
 input:not([type='checkbox']):not([type='radio']) {

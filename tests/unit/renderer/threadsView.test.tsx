@@ -143,6 +143,21 @@ describe('thread grouping and states from Sotto state', () => {
 })
 
 describe('ThreadsView workspace', () => {
+  it('keeps an unmanaged composer available when another thread owns the saved draft', () => {
+    const state = stateFixture()
+    state.assignments = []; state.activeThreadId = 'grok-previews'
+    state.draft = 'Keep the saved draft'; state.draftThreadId = 'visual-gate'
+    const { rerender } = renderThreads(state)
+    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'My next prompt' } })
+    state.host.threads.find(thread => thread.id === 'grok-previews')!.status = 'running'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('My next prompt')
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(state.draft).toBe('Keep the saved draft')
+  })
+
   for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'replacement images preserved' : 'the unchanged draft cleared'}`, async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     state.host.models.forEach(model => { model.supportsImages = true })

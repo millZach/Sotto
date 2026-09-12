@@ -211,10 +211,11 @@ describe('coordinator images, authority and durable settings', () => {
     await f.control.command({ type: 'assign', threadId: 'workshop' })
     await f.control.command({ type: 'compose', text: '', attachments: [image] })
     const moved = await f.control.command({ type: 'manual-send', threadId: 'docs', text: '', attachments: [image] })
-    expect(moved.error).toMatch(/existing draft/)
+    expect(moved.error).toBeNull()
+    expect(moved).toMatchObject({ draftThreadId: 'workshop', draft: '', draftAttachments: [image] })
     f.host.event({ type: 'permission', threadId: 'workshop', text: 'Publish?', status: 'idle' })
     expect((await f.control.command({ type: 'send' })).error).toMatch(/permission/)
-    expect(f.host.attempts).toEqual([])
+    expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'send', threadId: 'docs', attachments: [image] })])
     expect((await f.control.command({ type: 'cancel-draft' })).draftAttachments).toEqual([])
   })
   it('validates a combined save before dispatch and persists uncertain settings until actual readback', async () => {

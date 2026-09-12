@@ -63,6 +63,21 @@ async function fixture() {
 }
 
 describe('navigation independent of action latency', () => {
+  it('sends a manual prompt on B while preserving the saved draft on A', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'Keep A', attachments: [image] })
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    const draftId = randomUUID()
+    const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(result.error).toBeNull()
+    expect(f.host.attempts.at(-1)).toMatchObject({ type: 'send', threadId: 'docs', text: 'Only B' })
+    expect(result).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image], deliveredDrafts: [{ threadId: 'docs', draftId }] })
+    expect(result.assignments.map(assignment => assignment.threadId)).toEqual(['workshop'])
+    await f.restart()
+    expect(f.control.get()).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image] })
+  })
+
   it('publishes cached B and observes it during deferred refresh, retaining the draft and send authority on A', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })
@@ -164,6 +179,26 @@ describe('navigation independent of action latency', () => {
 })
 
 describe('manual delivery receipts', () => {
+  it('preserves a foreign answer and images through uncertain manual delivery, restart, and acknowledgement', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })
+    await f.control.command({ type: 'compose', text: 'Keep this answer', attachments: [image] })
+    const saved = f.control.get()
+    expect(saved.draftRequestId).toBe('question-a')
+    f.host.withheld = 'uncertain'
+    const draftId = randomUUID()
+    const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(result.error).toMatch(/confirm/)
+    const expected = { draft: saved.draft, draftThreadId: saved.draftThreadId, draftRequestId: saved.draftRequestId, draftAttachments: saved.draftAttachments }
+    expect(result).toMatchObject(expected)
+    await f.restart()
+    await f.host.acknowledge()
+    expect(f.control.get()).toMatchObject({ ...expected, deliveredDrafts: [{ threadId: 'docs', draftId }] })
+    await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
   it('accepts optional UUID identities and retains legacy callers', () => {
     const command = { type: 'manual-send', threadId: 'workshop', text: 'Hello' }
     expect(agentCommandSchema.safeParse(command).success).toBe(true)

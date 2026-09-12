@@ -76,9 +76,10 @@ function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readon
   const question = row.request?.kind === 'question' ? row.request : undefined
   const permission = row.request?.kind === 'permission'
   const archived = Boolean(row.thread.archivedAt)
-  const disabled = sending || state.busy || state.connection !== 'connected' || !state.host.capabilities.submit || (row.thread.status === 'running' && !question) || archived || permission
+  const disabled = sending || state.busy || state.connection !== 'connected' || !state.host.capabilities.submit || archived || permission
+  const sendDisabled = disabled || (row.thread.status === 'running' && !question)
   const send = async (): Promise<void> => {
-    if (disabled || readingImages || (!text.trim() && !attachments.length)) return
+    if (sendDisabled || readingImages || (!text.trim() && !attachments.length)) return
     const threadId = row.thread.id
     const draftId = revisions.current[threadId] ?? crypto.randomUUID()
     revisions.current[threadId] = draftId
@@ -117,7 +118,7 @@ function ThreadPrompt({ row, state, command }: { readonly row: ThreadRow; readon
       onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void send() } }} />
     </ScreenshotInput>
     <div className="thread-prompt__footer">{state.host.capabilities.configureThread ? <ThreadOptions key={row.thread.id} thread={row.thread} state={state} command={command} /> : <span>{row.model?.name ?? row.provider}<small>{question ? 'Answer this question' : 'Manual prompt'}</small></span>}
-      <Button iconOnly aria-label={question ? 'Send answer' : 'Send prompt'} disabled={disabled || readingImages || (!text.trim() && !attachments.length)} type="submit"><ArrowUp size={18} /></Button>
+      <Button iconOnly aria-label={question ? 'Send answer' : 'Send prompt'} disabled={sendDisabled || readingImages || (!text.trim() && !attachments.length)} type="submit"><ArrowUp size={18} /></Button>
     </div>
   </form>
 }
@@ -198,7 +199,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
           <ThreadRequest row={workspaceRow!} voiceAvailable={state.queue.some(item => item.threadId === selected.thread.id && item.requestId === workspaceRow?.request?.requestId)} command={agents.command} busy={state.busy || !connected} onAnswer={() => document.getElementById(managed ? 'agent-prompt' : 'thread-workspace-prompt')?.focus()} />
         </div>
         <div className="thread-workspace__compose">
-          {foreignDraft ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} />}
+          {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} />}
         </div>
       </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{state.draft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{state.draft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{state.draft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
     </section>

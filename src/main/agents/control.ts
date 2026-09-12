@@ -623,13 +623,18 @@ export class AgentControl {
       this.observe()
       return
     }
-    if (this.hasDraft() && (this.state.draftThreadId !== threadId || this.state.draftRequestId)) throw new Error('Send or clear the existing draft before prompting another thread.')
+    const preserveDraft = this.hasDraft() && this.state.draftThreadId !== threadId
+    if (this.hasDraft() && !preserveDraft && this.state.draftRequestId) throw new Error('Send or clear the existing answer before prompting this thread.')
     this.thread(threadId)
     attachments = agentAttachmentsSchema.parse(attachments)
-    this.state.draftAttachments = attachments
-    this.manualDraftId = draftId ?? null
-    this.state.draft = text; this.state.draftThreadId = threadId; this.state.draftRequestId = null; this.state.composing = true
-    await this.persist()
+    // Manual composers own their text per thread. A send must not replace the
+    // coordinator's saved prompt or answer on a different thread.
+    if (!preserveDraft) {
+      this.state.draftAttachments = attachments
+      this.manualDraftId = draftId ?? null
+      this.state.draft = text; this.state.draftThreadId = threadId; this.state.draftRequestId = null; this.state.composing = true
+      await this.persist()
+    }
     this.canAct()
     this.observe(threadId)
     this.acceptSnapshot(await this.dependencies.host.snapshot())
