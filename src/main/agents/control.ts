@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema,
-  defaultAgentConfiguration, EMPTY_AGENT_HOST, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
+  defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
   type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -340,6 +340,12 @@ export class AgentControl {
           await this.dependencies.credentials.set('t3', '')
         }
         if (providerChanged) this.disconnect()
+        if (next.provider !== this.state.configuration.provider) {
+          if (command.patch.defaultModelId === undefined) next.defaultModelId = ''
+          this.state.host = { ...structuredClone(EMPTY_AGENT_HOST), name: PROVIDER_LABELS[next.provider] }
+          this.state.activeThreadId = null
+          this.state.activeProjectId = null
+        }
         if (speechRevision !== this.speechPreferenceRevision) next.speak = this.state.configuration.speak
         this.state.configuration = next
         if (!next.enabled) this.disconnect()
@@ -354,18 +360,20 @@ export class AgentControl {
         this.state.connection = 'connecting'; this.publish()
         this.observe()
         try {
-          const snapshot = await this.dependencies.host.connect({ endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') })
+          const snapshot = await this.dependencies.host.connect(this.state.configuration.provider === 't3'
+            ? { endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') }
+            : { endpoint: '', credential: '' })
           this.acceptSnapshot(snapshot)
-          if (!snapshot.connected) throw new Error('T3 did not confirm the connection.')
+          if (!snapshot.connected) throw new Error(`${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           this.state.configuration.enabled = true
-          this.say('T3 Code connected')
+          this.say(`${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
         } catch (error) {
           this.disconnect()
           throw error
         }
         return
       }
-      case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected. T3 work continues.'); return
+      case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected.'); return
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot()); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
       case 'utterance': await this.utterance(command.text.trim(), turn, selectionRevision); return

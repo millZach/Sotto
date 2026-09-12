@@ -17,6 +17,14 @@ export interface AdapterFixture {
     restart(): Promise<AdapterFixture>
   }
   cleanup(): Promise<void>
+  /** Decode recorded native traffic; fixtures must also reject invalid native replies. */
+  protocol?: {
+    promptMethod: string
+    resumeMethod: string
+    permissionDecision(record: RecordedRpc): boolean | undefined
+  }
+  /** A process-owned turn may stop when its adapter process exits. */
+  restartStatus?: 'idle' | 'running'
   skips?: Partial<Record<'uncertain' | 'restart', string>>
 }
 
@@ -27,6 +35,10 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
     let sessionId: string
     const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === sessionId)!
     const send = () => f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'own-message', text: 'Synthetic prompt' })
+    const permissionDecision = (record: RecordedRpc): boolean | undefined => {
+      if (f.protocol) return f.protocol.permissionDecision(record)
+      return record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
+    }
     beforeEach(async () => {
       f = await factory(); await f.host.connect(f.connection)
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -73,7 +85,7 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       const request = (await thread()).requests[0]!
       expect(request.kind).toBe('permission')
       await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: '', approved })
-      await expect.poll(async () => (await f.driver.requests()).some(r => r.result?.decision === (approved ? 'accept' : 'decline'))).toBe(true)
+      await expect.poll(async () => (await f.driver.requests()).some(r => permissionDecision(r) === approved)).toBe(true)
       expect((await thread()).requests).toEqual([])
     })
     it('never approves a skipped permission when interrupted and disconnected', async () => {
@@ -81,21 +93,22 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       await expect.poll(async () => (await thread()).requests.length).toBe(1)
       await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: sessionId })
       f.host.disconnect()
-      expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
+      expect((await f.driver.requests()).some(r => permissionDecision(r) === true)).toBe(false)
     })
     it('reconciles an uncertain prompt acknowledgement without resending', async context => {
       if (f.skips?.uncertain) { context.skip(); return }
-      await f.driver.delayNextAck('turn/start')
+      const method = f.protocol?.promptMethod ?? 'turn/start'
+      await f.driver.delayNextAck(method)
       expect(await send()).toEqual({ accepted: false, uncertain: true })
       await expect.poll(async () => (await thread()).messages.filter(m => m.id === 'own-message').length).toBe(1)
-      expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+      expect((await f.driver.requests()).filter(r => r.method === method)).toHaveLength(1)
     })
     it('resumes the same thread and messages after restart during a run', async context => {
       if (f.skips?.restart) { context.skip(); return }
       await send(); const before = await thread()
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect(f.connection)
-      expect(await thread()).toEqual(before)
-      expect((await f.driver.requests()).some(r => r.method === 'thread/resume')).toBe(true)
+      expect(await thread()).toEqual({ ...before, status: f.restartStatus ?? before.status })
+      expect((await f.driver.requests()).some(r => r.method === (f.protocol?.resumeMethod ?? 'thread/resume'))).toBe(true)
     })
   })
 }

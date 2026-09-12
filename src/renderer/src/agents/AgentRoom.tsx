@@ -1,7 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { Mic, MicOff, Settings2, Volume2, VolumeX } from 'lucide-react'
 import { isThreadClosed } from '../../../shared/threadActivity'
-import { ORB_COLORS, supportsAgentSupervision, type AgentThread } from '../../../shared/agents'
+import { ORB_COLORS, PROVIDER_LABELS, supportsAgentSupervision, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { SideSheet } from '../components/SideSheet'
 import { useAgents } from './AgentContext'
@@ -64,7 +64,7 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
       <p role="status">{status === 'speaking' && state.speech.text ? state.speech.text : state.notice || (running ? `${running} ${running === 1 ? 'thread is' : 'threads are'} working. ${attention.items.length} waiting for you.` : connected ? 'Choose a thread, or start something new.' : 'Connect your provider to bring your threads here.')}</p>
       {agents.voice.error || state.error || agents.error ? <p className="agent-error" role="alert">{agents.voice.error ?? state.error ?? agents.error}</p> : null}
       {status === 'error' ? <Button variant="ghost" onClick={() => { if (!state.configuration.wakeModelDirectory || !state.configuration.wakeRuntimeDirectory) setSheet('settings'); else agents.retryVoice() }}>{!state.configuration.wakeModelDirectory || !state.configuration.wakeRuntimeDirectory ? 'Set up voice' : 'Retry voice'}</Button> : null}
-      {connected && state.configuration.enabled ? <small>Try “what needs my attention?”</small> : <div className="agent-actions">{!connected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting…' : `Connect ${state.configuration.provider === 'codex' ? 'Codex' : 'T3 Code'}`}</Button> : null}{!state.configuration.enabled ? <Button variant="ghost" onClick={() => void command({ type: 'configure', patch: { enabled: true } })}>Enable agent control</Button> : null}</div>}
+      {connected && state.configuration.enabled ? <small>Try “what needs my attention?”</small> : <div className="agent-actions">{!connected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting…' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : null}{!state.configuration.enabled ? <Button variant="ghost" onClick={() => void command({ type: 'configure', patch: { enabled: true } })}>Enable agent control</Button> : null}</div>}
       {state.pendingRequest ? <details><summary>Pending spoken request</summary><p>{state.pendingRequest}</p><Button variant="ghost" onClick={() => void command({ type: 'cancel-request' })}>Clear request</Button></details> : null}
     </div>
     <div className="agent-sessions" aria-label="Sessions">{state.host.threads.filter(thread => !isThreadClosed(thread)).slice(0, 6).map(thread => <button key={thread.id} type="button" className="agent-session tt-focusable" aria-label={`Open ${thread.title}`} onClick={() => void selectThread(thread)}><span className="agent-session__badge" data-provider={provider(thread).toLowerCase()}>{providerGlyph(provider(thread))}</span><span>{thread.title}</span><i data-state={thread.requests.length ? 'attention' : thread.status} /></button>)}

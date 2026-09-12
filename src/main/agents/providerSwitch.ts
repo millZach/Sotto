@@ -8,7 +8,9 @@ export class ConfiguredProviderHost implements AgentHost {
   constructor(private readonly options: { hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId }) {}
   async connect(connection: AgentHostConnection): Promise<AgentHostSnapshot> {
     this.active = this.options.provider()
-    this.options.hosts[this.active === 't3' ? 'codex' : 't3'].disconnect()
+    for (const provider of providerIdSchema.options) {
+      if (provider !== this.active) this.options.hosts[provider].disconnect()
+    }
     this.options.hosts[this.active].observeThreads?.(this.observed)
     return this.options.hosts[this.active].connect(connection)
   }

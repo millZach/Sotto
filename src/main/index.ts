@@ -122,6 +122,8 @@ import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
 import { T3CodeHost } from './agents/t3'
 import { CodexAppServerHost } from './agents/codex'
+import { ClaudeStreamJsonHost } from './agents/claude'
+import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
@@ -498,6 +500,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     hosts: {
       t3: new SottoThreadHost('t3', new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!),
       codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
+      claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
+      grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),
     },
     provider: () => agentControl.get().configuration.provider,
   })

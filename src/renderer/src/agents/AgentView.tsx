@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -16,7 +16,7 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   if (thread === undefined || assignment?.mode !== 'manual') return null
   return <section className="agent-manual" aria-label={`Manual control for ${thread.title}`}>
     <strong>Manual control · {thread.title}</strong>
-    <p>You’re replying directly in T3. Sotto is still watching this thread, but won’t send replies. Say “resume managing {thread.title}” or select Resume management to hand it back.</p>
+    <p>You’re replying directly in {PROVIDER_LABELS[state.configuration.provider]}. Sotto is still watching this thread, but won’t send replies. Say “resume managing {thread.title}” or select Resume management to hand it back.</p>
     <Button variant="secondary" onClick={() => void command({ type: 'resume', threadId: thread.id })}>Resume management</Button>
   </section>
 }
@@ -210,8 +210,8 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
   }
   return <section className="agent-settings" aria-label="Agent connection settings">
     <div className="agent-fields">
-      <label>T3 Code address<input value={configuration.endpoint} onChange={(event) => change('endpoint', event.target.value)} placeholder="http://127.0.0.1:3773" /></label>
-      <label>T3 access token<input type="password" autoComplete="off" value={token} onChange={(event) => { setToken(event.target.value); setSaved(false) }} placeholder={state.credentials.t3 ? 'Saved securely · enter to replace' : 'Token from T3 connection settings'} /></label>
+      {configuration.provider === 't3' ? <><label>T3 Code address<input value={configuration.endpoint} onChange={(event) => change('endpoint', event.target.value)} placeholder="http://127.0.0.1:3773" /></label>
+      <label>T3 access token<input type="password" autoComplete="off" value={token} onChange={(event) => { setToken(event.target.value); setSaved(false) }} placeholder={state.credentials.t3 ? 'Saved securely · enter to replace' : 'Token from T3 connection settings'} /></label></> : null}
       <label className="agent-field-wide">Default projects directory<input value={configuration.projectsDirectory} onChange={(event) => change('projectsDirectory', event.target.value)} placeholder="D:\Projects" /></label>
       <label>Default agent model<select value={configuration.defaultModelId} onChange={(event) => change('defaultModelId', event.target.value)}>
         <option value="">Choose a model after connecting</option>
@@ -253,7 +253,7 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
       </label>
     </div>
     <div className="agent-billing"><p><strong>Your connected accounts</strong></p>
-      <p>T3’s project agents use the accounts configured in T3. Sotto reasoning uses the subscription or API account selected above. Your provider app keeps its own sign-in. Local spoken replies have no provider usage charge.</p>
+      <p>Project agents use the account signed into the selected thread provider. Sotto reasoning uses the subscription or API account selected above. Your provider app keeps its own sign-in. Local spoken replies have no provider usage charge.</p>
       {!state.credentials.secure ? <p role="alert">Secure credential storage is unavailable. Credentials cannot be saved on this system.</p> : null}
       <p>Assignment context expires after seven days without activity. Turning off history prevents saving that context. Unsent drafts stay on this desktop until sent or cleared so they survive a restart.</p>
     </div>
@@ -350,11 +350,11 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
       <div className="agent-actions"><Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button>
         <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
-        <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect T3 Code' : state.connection === 'connecting' ? 'Connecting…' : 'Connect T3 Code'}</Button></div>
+        <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? `Disconnect ${PROVIDER_LABELS[state.configuration.provider]}` : state.connection === 'connecting' ? 'Connecting…' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button></div>
     </header>
-    <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{connected ? 'T3 Code connected' : 'T3 Code disconnected'}{state.host.version ? ` · ${state.host.version}` : ''}</span>
+    <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{`${PROVIDER_LABELS[state.configuration.provider]} ${connected ? 'connected' : 'disconnected'}`}{state.host.version ? ` · ${state.host.version}` : ''}</span>
       <span>{state.assignments.length} assigned · {state.queue.length} waiting</span>
-      {connected ? <Button variant="ghost" iconOnly aria-label="Refresh T3 Code" onClick={() => void command({ type: 'refresh' })}><RefreshCw size={14} /></Button> : null}
+      {connected ? <Button variant="ghost" iconOnly aria-label={`Refresh ${PROVIDER_LABELS[state.configuration.provider]}`} onClick={() => void command({ type: 'refresh' })}><RefreshCw size={14} /></Button> : null}
     </div>
     {settingsOpen ? <AgentConnectionSettings state={state} command={command} focusReasoning={focusReasoning} /> : null}
     <section className="agent-voice" aria-label="Voice control"><div><Mic size={18} aria-hidden="true" /><div><strong>{voiceLabel}</strong><span>Wake detection and speech recognition stay on this desktop.</span></div></div>

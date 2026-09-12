@@ -8,7 +8,7 @@ import { AgentCredentials, type CredentialEncryption } from '../../../src/main/a
 import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '../../../src/main/agents/reasoning'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import { agentCommandSchema, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
+import { agentCommandSchema, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -110,6 +110,20 @@ afterEach(async () => {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-control-recovery-')) throw new Error('Unexpected temporary test directory')
     await rm(root, { recursive: true, force: true })
   }
+})
+
+it.each(['claude', 'grok', 'codex'] as const)('connects %s without forwarding the saved T3 route or showing its old catalog', async provider => {
+  const f = await fixture()
+  await f.control.command({ type: 'credential', slot: 't3', value: 'synthetic-t3-secret' })
+  await f.control.command({ type: 'configure', patch: { defaultModelId: 'old-provider-model' } })
+  const changed = await f.control.command({ type: 'configure', patch: { provider } })
+  expect(changed).toMatchObject({ error: null, configuration: { provider, defaultModelId: '' }, activeThreadId: null, activeProjectId: null })
+  expect(changed.host).toMatchObject({ connected: false, name: PROVIDER_LABELS[provider], models: [], threads: [], projects: [] })
+  const connect = vi.spyOn(f.host, 'connect')
+  const connected = await f.control.command({ type: 'connect' })
+  expect(connect).toHaveBeenCalledWith({ endpoint: '', credential: '' })
+  expect(connected.notice).toBe(`${PROVIDER_LABELS[provider]} connected`)
+  expect(f.credentials.get('t3')).toBe('synthetic-t3-secret')
 })
 
 describe('reasoning account route isolation', () => {
