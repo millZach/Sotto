@@ -44,6 +44,8 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
   const status = agents.voice.status
   const orbState: OrbState = status === 'speaking' ? 'speaking' : status === 'listening' ? 'listening' : status === 'wake' ? 'wake' : (running > 0 || state.busy) ? 'working' : 'idle'
   const caption = { off: 'Your agents, one conversation away', starting: 'Preparing your voice', wake: 'Say “Hey Sotto”', listening: 'Sotto is listening', speaking: 'Sotto is speaking', muted: 'Microphone muted', dictation: 'Dictation is using the microphone', error: 'Voice needs attention' }[status]
+  const error = agents.voice.error ?? state.error ?? agents.error
+  const feedback = status === 'speaking' && state.speech.text ? state.speech.text : state.notice || (running ? `${running} ${running === 1 ? 'thread is' : 'threads are'} working. ${attention.items.length} waiting for you.` : connected ? 'Choose a thread, or start something new.' : 'Connect your provider to bring your threads here.')
   const selectThread = async (thread: AgentThread): Promise<void> => {
     const result = await command({ type: 'select-thread', threadId: thread.id })
     if (result && !result.error) setSheet('session')
@@ -61,8 +63,8 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
     <div className="agent-room__caption"><h1>{caption}</h1>
       {connected && attention.items.length > 0 && !showAttention ? <Button variant="secondary" onClick={attention.reopen}>Review attention ({attention.items.length})</Button> : null}
       {status === 'speaking' ? <Button variant="secondary" className="agent-room__speech-control" aria-label="Stop speech" onClick={agents.stopSpeech}><VolumeX size={15} />Stop speech</Button> : null}
-      <p role="status">{status === 'speaking' && state.speech.text ? state.speech.text : state.notice || (running ? `${running} ${running === 1 ? 'thread is' : 'threads are'} working. ${attention.items.length} waiting for you.` : connected ? 'Choose a thread, or start something new.' : 'Connect your provider to bring your threads here.')}</p>
-      {agents.voice.error || state.error || agents.error ? <p className="agent-error" role="alert">{agents.voice.error ?? state.error ?? agents.error}</p> : null}
+      {feedback !== error ? <p role="status">{feedback}</p> : null}
+      {error ? <p className="agent-error" role="alert">{error}</p> : null}
       {status === 'error' ? <Button variant="ghost" onClick={() => { if (!state.configuration.wakeModelDirectory || !state.configuration.wakeRuntimeDirectory) setSheet('settings'); else agents.retryVoice() }}>{!state.configuration.wakeModelDirectory || !state.configuration.wakeRuntimeDirectory ? 'Set up voice' : 'Retry voice'}</Button> : null}
       {connected && state.configuration.enabled ? <small>Try “what needs my attention?”</small> : <div className="agent-actions">{!connected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting…' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : null}{!state.configuration.enabled ? <Button variant="ghost" onClick={() => void command({ type: 'configure', patch: { enabled: true } })}>Enable agent control</Button> : null}</div>}
       {state.pendingRequest ? <details><summary>Pending spoken request</summary><p>{state.pendingRequest}</p><Button variant="ghost" onClick={() => void command({ type: 'cancel-request' })}>Clear request</Button></details> : null}

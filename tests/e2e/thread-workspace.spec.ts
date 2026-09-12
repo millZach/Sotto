@@ -22,6 +22,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await page.reload()
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('A separate manual message.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
