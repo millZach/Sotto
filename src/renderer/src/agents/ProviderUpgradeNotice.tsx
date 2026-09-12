@@ -5,8 +5,9 @@ import { Button } from '../components/Button'
 import './providerRecovery.css'
 
 /** Recovery is a draft review action, never a retry of the retired provider's command. */
-export function ProviderUpgradeNotice({ state, command, threadId }: {
+export function ProviderUpgradeNotice({ state, command, threadId, localDraftPresent = false }: {
   readonly state: AgentState; readonly command: AgentConnection['command']; readonly threadId?: string | undefined
+  readonly localDraftPresent?: boolean
 }): ReactNode {
   const upgrade = state.providerUpgrade
   if (!upgrade) return null
@@ -18,9 +19,10 @@ export function ProviderUpgradeNotice({ state, command, threadId }: {
       <label>Recovered draft<textarea rows={3} value={state.draft} readOnly /></label>
       {!!state.draftAttachments?.length && <p>{state.draftAttachments.map(image => image.name).join(', ')}</p>}
       <div className="agent-actions">
-        {threadId ? <Button variant="secondary" disabled={state.busy || state.connection !== 'connected'} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
+        {threadId ? <Button variant="secondary" disabled={localDraftPresent || state.busy || state.connection !== 'connected'} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
         <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'cancel-draft' })}>Clear saved draft</Button>
       </div>
+      {localDraftPresent ? <p>Finish or clear the current prompt, or choose another thread, before using this saved draft.</p> : null}
     </> : null}
     <details><summary>Previous-provider recovery</summary>
       <p>Automatic management and pending actions were stopped in Sotto. Native work was not cancelled or replayed.</p>

@@ -19,6 +19,12 @@ interface SubmissionFeedback {
   onSubmit: (submission: PendingSubmission) => void
   onSettle: (draftId: string, confirmed: boolean) => void
 }
+interface ManualDraftState {
+  drafts: Record<string, string>
+  setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  images: Record<string, AgentAttachment[]>
+  setImages: React.Dispatch<React.SetStateAction<Record<string, AgentAttachment[]>>>
+}
 export interface ThreadsViewProps {
   readonly onOpenAgents: () => void
   readonly now?: number | undefined
@@ -61,10 +67,8 @@ function ThreadRequest({ row, command, busy, onAnswer, voiceAvailable }: {
   </div>
 }
 
-function ThreadPrompt({ row, state, command, onSubmit, onSettle }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command } & SubmissionFeedback): ReactNode {
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+function ThreadPrompt({ row, state, command, onSubmit, onSettle, drafts, setDrafts, images, setImages }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command } & SubmissionFeedback & ManualDraftState): ReactNode {
   const [sending, setSending] = useState(false)
-  const [images, setImages] = useState<Record<string, AgentAttachment[]>>({})
   const [readingImages, setReadingImages] = useState(false)
   const revisions = useRef<Record<string, string>>({})
   const submitted = useRef(new Map<string, string>())
@@ -144,6 +148,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [newThreadOpen, setNewThreadOpen] = useState(false)
   const [messageLimit, setMessageLimit] = useState(80)
   const [submissions, setSubmissions] = useState<PendingSubmission[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [images, setImages] = useState<Record<string, AgentAttachment[]>>({})
   const onSubmit = useCallback((submission: PendingSubmission): void => {
     setSubmissions(previous => [...previous.filter(item => item.draftId !== submission.draftId), submission].slice(-MAX_DELIVERED_DRAFTS))
   }, [])
@@ -176,6 +182,17 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   </button>
   const foreignDraft = (state.draft.trim() || state.draftAttachments?.length) && state.draftThreadId && state.draftThreadId !== selected?.thread.id ? state.host.threads.find(thread => thread.id === state.draftThreadId) : undefined
   const connected = state.connection === 'connected'
+  const localDraftPresent = Boolean(selected && (drafts[selected.thread.id]?.trim() || images[selected.thread.id]?.length))
+  const recoverCommand: Command = async command => {
+    if (command.type === 'recover-draft' && (drafts[command.threadId]?.trim() || images[command.threadId]?.length)) return state
+    const result = await agents.command(command)
+    if (command.type === 'recover-draft' && result?.error === null && result.draftThreadId === command.threadId) {
+      // Empty local overrides must not mask the explicitly recovered coordinator draft.
+      setDrafts(previous => { const next = { ...previous }; delete next[command.threadId]; return next })
+      setImages(previous => { const next = { ...previous }; delete next[command.threadId]; return next })
+    }
+    return result
+  }
   const recoveredDraft = Boolean(state.providerUpgrade && state.draftThreadId === null && (state.draft || state.draftAttachments?.length))
   const savedDraft = !recoveredDraft && Boolean(state.draft || state.draftAttachments?.length)
   const pending = selected?.thread.requests[0]
@@ -204,7 +221,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
       </div>
     </aside>
     <section className="thread-workspace" aria-label="Thread workspace">
-      {recoveredDraft ? <ProviderUpgradeNotice state={state} command={agents.command} threadId={selected?.thread.id} /> : null}
+      {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={selected?.thread.id} localDraftPresent={localDraftPresent} /> : null}
       {selected ? <>
         <header className="thread-workspace__head"><div><span>{selected.project?.title ?? selected.provider}</span><h2>{selected.thread.title}</h2></div><div className="thread-workspace__actions">
           {assigned && !isThreadClosed(selected.thread) ? <Button variant="ghost" disabled={!canManage} onClick={() => void agents.command({ type: assigned.paused || assigned.mode === 'manual' ? 'resume' : 'pause', threadId: selected.thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
@@ -228,7 +245,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
           <ThreadRequest row={workspaceRow!} voiceAvailable={state.queue.some(item => item.threadId === selected.thread.id && item.requestId === workspaceRow?.request?.requestId)} command={agents.command} busy={state.busy || !connected} onAnswer={() => document.getElementById(managed ? 'agent-prompt' : 'thread-workspace-prompt')?.focus()} />
         </div>
         <div className="thread-workspace__compose">
-          {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} />}
+            {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} drafts={drafts} setDrafts={setDrafts} images={images} setImages={setImages} />}
         </div>
       </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
     </section>
