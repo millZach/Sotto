@@ -88,7 +88,7 @@ describe('native provider retirement', () => {
     const f = await fixture(); f.state.configuration.provider = provider; f.state.configuration.enabled = false; await f.save()
     const control = f.create(); await control.start()
     expect(control.get()).toMatchObject({ configuration: { provider, defaultModelId: 'old-model' }, draftThreadId: 'old-id', draftRequestId: 'request', assignments: f.state.assignments, providerUpgrade: null })
-    expect(JSON.parse(await readFile(f.path, 'utf8')).outbox).toEqual(f.state.outbox.map(item => ({ ...item, provider })))
+    expect(JSON.parse(await readFile(f.path, 'utf8')).outbox).toEqual(f.state.outbox.map((item: Record<string, unknown>) => ({ ...item, provider })))
     await control.command({ type: 'configure', patch: { provider: provider === 'grok' ? 'codex' : 'grok' } })
     expect(JSON.parse(await readFile(f.path, 'utf8')).outbox[0].provider).toBe(provider)
     expect(control.get().configuration).not.toHaveProperty('endpoint')

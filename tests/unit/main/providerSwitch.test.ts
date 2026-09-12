@@ -269,6 +269,47 @@ describe('independent thread providers', () => {
     expect(Object.values(f.adapters).map(adapter => adapter.connectCalls)).toEqual([0, 0, 0])
     expect(await readFile(join(f.root, 'provider-project-identity.json'), 'utf8')).toBe('{broken')
   })
+  it('retries a stopped child with the coordinator disabled without reconnecting or blocking its healthy peer', async () => {
+    const f = await fixture(); const control = await coordinator(f)
+    await control.command({ type: 'connect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'grok' })
+    const thread = control.get().host.threads.find(thread => thread.providerId === 'codex')!
+    let release!: () => void
+    const connect = f.adapters.grok.connect.bind(f.adapters.grok)
+    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { await new Promise<void>(resolve => { release = resolve }); return connect() })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      f.adapters.grok.state.connected = false; f.adapters.grok.emit()
+      expect(control.get().configuration.enabled).toBe(false)
+      expect(control.get().connection).toBe('connected')
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(release).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      vi.useRealTimers()
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+      const sent = await control.command({ type: 'manual-send', threadId: thread.id, text: 'Keep the healthy provider working.' })
+      expect(sent.error).toBeNull(); expect(sent.busy).toBe(false)
+      expect(f.adapters.codex.connectCalls).toBe(1)
+      release()
+      await vi.waitFor(() => expect(control.get().host.providers?.find(provider => provider.id === 'grok')?.connection).toBe('connected'))
+      expect(f.adapters.grok.connectCalls).toBe(2)
+      expect(control.get().configuration.enabled).toBe(false)
+    } finally { vi.useRealTimers(); release?.() }
+  })
+  it.each(['disabled', 'account-error'] as const)('cancels a stopped provider retry when it becomes %s', async outcome => {
+    const f = await fixture(); const control = await coordinator(f)
+    await control.command({ type: 'connect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'grok' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      f.adapters.grok.state.connected = false; f.adapters.grok.emit()
+      if (outcome === 'disabled') await control.command({ type: 'disconnect', provider: 'grok' })
+      else { f.adapters.grok.state.error = 'Sign in to Grok again'; f.adapters.grok.emit() }
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(f.adapters.grok.connectCalls).toBe(1)
+      expect(f.adapters.codex.connectCalls).toBe(1)
+      expect(control.get().host.providers?.find(provider => provider.id === 'grok')?.connection).toBe(outcome === 'disabled' ? 'disconnected' : 'error')
+      expect(enabledThreadProviders(control.get().configuration).includes('grok')).toBe(outcome !== 'disabled')
+    } finally { vi.useRealTimers() }
+  })
   it('does not start a connection cancelled while reading identity metadata', async () => {
     const f = await fixture(); const pending = f.host.connect('grok'); f.host.disconnect('grok'); await pending
     expect(f.adapters.grok.connectCalls).toBe(0)

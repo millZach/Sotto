@@ -64,6 +64,7 @@ export class AgentControl {
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
+  private readonly providerReconnect = new Map<ProviderId, ReturnType<typeof setTimeout>>()
   private retirementFailure: string | null = null
   private disposed = false
   private membershipTimer: ReturnType<typeof setInterval> | null = null
@@ -385,6 +386,7 @@ export class AgentControl {
         }
         if (speechRevision !== this.speechPreferenceRevision) next.speak = this.state.configuration.speak
         this.state.configuration = next
+        this.scheduleProviderReconnects()
         if (command.patch.enabled === false && !this.dependencies.host.concurrentProviders) this.disconnect()
         return
       }
@@ -925,11 +927,12 @@ export class AgentControl {
     if (this.disposed) return
     const connecting = this.state.connection === 'connecting'
     this.state.host = snapshot
+    this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId
     this.state.connection = snapshot.connected ? 'connected' : connecting ? 'connecting' : 'disconnected'
     if (!snapshot.connected) {
-      if (!connecting && this.state.configuration.enabled && enabledThreadProviders(this.state.configuration).length && !this.reconnect) this.reconnect = setTimeout(() => {
+      if (!snapshot.providers && !connecting && this.state.configuration.enabled && enabledThreadProviders(this.state.configuration).length && !this.reconnect) this.reconnect = setTimeout(() => {
         this.reconnect = null
         void this.command({ type: 'connect' }).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...s.host, connected: false }) })
       }, 5000)
@@ -1140,8 +1143,28 @@ export class AgentControl {
   private disconnect(): void {
     if (this.reconnect) clearTimeout(this.reconnect)
     this.reconnect = null
+    for (const timer of this.providerReconnect.values()) clearTimeout(timer)
+    this.providerReconnect.clear()
     this.dependencies.host.disconnect()
     this.state.connection = 'disconnected'; this.state.host.connected = false
+  }
+  private scheduleProviderReconnects(): void {
+    const retryable = (provider: ProviderId): boolean => !this.disposed
+      && enabledThreadProviders(this.state.configuration).includes(provider)
+      && this.state.host.providers?.find(status => status.id === provider)?.connection === 'disconnected'
+    for (const provider of providerIdSchema.options) {
+      const timer = this.providerReconnect.get(provider)
+      if (!retryable(provider)) {
+        if (timer) clearTimeout(timer)
+        this.providerReconnect.delete(provider)
+      } else if (!timer) {
+        // A stopped transport retries independently; account/discovery errors remain manual Retry.
+        this.providerReconnect.set(provider, setTimeout(() => {
+          this.providerReconnect.delete(provider)
+          if (retryable(provider)) void this.command({ type: 'connect', provider })
+        }, 5000))
+      }
+    }
   }
   dispose(): void { this.disposed = true; if (this.membershipTimer) clearInterval(this.membershipTimer); this.unsubscribe?.(); this.disconnect(); this.listeners.clear() }
 }
