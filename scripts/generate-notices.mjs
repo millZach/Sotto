@@ -28,28 +28,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.`
 
-const moonshineMit = `MIT License
-
-Copyright (c) 2024 Useful Sensors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`
-
 const guidIsc = `ISC License
 
 Copyright (c) NicolasDeveloper contributors
@@ -239,7 +217,6 @@ const licenseSections = [
   ['GUID TypeScript ISC license', guidIsc],
   ['Protocol Buffers BSD 3-Clause license', await read('node_modules/protobufjs/LICENSE')],
   ['Apache License 2.0', await read('node_modules/@huggingface/transformers/LICENSE')],
-  ['Moonshine MIT license', moonshineMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
   ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],
   ['Bricolage Grotesque SIL Open Font License 1.1', bricolageGrotesqueOfl],
@@ -273,7 +250,7 @@ ${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
 
 const output = `# Third-Party Notices
 
-Sotto performs transcription locally and does not require a paid API. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and transcription worker, the ONNX Web runtime embedded by Transformers.js, the bundled model, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the model/runtime lock manifests.
+Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and natural speech worker, the ONNX Web runtime used by Transformers.js for local natural speech, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the runtime lock manifest.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -282,8 +259,6 @@ Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comp
 ${table}
 
 \`electron-updater\` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from \`node_modules\` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
-
-The bundled Standard model is \`onnx-community/moonshine-base-ONNX\` revision \`b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad\`, an MIT-licensed work from Useful Sensors (Moonshine) converted by the Hugging Face ONNX community. Optional models are not part of the installer. If the user explicitly downloads it, \`Xenova/whisper-tiny\` revision \`5332fcc35e32a33b86612b9a57a89be7906102b1\` is an Apache-2.0 work from Hugging Face and OpenAI Whisper contributors.
 
 ## Sotto brand asset provenance
 

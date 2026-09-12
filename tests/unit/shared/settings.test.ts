@@ -18,9 +18,7 @@ const customSettings = {
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
-  modelPreset: 'fast',
   language: 'fr',
-  inferencePreference: 'wasm',
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -33,18 +31,25 @@ const customSettings = {
   historyRetention: 'unlimited',
   onboardingComplete: true,
   llmFormatting: true,
-  llmApiKey: 'sk-or-v1-test',
+  llmApiKey: '',
   llmDictionary: 'Sotto\nMoonshine',
   llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   streamingAsr: false,
-  remoteAsr: true,
-  remoteAsrUrl: 'http://forge.local:5092',
   autoUpdateCheck: false,
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('drops retired transcription settings while preserving valid settings', () => {
+    const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
+    expect(parseSettings(legacy)).toEqual(customSettings)
+    expect(settingsSchema.parse(legacy)).toEqual(customSettings)
+    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl']) {
+      expect(parseSettings(legacy)).not.toHaveProperty(field)
+    }
+  })
+
   it('tolerates persisted theme values and defaults an unknown value', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       expect(() => parseSettings({ theme })).not.toThrow()
@@ -63,9 +68,7 @@ describe('settings', () => {
       hotkey: 'CommandOrControl+Shift+Space',
       maxRecordingSeconds: 60,
       soundCues: true,
-      modelPreset: 'instant',
       language: 'auto',
-      inferencePreference: 'wasm',
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -84,22 +87,11 @@ describe('settings', () => {
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       streamingAsr: true,
-      remoteAsr: false,
-      remoteAsrUrl: '',
       autoUpdateCheck: true,
     })
   })
 
-  it('keeps remote transcription off for installs saved before it existed', () => {
-    const legacy = { ...customSettings } as Record<string, unknown>
-    delete legacy.remoteAsr
-    delete legacy.remoteAsrUrl
 
-    const parsed = parseSettings(legacy)
-    expect(parsed.remoteAsr).toBe(false)
-    expect(parsed.remoteAsrUrl).toBe('')
-    expect(parsed.language).toBe('fr')
-  })
 
   it('leaves the update check on for installs saved before it existed', () => {
     const legacy = { ...customSettings } as Record<string, unknown>
@@ -107,7 +99,6 @@ describe('settings', () => {
 
     const parsed = parseSettings(legacy)
     expect(parsed.autoUpdateCheck).toBe(true)
-    expect(parsed.remoteAsrUrl).toBe('http://forge.local:5092')
   })
 
   it('keeps an explicit update-check choice and recovers an unusable one', () => {
@@ -115,10 +106,7 @@ describe('settings', () => {
     expect(parseSettings({ autoUpdateCheck: 'sometimes' }).autoUpdateCheck).toBe(true)
   })
 
-  it('falls back to the defaults for an unusable remote server address', () => {
-    expect(parseSettings({ ...customSettings, remoteAsrUrl: 'x'.repeat(513) }).remoteAsrUrl).toBe('')
-    expect(parseSettings({ ...customSettings, remoteAsr: 'yes' }).remoteAsr).toBe(false)
-  })
+
 
   it('builds per-platform defaults that differ only in the hotkey', () => {
     expect(defaultSettings(defaultHotkey('win32'))).toEqual(DEFAULT_SETTINGS)
@@ -144,19 +132,9 @@ describe('settings', () => {
     expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
-  it('accepts the surviving presets and migrates removed or unknown presets to instant', () => {
-    expect(parseSettings({ modelPreset: 'instant' }).modelPreset).toBe('instant')
-    expect(parseSettings({ modelPreset: 'fast' }).modelPreset).toBe('fast')
-    expect(parseSettings({ modelPreset: 'balanced' }).modelPreset).toBe('instant')
-    expect(parseSettings({ modelPreset: 'accurate' }).modelPreset).toBe('instant')
-    expect(parseSettings({ modelPreset: 'turbo' }).modelPreset).toBe('instant')
-  })
 
-  it('migrates legacy inference preferences to wasm', () => {
-    expect(parseSettings({ inferencePreference: 'wasm' }).inferencePreference).toBe('wasm')
-    expect(parseSettings({ inferencePreference: 'auto' }).inferencePreference).toBe('wasm')
-    expect(parseSettings({ inferencePreference: 'webgpu' }).inferencePreference).toBe('wasm')
-  })
+
+
 
   it('defaults the widget idle visibility on and recovers invalid values to on', () => {
     expect(parseSettings({}).showWidgetWhenIdle).toBe(true)

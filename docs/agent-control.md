@@ -16,7 +16,7 @@ Sotto controls the agent apps you already use from a desktop voice interface. Th
    - **System voice:** uses the operating system's installed voice.
    **Use and preview voice** saves only speech settings and plays a short sample. **Stop speech** works here even with agent control off. Grok errors remain on the selected route with a visible explanation; Sotto does not retry automatically or switch voices/providers.
 
-Agent wake detection and speech recognition stay on the computer, including when optional remote dictation is configured elsewhere. Natural and system speech also run locally; Grok speech sends only the reply text for synthesis. Speech voice is independent of the subscription reasoning model. Muting stops capture and still permits a voice preview. Shortcut dictation takes the microphone until it finishes. The mute, stop-speech and retry controls are also available without speech.
+Agent wake detection stays on the computer. Once the wake phrase is heard, the spoken command is transcribed the same way dictation is: the audio goes to Microsoft MAI-Transcribe-2 through OpenRouter with your OpenRouter key (ADR-0006). Natural and system speech run locally; Grok speech sends only the reply text for synthesis. Speech voice is independent of the subscription reasoning model. Muting stops capture and still permits a voice preview. Shortcut dictation takes the microphone until it finishes. The mute, stop-speech and retry controls are also available without speech.
 
 ## Use it
 

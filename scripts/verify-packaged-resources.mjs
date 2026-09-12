@@ -10,7 +10,7 @@ import { _electron as electron } from '@playwright/test'
 
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
-import { verifyPreparedAssets } from './verify-model.mjs'
+import { verifyPreparedAssets } from './verify-runtime.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 import { releasePlatformProfile } from './release-platform-profile.mjs'
@@ -131,13 +131,8 @@ export async function verifyPackagedMemoryStore(target) {
   }
 }
 
-async function verifyNormalPackagedLaunch(target, asarPath, entries) {
+async function verifyNormalPackagedLaunch(target) {
   const executable = profile.executablePath(target)
-  const workerEntry = entries.find((entry) =>
-    /^out\/renderer\/assets\/worker-[^/]+\.js$/.test(entry),
-  )
-  if (workerEntry === undefined) fail('transcription worker is missing from app.asar')
-  const workerUrl = pathToFileURL(join(asarPath, workerEntry)).href
   const smokeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
   const forbiddenE2EProfile = join(smokeRoot, 'forbidden-e2e-profile')
   const smokeEnvironment = await profile.smokeEnvironment(smokeRoot)
@@ -174,27 +169,18 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
 
     let result
     try {
-      result = await page.evaluate(async ({ packagedWorkerUrl }) => {
+      result = await page.evaluate(async () => {
       if (globalThis.sotto === undefined) throw new Error('normal preload bridge is unavailable')
       if (globalThis.sottoE2E !== undefined) throw new Error('packaged build admitted the E2E bridge')
 
-      const [settings, modelStatus, disclosures, modelResponse, runtimeResponse] = await Promise.all([
+      const [settings, runtimeResponse] = await Promise.all([
         globalThis.sotto.getSettings(),
-        globalThis.sotto.getModelStatus('instant'),
-        globalThis.sotto.listModelDisclosures(),
-        globalThis.fetch('sotto-model://model/onnx-community/moonshine-base-ONNX/config.json'),
         globalThis.fetch('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm'),
       ])
-      if ('reason' in modelStatus || modelStatus.preset !== 'instant' || modelStatus.state !== 'bundled') {
-        throw new Error('bundled model is not available through the normal bridge')
+      for (const method of ['transcribe', 'cancelTranscription', 'checkTranscriptionKey']) {
+        if (typeof globalThis.sotto[method] !== 'function') throw new Error('transcription bridge is unavailable')
       }
-      if ('reason' in disclosures || disclosures.models.length !== 2) {
-        throw new Error('model disclosure bridge failed')
-      }
-      if (!modelResponse.ok || !runtimeResponse.ok) {
-        throw new Error(`local asset protocol failed (model ${modelResponse.status}, runtime ${runtimeResponse.status})`)
-      }
-      await modelResponse.json()
+      if (!runtimeResponse.ok) throw new Error(`local runtime protocol failed (${runtimeResponse.status})`)
       const runtimeHeader = new Uint8Array(await runtimeResponse.arrayBuffer(), 0, 4)
       if (runtimeHeader.join(',') !== '0,97,115,109') throw new Error('local runtime protocol returned invalid WASM')
 
@@ -206,40 +192,8 @@ async function verifyNormalPackagedLaunch(target, asarPath, entries) {
         await context.close()
       }
 
-      const workerResult = await new Promise((resolveResult, rejectResult) => {
-        const worker = new globalThis.Worker(packagedWorkerUrl, { type: 'module' })
-        const timeout = globalThis.setTimeout(() => {
-          worker.terminate()
-          rejectResult(new Error('local transcription worker load timed out'))
-        }, 180_000)
-        worker.addEventListener('error', (event) => {
-          globalThis.clearTimeout(timeout)
-          worker.terminate()
-          rejectResult(new Error(event.message || 'local transcription worker failed'))
-        }, { once: true })
-        worker.addEventListener('message', (event) => {
-          const message = event.data
-          if (message?.requestId !== 'packaged-smoke' || message?.type === 'progress') return
-          globalThis.clearTimeout(timeout)
-          worker.terminate()
-          if (message?.type === 'ready') resolveResult(message)
-          else rejectResult(new Error(`local transcription worker returned ${String(message?.code ?? message?.type)}`))
-        })
-        worker.postMessage({
-          type: 'load',
-          requestId: 'packaged-smoke',
-          preset: 'instant',
-          inferencePreference: 'wasm',
-        })
+      return { language: settings.language, workletUrl }
       })
-
-      return {
-        theme: settings.theme,
-        modelState: modelStatus.state,
-        workletUrl,
-        workerDevice: workerResult.device,
-      }
-      }, { packagedWorkerUrl: workerUrl })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       fail(`${message}; protocols=${protocolLog.slice(-20).join(' | ')}; console=${consoleLog.slice(-10).join(' | ')}`)
@@ -275,7 +229,6 @@ export async function verifyPackagedResources(input, options = {}) {
   }
 
   await verifyPreparedAssets({
-    modelRoot: join(resources, 'models'),
     runtimeRoot: join(resources, 'runtime'),
   })
 
@@ -344,7 +297,7 @@ export async function verifyPackagedResources(input, options = {}) {
     ? undefined
     : await verifyInstallerAppAsar(options.installer, asarPath)
   const memoryStore = await verifyPackagedMemoryStore(target)
-  const smoke = await verifyNormalPackagedLaunch(target, asarPath, entries)
+  const smoke = await verifyNormalPackagedLaunch(target)
   const asarInfo = await stat(asarPath)
   const executableInfo = await stat(profile.executablePath(target))
   return {

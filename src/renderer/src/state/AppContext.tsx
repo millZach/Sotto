@@ -12,21 +12,17 @@ import {
 
 import type {
   HotkeyChangeResult,
-  ModelDisclosureCatalog,
-  ModelInstallRequest,
-  ModelStatus,
-  RemoteAsrHealth,
+  TranscriptionKeyCheck,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
-  UnavailableResult,
   UpdateStatus,
 } from '../../../shared/contracts'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { SottoPlatform } from '../../../shared/platform'
-import type { AppSettings, ModelPreset, SettingsPatch } from '../../../shared/settings'
+import type { AppSettings, SettingsPatch } from '../../../shared/settings'
 import type { RecoveryNotice } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
 import { SoundCuePlayer } from '../audio/soundCues'
@@ -39,12 +35,7 @@ import {
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { updatePromptKey } from '../features/updates/updatePrompt'
-import { TranscriptionClient } from '../transcription/client'
-import { FallbackTranscriber } from '../transcription/fallbackTranscriber'
-import {
-  RemoteTranscriptionClient,
-  type RemoteTranscriptionBridge,
-} from '../transcription/remoteClient'
+import { OpenRouterTranscriber, TranscriptionError, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
@@ -56,7 +47,6 @@ export type AppFailureCode =
   | 'HISTORY_UPDATE_FAILED'
   | 'HOTKEY_UPDATE_FAILED'
   | 'STARTUP_UPDATE_FAILED'
-  | 'MODEL_OPERATION_FAILED'
   | 'APP_ACTION_FAILED'
 
 export interface AppController {
@@ -75,8 +65,8 @@ export interface AppControllerFactoryBindings {
   readonly addHistory: SottoBridge['addHistory']
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
   readonly polishTranscript?: SottoBridge['polishTranscript']
-  /** Present only when the preload bridge exposes the remote ASR channels. */
-  readonly remoteAsr?: RemoteTranscriptionBridge
+  /** Present when the preload bridge exposes hosted transcription. */
+  readonly transcription?: TranscriptionBridge
   readonly platform?: SottoPlatform
 }
 
@@ -90,30 +80,18 @@ export interface ProductionControllerFactories {
   readonly createCuePlayer: () => DictationCuePlayer
 }
 
-/**
- * The local worker client is the transcriber unless the bridge offers the
- * remote channels, in which case it becomes the fallback behind them. Reading
- * the toggle through getSettings keeps a mid-session change effective without
- * rebuilding the controller.
- */
 function createProductionTranscriber(
   bindings: AppControllerFactoryBindings,
 ): DictationTranscriber {
-  const local = new TranscriptionClient()
-  const remoteBridge = bindings.remoteAsr
-  if (remoteBridge === undefined) return local
-  return new FallbackTranscriber({
-    local,
-    remote: new RemoteTranscriptionClient({ bridge: remoteBridge }),
-    isRemoteEnabled: () => {
-      try {
-        const settings = bindings.getSettings()
-        return settings.remoteAsr && settings.remoteAsrUrl.trim().length > 0
-      } catch {
-        return false
-      }
-    },
-  })
+  if (bindings.transcription !== undefined) {
+    return new OpenRouterTranscriber({ bridge: bindings.transcription })
+  }
+  return {
+    async load() {},
+    async transcribe() { throw new TranscriptionError('unconfigured') },
+    cancel() {},
+    dispose() {},
+  }
 }
 
 const productionFactories: ProductionControllerFactories = {
@@ -162,11 +140,7 @@ export interface AppActions {
   deleteHistory(id: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   copyHistory(text: string): Promise<boolean>
-  getModelStatus(preset: ModelPreset): Promise<ModelStatus | UnavailableResult>
-  listModelDisclosures(): Promise<ModelDisclosureCatalog | UnavailableResult>
-  installModel(request: ModelInstallRequest): ReturnType<SottoBridge['installModel']>
-  removeModel(preset: ModelPreset): ReturnType<SottoBridge['removeModel']>
-  checkRemoteAsr(): Promise<RemoteAsrHealth>
+  checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
   checkForUpdates(): Promise<UpdateStatus | null>
   downloadUpdate(): Promise<boolean>
   installUpdate(): Promise<boolean>
@@ -185,7 +159,6 @@ export interface AppContextValue {
   readonly failure: AppFailureCode | null
   readonly settings: AppSettings | null
   readonly history: readonly HistoryEntry[]
-  readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
   readonly dictation: DictationState
   readonly navigation: AppNavigation
   readonly recoveryNotices: readonly RecoveryNotice[]
@@ -227,7 +200,6 @@ export function AppProvider({
   const [failure, setFailure] = useState<AppFailureCode | null>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [history, setHistory] = useState<readonly HistoryEntry[]>([])
-  const [modelStatuses, setModelStatuses] = useState<Partial<Record<ModelPreset, ModelStatus>>>({})
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
@@ -247,7 +219,6 @@ export function AppProvider({
   const activeGenerationRef = useRef(0)
   const settingsVersionRef = useRef(0)
   const historyVersionRef = useRef(0)
-  const modelStatusVersionRef = useRef<Partial<Record<ModelPreset, number>>>({})
   const settingsTailRef = useRef<Promise<void>>(Promise.resolve())
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
 
@@ -271,18 +242,8 @@ export function AppProvider({
   )
 
   const commitSettings = useCallback((next: AppSettings): void => {
-    const previous = settingsRef.current
     settingsRef.current = next
     setSettings(next)
-    if (
-      previous !== null &&
-      (previous.modelPreset !== next.modelPreset ||
-        previous.inferencePreference !== next.inferencePreference)
-    ) {
-      void invokeController(controllerRef.current, (controller) =>
-        controller.prewarm?.() ?? Promise.resolve(),
-      )
-    }
   }, [])
 
   const enqueueSettings = useCallback(
@@ -353,7 +314,6 @@ export function AppProvider({
     activeGenerationRef.current = generation
     let localController: AppController | null = null
     let unsubscribeCommands: (() => void) | null = null
-    let unsubscribeModelStatus: (() => void) | null = null
     let unsubscribeSettings: (() => void) | null = null
     let unsubscribeRecoveryNotices: (() => void) | null = null
     let unsubscribeUpdateStatus: (() => void) | null = null
@@ -363,8 +323,6 @@ export function AppProvider({
     setSettings(null)
     settingsRef.current = null
     setHistory([])
-    setModelStatuses({})
-    modelStatusVersionRef.current = {}
     setDictation(initialDictationState)
     setRecoveryNotices([])
     setUpdate(null)
@@ -408,16 +366,6 @@ export function AppProvider({
       },
       () => undefined,
     )
-    try {
-      unsubscribeModelStatus = bridge.onModelStatus((modelStatus) => {
-        if (!isCurrentGeneration(generation)) return
-        modelStatusVersionRef.current[modelStatus.preset] =
-          (modelStatusVersionRef.current[modelStatus.preset] ?? 0) + 1
-        setModelStatuses((current) => ({ ...current, [modelStatus.preset]: modelStatus }))
-      })
-    } catch {
-      // Model progress is observational; explicit status requests remain available.
-    }
     void bridge.listHistory().then(
       (entries) => {
         if (
@@ -461,11 +409,10 @@ export function AppProvider({
           },
           deliverOutput: (request) => bridge.deliverOutput(request),
           polishTranscript: (request) => bridge.polishTranscript(request),
-          remoteAsr: {
-            transcribeRemote: (request) => bridge.transcribeRemote(request),
-            cancelRemoteTranscription: (requestId) =>
-              bridge.cancelRemoteTranscription(requestId),
-            checkRemoteAsr: () => bridge.checkRemoteAsr(),
+          transcription: {
+            transcribe: (request) => bridge.transcribe(request),
+            cancelTranscription: (requestId) =>
+              bridge.cancelTranscription(requestId),
           },
           addHistory: async (entry) => {
             // E2E dictations get a constant timestamp so design captures do not
@@ -549,8 +496,6 @@ export function AppProvider({
       unsubscribeCommands = null
       try { unsubscribeSettings?.() } catch { /* listener is already unreachable */ }
       unsubscribeSettings = null
-      try { unsubscribeModelStatus?.() } catch { /* listener is already unreachable */ }
-      unsubscribeModelStatus = null
       try { unsubscribeRecoveryNotices?.() } catch { /* listener is already unreachable */ }
       unsubscribeRecoveryNotices = null
       try { unsubscribeUpdateStatus?.() } catch { /* listener is already unreachable */ }
@@ -635,53 +580,9 @@ export function AppProvider({
         return false
       }
     },
-    getModelStatus: async (preset) => {
-      if (bridge === undefined) return UNAVAILABLE
-      const generation = activeGenerationRef.current
-      const version = (modelStatusVersionRef.current[preset] ?? 0) + 1
-      modelStatusVersionRef.current[preset] = version
-      try {
-        const result = await bridge.getModelStatus(preset)
-        if (
-          'preset' in result &&
-          isCurrentGeneration(generation) &&
-          modelStatusVersionRef.current[preset] === version
-        ) {
-          setModelStatuses((current) => ({ ...current, [result.preset]: result }))
-        }
-        return result
-      } catch {
-        if (isCurrentGeneration(generation)) setFailure('MODEL_OPERATION_FAILED')
-        return UNAVAILABLE
-      }
-    },
-    listModelDisclosures: async () => {
-      if (bridge === undefined) return UNAVAILABLE
-      const generation = activeGenerationRef.current
-      try { return await bridge.listModelDisclosures() } catch {
-        if (isCurrentGeneration(generation)) setFailure('MODEL_OPERATION_FAILED')
-        return UNAVAILABLE
-      }
-    },
-    installModel: async (request) => {
-      if (bridge === undefined) return UNAVAILABLE
-      const generation = activeGenerationRef.current
-      try { return await bridge.installModel(request) } catch {
-        if (isCurrentGeneration(generation)) setFailure('MODEL_OPERATION_FAILED')
-        return UNAVAILABLE
-      }
-    },
-    removeModel: async (preset) => {
-      if (bridge === undefined) return UNAVAILABLE
-      const generation = activeGenerationRef.current
-      try { return await bridge.removeModel(preset) } catch {
-        if (isCurrentGeneration(generation)) setFailure('MODEL_OPERATION_FAILED')
-        return UNAVAILABLE
-      }
-    },
-    checkRemoteAsr: async () => {
+    checkTranscriptionKey: async () => {
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
-      try { return await bridge.checkRemoteAsr() } catch { return { ok: false, reason: 'network' } }
+      try { return await bridge.checkTranscriptionKey() } catch { return { ok: false, reason: 'network' } }
     },
     // Nothing about updating may raise a failure banner: an update that cannot
     // be reached is simply an update the user hears nothing about.
@@ -744,14 +645,13 @@ export function AppProvider({
     failure,
     settings,
     history,
-    modelStatuses,
     dictation,
     navigation,
     recoveryNotices,
     update,
     dismissedUpdates,
     actions,
-  }), [actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, modelStatuses, navigation, platform, recoveryNotices, settings, status, update])
+  }), [actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update])
 
   return createElement(AppContext.Provider, { value }, children)
 }

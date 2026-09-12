@@ -1,3 +1,5 @@
+import { parseDictionary } from '../../shared/dictionary'
+
 /**
  * Formatting-pass prompt for the LLM transcript cleanup.
  *
@@ -66,15 +68,7 @@ Notice: when the speaker corrects themselves ("no wait", "no scratch that"), kee
 
 const OUTPUT_RULE = 'Output ONLY the cleaned text. No preamble, no quotes, no explanation.'
 
-/** One dictionary word per line; blank lines and duplicates are dropped. */
-export function parseDictionary(dictionary: string): readonly string[] {
-  const seen = new Set<string>()
-  for (const line of dictionary.split(/\r?\n/)) {
-    const word = line.trim()
-    if (word.length > 0 && word.length <= 64) seen.add(word)
-  }
-  return [...seen]
-}
+export { parseDictionary } from '../../shared/dictionary'
 
 export function buildPolishSystemPrompt(dictionary: string): string {
   const words = parseDictionary(dictionary)

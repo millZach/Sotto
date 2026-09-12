@@ -1,3 +1,5 @@
+import { TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
+
 const INVALID_SAMPLE_RATE_MESSAGE = 'Sample rates must be finite positive numbers.'
 const DOWNSAMPLE_HALF_TAPS = 16
 const DOWNSAMPLE_TAP_COUNT = DOWNSAMPLE_HALF_TAPS * 2 + 1
@@ -90,7 +92,7 @@ function downsampleMono(
 export function resampleMono(
   input: Float32Array,
   sourceRate: number,
-  targetRate = 16_000,
+  targetRate = TRANSCRIPTION_SAMPLE_RATE,
 ): Float32Array {
   assertSampleRate(sourceRate)
   assertSampleRate(targetRate)

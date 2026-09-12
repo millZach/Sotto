@@ -1,28 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, CircleAlert, Trash2 } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
 
 import {
-  REMOTE_ASR_PRIVACY_NOTICE,
+  TRANSCRIPTION_PRIVACY_NOTICE,
   UPDATE_CHECK_PRIVACY_NOTICE,
-  type CommandResult,
   type HotkeyChangeResult,
-  type ModelDisclosure,
-  type ModelDisclosureCatalog,
-  type ModelInstallRequest,
-  type ModelStatus,
-  type RemoteAsrHealth,
+  type TranscriptionKeyCheck,
   type StartupState,
-  type UnavailableResult,
   type UpdateStatus,
 } from '../../../../shared/contracts'
 import { formatAccelerator, parseAccelerator } from '../../../../shared/accelerator'
-import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type {
   AppSettings,
   HistoryRetention,
   LlmQuality,
-  ModelPreset,
   ReducedMotion,
   SettingsPatch,
 } from '../../../../shared/settings'
@@ -35,7 +27,7 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { KNOWN_LANGUAGES } from '../../languages'
 import { platformCopy } from '../../platformCopy'
-import { SideSheet } from '../../components/SideSheet'
+import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentAccountSettings, AgentSettingsLink } from '../../agents/AgentAccountSettings'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
@@ -50,7 +42,6 @@ interface DraftSubmission<T> {
 export interface SettingsViewProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
-  readonly modelStatuses: Readonly<Partial<Record<ModelPreset, ModelStatus>>>
   /** Null until the main process answers; the section still renders. */
   readonly updateStatus: UpdateStatus | null
   readonly mediaDevices?: MediaDevicesAdapter | undefined
@@ -59,11 +50,7 @@ export interface SettingsViewProps {
   readonly onSetStartup: (enabled: boolean) => Promise<StartupState | null>
   readonly onResetSettings: () => Promise<boolean>
   readonly onClearHistory: () => Promise<boolean>
-  readonly onGetModelStatus: (preset: ModelPreset) => Promise<ModelStatus | UnavailableResult>
-  readonly onListModelDisclosures: () => Promise<ModelDisclosureCatalog | UnavailableResult>
-  readonly onInstallModel: (request: ModelInstallRequest) => Promise<CommandResult>
-  readonly onRemoveModel: (preset: ModelPreset) => Promise<CommandResult>
-  readonly onCheckRemoteAsr: () => Promise<RemoteAsrHealth>
+  readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
   readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
@@ -85,35 +72,6 @@ function prefersStillMotion(): boolean {
   if (typeof document !== 'undefined' && document.documentElement.dataset.reducedMotion === 'on') return true
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-function bytesLabel(bytes: number): string {
-  return `${Math.round(bytes / 1_000_000)} MB`
-}
-
-function modelReady(status: ModelStatus | undefined): boolean {
-  return status?.state === 'bundled' || status?.state === 'ready'
-}
-
-function modelStateCopy(status: ModelStatus | undefined): string {
-  if (status === undefined) return 'Checking local files...'
-  switch (status.state) {
-    case 'bundled': return 'Included and ready offline'
-    case 'ready': return 'Downloaded and ready offline'
-    case 'downloading': return `Downloading locally - ${Math.round((status.progress ?? 0) * 100)}%`
-    case 'error': return `${MODEL_CATALOG[status.preset].label} model could not be prepared. Retry the download.`
-    default: return 'Not installed'
-  }
-}
-
-function remoteAsrHealthCopy(health: RemoteAsrHealth): string {
-  if (health.ok) return 'Connected. Sotto can reach this server.'
-  switch (health.reason) {
-    case 'unconfigured': return 'That is not a valid http or https server address.'
-    case 'timeout': return 'The server did not answer. Check that it is running and reachable.'
-    case 'http': return 'The server answered, but not with a healthy status.'
-    default: return 'Sotto could not reach that server.'
-  }
 }
 
 function updateStatusCopy(status: UpdateStatus | null): string {
@@ -151,7 +109,6 @@ function canonicalAccelerator(value: string, platform: SottoPlatform): string {
 export function SettingsView({
   settings,
   platform,
-  modelStatuses,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   onUpdateSettings,
@@ -159,16 +116,11 @@ export function SettingsView({
   onSetStartup,
   onResetSettings,
   onClearHistory,
-  onGetModelStatus,
-  onListModelDisclosures,
-  onInstallModel,
-  onRemoveModel,
-  onCheckRemoteAsr,
+  onCheckTranscriptionKey,
   onCheckForUpdates,
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
-  const [serverGuideOpen, setServerGuideOpen] = useState(false)
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [hotkeyDraft, setHotkeyDraft] = useState(() => formatAccelerator(settings.hotkey, platform, 'editing'))
@@ -177,25 +129,13 @@ export function SettingsView({
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
-  const [llmApiKeyDraft, setLlmApiKeyDraft] = useState(settings.llmApiKey)
   const [llmDictionaryDraft, setLlmDictionaryDraft] = useState(settings.llmDictionary)
-  const [remoteAsrUrlDraft, setRemoteAsrUrlDraft] = useState(settings.remoteAsrUrl)
-  const [remoteAsrStatus, setRemoteAsrStatus] = useState<{ text: string; error: boolean } | null>(null)
-  const [remoteAsrTesting, setRemoteAsrTesting] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
-  const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | null>(null)
-  const [disclosureState, setDisclosureState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [installPreset, setInstallPreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
-  const [installConsent, setInstallConsent] = useState(false)
-  const [removePreset, setRemovePreset] = useState<Exclude<ModelPreset, 'instant'> | null>(null)
-  const [installFailure, setInstallFailure] = useState<string | null>(null)
-  const [removeFailure, setRemoveFailure] = useState<string | null>(null)
   const [clearFailure, setClearFailure] = useState<string | null>(null)
   const [resetFailure, setResetFailure] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
-  const remoteAsrSequenceRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -263,15 +203,8 @@ export function SettingsView({
   }, [settings.successDisplayMs])
 
   useEffect(() => {
-    setLlmApiKeyDraft(settings.llmApiKey)
-  }, [settings.llmApiKey])
-  useEffect(() => {
     setLlmDictionaryDraft(settings.llmDictionary)
   }, [settings.llmDictionary])
-  useEffect(() => {
-    setRemoteAsrUrlDraft(settings.remoteAsrUrl)
-  }, [settings.remoteAsrUrl])
-
   useEffect(() => {
     if (mediaDevices === undefined) {
       setDeviceState('error')
@@ -304,23 +237,6 @@ export function SettingsView({
       }
     }
   }, [mediaDevices])
-
-  useEffect(() => {
-    let current = true
-    setDisclosureState('loading')
-    void onListModelDisclosures().then(
-      (result) => {
-        if (!current) return
-        if ('models' in result) {
-          setDisclosures(result)
-          setDisclosureState('ready')
-        } else setDisclosureState('error')
-      },
-      () => { if (current) setDisclosureState('error') },
-    )
-    for (const preset of ['instant', 'fast'] as const) void onGetModelStatus(preset)
-    return () => { current = false }
-  }, [onGetModelStatus, onListModelDisclosures])
 
   const save = useCallback(async (patch: SettingsPatch, successText = 'Setting saved.'): Promise<boolean> => {
     const sequence = ++saveSequenceRef.current
@@ -381,35 +297,6 @@ export function SettingsView({
     }
   }
 
-  // One affordance rather than separate save and test buttons: the address is
-  // only useful once it has been saved, and the probe runs against the saved
-  // value in the main process.
-  const saveAndTestRemoteAsr = async (): Promise<void> => {
-    const sequence = ++remoteAsrSequenceRef.current
-    const url = remoteAsrUrlDraft.trim()
-    setRemoteAsrStatus(null)
-    if (url.length === 0) {
-      setRemoteAsrStatus({ text: 'Enter a server address first.', error: true })
-      return
-    }
-
-    setRemoteAsrTesting(true)
-    try {
-      const saved = url === settingsRef.current.remoteAsrUrl
-        || await onUpdateSettings({ remoteAsrUrl: url }).catch(() => false)
-      if (sequence !== remoteAsrSequenceRef.current) return
-      if (!saved) {
-        setRemoteAsrStatus({ text: 'The server address could not be saved.', error: true })
-        return
-      }
-      const health = await onCheckRemoteAsr().catch((): RemoteAsrHealth => ({ ok: false, reason: 'network' }))
-      if (sequence !== remoteAsrSequenceRef.current) return
-      setRemoteAsrStatus({ text: remoteAsrHealthCopy(health), error: !health.ok })
-    } finally {
-      if (sequence === remoteAsrSequenceRef.current) setRemoteAsrTesting(false)
-    }
-  }
-
   // One busy flag for all three: they are the same button row, and only one of
   // check, download, or restart can sensibly be in flight at a time.
   const runUpdateAction = async (operation: () => Promise<unknown>): Promise<void> => {
@@ -420,10 +307,6 @@ export function SettingsView({
       setUpdateBusy(false)
     }
   }
-
-  const optionalDisclosure = useCallback((preset: Exclude<ModelPreset, 'instant'>): ModelDisclosure | undefined => (
-    disclosures?.models.find((model) => model.preset === preset && !model.bundled)
-  ), [disclosures])
 
   const copy = platformCopy(platform)
   const languageKnown = KNOWN_LANGUAGES.some(({ value }) => value === settings.language)
@@ -455,29 +338,6 @@ export function SettingsView({
       applyMotionPreference(settingsRef.current.reducedMotion)
     }
   }
-
-  const modelCards = useMemo(() => (['instant', 'fast'] as const).map((preset) => {
-    const status = modelStatuses[preset]
-    const optional = preset !== 'instant'
-    const disclosure = optional ? optionalDisclosure(preset) : undefined
-    const selected = settings.modelPreset === preset
-    const canInstall = status?.state === 'missing' || status?.state === 'error'
-    return (
-      <article className="settings-model-card" key={preset} data-selected={selected}>
-        <div className="settings-model-card__heading">
-          <div><h3>{MODEL_CATALOG[preset].label}</h3><p>{preset === 'instant' ? 'Included, near-instant, English only' : 'Whisper model for non-English speech'}</p></div>
-          {selected ? <span className="settings-selected-badge"><Check size={14} />Selected</span> : null}
-        </div>
-        <p className="settings-model-card__status" aria-live="polite">{modelStateCopy(status)}</p>
-        {disclosure === undefined ? null : <p>{bytesLabel(disclosure.totalBytes)} / {disclosure.license}</p>}
-        <div className="settings-model-card__actions">
-          <Button variant={selected ? 'ghost' : 'secondary'} disabled={!modelReady(status) || selected} onClick={() => void save({ modelPreset: preset }, `${MODEL_CATALOG[preset].label} selected.`)}>Use {MODEL_CATALOG[preset].label}</Button>
-          {optional && status?.state !== 'ready' ? <Button disabled={disclosure === undefined || !canInstall} onClick={() => { setInstallFailure(null); setInstallConsent(false); setInstallPreset(preset) }}>Install {MODEL_CATALOG[preset].label}</Button> : null}
-          {optional && status?.state === 'ready' ? <Button variant="ghost" onClick={() => { setRemoveFailure(null); setRemovePreset(preset) }}><Trash2 size={15} />Remove {MODEL_CATALOG[preset].label}</Button> : null}
-        </div>
-      </article>
-    )
-  }), [modelStatuses, optionalDisclosure, save, settings.modelPreset])
 
   const saveHotkey = async (): Promise<void> => {
 
@@ -568,37 +428,28 @@ export function SettingsView({
           </Card>
 
           <Card className="settings-section" id="settings-transcription">
-            <div className="settings-section__heading"><h2>Transcription</h2><p><b>{MODEL_CATALOG[settings.modelPreset].label}</b> turns your speech into text {settings.remoteAsr ? 'with your transcription server and a local fallback.' : 'on this computer.'}</p></div>
-            <div className="settings-model-grid">{modelCards}</div>
-            {disclosureState === 'error' ? <p className="settings-inline-warning"><CircleAlert size={16} />{modelReady(modelStatuses.instant) ? 'Optional model details are unavailable. Standard remains ready and no download can start.' : 'Optional model details are unavailable, so no model download can start.'}</p> : null}
-            <div className="settings-rows">
-              <Field label="Language" description="Automatic currently uses English defaults; choose a language for multilingual speech."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{KNOWN_LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
-              <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
-              <Button variant="ghost" className="server-guide-link" onClick={() => setServerGuideOpen(true)}>Set up a transcription server</Button>
-              <div className="settings-input-action">
-                <Field label="Transcription server" description="Base address of an OpenAI-compatible speech server on your network, such as http://desktop.local:5092.">
-                  <input className="tt-input" inputMode="url" autoComplete="off" spellCheck={false} placeholder="http://host:port" value={remoteAsrUrlDraft} onBlur={() => { if (remoteAsrUrlDraft.trim() !== settings.remoteAsrUrl) void saveAndTestRemoteAsr() }} onChange={(event) => { setRemoteAsrStatus(null); setRemoteAsrUrlDraft(event.currentTarget.value) }} />
-                </Field>
-                <Button variant="secondary" disabled={remoteAsrTesting} onClick={() => void saveAndTestRemoteAsr()}>{remoteAsrTesting ? 'Testing...' : 'Test connection'}</Button>
+            <div className="settings-section__heading"><h2>Transcription</h2><p><b>MAI-Transcribe-2</b> turns your speech into text through OpenRouter.</p></div>
+            <article className="settings-model-card" data-selected={true}>
+              <div className="settings-model-card__heading">
+                <div><h3>MAI-Transcribe-2</h3><p>Microsoft's hosted model. Uses your personal dictionary as spelling hints.</p></div>
+                <span className="settings-selected-badge"><Check size={14} />Selected</span>
               </div>
-              <Toggle label="Use the transcription server" checked={settings.remoteAsr} disabled={settings.remoteAsrUrl.trim().length === 0} onCheckedChange={(checked) => void save({ remoteAsr: checked })} description={REMOTE_ASR_PRIVACY_NOTICE} />
+            </article>
+            <div className="settings-rows">
+              <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
+              <Field label="Language" description="Choose a language or let the transcription model detect it."><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{KNOWN_LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
+              <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
             </div>
-            {remoteAsrStatus === null ? null : <p className={`settings-remote-status${remoteAsrStatus.error ? ' settings-remote-status--error' : ''}`} role="status">{remoteAsrStatus.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{remoteAsrStatus.text}</p>}
+            <p>{TRANSCRIPTION_PRIVACY_NOTICE}</p>
           </Card>
 
           <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
 
           <Card className="settings-section" id="settings-formatting">
-            <div className="settings-section__heading"><h2>Cleanup</h2><p>{settings.llmFormatting ? 'AI cleanup is on. Transcript text is sent to OpenRouter; audio stays on this computer.' : 'AI cleanup is off. Your words stay as you dictated them.'}</p></div>
+            <div className="settings-section__heading"><h2>Cleanup</h2><p>{settings.llmFormatting ? 'AI cleanup is on. Transcript text is sent to OpenRouter with the same key.' : 'AI cleanup is off. Your words stay as you dictated them.'}</p></div>
             <div className="settings-rows">
-              <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text (never audio) to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
+              <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
               <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
-              <div className="settings-input-action">
-                <Field label="OpenRouter API key" description="Required for AI formatting. Stored locally in settings.">
-                  <input className="tt-input" type="password" autoComplete="off" value={llmApiKeyDraft} onBlur={() => { if (llmApiKeyDraft !== settings.llmApiKey) void save({ llmApiKey: llmApiKeyDraft.trim() }, 'API key saved.') }} onChange={(event) => setLlmApiKeyDraft(event.currentTarget.value)} />
-                </Field>
-
-              </div>
               <div className="settings-input-action">
                 <Field label="Personal dictionary" description="One word or name per line. The AI corrects mis-heard words toward these.">
                   <textarea className="tt-input" rows={5} value={llmDictionaryDraft} onBlur={() => { if (llmDictionaryDraft !== settings.llmDictionary) void save({ llmDictionary: llmDictionaryDraft }, 'Dictionary saved.') }} onChange={(event) => setLlmDictionaryDraft(event.currentTarget.value)} />
@@ -664,69 +515,8 @@ export function SettingsView({
         </div>
       </div>
 
-      {serverGuideOpen ? <SideSheet title="Transcription server" onClose={() => setServerGuideOpen(false)}><ol className="server-guide"><li><h3>Start your speech server</h3><p>Run an OpenAI-compatible transcription server on a computer you control. Keep it reachable from this device.</p></li><li><h3>Enter its address</h3><p>Use the base address, including the port, in Transcription server. The address saves when you leave the field.</p><code>http://desktop.local:5092</code></li><li><h3>Test, then turn it on</h3><p>Select Test connection. Once it connects, enable Use the transcription server. Audio goes to this server; if it cannot answer, Sotto falls back to local transcription.</p></li></ol></SideSheet> : null}
-      {installPreset === null ? null : (() => {
-        const disclosure = optionalDisclosure(installPreset)
-        if (disclosure === undefined) return null
-        const label = MODEL_CATALOG[installPreset].label
-        const installStatus = modelStatuses[installPreset]
-        const pendingStatus = installStatus?.state === 'downloading'
-          ? modelStateCopy(installStatus)
-          : installStatus?.state === 'error'
-            ? modelStateCopy(installStatus)
-            : installStatus !== undefined && modelReady(installStatus)
-              ? `${label} is installed and ready offline.`
-              : `Preparing the ${label} model download...`
-        return <ConfirmationDialog
-          title={`Download ${label} model?`}
-          description={<div className="settings-download-dialog"><p>{disclosure.repository} / {bytesLabel(disclosure.totalBytes)} / {disclosure.license}</p><p>{disclosures?.optionalDownloadNotice}</p><label><input type="checkbox" checked={installConsent} onChange={(event) => setInstallConsent(event.currentTarget.checked)} />Allow this {label} model download</label></div>}
-          cancelLabel="Not now"
-          confirmLabel={`Download ${label} model`}
-          danger={false}
-          confirmDisabled={!installConsent}
-          pendingStatus={pendingStatus}
-          failureMessage={installFailure ?? `${label} could not be downloaded. Standard is unchanged.`}
-          fallbackFocusRef={headingRef}
-          onCancel={() => { setInstallConsent(false); setInstallPreset(null) }}
-          onConfirm={async () => {
-            if (!installConsent) return false
-            setInstallFailure(null)
-            const result = await onInstallModel({ preset: installPreset, consent: true }).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
-            setInstallConsent(false)
-            if (!result.ok) { setInstallFailure(`${label} could not be downloaded. Standard is unchanged.`); return false }
-            setNotice({ text: `${label} is installed and ready offline.`, error: false })
-            void onGetModelStatus(installPreset)
-            return true
-          }}
-        />
-      })()}
-      {removePreset === null ? null : <ConfirmationDialog
-        title={`Remove ${MODEL_CATALOG[removePreset].label} model?`}
-        description="The downloaded files will be removed. Standard always remains installed and ready."
-        cancelLabel="Keep model"
-        confirmLabel="Remove downloaded model"
-        failureMessage={removeFailure ?? 'The downloaded model could not be removed.'}
-        fallbackFocusRef={headingRef}
-        onCancel={() => setRemovePreset(null)}
-        onConfirm={async () => {
-          setRemoveFailure(null)
-          if (settings.modelPreset === removePreset) {
-            if (!modelReady(modelStatuses.instant)) {
-              setRemoveFailure('Standard is not ready, so the selected model was not removed.')
-              return false
-            }
-            const switched = await onUpdateSettings({ modelPreset: 'instant' }).catch(() => false)
-            if (!switched) { setRemoveFailure('Could not switch to Standard, so the selected model was not removed.'); return false }
-          }
-          const result = await onRemoveModel(removePreset).catch(() => ({ ok: false as const, reason: 'unavailable' as const }))
-          if (!result.ok) { setRemoveFailure('The downloaded model could not be removed.'); return false }
-          setNotice({ text: 'Downloaded model removed. Standard remains ready.', error: false })
-          void onGetModelStatus(removePreset)
-          return true
-        }}
-      />}
-      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings and models are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
-      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Downloaded models and saved history are preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
+      {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
+      {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Saved history is preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}
     </div>
   )
 }

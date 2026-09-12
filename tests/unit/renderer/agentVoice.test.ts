@@ -43,7 +43,7 @@ function harness() {
   const dependencies: AgentVoiceDependencies = {
     createWakeDetector: () => wake,
     createCapture: (options) => { captureOptions = options; return capture },
-    createLocalTranscriber: () => local,
+    createTranscriber: () => local,
     speech,
     createId: () => `voice-${nextId++}`,
     setTimer: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -51,7 +51,7 @@ function harness() {
   }
   const onWake = vi.fn()
   const session = new AgentVoiceSession({
-    getSettings: () => ({ microphoneId: null, modelPreset: 'instant', language: 'en' }),
+    getSettings: () => ({ microphoneId: null, language: 'en' }),
     onState: (state) => states.push(state),
     onWake,
     onUtterance: async (text) => { utterances.push(text) },
@@ -80,7 +80,7 @@ describe('desktop agent voice interaction', () => {
     h.session.dispose()
   })
 
-  it('keeps room speech local, accepts exact wake words, and preserves following commands', async () => {
+  it('keeps room speech behind wake activation, accepts exact wake words, and preserves following commands', async () => {
     const h = harness()
     await h.session.start()
     await h.hear('Tell Hey Sotto to open this later.')

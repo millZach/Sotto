@@ -643,7 +643,7 @@ test.describe('authoritative design-review captures', () => {
   test('onboarding, dictate, focus, and feedback matrix', async () => {
     await withSotto({ onboardingComplete: false }, async ({ page }) => {
       const onboarding = page.locator('.onboarding-shell')
-      const onboardingHeading = page.getByRole('heading', { name: /private dictation/i })
+      const onboardingHeading = page.getByRole('heading', { name: /dictation, ready when you are/i })
       await expect(onboardingHeading).toBeVisible()
       expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === heading)).toBe(true)
       expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineStyle: string } }).getComputedStyle(heading).outlineStyle)).toBe('none')
@@ -657,8 +657,8 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-2-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
 
       await page.getByRole('button', { name: 'Continue' }).click()
-      await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-3-model.png', { category: 'onboarding', state: 'model-ready' })
+      await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-3-openrouter.png', { category: 'onboarding', state: 'openrouter-key' })
 
       await page.getByRole('button', { name: 'Continue' }).click()
       await expect(page.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
@@ -764,9 +764,9 @@ test.describe('authoritative design-review captures', () => {
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
-      await page.getByRole('button', { name: 'Set up a transcription server', exact: true }).click()
-      await capturePage(page, 'settings-server.png')
-      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: 'Verify key', exact: true }).click()
+      await expect(page.getByText('Key verified.')).toBeVisible()
+      await capturePage(page, 'settings-key-verified.png')
       await page.getByLabel('Paste delay').fill('10')
       await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
@@ -857,7 +857,7 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('button', { name: /test microphone/i }).click()
         await expect(page.getByText(/microphone ready/i)).toBeVisible()
         await page.getByRole('button', { name: 'Continue' }).click()
-        await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
+        await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
         await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)
       })
 

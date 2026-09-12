@@ -1,6 +1,6 @@
 import type { AppSettings } from '../../../shared/settings'
 import type { AgentWakeDetection } from '../../../shared/agents'
-import { TranscriptionClient, type LoadOptions, type TranscribeOptions } from '../transcription/client'
+import { OpenRouterTranscriber, TranscriptionError, type TranscriptionBridge, type LoadOptions, type TranscribeOptions } from '../transcription/openRouterTranscriber'
 import { BrowserVoiceCapture, type VoiceCapture, type VoiceCaptureOptions } from './voiceCapture'
 import { LocalSystemSpeech, type VoiceSpeechOutput } from './voiceSpeech'
 import { calculateRms } from '../audio/audioMath'
@@ -14,9 +14,10 @@ export interface AgentVoiceState {
 }
 
 export interface AgentVoiceOptions {
+  readonly transcriptionBridge?: TranscriptionBridge
   readonly wakeDetector?: LocalWakeDetector
   readonly speechOutput?: VoiceSpeechOutput
-  readonly getSettings: () => Pick<AppSettings, 'microphoneId' | 'modelPreset' | 'language'>
+  readonly getSettings: () => Pick<AppSettings, 'microphoneId' | 'language'>
   readonly onState: (state: AgentVoiceState) => void
   readonly onWake?: () => void | Promise<void>
   /** Receives activated speech only. Caller owns prompt composition and send-it semantics. */
@@ -26,7 +27,7 @@ export interface AgentVoiceOptions {
   readonly conversationTimeoutMs?: number
 }
 
-interface LocalVoiceTranscriber {
+interface VoiceTranscriber {
   load(options: LoadOptions): Promise<unknown>
   transcribe(options: TranscribeOptions): Promise<{ text: string; language: string }>
   cancel(sessionId: string): void
@@ -42,8 +43,8 @@ export interface LocalWakeDetector {
 export interface AgentVoiceDependencies {
   readonly createWakeDetector: () => LocalWakeDetector
   readonly createCapture: (options: VoiceCaptureOptions) => VoiceCapture
-  /** Must always be the local worker, never the optional remote dictation fallback. */
-  readonly createLocalTranscriber: () => LocalVoiceTranscriber
+  /** Agent voice uses the same hosted transcription as dictation. */
+  readonly createTranscriber: () => VoiceTranscriber
   readonly speech: VoiceSpeechOutput
   readonly createId: () => string
   readonly setTimer: (callback: () => void, delayMs: number) => unknown
@@ -54,7 +55,7 @@ const MAX_PENDING_UTTERANCES = 8
 const SPEECH_ECHO_GUARD_MS = 450
 const DEFAULT_CONVERSATION_TIMEOUT_MS = 120_000
 
-function productionDependencies(): AgentVoiceDependencies {
+function productionDependencies(bridge: TranscriptionBridge | undefined): AgentVoiceDependencies {
   return {
     createWakeDetector: () => ({
       async load() { throw new Error('Wake setup required. Configure a supported local wake model in Agent connection settings.') },
@@ -62,7 +63,9 @@ function productionDependencies(): AgentVoiceDependencies {
       dispose() {},
     }),
     createCapture: (options) => new BrowserVoiceCapture(options),
-    createLocalTranscriber: () => new TranscriptionClient(),
+    createTranscriber: () => bridge === undefined
+      ? { async load() {}, async transcribe() { throw new TranscriptionError('unconfigured') }, cancel() {}, dispose() {} }
+      : new OpenRouterTranscriber({ bridge }),
     speech: new LocalSystemSpeech(),
     createId: () => crypto.randomUUID(),
     setTimer: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -111,7 +114,7 @@ export class AgentVoiceSession {
   private disposed = false
   private starting = false
   private capture: VoiceCapture | null = null
-  private local: LocalVoiceTranscriber | null = null
+  private local: VoiceTranscriber | null = null
   private wake: LocalWakeDetector | null = null
   private inputError: string | undefined
   private speechError: string | undefined
@@ -129,7 +132,7 @@ export class AgentVoiceSession {
 
   constructor(private readonly options: AgentVoiceOptions, dependencies?: AgentVoiceDependencies) {
     this.dependencies = dependencies ?? {
-      ...productionDependencies(),
+      ...productionDependencies(options.transcriptionBridge),
       ...(options.speechOutput === undefined ? {} : { speech: options.speechOutput }),
       ...(options.wakeDetector === undefined ? {} : { createWakeDetector: () => options.wakeDetector! }),
     }
@@ -271,9 +274,9 @@ export class AgentVoiceSession {
       this.wake = wake
       await wake.load()
       if (generation !== this.captureGeneration || !this.canCapture()) return
-      const local = this.dependencies.createLocalTranscriber()
+      const local = this.dependencies.createTranscriber()
       this.local = local
-      await local.load({ preset: settings.modelPreset, inferencePreference: 'wasm' })
+      await local.load({})
       if (generation !== this.captureGeneration || !this.canCapture()) return
       const capture = this.dependencies.createCapture({
         ...(settings.microphoneId === null ? {} : { selectedDeviceId: settings.microphoneId }),
@@ -355,8 +358,6 @@ export class AgentVoiceSession {
           const result = audio.length < 1 || (activated && calculateRms(audio) < 0.004) ? { text: '' } : await local.transcribe({
             audio,
             sessionId: id,
-            preset: settings.modelPreset,
-            inferencePreference: 'wasm',
             language: settings.language,
           })
           if (pending.generation !== this.audioGeneration || !this.canCapture()) continue

@@ -48,8 +48,8 @@ const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
   'preparing-audio': 'Preparing audio',
-  'loading-model': 'Loading local model',
-  transcribing: 'Transcribing locally',
+  'loading-model': 'Preparing transcription',
+  transcribing: 'Transcribing',
   'delivering-output': 'Delivering text',
 }
 
@@ -77,9 +77,21 @@ function errorCopyFor(
       title: 'No speech detected',
       detail: 'Speak closer to the microphone and try again.',
     },
+    TRANSCRIPTION_UNCONFIGURED: {
+      title: 'API key needed',
+      detail: 'Add your OpenRouter API key in Settings to transcribe.',
+    },
+    TRANSCRIPTION_UNAUTHORIZED: {
+      title: 'API key rejected',
+      detail: 'OpenRouter rejected the API key. Check it in Settings.',
+    },
+    TRANSCRIPTION_OFFLINE: {
+      title: 'Connection unavailable',
+      detail: 'Sotto could not reach OpenRouter. Check your connection and try again.',
+    },
     TRANSCRIPTION_FAILED: {
       title: 'Couldn’t transcribe',
-      detail: 'Try again or choose the Standard model.',
+      detail: 'Transcription failed. Try again.',
     },
     OUTPUT_UNAVAILABLE: {
       title: 'Output unavailable',

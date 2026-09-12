@@ -6,8 +6,7 @@ interface WasmEnvironment {
   numThreads?: number
 }
 
-// Whisper inference stops scaling past four WASM threads, so reserve one core
-// for the UI and cap the rest. ORT falls back to one thread without
+// Natural speech reserves one core for the UI and caps WASM inference at four threads. ORT falls back to one thread without
 // SharedArrayBuffer, making an over-request safe on locked-down machines.
 const MAX_INFERENCE_THREADS = 4
 

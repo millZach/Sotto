@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { lstat, mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 
-import { createHttpsDownloader, replaceDirectoryAtomic, type LockedFile, type ModelDownloader } from '../models/modelManager'
+import { createHttpsDownloader, replaceDirectoryAtomic, type LockedFile, type ModelDownloader } from '../models/modelDownload'
 import type { FileSource } from '../models/modelProtocol'
 import manifestData from './speechModelManifest.json'
 
@@ -202,7 +202,7 @@ export class NaturalSpeechModels {
       }
       hash.update([path, info.dev, info.ino, info.mode, info.nlink, info.size, info.mtimeNs, info.ctimeNs, info.birthtimeNs].join('\0'))
     }
-    // Like the existing transcription model cache, identity/timestamp changes force
+    // Identity/timestamp changes force
     // fresh content hashing; asset protocol containment is checked again per request.
     return hash.digest('hex')
   }

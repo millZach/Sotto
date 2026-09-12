@@ -1,3 +1,5 @@
+import type { SottoBridge } from '../../../shared/contracts'
+import type { AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
 import type { MicrophoneTestController } from '../features/onboarding/microphoneTest'
@@ -68,4 +70,25 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
 export function createE2EControllerFactory(scenario: E2EScenario): AppControllerFactory {
   const factories = createE2EFactories(scenario)
   return (bindings) => createProductionDictationController(bindings, factories)
+}
+
+
+/** A display-only saved-key fixture; never enters settings storage or an upload. */
+export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): SottoBridge {
+  if (!enabled) return bridge
+  const configured = (settings: AppSettings): AppSettings => ({
+    ...settings, llmApiKey: 'Saved in your operating system credential store',
+  })
+  return {
+    ...bridge,
+    getSettings: async () => configured(await bridge.getSettings()),
+    updateSettings: async (patch) => {
+      const persisted = { ...patch }
+      delete persisted.llmApiKey
+      return configured(await bridge.updateSettings(persisted))
+    },
+    resetSettings: async () => configured(await bridge.resetSettings()),
+    onSettingsChanged: (listener) => bridge.onSettingsChanged((settings) => listener(configured(settings))),
+    checkTranscriptionKey: async () => ({ ok: true }),
+  }
 }

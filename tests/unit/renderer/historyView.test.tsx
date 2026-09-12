@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HistoryView as HistoryContent, HistoryFooter, type HistoryViewProps } from '../../../src/renderer/src/features/history/HistoryView'
+import { HistoryView as HistoryContent, HistoryFooter, transcriptFacts, type HistoryViewProps } from '../../../src/renderer/src/features/history/HistoryView'
 import type { HistoryEntry } from '../../../src/shared/history'
 
 function HistoryView(props: HistoryViewProps): ReactNode {
@@ -28,6 +28,13 @@ const baseProps = {
 }
 
 describe('HistoryView', () => {
+  it('labels new MAI transcripts and preserves legacy model facts and local storage copy', () => {
+    const entry = entries[0]!
+    expect(transcriptFacts({ ...entry, modelPreset: 'mai' }).rest).toContain('MAI-Transcribe-2 model. Kept on this computer only.')
+    expect(transcriptFacts({ ...entry, modelPreset: 'instant' }).rest).toContain('Moonshine')
+    expect(transcriptFacts(entry).rest).toContain('Whisper')
+  })
+
   it('searches locally with trimmed case-insensitive matching and copies through its safe action', async () => {
     const user = userEvent.setup()
     const copy = vi.fn(async () => true)

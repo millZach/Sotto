@@ -5,7 +5,7 @@ import {
   LOCAL_MODEL_ROOT,
   LOCAL_RUNTIME_ROOT,
   type LocalInferenceEnvironment,
-} from '../../../src/renderer/src/transcription/environment'
+} from '../../../src/renderer/src/agents/inferenceEnvironment'
 
 function environmentWithWasm(): LocalInferenceEnvironment {
   return {

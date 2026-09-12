@@ -82,7 +82,7 @@ function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
 }
 
 /**
- * Owns the GitHub-Releases updater the way RemoteAsrService owns remote
+ * Owns the GitHub-Releases updater the way OpenRouterTranscriptionService owns
  * transcription: one main-process object, every dependency injected, and no
  * failure that can escape as a rejection. An unreachable GitHub, a malformed
  * feed, or a build with no feed at all are all just phases the UI can render,

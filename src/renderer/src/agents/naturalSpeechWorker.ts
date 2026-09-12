@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { env, pipeline, type TextToAudioPipeline } from '@huggingface/transformers'
-import { configureLocalInferenceEnvironment, LOCAL_MODEL_ROOT } from '../transcription/environment'
+import { configureLocalInferenceEnvironment, LOCAL_MODEL_ROOT } from './inferenceEnvironment'
 import { NATURAL_VOICES } from '../../../shared/agents'
 import { encodeSpeechWave, splitSpeechText } from './speechAudio'
 

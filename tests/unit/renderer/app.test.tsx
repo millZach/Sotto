@@ -10,8 +10,6 @@ import {
   type AppControllerFactory,
 } from '../../../src/renderer/src/state/AppContext'
 import {
-  MODEL_DOWNLOAD_PRIVACY_NOTICE,
-  type ModelDisclosureCatalog,
   type SottoBridge,
   type UpdateStatus,
 } from '../../../src/shared/contracts'
@@ -19,31 +17,6 @@ import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const OK = Object.freeze({ ok: true as const })
-const DISCLOSURES: ModelDisclosureCatalog = Object.freeze({
-  models: Object.freeze([
-    Object.freeze({
-      preset: 'fast' as const,
-      repository: 'Xenova/whisper-tiny',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: '5332fcc35e32a33b86612b9a57a89be7906102b1',
-      totalBytes: 42_000_000,
-      license: 'Apache-2.0' as const,
-      bundled: false,
-    }),
-    Object.freeze({
-      preset: 'instant' as const,
-      repository: 'onnx-community/moonshine-base-ONNX',
-      sourceProvider: 'Hugging Face' as const,
-      sourceHost: 'huggingface.co' as const,
-      revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad',
-      totalBytes: 67_000_000,
-      license: 'MIT' as const,
-      bundled: true,
-    }),
-  ]),
-  optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
-})
 
 function deferred<Value>() {
   let resolve!: (value: Value) => void
@@ -71,11 +44,10 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     onDictationCommand: vi.fn(() => () => undefined),
     onSettingsChanged: vi.fn(() => () => undefined),
     publishWidgetState: vi.fn(async () => OK),
-    getModelStatus: vi.fn(async (preset) => ({ preset, state: 'bundled' as const })),
-    listModelDisclosures: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
-    installModel: vi.fn(async () => OK),
-    removeModel: vi.fn(async () => OK),
-    onModelStatus: vi.fn(() => () => undefined),
+    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    cancelTranscription: vi.fn(async () => OK),
+    checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -118,7 +90,7 @@ function renderApp(
 }
 
 async function reachMicrophoneStep(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await waitFor(() => expect(screen.getByRole('heading', { name: /private dictation/i })).toBeVisible())
+  await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
 }
 
@@ -127,7 +99,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
   await waitFor(() => expect(screen.getByText(/microphone ready/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByText(/standard model is included and ready/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByText(/connect your openrouter key/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }
@@ -157,7 +129,7 @@ describe('shared main-window frame', () => {
     {
       name: 'onboarding',
       createStateBridge: () => createBridge(),
-      stateText: /private dictation/i,
+      stateText: /dictation, ready when you are/i,
     },
     {
       name: 'ready',
@@ -243,7 +215,7 @@ describe('Sotto application onboarding integration', () => {
     })
     renderApp(bridge)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /private dictation/i })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
     // The heading commits with the settings render, but the preferences land in
     // a passive effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
@@ -274,7 +246,7 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
-    expect(screen.getByRole('contentinfo')).toHaveTextContent(/pastes automatically/i)
+    expect(screen.getByRole('contentinfo')).toHaveTextContent(/add your openrouter api key in settings/i)
   })
 
   it('carries a release offer into the management window and keeps a dismissal for the session', async () => {
@@ -375,43 +347,9 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
   })
 
-  it('installs an optional model only after returned disclosure and explicit consent', async () => {
-    const user = userEvent.setup()
-    const installModel = vi.fn(async () => OK)
-    const bridge = createBridge({
-      listModelDisclosures: vi.fn(async () => DISCLOSURES),
-      installModel,
-    })
-    renderApp(bridge)
 
-    await reachMicrophoneStep(user)
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    const installFast = await screen.findByRole('button', { name: /install multi-lingual/i })
-    expect(installFast).toBeDisabled()
-    expect(installModel).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
-    await user.click(installFast)
-    await waitFor(() => expect(installModel).toHaveBeenCalledWith({ preset: 'fast', consent: true }))
-  })
 
-  it('shows a finite optional-download failure when the desktop bridge is unavailable', async () => {
-    const user = userEvent.setup()
-    const bridge = createBridge({
-      listModelDisclosures: vi.fn(async () => DISCLOSURES),
-      installModel: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
-    })
-    renderApp(bridge)
 
-    await reachMicrophoneStep(user)
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    await screen.findByText(/ip address and request time/i)
-    await user.click(screen.getByRole('checkbox', { name: /allow the multi-lingual model download/i }))
-    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
-
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/download could not start/i))
-    expect(screen.getByText(/standard model is unchanged/i)).toBeVisible()
-    expect(document.body).not.toHaveTextContent('MODEL_INSTALL_UNAVAILABLE')
-  })
 
   it('stays in setup and reports a save failure instead of claiming completion', async () => {
     const user = userEvent.setup()
@@ -465,7 +403,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /continue/i }))
     stopped.resolve()
 
-    await screen.findByRole('heading', { name: /your local model/i })
+    await screen.findByRole('heading', { name: /connect your openrouter key/i })
     await act(async () => undefined)
     expect(createMicrophoneTest).toHaveBeenCalledOnce()
     expect(replacement.start).not.toHaveBeenCalled()
@@ -556,36 +494,12 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     started.resolve('ready')
 
-    await screen.findByRole('heading', { name: /your local model/i })
+    await screen.findByRole('heading', { name: /connect your openrouter key/i })
     await act(async () => undefined)
     expect(microphone.stop).toHaveBeenCalledOnce()
   })
 
-  it('keeps a newer model-status event when an older explicit check resolves later', async () => {
-    const user = userEvent.setup()
-    const check = deferred<Awaited<ReturnType<SottoBridge['getModelStatus']>>>()
-    const listeners: Array<Parameters<SottoBridge['onModelStatus']>[0]> = []
-    const bridge = createBridge({
-      getModelStatus: vi.fn(() => check.promise),
-      onModelStatus: vi.fn((listener) => {
-        listeners.push(listener)
-        return () => undefined
-      }),
-    })
-    renderApp(bridge)
-    await waitFor(() => expect(listeners).toHaveLength(1))
-    await waitFor(() => expect(bridge.getModelStatus).toHaveBeenCalledWith('instant'))
 
-    act(() => listeners[0]?.({ preset: 'instant', state: 'ready' }))
-    await reachMicrophoneStep(user)
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    await screen.findByText(/standard model is included and ready/i)
-
-    check.resolve({ preset: 'instant', state: 'missing' })
-    await act(async () => undefined)
-    expect(screen.getByText(/standard model is included and ready/i)).toBeVisible()
-    expect(screen.queryByText(/standard model is not ready/i)).not.toBeInTheDocument()
-  })
 })
 
 describe('transcription pipeline prewarm', () => {
@@ -623,7 +537,7 @@ describe('transcription pipeline prewarm', () => {
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
   })
 
-  it('prewarms again only when the model preset changes', async () => {
+  it('does not prewarm again when settings change', async () => {
     let emitSettings: ((next: AppSettings) => void) | undefined
     const bridge = createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
@@ -646,10 +560,10 @@ describe('transcription pipeline prewarm', () => {
         ...DEFAULT_SETTINGS,
         onboardingComplete: true,
         theme: 'dark',
-        modelPreset: 'fast',
+        language: 'es',
       })
     })
-    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
   })
   it('carries the bridge platform into every main-window view', async () => {
     const user = userEvent.setup()
@@ -660,7 +574,7 @@ describe('transcription pipeline prewarm', () => {
     }))
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeInTheDocument())
-    expect(screen.getByLabelText('Command+Shift+Space')).toBeVisible()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Add your OpenRouter API key in Settings')
     expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: /help/i }))

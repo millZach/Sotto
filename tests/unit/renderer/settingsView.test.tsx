@@ -6,26 +6,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import {
-  MODEL_DOWNLOAD_PRIVACY_NOTICE,
-  REMOTE_ASR_PRIVACY_NOTICE,
+  TRANSCRIPTION_PRIVACY_NOTICE,
   UPDATE_CHECK_PRIVACY_NOTICE,
   type HotkeyChangeResult,
-  type ModelDisclosureCatalog,
-  type ModelStatus,
+  type TranscriptionKeyCheck,
 } from '../../../src/shared/contracts'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
-})
-
-const disclosures: ModelDisclosureCatalog = Object.freeze({
-  models: Object.freeze([
-    Object.freeze({ preset: 'instant' as const, repository: 'onnx-community/moonshine-base-ONNX', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: 'b1e9b6aae3c3c7298f10c3798393fdf38e8fbbad', totalBytes: 67_000_000, license: 'MIT' as const, bundled: true }),
-    Object.freeze({ preset: 'fast' as const, repository: 'Xenova/whisper-tiny', sourceProvider: 'Hugging Face' as const, sourceHost: 'huggingface.co' as const, revision: '5332fcc35e32a33b86612b9a57a89be7906102b1', totalBytes: 42_000_000, license: 'Apache-2.0' as const, bundled: false }),
-  ]),
-  optionalDownloadNotice: MODEL_DOWNLOAD_PRIVACY_NOTICE,
 })
 
 function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'> {
@@ -49,21 +39,13 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
   return {
     settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
     platform: 'win32',
-    modelStatuses: {
-      instant: { preset: 'instant', state: 'bundled' },
-      fast: { preset: 'fast', state: 'missing' },
-    },
     mediaDevices: createMediaDevices([device('default', 'Studio microphone')]),
     onUpdateSettings: vi.fn(async () => true),
     onReplaceHotkey: vi.fn(async () => ({ ok: true } as const)),
     onSetStartup: vi.fn(async (enabled) => ({ enabled })),
     onResetSettings: vi.fn(async () => true),
     onClearHistory: vi.fn(async () => true),
-    onGetModelStatus: vi.fn(async (preset) => ({ preset, state: preset === 'instant' ? 'bundled' : 'missing' } as ModelStatus)),
-    onListModelDisclosures: vi.fn(async () => disclosures),
-    onInstallModel: vi.fn(async () => ({ ok: true } as const)),
-    onRemoveModel: vi.fn(async () => ({ ok: true } as const)),
-    onCheckRemoteAsr: vi.fn(async () => ({ ok: true } as const)),
+    onCheckTranscriptionKey: vi.fn(async () => ({ ok: true } as const)),
     updateStatus: { currentVersion: '3.4.0', phase: { phase: 'up-to-date' } },
     onCheckForUpdates: vi.fn(async () => null),
     onDownloadUpdate: vi.fn(async () => true),
@@ -294,138 +276,20 @@ describe('SettingsView', () => {
   it('preserves an unknown persisted language and labels auto honestly', () => {
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, language: 'cy' } })} />)
     expect(screen.getByRole('option', { name: 'Saved language (cy)' })).toBeVisible()
-    expect(screen.getByRole('option', { name: 'Automatic (English default)' })).toBeVisible()
+    expect(screen.getByRole('option', { name: 'Automatic (detect language)' })).toBeVisible()
     expect(screen.queryByText(/auto-detect/i)).not.toBeInTheDocument()
   })
 
-  it('requests a status for every preset so each model card leaves the checking state', async () => {
-    const getStatus = vi.fn(async (preset: ModelStatus['preset']) =>
-      ({ preset, state: preset === 'instant' ? 'bundled' : 'missing' } as ModelStatus))
-    render(<SettingsView {...baseProps({ onGetModelStatus: getStatus })} />)
-
-    for (const preset of ['instant', 'fast']) {
-      expect(getStatus).toHaveBeenCalledWith(preset)
-    }
-  })
-
-  it('requires returned disclosure and fresh explicit consent before every optional install', async () => {
-    const user = userEvent.setup()
-    const install = vi.fn(async () => ({ ok: true as const }))
-    render(<SettingsView {...baseProps({ onInstallModel: install })} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /install multi-lingual/i })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
-    expect(screen.getByText(/ip address and request time/i)).toBeVisible()
-    const confirm = screen.getByRole('button', { name: /download multi-lingual model/i })
-    expect(confirm).toBeDisabled()
-    expect(install).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
-    await user.click(confirm)
-    await waitFor(() => expect(install).toHaveBeenCalledWith({ preset: 'fast', consent: true }))
-    await user.click(screen.getByRole('button', { name: /install multi-lingual/i }))
-    expect(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i })).not.toBeChecked()
-  })
-
-  it('keeps install progress and errors live inside the busy consent dialog and reports ready only after completion', async () => {
-    const user = userEvent.setup()
-    const first = deferred<{ ok: false; reason: 'unavailable' }>()
-    const second = deferred<{ ok: true }>()
-    const install = vi.fn()
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise)
-    const props = baseProps({ onInstallModel: install })
-    const rendered = render(<SettingsView {...props} />)
-    await user.click(await screen.findByRole('button', { name: /install multi-lingual/i }))
-    expect(install).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
-    await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
-    const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveAttribute('aria-busy', 'true')
-    rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'downloading', progress: 0.42 } }} />)
-    expect(within(dialog).getByText(/42%/i)).toBeVisible()
-    first.resolve({ ok: false, reason: 'unavailable' })
-    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(/multi-lingual could not be downloaded/i))
-
-    expect(screen.getByRole('button', { name: /download multi-lingual model/i })).toBeDisabled()
-    await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
-    await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
-    second.resolve({ ok: true })
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/multi-lingual is installed and ready/i))
-    expect(screen.queryByText(/download started/i)).not.toBeInTheDocument()
-  })
-
-  it('does not claim Standard is ready when disclosure lookup and Standard status both fail', async () => {
-    render(<SettingsView {...baseProps({
-      modelStatuses: { instant: { preset: 'instant', state: 'error' } },
-      onListModelDisclosures: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
-    })} />)
-    expect(await screen.findByText(/no model download can start/i)).toBeVisible()
-    expect(screen.queryByText(/standard remains ready/i)).not.toBeInTheDocument()
-  })
-
-  it('shows finite model progress and errors and permits selection only when ready', async () => {
-    const user = userEvent.setup()
-    const statuses = {
-      instant: { preset: 'instant', state: 'bundled' as const },
-      fast: { preset: 'fast', state: 'downloading' as const, progress: 0.42 },
-    }
-    const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' }, modelStatuses: statuses, onUpdateSettings: update })} />)
-    expect(screen.getByText(/42%/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: /use multi-lingual/i })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: /use standard/i }))
-    expect(update).toHaveBeenCalledWith({ modelPreset: 'instant' })
-  })
-
-  it('selects Standard successfully before removing the selected optional model and never removes Standard', async () => {
-    const user = userEvent.setup()
-    const order: string[] = []
-    const update = vi.fn(async (patch: Partial<AppSettings>) => { order.push(`select:${String(patch.modelPreset)}`); return true })
-    const remove = vi.fn(async (preset) => { order.push(`remove:${String(preset)}`); return { ok: true as const } })
-    const props = baseProps({
-      settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' },
-      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
-      onUpdateSettings: update as SettingsViewProps['onUpdateSettings'],
-      onRemoveModel: remove,
-    })
-    render(<SettingsView {...props} />)
-    expect(screen.queryByRole('button', { name: /remove standard/i })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
-    await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
-    await waitFor(() => expect(remove).toHaveBeenCalledWith('fast'))
-    expect(order).toEqual(['select:instant', 'remove:fast'])
-  })
-
-  it('does not remove the current optional model when selecting Standard fails', async () => {
-    const user = userEvent.setup()
-    const remove = vi.fn(async () => ({ ok: true as const }))
-    render(<SettingsView {...baseProps({
-      settings: { ...DEFAULT_SETTINGS, modelPreset: 'fast' },
-      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
-      onUpdateSettings: vi.fn(async () => false),
-      onRemoveModel: remove,
-    })} />)
-    await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
-    await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not switch to standard/i))
-    expect(remove).not.toHaveBeenCalled()
-  })
-
   it.each([
-    ['remove', 'The downloaded model could not be removed.'],
     ['clear', 'History could not be cleared.'],
     ['reset', 'Settings could not be reset.'],
   ] as const)('shows a finite %s failure inside the active dialog', async (operation, message) => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps({
-      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: 'ready' } },
-      onRemoveModel: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
       onClearHistory: vi.fn(async () => false),
       onResetSettings: vi.fn(async () => false),
     })} />)
-    if (operation === 'remove') {
-      await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
-      await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
-    } else if (operation === 'clear') {
+    if (operation === 'clear') {
       await user.click(screen.getByRole('button', { name: /clear history/i }))
       await user.click(screen.getByRole('button', { name: /clear all transcripts/i }))
     } else {
@@ -433,29 +297,6 @@ describe('SettingsView', () => {
       await user.click(screen.getByRole('button', { name: /reset all settings/i }))
     }
     expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(message)
-  })
-
-  it.each(['install', 'remove'] as const)('focuses the Settings heading when successful %s replaces its trigger', async (operation) => {
-    const user = userEvent.setup()
-    const pending = deferred<{ ok: true }>()
-    const props = baseProps({
-      modelStatuses: { instant: { preset: 'instant', state: 'bundled' }, fast: { preset: 'fast', state: operation === 'install' ? 'missing' : 'ready' } },
-      onInstallModel: vi.fn(() => pending.promise),
-      onRemoveModel: vi.fn(() => pending.promise),
-    })
-    const rendered = render(<SettingsView {...props} />)
-    if (operation === 'install') {
-      await user.click(await screen.findByRole('button', { name: /install multi-lingual/i }))
-      await user.click(screen.getByRole('checkbox', { name: /allow this multi-lingual model download/i }))
-      await user.click(screen.getByRole('button', { name: /download multi-lingual model/i }))
-      rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'ready' } }} />)
-    } else {
-      await user.click(screen.getByRole('button', { name: /remove multi-lingual/i }))
-      await user.click(screen.getByRole('button', { name: /remove downloaded model/i }))
-      rendered.rerender(<SettingsView {...props} modelStatuses={{ ...props.modelStatuses, fast: { preset: 'fast', state: 'missing' } }} />)
-    }
-    pending.resolve({ ok: true })
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus())
   })
 
   it('wires startup, auto-paste, retention, reset, and clear-history controls', async () => {
@@ -498,58 +339,94 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
   })
 
-  it('saves the transcription server address and reports a reachable server', async () => {
-    const user = userEvent.setup()
-    const update = vi.fn(async () => true)
-    const check = vi.fn(async () => ({ ok: true as const }))
-    render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckRemoteAsr: check })} />)
-
-    await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
-    await user.click(screen.getByRole('button', { name: /test connection/i }))
-
-    expect(update).toHaveBeenCalledWith({ remoteAsrUrl: 'forge.local:5092' })
-    expect(check).toHaveBeenCalledOnce()
-    expect(await screen.findByText('Connected. Sotto can reach this server.')).toBeVisible()
+  it('shows only MAI and puts its shared key and verification in Transcription', () => {
+    const { container } = render(<SettingsView {...baseProps()} />)
+    const section = container.querySelector('#settings-transcription') as HTMLElement
+    expect(within(section).getByLabelText('OpenRouter API key')).toHaveAttribute('type', 'password')
+    expect(within(section).getByRole('button', { name: 'Verify key' })).toBeVisible()
+    expect(container.querySelectorAll('.settings-model-card')).toHaveLength(1)
+    expect(within(section).getByRole('heading', { name: 'MAI-Transcribe-2' })).toBeVisible()
+    expect(within(section).getByText('Selected')).toBeVisible()
+    expect(within(section).getByText(TRANSCRIPTION_PRIVACY_NOTICE)).toBeVisible()
+    expect(within(container.querySelector('#settings-formatting') as HTMLElement).queryByLabelText('OpenRouter API key')).toBeNull()
+    expect(screen.queryByRole('button', { name: /install.*model|test connection/i })).toBeNull()
+    expect(screen.queryByLabelText('Transcription server')).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Use the transcription server' })).toBeNull()
   })
 
-  it('explains why an unreachable server failed without saving nothing', async () => {
+  it.each([
+    [{ ok: true }, 'Key verified.'],
+    [{ ok: false, reason: 'unauthorized' }, 'OpenRouter rejected this key.'],
+    [{ ok: false, reason: 'unconfigured' }, 'Enter your OpenRouter API key first.'],
+    [{ ok: false, reason: 'network' }, 'Could not reach OpenRouter.'],
+    [{ ok: false, reason: 'timeout' }, 'Could not reach OpenRouter.'],
+    [{ ok: false, reason: 'http' }, 'OpenRouter returned an error.'],
+  ] as const)('shows the verification result %j', async (result, message) => {
     const user = userEvent.setup()
-    const check = vi.fn(async () => ({ ok: false as const, reason: 'timeout' as const }))
-    render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
-
-    await user.type(screen.getByRole('textbox', { name: 'Transcription server' }), 'forge.local:5092')
-    await user.click(screen.getByRole('button', { name: /test connection/i }))
-
-    expect(await screen.findByText(/did not answer/i)).toBeVisible()
+    render(<SettingsView {...baseProps({ onCheckTranscriptionKey: vi.fn(async (): Promise<TranscriptionKeyCheck> => result) })} />)
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(await screen.findByText(message)).toBeVisible()
   })
 
-  it('asks for an address before probing an empty field', async () => {
+  it('awaits draft persistence before checking', async () => {
     const user = userEvent.setup()
+    const pending = deferred<boolean>()
+    const update = vi.fn(() => pending.promise)
     const check = vi.fn(async () => ({ ok: true as const }))
-    render(<SettingsView {...baseProps({ onCheckRemoteAsr: check })} />)
-
-    await user.click(screen.getByRole('button', { name: /test connection/i }))
-
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckTranscriptionKey: check })} />)
+    // A generated inert value exercises credential plumbing without storing any key in a fixture.
+    await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(update).toHaveBeenCalledOnce()
     expect(check).not.toHaveBeenCalled()
-    expect(await screen.findByText('Enter a server address first.')).toBeVisible()
+    pending.resolve(true)
+    expect(await screen.findByText('Key verified.')).toBeVisible()
+    expect(check).toHaveBeenCalledOnce()
   })
 
-  it('locks the remote toggle until an address is saved and discloses the audio upload', async () => {
+  it('keeps the saved placeholder through verification and credential replacement', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
-    const { rerender } = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    const stored = 'Saved in your operating system credential store'
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, llmApiKey: stored }, onUpdateSettings: update })} />)
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(stored)
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(await screen.findByText('Key verified.')).toBeVisible()
+    expect(update).not.toHaveBeenCalled()
+    await user.clear(screen.getByLabelText('OpenRouter API key'))
+    await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(await screen.findByText('Key verified.')).toBeVisible()
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(stored)
+  })
 
-    const toggle = screen.getByRole('switch', { name: 'Use the transcription server' })
-    expect(toggle).toBeDisabled()
-    expect(screen.getByText(REMOTE_ASR_PRIVACY_NOTICE)).toBeVisible()
+  it('preserves newer typing and suppresses a stale verification result during a save', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<boolean>()
+    const check = vi.fn(async () => ({ ok: true as const }))
+    const props = baseProps({ onUpdateSettings: vi.fn(() => pending.promise), onCheckTranscriptionKey: check })
+    const rendered = render(<SettingsView {...props} />)
+    const input = screen.getByLabelText('OpenRouter API key')
+    await user.type(input, crypto.randomUUID())
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    await user.clear(input)
+    const newer = crypto.randomUUID()
+    await user.type(input, newer)
+    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, llmApiKey: 'Saved in your operating system credential store' }} />)
+    pending.resolve(true)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Verify key' })).toBeEnabled())
+    expect((input as HTMLInputElement).value === newer).toBe(true)
+    expect(check).not.toHaveBeenCalled()
+  })
 
-    rerender(<SettingsView {...baseProps({
-      onUpdateSettings: update,
-      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, remoteAsrUrl: 'http://forge.local:5092' },
-    })} />)
-
-    await user.click(screen.getByRole('switch', { name: 'Use the transcription server' }))
-    expect(update).toHaveBeenCalledWith({ remoteAsr: true })
+  it('does not verify a draft that failed to save', async () => {
+    const user = userEvent.setup()
+    const check = vi.fn(async () => ({ ok: true as const }))
+    render(<SettingsView {...baseProps({ onUpdateSettings: vi.fn(async () => false), onCheckTranscriptionKey: check })} />)
+    await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    expect(await screen.findByText('The API key could not be saved.')).toBeVisible()
+    expect(check).not.toHaveBeenCalled()
   })
 
   it('discloses what an update check sends and saves the choice through the ordinary patch flow', async () => {

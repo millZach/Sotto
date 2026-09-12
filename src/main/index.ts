@@ -55,7 +55,7 @@ import {
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
-import { RemoteAsrService } from './asr/remoteAsrService'
+import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
 import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
@@ -91,7 +91,6 @@ import {
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
-  MODEL_STATUS,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
   UPDATE_STATUS,
@@ -102,8 +101,6 @@ import type { WidgetSnapshot } from '../shared/dictation'
 import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
-import { loadBundledModelManifest, loadCatalogLock, ModelManager } from './models/modelManager'
-import { createModelIpcService } from './models/modelIpcService'
 import {
   loadVerifiedRuntimeSource,
   registerLocalAssetProtocols,
@@ -113,7 +110,6 @@ import {
   createE2EClipboard,
   createE2EGlobalShortcuts,
   createE2ENativeState,
-  createE2EModelOperations,
   createE2EPasteProcess,
   resolveE2EConfiguration,
   isTrustedMainE2ESender,
@@ -552,24 +548,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     // reload/devtools accelerators the app ships with today.
     Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
-  const productionModels = e2eConfiguration === null ? await (async () => {
-    const modelRoot = join(resourceRoot, 'models')
-    const runtimeRoot = join(resourceRoot, 'runtime')
-    const catalog = await loadCatalogLock(join(modelRoot, 'catalog.lock.json'))
-    const bundledManifest = await loadBundledModelManifest(join(modelRoot, 'manifest.lock.json'), catalog)
-    const runtimeSource = await loadVerifiedRuntimeSource(runtimeRoot)
-    const manager = new ModelManager({
-      catalog,
-      bundledManifest,
-      packagedRoot: modelRoot,
-      userRoot: join(userDataPath, 'models'),
-      onProgress(progress) {
-        windows.sendToMain(MODEL_STATUS, { preset: progress.preset, state: 'downloading', progress: progress.totalBytes === 0 ? 0 : progress.completedBytes / progress.totalBytes })
-      },
-    })
-    return { manager, runtimeSource }
-  })() : null
-  const models = productionModels?.manager ?? createE2EModelOperations()
+  const runtimeSource = e2eConfiguration === null
+    ? await loadVerifiedRuntimeSource(join(resourceRoot, 'runtime'))
+    : null
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const pasteCommands = createPasteCommands(platform)
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
@@ -638,11 +619,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Remote transcription uploads audio, so like the formatting pass it stays
-  // offline in E2E runs and every failure resolves to a value the renderer
-  // falls back from.
-  const remoteAsr = new RemoteAsrService({
-    getSettings: () => settings.get(),
+  // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
+  const transcription = new OpenRouterTranscriptionService({
+    getSettings: () => settings.forFormatting(),
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
@@ -813,13 +792,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         // synchronous exactly as it is today.
         microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
       ),
-    installProtocols: productionModels === null
+    installProtocols: runtimeSource === null
       ? () => () => undefined
       : () => registerLocalAssetProtocols({
           protocol,
           net,
-          modelSources: async () => ({ ...await productionModels.manager.protocolSources(), ...await naturalSpeechModels.protocolSources() }),
-          runtimeSource: productionModels.runtimeSource,
+          modelSources: () => naturalSpeechModels.protocolSources(),
+          runtimeSource,
         }),
     registerIpc: () => {
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
@@ -861,10 +840,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcriptPolish: {
           polish: (text, asr) => transcriptPolish.polish(text, asr),
         },
-        remoteAsr: {
-          transcribe: (request) => remoteAsr.transcribe(request),
-          cancel: (requestId) => remoteAsr.cancel(requestId),
-          check: () => remoteAsr.check(),
+        transcription: {
+          transcribe: (request) => transcription.transcribe(request),
+          cancel: (requestId) => transcription.cancel(requestId),
+          checkKey: () => transcription.checkKey(),
         },
         updates: {
           status: () => updates.status(),
@@ -876,9 +855,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           setPresentation: (presentation) => windows.setWidgetPresentation(presentation),
           reportDrag: (payload) => windows.reportWidgetDrag(payload),
         },
-        models: createModelIpcService(models, (status) => {
-          windows.sendToMain(MODEL_STATUS, status)
-        }),
         recoveryNotices: {
           list: () => recoveryNotices.list(),
         },
@@ -895,7 +871,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupAgents()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
-        remoteAsr.dispose()
+        transcription.dispose()
         updates.dispose()
         cleanup()
       }

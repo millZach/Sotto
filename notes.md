@@ -1,5 +1,20 @@
 # Talk to Text (Sotto) — engineering notes
 
+## 2026-09-11 — The phrase list, not the model, won the transcription bench
+Benched MAI-Transcribe-2, Voxtral Mini Transcribe 2 and GPT Transcribe through
+OpenRouter against Parakeet on Forge plus the cleanup pass. Raw MAI was no
+better on names than raw Parakeet (both 55.6% exact). Passing the dictionary as
+`provider.options.azure.phraseList.phrases` took MAI to 100% exact names and 0%
+WER on every screen clip, including "Zache" and "Wispr Flow", which nothing else
+spelled right. Two traps in the harness: my forwarding classifier demanded a
+field-specific error message, but OpenRouter masks upstream errors as "Provider
+returned 400", so the rejection status alone has to count; and Voxtral's
+`context_bias` was accepted silently and produced a transcript identical to the
+raw route, so silent acceptance means nothing. Outcome: MAI is now the only
+transcription route (ADR-0006), Parakeet is stopped on Forge, and Moonshine and
+the Whisper download are gone. Supertonic still needs the ONNX WASM runtime and
+the asset protocols, so those stayed.
+
 ## 2026-08-29 — Made the visual gate deterministic instead of refreshing it again
 Third sub-perceptual gate failure in one day broke my patience with baseline
 refreshes. Root causes found: the scripted E2E dictation stamped its history

@@ -74,7 +74,7 @@ describe('WidgetApp', () => {
         now={0}
       />,
     )
-    expect(screen.getByText('Transcribing locally')).toHaveAttribute('title', macCopy.widgetProcessingDetail)
+    expect(screen.getByText('Transcribing')).toHaveAttribute('title', macCopy.widgetProcessingDetail)
 
     rerender(
       <WidgetApp
@@ -151,8 +151,8 @@ describe('WidgetApp', () => {
 
   it.each([
     ['preparing-audio', 'Preparing audio'],
-    ['loading-model', 'Loading local model'],
-    ['transcribing', 'Transcribing locally'],
+    ['loading-model', 'Preparing transcription'],
+    ['transcribing', 'Transcribing'],
     ['delivering-output', 'Delivering text'],
   ] as const)('renders the %s processing stage with bounded progress', (stage, label) => {
     render(
@@ -176,7 +176,10 @@ describe('WidgetApp', () => {
     ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Try again or choose the Standard model.'],
+    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Add your OpenRouter API key in Settings to transcribe.'],
+    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. Check it in Settings.'],
+    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. Check your connection and try again.'],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Transcription failed. Try again.'],
     ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
     ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
@@ -413,7 +416,7 @@ describe('WidgetApp', () => {
       />,
     )
     const processingCopy = container.querySelector('.widget-copy')
-    expect(processingCopy).toHaveTextContent('Transcribing locally')
+    expect(processingCopy).toHaveTextContent('Transcribing')
     expect(processingCopy).not.toHaveAttribute('role')
     expect(processingCopy).not.toHaveAttribute('aria-live')
   })
@@ -1080,7 +1083,7 @@ describe('WidgetEntry', () => {
       status: 'processing', sessionId: 'announce', startedAt: Date.now() - 1_000,
       stage: 'transcribing', progress: 0.58, cancellable: true,
     }))
-    expect(polite).toHaveTextContent(`Transcribing locally. ${win32Copy.widgetProcessingDetail}`)
+    expect(polite).toHaveTextContent(`Transcribing. ${win32Copy.widgetProcessingDetail}`)
     expect(assertive).toBeEmptyDOMElement()
     expect(polite.contains(screen.getByRole('progressbar'))).toBe(false)
     expect(polite).not.toHaveTextContent('58%')
@@ -1091,7 +1094,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
     expect(polite).toBeEmptyDOMElement()
-    expect(assertive).toHaveTextContent('Couldn’t transcribe. Try again or choose the Standard model.')
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. Transcription failed. Try again.')
     expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
 
     emit(snapshot({ status: 'idle' }))

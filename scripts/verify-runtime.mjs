@@ -7,14 +7,12 @@ import { pathToFileURL } from 'node:url'
 
 import {
   RUNTIME_FILE_ALLOWLIST,
-  validateBundledManifest,
-  validateCatalogLock,
   validateRuntimeManifest,
 } from './model-catalog.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const modelRoot = join(root, 'resources', 'models'); const runtimeRoot = join(root, 'resources', 'runtime')
-const fail = (message) => { throw new Error(`Model verification failed: ${message}`) }
+const runtimeRoot = join(root, 'resources', 'runtime')
+const fail = (message) => { throw new Error(`Runtime verification failed: ${message}`) }
 const safeRelative = (value) => typeof value === 'string' && !value.includes('\\') && value.split('/').every((part) => part && part !== '.' && part !== '..')
 
 async function json(path) { try { const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink() || info.size > 1_000_000) fail('invalid lock file'); return JSON.parse(await readFile(path, 'utf8')) } catch { fail('invalid lock file') } }
@@ -24,24 +22,16 @@ async function checkFile(base, file) { if (!safeRelative(file.path) || !Number.i
 async function checkRoot(path) { const info = await lstat(path).catch(() => fail('missing asset root')); if (!info.isDirectory() || info.isSymbolicLink()) fail('unsafe asset root') }
 
 export async function verifyPreparedAssets(options = {}) {
-  const selectedModelRoot = options.modelRoot ?? modelRoot
   const selectedRuntimeRoot = options.runtimeRoot ?? runtimeRoot
-  await checkRoot(selectedModelRoot); await checkRoot(selectedRuntimeRoot)
-  const catalog = await json(join(selectedModelRoot, 'catalog.lock.json')); const manifest = await json(join(selectedModelRoot, 'manifest.lock.json'))
-  try { validateCatalogLock(catalog); validateBundledManifest(manifest, catalog) } catch { fail('catalog or manifest drift') }
-  const bundled = catalog.presets.instant
-  const expectedModelFiles = ['catalog.lock.json', 'manifest.lock.json', ...bundled.files.map((file) => `${bundled.repository}/${file.path}`)].sort()
-  if (JSON.stringify(await allFiles(selectedModelRoot)) !== JSON.stringify(expectedModelFiles)) fail('unexpected model files')
-  for (const file of manifest.files) await checkFile(join(selectedModelRoot, bundled.repository), file)
-
+  await checkRoot(selectedRuntimeRoot)
   const runtime = await json(join(selectedRuntimeRoot, 'manifest.lock.json'))
   try { validateRuntimeManifest(runtime) } catch { fail('runtime manifest drift') }
   if (JSON.stringify(await allFiles(selectedRuntimeRoot)) !== JSON.stringify(['manifest.lock.json', ...RUNTIME_FILE_ALLOWLIST].sort())) fail('unexpected runtime files')
   for (const file of runtime.files) await checkFile(selectedRuntimeRoot, file)
-  return { modelFiles: manifest.files.length, runtimeFiles: runtime.files.length }
+  return { runtimeFiles: runtime.files.length }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const result = await verifyPreparedAssets()
-  process.stdout.write(`Verified ${result.modelFiles} model files and ${result.runtimeFiles} runtime files.\n`)
+  process.stdout.write(`Verified ${result.runtimeFiles} runtime files.\n`)
 }

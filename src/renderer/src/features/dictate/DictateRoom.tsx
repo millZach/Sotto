@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import type { ModelStatus } from '../../../../shared/contracts'
 import type { DictationState } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
 import type { SottoPlatform } from '../../../../shared/platform'
@@ -15,7 +14,6 @@ export interface DictateRoomProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
   readonly dictation: DictationState
-  readonly modelStatus?: ModelStatus | undefined
   readonly entries: readonly HistoryEntry[]
   readonly historyStatus: HistoryStatus
   readonly onStart: () => Promise<void>
@@ -26,10 +24,6 @@ export interface DictateRoomProps {
 
 const DAY_MS = 86_400_000
 const TIMER_TICK_MS = 250
-
-export function isModelReady(status: ModelStatus | undefined): boolean {
-  return status?.state === 'bundled' || status?.state === 'ready'
-}
 
 export function formatElapsed(milliseconds: number): string {
   const totalSeconds = Number.isFinite(milliseconds) ? Math.max(0, Math.floor(milliseconds / 1_000)) : 0
@@ -64,7 +58,10 @@ function errorDetail(code: string, copy: PlatformCopy): string {
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your text could not be delivered. Try again, then paste from the clipboard manually.'
-    default: return 'Sotto could not transcribe that recording. Try again or choose a smaller model in Settings.'
+    case 'TRANSCRIPTION_UNCONFIGURED': return 'Add your OpenRouter API key in Settings to transcribe.'
+    case 'TRANSCRIPTION_UNAUTHORIZED': return 'OpenRouter rejected the API key. Check it in Settings.'
+    case 'TRANSCRIPTION_OFFLINE': return 'Sotto could not reach OpenRouter. Check your connection and try again.'
+    default: return 'Transcription failed. Try again.'
   }
 }
 
@@ -99,7 +96,6 @@ export function DictateRoom({
   settings,
   platform,
   dictation,
-  modelStatus,
   entries,
   historyStatus,
   onStart,
@@ -111,9 +107,7 @@ export function DictateRoom({
   const [copying, setCopying] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const copy = platformCopy(platform)
-  // Until the main process has answered, the model is neither ready nor missing: the pill waits without accusing anyone.
-  const modelChecking = modelStatus === undefined
-  const modelReady = isModelReady(modelStatus)
+  const configured = settings.llmApiKey.trim().length > 0
   const stage = waveStage(dictation)
   const listening = dictation.status === 'listening'
   const sessionId = 'sessionId' in dictation ? dictation.sessionId : undefined
@@ -144,8 +138,8 @@ export function DictateRoom({
     try { await onCopy(latest.text) } catch { /* the notice belongs to the caller */ } finally { setCopying(false) }
   }
 
-  let actionLabel = modelReady || modelChecking ? 'Start dictation' : 'Model required'
-  let actionDisabled = submitting || !modelReady
+  let actionLabel = configured ? 'Start dictation' : 'API key required'
+  let actionDisabled = submitting || !configured
   let action = onStart
   if (dictation.status === 'requesting-permission') {
     actionLabel = 'Connecting...'
@@ -189,7 +183,7 @@ export function DictateRoom({
         </div>
         <div className="dictate__actions">
           <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
-          {modelReady || modelChecking ? (
+          {configured ? (
             <span className="dictate__hint">
               or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}
             </span>

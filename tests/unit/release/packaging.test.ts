@@ -25,6 +25,7 @@ interface BuilderResource {
 }
 
 interface BuilderConfig {
+  extraResources: BuilderResource[]
   win: { target: BuilderTarget[] }
   mac: {
     identity: string | null
@@ -61,10 +62,10 @@ const releaseContracts = [
 describe.each(releaseContracts)(
   '$platform release contract',
   ({ scripts, distributableScript, outDir, installer }) => {
-    it('verifies the model, builds, records provenance, and verifies the packaged output', () => {
+    it('verifies the runtime, builds, records provenance, and verifies the packaged output', () => {
       for (const script of scripts) {
         const command = packageManifest.scripts[script]
-        expect(command).toMatch(/^npm run model:verify && npm run build && /)
+        expect(command).toMatch(/^npm run runtime:verify && npm run build && /)
         expect(command).toContain('node scripts/write-build-provenance.mjs')
         expect(command).toContain(`node scripts/verify-packaged-resources.mjs ${outDir}`)
       }
@@ -78,7 +79,9 @@ describe.each(releaseContracts)(
 
 describe('release contract', () => {
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
-    expect(Object.keys(packageManifest.dependencies)).toEqual(['zod'])
+    expect(packageManifest.dependencies).toEqual({ zod: '4.4.3' })
+    expect(builderConfig.extraResources).toContainEqual({ from: 'resources/runtime', to: 'runtime' })
+    expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')
     for (const bundled of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom']) {
       expect(packageManifest.devDependencies[bundled]).toBeTypeOf('string')
@@ -225,8 +228,8 @@ describe('Windows installer contract', () => {
 
   it('documents conservative install headroom and the exact optional shortcut behavior', () => {
     const readme = read('README.md')
-    expect(readme).toContain('At least 1.5 GB of free space during installation')
+    expect(readme).toContain('At least 1 GB of free space during installation')
     expect(readme).toContain('The desktop shortcut is optional and unchecked by default')
-    expect(readme).toContain('automatically verifies the source model before packaging')
+    expect(readme).toContain('automatically verifies the source runtime before packaging')
   })
 })

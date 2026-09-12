@@ -23,7 +23,7 @@ function add(requirement) {
 for (const [id, category, state] of [
   ['onboarding-step-1-welcome', 'onboarding', 'welcome'],
   ['onboarding-step-2-microphone-ready', 'onboarding', 'microphone-ready'],
-  ['onboarding-step-3-model', 'onboarding', 'model-ready'],
+  ['onboarding-step-3-openrouter', 'onboarding', 'openrouter-key'],
   ['onboarding-step-4-shortcut', 'onboarding', 'shortcut-paste'],
   ['dictate-ready', 'dictate', 'ready'],
   ['dictate-listening', 'dictate', 'listening'],
@@ -39,7 +39,7 @@ for (const [id, category, state] of [
   ['history-empty', 'history', 'empty-feedback'],
   ['history-search', 'history', 'search'],
   ['history-off', 'history', 'off'],
-  ['settings-server', 'settings', 'server'],
+  ['settings-key-verified', 'settings', 'key-verified'],
   ['settings-cleanup', 'settings', 'cleanup'],
   ['settings-feedback', 'settings', 'saved-feedback'],
   ['settings-account', 'settings', 'account'],

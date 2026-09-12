@@ -37,16 +37,16 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
   const gettingStarted: Topic[] = [
     { title: 'Start and stop', body: <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
     { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
-    { title: 'Optional models', body: <p>Standard is included and works offline. Installing Multi-lingual contacts Hugging Face, which receives ordinary network metadata such as your IP address and request time. Audio and transcripts are not sent. Standard is English-only.</p> },
+    { title: 'Transcription', body: <p>Microsoft MAI-Transcribe-2 transcribes your speech through OpenRouter. Add your OpenRouter API key in Settings and use Verify key to check the connection.</p> },
   ]
   const privacy: Topic[] = [
-    { title: 'Offline privacy', body: <p>Local dictation keeps audio and transcripts on this computer, without an account or per-use fee. If you enable a transcription server, audio goes to that server. AI cleanup sends transcript text to your configured provider. Agent prompts go to the connected coding provider.</p> },
+    { title: 'Privacy', body: <p>Audio you dictate is sent to OpenRouter for transcription. AI cleanup sends transcript text to OpenRouter. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
   ]
   const troubleshooting: Topic[] = [
     { title: 'Microphone access', body: <p>{copy.helpMicrophoneAccess}</p> },
     { title: 'Paste fallback', body: <p>{copy.helpPasteFallback}</p> },
     ...(copy.accessibilityHelp === null ? [] : [{ title: 'Paste permissions', body: <p>{copy.accessibilityHelp}</p> }]),
-    { title: 'Reset safely', body: <p>Resetting settings reopens first-run setup, but does not remove models or clear transcript history. Use the separate History controls when you want to remove saved text.</p> },
+    { title: 'Reset safely', body: <p>Resetting settings reopens first-run setup, but does not clear transcript history. Use the separate History controls when you want to remove saved text.</p> },
   ]
 
   return (
@@ -74,9 +74,9 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>About</h2></div>
             <p className="help-about">
-              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : 'Windows'}. Free, with no account and no telemetry.
+              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : 'Windows'}. No account with Sotto and no telemetry.
               <br />
-              Speech and transcripts never leave this computer unless you turn on an optional network feature.
+              Transcription uses your OpenRouter account.
             </p>
           </section>
         </div>

@@ -6,7 +6,7 @@ export const historyEntrySchema = z.object({
   createdAt: z.number().int().nonnegative(),
   durationMs: z.number().int().nonnegative(),
   language: z.string().min(1),
-  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant']),
+  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant', 'mai']),
 })
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>

@@ -2,7 +2,6 @@ import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent,
 import { Search, X } from 'lucide-react'
 
 import type { HistoryEntry } from '../../../../shared/history'
-import { MODEL_CATALOG } from '../../../../shared/modelCatalog'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { languageLabel } from '../../languages'
@@ -56,7 +55,8 @@ export function clockLabel(createdAt: number): { dateTime?: string; time: string
 
 /** Older entries may carry presets the catalog no longer lists. */
 function modelLabel(preset: HistoryEntry['modelPreset']): string {
-  return preset in MODEL_CATALOG ? MODEL_CATALOG[preset as keyof typeof MODEL_CATALOG].label : 'Whisper'
+  if (preset === 'mai') return 'MAI-Transcribe-2'
+  return preset === 'instant' ? 'Moonshine' : 'Whisper'
 }
 
 export function lengthLabel(durationMs: number): string {
@@ -100,7 +100,7 @@ export interface HistoryFooterProps {
  */
 export function HistoryFooter({ enabled, status, count, onClear }: HistoryFooterProps): ReactNode {
   const clearable = status === 'ready' && count > 0
-  let sentence = 'Kept on this computer only. Nothing leaves it.'
+  let sentence = 'Kept on this computer only.'
   if (!enabled) sentence = clearable ? 'History is off. Older transcripts are still here.' : 'History is off.'
   return (
     <span className="history-footer">
@@ -353,7 +353,7 @@ export function HistoryView({
       {!clearOpen ? null : (
         <ConfirmationDialog
           title="Clear history?"
-          description="This permanently removes every saved transcript from this computer. Your settings and downloaded models are unchanged."
+          description="This permanently removes every saved transcript from this computer. Your settings are unchanged."
           cancelLabel="Keep history"
           confirmLabel="Clear all transcripts"
           failureMessage="History could not be cleared. Your saved transcripts are unchanged."

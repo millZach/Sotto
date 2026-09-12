@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import type { ModelDisclosureCatalog, ModelStatus } from '../../shared/contracts'
-import type { AppSettings, ModelPreset } from '../../shared/settings'
+import type { AppSettings } from '../../shared/settings'
 import { AppShell } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryFooter, HistoryView } from './features/history/HistoryView'
-import { Onboarding, type OnboardingModelState } from './features/onboarding/Onboarding'
+import { Onboarding } from './features/onboarding/Onboarding'
 import { UpdateBanner } from './features/updates/UpdateBanner'
 import { updatePromptKey } from './features/updates/updatePrompt'
 import {
@@ -19,8 +18,6 @@ import { useApp, type AppNavigation } from './state/AppContext'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider, useAgents } from './agents/AgentContext'
-import { MODEL_CATALOG } from '../../shared/modelCatalog'
-import { languageLabel } from './languages'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadsView } from './agents/ThreadsView'
 import { lookingAfterSentence } from './agents/threadFacts'
@@ -57,29 +54,19 @@ function FooterStatus({ navigation, settings }: {
     case 'agents': return <AgentAppearance />
     case 'threads':
       return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
-    case 'history': return settings.historyEnabled ? 'Kept on this computer only. Nothing leaves it.' : 'History is off.'
+    case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : 'History is off.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: {
-      const model = MODEL_CATALOG[settings.modelPreset].label
-      return `${model} model, ${languageLabel(settings.language)}. ${settings.autoPaste ? 'Pastes automatically.' : 'Copies to the clipboard.'}`
-    }
+    default: return settings.llmApiKey.length > 0
+      ? 'MAI-Transcribe-2 via OpenRouter'
+      : 'Add your OpenRouter API key in Settings'
   }
-}
-
-function toModelState(status: ModelStatus | undefined): OnboardingModelState {
-  if (status === undefined || status.state === 'downloading') return 'checking'
-  if (status.state === 'bundled' || status.state === 'ready') return 'ready'
-  if (status.state === 'missing') return 'missing'
-  return 'error'
 }
 
 export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
-  const [modelState, setModelState] = useState<OnboardingModelState>('checking')
-  const [disclosures, setDisclosures] = useState<ModelDisclosureCatalog | undefined>()
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
   const [agentSheet, setAgentSheet] = useState<'session' | 'new' | null>(null)
@@ -91,7 +78,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const microphoneSettledStateRef = useRef<Exclude<MicrophoneTestState, 'requesting'>>('idle')
   const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
-  const modelGenerationRef = useRef(0)
 
   useEffect(() => {
     applyDocumentPreferences(app.settings)
@@ -201,45 +187,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     }
   }, [commitMicrophoneState, createMicrophoneTest, releaseMicrophone])
 
-  const checkModel = useCallback(async (): Promise<void> => {
-    const generation = ++modelGenerationRef.current
-    setModelState('checking')
-    const result = await app.actions.getModelStatus('instant')
-    if (modelGenerationRef.current !== generation) return
-    if (!('preset' in result)) setModelState('unavailable')
-  }, [app.actions])
-
-  useEffect(() => {
-    if (app.status !== 'ready' || app.settings?.onboardingComplete === true) return
-    let current = true
-    void checkModel()
-    void app.actions.listModelDisclosures().then((result) => {
-      if (current && 'models' in result) setDisclosures(result)
-    })
-    return () => {
-      current = false
-      ++modelGenerationRef.current
-    }
-  }, [app.actions, app.settings?.onboardingComplete, app.status, checkModel])
-
-  useEffect(() => {
-    const bundled = app.modelStatuses.instant
-    if (bundled !== undefined) {
-      ++modelGenerationRef.current
-      setModelState(toModelState(bundled))
-    }
-  }, [app.modelStatuses.instant])
-
-  useEffect(() => {
-    if (
-      app.status !== 'ready' ||
-      app.settings === null ||
-      !app.settings.onboardingComplete ||
-      app.navigation === 'onboarding'
-    ) return
-    void app.actions.getModelStatus(app.settings.modelPreset)
-  }, [app.actions, app.navigation, app.settings, app.status])
-
   let content: ReactNode
   if (app.status === 'loading') {
     content = <main className="app-loading" aria-busy="true"><p role="status">Preparing Sotto...</p></main>
@@ -262,17 +209,13 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         <Onboarding
           microphoneState={microphoneState}
           microphoneLevel={microphoneLevel}
-          modelState={modelState}
+          settings={app.settings}
+          onUpdateSettings={app.actions.updateSettings}
+          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
           shortcut={app.settings.hotkey}
           platform={app.platform}
-          {...(disclosures === undefined ? {} : { disclosures })}
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
-          onRetryModel={checkModel}
-          onInstallModel={async (preset: Exclude<ModelPreset, 'instant'>) => {
-            const result = await app.actions.installModel({ preset, consent: true })
-            if (!result.ok) throw new Error('MODEL_INSTALL_UNAVAILABLE')
-          }}
           onComplete={async () => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true })
@@ -317,18 +260,13 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = <SettingsView
           settings={app.settings}
           platform={app.platform}
-          modelStatuses={app.modelStatuses}
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
-          onGetModelStatus={app.actions.getModelStatus}
-          onListModelDisclosures={app.actions.listModelDisclosures}
-          onInstallModel={app.actions.installModel}
-          onRemoveModel={app.actions.removeModel}
-          onCheckRemoteAsr={app.actions.checkRemoteAsr}
+          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
           onCheckForUpdates={app.actions.checkForUpdates}
           onDownloadUpdate={app.actions.downloadUpdate}
           onInstallUpdate={app.actions.installUpdate}
@@ -342,7 +280,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           settings={app.settings}
           platform={app.platform}
           dictation={app.dictation}
-          modelStatus={app.modelStatuses[app.settings.modelPreset]}
           entries={app.history}
           historyStatus={app.historyStatus}
           onStart={app.actions.start}

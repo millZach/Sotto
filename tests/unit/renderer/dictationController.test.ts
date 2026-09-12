@@ -1,3 +1,4 @@
+import { TranscriptionError } from '../../../src/renderer/src/transcription/openRouterTranscriber'
 import { describe, expect, it, vi } from 'vitest'
 
 import { widgetSnapshotSchema } from '../../../src/shared/contracts'
@@ -17,7 +18,7 @@ import type {
   TranscribeOptions,
   TranscriptionProgress,
   TranscriptionResult,
-} from '../../../src/renderer/src/transcription/client'
+} from '../../../src/renderer/src/transcription/openRouterTranscriber'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -196,7 +197,7 @@ describe('DictationController', () => {
       createdAt: 1_000,
       durationMs: 500,
       language: 'en',
-      modelPreset: 'instant',
+      modelPreset: 'mai',
     })
     expect(harness.controller.getState()).toEqual({
       status: 'success',
@@ -601,9 +602,7 @@ describe('DictationController', () => {
   it('uses one immutable settings snapshot for the whole session', async () => {
     const current = settings({
       microphoneId: 'mic-original',
-      modelPreset: 'fast',
       language: 'es',
-      inferencePreference: 'wasm',
       formatWhitespace: true,
       autoPaste: false,
       pasteDelayMs: 320,
@@ -617,9 +616,7 @@ describe('DictationController', () => {
 
     Object.assign(current, {
       microphoneId: 'mic-mutated',
-      modelPreset: 'accurate',
       language: 'de',
-      inferencePreference: 'webgpu',
       formatWhitespace: false,
       autoPaste: true,
       pasteDelayMs: 900,
@@ -634,16 +631,14 @@ describe('DictationController', () => {
 
     expect(recorderOptions(harness)).toMatchObject({ selectedDeviceId: 'mic-original' })
     expect(harness.transcriber.transcribe).toHaveBeenCalledWith(expect.objectContaining({
-      preset: 'fast',
       language: 'es',
-      inferencePreference: 'wasm',
     }))
     expect(harness.deliverOutput).toHaveBeenCalledWith({
       text: 'hello world',
       autoPaste: false,
       pasteDelayMs: 320,
     })
-    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'fast' }))
+    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'mai' }))
   })
 
   it.each([
@@ -816,16 +811,14 @@ describe('DictationController', () => {
 })
 
 describe('pipeline prewarm', () => {
-  it('warms the configured model and device without starting a dictation session', async () => {
+  it('prepares hosted transcription without starting a dictation session', async () => {
     const harness = createHarness({
-      currentSettings: settings({ modelPreset: 'fast', inferencePreference: 'wasm' }),
+      currentSettings: settings(),
     })
 
     await harness.controller.prewarm()
 
     expect(harness.transcriber.load).toHaveBeenCalledWith({
-      preset: 'fast',
-      inferencePreference: 'wasm',
     })
     expect(harness.controller.getState().status).toBe('idle')
     expect(harness.createRecorder).not.toHaveBeenCalled()
@@ -833,7 +826,7 @@ describe('pipeline prewarm', () => {
 
   it('resolves quietly when warm-up loading fails', async () => {
     const harness = createHarness()
-    harness.transcriber.load.mockRejectedValueOnce(new Error('MODEL_MISSING'))
+    harness.transcriber.load.mockRejectedValueOnce(new Error('TRANSCRIPTION_FAILED'))
 
     await expect(harness.controller.prewarm()).resolves.toBeUndefined()
 
@@ -858,7 +851,7 @@ describe('pipeline prewarm', () => {
     expect(harness.transcriber.load).not.toHaveBeenCalled()
   })
 
-  it('resolves quietly when settings are unavailable', async () => {
+  it('prepares without requiring settings', async () => {
     const harness = createHarness({
       getSettings: () => {
         throw new Error('SETTINGS_UNAVAILABLE')
@@ -867,7 +860,7 @@ describe('pipeline prewarm', () => {
 
     await expect(harness.controller.prewarm()).resolves.toBeUndefined()
 
-    expect(harness.transcriber.load).not.toHaveBeenCalled()
+    expect(harness.transcriber.load).toHaveBeenCalledOnce()
   })
 
   it('supports transcribers without warm-up loading', async () => {
@@ -1021,5 +1014,26 @@ describe('pipeline prewarm', () => {
     expect(harness.deliverOutput).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'streamed words only' }),
     )
+  })
+})
+
+
+describe('hosted transcription failures', () => {
+  it.each([
+    ['unconfigured', 'TRANSCRIPTION_UNCONFIGURED'],
+    ['unauthorized', 'TRANSCRIPTION_UNAUTHORIZED'],
+    ['network', 'TRANSCRIPTION_OFFLINE'],
+    ['timeout', 'TRANSCRIPTION_OFFLINE'],
+    ['billing', 'TRANSCRIPTION_FAILED'],
+    ['rate-limited', 'TRANSCRIPTION_FAILED'],
+    ['http', 'TRANSCRIPTION_FAILED'],
+    ['malformed', 'TRANSCRIPTION_FAILED'],
+  ] as const)('surfaces %s as %s', async (reason, code) => {
+    const harness = createHarness({ transcribe: async () => { throw new TranscriptionError(reason) } })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.publishWidgetState).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', code }))
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
   })
 })

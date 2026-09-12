@@ -18,7 +18,7 @@ async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: /test microphone/i }).click()
   await expect(page.getByText(/microphone ready/i)).toBeVisible()
   await page.getByRole('button', { name: 'Continue' }).click()
-  await expect(page.getByText(/standard model is included and ready/i)).toBeVisible()
+  await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
   await page.getByRole('button', { name: 'Continue' }).click()
 }
 
@@ -134,7 +134,7 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
   }
 })
 
-test('keeps history disabled without blocking private dictation', async () => {
+test('keeps history disabled without blocking dictation', async () => {
   const launched = await launchSotto('history-disabled')
   try {
     await completeOnboarding(launched.page)
@@ -287,7 +287,7 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
   const launched = await launchSotto()
   try {
     await expect(
-      launched.page.getByRole('heading', { name: /private dictation/i }),
+      launched.page.getByRole('heading', { name: /dictation, ready when you are/i }),
     ).toBeVisible()
     await launched.app.evaluate(({ BrowserWindow }) => {
       const main = BrowserWindow.getAllWindows().find((candidate) =>

@@ -61,6 +61,16 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Utterance.** One transcribed spoken command handled by the coordinator.
 
+**Transcription.** Turning dictated audio into text. Since ADR-0006 there is exactly one route: each segment is encoded as a 16 kHz mono PCM16 WAV and sent from the main process to Microsoft MAI-Transcribe-2 through OpenRouter's transcription endpoint with the user's OpenRouter key. Nothing is transcribed on this computer and there is no fallback route; a failed request is reported with its reason. Avoid: "local model", "preset", "transcription server", "remote ASR".
+
+**OpenRouter key.** The one API key the user supplies, stored encrypted in the operating system credential store under the `formatting` slot and never returned to the renderer. It pays for transcription, the cleanup pass and any OpenRouter-hosted reasoning. In settings code it is still the `llmApiKey` field.
+
+**Personal dictionary.** The user's list of names and terms, one per line (`llmDictionary`). It is sent with every transcription request as an Azure phrase list so MAI spells those words as written, and it is also quoted in the cleanup prompt. Avoid: "vocabulary hints" in user-facing text.
+
+**Cleanup pass.** The optional LLM pass over the finished transcript (punctuation, fillers, self-corrections, lists), run through OpenRouter chat completions at the chosen quality tier and skipped for very short transcripts. Audio never goes through it. Avoid: "polish" in user-facing text (the code still says `polish`).
+
+**Segment.** One slice of a dictation, cut at a pause while streaming transcription is on, transcribed as its own request so the final text is ready almost as soon as the user stops. Avoid: "chunk".
+
 ## Memory
 
 **Memory.** One remembered fact about the user, a project or the world, with the metadata the spec requires: type, scope, content, source class (explicit, observed, inferred, imported, agent-confirmed), confidence, evidence count, importance, temporal fields (created, last confirmed, last used, valid from, valid to), provenance, tags, state (active, superseded, disputed, temporary, archived) and authority (preference, policy, permission). Avoid: "fact", "note", "record".
@@ -107,6 +117,9 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 - `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links and footer status.
 - `src/renderer/src/features/dictate/DictateRoom.tsx` — the Dictate room.
+- `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
+- `src/main/llm/transcriptPolishService.ts` — the cleanup pass.
+- `scripts/asr-bench/` — the transcription bench (`bench-stt.mjs`) and its results; `docs/perf/` holds the decision reports.
 - `src/renderer/src/styles/tokens.css` and `global.css` — the black token set and shared styles; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
 - `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (one theme, scales, motion, focus).
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
@@ -123,4 +136,4 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records and ADR-0005 on the Codex App Server adapter.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter and ADR-0006 on hosted transcription through OpenRouter.

@@ -13,15 +13,11 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
-  MODEL_GET_STATUS,
-  MODEL_INSTALL,
-  MODEL_LIST_DISCLOSURES,
-  MODEL_REMOVE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
-  REMOTE_ASR_CANCEL,
-  REMOTE_ASR_CHECK,
-  REMOTE_ASR_TRANSCRIBE,
+  TRANSCRIPTION_CANCEL,
+  TRANSCRIPTION_CHECK_KEY,
+  TRANSCRIPTION_TRANSCRIBE,
   TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -39,7 +35,7 @@ import {
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
-  remoteTranscriptionRequestSchema,
+  transcriptionRequestSchema,
   transcriptPolishRequestSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -47,15 +43,12 @@ import {
   type CommandResult,
   type DictationCommand,
   type HotkeyChangeResult,
-  type ModelInstallRequest,
-  type ModelDisclosureCatalog,
-  type ModelStatus,
   type OutputOutcome,
   type OutputDeliveryRequest,
   type OutputResult,
-  type RemoteAsrHealth,
-  type RemoteTranscriptionRequest,
-  type RemoteTranscriptionResult,
+  type TranscriptionKeyCheck,
+  type TranscriptionRequest,
+  type TranscriptionResult,
   type StartupState,
   type TranscriptPolishAsrContext,
   type UpdateStatus,
@@ -67,7 +60,6 @@ import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
   settingsSchema,
   type AppSettings,
-  type ModelPreset,
   type SettingsPatch,
 } from '../../shared/settings'
 import type { RendererRole } from '../security'
@@ -81,9 +73,7 @@ const settingKeys = [
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
-  'modelPreset',
   'language',
-  'inferencePreference',
   'formatWhitespace',
   'autoCopy',
   'autoPaste',
@@ -101,8 +91,6 @@ const settingKeys = [
   'llmTimeoutMs',
   'llmMinWords',
   'streamingAsr',
-  'remoteAsr',
-  'remoteAsrUrl',
   'autoUpdateCheck',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
@@ -142,10 +130,6 @@ const hotkeySchema = z
   .min(1)
   .max(128)
   .refine((accelerator) => accelerator.toLowerCase() !== 'escape')
-const modelPresetSchema = z.enum(['fast', 'instant'])
-const modelInstallSchema = z
-  .object({ preset: modelPresetSchema, consent: z.literal(true) })
-  .strict()
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
 
@@ -218,13 +202,6 @@ export interface DictationIpcService {
   publishWidgetState(state: z.infer<typeof widgetSnapshotSchema>): void | Promise<void>
 }
 
-export interface ModelIpcService {
-  listDisclosures(): ModelDisclosureCatalog | Promise<ModelDisclosureCatalog>
-  getStatus(preset: ModelPreset): ModelStatus | Promise<ModelStatus>
-  install(request: ModelInstallRequest): void | Promise<void>
-  remove(preset: ModelPreset): void | Promise<void>
-}
-
 export interface OutputIpcService {
   deliver(
     text: string,
@@ -241,10 +218,10 @@ export interface TranscriptPolishIpcService {
   ): TranscriptPolishResult | Promise<TranscriptPolishResult>
 }
 
-export interface RemoteAsrIpcService {
-  transcribe(request: RemoteTranscriptionRequest): Promise<RemoteTranscriptionResult>
+export interface TranscriptionIpcService {
+  transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancel(requestId: string): void
-  check(): Promise<RemoteAsrHealth>
+  checkKey(): Promise<TranscriptionKeyCheck>
 }
 
 export interface UpdateIpcService {
@@ -266,10 +243,9 @@ export interface RegisterIpcDependencies {
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly dictation?: DictationIpcService
-  readonly models?: ModelIpcService
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
-  readonly remoteAsr?: RemoteAsrIpcService
+  readonly transcription?: TranscriptionIpcService
   readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
@@ -545,42 +521,6 @@ export function registerIpc(
       },
     )
 
-    register(MODEL_LIST_DISCLOSURES, noPayloadSchema, 0, async () => {
-      if (dependencies.models === undefined) {
-        return UNAVAILABLE
-      }
-      return dependencies.models.listDisclosures()
-    })
-    register(MODEL_GET_STATUS, modelPresetSchema, 1, async (preset) => {
-      if (dependencies.models === undefined) {
-        return UNAVAILABLE
-      }
-      return dependencies.models.getStatus(preset)
-    })
-    register(
-      MODEL_INSTALL,
-      modelInstallSchema,
-      1,
-      async (request): Promise<CommandResult> => {
-        if (dependencies.models === undefined) {
-          return UNAVAILABLE
-        }
-        await dependencies.models.install(request)
-        return OK
-      },
-    )
-    register(
-      MODEL_REMOVE,
-      modelPresetSchema,
-      1,
-      async (preset): Promise<CommandResult> => {
-        if (dependencies.models === undefined) {
-          return UNAVAILABLE
-        }
-        await dependencies.models.remove(preset)
-        return OK
-      },
-    )
     register(
       TRANSCRIPT_POLISH,
       transcriptPolishRequestSchema,
@@ -594,27 +534,27 @@ export function registerIpc(
     )
 
     register(
-      REMOTE_ASR_TRANSCRIBE,
-      remoteTranscriptionRequestSchema,
+      TRANSCRIPTION_TRANSCRIBE,
+      transcriptionRequestSchema,
       1,
-      async (request): Promise<RemoteTranscriptionResult> => {
-        if (dependencies.remoteAsr === undefined) return { ok: false, reason: 'disabled' }
-        return dependencies.remoteAsr.transcribe(request)
+      async (request): Promise<TranscriptionResult> => {
+        if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
+        return dependencies.transcription.transcribe(request)
       },
     )
     register(
-      REMOTE_ASR_CANCEL,
+      TRANSCRIPTION_CANCEL,
       z.string().min(1).max(128),
       1,
       async (requestId): Promise<CommandResult> => {
-        if (dependencies.remoteAsr === undefined) return UNAVAILABLE
-        dependencies.remoteAsr.cancel(requestId)
+        if (dependencies.transcription === undefined) return UNAVAILABLE
+        dependencies.transcription.cancel(requestId)
         return OK
       },
     )
-    register(REMOTE_ASR_CHECK, noPayloadSchema, 0, async (): Promise<RemoteAsrHealth> => {
-      if (dependencies.remoteAsr === undefined) return { ok: false, reason: 'disabled' }
-      return dependencies.remoteAsr.check()
+    register(TRANSCRIPTION_CHECK_KEY, noPayloadSchema, 0, async (): Promise<TranscriptionKeyCheck> => {
+      if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
+      return dependencies.transcription.checkKey()
     })
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {
