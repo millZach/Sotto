@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, object, type ClaudeFrame } from './claudeProtocol'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
@@ -51,8 +51,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'claude-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.client = new ClaudeSubscriptionClient(options.userDataPath, { ...(options.executable ? { executable: options.executable } : {}), ...(options.args ? { prefixArgs: options.args } : {}), ...(options.environment ? { environment: options.environment } : {}) })
   }
-  async connect(_connection: AgentHostConnection): Promise<AgentHostSnapshot> {
-    void _connection
+  async connect(): Promise<AgentHostSnapshot> {
     this.disconnect(); await this.closed()
     const generation = this.generation
     const [account, executable, aliases, projects] = await Promise.all([this.client.status(), this.client.findExecutable(), this.aliasStore.read(), this.projectStore.read()])

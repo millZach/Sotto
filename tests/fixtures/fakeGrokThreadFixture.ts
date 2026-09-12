@@ -12,7 +12,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 1000) {
  const script = (value: unknown) => writeFile(join(root,'script.json'),JSON.stringify(value))
  const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root,'grok-threads.json'),'utf8'))[id].grokSessionId
  const action = async (id: string, value: Record<string,unknown>) => { await writeFile(join(root,'control.json'),JSON.stringify({id:randomUUID(),sessionId:await realId(id),...value})) }
- return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',connection:{endpoint:'ignored',credential:'ignored'},realId,script,action,
+ return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,
   protocol:{promptMethod:'session/prompt',resumeMethod:'session/load',permissionDecision:(record:RecordedRpc): boolean|undefined=>{
    const outcome = record.result?.outcome as {outcome?:string;optionId?:string}|undefined
    return outcome?.outcome === 'cancelled' ? false : outcome?.outcome === 'selected' ? outcome.optionId === 'yes' : undefined

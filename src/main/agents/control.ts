@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema,
-  defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
+  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
   type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -16,6 +16,7 @@ import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { isThreadClosed } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
+import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
@@ -25,8 +26,9 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
 ])
 
 const savedSchema = z.object({
+  providerUpgrade: providerUpgradeSchema.nullable().default(null),
   configuration: z.preprocess(value => typeof value === 'object' && value !== null
-    ? { ...defaultAgentConfiguration(), ...value } : value, agentConfigurationSchema),
+    ? { ...defaultAgentConfiguration(), ...stripRetiredEndpoint(value) } : value, agentConfigurationSchema),
   assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(), draft: z.string(), draftThreadId: z.string().nullable(),
   draftRequestId: z.string().nullable().default(null),
@@ -61,6 +63,7 @@ export class AgentControl {
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
+  private retirementFailure: string | null = null
   private disposed = false
   private membershipTimer: ReturnType<typeof setInterval> | null = null
   private presentedQueueId: string | null = null
@@ -85,13 +88,22 @@ export class AgentControl {
       pendingRequest: '',
       busy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { t3: false, reasoning: false, grokSpeech: false, secure: false },
+      credentials: { reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
       membership: { status: 'free', label: 'Free dictation', expiresAt: null },
     }
     this.store = new AtomicJsonStore(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
   }
   async start(): Promise<void> {
+    try {
+      await retireLegacyProvider({ directory: this.dependencies.directory, parse: savedSchema.parse,
+        historyEnabled: this.dependencies.historyEnabled?.() !== false, credentials: this.dependencies.credentials })
+      this.retirementFailure = null
+    } catch (error) {
+      this.retirementFailure = 'Could not safely recover the previous provider state. No provider was connected. Restart after restoring access to local storage.'
+      this.state.error = this.retirementFailure
+      throw error
+    }
     const saved = await this.store.read()
     this.contextActivityAt = saved.contextSavedAt
     const { outbox, contextSavedAt, manualDraftId, ...restored } = saved
@@ -148,14 +160,20 @@ export class AgentControl {
   private saved(): Saved {
     const { configuration, assignments, queue, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing, pendingRequest } = this.state
     const retainContext = this.dependencies.historyEnabled?.() !== false
-    return structuredClone({ configuration,
+    return structuredClone({ configuration, providerUpgrade: this.state.providerUpgrade ?? null,
       assignments: assignments.map(assignment => ({ ...assignment, instruction: retainContext ? assignment.instruction : '', paused: assignment.paused || (!retainContext && Boolean(assignment.instruction)) })),
       queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open the provider to review this pending item.' })),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
       contextSavedAt: this.contextActivityAt, outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [] })
   }
-  async privacyChanged(): Promise<void> { await this.persist() }
-  private async persist(): Promise<void> { await this.store.write(this.saved()) }
+  async privacyChanged(): Promise<void> {
+    await maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false)
+    await this.persist()
+  }
+  private async persist(): Promise<void> {
+    if (this.retirementFailure) throw new Error(this.retirementFailure)
+    await this.store.write(this.saved())
+  }
   private publish(): void {
     if (this.disposed) return
     const value = this.get()
@@ -168,7 +186,7 @@ export class AgentControl {
   }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { t3: vault.has('t3'), reasoning: vault.has('reasoning'), grokSpeech: vault.has('grokSpeech'), secure: vault.available() }
+    this.state.credentials = { reasoning: vault.has('reasoning'), grokSpeech: vault.has('grokSpeech'), secure: vault.available() }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)
@@ -210,6 +228,7 @@ export class AgentControl {
     }
   }
   command(command: AgentCommand): Promise<AgentState> {
+    if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
     const selectionRevision = this.selectionRevision
@@ -331,14 +350,11 @@ export class AgentControl {
       case 'configure': {
         const speechRevision = this.speechPreferenceRevision
         const next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
-        const providerChanged = next.provider !== this.state.configuration.provider || next.endpoint !== this.state.configuration.endpoint
-        if (providerChanged && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the provider or its server.')
+        const providerChanged = next.provider !== this.state.configuration.provider
+        if (providerChanged && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the provider.')
         // Delete the old route's key durably before exposing the new route. If
         // either write fails, the old credential cannot reach another provider.
         if (next.reasoning !== this.state.configuration.reasoning) await this.dependencies.credentials.set('reasoning', '')
-        if (next.endpoint !== this.state.configuration.endpoint) {
-          await this.dependencies.credentials.set('t3', '')
-        }
         if (providerChanged) this.disconnect()
         if (next.provider !== this.state.configuration.provider) {
           if (command.patch.defaultModelId === undefined) next.defaultModelId = ''
@@ -360,9 +376,7 @@ export class AgentControl {
         this.state.connection = 'connecting'; this.publish()
         this.observe()
         try {
-          const snapshot = await this.dependencies.host.connect(this.state.configuration.provider === 't3'
-            ? { endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') }
-            : { endpoint: '', credential: '' })
+          const snapshot = await this.dependencies.host.connect()
           this.acceptSnapshot(snapshot)
           if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           this.state.configuration.enabled = true

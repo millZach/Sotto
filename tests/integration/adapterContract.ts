@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AgentHost, AgentHostConnection } from '../../src/main/agents/host'
+import type { AgentHost } from '../../src/main/agents/host'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 
 export interface AdapterFixture {
-  host: AgentHost; connection: AgentHostConnection; projectId: string; modelId: string; root: string
+  host: AgentHost; projectId: string; modelId: string; root: string
   driver: {
     typeInProvider(sessionId: string, text: string): Promise<void>
     completeTurn(sessionId: string, text: string): Promise<void>
@@ -40,7 +40,7 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       return record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
     }
     beforeEach(async () => {
-      f = await factory(); await f.host.connect(f.connection)
+      f = await factory(); await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Contract thread' })
@@ -106,7 +106,7 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
     it('resumes the same thread and messages after restart during a run', async context => {
       if (f.skips?.restart) { context.skip(); return }
       await send(); const before = await thread()
-      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect(f.connection)
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       expect(await thread()).toEqual({ ...before, status: f.restartStatus ?? before.status })
       expect((await f.driver.requests()).some(r => r.method === (f.protocol?.resumeMethod ?? 'thread/resume'))).toBe(true)
     })

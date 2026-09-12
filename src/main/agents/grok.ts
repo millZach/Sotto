@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentRequest, type AgentMessage } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokUncertain, type GrokFrame } from './grokRpc'
 
@@ -69,8 +69,7 @@ export class GrokAcpHost implements AgentHost {
     return this.threads.get(id)!
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
-  async connect(_connection: AgentHostConnection): Promise<AgentHostSnapshot> {
-    void _connection
+  async connect(): Promise<AgentHostSnapshot> {
     this.disconnect(); await this.closed()
     const generation = this.generation
     await mkdir(this.userDataDirectory, { recursive: true })

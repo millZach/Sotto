@@ -9,7 +9,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 let f: Awaited<ReturnType<typeof grokFixture>> | undefined
 afterEach(async()=> {await f?.cleanup();f=undefined})
 async function setup() {
- f = await grokFixture(); await f.host.connect(f.connection)
+ f = await grokFixture(); await f.host.connect()
  await f.host.execute({type:'create-project',commandId:randomUUID(),projectId:f.projectId,title:'Project',path:f.root})
  const id = randomUUID()
  await f.host.execute({type:'create-thread',commandId:randomUUID(),threadId:id,projectId:f.projectId,modelId:f.modelId,title:'Test'})
@@ -18,7 +18,7 @@ async function setup() {
 const send = (id:string,messageId='own',text='Synthetic prompt')=>f!.host.execute({type:'send',commandId:messageId,threadId:id,messageId,text})
 it.each([{cliVersion:'1.0.6'},{protocolVersion:2}])('rejects unpinned native versions before authentication (%j)',async script=>{
  f=await grokFixture();await f.script(script)
- await expect(f.host.connect(f.connection)).rejects.toThrow('requires Grok CLI 1.0.5, ACP 1')
+ await expect(f.host.connect()).rejects.toThrow('requires Grok CLI 1.0.5, ACP 1')
  expect((await f.driver.requests()).some(request=>request.method==='authenticate')).toBe(false)
 })
 it('filters API keys and keeps native home/auth paths without disabling coding tools',()=>{
@@ -75,7 +75,7 @@ it('rejects concurrent prompts and deduplicates acknowledged command identities'
  expect(metadata).not.toContain('Synthetic prompt');expect(metadata).toContain('digest')
 })
 it('does not duplicate an uncertain creation, including after its late native response',async()=>{
- f=await grokFixture(undefined,200);await f.host.connect(f.connection)
+ f=await grokFixture(undefined,200);await f.host.connect()
  await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({delayCreate:500})
  const command={type:'create-thread',commandId:'create',threadId:randomUUID(),projectId:'project',title:'Test',modelId:f.modelId} as const
  expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true});expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true})
@@ -86,7 +86,7 @@ it('does not duplicate an uncertain creation, including after its late native re
  await expect(send(command.threadId)).rejects.toThrow('not confirmed')
 })
 it('blocks prompt delivery when native model selection was rejected',async()=>{
- f=await grokFixture();await f.host.connect(f.connection);await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({rejectModel:true})
+ f=await grokFixture();await f.host.connect();await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({rejectModel:true})
  const command={type:'create-thread',commandId:'create',threadId:randomUUID(),projectId:'project',title:'Test',modelId:f.modelId} as const
  await expect(f.host.execute(command)).rejects.toThrow('rejected')
  expect((await f.host.snapshot()).threads[0]!.status).toBe('error');await expect(send(command.threadId)).rejects.toThrow('not confirmed')
@@ -105,21 +105,21 @@ it('rechecks takeover after persisting an origin and rolls back the undispatched
  expect(await readFile(join(f!.root,'grok-threads.json'),'utf8')).not.toContain('"messageId": "stale"')
 })
 it('reconnects the same host instance after a turn without stale running state',async()=>{
- const id=await setup();await send(id);f!.host.disconnect();await f!.adapter.closed();await f!.host.connect(f!.connection)
+ const id=await setup();await send(id);f!.host.disconnect();await f!.adapter.closed();await f!.host.connect()
  await f!.driver.completeTurn(id,'Done')
  await expect.poll(async()=>(await f!.host.snapshot()).threads[0]!.status).toBe('idle')
  expect((await f!.host.snapshot()).threads[0]!.messages.filter(message=>message.role==='user')).toHaveLength(1)
 })
 it('preserves Sotto identity across native session restart through the registry wrapper',async()=>{
  f=await grokFixture();let registry=new ThreadRegistry(f.root);let wrapper=new SottoThreadHost('grok',f.adapter,registry)
- await wrapper.connect(f.connection);await wrapper.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root})
+ await wrapper.connect();await wrapper.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root})
  const sottoId=randomUUID();await wrapper.execute({type:'create-thread',commandId:'create',threadId:sottoId,projectId:'project',title:'Wrapped',modelId:f.modelId})
  const providerAlias=registry.byThread(sottoId)!.sessionId;const nativeId=await f.realId(providerAlias)
  expect(nativeId).not.toBe(providerAlias);expect(providerAlias).not.toBe(sottoId)
  await wrapper.execute({type:'send',threadId:sottoId,commandId:'wrapped-send',messageId:'wrapped-own',text:'Wrapped prompt'})
  wrapper.disconnect();await f.adapter.closed();await registry.flush()
  f=await f.driver.restart();registry=new ThreadRegistry(f.root);wrapper=new SottoThreadHost('grok',f.adapter,registry)
- const resumed=await wrapper.connect(f.connection)
+ const resumed=await wrapper.connect()
  expect(resumed.threads[0]!.id).toBe(sottoId);expect(registry.byThread(sottoId)!.sessionId).toBe(providerAlias);expect(await f.realId(providerAlias)).toBe(nativeId)
  expect(JSON.stringify(resumed)).not.toContain(nativeId)
  wrapper.disconnect();await f.adapter.closed();await registry.flush()

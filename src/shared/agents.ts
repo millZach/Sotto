@@ -117,20 +117,19 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
   return provider === 'codex' || provider === 'claude' || provider === 'grok'
 }
 
-export const providerIdSchema = z.enum(['t3', 'codex', 'claude', 'grok'])
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  t3: 'T3 Code', codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
 }
 export const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 export const orbColorSchema = z.enum(ORB_COLORS)
 export type OrbColor = z.infer<typeof orbColorSchema>
 export const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
-  provider: providerIdSchema.default('t3'),
+  provider: providerIdSchema.default('codex'),
   orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
-  endpoint: z.string().max(2_048),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(512),
   followupLimit: z.number().int().min(0).max(100),
@@ -147,9 +146,9 @@ export const agentConfigurationSchema = z.object({
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
-  provider: 't3',
+  provider: 'codex',
   orbColor: 'teal',
-  enabled: false, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: '',
+  enabled: false, projectsDirectory: '', defaultModelId: '',
   followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
 })
 
@@ -176,8 +175,10 @@ export const agentQueueItemSchema = z.object({
 export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
+export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
+  providerUpgrade: providerUpgradeSchema.nullable().optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
   assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
@@ -190,7 +191,7 @@ export const agentStateSchema = z.object({
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
   speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
-  credentials: z.object({ t3: z.boolean(), reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
+  credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   membership: z.object({
     status: z.enum(['beta', 'free', 'active', 'expired', 'unavailable']),
@@ -201,7 +202,7 @@ export type AgentState = z.infer<typeof agentStateSchema>
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['t3', 'reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect') }).strict(),
   z.object({ type: z.literal('disconnect') }).strict(),
   z.object({ type: z.literal('refresh') }).strict(),
@@ -248,7 +249,7 @@ export interface AgentBridge {
 }
 
 export const EMPTY_AGENT_HOST: AgentHostSnapshot = {
-  connected: false, name: 'T3 Code', version: '', projects: [], threads: [], models: [],
+  connected: false, name: 'Codex', version: '', projects: [], threads: [], models: [],
   capabilities: { projects: false, threads: false, submit: false, observe: false,
     questions: false, permissions: false, interrupt: false, messageOrigin: false, reconcile: false },
 }

@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
@@ -81,8 +81,7 @@ export class CodexAppServerHost implements AgentHost {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
   }
-  async connect(_connection: AgentHostConnection): Promise<AgentHostSnapshot> {
-    void _connection
+  async connect(): Promise<AgentHostSnapshot> {
     this.shutdown(false); await this.closed()
     const generation = this.generation
     const [aliases, projects, executable] = await Promise.all([this.aliasStore.read(), this.projectStore.read(), this.options.executable ?? findExecutable()])

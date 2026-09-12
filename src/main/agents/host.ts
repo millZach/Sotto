@@ -1,6 +1,5 @@
 import type { AgentAttachment, AgentHostSnapshot, AgentThreadOptions } from '../../shared/agents'
 
-export interface AgentHostConnection { readonly endpoint: string; readonly credential: string }
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
   | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string } & AgentThreadOptions)
@@ -14,7 +13,7 @@ export interface AgentHostResult { readonly accepted: boolean; readonly uncertai
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
-  connect(connection: AgentHostConnection): Promise<AgentHostSnapshot>
+  connect(): Promise<AgentHostSnapshot>
   snapshot(): Promise<AgentHostSnapshot>
   /** Throws only for a definitive rejection before commitment; unknown delivery returns uncertain. */
   execute(command: AgentHostCommand): Promise<AgentHostResult>

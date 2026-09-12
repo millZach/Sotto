@@ -12,7 +12,7 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 150): Prom
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8'))[id].sessionId
   const action = async (id: string, value: Record<string, unknown>) => { await writeFile(join(root, `control-${await realId(id)}.json`), JSON.stringify({ id: randomUUID(), ...value })) }
   const check = async () => { const violations = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => ''); if (violations) throw new Error(violations) }
-  return { root, adapter, host: adapter, connection: { endpoint: 'ignored', credential: 'ignored' }, projectId: 'project', modelId: 'fixture-model', realId, action,
+  return { root, adapter, host: adapter, projectId: 'project', modelId: 'fixture-model', realId, action,
     protocol: { promptMethod: 'user', resumeMethod: 'resume', permissionDecision: (record: RecordedRpc) => {
       const frame = record.params?.frame as { response?: { response?: { behavior?: string } } } | undefined
       const behavior = frame?.response?.response?.behavior

@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -15,20 +14,6 @@ const registrySchema = z.object({ bindings: z.array(bindingSchema) })
 
 function sessionKey(provider: string, sessionId: string): string { return JSON.stringify([provider, sessionId]) }
 
-const legacyStateSchema = z.object({
-  assignments: z.array(z.unknown()).default([]), queue: z.array(z.unknown()).default([]),
-  activeThreadId: z.string().nullable().default(null), draftThreadId: z.string().nullable().default(null),
-  outbox: z.array(z.object({ threadId: z.string().optional() })).default([]),
-})
-
-/** Coordinator state written by a build without the registry refers to threads by provider session ID. */
-async function legacyStateRefersToThreads(directory: string): Promise<boolean> {
-  const parsed = legacyStateSchema.safeParse(await readFile(join(directory, 'agents.json'), 'utf8').then(JSON.parse, () => null))
-  if (!parsed.success) return false
-  const { assignments, queue, activeThreadId, draftThreadId, outbox } = parsed.data
-  return assignments.length > 0 || queue.length > 0 || activeThreadId !== null || draftThreadId !== null || outbox.some(item => item.threadId)
-}
-
 /** Local identity authority. Load before discovery; flush before persisting references to new IDs. */
 export class ThreadRegistry {
   private readonly store: AtomicJsonStore<z.infer<typeof registrySchema>>
@@ -38,9 +23,8 @@ export class ThreadRegistry {
   private pending: Promise<void> | undefined
   private dirty = false
   private ready = false
-  private adoptSessionIds = false
 
-  constructor(private readonly directory: string) {
+  constructor(directory: string) {
     this.store = new AtomicJsonStore(join(directory, 'threads.json'), registrySchema.parse, () => ({ bindings: [] }))
   }
 
@@ -49,10 +33,6 @@ export class ThreadRegistry {
 
   load(): Promise<void> {
     this.loading ??= (async () => {
-      // Installs that predate the registry saved provider session IDs as thread IDs in the
-      // coordinator state beside this file. Their first run adopts those IDs so existing
-      // assignments, drafts and queue items keep resolving; fresh installs mint UUIDs.
-      this.adoptSessionIds = !(await this.store.exists()) && await legacyStateRefersToThreads(this.directory)
       const { bindings } = await this.store.read()
       // Duplicate rows are dropped, first wins; refusing the file would re-mint every thread.
       for (const binding of bindings) {
@@ -75,7 +55,7 @@ export class ThreadRegistry {
 
   bind(provider: string, sessionId: string, projectId: string): ThreadBinding {
     const existing = this.bySession(provider, sessionId)
-    return this.reserve(existing?.threadId ?? (this.adoptSessionIds && !this.threads.has(sessionId) ? sessionId : randomUUID()), provider, sessionId, projectId)
+    return this.reserve(existing?.threadId ?? randomUUID(), provider, sessionId, projectId)
   }
 
   reserve(threadId: string, provider: string, sessionId: string, projectId: string): ThreadBinding {
@@ -127,10 +107,10 @@ export class SottoThreadHost implements AgentHost {
   constructor(private readonly provider: string, private readonly inner: AgentHost,
     private readonly registry: ThreadRegistry) {}
 
-  async connect(connection: AgentHostConnection): Promise<AgentHostSnapshot> {
+  async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
     this.observeThreads(this.observed)
-    return this.read(() => this.inner.connect(connection))
+    return this.read(() => this.inner.connect())
   }
 
   async snapshot(): Promise<AgentHostSnapshot> {

@@ -1,11 +1,11 @@
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from '../../src/main/agents/host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 
 /** Provider-facing fake: session IDs deliberately differ from Sotto thread IDs. */
 export class FakeProviderHost implements AgentHost {
   readonly commands: AgentHostCommand[] = []
   observed: readonly string[] = []
-  connection: AgentHostConnection | undefined
+  connectCalls = 0
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   readonly state: AgentHostSnapshot
 
@@ -23,8 +23,8 @@ export class FakeProviderHost implements AgentHost {
     })
   }
 
-  async connect(connection: AgentHostConnection): Promise<AgentHostSnapshot> {
-    this.connection = connection
+  async connect(): Promise<AgentHostSnapshot> {
+    this.connectCalls += 1
     this.state.connected = true
     return this.snapshot()
   }

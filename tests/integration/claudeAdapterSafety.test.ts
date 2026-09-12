@@ -35,7 +35,7 @@ describe('Claude recovery and safety', () => {
   let id: string
   const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === id)!
   beforeEach(async () => {
-    f = await claudeFixture(); await f.host.connect(f.connection)
+    f = await claudeFixture(); await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     id = randomUUID(); await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId })
   })
@@ -50,7 +50,7 @@ describe('Claude recovery and safety', () => {
   })
   it.each([false, true])('waits for observed-thread initialization before sending (failed=%s)', async fail => {
     f.host.disconnect(); await f.adapter.closed()
-    f = await claudeFixture(f.root, 1000); await f.host.connect(f.connection)
+    f = await claudeFixture(f.root, 1000); await f.host.connect()
     await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true, fail }))
     f.host.observeThreads?.([id])
     await expect.poll(async () => readFile(join(f.root, 'initialize-waiting'), 'utf8').catch(() => '')).not.toBe('')
@@ -97,7 +97,7 @@ describe('Claude recovery and safety', () => {
     expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', text: '', attachments: [{ id: 'image', sizeBytes: image.length }] })
     const stored = await readFile(join(f.root, 'claude-threads.json'), 'utf8')
     expect(stored).not.toContain(image.toString('base64'))
-    f = await f.driver.restart() as typeof f; await f.host.connect(f.connection)
+    f = await f.driver.restart() as typeof f; await f.host.connect()
     expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', commandId: 'image-command', attachments: [{ id: 'image', sizeBytes: image.length }] })
   })
   it('does not resend a repeated uncertain message', async () => {
@@ -124,7 +124,7 @@ describe('Claude recovery and safety', () => {
   it('keeps native and adapter identifiers behind the durable Sotto thread registry', async () => {
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    await wrapped.connect(f.connection)
+    await wrapped.connect()
     const sottoId = randomUUID()
     await wrapped.execute({ type: 'create-thread', commandId: 'wrapped-create', threadId: sottoId, projectId: f.projectId, title: 'Wrapped', modelId: f.modelId })
     const binding = registry.byThread(sottoId)!
@@ -136,7 +136,7 @@ describe('Claude recovery and safety', () => {
     wrapped.disconnect(); await f.adapter.closed(); await registry.flush()
     f = await f.driver.restart() as typeof f
     registry = new ThreadRegistry(f.root); wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    await wrapped.connect(f.connection)
+    await wrapped.connect()
     expect((await wrapped.snapshot()).threads.find(thread => thread.id === sottoId)?.messages).toContainEqual(expect.objectContaining({ id: 'wrapped-message', commandId: 'wrapped-send' }))
     expect(registry.byThread(sottoId)).toEqual(binding)
     wrapped.disconnect(); await f.adapter.closed(); await registry.flush()

@@ -1,18 +1,18 @@
 import { providerIdSchema, type ProviderId, type AgentHostSnapshot } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 
 /** Configuration is restored after construction, so select the provider only when connecting. */
 export class ConfiguredProviderHost implements AgentHost {
-  private active: ProviderId = 't3'
+  private active: ProviderId = 'codex'
   private observed: readonly string[] = []
   constructor(private readonly options: { hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId }) {}
-  async connect(connection: AgentHostConnection): Promise<AgentHostSnapshot> {
+  async connect(): Promise<AgentHostSnapshot> {
     this.active = this.options.provider()
     for (const provider of providerIdSchema.options) {
       if (provider !== this.active) this.options.hosts[provider].disconnect()
     }
     this.options.hosts[this.active].observeThreads?.(this.observed)
-    return this.options.hosts[this.active].connect(connection)
+    return this.options.hosts[this.active].connect()
   }
   snapshot(): Promise<AgentHostSnapshot> { return this.options.hosts[this.active].snapshot() }
   execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.options.hosts[this.active].execute(command) }

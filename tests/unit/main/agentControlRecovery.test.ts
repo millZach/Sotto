@@ -15,7 +15,7 @@ const controls: AgentControl[] = []
 const ROUTER_KEY = 'fixture-openrouter-key'
 const OPENAI_KEY = 'fixture-openai-key'
 
-// Only external effects are replaced: OS encryption, T3, and provider HTTP.
+// Only external effects are replaced: OS encryption, native coding adapters, and provider HTTP.
 // The controller, configured reasoner, and durable credential/state stores are real.
 const encryption: CredentialEncryption = {
   isEncryptionAvailable: () => true,
@@ -112,18 +112,17 @@ afterEach(async () => {
   }
 })
 
-it.each(['claude', 'grok', 'codex'] as const)('connects %s without forwarding the saved T3 route or showing its old catalog', async provider => {
+it.each(['claude', 'grok', 'codex'] as const)('connects %s without transport credentials or the previous provider catalog', async provider => {
   const f = await fixture()
-  await f.control.command({ type: 'credential', slot: 't3', value: 'synthetic-t3-secret' })
+  await f.control.command({ type: 'configure', patch: { provider: provider === 'codex' ? 'claude' : 'codex' } })
   await f.control.command({ type: 'configure', patch: { defaultModelId: 'old-provider-model' } })
   const changed = await f.control.command({ type: 'configure', patch: { provider } })
   expect(changed).toMatchObject({ error: null, configuration: { provider, defaultModelId: '' }, activeThreadId: null, activeProjectId: null })
   expect(changed.host).toMatchObject({ connected: false, name: PROVIDER_LABELS[provider], models: [], threads: [], projects: [] })
   const connect = vi.spyOn(f.host, 'connect')
   const connected = await f.control.command({ type: 'connect' })
-  expect(connect).toHaveBeenCalledWith({ endpoint: '', credential: '' })
+  expect(connect).toHaveBeenCalledWith()
   expect(connected.notice).toBe(`${PROVIDER_LABELS[provider]} connected`)
-  expect(f.credentials.get('t3')).toBe('synthetic-t3-secret')
 })
 
 it('preserves the native account sign-in guidance when the adapter cannot connect', async () => {
@@ -210,44 +209,28 @@ describe('reasoning account route isolation', () => {
     expect(f.requests[0]).toMatchObject({ origin: 'https://openrouter.ai', authorization: `Bearer ${ROUTER_KEY}` })
   })
 
-  it('clears the T3 token before changing its server while preserving it for unrelated settings', async () => {
+  it('refuses provider changes with assignments and preserves unrelated reasoning credentials once unassigned', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'credential', slot: 't3', value: 'fixture-first-t3-token' })
-    const unchanged = await f.control.command({ type: 'configure', patch: { followupLimit: 3 } })
-    expect(unchanged.credentials.t3).toBe(true)
-    const changed = await f.control.command({ type: 'configure', patch: { endpoint: 'http://127.0.0.1:4773' } })
-    expect(changed.credentials.t3).toBe(false)
-    expect(changed.connection).toBe('disconnected')
-    const blocked = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Wrong server', modelId: 'claude:test' })
-    expect(blocked.error).toMatch(/reconnect the provider/iu)
-    expect(blocked.host.threads).toHaveLength(2)
-    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
-    await reloaded.load()
-    expect(reloaded.has('t3')).toBe(false)
-  })
-
-  it('refuses provider changes with assignments and disconnects without clearing the T3 credential once unassigned', async () => {
-    const f = await fixture()
-    await f.control.command({ type: 'credential', slot: 't3', value: 'fixture-t3-token' })
+    await f.control.command({ type: 'credential', slot: 'reasoning', value: 'fixture-reasoning-token' })
     await f.control.command({ type: 'assign', threadId: 'workshop' })
-    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
-    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider or its server.')
-    expect(blocked.configuration.provider).toBe('t3')
+    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider.')
+    expect(blocked.configuration.provider).toBe('codex')
     expect(blocked.connection).toBe('connected')
     await f.control.command({ type: 'unassign', threadId: 'workshop' })
-    const changed = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
-    expect(changed).toMatchObject({ error: null, configuration: { provider: 'codex' }, connection: 'disconnected', credentials: { t3: true } })
-    expect(f.credentials.get('t3')).toBe('fixture-t3-token')
+    const changed = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'disconnected', credentials: { reasoning: true } })
+    expect(f.credentials.get('reasoning')).toBe('fixture-reasoning-token')
     const reloaded = new AgentCredentials(f.credentialsDirectory, encryption); await reloaded.load()
-    expect(reloaded.get('t3')).toBe('fixture-t3-token')
+    expect(reloaded.get('reasoning')).toBe('fixture-reasoning-token')
   })
 
   it('refuses provider changes while a creation acknowledgement is pending', async () => {
     const f = await fixture(new UnacknowledgedCreationHost())
     await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Pending', modelId: 'claude:test' })
-    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'codex' } })
-    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider or its server.')
-    expect(blocked.configuration.provider).toBe('t3')
+    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider.')
+    expect(blocked.configuration.provider).toBe('codex')
   })
 
   it('keeps the original route when deleting its credential fails', async () => {
