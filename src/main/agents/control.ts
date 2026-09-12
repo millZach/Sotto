@@ -8,10 +8,11 @@ import {
   type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import type { MemoryProfile } from '../memory/profile'
 import type { AgentCredentials } from './credentials'
 import { approvalWords, classifyRiskyAction, denialWords, type Authority } from './authority'
 import type { AgentHost, AgentHostCommand } from './host'
-import type { AgentReasoner } from './reasoning'
+import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { isThreadClosed } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
@@ -75,6 +76,7 @@ export class AgentControl {
     historyEnabled?: () => boolean
     turns?: TurnRecorder
     authority?: Authority
+    preferences?: Pick<MemoryProfile, 'preferences'>
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -702,6 +704,22 @@ export class AgentControl {
   private promptDigest(text: string, attachments: AgentAttachment[] = []): string {
     return createHash('sha256').update(JSON.stringify([text.trim(), attachments])).digest('hex')
   }
+  private readPreferences(projectId: string | null, turn?: ActiveTurn): AgentPreference[] {
+    if (!this.dependencies.preferences) return []
+    const started = Date.now()
+    try {
+      const preferences = this.dependencies.preferences.preferences(projectId ?? undefined)
+      this.recordPreferences(turn, preferences)
+      return preferences
+    } finally {
+      if (turn) turn.retrievalMs += Date.now() - started
+    }
+  }
+  private recordPreferences(turn: ActiveTurn | undefined, preferences: AgentPreference[]): void {
+    if (!turn || preferences.length === 0) return
+    turn.retrievedMemoryIds = [...new Set([...turn.retrievedMemoryIds, ...preferences.map(preference => preference.id)])]
+    addTurnContext(turn, JSON.stringify(preferences))
+  }
   private async utterance(text: string, turn?: ActiveTurn, selectionRevision = this.selectionRevision): Promise<void> {
     addTurnContext(turn, text)
     const normalized = text.toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim()
@@ -749,10 +767,11 @@ export class AgentControl {
     if (request.length > 18_000) throw new Error('This request is too long. Clear it and start a shorter command; use the prompt editor for project instructions.')
     this.canAct()
     if (this.state.pendingRequest) addTurnContext(turn, `${this.state.pendingRequest}\nUser clarification: `)
+    const preferences = this.readPreferences(this.state.activeProjectId, turn)
     const intentStarted = Date.now()
     let intent
     try {
-      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId)
+      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId, preferences)
     } finally {
       if (turn) turn.intentMs += Date.now() - intentStarted
     }
@@ -909,7 +928,12 @@ export class AgentControl {
         assignment.paused = true; this.enqueue(thread, 'blocked', `The ${this.state.configuration.followupLimit} follow-up limit is reached. Review the thread and resume management to authorize more.`); return
       }
       this.canAct()
-      const decision = await this.dependencies.reasoner.decide(assignment.instruction, structuredClone(thread))
+      const retrievalStarted = Date.now()
+      const preferences = this.readPreferences(thread.projectId)
+      const retrievalMs = this.dependencies.preferences ? Date.now() - retrievalStarted : 0
+      const intentStarted = Date.now()
+      const decision = await this.dependencies.reasoner.decide(assignment.instruction, structuredClone(thread), preferences)
+      const intentMs = Date.now() - intentStarted
       const current = this.state.assignments.find(a => a.threadId === thread.id)
       const latest = this.state.host.threads.find(t => t.id === thread.id)
       if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !this.state.host.connected) return
@@ -925,6 +949,11 @@ export class AgentControl {
         assignment.paused = true; this.enqueue(thread, 'blocked', 'The agent is repeating a failure without progress. Review the thread before resuming.'); return
       }
       turn = this.beginTurn({ source: 'supervision', commandType: 'send', text: decision.text, threadId: thread.id, projectId: thread.projectId })
+      if (turn) {
+        turn.startedAtMs = retrievalStarted; turn.startedAt = new Date(retrievalStarted).toISOString()
+        turn.retrievalMs = retrievalMs; turn.intentMs = intentMs
+      }
+      this.recordPreferences(turn, preferences)
       this.canAct()
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()

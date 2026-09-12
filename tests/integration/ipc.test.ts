@@ -333,6 +333,7 @@ describe('typed preload bridge', () => {
         'installUpdate',
         'listHistory',
         'listRecoveryNotices',
+        'memory',
         'minimizeApp',
         'onDictationCommand',
         'onRecoveryNotice',
@@ -358,6 +359,8 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('onWidgetState')
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.agents)).toBe(true)
+    expect(Object.isFrozen(bridge.memory)).toBe(true)
+    expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
     expect(Object.keys(bridge.agents!).sort()).toEqual(['cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'voiceModel'])
   })
 

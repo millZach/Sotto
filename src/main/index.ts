@@ -139,6 +139,9 @@ import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
+import { MemoryProfile } from './memory/profile'
+import { registerMemoryIpc } from './memory/ipc'
+import { MEMORY_CHANGED } from '../shared/memory'
 import { probeMemoryStore } from './memory/probe'
 
 const memoryProbeMode = process.env.SOTTO_MEMORY_PROBE === '1'
@@ -410,9 +413,8 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   const userDataPath = app.getPath('userData')
-  const memoryStore = e2eConfiguration === null
-    ? openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
-    : undefined
+  const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
+  const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
@@ -514,6 +516,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const agentControl: AgentControl = new AgentControl({
     directory: userDataPath, host: agentHost, credentials, membership,
     ...(authority === undefined ? {} : { authority }),
+    ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
     historyEnabled: () => agentHistoryEnabled,
     turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
@@ -803,6 +806,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
+      const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
@@ -871,6 +875,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       updates.start()
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
+        cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
         transcription.dispose()

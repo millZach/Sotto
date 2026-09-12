@@ -56,6 +56,14 @@ export const migrations = [{
     );
     CREATE INDEX policies_action_scope ON policies(action, scope);
   `,
+}, {
+  version: 3,
+  sql: `
+    CREATE TABLE memory_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      questionnaireCompletedAt TEXT NOT NULL
+    );
+  `,
 }]
 
 export const latestMigrationVersion = migrations.at(-1).version

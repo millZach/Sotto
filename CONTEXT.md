@@ -51,7 +51,7 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
 
-**Turn record.** One JSON line in `turns.jsonl` in the user data folder, written by the turn recorder when a turn finishes: source (`utterance`, `command` or `supervision`), the Sotto thread ID and project the turn acted on, the provider session resolved from the thread registry, timings (intent, retrieval, delegation, total; speech-to-intent and speech-to-first-feedback once the voice pipeline supplies an end-of-speech time), retrieved memory IDs (empty until memory exists), a context-token estimate, the outcome (`completed`, `clarified`, `failed`) and the text and error, which are blanked when Keep local history is off. Draft edits are not turns. Avoid: "trace", "log entry".
+**Turn record.** One JSON line in `turns.jsonl` in the user data folder, written by the turn recorder when a turn finishes: source (`utterance`, `command` or `supervision`), the Sotto thread ID and project the turn acted on, the provider session resolved from the thread registry, timings (intent, retrieval, delegation, total; speech-to-intent and speech-to-first-feedback once the voice pipeline supplies an end-of-speech time), retrieved memory IDs, a context-token estimate, the outcome (`completed`, `clarified`, `failed`) and the text and error, which are blanked when Keep local history is off. Draft edits are not turns. Avoid: "trace", "log entry".
 
 **Outbox.** Durable intent for a dispatched command whose acknowledgement may be lost. Sotto reconciles outbox items against the next status rather than resending.
 
@@ -77,7 +77,11 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 **Memory store.** The SQLite database `memory.sqlite` in the user data folder, the single source of truth for accepted memories. It is opened by Node's built-in `node:sqlite` in the packaged Electron runtime, so production dependencies stay `zod` only, and it carries a full-text index for lexical retrieval. Search honours a memory's validity window and includes temporary memories that are current. See ADR-0003.
 
-**Provenance.** Where a memory came from: a list of Sotto thread IDs with a reference into the thread (for example a turn record ID). Provenance never carries a provider session ID; the thread registry resolves that when needed.
+**Provenance.** Where a memory came from: a Sotto thread and reference, or a dated questionnaire answer or inspector correction. Questionnaire and inspector provenance do not invent a thread; provenance never carries a provider session ID.
+
+**Working preferences.** The user's explicit answers about communication, autonomy, verification, git and review, agent choices, workflow and privacy. They guide coordinator replies without granting permissions or changing history settings.
+
+**Memory inspector.** The Memory page where the user sees remembered content, its provenance and history, and can correct, supersede or delete it. Corrections retain earlier versions; deleting a memory removes its full chain of versions.
 
 **Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in a probe mode that opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and prints its evidence. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
 

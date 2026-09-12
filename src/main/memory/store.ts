@@ -4,32 +4,12 @@ import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 
 import { z } from 'zod'
 
+import { memoryItemSchema } from '../../shared/memory'
 import { memoryInsertSql, migrateDatabase } from './migrations.mjs'
 
 const timestampSchema = z.iso.datetime()
 
-export const memorySchema = z.object({
-  id: z.string().min(1),
-  type: z.string(),
-  // For project-scoped memories, scope is the project id, not the word "project".
-  scope: z.string().describe('Project id for project-scoped memories; otherwise the scope name'),
-  content: z.string().min(1),
-  sourceClass: z.enum(['explicit', 'observed', 'inferred', 'imported', 'agent-confirmed']),
-  confidence: z.number().min(0).max(1),
-  evidenceCount: z.number().int().min(0),
-  importance: z.number().min(0).max(1),
-  createdAt: timestampSchema,
-  lastConfirmedAt: timestampSchema.nullable(),
-  lastUsedAt: timestampSchema.nullable(),
-  validFrom: timestampSchema,
-  validTo: timestampSchema.nullable(),
-  supersededBy: z.string().min(1).nullable(),
-  provenance: z.array(z.object({
-    threadId: z.string().describe('Sotto thread ID'), ref: z.string(),
-  })),
-  tags: z.array(z.string()),
-  state: z.enum(['active', 'superseded', 'disputed', 'temporary', 'archived']),
-  authority: z.enum(['preference', 'policy', 'permission']),
+export const memorySchema = memoryItemSchema.extend({
   embedding: z.instanceof(Uint8Array).nullable().optional(),
 })
 
@@ -85,6 +65,20 @@ export class MemoryStore {
     const row = this.requireOpen().prepare('SELECT * FROM memories WHERE id = ?')
       .get(z.string().min(1).parse(id))
     return row === undefined ? undefined : parseRow(row)
+  }
+
+  list(): Memory[] {
+    return this.requireOpen().prepare('SELECT * FROM memories ORDER BY createdAt DESC, id').all().map(parseRow)
+  }
+
+  currentPreferences(projectId?: string): Memory[] {
+    const at = new Date().toISOString()
+    return this.requireOpen().prepare(`SELECT * FROM memories
+      WHERE authority = 'preference' AND sourceClass = 'explicit' AND state = 'active'
+      AND supersededBy IS NULL AND (scope = 'global' OR scope = ?)
+      AND validFrom <= ? AND (validTo IS NULL OR validTo > ?)
+      ORDER BY CASE WHEN scope = 'global' THEN 1 ELSE 0 END, lastConfirmedAt DESC, id LIMIT 20`)
+      .all(projectId === undefined ? null : z.string().min(1).parse(projectId), at, at).map(parseRow)
   }
 
   search(query: string, options: { limit: number; projectId?: string; at?: string }): Memory[] {

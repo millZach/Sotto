@@ -59,6 +59,7 @@ test('settled work stays off attention and session pills, with real timestamps a
   const { page } = launched
   try {
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('button', { name: 'Not now', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Open Footer links', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Open Release notes 1.4', exact: true })).toHaveCount(0)
     await expect(page.getByText('Old closed thread update.', { exact: true })).toHaveCount(0)

@@ -1,17 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { riskyActionSchema, type AuthorizationQuery, type AuthorizationResult } from '../agents/authority'
+import { type AuthorizationQuery, type AuthorizationResult } from '../agents/authority'
+import { memoryPolicySchema } from '../../shared/memory'
 import { policyInsertSql } from './migrations.mjs'
 import type { MemoryStore } from './store'
 
-export const policyRecordSchema = z.object({
-  id: z.string().min(1),
-  action: riskyActionSchema,
-  resource: z.string().min(1), scope: z.string().min(1),
-  effect: z.enum(['allow', 'always-confirm']), source: z.enum(['user', 'questionnaire']),
-  note: z.string(), grantedAt: z.iso.datetime(),
-  expiresAt: z.iso.datetime().nullable(), revokedAt: z.iso.datetime().nullable(),
-})
+export const policyRecordSchema = memoryPolicySchema
 export type PolicyRecord = z.infer<typeof policyRecordSchema>
 type GrantInput = Pick<PolicyRecord, 'action' | 'note'> &
   Partial<Omit<PolicyRecord, 'action' | 'note' | 'revokedAt'>>

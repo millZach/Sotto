@@ -1,0 +1,38 @@
+.memory-page { width: min(100%, 840px); margin: 0 auto; padding: 48px 36px 64px; }
+.memory-page h1 { font-size: 30px; font-weight: 600; line-height: 1.15; letter-spacing: -.045em; margin: 0 0 24px; }
+.memory-page h2 { font-size: 23px; font-weight: 600; letter-spacing: -.035em; margin: 0 0 18px; }
+.memory-description { color: var(--tt-text-2); font-size: 16px; max-width: 65ch; margin: 0 0 24px; }
+.memory-conversation { max-width: 760px; padding-top: clamp(32px, 9vh, 80px); }
+.memory-step { animation: memory-arrive 160ms ease-out; }
+.memory-answer { display: block; width: 100%; resize: vertical; min-height: 128px; padding: 16px; background: var(--tt-canvas); border: 1px solid var(--tt-border); border-radius: 10px; font-size: 17px; line-height: 1.5; }
+.memory-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.memory-page button { min-height: 40px; font-size: 14px; }
+.memory-conversation button { min-height: 44px; }
+.memory-progress { color: var(--tt-text-muted); margin-left: auto; font-size: 14px; }
+.memory-boundaries { display: grid; gap: 8px; padding: 6px 0 20px; }
+.memory-boundaries label { display: flex; gap: 14px; align-items: center; min-height: 44px; font-size: 17px; cursor: pointer; }
+.memory-page input[type='checkbox'] { accent-color: var(--tt-primary); width: 18px; height: 18px; flex: 0 0 auto; }
+.memory-review > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; border-top: 1px solid var(--tt-hairline); padding: 12px 0; }
+.memory-review p, .memory-content { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-review p { margin: 0; font-size: 16px; }
+.memory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin: 32px 0 16px; }
+.memory-history-toggle { display: flex; gap: 10px; align-items: center; min-height: 40px; color: var(--tt-text-2); cursor: pointer; }
+.memory-item { border-top: 1px solid var(--tt-hairline); padding: 24px 0; }
+.memory-content { font-size: 18px; line-height: 1.5; margin: 0 0 12px; }
+.memory-meta { color: var(--tt-text-muted); font-size: 13px; overflow-wrap: anywhere; margin: 8px 0; }
+.memory-details { color: var(--tt-text-2); font-size: 14px; }
+.memory-details summary { cursor: pointer; padding: 8px 0; width: fit-content; }
+.memory-details dl { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: 10px 24px; }
+.memory-details dt { color: var(--tt-text-muted); }
+.memory-details dd { margin: 0; overflow-wrap: anywhere; }
+.memory-details li { overflow-wrap: anywhere; }
+.memory-delete { border-left: 2px solid var(--tt-error); padding-left: 16px; }
+.memory-error { color: var(--tt-error); overflow-wrap: anywhere; }
+.memory-empty { padding: 24px 0; font-size: 18px; }
+.memory-policies { margin-top: 36px; padding-top: 32px; border-top: 1px solid var(--tt-border-faint); }
+.memory-policies > ul { padding: 0; list-style: none; }
+.memory-policies > ul > li { padding: 12px 0; }
+@keyframes memory-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) { .memory-page { padding: 28px 20px 40px; } .memory-page h1 { font-size: 27px; } .memory-review > div { gap: 8px; } .memory-details dl { gap: 8px 12px; } }
+@media (prefers-reduced-motion: reduce) { .memory-step { animation: none; } }
+:root[data-reduced-motion='on'] .memory-step { animation: none; }
