@@ -273,6 +273,18 @@ describe('independent thread providers', () => {
     const f = await fixture(); const pending = f.host.connect('grok'); f.host.disconnect('grok'); await pending
     expect(f.adapters.grok.connectCalls).toBe(0)
   })
+  it('does not let an uncertain project creation block another provider project', async () => {
+    const f = await fixture(); const control = await coordinator(f)
+    await control.command({ type: 'connect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'claude' })
+    const execute = f.adapters.codex.execute.bind(f.adapters.codex)
+    vi.spyOn(f.adapters.codex, 'execute').mockImplementation(command => command.type === 'create-project' ? Promise.resolve({ accepted: false, uncertain: true }) : execute(command))
+    const first = await control.command({ type: 'create-project', provider: 'codex', title: 'Unknown', path: join(f.root, 'unknown') })
+    expect(first.error).toContain('did not confirm')
+    const second = await control.command({ type: 'create-project', provider: 'claude', title: 'Independent', path: join(f.root, 'independent') })
+    expect(second.error).toBeNull()
+    expect(second.host.projects.some(project => project.title === 'Independent' && project.providerId === 'claude')).toBe(true)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toMatchObject([{ type: 'create-project', provider: 'codex' }])
+  })
   it('resolves legacy project/model choices to their original default provider', async () => {
     const f = await fixture(); await f.host.connect('codex')
     expect(f.host.resolveProjectId('project')).toBe('project')

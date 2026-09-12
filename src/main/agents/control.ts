@@ -136,7 +136,8 @@ export class AgentControl {
       ids.add(item.id)
       this.recoveredQueueIds.set(item.threadId, ids)
     }
-    this.outbox = outbox
+    // Before independent providers, every durable pending action belonged to the restored native provider.
+    this.outbox = outbox.map(item => ({ ...item, provider: item.provider ?? this.state.configuration.provider }))
     // Redaction also reaches disk when control is disabled and no reconnect will run.
     await this.persist()
     this.state.membership = await this.dependencies.membership.status()
@@ -660,7 +661,7 @@ export class AgentControl {
         if (request && !(request.kind === 'permission' ? capabilities.permissions : capabilities.questions)) throw new Error('This provider does not support answering this request.')
       }
     }
-    if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
+    if (this.outbox.some(item => threadId ? item.threadId === threadId : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -944,7 +945,7 @@ export class AgentControl {
     }
     for (const item of [...this.outbox]) {
       const thread = snapshot.threads.find(t => t.id === item.threadId)
-      if (item.provider && snapshot.providers?.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
+      if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
       const confirmed = item.type === 'send' ? Boolean(message) : item.type === 'create-project'
