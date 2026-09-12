@@ -138,7 +138,7 @@ it('does not reconnect again after a native adapter replaces its process while c
   const f = await fixture()
   const originalConnect = f.host.connect.bind(f.host)
   const connect = vi.spyOn(f.host, 'connect').mockImplementation(async () => {
-    f.host.event({ type: 'disconnect', threadId: '' })
+    f.host.event({ type: 'disconnect', threadId: '', text: '' })
     return originalConnect()
   })
   vi.useFakeTimers()
