@@ -51,7 +51,7 @@ async function fixture() {
   const recorder = new TurnRecorder({
     directory: root,
     historyEnabled: () => historyEnabled,
-    resolveSession: id => ({ provider: 't3', sessionId: `session-${id}` }),
+    resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }),
   })
   const binding: { control: AgentControl } = {} as { control: AgentControl }
   const reasoner = new ConfiguredAgentReasoner(() => binding.control.get().configuration, credentials)

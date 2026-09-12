@@ -58,7 +58,7 @@ it('maps a targeted read through provider selection and durable Sotto identity w
   const host = new ConfiguredProviderHost({ hosts, provider: () => 'codex' })
   let release!: () => void
   try {
-    const connected = await host.connect({ endpoint: '', credential: '' })
+    const connected = await host.connect()
     const id = connected.threads.find(thread => thread.title === 'Workshop')!.id
     expect(id).not.toBe('workshop')
     adapter.blocked = new Promise<void>(resolve => { release = resolve })

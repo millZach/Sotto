@@ -16,7 +16,7 @@ it.each(['codex', 'claude', 'grok'] as const)('%s sends and confirms while anoth
   let sending: Promise<AgentHostResult> | undefined
   let background: ReturnType<AgentHost['snapshot']> | undefined
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     const unrelated = randomUUID(), target = randomUUID()
     for (const id of [unrelated, target]) await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: id, modelId: f.modelId })
@@ -51,7 +51,7 @@ it.each(['codex', 'claude', 'grok'] as const)('%s rechecks a permission arriving
   let permission = false
   const unsubscribe = f.host.subscribe(snapshot => { permission = Boolean(snapshot.threads.find(thread => thread.id === id)?.requests.length) })
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     const seam = f.adapter as unknown as { persist(): Promise<void> }
@@ -74,7 +74,7 @@ it('Codex rejects a stale history completion after live text and turn completion
   let completed = false
   const unsubscribe = f.host.subscribe(snapshot => { completed = snapshot.threads.find(thread => thread.id === id)?.messages.some(message => message.text === 'Finished during history read') ?? false })
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     await f.host.execute({ type: 'send', commandId: 'own-command', threadId: id, messageId: 'own-message', text: 'Synthetic prompt' })
@@ -95,7 +95,7 @@ it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority r
   const f = provider === 'codex' ? await codexFixture(undefined, false, 200) : await grokFixture(undefined, 200)
   const id = randomUUID()
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     await f.script(provider === 'codex' ? { delay: { method: 'thread/read', ms: 500 } } : { ignoreHistory: true })
@@ -108,7 +108,7 @@ it('Codex rechecks native authorship after persisting an undispatched origin', a
   const f = await codexFixture()
   const id = randomUUID()
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     const seam = f.adapter as unknown as { persist(): Promise<void> }
