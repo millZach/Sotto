@@ -3,6 +3,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
+import console from 'node:console'
+import { clearInterval } from 'node:timers'
 const [root, ...args] = process.argv.slice(2)
 const value = flag => args[args.indexOf(flag) + 1]
 const record = (method, frame) => appendFileSync(join(root, 'requests.jsonl'), JSON.stringify({ method, params: { frame } }) + '\n')

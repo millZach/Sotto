@@ -37,6 +37,18 @@ test('selects native thread providers through the existing configuration control
     if (await dismissPreferences.isVisible()) await dismissPreferences.click()
     await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
     await expect(picker).toHaveValue('grok')
+    for (const width of [760, 420]) {
+      await launched.app.evaluate(({ BrowserWindow }, windowWidth) => {
+        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+        window.setMinimumSize(320, 400); window.setSize(windowWidth, 740)
+      }, width)
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+      await expect(picker).toBeVisible()
+      await page.screenshot({ animations: 'disabled', path: `artifacts/native-providers/grok-${width}.png` })
+      expect(await page.getByRole('dialog', { name: 'Agent configuration', exact: true }).evaluate(element => {
+        const bounds = element.getBoundingClientRect(); return bounds.left >= -1 && bounds.right <= innerWidth + 1
+      })).toBe(true)
+    }
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Connect Grok Build', exact: true })).toBeVisible()
   } finally { await closeSotto(launched) }
