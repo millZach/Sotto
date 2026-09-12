@@ -110,7 +110,7 @@ export class AgentControl {
       this.state.pendingRequest = ''
     }
     this.state.queue = this.state.queue.filter(item => item.requestId || (!historyDisabled && Date.parse(item.createdAt) > cutoff))
-      .map(item => historyDisabled ? { ...item, text: 'Open T3 to review this pending request.' } : item)
+      .map(item => historyDisabled ? { ...item, text: 'Open the provider to review this pending request.' } : item)
     // A durable attention item means its observation already reached a result.
     // Do not persist the in-flight `considered` map: a crash must retry unfinished work.
     for (const item of this.state.queue) {
@@ -150,7 +150,7 @@ export class AgentControl {
     const retainContext = this.dependencies.historyEnabled?.() !== false
     return structuredClone({ configuration,
       assignments: assignments.map(assignment => ({ ...assignment, instruction: retainContext ? assignment.instruction : '', paused: assignment.paused || (!retainContext && Boolean(assignment.instruction)) })),
-      queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open T3 to review this pending item.' })),
+      queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open the provider to review this pending item.' })),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
       contextSavedAt: this.contextActivityAt, outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [] })
   }
@@ -190,7 +190,7 @@ export class AgentControl {
   }
   private thread(id: string | null): AgentThread {
     const thread = this.state.host.threads.find(t => t.id === id)
-    if (!thread) throw new Error('Select an available T3 thread first.')
+    if (!thread) throw new Error('Select an available thread first.')
     return thread
   }
   private assignment(id: string): AgentAssignment {
@@ -200,13 +200,13 @@ export class AgentControl {
   }
   private canAct(): void {
     if (!['active', 'beta'].includes(this.state.membership.status)) throw new Error('Agent actions require an active Sotto membership. Free dictation remains available.')
-    if (this.state.membership.expiresAt && Date.parse(this.state.membership.expiresAt) <= Date.now()) throw new Error('Refresh your Sotto membership before starting more agent actions. Existing T3 work continues.')
-    if (!this.state.host.connected) throw new Error('Reconnect T3 before sending. Your draft is saved.')
+    if (this.state.membership.expiresAt && Date.parse(this.state.membership.expiresAt) <= Date.now()) throw new Error('Refresh your Sotto membership before starting more agent actions. Existing provider work continues.')
+    if (!this.state.host.connected) throw new Error('Reconnect the provider before sending. Your draft is saved.')
   }
   private canCreate(): void {
     this.canAct()
     if (this.outbox.some(item => item.type === 'create-project' || item.type === 'create-thread')) {
-      throw new Error('An earlier creation has an unknown result. Reconnect and inspect T3 before creating anything else; select the existing project or thread if it appears.')
+      throw new Error('An earlier creation has an unknown result. Reconnect and inspect the provider before creating anything else; select the existing project or thread if it appears.')
     }
   }
   command(command: AgentCommand): Promise<AgentState> {
@@ -234,7 +234,7 @@ export class AgentControl {
       this.state.voice.action = command.action; this.state.voice.revision += 1; this.publish()
       return Promise.resolve(this.get())
     }
-    // Host observations bypass this lane: a direct T3 send must revoke authority even during model reasoning.
+    // Host observations bypass this lane: a direct provider send must revoke authority even during model reasoning.
     const task = this.serial.then(async () => {
       this.state.busy = true
       this.state.error = null
@@ -388,7 +388,7 @@ export class AgentControl {
       case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId); return
       case 'create-project': {
         this.canCreate()
-        if (!this.state.host.capabilities.projects) throw new Error('This T3 version does not support creating projects.')
+        if (!this.state.host.capabilities.projects) throw new Error('This provider does not support creating projects.')
         if (/[<>:"/\\|?*]/u.test(command.title) || /[. ]$/u.test(command.title) || /^(\.|\.\.|con|prn|aux|nul|com\d|lpt\d)$/iu.test(command.title)) throw new Error('Choose a project name that can be used as a folder name.')
         const target = command.path || (this.state.configuration.projectsDirectory ? join(this.state.configuration.projectsDirectory, command.title) : '')
         if (!target || !isAbsolute(target)) throw new Error('Choose an absolute project folder or configure a default projects directory.')
@@ -421,7 +421,7 @@ export class AgentControl {
       case 'create-thread': {
         if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
         this.canCreate()
-        if (!this.state.host.capabilities.threads) throw new Error('This T3 version cannot create threads.')
+        if (!this.state.host.capabilities.threads) throw new Error('This provider cannot create threads.')
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!this.state.host.models.some(m => m.id === command.modelId && m.ready)) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
         validateThreadOptions(this.state.host, command)
@@ -461,7 +461,7 @@ export class AgentControl {
           validateThreadOptions(this.state.host, command, thread.modelId)
         }
         validate()
-        // T3 exposes two distinct commands. Each has its own durable identity;
+        // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.
         if (command.modelId !== undefined || command.reasoningEffort !== undefined) {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
@@ -506,7 +506,7 @@ export class AgentControl {
         this.acceptSnapshot(await this.dependencies.host.snapshot())
         return
       }
-      case 'pause': this.assignment(command.threadId).paused = true; this.say(`Paused management of ${this.thread(command.threadId).title}. T3 work continues.`); return
+      case 'pause': this.assignment(command.threadId).paused = true; this.say(`Paused management of ${this.thread(command.threadId).title}. Provider work continues.`); return
       case 'interrupt': {
         const validate = (): void => {
           this.canAct()
@@ -571,7 +571,7 @@ export class AgentControl {
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
-    if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
+    if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     this.outbox.push({ id: command.commandId, type: command.type, ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -595,7 +595,7 @@ export class AgentControl {
     } finally {
       if (turn) turn.delegationMs += Date.now() - delegatedAt
     }
-    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('T3 did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
+    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || command.type === 'send') && result.accepted) {
       this.acceptSnapshot(await this.dependencies.host.snapshot())
       await this.persist()
@@ -606,7 +606,7 @@ export class AgentControl {
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
-    if (!result.accepted && !result.uncertain) throw new Error('T3 rejected this action. Check its current permissions and account status.')
+    if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
     this.acceptSnapshot(await this.dependencies.host.snapshot())
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string): Promise<void> {
@@ -618,7 +618,7 @@ export class AgentControl {
       this.canAct()
       this.observe(threadId)
       this.acceptSnapshot(await this.dependencies.host.snapshot())
-      if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
+      if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
       this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
       this.observe()
       return
@@ -660,7 +660,7 @@ export class AgentControl {
     if (pendingId) {
       this.canAct()
       this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot())
-      if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect T3 before retrying; Sotto will not send it twice.')
+      if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
       this.say('Reconciled the earlier action. No new prompt was sent.')
       return
     }
