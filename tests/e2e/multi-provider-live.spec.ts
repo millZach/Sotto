@@ -29,9 +29,35 @@ function connections(snapshot: AgentState) {
 
 const allConnected = providers.map(id => ({ id, connection: 'connected' }))
 
+async function settleProviders(page: Page): Promise<void> {
+  const navigation = page.getByRole('link', { name: 'Providers', exact: true })
+  await navigation.click()
+  let previous: number | undefined
+  let unchanged = 0
+  await expect.poll(async () => {
+    const top = await page.locator('.settings-scroll').evaluate(element => element.scrollTop)
+    unchanged = top === previous ? unchanged + 1 : 0
+    previous = top
+    return unchanged >= 3
+  }, { intervals: [100], timeout: 10_000 }).toBe(true)
+  await expect(navigation).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => page.locator('#settings-providers').evaluate(section => {
+    const scroller = section.closest('.settings-scroll')!
+    const offset = (Number.parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0)
+      + (Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0)
+    return Math.abs(section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - offset)
+  })).toBeLessThanOrEqual(2)
+}
+
+
 async function openProviders(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
-  await page.getByRole('link', { name: 'Providers', exact: true }).click()
+  await settleProviders(page)
+}
+
+async function captureProviders(page: Page, path: string): Promise<void> {
+  await settleProviders(page)
+  await page.screenshot({ animations: 'disabled', path })
 }
 
 async function providerAction(page: Page, provider: ProviderId, action: 'Connect' | 'Disconnect'): Promise<void> {
@@ -101,6 +127,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       ...process.env, SOTTO_NATIVE_THREADS_LIVE: '1', SOTTO_NATIVE_THREADS_ROOT: root,
     }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE')) })
     const target = await firstSottoWindow(app)
+    target.setDefaultTimeout(15_000)
     await target.waitForFunction(() => !!window.sotto?.agents)
     expect(await target.evaluate(() => typeof window.sottoE2E)).toBe('undefined')
     expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile)
@@ -117,34 +144,17 @@ test('three native providers coexist independently of Sotto reasoning and surviv
         if (result.error) throw new Error(result.error)
       })
       await openProviders(page)
-      await page.screenshot({ animations: 'disabled', path: join(artifacts, 'initial-providers.png') })
+      await captureProviders(page, join(artifacts, 'initial-providers.png'))
       for (const provider of providers) {
         await providerAction(page, provider, 'Connect')
         await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible()
         await page.getByRole('tab', { name: 'Models', exact: true }).click()
         await expect.poll(async () => (await state(page!)).host.models.filter(model => model.providerId === provider && model.ready).length).toBeGreaterThan(0)
-        await page.screenshot({ animations: 'disabled', path: join(artifacts, `${provider}-models.png`) })
+        await captureProviders(page, join(artifacts, `${provider}-models.png`))
         await page.getByRole('tab', { name: 'Configuration', exact: true }).click()
       }
       await expect.poll(async () => connections(await state(page!))).toEqual(allConnected)
       expect([...((await state(page)).configuration.enabledProviders ?? [])].sort()).toEqual([...providers].sort())
-      await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
-      await page.screenshot({ animations: 'disabled', path: join(artifacts, 'all-connected-claude-configuration.png') })
-      await page.getByRole('tab', { name: 'Models', exact: true }).click()
-      await page.screenshot({ animations: 'disabled', path: join(artifacts, 'all-connected-claude-models.png') })
-      await page.getByRole('tab', { name: 'Configuration', exact: true }).click()
-      const previousSize = await app!.evaluate(({ BrowserWindow }) => {
-        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-        const size = window.getSize(); const minimum = window.getMinimumSize()
-        window.setMinimumSize(760, 600); window.setSize(760, 740); return { size, minimum }
-      })
-      await expect.poll(() => page!.evaluate(() => innerWidth)).toBe(760)
-      await page.screenshot({ animations: 'disabled', path: join(artifacts, 'providers-760.png') })
-      await app!.evaluate(({ BrowserWindow }, previous) => {
-        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-        window.setMinimumSize(previous.minimum[0]!, previous.minimum[1]!)
-        window.setSize(previous.size[0]!, previous.size[1]!)
-      }, previousSize)
       await page.getByRole('link', { name: 'Threads', exact: true }).click()
       for (const [index, provider] of providers.entries()) {
         const model = (await state(page)).host.models.find(model => model.providerId === provider && model.ready)
@@ -198,6 +208,27 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     evidence.connected = connections(before)
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'three-providers.png') })
 
+    await openProviders(page)
+    await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
+    await captureProviders(page, join(artifacts, 'all-connected-claude-configuration.png'))
+    await page.getByRole('tab', { name: 'Models', exact: true }).click()
+    await captureProviders(page, join(artifacts, 'all-connected-claude-models.png'))
+    await page.getByRole('tab', { name: 'Configuration', exact: true }).click()
+    const previousSize = await app!.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+      const size = window.getSize(); const minimum = window.getMinimumSize()
+      window.setMinimumSize(760, 600); window.setSize(760, 740); return { size, minimum }
+    })
+    await expect.poll(() => page!.evaluate(() => innerWidth)).toBe(760)
+    await captureProviders(page, join(artifacts, 'providers-760.png'))
+    expect(await page.locator('.settings-scroll').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await app!.evaluate(({ BrowserWindow }, previous) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+      window.setMinimumSize(previous.minimum[0]!, previous.minimum[1]!)
+      window.setSize(previous.size[0]!, previous.size[1]!)
+    }, previousSize)
+
+
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('link', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
@@ -214,11 +245,29 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
     await configuration.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
 
+    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('button', { name: 'Not now', exact: true }).click()
+    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    const agentControl = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
+    if (!(await state(page)).configuration.enabled) {
+      await agentControl.getByRole('button', { name: 'Enable agent control', exact: true }).click()
+      await expect.poll(async () => (await state(page!)).configuration.enabled).toBe(true)
+    }
+    await agentControl.getByRole('button', { name: 'Turn off agent control', exact: true }).click()
+    await expect.poll(async () => (await state(page!)).configuration.enabled).toBe(false)
+    expect(connections(await state(page))).toEqual(allConnected)
+    expect(identities(await state(page))).toEqual(expectedIdentities)
+    await page.screenshot({ animations: 'disabled', path: join(artifacts, 'coordinator-off.png') })
+    await agentControl.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
+    evidence.coordinatorOffPreservesProviders = true
+
+
     // Disconnect only a completed provider; other native connections and all
     // three materialized transcripts must remain usable without another turn.
     await openProviders(page)
     await providerAction(page, 'claude', 'Disconnect')
-    await page.screenshot({ animations: 'disabled', path: join(artifacts, 'disabled-claude-configuration.png') })
+    await captureProviders(page, join(artifacts, 'disabled-claude-configuration.png'))
+    expect((await state(page)).configuration.enabled).toBe(false)
     expect(connections(await state(page))).toEqual(providers.map(id => ({ id, connection: id === 'claude' ? 'disconnected' : 'connected' })))
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await expectAllRows(page)
@@ -228,6 +277,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await openProviders(page)
     await providerAction(page, 'claude', 'Connect')
     await expect.poll(async () => connections(await state(page!))).toEqual(allConnected)
+    expect((await state(page)).configuration.enabled).toBe(false)
     evidence.disconnectIsolation = true
 
     // Every native thread has a confirmed assistant reply before restarting.
@@ -240,11 +290,12 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     const restored = await state(page)
     expect(identities(restored)).toEqual(expectedIdentities)
     expect(restored.configuration.reasoning).toBe('claude')
+    expect(restored.configuration.enabled).toBe(false)
     expect(restored.assignments).toHaveLength(0)
     expect(await registry(profile)).toEqual(bindingBefore)
     expect(await aliases(profile)).toEqual(aliasesBefore)
     expect(await readdir(project)).toEqual([])
-    evidence.restored = { sameBindings: true, sameNativeSessions: true, sameModels: true, noAdditionalTurns: true, noProjectFiles: true }
+    evidence.restored = { sameBindings: true, sameNativeSessions: true, sameModels: true, noAdditionalTurns: true, noProjectFiles: true, coordinatorStillOff: true }
     evidence.passed = true
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'restart.png') })
   } catch (error) {
