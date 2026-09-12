@@ -364,7 +364,7 @@ export class AgentControl {
             ? { endpoint: this.state.configuration.endpoint, credential: this.dependencies.credentials.get('t3') }
             : { endpoint: '', credential: '' })
           this.acceptSnapshot(snapshot)
-          if (!snapshot.connected) throw new Error(`${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
+          if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           this.state.configuration.enabled = true
           this.say(`${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
         } catch (error) {

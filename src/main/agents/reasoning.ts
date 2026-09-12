@@ -54,7 +54,7 @@ export class ConfiguredAgentReasoner implements AgentReasoner {
     }
     if (config.reasoning === 'none' || !config.reasoningModel) throw new Error('Configure Sotto reasoning to interpret this request. Direct controls remain available.')
     const key = this.credentials.get('reasoning')
-    if (!key) throw new Error('Connect a Sotto reasoning API account first. T3 accounts fund T3 agents separately.')
+    if (!key) throw new Error('Connect a Sotto reasoning API account first. Thread providers use their own accounts separately.')
     const endpoint = config.reasoning === 'openrouter'
       ? 'https://openrouter.ai/api/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions'

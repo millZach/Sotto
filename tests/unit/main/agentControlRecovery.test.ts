@@ -126,6 +126,14 @@ it.each(['claude', 'grok', 'codex'] as const)('connects %s without forwarding th
   expect(f.credentials.get('t3')).toBe('synthetic-t3-secret')
 })
 
+it('preserves the native account sign-in guidance when the adapter cannot connect', async () => {
+  const f = await fixture()
+  await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+  vi.spyOn(f.host, 'connect').mockResolvedValue({ ...(await f.host.snapshot()), connected: false, error: 'Sign in through Claude Code, then reconnect.' })
+  const result = await f.control.command({ type: 'connect' })
+  expect(result).toMatchObject({ connection: 'disconnected', error: 'Sign in through Claude Code, then reconnect.' })
+})
+
 describe('reasoning account route isolation', () => {
   it('defaults to Grok Altair and preserves an explicit Kokoro selection across restart', async () => {
     const f = await fixture()
@@ -195,7 +203,7 @@ describe('reasoning account route isolation', () => {
     expect(changed.credentials.t3).toBe(false)
     expect(changed.connection).toBe('disconnected')
     const blocked = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Wrong server', modelId: 'claude:test' })
-    expect(blocked.error).toMatch(/reconnect t3/iu)
+    expect(blocked.error).toMatch(/reconnect the provider/iu)
     expect(blocked.host.threads).toHaveLength(2)
     const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
     await reloaded.load()
