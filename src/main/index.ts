@@ -496,12 +496,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = testAgentHost ?? new ConfiguredProviderHost({
+    directory: userDataPath,
     hosts: {
       codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
       claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
       grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),
     },
     provider: () => agentControl.get().configuration.provider,
+    enabledProviders: () => { const configuration = agentControl.get().configuration; return configuration.enabledProviders ?? [configuration.provider] },
+    threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   })
   const turns = new TurnRecorder({
     directory: userDataPath,

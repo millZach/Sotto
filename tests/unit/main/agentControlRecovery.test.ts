@@ -112,13 +112,13 @@ afterEach(async () => {
   }
 })
 
-it.each(['claude', 'grok', 'codex'] as const)('connects %s without transport credentials or the previous provider catalog', async provider => {
+it.each(['claude', 'grok', 'codex'] as const)('changes the default to %s without discarding connected threads or coordinator credentials', async provider => {
   const f = await fixture()
   await f.control.command({ type: 'configure', patch: { provider: provider === 'codex' ? 'claude' : 'codex' } })
   await f.control.command({ type: 'configure', patch: { defaultModelId: 'old-provider-model' } })
   const changed = await f.control.command({ type: 'configure', patch: { provider } })
   expect(changed).toMatchObject({ error: null, configuration: { provider, defaultModelId: '' }, activeThreadId: null, activeProjectId: null })
-  expect(changed.host).toMatchObject({ connected: false, name: PROVIDER_LABELS[provider], models: [], threads: [], projects: [] })
+  expect(changed.host).toMatchObject({ connected: true, threads: [{ id: 'workshop' }, { id: 'docs' }] })
   const connect = vi.spyOn(f.host, 'connect')
   const connected = await f.control.command({ type: 'connect' })
   expect(connect).toHaveBeenCalledWith()
@@ -209,28 +209,33 @@ describe('reasoning account route isolation', () => {
     expect(f.requests[0]).toMatchObject({ origin: 'https://openrouter.ai', authorization: `Bearer ${ROUTER_KEY}` })
   })
 
-  it('refuses provider changes with assignments and preserves unrelated reasoning credentials once unassigned', async () => {
+  it('changes the default provider while preserving assignments and unrelated reasoning credentials', async () => {
     const f = await fixture()
     await f.control.command({ type: 'credential', slot: 'reasoning', value: 'fixture-reasoning-token' })
     await f.control.command({ type: 'assign', threadId: 'workshop' })
-    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
-    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider.')
-    expect(blocked.configuration.provider).toBe('codex')
-    expect(blocked.connection).toBe('connected')
+    const updated = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(updated.error).toBeNull()
+    expect(updated.configuration.provider).toBe('claude')
+    expect(updated.connection).toBe('connected')
+    expect(updated.assignments).toMatchObject([{ threadId: 'workshop' }])
     await f.control.command({ type: 'unassign', threadId: 'workshop' })
     const changed = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
-    expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'disconnected', credentials: { reasoning: true } })
+    expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'connected', credentials: { reasoning: true } })
     expect(f.credentials.get('reasoning')).toBe('fixture-reasoning-token')
     const reloaded = new AgentCredentials(f.credentialsDirectory, encryption); await reloaded.load()
     expect(reloaded.get('reasoning')).toBe('fixture-reasoning-token')
   })
 
-  it('refuses provider changes while a creation acknowledgement is pending', async () => {
-    const f = await fixture(new UnacknowledgedCreationHost())
+  it('keeps an uncertain creation bound when the default provider changes', async () => {
+    const host = new UnacknowledgedCreationHost()
+    const f = await fixture(host)
     await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Pending', modelId: 'claude:test' })
-    const blocked = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
-    expect(blocked.error).toBe('Unassign threads and resolve pending actions before changing the provider.')
-    expect(blocked.configuration.provider).toBe('codex')
+    const updated = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(updated.error).toBeNull()
+    expect(updated.configuration.provider).toBe('claude')
+    const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    expect(saved.outbox).toMatchObject([{ type: 'create-thread' }])
+    expect(host.creationAttempts).toHaveLength(1)
   })
 
   it('keeps the original route when deleting its credential fails', async () => {

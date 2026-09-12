@@ -4,9 +4,10 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema,
-  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
-  type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
+  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema,
+  type ProviderId, type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
+import { providerEntityId } from './providerSwitch'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
 import type { AgentCredentials } from './credentials'
@@ -39,6 +40,7 @@ const savedSchema = z.object({
   contextSavedAt: z.number().default(0),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt']),
+    provider: providerIdSchema.optional(),
     threadId: z.string().optional(), messageId: z.string().optional(), entityId: z.string().optional(), requestId: z.string().optional(),
     options: agentThreadOptionsSchema.optional(), draftDigest: z.string().optional(), draftId: z.uuid().optional(),
   })),
@@ -220,19 +222,22 @@ export class AgentControl {
     if (!assignment) throw new Error('Assign this thread to Sotto first.')
     return assignment
   }
-  private canAct(): void {
+  private canAct(threadId?: string): void {
     if (!['active', 'beta'].includes(this.state.membership.status)) throw new Error('Agent actions require an active Sotto membership. Free dictation remains available.')
     if (this.state.membership.expiresAt && Date.parse(this.state.membership.expiresAt) <= Date.now()) throw new Error('Refresh your Sotto membership before starting more agent actions. Existing provider work continues.')
+    if (threadId && !isThreadProviderConnected(this.state.host, this.thread(threadId))) throw new Error('Reconnect this thread provider before sending. Your draft is saved.')
     if (!this.state.host.connected) throw new Error('Reconnect the provider before sending. Your draft is saved.')
   }
-  private canCreate(): void {
+  private canCreate(provider?: ProviderId): void {
     this.canAct()
-    if (this.outbox.some(item => item.type === 'create-project' || item.type === 'create-thread')) {
+    if (this.outbox.some(item => (item.type === 'create-project' || item.type === 'create-thread') && (!provider || (item.provider ?? this.state.configuration.provider) === provider))) {
       throw new Error('An earlier creation has an unknown result. Reconnect and inspect the provider before creating anything else; select the existing project or thread if it appears.')
     }
   }
   command(command: AgentCommand): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
+    // Provider discovery has independent progress; a stalled account must not own the thread command lane.
+    if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && command.provider) return this.providerCommand(command)
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
     const selectionRevision = this.selectionRevision
@@ -299,6 +304,13 @@ export class AgentControl {
     this.serial = task.catch(() => undefined)
     return task
   }
+  private async providerCommand(command: Extract<AgentCommand, { type: 'connect' | 'disconnect' | 'refresh' }>): Promise<AgentState> {
+    const turn = this.beginTurn({ source: 'command', commandType: command.type, text: '' })
+    let failure: string | undefined
+    try { this.state.error = null; await this.execute(command, turn); await this.persist() }
+    catch (error) { failure = error instanceof Error ? error.message : 'Provider action failed.'; this.state.error = failure }
+    await this.finishTurn(turn, failure); this.publish(); return this.get()
+  }
   private beginTurn(input: Parameters<TurnRecorder['begin']>[0]): ActiveTurn | undefined {
     try { return this.dependencies.turns?.begin(input) } catch { return undefined }
   }
@@ -356,21 +368,18 @@ export class AgentControl {
       case 'configure': {
         const speechRevision = this.speechPreferenceRevision
         const next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
-        const providerChanged = next.provider !== this.state.configuration.provider
-        if (providerChanged && (this.state.assignments.length || this.outbox.length)) throw new Error('Unassign threads and resolve pending actions before changing the provider.')
-        // Delete the old route's key durably before exposing the new route. If
-        // either write fails, the old credential cannot reach another provider.
-        if (next.reasoning !== this.state.configuration.reasoning) await this.dependencies.credentials.set('reasoning', '')
-        if (providerChanged) this.disconnect()
-        if (next.provider !== this.state.configuration.provider) {
-          if (command.patch.defaultModelId === undefined) next.defaultModelId = ''
-          this.state.host = { ...structuredClone(EMPTY_AGENT_HOST), name: PROVIDER_LABELS[next.provider] }
-          this.state.activeThreadId = null
-          this.state.activeProjectId = null
+        const before = this.state.configuration
+        // Coordinator account selection has no authority over native thread connections.
+        if (next.reasoning !== before.reasoning) await this.dependencies.credentials.set('reasoning', '')
+        if (next.provider !== before.provider && command.patch.defaultModelId === undefined) next.defaultModelId = ''
+        // Preserve an established enabled set when changing only the legacy default choice.
+        if (next.provider !== before.provider && next.enabledProviders === undefined && this.state.host.providers) next.enabledProviders = enabledThreadProviders(before)
+        if (command.patch.enabledProviders !== undefined) {
+          for (const provider of enabledThreadProviders(before)) if (!next.enabledProviders?.includes(provider)) this.dependencies.host.disconnect(provider)
         }
         if (speechRevision !== this.speechPreferenceRevision) next.speak = this.state.configuration.speak
         this.state.configuration = next
-        if (!next.enabled) this.disconnect()
+        if (command.patch.enabled === false) this.disconnect()
         return
       }
       case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); return
@@ -379,22 +388,36 @@ export class AgentControl {
         if (!['active', 'beta'].includes(this.state.membership.status)) this.state.assignments.forEach(a => { a.paused = true })
         return
       case 'connect': {
-        this.state.connection = 'connecting'; this.publish()
-        this.observe()
+        if (command.provider) {
+          this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]
+          this.state.configuration.enabled = true
+          await this.persist()
+        }
+        if (!this.state.host.connected) this.state.connection = 'connecting'
+        this.publish(); this.observe()
         try {
-          const snapshot = await this.dependencies.host.connect()
+          const snapshot = await (command.provider ? this.dependencies.host.connect(command.provider) : this.dependencies.host.connect())
           this.acceptSnapshot(snapshot)
+          const requested = command.provider && snapshot.providers?.find(provider => provider.id === command.provider)
+          if (requested && requested.connection !== 'connected') throw new Error(requested.error || `${requested.name} did not confirm the connection.`)
           if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           this.state.configuration.enabled = true
-          this.say(`${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
+          this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
         } catch (error) {
-          this.disconnect()
+          if (!this.state.host.providers) this.disconnect()
           throw error
         }
         return
       }
-      case 'disconnect': this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected.'); return
-      case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot()); return
+      case 'disconnect':
+        if (command.provider) {
+          this.state.configuration.enabledProviders = enabledThreadProviders(this.state.configuration).filter(provider => provider !== command.provider)
+          this.dependencies.host.disconnect(command.provider)
+          this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider))
+          this.say(`${PROVIDER_LABELS[command.provider]} disconnected.`)
+        } else { this.state.configuration.enabled = false; this.disconnect(); this.say('Sotto disconnected.') }
+        return
+      case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider)); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
       case 'utterance': await this.utterance(command.text.trim(), turn, selectionRevision); return
       case 'compose':
@@ -416,8 +439,11 @@ export class AgentControl {
       case 'send': await this.sendDraft(turn, manualRetryId, selectionRevision); return
       case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId); return
       case 'create-project': {
-        this.canCreate()
-        if (!this.state.host.capabilities.projects) throw new Error('This provider does not support creating projects.')
+        const provider = command.provider ?? this.state.configuration.provider
+        this.canCreate(provider)
+        const targetProvider = this.state.host.providers?.find(status => status.id === provider)
+        if (targetProvider && targetProvider.connection !== 'connected') throw new Error(`Connect ${PROVIDER_LABELS[provider]} before creating a project.`)
+        if (!(targetProvider?.capabilities ?? this.state.host.capabilities).projects) throw new Error('This provider does not support creating projects.')
         if (/[<>:"/\\|?*]/u.test(command.title) || /[. ]$/u.test(command.title) || /^(\.|\.\.|con|prn|aux|nul|com\d|lpt\d)$/iu.test(command.title)) throw new Error('Choose a project name that can be used as a folder name.')
         const target = command.path || (this.state.configuration.projectsDirectory ? join(this.state.configuration.projectsDirectory, command.title) : '')
         if (!target || !isAbsolute(target)) throw new Error('Choose an absolute project folder or configure a default projects directory.')
@@ -425,12 +451,12 @@ export class AgentControl {
         const existing = await stat(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return null })
         if (existing && (!existing.isDirectory() || !command.useExisting)) throw new Error('That folder already exists. Select “Use existing folder” to attach it without overwriting its contents.')
         if (!existing) await mkdir(path, { recursive: true })
-        const projectId = randomUUID()
+        const projectId = this.state.host.providers ? providerEntityId(provider, 'project', randomUUID()) : randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
         const previousSelectionPinned = this.queueSelectionPinned
         if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = true
         try {
-          await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path }, turn)
+          await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn)
         } catch (error) { if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = previousSelectionPinned; throw error }
         if (selectionRevision === this.selectionRevision) {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
@@ -449,7 +475,8 @@ export class AgentControl {
         this.observe(); return
       case 'create-thread': {
         if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
-        this.canCreate()
+        const model = this.state.host.models.find(model => model.id === command.modelId)
+        this.canCreate(model?.providerId)
         if (!this.state.host.capabilities.threads) throw new Error('This provider cannot create threads.')
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!this.state.host.models.some(m => m.id === command.modelId && m.ready)) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
@@ -467,7 +494,8 @@ export class AgentControl {
           this.presentedQueueId = null
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
         }
-        this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot())
+        this.observe(); this.acceptSnapshot(await this.readThread(threadId))
+        if (selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
         if (command.managed !== false) this.assign(threadId, '', selectionRevision)
         if (!(this.state.providerUpgrade && this.state.draftThreadId === null && this.hasDraft())) {
           this.clearDraft(); this.startDraft(threadId)
@@ -483,12 +511,13 @@ export class AgentControl {
       case 'configure-thread': {
         this.canAct()
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined) throw new Error('Choose a thread setting to change.')
-        if (!this.state.host.capabilities.configureThread) throw new Error('This provider does not support changing thread settings.')
+        if (!capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         this.observe(command.threadId)
-        this.acceptSnapshot(await this.dependencies.host.snapshot())
+        this.acceptSnapshot(await this.readThread(command.threadId))
         const validate = (): void => {
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
+          if (command.modelId && thread.providerId && this.state.host.models.find(model => model.id === command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
           validateThreadOptions(this.state.host, command, thread.modelId)
         }
         validate()
@@ -514,9 +543,9 @@ export class AgentControl {
         return
       }
       case 'assign': {
-        this.canAct()
+        this.canAct(command.threadId)
         this.observe(command.threadId)
-        this.acceptSnapshot(await this.dependencies.host.snapshot())
+        this.acceptSnapshot(await this.readThread(command.threadId))
         this.assign(command.threadId, command.instruction ?? '', selectionRevision)
         this.observe()
         return
@@ -526,7 +555,8 @@ export class AgentControl {
         this.state.queue = this.state.queue.filter(q => q.threadId !== command.threadId)
         this.observe(); return
       case 'resume': {
-        this.canAct()
+        this.canAct(command.threadId)
+        if (!supportsAgentSupervision(capabilitiesForThread(this.state.host, this.thread(command.threadId)))) throw new Error('This connection cannot safely supervise threads.')
         const assignment = this.assignment(command.threadId)
         assignment.mode = 'managed'; assignment.paused = false; assignment.followups = 0; assignment.lastFailure = ''
         assignment.stopReason = 'none'; assignment.stoppedAt = ''
@@ -534,14 +564,14 @@ export class AgentControl {
         this.recoveredQueueIds.delete(command.threadId)
         this.state.queue = this.state.queue.filter(q => q.threadId !== command.threadId || q.kind !== 'blocked')
         this.say(`Resumed managing ${this.thread(command.threadId).title}.`)
-        this.acceptSnapshot(await this.dependencies.host.snapshot())
+        this.acceptSnapshot(await this.readThread(command.threadId))
         return
       }
       case 'pause': this.assignment(command.threadId).paused = true; this.say(`Paused management of ${this.thread(command.threadId).title}. Provider work continues.`); return
       case 'interrupt': {
         const validate = (): void => {
           this.canAct()
-          if (!this.state.host.capabilities.interrupt) throw new Error('This connection cannot stop agent work.')
+          if (!capabilitiesForThread(this.state.host, this.thread(command.threadId)).interrupt) throw new Error('This connection cannot stop agent work.')
           if (isThreadClosed(this.thread(command.threadId))) throw new Error('This thread is settled or archived. There is no open work to stop.')
         }
         validate()
@@ -576,7 +606,7 @@ export class AgentControl {
     }
   }
   private assign(threadId: string, instruction: string, selectionRevision: number): void {
-    if (!supportsAgentSupervision(this.state.host.capabilities)) throw new Error('This connection cannot safely supervise threads. Its available controls remain visible.')
+    if (!supportsAgentSupervision(capabilitiesForThread(this.state.host, this.thread(threadId)))) throw new Error('This connection cannot safely supervise threads. Its available controls remain visible.')
     const thread = this.thread(threadId)
     if (this.state.assignments.some(a => a.threadId === threadId)) return
     this.state.assignments.push({ threadId, mode: 'managed', instruction, followups: 0, paused: false,
@@ -599,9 +629,9 @@ export class AgentControl {
     const at = new Date().toISOString()
     for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
   }
-  private readThread(threadId?: string): Promise<AgentHostSnapshot> {
+  private readThread(threadId?: string, provider?: ProviderId): Promise<AgentHostSnapshot> {
     const host = this.dependencies.host
-    return threadId && host.refreshThread ? host.refreshThread(threadId) : host.snapshot()
+    return threadId && host.refreshThread ? host.refreshThread(threadId) : provider ? host.snapshot(provider) : host.snapshot()
   }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     if (turn) this.dispatchTurns.set(command.commandId, turn)
@@ -611,8 +641,18 @@ export class AgentControl {
   private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
+    const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider : command.type === 'create-thread' ? this.state.host.models.find(model => model.id === command.modelId)?.providerId : this.thread(command.threadId).providerId
+    if (threadId && command.type !== 'create-thread') this.canAct(threadId)
+    if (command.type === 'send' || command.type === 'answer') {
+      const thread = this.thread(command.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)
+      if (command.type === 'send' && (!capabilities.submit || !capabilities.reconcile)) throw new Error('This connection cannot safely send and reconcile a prompt.')
+      if (command.type === 'answer') {
+        const request = thread.requests.find(request => request.id === command.requestId)
+        if (request && !(request.kind === 'permission' ? capabilities.permissions : capabilities.questions)) throw new Error('This provider does not support answering this request.')
+      }
+    }
     if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
-    this.outbox.push({ id: command.commandId, type: command.type, ...(threadId ? { threadId } : {}),
+    this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command,
@@ -658,7 +698,7 @@ export class AgentControl {
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
     if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
-    this.acceptSnapshot(await this.readThread(threadId))
+    this.acceptSnapshot(await this.readThread(threadId, provider))
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
@@ -694,7 +734,7 @@ export class AgentControl {
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
       validatePromptAttachments(this.state.host, latest.modelId, attachments)
-      if (!this.state.host.capabilities.submit || !this.state.host.capabilities.reconcile) throw new Error('This connection cannot safely send and reconcile a prompt.')
+      if (!capabilitiesForThread(this.state.host, latest).submit || !capabilitiesForThread(this.state.host, latest).reconcile) throw new Error('This connection cannot safely send and reconcile a prompt.')
       // Settlement parks an open thread; explicitly prompting it starts fresh work.
       if (latest.archivedAt && Number.isFinite(Date.parse(latest.archivedAt))) throw new Error('This thread is archived. Reopen it before sending a prompt.')
       if (latest.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
@@ -865,13 +905,21 @@ export class AgentControl {
       }
     }
   }
+  private keepPendingAttention(item: AgentQueueItem, snapshot: AgentHostSnapshot): boolean {
+    const thread = snapshot.threads.find(thread => thread.id === item.threadId)
+    const provider = thread?.providerId ?? this.dependencies.host.providerForThread?.(item.threadId)
+    if (provider && snapshot.providers?.find(status => status.id === provider)?.connection !== 'connected') return true
+    return isLiveAttention(item, snapshot.threads)
+  }
   private acceptSnapshot(snapshot: AgentHostSnapshot): void {
     if (this.disposed) return
     const connecting = this.state.connection === 'connecting'
     this.state.host = snapshot
+    if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
+    if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId
     this.state.connection = snapshot.connected ? 'connected' : connecting ? 'connecting' : 'disconnected'
     if (!snapshot.connected) {
-      if (!connecting && this.state.configuration.enabled && !this.reconnect) this.reconnect = setTimeout(() => {
+      if (!connecting && this.state.configuration.enabled && enabledThreadProviders(this.state.configuration).length && !this.reconnect) this.reconnect = setTimeout(() => {
         this.reconnect = null
         void this.command({ type: 'connect' }).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...s.host, connected: false }) })
       }, 5000)
@@ -879,7 +927,7 @@ export class AgentControl {
     }
     if (this.reconnect) clearTimeout(this.reconnect)
     this.reconnect = null
-    this.state.queue = this.state.queue.filter(item => isLiveAttention(item, snapshot.threads))
+    this.state.queue = this.state.queue.filter(item => this.keepPendingAttention(item, snapshot))
     if (this.attentionNarration && !this.state.queue.some(item => attentionItemKey(item) === this.attentionNarration)) {
       this.attentionNarration = null
       this.state.notice = ''; this.state.speech.text = ''
@@ -887,11 +935,13 @@ export class AgentControl {
     }
     for (const item of [...this.outbox]) {
       const thread = snapshot.threads.find(t => t.id === item.threadId)
+      if (item.provider && snapshot.providers?.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
+      if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
       const confirmed = item.type === 'send' ? Boolean(message) : item.type === 'create-project'
-        ? snapshot.projects.some(p => p.id === item.entityId) : item.type === 'create-thread'
+        ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? snapshot.threads.some(t => t.id === item.entityId) : item.type === 'configure-thread'
-            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === value) : item.type === 'answer'
+            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
       const turn = this.dispatchTurns.get(item.id)
@@ -910,7 +960,7 @@ export class AgentControl {
     let announcedManualControl = false
     for (const assignment of this.state.assignments) {
       const thread = snapshot.threads.find(t => t.id === assignment.threadId)
-      if (!thread || isThreadClosed(thread)) continue
+      if (!thread || isThreadClosed(thread) || !isThreadProviderConnected(snapshot, thread)) continue
       const fresh = thread.messages.filter(m => !assignment.seenMessageIds.includes(m.id))
       if (fresh.length) assignment.contextUpdatedAt = Date.now()
       if (assignment.contextUpdatedAt < Date.now() - 7 * 86_400_000 && assignment.instruction) {
@@ -952,7 +1002,7 @@ export class AgentControl {
       }
     }
     // Requests resolved directly in the host leave the queue; skipped requests stay pending.
-    this.state.queue = this.state.queue.filter(item => isLiveAttention(item, snapshot.threads))
+    this.state.queue = this.state.queue.filter(item => this.keepPendingAttention(item, snapshot))
     if (!announcedManualControl) this.presentQueue(false)
     void this.persist().catch(() => { this.state.assignments.forEach(a => { a.paused = true }); this.state.error = 'Agent state could not be saved. Management paused.'; this.publish() })
     this.publish()
@@ -1009,7 +1059,7 @@ export class AgentControl {
         .finally(() => { if (turn) turn.intentMs = Date.now() - intentStarted })
       const current = this.state.assignments.find(a => a.threadId === thread.id)
       const latest = this.state.host.threads.find(t => t.id === thread.id)
-      if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !this.state.host.connected) return
+      if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !isThreadProviderConnected(this.state.host, latest)) return
       const latestKey = latest.requests.find(r => r.kind === 'question' && !current.handledRequestIds.includes(r.id))?.id ?? latest.messages.at(-1)?.id
       if (latestKey !== key || (!requestId && latest.status === 'running')) return
       if (decision.decision !== 'followup') {
@@ -1029,12 +1079,12 @@ export class AgentControl {
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()
       // Refresh immediately before dispatch, so a direct host send revokes this queued reply.
-      this.acceptSnapshot(await this.dependencies.host.snapshot())
+      this.acceptSnapshot(await this.readThread(thread.id))
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
         if (this.disposed || current !== assignment || current.mode !== 'managed' || current.paused || !live || isThreadClosed(live)
-          || !supportsAgentSupervision(this.state.host.capabilities)) throw new SupersededSupervision('Management authority changed before dispatch.')
+          || !isThreadProviderConnected(this.state.host, live) || !supportsAgentSupervision(capabilitiesForThread(this.state.host, live))) throw new SupersededSupervision('Management authority changed before dispatch.')
         if (requestId && live.requests.some(request => request.id === requestId && request.kind === 'permission')) {
           throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
         }
@@ -1071,7 +1121,7 @@ export class AgentControl {
       this.deciding.delete(thread.id)
       // A newer event may have arrived while this lane awaited reasoning,
       // dispatch, or persistence. Reconsider current state once the lane is free.
-      if (this.state.host.connected && this.state.assignments.includes(assignment) && assignment.mode === 'managed' && !assignment.paused) {
+      if (isThreadProviderConnected(this.state.host, thread) && this.state.assignments.includes(assignment) && assignment.mode === 'managed' && !assignment.paused) {
         this.acceptSnapshot(this.state.host)
       } else this.presentQueue(false)
       this.publish()

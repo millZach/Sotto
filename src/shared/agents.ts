@@ -28,7 +28,12 @@ export const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(va
 export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
 export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
 
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok'])
+export type ProviderId = z.infer<typeof providerIdSchema>
+
 const id = z.string().min(1).max(512)
+// Scoped public model/project IDs include an encoded native identifier.
+const providerEntityId = z.string().min(1).max(6_144)
 const text = z.string().max(100_000)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
@@ -56,13 +61,13 @@ export const agentAttachmentsSchema = z.array(agentAttachmentSchema).max(AGENT_M
 export type AgentAttachment = z.infer<typeof agentAttachmentSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative() })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
-export const agentThreadOptionsSchema = z.object({ modelId: id.optional(), reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional() })
+export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
-export const agentModelSchema = z.object({ id, provider: id, name: id, ready: z.boolean(),
+export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
 })
-export const agentProjectSchema = z.object({ id, title: id, path: z.string().max(4_096) })
+export const agentProjectSchema = z.object({ id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096) })
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
   options: z.array(z.object({ id, label: text })).default([]),
@@ -73,7 +78,7 @@ export const agentMessageSchema = z.object({
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
 export const agentThreadSchema = z.object({
-  id, projectId: id, title: id, modelId: z.string(),
+  id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
@@ -91,7 +96,13 @@ export const agentCapabilitiesSchema = z.object({
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
   configureThread: z.boolean().optional(),
 })
+export const agentProviderStatusSchema = z.object({
+  id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
+  name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
+})
+export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
 export const agentHostSnapshotSchema = z.object({
+  providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
   error: z.string().optional(),
   capabilities: agentCapabilitiesSchema,
@@ -125,8 +136,6 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
   return provider === 'codex' || provider === 'claude' || provider === 'grok'
 }
 
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok'])
-export type ProviderId = z.infer<typeof providerIdSchema>
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
 }
@@ -136,10 +145,11 @@ export type OrbColor = z.infer<typeof orbColorSchema>
 export const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
+  enabledProviders: z.array(providerIdSchema).max(3).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
-  defaultModelId: z.string().max(512),
+  defaultModelId: z.string().max(6_144),
   followupLimit: z.number().int().min(0).max(100),
   speak: z.boolean(),
   speechProvider: speechProviderSchema.default('grok'),
@@ -211,9 +221,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
-  z.object({ type: z.literal('connect') }).strict(),
-  z.object({ type: z.literal('disconnect') }).strict(),
-  z.object({ type: z.literal('refresh') }).strict(),
+  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
+  z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
+  z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('preview-voice') }).strict(),
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
@@ -225,9 +235,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
-  z.object({ type: z.literal('create-project'), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
-  z.object({ type: z.literal('select-project'), projectId: id }).strict(),
-  z.object({ type: z.literal('create-thread'), projectId: id, title: id, modelId: id,
+  z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),
+  z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
@@ -261,4 +271,17 @@ export const EMPTY_AGENT_HOST: AgentHostSnapshot = {
   connected: false, name: 'Codex', version: '', projects: [], threads: [], models: [],
   capabilities: { projects: false, threads: false, submit: false, observe: false,
     questions: false, permissions: false, interrupt: false, messageOrigin: false, reconcile: false },
+}
+
+/** Legacy installations retain their selected native provider until explicitly changed. */
+export function enabledThreadProviders(configuration: AgentConfiguration): ProviderId[] {
+  return [...(configuration.enabledProviders ?? [configuration.provider])]
+}
+export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
+  if (!host.providers || !thread.providerId) return host.capabilities
+  return host.providers.find(provider => provider.id === thread.providerId)?.capabilities ?? EMPTY_AGENT_HOST.capabilities
+}
+export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {
+  if (!host.providers || !thread.providerId) return host.connected
+  return host.providers.some(provider => provider.id === thread.providerId && provider.connection === 'connected')
 }

@@ -34,6 +34,7 @@ it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting fo
       await control.command({ type: 'assign', threadId: 'workshop' })
       await control.command({ type: 'compose', text: 'Selected thread prompt' })
     }
+    host.reads.length = 0
     host.blocked = new Promise<void>(resolve => { release = resolve })
     const background = host.snapshot()
     sending = control.command(mode === 'manual' ? { type: 'manual-send', threadId: 'workshop', text: 'Selected thread prompt', draftId: 'selected-draft' } : { type: 'send' })
