@@ -49,3 +49,27 @@ npx vitest run tests/unit/main/agentTargetRefresh.test.ts tests/unit/main/codexT
 Node typechecking and ESLint on every changed TypeScript file passed. An earlier focused native/recovery run passed 158 tests in 10 files. The expanded serial check ran 14 files: 219 passed, 2 skipped, and 2 existing Codex recovery tests failed while polling durable metadata. One failure included Windows `EPERM` replacing `codex-threads.json`; the other observed an outbox file still containing its entry after the in-memory draft cleared.
 
 To distinguish that failure from this implementation, the exact late-rejection/outbox tests were run on a clean detached `6175989` worktree. The first baseline run passed; the second reproduced the same late-rejection assertion and `AtomicJsonStore` rename `EPERM`. Thus a pre-existing intermittent Windows persistence failure is independently confirmed. No storage or fixture workaround is included in this change. The full expanded run is not reported as passing; the integration owner has the baseline evidence for storage follow-up.
+
+## Separate Windows persistence fix
+
+The integration owner subsequently authorized a bounded storage fix for that demonstrated blocker. The target-read implementation above was left unchanged.
+
+The local test runtime is Node `24.14.1`, libuv `1.51.0`, on Windows. That libuv version implements rename using [`MoveFileExW` with replacement](https://github.com/libuv/libuv/blob/v1.51.0/src/win/fs.c#L2109-L2115). Its [Windows error mapping](https://github.com/libuv/libuv/blob/v1.51.0/src/win/error.c#L62-L167) maps access denial to `EPERM` and lock/sharing violations to `EBUSY`. The captured Sotto failure was `EPERM`; the particular process or handle causing it was not identified. A transient handle conflict is an explanation consistent with the intermittent evidence, not a verified attribution to antivirus or a particular reader.
+
+Before the storage fix, `npx vitest run tests/unit/main/atomicJsonStoreRename.test.ts --maxWorkers=1` failed both deterministic cases in 307 ms. Each case injected exactly one rename denial after the real temporary file had been written and synced; the next rename would have succeeded. The existing store rejected immediately.
+
+Ranked hypotheses recorded after that red run and before the fix:
+
+1. A transient Windows rename denial causes the failure. Retrying the same source/destination should preserve the old document until atomic replacement succeeds.
+2. A permanent permission denial can have the same code. It must still fail after a bounded wait, preserve the original, and clean the temporary file.
+3. An unrelated filesystem or queue failure requires different handling. Non-Windows denials and unrelated error codes must fail immediately; subsequent queued operations must remain usable.
+
+`AtomicJsonStore` now retries only its final atomic rename, only on Windows, and only for `EPERM` or `EBUSY`. Five backoff delays of 10, 20, 40, 80 and 160 ms permit six rename attempts. The 310 ms bound covers scheduled backoff, not a guarantee about filesystem-call or scheduler duration. Every attempt uses the same already-written, synced and closed temporary file. The destination is never unlinked, rewritten in place, or copied over. Permanent errors retain the existing failure/temporary-cleanup path, and the operation queue remains serialized.
+
+Verification after this separate fix:
+
+- `atomicJsonStoreRename.test.ts` plus the existing `atomicJsonStore.test.ts`: **35 passed, 1 skipped** in 2.86 seconds. The skip is the existing Windows symlink-permission case. New coverage checks both transient codes, bounded permanent denial, same temporary-file reuse, original-file preservation, temporary cleanup, immediate unrelated/platform-specific failures, and queued write ordering.
+- The original `codexHost.test.ts` cases matching `late send acknowledgement|rejection arrives after the deadline`: **both passed in five consecutive runs**, with no fixture or provider changes.
+- Node typechecking, ESLint on both changed TypeScript files, and `git diff --check` passed.
+
+No full suite was run for the storage follow-up. The bounded retry addresses temporary replacement denials; permanent filesystem failure still reaches the caller rather than being reported as durable success.
