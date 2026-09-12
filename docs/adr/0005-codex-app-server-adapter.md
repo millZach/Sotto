@@ -46,6 +46,10 @@ Exact names used:
 - Server notifications: `thread/started`, `turn/started`, `turn/completed`, `item/started`, `item/completed`, `item/agentMessage/delta`, `error`, `serverRequest/resolved`. There is no generic `item/updated` notification in this generated schema.
 - Handled server requests: `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `item/permissions/requestApproval`, `item/tool/requestUserInput`, `mcpServer/elicitation/request`. Other generated server requests (`account/chatgptAuthTokens/refresh`, `applyPatchApproval`, `attestation/generate`, `currentTime/read`, `execCommandApproval`, `item/tool/call`) receive an unsupported-request JSON-RPC error.
 
+## Follow-up: Claude and Grok adapters
+
+Tickets #22 and #23 extend the same Sotto-owned identity and adapter contract to Claude Code stream-json and Grok Build ACP. Provider selection retains T3 as the legacy default. The shared contract decodes each provider's actual recorded protocol for prompt acknowledgement, resume and permission decisions; a process-owned turn restores as idle after that process exits. The original consequences below describe the Codex decision at the time it was made. Removing T3 remains separate work in #24.
+
 ## Consequences
 
 - The shared adapter integration contract exercises create, prompt, streaming, status, cancel, questions, permission decisions, skipping, takeover with stale-reply rejection, uncertain delivery and restart. Every check runs against a real child process speaking the fake Codex protocol; the in-memory `FakeProviderHost` skips only transport uncertainty and durable restart because it has neither seam. AgentControl-level tests additionally cover the outbox, attention queue and manual takeover. These tests do not claim a live paid coding turn was run.

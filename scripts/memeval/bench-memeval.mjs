@@ -42,13 +42,18 @@ export async function runMemEval({ backend, casesPath, outDir = join(HERE, 'resu
   }
   const instance = await createBackend(backend)
   const cases = []
-  for (const entry of caseSet.cases) {
-    await instance.reset()
-    for (const event of entry.history) await instance.observe(event)
-    const response = await instance.answer({ question: entry.question, project: entry.project, asOf: entry.asOf })
-    const parsed = answerSchema.safeParse(response)
-    if (!parsed.success) throw new Error(`Invalid answer from ${instance.name} for case ${entry.id}: ${parsed.error.message}`)
-    cases.push({ id: entry.id, category: entry.category, ...scoreCase(entry, parsed.data), ...parsed.data })
+  try {
+    for (const entry of caseSet.cases) {
+      await instance.reset()
+      for (const event of entry.history) await instance.observe(event)
+      const response = await instance.answer({ question: entry.question, project: entry.project, asOf: entry.asOf,
+        ...(entry.threadId === undefined ? {} : { threadId: entry.threadId }) })
+      const parsed = answerSchema.safeParse(response)
+      if (!parsed.success) throw new Error(`Invalid answer from ${instance.name} for case ${entry.id}: ${parsed.error.message}`)
+      cases.push({ id: entry.id, category: entry.category, ...scoreCase(entry, parsed.data), ...parsed.data })
+    }
+  } finally {
+    await instance.dispose?.()
   }
   const passed = cases.filter((entry) => entry.pass).length
   const generatedAt = new Date().toISOString()

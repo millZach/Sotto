@@ -8,7 +8,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The system that actually runs the agent for a thread. Providers today are `t3` (the local T3 Code host, the default) and `codex` (a native Codex App Server child process). One provider is active at a time, chosen by `configuration.provider` when Sotto connects; Claude and Grok follow later. In code, `Host` in a class name (`AgentHost`, `T3CodeHost`, `CodexAppServerHost`, `E2EAgentHost`) means a provider adapter.
+**Provider.** The system that runs the agent for a thread: T3 Code (the default), Codex, Claude Code or Grok Build. One provider is active at a time; its installed client retains its own sign-in.
 
 **Provider session.** The provider's own identifier for the same thread, for example a T3 thread ID or a Codex thread ID. Provider session IDs exist only inside the provider adapter and in the thread registry. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
@@ -80,6 +80,8 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 **Provenance.** Where a memory came from: a Sotto thread and reference, or a dated questionnaire answer or inspector correction. Questionnaire and inspector provenance do not invent a thread; provenance never carries a provider session ID.
 
 **Working preferences.** The user's explicit answers about communication, autonomy, verification, git and review, agent choices, workflow and privacy. They guide coordinator replies without granting permissions or changing history settings.
+
+**Retrieved preferences.** Current explicit memories relevant to the coordinator's question, drawn from the current thread, its project and global scope in that order. Irrelevant memories are omitted; retrieved preferences provide context, never authority.
 
 **Memory inspector.** The Memory page where the user sees remembered content, its provenance and history, and can correct, supersede or delete it. Corrections retain earlier versions; deleting a memory removes its full chain of versions.
 

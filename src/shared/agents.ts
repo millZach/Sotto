@@ -117,8 +117,11 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
   return provider === 'codex' || provider === 'claude' || provider === 'grok'
 }
 
-export const providerIdSchema = z.enum(['t3', 'codex'])
+export const providerIdSchema = z.enum(['t3', 'codex', 'claude', 'grok'])
 export type ProviderId = z.infer<typeof providerIdSchema>
+export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
+  t3: 'T3 Code', codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
+}
 export const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 export const orbColorSchema = z.enum(ORB_COLORS)
 export type OrbColor = z.infer<typeof orbColorSchema>

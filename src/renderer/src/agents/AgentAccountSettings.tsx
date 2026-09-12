@@ -1,5 +1,5 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
-import { isSubscriptionReasoning, type AgentConfiguration, type AgentCommand } from '../../../shared/agents'
+import { isSubscriptionReasoning, PROVIDER_LABELS, providerIdSchema, type AgentConfiguration, type AgentCommand } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { SideSheet } from '../components/SideSheet'
 import { useOptionalAgents } from './AgentContext'
@@ -56,7 +56,7 @@ export function AgentSetupFields(): ReactNode {
   const perform = async (request: AgentCommand): Promise<boolean> => { const result = await command(request); return result !== null && result.error === null }
   const save = (patch: Partial<AgentConfiguration>): Promise<boolean> => perform({ type: 'configure', patch })
   return <div className="account-settings"><div className="account-rows">
-    <label>Thread provider<select aria-label="Thread provider" value={configuration.provider} disabled={state.connection !== 'disconnected'} onChange={event => void save({ provider: event.target.value as AgentConfiguration['provider'] })}><option value="t3">T3 Code</option><option value="codex">Codex</option></select></label>
+    <label>Thread provider<select aria-label="Thread provider" value={configuration.provider} disabled={state.connection !== 'disconnected'} onChange={event => void save({ provider: event.target.value as AgentConfiguration['provider'], defaultModelId: '' })}>{providerIdSchema.options.map(provider => <option key={provider} value={provider}>{PROVIDER_LABELS[provider]}</option>)}</select></label>
     {state.connection !== 'disconnected' ? <p className="agent-muted">Disconnect before choosing another provider.</p> : null}
     {configuration.provider === 't3' ? <><SavedField label="T3 Code address" value={configuration.endpoint} onSave={endpoint => save({ endpoint })} /><SavedField label="T3 access token" value="" secret placeholder={state.credentials.t3 ? 'Saved securely · enter to replace' : 'Token from T3 connection settings'} onSave={value => perform({ type: 'credential', slot: 't3', value: value.trim() })} />{state.credentials.t3 ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'credential', slot: 't3', value: '' })}>Remove T3 access token</Button> : null}</> : null}
     <SavedField label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />

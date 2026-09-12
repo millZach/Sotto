@@ -75,7 +75,7 @@ describe('saved memory in coordinator reasoning', () => {
     const f = await fixture()
     const initial = f.profile.command({ type: 'complete-questionnaire', answers: memoryTopics.map(topic => ({ topic, content: topic === 'communication' ? 'Use concise replies.' : `${topic}: no preference` })), boundaries: ['publish', 'spend'] })
     const communication = initial.memories.find(memory => memory.tags.includes('communication'))!
-    await f.control.command({ type: 'utterance', text: 'Help with my project' })
+    await f.control.command({ type: 'utterance', text: 'How should communication work?' })
     expect(f.control.get().notice).toBe('Which project?')
     const firstTurn = (await f.turns.recent(1))[0]!
     expect(firstTurn.retrievedMemoryIds).toContain(communication.id)
@@ -84,7 +84,7 @@ describe('saved memory in coordinator reasoning', () => {
     const currentId = edited.memories.find(memory => memory.id === communication.id)!.supersededBy!
     await f.control.command({ type: 'cancel-request' })
     await f.restart()
-    await f.control.command({ type: 'utterance', text: 'Help with my project' })
+    await f.control.command({ type: 'utterance', text: 'How should communication work?' })
     expect(f.control.get().notice).toBe('Please name the project and describe the desired change so I can help you plan the next steps.')
     const lastTurn = (await f.turns.recent(1))[0]!
     expect(lastTurn.retrievedMemoryIds).toContain(currentId)
@@ -100,21 +100,28 @@ describe('saved memory in coordinator reasoning', () => {
     const f = await fixture()
     const snapshot = f.profile.command({ type: 'complete-questionnaire', answers: memoryTopics.map(topic => ({ topic, content: `${topic} preference` })), boundaries: ['publish'] })
     const base = snapshot.memories[0]!
-    f.store.insert({ ...base, id: 'project-memory', scope: 'project', content: 'Project-specific guidance' })
-    f.store.insert({ ...base, id: 'foreign-memory', scope: 'another-project', content: 'Do not leak me' })
+    f.store.insert({ ...base, id: 'project-memory', scope: 'project', content: 'Bug verification: run focused tests' })
+    f.store.insert({ ...base, id: 'foreign-memory', scope: 'another-project', content: 'Bug verification: Do not leak me' })
+    f.store.insert({ ...base, id: 'unrelated-memory', scope: 'project', content: 'The database uses sqlite', tags: [] })
     await f.control.command({ type: 'select-thread', threadId: 'workshop' })
-    await f.control.command({ type: 'utterance', text: 'Help me plan the next change' })
+    await f.control.command({ type: 'utterance', text: 'What is the bug verification preference?' })
     const intentInput = f.complete.mock.calls.at(-1)![1] as { preferences: { id: string }[] }
     expect(intentInput.preferences.map(memory => memory.id)).toContain('project-memory')
     expect(intentInput.preferences.map(memory => memory.id)).not.toContain('foreign-memory')
+    expect(intentInput.preferences.map(memory => memory.id)).not.toContain('unrelated-memory')
+    expect((await f.turns.recent(1))[0]!.retrievedMemoryIds).toEqual(intentInput.preferences.map(memory => memory.id))
     await f.control.command({ type: 'cancel-request' })
-    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the current bug' })
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Bug verification' })
     f.host.event({ type: 'failure', threadId: 'workshop', text: 'The test still fails' })
     await vi.waitFor(() => expect(f.complete.mock.calls.some(call => !('utterance' in (call[1] as object)))).toBe(true))
     const decisionInput = f.complete.mock.calls.find(call => !('utterance' in (call[1] as object)))![1] as { preferences: { id: string }[] }
     expect(decisionInput.preferences.map(memory => memory.id)).toContain('project-memory')
     expect(decisionInput.preferences.map(memory => memory.id)).not.toContain('foreign-memory')
     await vi.waitFor(() => expect(f.control.get().queue.some(item => item.kind === 'blocked')).toBe(true))
+    await vi.waitFor(async () => {
+      const supervision = (await f.turns.recent(10)).find(turn => turn.source === 'supervision')!
+      expect(supervision?.retrievedMemoryIds).toEqual(decisionInput.preferences.map(memory => memory.id))
+    })
     f.host.event({ type: 'permission', threadId: 'workshop', text: 'Publish a release and spend money', requestId: 'publish-request' })
     await f.control.command({ type: 'refresh' })
     expect(f.control.get().queue.some(item => item.kind === 'permission' && item.requestId === 'publish-request')).toBe(true)
@@ -122,5 +129,13 @@ describe('saved memory in coordinator reasoning', () => {
     await f.control.command({ type: 'answer', threadId: 'workshop', requestId: 'publish-request', answer: 'Proceed' })
     expect(f.control.get().error).toMatch(/confirm|allow|approval|policy/i)
     expect(f.execute.mock.calls.some(([command]) => command.type === 'answer')).toBe(false)
+  })
+
+  it('records no memory IDs or preference context for an unrelated request', async () => {
+    const f = await fixture()
+    f.profile.command({ type: 'complete-questionnaire', answers: memoryTopics.map(topic => ({ topic, content: `${topic} preference` })), boundaries: [] })
+    await f.control.command({ type: 'utterance', text: 'Compiler database networking' })
+    expect((f.complete.mock.calls.at(-1)![1] as { preferences: unknown[] }).preferences).toEqual([])
+    expect((await f.turns.recent(1))[0]!.retrievedMemoryIds).toEqual([])
   })
 })

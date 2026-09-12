@@ -18,6 +18,16 @@ const pattern = text.refine((value) => {
   }
 }, 'Expected a valid regular expression')
 
+// Accepted memory input is fixture evidence, separate from answer labels. It models
+// explicit questionnaire/inspector storage; the backend does not extract raw history.
+const acceptedMemorySchema = z.object({
+  id: text, scope: text, tags: z.array(z.string()),
+  sourceClass: z.enum(['explicit', 'observed', 'inferred', 'imported', 'agent-confirmed']),
+  authority: z.enum(['preference', 'policy', 'permission']),
+  state: z.enum(['active', 'superseded', 'disputed', 'temporary', 'archived']).default('active'),
+  validTo: timestamp.nullable().default(null),
+}).strict()
+
 const expectedSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('recall'), pattern }),
   z.object({ kind: z.literal('abstain') }),
@@ -32,6 +42,7 @@ const caseSchema = z.object({
   category: z.enum(CATEGORIES),
   status: z.enum(['draft', 'reviewed']),
   project: text,
+  threadId: text.optional(),
   asOf: timestamp,
   history: z.array(z.object({
     at: timestamp,
@@ -39,6 +50,7 @@ const caseSchema = z.object({
     project: text,
     role: z.enum(['user', 'assistant']),
     text,
+    acceptedMemory: acceptedMemorySchema.optional(),
   })).min(3).max(8),
   question: text,
   expected: expectedSchema,

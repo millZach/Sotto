@@ -16,12 +16,20 @@ export interface HistoryEvent {
   project: string
   role: 'user' | 'assistant'
   text: string
+  acceptedMemory?: {
+    id: string; scope: string; tags: string[]
+    sourceClass: 'explicit' | 'observed' | 'inferred' | 'imported' | 'agent-confirmed'
+    authority: 'preference' | 'policy' | 'permission'
+    state: 'active' | 'superseded' | 'disputed' | 'temporary' | 'archived'
+    validTo: string | null
+  }
 }
 export interface MemoryCase {
   id: string
   category: Category
   status: 'draft' | 'reviewed'
   project: string
+  threadId?: string
   asOf: string
   history: HistoryEvent[]
   question: string

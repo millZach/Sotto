@@ -5,6 +5,7 @@ import {
 } from '../../shared/memory'
 import { PolicyStore } from './policies'
 import type { MemoryStore } from './store'
+import { retrieveExplicitMemories, type RetrievalQuery, type RetrievedPreference } from './retrieval.mjs'
 
 /** Local profile mutations share one SQLite transaction, including policy and FTS writes. */
 export class MemoryProfile {
@@ -40,6 +41,10 @@ export class MemoryProfile {
       db.exec('ROLLBACK')
       throw error
     }
+  }
+
+  retrieve(query: RetrievalQuery): RetrievedPreference[] {
+    return retrieveExplicitMemories(this.store.database(), query)
   }
 
   preferences(projectId?: string): { id: string; content: string; topic?: MemoryTopic }[] {

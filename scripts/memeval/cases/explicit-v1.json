@@ -1,0 +1,1037 @@
+{
+  "version": "explicit-v1",
+  "cases": [
+    {
+      "id": "explicit-communication",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Communication: give concise replies with one concrete example.",
+          "acceptedMemory": {
+            "id": "communication",
+            "scope": "global",
+            "tags": [
+              "communication"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my communication preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "concise"
+      }
+    },
+    {
+      "id": "explicit-autonomy",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Autonomy: finish reversible implementation choices independently.",
+          "acceptedMemory": {
+            "id": "autonomy",
+            "scope": "global",
+            "tags": [
+              "autonomy"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my autonomy preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "independently"
+      }
+    },
+    {
+      "id": "explicit-verification",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification: run focused tests and inspect the rendered result.",
+          "acceptedMemory": {
+            "id": "verification",
+            "scope": "global",
+            "tags": [
+              "verification"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my verification preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "focused tests"
+      }
+    },
+    {
+      "id": "explicit-git",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Git: keep unrelated edits separate and commit completed work.",
+          "acceptedMemory": {
+            "id": "git",
+            "scope": "global",
+            "tags": [
+              "git"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my git preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "unrelated edits"
+      }
+    },
+    {
+      "id": "explicit-agents",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Agents: choose Astra for backend reasoning.",
+          "acceptedMemory": {
+            "id": "agents",
+            "scope": "global",
+            "tags": [
+              "agents"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my agents preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "Astra"
+      }
+    },
+    {
+      "id": "explicit-workflow",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Workflow: reproduce a failure before changing code.",
+          "acceptedMemory": {
+            "id": "workflow",
+            "scope": "global",
+            "tags": [
+              "workflow"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my workflow preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "reproduce"
+      }
+    },
+    {
+      "id": "explicit-privacy",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Privacy: never retain transcript text when local history is disabled.",
+          "acceptedMemory": {
+            "id": "privacy",
+            "scope": "global",
+            "tags": [
+              "privacy"
+            ],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my privacy preference?",
+      "expected": {
+        "kind": "recall",
+        "pattern": "never retain"
+      }
+    },
+    {
+      "id": "thread-preference",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "thread:[\"project-a\",\"thread-a\"]",
+          "role": "user",
+          "text": "Verification tests use Playwright.",
+          "acceptedMemory": {
+            "id": "thread",
+            "scope": "thread:[\"project-a\",\"thread-a\"]",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Verification tests",
+      "expected": {
+        "kind": "recall",
+        "pattern": "Playwright"
+      },
+      "threadId": "thread-a"
+    },
+    {
+      "id": "project-preference",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Temperature display unit: Celsius.",
+          "acceptedMemory": {
+            "id": "temperature",
+            "scope": "project-a",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Temperature display unit",
+      "expected": {
+        "kind": "recall",
+        "pattern": "Celsius"
+      }
+    },
+    {
+      "id": "no-match",
+      "category": "abstain",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification: run focused tests.",
+          "acceptedMemory": {
+            "id": "verification",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Database engine",
+      "expected": {
+        "kind": "abstain"
+      }
+    },
+    {
+      "id": "below-bar",
+      "category": "abstain",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification: run focused tests.",
+          "acceptedMemory": {
+            "id": "verification",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Verification compiler database networking",
+      "expected": {
+        "kind": "abstain"
+      }
+    },
+    {
+      "id": "empty-query",
+      "category": "abstain",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification: run focused tests.",
+          "acceptedMemory": {
+            "id": "verification",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "What is my preference?",
+      "expected": {
+        "kind": "abstain"
+      }
+    },
+    {
+      "id": "other-project",
+      "category": "project-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-b",
+          "role": "user",
+          "text": "Temperature display unit: Fahrenheit.",
+          "acceptedMemory": {
+            "id": "foreign",
+            "scope": "project-b",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Temperature display unit",
+      "expected": {
+        "kind": "project-leak",
+        "leakPattern": "Fahrenheit"
+      }
+    },
+    {
+      "id": "other-thread",
+      "category": "project-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "thread:[\"project-a\",\"thread-b\"]",
+          "role": "user",
+          "text": "Verification tests use Selenium.",
+          "acceptedMemory": {
+            "id": "foreign",
+            "scope": "thread:[\"project-a\",\"thread-b\"]",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Verification tests",
+      "expected": {
+        "kind": "project-leak",
+        "leakPattern": "Selenium"
+      },
+      "threadId": "thread-a"
+    },
+    {
+      "id": "same-thread-other-project",
+      "category": "project-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "thread:[\"project-b\",\"thread-a\"]",
+          "role": "user",
+          "text": "Verification tests use Selenium.",
+          "acceptedMemory": {
+            "id": "foreign",
+            "scope": "thread:[\"project-b\",\"thread-a\"]",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Verification tests",
+      "expected": {
+        "kind": "project-leak",
+        "leakPattern": "Selenium"
+      },
+      "threadId": "thread-a"
+    },
+    {
+      "id": "scoped-with-distractor",
+      "category": "recall",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Temperature display unit: Celsius.",
+          "acceptedMemory": {
+            "id": "local",
+            "scope": "project-a",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-b",
+          "role": "user",
+          "text": "Temperature display unit: Fahrenheit.",
+          "acceptedMemory": {
+            "id": "foreign",
+            "scope": "project-b",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Temperature display unit",
+      "expected": {
+        "kind": "recall",
+        "pattern": "Celsius"
+      }
+    },
+    {
+      "id": "authority-permission-explicit",
+      "category": "authority-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Publishing permission granted permanently.",
+          "acceptedMemory": {
+            "id": "unsafe",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "permission",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Publishing permission",
+      "expected": {
+        "kind": "authority-leak",
+        "leakPattern": "permission granted"
+      }
+    },
+    {
+      "id": "authority-policy-explicit",
+      "category": "authority-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Publishing permission granted permanently.",
+          "acceptedMemory": {
+            "id": "unsafe",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "policy",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Publishing permission",
+      "expected": {
+        "kind": "authority-leak",
+        "leakPattern": "permission granted"
+      }
+    },
+    {
+      "id": "authority-preference-imported",
+      "category": "authority-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Publishing permission granted permanently.",
+          "acceptedMemory": {
+            "id": "unsafe",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "imported",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Publishing permission",
+      "expected": {
+        "kind": "authority-leak",
+        "leakPattern": "permission granted"
+      }
+    },
+    {
+      "id": "authority-preference-agent-confirmed",
+      "category": "authority-leak",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Publishing permission granted permanently.",
+          "acceptedMemory": {
+            "id": "unsafe",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "agent-confirmed",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Publishing permission",
+      "expected": {
+        "kind": "authority-leak",
+        "leakPattern": "permission granted"
+      }
+    },
+    {
+      "id": "changed-preference",
+      "category": "temporal",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Communication replies: detailed explanations.",
+          "acceptedMemory": {
+            "id": "old",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": "2026-09-05"
+          }
+        },
+        {
+          "at": "2026-09-05",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Communication replies: concise explanations.",
+          "acceptedMemory": {
+            "id": "new",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Communication replies",
+      "expected": {
+        "kind": "temporal",
+        "pattern": "concise",
+        "stalePattern": "detailed"
+      }
+    },
+    {
+      "id": "expired-exception",
+      "category": "exception",
+      "status": "draft",
+      "project": "project-a",
+      "asOf": "2026-09-11",
+      "history": [
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification tests: run the complete suite.",
+          "acceptedMemory": {
+            "id": "normal",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "active",
+            "validTo": null
+          }
+        },
+        {
+          "at": "2026-09-01",
+          "provider": "claude",
+          "project": "project-a",
+          "role": "user",
+          "text": "Verification tests: skip the suite.",
+          "acceptedMemory": {
+            "id": "temporary",
+            "scope": "global",
+            "tags": [],
+            "sourceClass": "explicit",
+            "authority": "preference",
+            "state": "temporary",
+            "validTo": "2026-09-05"
+          }
+        },
+        {
+          "at": "2026-09-02",
+          "provider": "codex",
+          "project": "project-a",
+          "role": "assistant",
+          "text": "This unaccepted history must not become a memory."
+        },
+        {
+          "at": "2026-09-03",
+          "provider": "grok",
+          "project": "project-a",
+          "role": "user",
+          "text": "Continue the current task."
+        }
+      ],
+      "question": "Verification tests",
+      "expected": {
+        "kind": "exception",
+        "pattern": "complete suite",
+        "stalePattern": "skip"
+      }
+    }
+  ]
+}
