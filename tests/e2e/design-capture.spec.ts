@@ -710,6 +710,7 @@ test.describe('authoritative design-review captures', () => {
 
     await withSotto({ onboardingComplete: true }, async ({ page }) => {
       await page.getByRole('tab', { name: 'Agents' }).click()
+      await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
@@ -827,6 +828,7 @@ test.describe('authoritative design-review captures', () => {
     await withSotto({ onboardingComplete: true }, async ({ page }) => {
       await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
       await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+      await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'wake')
       await capturePage(page, 'agents-wake.png')
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sotto:e2e:microphone', { detail: 'Hey Sotto' })))
