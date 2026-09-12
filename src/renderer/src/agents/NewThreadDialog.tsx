@@ -40,9 +40,15 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
   // A missing acknowledgement is not permission to issue another mutation.
   // Keep attempts even when the user goes back and chooses the same folder.
   const attemptedFolders = useRef(new Set<string>())
-  const projects = state.host.projects.filter(item => `${item.title} ${item.path}`.toLowerCase().includes(query.toLowerCase()))
+  const projects = state.host.projects.filter((item, index, entries) => entries.findIndex(other => folderKey(other.path) === folderKey(item.path)) === index)
+    .filter(item => `${item.title} ${item.path}`.toLowerCase().includes(query.toLowerCase()))
   const selectedFolder = project?.path ?? folder
-  const connected = state.connection === 'connected'
+  const selectedModel = state.host.models.find(model => model.id === modelId)
+  const selectedProvider = state.host.providers?.find(provider => provider.id === selectedModel?.providerId)
+  const canCreateThread = selectedProvider?.capabilities.threads ?? state.host.capabilities.threads
+  const connected = selectedModel?.ready === true && (selectedModel.providerId && state.host.providers
+    ? state.host.providers.some(provider => provider.id === selectedModel.providerId && provider.connection === 'connected')
+    : state.connection === 'connected')
   useEffect(() => {
     const previous = document.activeElement
     const element = dialog.current
@@ -53,6 +59,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
   }, [])
   useEffect(() => { dialog.current?.querySelector('[data-highlighted]')?.scrollIntoView?.({ block: 'nearest' }) }, [highlight])
   useEffect(() => { if (!selectedFolder) search.current?.focus() }, [selectedFolder])
+  useEffect(() => { if (!modelId) setModelId(state.host.models.find(model => model.ready)?.id ?? '') }, [modelId, state.host.models])
   const browse = async (): Promise<void> => {
     setError(null)
     try {
@@ -71,7 +78,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
     if (choice) { setProject(choice); setError(null) }
   }
   const create = async (): Promise<void> => {
-    if (creating.current || completed.current || submitting || state.busy || !connected || !selectedFolder || !modelId) return
+    if (creating.current || completed.current || submitting || state.busy || !connected || !canCreateThread || !selectedFolder || !modelId) return
     creating.current = true
     setSubmitting(true)
     setError(null)
@@ -79,13 +86,14 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
       let selectedProject = project
       if (!selectedProject && folder) {
         const key = folderKey(folder)
+        const attemptKey = `${selectedModel?.providerId ?? state.configuration.provider}:${key}`
         const findProject = (snapshot: AgentState | null): AgentProject | null => snapshot?.host.projects.find(item => folderKey(item.path) === key) ?? null
         selectedProject = findProject(latestState.current)
         let acknowledgement: AgentState | null = null
-        if (!selectedProject && !attemptedFolders.current.has(key)) {
+        if (!selectedProject && !attemptedFolders.current.has(attemptKey)) {
           const name = folder.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || 'Project'
-          attemptedFolders.current.add(key)
-          acknowledgement = await command({ type: 'create-project', title: name, path: folder, useExisting: true })
+          attemptedFolders.current.add(attemptKey)
+          acknowledgement = await command({ type: 'create-project', title: name, path: folder, useExisting: true, ...(selectedModel?.providerId ? { provider: selectedModel.providerId } : {}) })
           selectedProject = findProject(acknowledgement) ?? findProject(latestState.current)
         }
         if (!selectedProject) {
@@ -127,8 +135,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
       <ThreadOptionFields models={state.host.models} modelId={modelId} reasoningEffort={reasoningEffort} runtimeMode={runtimeMode}
         disabled={submitting} onModel={id => { setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
       {error && <p className="agent-error" role="alert">{error}</p>}
-      {!connected && <p className="agent-muted">Connect your provider before creating a thread.</p>}
-      <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || state.busy || !connected || !modelId || !state.host.capabilities.threads}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>
+      {!connected && <p className="agent-muted">Connect {selectedModel?.provider ?? 'a provider'} in Settings → Providers before creating a thread.</p>}
+      <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || state.busy || !connected || !modelId || !canCreateThread}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>
     </form> : <div className="new-thread-dialog__choices">
       <h3>Sources</h3>
       <button className="new-thread-choice" type="button" data-highlighted={highlight === 0 || undefined} onMouseEnter={() => setHighlight(0)} onClick={() => void browse()}><FolderPlus size={19} /><span><strong>Local folder</strong><small>Browse a folder on disk</small></span><ChevronRight size={15} /></button>

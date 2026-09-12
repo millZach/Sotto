@@ -22,6 +22,8 @@ test('selects each native subscription with its available model and reasoning ef
   try {
     await setup(page)
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await page.getByLabel('Reasoning account').selectOption('claude')
     await page.getByRole('button', { name: 'Check connection', exact: true }).click()
     await expect(page.getByLabel('Reasoning model')).toBeEnabled()
@@ -45,9 +47,12 @@ test('selects each native subscription with its available model and reasoning ef
     await expect(page.getByLabel('Reasoning model')).toHaveValue('')
     await expect(page.getByLabel('Reasoning effort')).toHaveValue('')
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.configuration.reasoning))).toBe('codex')
+    await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByLabel('Reasoning account', { exact: true })).toHaveCount(0)
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Reasoning account')).toHaveValue('codex')
     await page.getByLabel('Reasoning account').scrollIntoViewIfNeeded()
     await page.screenshot({ path: 'artifacts/agent-control-smoke/subscription-settings-e2e.png' })
@@ -59,7 +64,7 @@ test('chooses and previews a natural voice without changing subscription reasoni
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
     await page.getByLabel('Speech voice', { exact: true }).selectOption('natural')
     await page.getByLabel('Voice', { exact: true }).selectOption('M3')
@@ -70,7 +75,7 @@ test('chooses and previews a natural voice without changing subscription reasoni
     await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: 'artifacts/agent-control-smoke/natural-voice-settings-e2e.png' })
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('M3')
   } finally { await closeSotto(launched) }
 })
@@ -80,7 +85,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await page.getByLabel('Speech voice', { exact: true }).selectOption('grok')
     await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
     await expect(page.getByText(/\$15 per million characters, including previews/u)).toBeVisible()
@@ -108,7 +113,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
     expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
     expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
     await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('fixture-custom-voice')
     await expect(page.getByLabel('Grok speech API key', { exact: true })).toHaveValue('')
@@ -123,7 +128,7 @@ test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRout
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('grok')
     await expect(page.getByLabel('Grok voice', { exact: true })).toHaveValue('altair')
     await page.getByLabel('Speech voice', { exact: true }).selectOption('kokoro')
@@ -145,7 +150,7 @@ test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRout
     expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
     expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Speech voice', { exact: true })).toHaveValue('kokoro')
     await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.updateSettings({ llmApiKey: '' }))
     await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
@@ -159,7 +164,7 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connect Codex' }).click()
+    await page.getByRole('button', { name: 'Connect providers' }).click()
     await expect(page.getByRole('status')).toHaveText('Codex connected')
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
@@ -214,13 +219,13 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
       const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       main.setBounds({ ...main.getBounds(), width: 820, height: 560 })
     })
-    await page.getByRole('button', { name: 'Connect Codex' }).click()
+    await page.getByRole('button', { name: 'Connect providers' }).click()
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Manage', exact: true }).click()
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await page.getByLabel('Default projects directory').fill('D:\\Builder projects')
     await page.getByLabel('Default projects directory').press('Tab')

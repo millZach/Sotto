@@ -27,7 +27,8 @@ import { Toggle } from '../../components/Toggle'
 import { KNOWN_LANGUAGES } from '../../languages'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
-import { AgentAccountSettings, AgentSettingsLink } from '../../agents/AgentAccountSettings'
+import { AgentSettingsLink } from '../../agents/AgentAccountSettings'
+import { ProvidersSettings } from '../../agents/ProvidersSettings'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -59,7 +60,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-capture', label: 'Dictation' },
   { id: 'settings-transcription', label: 'Transcription' },
   { id: 'settings-formatting', label: 'Cleanup' },
-  { id: 'settings-account', label: 'AI account' },
+  { id: 'settings-providers', label: 'Providers' },
   { id: 'settings-output', label: 'Output' },
   { id: 'settings-privacy', label: 'Application' },
   { id: 'settings-agents', label: 'Agents' },
@@ -316,11 +317,15 @@ export function SettingsView({
   const updateActiveSection = useCallback((): void => {
     const scroller = scrollRef.current
     if (scroller === null) return
-    const edge = scroller.getBoundingClientRect().top + 24
+    const top = scroller.getBoundingClientRect().top
+    const padding = Number.parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0
     let current: SettingsSectionId = SETTINGS_SECTIONS[0].id
     for (const section of SETTINGS_SECTIONS) {
       const element = scroller.querySelector<HTMLElement>(`#${section.id}`)
-      if (element !== null && element.getBoundingClientRect().top <= edge) current = section.id
+      if (element !== null) {
+        const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0
+        if (element.getBoundingClientRect().top <= top + Math.max(24, padding + margin + 1)) current = section.id
+      }
     }
     if (scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
       current = 'settings-agents'
@@ -455,7 +460,7 @@ export function SettingsView({
             </div>
           </Card>
 
-          <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
+          <Card className="settings-section" id="settings-providers"><div className="settings-section__heading"><h2>Providers</h2></div><ProvidersSettings /></Card>
 
           <Card className="settings-section" id="settings-output">
             <div className="settings-section__heading"><h2>Output</h2><p>{settings.autoPaste ? 'Sotto copies your words and pastes them at your cursor.' : 'Sotto copies your words so you can paste them yourself.'}</p></div>
@@ -508,7 +513,7 @@ export function SettingsView({
               <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
             </div>
           </Card>
-          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2><p>Choose how Sotto connects to and manages your coding agents.</p></div><AgentSettingsLink /></Card>
+          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2><p>Choose Sotto’s coordinator for deep reasoning and thread management.</p></div><AgentSettingsLink /></Card>
         </div>
       </div>
 

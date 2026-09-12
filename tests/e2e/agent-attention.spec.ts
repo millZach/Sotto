@@ -16,7 +16,7 @@ test('saved attention does not cover the room while its provider is disconnected
   const launched = await launchSotto('success', profile)
   try {
     await openVoiceJourneyAgents(launched.page)
-    await expect(launched.page.getByRole('button', { name: 'Connect Codex', exact: true })).toBeVisible()
+    await expect(launched.page.getByRole('button', { name: 'Connect providers', exact: true })).toBeVisible()
     await expect(launched.page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).queue)).toEqual(savedQueue)
     await launched.page.screenshot({ path: 'artifacts/crossing/attention-disconnected.png' })
@@ -32,7 +32,7 @@ test('Later returns to the orb without answering a pending permission', async ()
   try {
     await completeVoiceJourneySetup(page)
     await openVoiceJourneyAgents(page)
-    await page.getByRole('button', { name: 'Connect Codex', exact: true }).click()
+    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'assign', threadId: 'workshop' }); await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', text: 'Allow this test change?' }) })
     await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
@@ -65,7 +65,7 @@ test('Next finishes a review instead of cycling through the same requests', asyn
   try {
     await completeVoiceJourneySetup(page)
     await openVoiceJourneyAgents(page)
-    await page.getByRole('button', { name: 'Connect Codex', exact: true }).click()
+    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()
     await page.getByRole('button', { name: 'Enable spoken replies', exact: true }).click()
     await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()

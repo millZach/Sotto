@@ -752,7 +752,7 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
       const settingsSections = [
-        ['AI account', 'account'],
+        ['Providers', 'providers'],
         ['Dictation', 'capture'],
         ['Transcription', 'transcription'],
         ['Cleanup', 'cleanup'],

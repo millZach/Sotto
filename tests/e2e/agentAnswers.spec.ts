@@ -42,7 +42,7 @@ async function event(page: Page, value: HostEvent): Promise<void> {
 async function onboard(page: Page): Promise<void> {
   await completeVoiceJourneySetup(page)
   await openVoiceJourneyAgents(page)
-  await page.getByRole('button', { name: 'Connect Codex' }).click()
+  await page.getByRole('button', { name: 'Connect providers' }).click()
   await command(page, { type: 'assign', threadId: 'workshop' })
   await command(page, { type: 'assign', threadId: 'docs' })
   await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()

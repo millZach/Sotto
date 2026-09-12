@@ -42,7 +42,7 @@ for (const [id, category, state] of [
   ['settings-key-verified', 'settings', 'key-verified'],
   ['settings-cleanup', 'settings', 'cleanup'],
   ['settings-feedback', 'settings', 'saved-feedback'],
-  ['settings-account', 'settings', 'account'],
+  ['settings-providers', 'settings', 'providers'],
   ['settings-capture', 'settings', 'capture'],
   ['settings-transcription', 'settings', 'transcription'],
   ['settings-output', 'settings', 'output'],

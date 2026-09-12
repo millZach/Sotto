@@ -16,7 +16,7 @@
 .settings-rows .tt-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 230px); column-gap: 20px; align-items: center; }
 .settings-rows .tt-field__label { font-size: 15px; font-weight: 500; }
 .settings-rows .tt-field__description { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.settings-rows .tt-input, .settings-rows .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; background: transparent; border-color: var(--tt-hairline); border-radius: 999px; }
+.settings-rows .tt-field > .tt-input, .settings-rows .tt-field > .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 100%; min-width: 0; background: transparent; border-color: var(--tt-hairline); border-radius: 999px; }
 .settings-rows textarea.tt-input { border-radius: 14px; }
 .settings-rows .tt-toggle { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 24px; padding: 18px 0; }
 .settings-rows .tt-toggle__copy { flex: 1; }

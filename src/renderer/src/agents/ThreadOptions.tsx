@@ -1,5 +1,5 @@
 import React, { useState, type ReactNode } from 'react'
-import type { AgentModel, AgentRuntimeMode, AgentState, AgentThread } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { ModelPicker } from './ModelPicker'
 
@@ -38,7 +38,7 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
 export function ThreadOptions({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const disabled = saving || state.busy || state.connection !== 'connected' || thread.status === 'running' || thread.requests.length > 0 || Boolean(thread.archivedAt)
+  const disabled = saving || state.busy || !isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0 || Boolean(thread.archivedAt)
   const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
     setSaving(true); setError(null)
     try {
@@ -46,9 +46,9 @@ export function ThreadOptions({ thread, state, command }: { readonly thread: Age
       if (!result || result.error) setError(result?.error ?? 'Could not confirm this change. Try again.')
     } finally { setSaving(false) }
   }
-  if (!state.host.capabilities.configureThread) return null
+  if (!capabilitiesForThread(state.host, thread).configureThread) return null
   return <div className="thread-options-bar">
-    <ThreadOptionFields models={state.host.models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
+    <ThreadOptionFields models={state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId)} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
       disabled={disabled} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
     {saving ? <small role="status">Saving...</small> : thread.status === 'running' ? <small>Available after this turn finishes.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}

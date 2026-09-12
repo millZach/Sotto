@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -16,7 +16,7 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   if (thread === undefined || assignment?.mode !== 'manual') return null
   return <section className="agent-manual" aria-label={`Manual control for ${thread.title}`}>
     <strong>Manual control · {thread.title}</strong>
-    <p>You’re replying directly in {PROVIDER_LABELS[state.configuration.provider]}. Sotto is still watching this thread, but won’t send replies. Say “resume managing {thread.title}” or select Resume management to hand it back.</p>
+    <p>You’re replying directly in {PROVIDER_LABELS[thread.providerId ?? state.configuration.provider]}. Sotto is still watching this thread, but won’t send replies. Say “resume managing {thread.title}” or select Resume management to hand it back.</p>
     <Button variant="secondary" onClick={() => void command({ type: 'resume', threadId: thread.id })}>Resume management</Button>
   </section>
 }
@@ -73,7 +73,7 @@ export function AgentComposer({ state, command, compact = false, footerControls 
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
     {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}
-    {!assigned ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || state.connection !== 'connected' || !supportsAgentSupervision(state.host.capabilities)} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
+    {!assigned ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || !isThreadProviderConnected(state.host, target) || !supportsAgentSupervision(capabilitiesForThread(state.host, target))} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
     <ScreenshotInput key={target?.id ?? 'no-thread'} attachments={attachments} onChange={updateImages} onReadingChange={setReadingImages}
       disabled={state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
@@ -83,7 +83,7 @@ export function AgentComposer({ state, command, compact = false, footerControls 
     <div className="agent-composer__footer">{footerControls ?? <span>Say “send it” when you’re ready.</span>}
       <div className="agent-actions">
         {hasDraft ? <Button variant="ghost" disabled={readingImages || state.busy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
-        <Button disabled={state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || state.connection !== 'connected'} onClick={() => void send()}>
+        <Button disabled={state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
       </div>
@@ -144,9 +144,9 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
         <span className="agent-eyebrow">{active.kind === 'permission' ? 'Permission requested' : active.kind === 'question' ? 'Your decision' : 'Ready for you'}</span>
         {active.kind === 'ready' ? <AgentReadyUpdate key={active.id} text={active.text} compact={compact} /> : <p>{active.text}</p>}
         {active.requestId === undefined ? null : request?.kind === 'permission' || active.kind === 'permission'
-          ? <div className="agent-actions"><Button variant="secondary" onClick={() => reply('Denied', false)}>Deny</Button><Button onClick={() => reply('Approved', true)}>{approvalLabel}</Button></div>
+          ? <div className="agent-actions"><Button variant="secondary" disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Denied', false)}>Deny</Button><Button disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Approved', true)}>{approvalLabel}</Button></div>
           : request?.options.length ? <div className="agent-actions">{request.options.map((option) =>
-            <Button key={option.id} variant="secondary" disabled={state.busy || state.connection !== 'connected'} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
+            <Button key={option.id} variant="secondary" disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
       </div>}
     </>}
   </section>
@@ -291,6 +291,9 @@ export function AgentNewThread({ state, command, project, onCreated }: { readonl
   const [submitting, setSubmitting] = useState(false)
   const details = useRef<HTMLDetailsElement>(null)
   const modelId = modelOverride || state.configuration.defaultModelId
+  const model = state.host.models.find(entry => entry.id === modelId)
+  const provider = state.host.providers?.find(entry => entry.id === model?.providerId)
+  const available = model?.ready === true && (provider ? provider.connection === 'connected' && provider.capabilities.threads : state.connection === 'connected' && state.host.capabilities.threads)
   const create = async (): Promise<void> => {
     if (submitting) return
     setSubmitting(true)
@@ -306,7 +309,7 @@ export function AgentNewThread({ state, command, project, onCreated }: { readonl
   return <details ref={details} className="agent-new-thread" open={onCreated === undefined ? undefined : true}><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
     <label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label>
     <label>Agent model<select aria-label="Agent model" value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
-    <Button type="submit" disabled={state.busy || submitting || !modelId || state.connection !== 'connected' || !state.host.capabilities.threads}><Plus size={14} aria-hidden="true" />Open thread</Button>
+    <Button type="submit" disabled={state.busy || submitting || !modelId || !available}><Plus size={14} aria-hidden="true" />Open thread</Button>
   </form></details>
 }
 
@@ -322,7 +325,9 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
   const activeProject = state.host.projects.find((project) => project.id === (active?.projectId ?? state.activeProjectId))
   const assignment = state.assignments.find((entry) => entry.threadId === active?.id)
   const connected = state.connection === 'connected'
-  const fullSupervision = supportsAgentSupervision(state.host.capabilities)
+  const activeConnected = active !== undefined && isThreadProviderConnected(state.host, active)
+  const activeCapabilities = active ? capabilitiesForThread(state.host, active) : state.host.capabilities
+  const fullSupervision = supportsAgentSupervision(activeCapabilities)
   const query = search.trim().toLocaleLowerCase()
   const visibleProjects = state.host.projects.map((project) => {
     const matchesProject = `${project.title} ${project.path}`.toLocaleLowerCase().includes(query)
@@ -340,12 +345,12 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
   return <div className="management-view agent-view">
     <header className="agent-header"><div><span className="agent-eyebrow">Agent control center</span><h1>Agents</h1></div>
       <div className="agent-actions"><Button variant="ghost" onClick={onOpenThreads}><List size={15} aria-hidden="true" />All threads</Button>
-        <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Connection settings</Button>
-        <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? `Disconnect ${PROVIDER_LABELS[state.configuration.provider]}` : state.connection === 'connecting' ? 'Connecting…' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button></div>
+        <Button variant="ghost" aria-expanded={settingsOpen} onClick={() => { setFocusReasoning(false); setSettingsOpen(!settingsOpen) }}><Settings2 size={15} aria-hidden="true" />Configure agents</Button>
+        <Button variant={connected ? 'secondary' : 'primary'} disabled={state.connection === 'connecting'} onClick={() => void command({ type: connected ? 'disconnect' : 'connect' })}>{connected ? 'Disconnect providers' : state.connection === 'connecting' ? 'Connecting…' : 'Connect providers'}</Button></div>
     </header>
-    <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{`${PROVIDER_LABELS[state.configuration.provider]} ${connected ? 'connected' : 'disconnected'}`}{state.host.version ? ` · ${state.host.version}` : ''}</span>
+    <div className="agent-statusline"><span className="agent-connection" data-connected={connected}><i />{`Providers ${connected ? 'connected' : 'disconnected'}`}{state.host.version ? ` · ${state.host.version}` : ''}</span>
       <span>{state.assignments.length} assigned · {state.queue.length} waiting</span>
-      {connected ? <Button variant="ghost" iconOnly aria-label={`Refresh ${PROVIDER_LABELS[state.configuration.provider]}`} onClick={() => void command({ type: 'refresh' })}><RefreshCw size={14} /></Button> : null}
+      {connected ? <Button variant="ghost" iconOnly aria-label={'Refresh providers'} onClick={() => void command({ type: 'refresh' })}><RefreshCw size={14} /></Button> : null}
     </div>
     {settingsOpen ? <AgentConnectionSettings state={state} command={command} focusReasoning={focusReasoning} /> : null}
     <section className="agent-voice" aria-label="Voice control"><div><Mic size={18} aria-hidden="true" /><div><strong>{voiceLabel}</strong><span>Wake detection and speech recognition stay on this desktop.</span></div></div>
@@ -378,7 +383,7 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
               <button type="button" aria-label={`Select ${thread.title}`} onClick={() => void command({ type: 'select-thread', threadId: thread.id })}>
                 <i data-status={thread.status} /><span>{thread.title}<small>{managed?.mode === 'manual' ? 'Manual control' : managed?.paused ? 'Management paused' : managed ? 'Managed' : thread.status === 'running' ? 'Working' : 'Unassigned'}</small></span>
               </button>
-              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={state.busy || !connected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
+              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={state.busy || !isThreadProviderConnected(state.host, thread) || !supportsAgentSupervision(capabilitiesForThread(state.host, thread))} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
             </div>
           })}
         </div>)}
@@ -389,11 +394,11 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
         <AgentQueue state={state} command={command} />
         <AgentManualNotice state={state} command={command} />
         {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or open one in your selected project.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working' : assignment === undefined ? 'Unassigned · manage this thread to send prompts' : 'Ready for a prompt'}</p></div>
-          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.busy || !connected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
+          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.busy || !activeConnected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
             <span>{assignment.followups}/{state.configuration.followupLimit} follow-ups</span>
             {assignment.mode === 'managed' ? <Button variant="ghost" onClick={() => void command({ type: assignment.paused ? 'resume' : 'pause', threadId: active.id })}>{assignment.paused ? 'Resume management' : 'Pause management'}</Button> : null}
             <Button variant="ghost" onClick={() => void command({ type: 'unassign', threadId: active.id })}>Stop managing</Button>
-          </>}{assignment !== undefined && active.status === 'running' && state.host.capabilities.interrupt ? <Button variant="secondary" disabled={state.busy || !connected} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
+          </>}{assignment !== undefined && active.status === 'running' && activeCapabilities.interrupt ? <Button variant="secondary" disabled={state.busy || !activeConnected} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
         </section>}
         <AgentLatestResponse thread={active} />
         <AgentComposer state={state} command={command} />

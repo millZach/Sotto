@@ -1,0 +1,9 @@
+# Independent coordinator and thread providers
+
+Accepted September 12, 2026 following the provider-settings correction to ticket #24. Sotto's coordinator account, model and enablement control reasoning and supervision; installed thread providers have independent connections, and a new thread's model chooses its provider. This supersedes the single active-provider lifecycle in ADR-0005: a composite host aggregates catalogs and routes existing Sotto thread IDs through their durable bindings, with per-provider connection and capability checks.
+
+Model IDs and additional providers' project IDs are namespaced to prevent collisions. The native provider selected before this upgrade retains its original public project IDs, with that choice persisted once in `provider-project-identity.json`; renaming those IDs would orphan existing project memories and permission policies. Other providers cannot inherit those scopes, even when native IDs or folders coincide. A global folder-based project registry would require a broader identity and authority migration, so it is deferred.
+
+Provider connection and discovery operations run outside the shared coordinator command queue, including startup reconnect. A slow or failed connection must not delay another provider's thread submission. Thread mutations keep their ordering, permission checks and outbox recovery. An uncertain auxiliary folder registration is recorded separately before dispatch, so retrying a cross-provider thread creation cannot replay registration or pretend a thread was already submitted.
+
+The Providers settings use the supplied T3 list/detail reference, with Configuration and Models tabs in Sotto's Crossing style. Configure agents contains the coordinator settings. The [T3 source study](../research/2026-09-12-native-thread-source-study.md) remains the protocol and UI provenance.

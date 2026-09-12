@@ -130,7 +130,7 @@ test('settled work stays off attention and session pills, with real timestamps a
 
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     expect(await page.locator('.side-sheet__body').evaluate(node => getComputedStyle(node).scrollbarColor)).toBe('rgb(42, 46, 44) rgba(0, 0, 0, 0)')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agent-configuration-scrollbar.png' })
   } finally {

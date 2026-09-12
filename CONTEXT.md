@@ -8,7 +8,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. One provider is active at a time and retains its own sign-in; new installations initially select Codex.
+**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 
 **Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
@@ -41,11 +41,13 @@ Answering a question or permission request and creating a project are also part 
 
 ## Coordination
 
+**Coordinator.** The default reasoning agent Sotto uses for deep reasoning and managing assigned threads. Its account, model and reasoning effort are independent of the providers and models running those threads. Avoid: "thread provider" when referring to Sotto's reasoning agent.
+
 **Assignment.** Sotto's authority to reply automatically on a thread. Modes are `managed` (Sotto may send follow-ups within its limits) and `manual` (the user replied in the provider directly, so Sotto only watches). Selecting or reading a thread never creates an assignment. Avoid: "subscription", "watch".
 
 **Assignment facts.** What the coordinator records on an assignment so the app can say how it started and why it stopped: `startedAt`, `origin` (`voice`, `typed` or `unknown`), `stopReason` (`none`, `limit`, `repeat` or `error`) and `stoppedAt`. A takeover clears the stop facts; a save failure only stamps `error` when nothing else stopped the assignment first.
 
-**Threads page.** The management-window view that lists every thread the active provider knows, grouped as needs you, running, finished today and earlier days. Groups, states and the one-sentence summary derive only from the attention queue, assignments and thread status, never from provider-specific fields. Rows waiting on a decision carry the request inline with Allow and Deny; nothing else on the page answers a request. Attention rows are never hidden by search, and an open row's card shows the user's latest prompt. Avoid: "inbox", "dashboard".
+**Threads page.** The management-window view that lists threads across Sotto's providers, including retained threads whose provider is disconnected. A thread's messages and pending decisions stay with its original provider. Avoid: "inbox", "dashboard".
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
@@ -136,7 +138,7 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
 - `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
-- `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which picks the active provider adapter at connect.
+- `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which aggregates independent provider connections and routes each thread to its bound adapter.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
 - `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state.
 - `docs/agent-control.md` — user-facing behaviour of agent control, including the Threads page.

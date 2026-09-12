@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react'
-import type { AgentState } from '../../../shared/agents'
+import { isThreadProviderConnected, type AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './providerRecovery.css'
@@ -12,6 +12,7 @@ export function ProviderUpgradeNotice({ state, command, threadId, localDraftPres
   const upgrade = state.providerUpgrade
   if (!upgrade) return null
   const expiresAt = upgrade.migratedAt + 7 * 86_400_000
+  const target = state.host.threads.find(thread => thread.id === threadId)
   const recovered = state.draftThreadId === null && Boolean(state.draft || state.draftAttachments?.length)
   return <section className="provider-recovery" aria-label="Recovered work">
     {recovered ? <>
@@ -19,7 +20,7 @@ export function ProviderUpgradeNotice({ state, command, threadId, localDraftPres
       <label>Recovered draft<textarea rows={3} value={state.draft} readOnly /></label>
       {!!state.draftAttachments?.length && <p>{state.draftAttachments.map(image => image.name).join(', ')}</p>}
       <div className="agent-actions">
-        {threadId ? <Button variant="secondary" disabled={localDraftPresent || state.busy || state.connection !== 'connected'} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
+        {threadId ? <Button variant="secondary" disabled={localDraftPresent || state.busy || !target || !isThreadProviderConnected(state.host, target)} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
         <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'cancel-draft' })}>Clear saved draft</Button>
       </div>
       {localDraftPresent ? <p>Finish or clear the current prompt, or choose another thread, before using this saved draft.</p> : null}

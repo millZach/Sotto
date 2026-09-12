@@ -61,7 +61,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     expect(state).toMatchObject({ configuration: { provider: 'codex', enabled: false }, draft, draftAttachments: [attachment],
       draftThreadId: null, draftRequestId: null, assignments: [], queue: [], composing: false })
     await capture(page, 'unbound')
-    await page.getByRole('button', { name: 'Connect Codex', exact: true }).click()
+    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
     const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
     await dialog.getByRole('button', { name: /Sotto test/ }).click()

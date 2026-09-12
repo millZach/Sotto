@@ -1,19 +1,21 @@
 # Sotto agent control
 
-Sotto creates and manages coding threads through the installed Codex, Claude Code and Grok Build clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. One coding provider is connected at a time. Reading or sending a manual prompt does not grant Sotto permission to supervise a thread.
+Sotto creates and manages coding threads through the installed Codex, Claude Code and Grok Build clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. All three providers can be connected together. Reading or sending a manual prompt does not grant Sotto permission to supervise a thread.
 
 ## Set up
 
 1. Install and sign in to your chosen native coding client. Codex uses App Server, Claude Code uses stream-json and Grok Build uses ACP. Grok connection requires CLI 1.0.5 and ACP 1; incompatible versions produce an error before creating a session.
-2. Open **Agents → Connection settings → Thread provider**, choose the client and connect. No server address or pairing token is needed. Disconnect before changing providers; finish pending actions and remove assignments before switching.
-3. Choose an available default model and a default projects directory. A new project can use an explicit folder path; reusing an existing folder requires the explicit choice in the creation dialog. Unavailable models are reported rather than replaced.
-4. Choose **Sotto reasoning** separately. Native Codex, Claude and Grok subscriptions are supported through their installed clients; explicitly configured OpenRouter and OpenAI API routes are also available. Check the connection, then select a model and supported reasoning effort. Manual controls and local control phrases work without reasoning.
+2. Open **Settings → Providers**. Select Codex, Claude Code or Grok Build in the list, then connect or enable it. Each row has its own status and switch; Configuration holds connection controls and a default model choice, while Models shows that provider's catalog. No server address or pairing token is needed.
+3. In **New thread**, choose a model from any connected provider. That choice determines which client runs the thread. The same working folder can be used with different providers. Existing threads retain their provider; their model picker only offers models from that client. Unavailable models are reported rather than replaced.
+4. Open **Settings → Agents → Configure agents** to choose the **Sotto coordinator**: its reasoning account, model and effort, plus the default projects directory. Native Codex, Claude and Grok subscriptions and explicitly configured OpenRouter and OpenAI API routes are supported. Changing this account does not change thread providers. Manual controls work without the coordinator.
 5. Choose the speech route independently: **Grok voice** is the default and **Kokoro** is the cheaper option. Both use the configured hosted route; neither is a system voice. Save the relevant API key, select a voice and preview it. Sotto does not silently switch funding routes.
 6. Configure compatible local wake-model and runtime directories before enabling voice. Wake detection runs locally. See the [wake verification record](verification/issue-9-wake.md) for model formats and distribution limits. Dictation remains available independently of agent control.
 
 ## Working with threads
 
-The **Threads** page lists conversations known to the selected adapter. Create a thread with its project, model and available options; open one to read messages, type a prompt or answer an outstanding request. Native adapters recover threads created by Sotto; they do not import unrelated conversations from your coding clients.
+The **Threads** page lists threads across providers. Create a thread with its project, model and available options; open one to read messages, type a prompt or answer an outstanding request. Native adapters recover threads created by Sotto; they do not import unrelated conversations from your coding clients.
+
+Disconnecting one provider leaves other providers usable and keeps its thread identities, saved draft and assignments. Its thread controls wait until that provider reconnects. Turning off agent control stops coordination and voice control while leaving native thread connections available. Connecting a provider does not turn the coordinator back on.
 
 A manual composer remains available when another thread owns a saved coordinator draft. You can prepare the next prompt while the current turn runs; sending waits for that turn to finish. A manual submission appears immediately with **Sending…**. It becomes a normal message only when delivery is confirmed. **Not confirmed** means Sotto has not established delivery; reconnecting or retrying reconciles the earlier action without automatically sending it twice. Other manual text remains local to the Threads view; only the coordinator draft has restart persistence.
 
