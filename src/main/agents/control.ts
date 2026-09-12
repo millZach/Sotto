@@ -398,6 +398,15 @@ export class AgentControl {
         this.state.draft = command.text
         return
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
+      case 'recover-draft': {
+        this.canAct()
+        if (!this.state.providerUpgrade || this.state.draftThreadId !== null || !this.hasDraft()) throw new Error('There is no unbound recovered draft to use.')
+        const target = this.thread(command.threadId)
+        if (target.archivedAt || target.requests.length) throw new Error('Choose an open thread without a pending question or permission before using the recovered draft.')
+        this.startDraft(target.id)
+        this.say(`Recovered draft ready in ${target.title}. Review it before sending.`)
+        return
+      }
       case 'send': await this.sendDraft(turn, manualRetryId, selectionRevision); return
       case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId); return
       case 'create-project': {
@@ -454,7 +463,9 @@ export class AgentControl {
         }
         this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot())
         if (command.managed !== false) this.assign(threadId, '', selectionRevision)
-        this.clearDraft(); this.startDraft(threadId)
+        if (!(this.state.providerUpgrade && this.state.draftThreadId === null && this.hasDraft())) {
+          this.clearDraft(); this.startDraft(threadId)
+        }
         this.state.pendingRequest = ''
         this.say(`Opened ${command.title}. Tell me your prompt, then say send it.`)
         return

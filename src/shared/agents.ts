@@ -212,6 +212,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
+  z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),

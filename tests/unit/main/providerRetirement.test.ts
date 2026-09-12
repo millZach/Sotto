@@ -46,6 +46,19 @@ async function fixture() {
 }
 
 describe('native provider retirement', () => {
+  it('keeps the recovered draft through new-thread creation and binds it only by explicit choice', async () => {
+    const f = await fixture(); await f.save(); const control = f.create(); await control.start()
+    await control.command({ type: 'connect' })
+    const created = await control.command({ type: 'create-thread', projectId: 'project', title: 'New native work', modelId: 'fake:model', managed: false })
+    expect(created.error).toBeNull()
+    expect(created).toMatchObject({ draft: f.state.draft, draftAttachments: f.state.draftAttachments, draftThreadId: null, composing: false })
+    const threadId = created.activeThreadId!
+    expect(agentCommandSchema.safeParse({ type: 'recover-draft', threadId }).success).toBe(true)
+    const restored = await control.command({ type: 'recover-draft', threadId })
+    expect(restored).toMatchObject({ draft: f.state.draft, draftAttachments: f.state.draftAttachments, draftThreadId: threadId, draftRequestId: null, composing: true, assignments: [] })
+    expect(f.host.commands.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
+  })
+
   it('fresh startup is disabled Codex with no connection or recovery', async () => {
     const f = await fixture(); const control = f.create(); await control.start()
     expect(control.get()).toMatchObject({ configuration: { provider: 'codex', enabled: false }, providerUpgrade: null })

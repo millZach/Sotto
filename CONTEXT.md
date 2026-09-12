@@ -29,7 +29,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 | status | read every project, model and thread the provider knows | `snapshot` |
 | events | subscribe to status changes pushed by the provider | `subscribe` |
 
-Answering a question or permission request (`execute({ type: 'answer' })`) and creating a project are also part of the interface. `SottoThreadHost` in `src/main/agents/threads.ts` is the implementation that owns Sotto thread IDs and delegates to a provider adapter; `T3CodeHost` is the first provider adapter and `CodexAppServerHost` the second. `E2EAgentHost` is the fake adapter used by tests and end-to-end runs.
+Answering a question or permission request and creating a project are also part of the thread interface. The native provider adapters preserve Sotto thread identity across these actions.
 
 **Provider adapter.** An implementation of `AgentHost` that speaks one provider's protocol and identifiers. Every adapter must pass the shared adapter contract in `tests/integration/adapterContract.ts`. Avoid: "driver", "backend".
 
@@ -135,7 +135,6 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
-- `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
 - `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which picks the active provider adapter at connect.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.

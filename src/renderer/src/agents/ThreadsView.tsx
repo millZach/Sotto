@@ -9,6 +9,7 @@ import { clockLabel, describeThreads, groupThreads, listThreads, type ThreadRow 
 import { NewThreadDialog } from './NewThreadDialog'
 import { ThreadOptions } from './ThreadOptions'
 import { ScreenshotInput } from './ScreenshotInput'
+import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 
 type Command = AgentConnection['command']
 interface PendingSubmission {
@@ -175,6 +176,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   </button>
   const foreignDraft = (state.draft.trim() || state.draftAttachments?.length) && state.draftThreadId && state.draftThreadId !== selected?.thread.id ? state.host.threads.find(thread => thread.id === state.draftThreadId) : undefined
   const connected = state.connection === 'connected'
+  const recoveredDraft = Boolean(state.providerUpgrade && state.draftThreadId === null && (state.draft || state.draftAttachments?.length))
+  const savedDraft = !recoveredDraft && Boolean(state.draft || state.draftAttachments?.length)
   const pending = selected?.thread.requests[0]
   const workspaceRow = selected && !isThreadClosed(selected.thread) && pending && !selected.request ? { ...selected, request: {
     id: `${selected.thread.id}:${pending.id}`, threadId: selected.thread.id, requestId: pending.id,
@@ -201,6 +204,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
       </div>
     </aside>
     <section className="thread-workspace" aria-label="Thread workspace">
+      {recoveredDraft ? <ProviderUpgradeNotice state={state} command={agents.command} threadId={selected?.thread.id} /> : null}
       {selected ? <>
         <header className="thread-workspace__head"><div><span>{selected.project?.title ?? selected.provider}</span><h2>{selected.thread.title}</h2></div><div className="thread-workspace__actions">
           {assigned && !isThreadClosed(selected.thread) ? <Button variant="ghost" disabled={!canManage} onClick={() => void agents.command({ type: assigned.paused || assigned.mode === 'manual' ? 'resume' : 'pause', threadId: selected.thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
@@ -226,7 +230,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
         <div className="thread-workspace__compose">
           {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} />}
         </div>
-      </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{state.draft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{state.draft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{state.draft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
+      </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
     </section>
   </div>
 }

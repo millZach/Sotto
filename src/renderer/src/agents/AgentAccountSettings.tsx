@@ -4,6 +4,7 @@ import { Button } from '../components/Button'
 import { SideSheet } from '../components/SideSheet'
 import { useOptionalAgents } from './AgentContext'
 import { VoiceSettings } from './VoiceSettings'
+import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 
 function SavedField({ label, value, onSave, secret = false, placeholder }: {
   readonly label: string; readonly value: string; readonly onSave: (value: string) => Promise<boolean>
@@ -56,6 +57,7 @@ export function AgentSetupFields(): ReactNode {
   const perform = async (request: AgentCommand): Promise<boolean> => { const result = await command(request); return result !== null && result.error === null }
   const save = (patch: Partial<AgentConfiguration>): Promise<boolean> => perform({ type: 'configure', patch })
   return <div className="account-settings"><div className="account-rows">
+    <ProviderUpgradeNotice state={state} command={command} />
     <label>Thread provider<select aria-label="Thread provider" value={configuration.provider} disabled={state.connection !== 'disconnected'} onChange={event => void save({ provider: event.target.value as AgentConfiguration['provider'], defaultModelId: '' })}>{providerIdSchema.options.map(provider => <option key={provider} value={provider}>{PROVIDER_LABELS[provider]}</option>)}</select></label>
     {state.connection !== 'disconnected' ? <p className="agent-muted">Disconnect before choosing another provider.</p> : null}
     <SavedField label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />
