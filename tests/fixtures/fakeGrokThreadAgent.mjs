@@ -88,7 +88,7 @@ let last
 const control = setInterval(() => {
  if (!existsSync(path('control.json'))) return
  const command = read('control.json', {}); if (!command.id || command.id === last) return; last = command.id
- if (command.type === 'complete') complete(command.sessionId,command.text)
+ if (command.type === 'complete') complete(command.sessionId,command.text,command.reason)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)
  if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}})
  if (command.type === 'malformed') process.stdout.write('{bad json}\n')

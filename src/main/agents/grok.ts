@@ -28,6 +28,9 @@ function messageOrigin(alias: Alias, key: string, text: string, timestampMs: num
     ?? alias.origins.find((origin, index) => !origin.entryKey && origin.digest === hash && Date.parse(origin.createdAt) <= timestampMs
       && (!alias.origins[index + 1] || timestampMs < Date.parse(alias.origins[index + 1]!.createdAt)))
 }
+function completedStatus(stopReason: string | undefined): AgentThread['status'] {
+  return ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests', 'refusal'].includes(stopReason ?? '') ? 'idle' : 'error'
+}
 
 export interface GrokAcpOptions { executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number }
 
@@ -42,6 +45,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly activePrompts = new Set<string>()
   private readonly streams = new Map<string, { threadId: string; message: AgentMessage }>()
   private readonly authored = new Map<string, { threadId: string; message: AgentMessage }>()
+  private readonly liveStatus = new Map<string, { eventKey: string; status: AgentThread['status'] }>()
   private readonly selections = new Map<string, { model: string; effort: string | undefined }>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private rpc: GrokRpc | undefined
@@ -72,7 +76,7 @@ export class GrokAcpHost implements AgentHost {
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.selections.clear(); this.activePrompts.clear()
+    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
     const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', 'agent', '--leader', 'stdio'], this.userDataDirectory,
       grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame), () => {
@@ -118,6 +122,7 @@ export class GrokAcpHost implements AgentHost {
     for (const [id, alias] of Object.entries(this.aliases)) {
       if (!alias.grokSessionId) continue
       const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false
+      const persistedStatusEvents = new Set<string>()
       let assistant: AgentMessage | undefined
       while (more) {
         await this.rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: 100 }, value => {
@@ -132,6 +137,7 @@ export class GrokAcpHost implements AgentHost {
             const update = parsed.data.update
             if (entry.method === 'session/update' && update.content?.type === 'text' && typeof update.content.text === 'string') {
               if (update.sessionUpdate === 'user_message_chunk') {
+                persistedStatusEvents.add(eventKey(parsed.data, 0))
                 assistant = undefined; status = 'running'
                 const text = update.content.text
                 const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
@@ -143,12 +149,19 @@ export class GrokAcpHost implements AgentHost {
                 assistant.text += update.content.text
               }
             }
-            if (update.sessionUpdate === 'turn_completed') { status = ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests', 'refusal'].includes(update.stop_reason ?? update.stopReason ?? '') ? 'idle' : 'error'; assistant = undefined }
+            if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); assistant = undefined }
           }
         })
       }
       if (changed) await this.persist()
       const thread = this.thread(id)
+      // A live native turn may belong to the CLI, not activePrompts. Older durable
+      // status cannot supersede it until its event has entered the persisted timeline.
+      const liveStatus = this.liveStatus.get(id)
+      if (liveStatus) {
+        if (persistedStatusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
+        else status = liveStatus.status
+      }
       // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
       for (const live of [...[...this.authored.values()].filter(entry => entry.threadId === id).map(entry => entry.message), ...[...this.streams.values()].filter(stream => stream.threadId === id).map(stream => stream.message)]) {
         if (live.role === 'user') {
@@ -297,6 +310,7 @@ export class GrokAcpHost implements AgentHost {
           this.authored.set(messageId, { threadId: id, message }); thread.messages.push(message)
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
+        this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: 'running' })
         thread.status = 'running'
       }
       if (update.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
@@ -308,7 +322,10 @@ export class GrokAcpHost implements AgentHost {
           this.streams.set(streamId, { threadId: id, message }); thread.messages.push(message)
         }
       }
-      if (update.sessionUpdate === 'turn_completed') { this.activePrompts.delete(id); thread.status = 'idle' }
+      if (update.sessionUpdate === 'turn_completed') {
+        this.activePrompts.delete(id); thread.status = completedStatus(update.stop_reason ?? update.stopReason)
+        this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: thread.status })
+      }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
       this.emit()
     }
