@@ -58,8 +58,8 @@ export interface SettingsViewProps {
 const SETTINGS_SECTIONS = [
   { id: 'settings-capture', label: 'Dictation' },
   { id: 'settings-transcription', label: 'Transcription' },
-  { id: 'settings-account', label: 'AI account' },
   { id: 'settings-formatting', label: 'Cleanup' },
+  { id: 'settings-account', label: 'AI account' },
   { id: 'settings-output', label: 'Output' },
   { id: 'settings-privacy', label: 'Application' },
   { id: 'settings-agents', label: 'Agents' },
@@ -440,8 +440,6 @@ export function SettingsView({
             </div>
           </Card>
 
-          <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
-
           <Card className="settings-section" id="settings-formatting">
             <div className="settings-section__heading"><h2>Cleanup</h2><p>{settings.llmFormatting ? 'AI cleanup is on. Transcript text goes to OpenRouter with your API key.' : 'AI cleanup is off. Your words stay as you dictated them.'}</p></div>
             <div className="settings-rows">
@@ -456,6 +454,8 @@ export function SettingsView({
 
             </div>
           </Card>
+
+          <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
 
           <Card className="settings-section" id="settings-output">
             <div className="settings-section__heading"><h2>Output</h2><p>{settings.autoPaste ? 'Sotto copies your words and pastes them at your cursor.' : 'Sotto copies your words so you can paste them yourself.'}</p></div>
