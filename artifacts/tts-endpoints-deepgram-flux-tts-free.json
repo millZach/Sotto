@@ -1,0 +1,54 @@
+﻿{
+    "data":  {
+                 "id":  "deepgram/flux-tts:free",
+                 "name":  "Deepgram: Flux TTS (free)",
+                 "created":  1786574888,
+                 "description":  "Flux TTS is a text-to-speech model from Deepgram. It is suited for natural, expressive English speech synthesis across Deepgram\u0027s Flux voice catalog.",
+                 "architecture":  {
+                                      "tokenizer":  "Other",
+                                      "instruct_type":  null,
+                                      "modality":  "text-\u003espeech",
+                                      "input_modalities":  [
+                                                               "text"
+                                                           ],
+                                      "output_modalities":  [
+                                                                "speech"
+                                                            ]
+                                  },
+                 "endpoints":  [
+                                   {
+                                       "name":  "Deepgram | deepgram/flux-tts-20260812:free",
+                                       "model_id":  "deepgram/flux-tts:free",
+                                       "model_name":  "Deepgram: Flux TTS",
+                                       "context_length":  0,
+                                       "pricing":  {
+                                                       "prompt":  "0",
+                                                       "completion":  "0",
+                                                       "discount":  0
+                                                   },
+                                       "provider_name":  "Deepgram",
+                                       "tag":  "deepgram",
+                                       "quantization":  "unknown",
+                                       "max_completion_tokens":  0,
+                                       "max_prompt_tokens":  null,
+                                       "supported_parameters":  [
+
+                                                                ],
+                                       "supports_tool_choice":  {
+                                                                    "none":  true,
+                                                                    "auto":  true,
+                                                                    "required":  true,
+                                                                    "function":  true
+                                                                },
+                                       "status":  0,
+                                       "uptime_last_30m":  null,
+                                       "uptime_last_5m":  null,
+                                       "uptime_last_1d":  100,
+                                       "supports_implicit_caching":  false,
+                                       "supports_voice_cloning":  false,
+                                       "latency_last_30m":  null,
+                                       "throughput_last_30m":  null
+                                   }
+                               ]
+             }
+}

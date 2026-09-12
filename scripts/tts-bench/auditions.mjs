@@ -1,0 +1,17 @@
+/* global console, process, URL */
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+import { normalizeWave } from './bench.mjs'
+const target=resolve(process.argv[2]),source=resolve(process.argv[3])
+const summary=JSON.parse(readFileSync(join(source,'summary.json'),'utf8'))
+const rows=readFileSync(join(source,'trials.jsonl'),'utf8').trim().split('\n').map(x=>JSON.parse(x)).filter(r=>r.ok)
+const labels={af_heart:'Kokoro · Heart',af_bella:'Kokoro · Bella',am_michael:'Kokoro · Michael','flux-haley-en':'Flux · Haley','flux-jack-en':'Flux · Jack','flux-priya-en':'Flux · Priya',ca3007f96ae7499ab87d27ea3599956a:'Fish · reference voice 1','9a9cf47702da476aa4629e2506d4a857':'Fish · Energetic Male',altair:'Grok · Altair'}
+mkdirSync(join(target,'voice-options'),{recursive:true})
+const clips=rows.map((row,i)=>{const file=`voice-options/${i+1}.wav`;writeFileSync(join(target,file),normalizeWave(readFileSync(join(source,row.audio))));return {file,fixtureId:row.fixtureId,label:labels[row.voice]||`${row.model} · ${row.voice}`}})
+const data={fixtures:summary.manifest.fixtures,clips}
+const style=readFileSync(new URL('./listening.html',import.meta.url),'utf8').match(/<style>[\s\S]*?<\/style>/u)[0]
+const html=`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sotto · Voice options</title>${style}<main><header><div class="brand"><span>∿</span>Sotto</div><a href="listening.html" style="color:var(--accent)">Back to blind comparison</a></header><h1>Find a voice you like.</h1><p>Nine voice options, with the same three replies. These auditions are separate from the repeated latency screen.</p><nav><select id="fixture" aria-label="Reply"></select></nav><blockquote id="text"></blockquote><div id="voices" class="voices"></div></main><script>const data=${JSON.stringify(data).replace(/</gu,'\\u003c')};const select=document.getElementById('fixture');data.fixtures.forEach(f=>{const o=document.createElement('option');o.value=f.id;o.textContent=f.category;select.append(o)});function render(){document.querySelectorAll('audio').forEach(a=>a.pause());const fixture=data.fixtures.find(f=>f.id===select.value);document.getElementById('text').textContent=fixture.text;const list=document.getElementById('voices');list.replaceChildren();data.clips.filter(c=>c.fixtureId===fixture.id).forEach(c=>{const row=document.createElement('div');row.className='voice';row.style.gridTemplateColumns='minmax(100px, 1fr) 2fr';const name=document.createElement('div');name.textContent=c.label;name.style.fontSize='16px';const audio=document.createElement('audio');audio.src=c.file;audio.controls=true;audio.preload='none';audio.setAttribute('aria-label',c.label);audio.onplay=()=>document.querySelectorAll('audio').forEach(a=>{if(a!==audio)a.pause()});row.append(name,audio);list.append(row)})}select.onchange=render;render();</script></html>`
+writeFileSync(join(target,'auditions.html'),html)
+const path=join(target,'listening.html')
+writeFileSync(path,readFileSync(path,'utf8').replace('<details><summary>View measured latency</summary>','<p><a href="auditions.html" style="color:var(--accent)">Explore nine voice options →</a></p><details><summary>View measured latency</summary>'))
+console.log(JSON.stringify({voices:summary.manifest.configs.length,clips:clips.length,url:'http://127.0.0.1:5187/auditions.html'}))

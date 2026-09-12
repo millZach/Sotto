@@ -25,6 +25,9 @@ resources/runtime/*.wasm
 scripts/llm-bench/.openrouter-key
 scripts/llm-bench/results/
 
+# Generated hosted voice benchmark audio, reports and bundled test service.
+artifacts/tts-bench/
+
 # Generated memory benchmark results
 scripts/memeval/results/*.json
 

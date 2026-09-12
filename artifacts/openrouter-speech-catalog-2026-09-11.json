@@ -1,0 +1,1253 @@
+﻿{
+    "data":  [
+                 {
+                     "id":  "deepgram/flux-tts:free",
+                     "canonical_slug":  "deepgram/flux-tts-20260812",
+                     "hugging_face_id":  null,
+                     "name":  "Deepgram: Flux TTS (free)",
+                     "created":  1786574888,
+                     "description":  "Flux TTS is a text-to-speech model from Deepgram. It is suited for natural, expressive English speech synthesis across Deepgram\u0027s Flux voice catalog.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "flux-alexis-en",
+                                              "flux-bree-en",
+                                              "flux-brittany-en",
+                                              "flux-brooke-en",
+                                              "flux-bruce-en",
+                                              "flux-cliff-en",
+                                              "flux-cole-en",
+                                              "flux-colin-en",
+                                              "flux-conor-en",
+                                              "flux-donovan-en",
+                                              "flux-drew-en",
+                                              "flux-elise-en",
+                                              "flux-gemma-en",
+                                              "flux-haley-en",
+                                              "flux-hannah-en",
+                                              "flux-heather-en",
+                                              "flux-jack-en",
+                                              "flux-kai-en",
+                                              "flux-kelsey-en",
+                                              "flux-kit-en",
+                                              "flux-maeve-en",
+                                              "flux-marcelo-en",
+                                              "flux-marcus-en",
+                                              "flux-meena-en",
+                                              "flux-meghan-en",
+                                              "flux-miles-en",
+                                              "flux-naveen-en",
+                                              "flux-paige-en",
+                                              "flux-priya-en",
+                                              "flux-rufus-en",
+                                              "flux-sean-en",
+                                              "flux-sharon-en",
+                                              "flux-sienna-en",
+                                              "flux-tanner-en",
+                                              "flux-wade-en",
+                                              "flux-wes-en"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/deepgram/flux-tts-20260812/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "fish-audio/s1",
+                     "canonical_slug":  "fish-audio/s1-20260729",
+                     "hugging_face_id":  null,
+                     "name":  "Fish Audio: S1",
+                     "created":  1785353734,
+                     "description":  "S1 is a multilingual text-to-speech model from Fish Audio. It is suited for voice applications that need broad emotional expression, using parenthetical controls to guide speaking style across its supported...",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  null,
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/fish-audio/s1-20260729/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "fish-audio/s2-pro",
+                     "canonical_slug":  "fish-audio/s2-pro-20260729",
+                     "hugging_face_id":  null,
+                     "name":  "Fish Audio: S2 Pro",
+                     "created":  1785353734,
+                     "description":  "S2 Pro is a multilingual text-to-speech model from Fish Audio. It is suited for expressive narration and multi-speaker dialogue, with natural-language controls for speaking style and emotion.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  null,
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/fish-audio/s2-pro-20260729/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "fish-audio/s2.1-pro-free:free",
+                     "canonical_slug":  "fish-audio/s2.1-pro-free-20260729",
+                     "hugging_face_id":  null,
+                     "name":  "Fish Audio: S2.1 Pro Free (free)",
+                     "created":  1785353733,
+                     "description":  "S2.1 Pro Free is the no-cost variant of Fish Audio S2.1 Pro, intended for testing, prototyping, and low-volume applications. It provides the same synthesis capabilities without production latency or availability...",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  null,
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/fish-audio/s2.1-pro-free-20260729/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "fish-audio/s2.1-pro",
+                     "canonical_slug":  "fish-audio/s2.1-pro-20260729",
+                     "hugging_face_id":  null,
+                     "name":  "Fish Audio: S2.1 Pro",
+                     "created":  1785353732,
+                     "description":  "S2.1 Pro is a production-oriented text-to-speech model from Fish Audio. It is suited for multilingual voice applications, expressive narration, and dialogue synthesis, with open-ended natural-language controls for speaking style and...",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  null,
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/fish-audio/s2.1-pro-20260729/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "microsoft/mai-voice-2-flash",
+                     "canonical_slug":  "microsoft/mai-voice-2-flash-20260723",
+                     "hugging_face_id":  null,
+                     "name":  "Microsoft AI: MAI-Voice-2-Flash",
+                     "created":  1784822080,
+                     "description":  "MAI-Voice-2-Flash is a low-latency text-to-speech model from Microsoft AI for voice agents, assistants, call centers, accessibility, narration, and other interactive applications. It generates expressive 24 kHz mono speech across 15...",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_completion_tokens",
+                                                  "max_tokens",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "en-US-Harper:MAI-Voice-2",
+                                              "es-MX-Valeria:MAI-Voice-2",
+                                              "fr-FR-Soleil:MAI-Voice-2",
+                                              "de-DE-Klaus:MAI-Voice-2"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/microsoft/mai-voice-2-flash-20260723/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "qwen/qwen-audio-3.0-tts-flash",
+                     "canonical_slug":  "qwen/qwen-audio-3.0-tts-flash-20260723",
+                     "hugging_face_id":  null,
+                     "name":  "Qwen: Qwen-Audio-3.0-TTS Flash",
+                     "created":  1784817207,
+                     "description":  "Qwen-Audio-3.0-TTS Flash is Alibaba\u0027s fast, cost-efficient text-to-speech model, generating spoken audio from text via the DashScope Speech Synthesizer API.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_tokens",
+                                                  "presence_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "loongjohn",
+                                              "longanhuan_v3.6"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/qwen/qwen-audio-3.0-tts-flash-20260723/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "qwen/qwen-audio-3.0-tts-plus",
+                     "canonical_slug":  "qwen/qwen-audio-3.0-tts-plus-20260723",
+                     "hugging_face_id":  null,
+                     "name":  "Qwen: Qwen-Audio-3.0-TTS Plus",
+                     "created":  1784817207,
+                     "description":  "Qwen-Audio-3.0-TTS Plus is Alibaba\u0027s higher-quality text-to-speech model, generating spoken audio from text via the DashScope Speech Synthesizer API.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.00002",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_tokens",
+                                                  "presence_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "longanlingxin",
+                                              "longanlufeng"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/qwen/qwen-audio-3.0-tts-plus-20260723/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "deepgram/aura-2",
+                     "canonical_slug":  "deepgram/aura-2-20260716",
+                     "hugging_face_id":  null,
+                     "name":  "Deepgram: Aura-2",
+                     "created":  1784237167,
+                     "description":  "Aura-2 is a multilingual text-to-speech model from Deepgram. It supports Deepgramâs canonical Aura-2 voice catalog for speech synthesis across multiple languages.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.00003",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null,
+                                                "top_k":  null,
+                                                "frequency_penalty":  null,
+                                                "presence_penalty":  null,
+                                                "repetition_penalty":  null
+                                            },
+                     "supported_voices":  [
+                                              "aura-2-thalia-en",
+                                              "aura-2-agathe-fr",
+                                              "aura-2-agustina-es",
+                                              "aura-2-alvaro-es",
+                                              "aura-2-ama-ja",
+                                              "aura-2-amalthea-en",
+                                              "aura-2-andromeda-en",
+                                              "aura-2-antonia-es",
+                                              "aura-2-apollo-en",
+                                              "aura-2-aquila-es",
+                                              "aura-2-arcas-en",
+                                              "aura-2-aries-en",
+                                              "aura-2-asteria-en",
+                                              "aura-2-athena-en",
+                                              "aura-2-atlas-en",
+                                              "aura-2-aurelia-de",
+                                              "aura-2-aurora-en",
+                                              "aura-2-beatrix-nl",
+                                              "aura-2-callista-en",
+                                              "aura-2-carina-es",
+                                              "aura-2-celeste-es",
+                                              "aura-2-cesare-it",
+                                              "aura-2-cinzia-it",
+                                              "aura-2-cora-en",
+                                              "aura-2-cordelia-en",
+                                              "aura-2-cornelia-nl",
+                                              "aura-2-daphne-nl",
+                                              "aura-2-delia-en",
+                                              "aura-2-demetra-it",
+                                              "aura-2-diana-es",
+                                              "aura-2-dionisio-it",
+                                              "aura-2-draco-en",
+                                              "aura-2-ebisu-ja",
+                                              "aura-2-elara-de",
+                                              "aura-2-electra-en",
+                                              "aura-2-elio-it",
+                                              "aura-2-estrella-es",
+                                              "aura-2-fabian-de",
+                                              "aura-2-flavio-it",
+                                              "aura-2-fujin-ja",
+                                              "aura-2-gloria-es",
+                                              "aura-2-harmonia-en",
+                                              "aura-2-hector-fr",
+                                              "aura-2-helena-en",
+                                              "aura-2-hera-en",
+                                              "aura-2-hermes-en",
+                                              "aura-2-hestia-nl",
+                                              "aura-2-hyperion-en",
+                                              "aura-2-iris-en",
+                                              "aura-2-izanami-ja",
+                                              "aura-2-janus-en",
+                                              "aura-2-javier-es",
+                                              "aura-2-julius-de",
+                                              "aura-2-juno-en",
+                                              "aura-2-jupiter-en",
+                                              "aura-2-kara-de",
+                                              "aura-2-lara-de",
+                                              "aura-2-lars-nl",
+                                              "aura-2-leda-nl",
+                                              "aura-2-livia-it",
+                                              "aura-2-luciano-es",
+                                              "aura-2-luna-en",
+                                              "aura-2-maia-it",
+                                              "aura-2-mars-en",
+                                              "aura-2-melia-it",
+                                              "aura-2-minerva-en",
+                                              "aura-2-neptune-en",
+                                              "aura-2-nestor-es",
+                                              "aura-2-odysseus-en",
+                                              "aura-2-olivia-es",
+                                              "aura-2-ophelia-en",
+                                              "aura-2-orion-en",
+                                              "aura-2-orpheus-en",
+                                              "aura-2-pandora-en",
+                                              "aura-2-phoebe-en",
+                                              "aura-2-pluto-en",
+                                              "aura-2-rhea-nl",
+                                              "aura-2-roman-nl",
+                                              "aura-2-sander-nl",
+                                              "aura-2-saturn-en",
+                                              "aura-2-selena-es",
+                                              "aura-2-selene-en",
+                                              "aura-2-silvia-es",
+                                              "aura-2-sirio-es",
+                                              "aura-2-theia-en",
+                                              "aura-2-uzume-ja",
+                                              "aura-2-valerio-es",
+                                              "aura-2-vesta-en",
+                                              "aura-2-viktoria-de",
+                                              "aura-2-zeus-en"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/deepgram/aura-2-20260716/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "minimax/speech-2.8-hd",
+                     "canonical_slug":  "minimax/speech-2.8-hd-20260716",
+                     "hugging_face_id":  null,
+                     "name":  "MiniMax: Speech 2.8 HD",
+                     "created":  1784164001,
+                     "description":  "MiniMax Speech 2.8 HD is a text-to-speech model from MiniMax. It is suited for applications that generate spoken audio from text and accepts arbitrary MiniMax voice IDs.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.0001",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_tokens",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null,
+                                                "top_k":  null,
+                                                "frequency_penalty":  null,
+                                                "presence_penalty":  null,
+                                                "repetition_penalty":  null
+                                            },
+                     "supported_voices":  [
+                                              "English_expressive_narrator",
+                                              "English_radiant_girl",
+                                              "English_magnetic_voiced_man",
+                                              "English_compelling_lady1",
+                                              "English_Aussie_Bloke",
+                                              "English_captivating_female1",
+                                              "English_Upbeat_Woman",
+                                              "English_Trustworth_Man",
+                                              "English_CalmWoman",
+                                              "English_UpsetGirl",
+                                              "English_Gentle-voiced_man",
+                                              "English_Whispering_girl",
+                                              "English_Diligent_Man",
+                                              "English_Graceful_Lady",
+                                              "English_ReservedYoungMan",
+                                              "English_PlayfulGirl",
+                                              "English_ManWithDeepVoice",
+                                              "English_MaturePartner",
+                                              "English_FriendlyPerson",
+                                              "English_MatureBoss",
+                                              "English_Debator",
+                                              "English_LovelyGirl",
+                                              "English_Steadymentor",
+                                              "English_Deep-VoicedGentleman",
+                                              "English_Wiselady",
+                                              "English_CaptivatingStoryteller",
+                                              "English_DecentYoungMan",
+                                              "English_SentimentalLady",
+                                              "English_ImposingManner",
+                                              "English_SadTeen",
+                                              "English_PassionateWarrior",
+                                              "English_WiseScholar",
+                                              "English_Soft-spokenGirl",
+                                              "English_SereneWoman",
+                                              "English_ConfidentWoman",
+                                              "English_PatientMan",
+                                              "English_Comedian",
+                                              "English_BossyLeader",
+                                              "English_Strong-WilledBoy",
+                                              "English_StressedLady",
+                                              "English_AssertiveQueen",
+                                              "English_AnimeCharacter",
+                                              "English_Jovialman",
+                                              "English_WhimsicalGirl",
+                                              "English_Kind-heartedGirl"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/minimax/speech-2.8-hd-20260716/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "minimax/speech-2.8-turbo",
+                     "canonical_slug":  "minimax/speech-2.8-turbo-20260716",
+                     "hugging_face_id":  null,
+                     "name":  "MiniMax: Speech 2.8 Turbo",
+                     "created":  1784164000,
+                     "description":  "MiniMax Speech 2.8 Turbo is a text-to-speech model from MiniMax. It is suited for applications that generate spoken audio from text and accepts arbitrary MiniMax voice IDs.",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.00006",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_tokens",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null,
+                                                "top_k":  null,
+                                                "frequency_penalty":  null,
+                                                "presence_penalty":  null,
+                                                "repetition_penalty":  null
+                                            },
+                     "supported_voices":  [
+                                              "English_expressive_narrator",
+                                              "English_radiant_girl",
+                                              "English_magnetic_voiced_man",
+                                              "English_compelling_lady1",
+                                              "English_Aussie_Bloke",
+                                              "English_captivating_female1",
+                                              "English_Upbeat_Woman",
+                                              "English_Trustworth_Man",
+                                              "English_CalmWoman",
+                                              "English_UpsetGirl",
+                                              "English_Gentle-voiced_man",
+                                              "English_Whispering_girl",
+                                              "English_Diligent_Man",
+                                              "English_Graceful_Lady",
+                                              "English_ReservedYoungMan",
+                                              "English_PlayfulGirl",
+                                              "English_ManWithDeepVoice",
+                                              "English_MaturePartner",
+                                              "English_FriendlyPerson",
+                                              "English_MatureBoss",
+                                              "English_Debator",
+                                              "English_LovelyGirl",
+                                              "English_Steadymentor",
+                                              "English_Deep-VoicedGentleman",
+                                              "English_Wiselady",
+                                              "English_CaptivatingStoryteller",
+                                              "English_DecentYoungMan",
+                                              "English_SentimentalLady",
+                                              "English_ImposingManner",
+                                              "English_SadTeen",
+                                              "English_PassionateWarrior",
+                                              "English_WiseScholar",
+                                              "English_Soft-spokenGirl",
+                                              "English_SereneWoman",
+                                              "English_ConfidentWoman",
+                                              "English_PatientMan",
+                                              "English_Comedian",
+                                              "English_BossyLeader",
+                                              "English_Strong-WilledBoy",
+                                              "English_StressedLady",
+                                              "English_AssertiveQueen",
+                                              "English_AnimeCharacter",
+                                              "English_Jovialman",
+                                              "English_WhimsicalGirl",
+                                              "English_Kind-heartedGirl"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/minimax/speech-2.8-turbo-20260716/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "microsoft/mai-voice-2",
+                     "canonical_slug":  "microsoft/mai-voice-2",
+                     "hugging_face_id":  null,
+                     "name":  "Microsoft AI: MAI-Voice-2",
+                     "created":  1780425097,
+                     "description":  "MAI-Voice-2 is an expressive text-to-speech model from Microsoft AI. It is suited for conversational assistants, media narration, accessibility, education, and other long-form voice applications. It supports 15 languages across 18...",
+                     "context_length":  0,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000022",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  0,
+                                          "max_completion_tokens":  0,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_completion_tokens",
+                                                  "max_tokens",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "en-US-Harper:MAI-Voice-2",
+                                              "es-MX-Valeria:MAI-Voice-2",
+                                              "fr-FR-Soleil:MAI-Voice-2",
+                                              "de-DE-Klaus:MAI-Voice-2"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/microsoft/mai-voice-2/endpoints"
+                               },
+                     "benchmarks":  {
+                                        "design_arena":  [
+                                                             {
+                                                                 "arena":  "models",
+                                                                 "category":  "audiorealism",
+                                                                 "elo":  1228,
+                                                                 "win_rate":  65.7,
+                                                                 "rank":  1
+                                                             },
+                                                             {
+                                                                 "arena":  "models",
+                                                                 "category":  "text-to-speech",
+                                                                 "elo":  1191,
+                                                                 "win_rate":  52.9,
+                                                                 "rank":  1
+                                                             }
+                                                         ]
+                                    }
+                 },
+                 {
+                     "id":  "x-ai/grok-voice-tts-1.0",
+                     "canonical_slug":  "x-ai/grok-voice-tts-1.0",
+                     "hugging_face_id":  null,
+                     "name":  "SpaceXAI: Grok Voice TTS 1.0",
+                     "created":  1778805456,
+                     "description":  "Grok Voice TTS 1.0 is a text-to-speech model from SpaceXAI. It converts text into spoken audio across 20+ languages with automatic language detection, and offers five built-in voices (Eve, Ara,...",
+                     "context_length":  15000,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Grok",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000015",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  15000,
+                                          "max_completion_tokens":  13500,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "logprobs",
+                                                  "max_tokens",
+                                                  "response_format",
+                                                  "seed",
+                                                  "temperature",
+                                                  "top_logprobs",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null,
+                                                "top_k":  null,
+                                                "frequency_penalty":  null,
+                                                "presence_penalty":  null,
+                                                "repetition_penalty":  null
+                                            },
+                     "supported_voices":  [
+                                              "eve",
+                                              "ara",
+                                              "rex",
+                                              "sal",
+                                              "leo"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/x-ai/grok-voice-tts-1.0/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "google/gemini-3.1-flash-tts-preview",
+                     "canonical_slug":  "google/gemini-3.1-flash-tts-preview",
+                     "hugging_face_id":  null,
+                     "name":  "Google: Gemini 3.1 Flash TTS Preview",
+                     "created":  1776999308,
+                     "description":  "Gemini 3.1 Flash TTS Preview is a text-to-speech model from Google, and a substantial generational step up from Gemini 2.5 Flash TTS. It takes text input and produces audio output...",
+                     "context_length":  32768,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Gemini",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000001",
+                                     "completion":  "0.00002"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  32768,
+                                          "max_completion_tokens":  16384,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "max_tokens",
+                                                  "response_format",
+                                                  "seed",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null
+                                            },
+                     "supported_voices":  [
+                                              "Zephyr",
+                                              "Puck",
+                                              "Charon",
+                                              "Kore",
+                                              "Fenrir",
+                                              "Leda",
+                                              "Orus",
+                                              "Aoede",
+                                              "Callirrhoe",
+                                              "Autonoe",
+                                              "Enceladus",
+                                              "Iapetus",
+                                              "Umbriel",
+                                              "Algieba",
+                                              "Despina",
+                                              "Erinome",
+                                              "Algenib",
+                                              "Rasalgethi",
+                                              "Laomedeia",
+                                              "Achernar",
+                                              "Alnilam",
+                                              "Schedar",
+                                              "Gacrux",
+                                              "Pulcherrima",
+                                              "Achird",
+                                              "Zubenelgenubi",
+                                              "Vindemiatrix",
+                                              "Sadachbia",
+                                              "Sadaltager",
+                                              "Sulafat"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/google/gemini-3.1-flash-tts-preview/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "canopylabs/orpheus-3b-0.1-ft",
+                     "canonical_slug":  "canopylabs/orpheus-3b-0.1-ft",
+                     "hugging_face_id":  null,
+                     "name":  "Canopy Labs: Orpheus 3B",
+                     "created":  1776983168,
+                     "description":  "Orpheus 3B is an English text-to-speech model from Canopy Labs, fine-tuned for natural prosody and expressive delivery. It offers 7 preset voices and is suited for narration, voice assistants, and...",
+                     "context_length":  4096,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000007",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  4096,
+                                          "max_completion_tokens":  3686,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "frequency_penalty",
+                                                  "logit_bias",
+                                                  "max_tokens",
+                                                  "min_p",
+                                                  "presence_penalty",
+                                                  "repetition_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "stop",
+                                                  "temperature",
+                                                  "top_k",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "tara",
+                                              "leah",
+                                              "jess",
+                                              "leo",
+                                              "dan",
+                                              "mia",
+                                              "zac"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/canopylabs/orpheus-3b-0.1-ft/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "sesame/csm-1b",
+                     "canonical_slug":  "sesame/csm-1b",
+                     "hugging_face_id":  null,
+                     "name":  "Sesame: CSM 1B",
+                     "created":  1776983168,
+                     "description":  "CSM 1B is a conversational speech model from Sesame. It accepts text input and produces English speech output, with voice options spanning conversational and read-speech styles. At 1B parameters, it...",
+                     "context_length":  4096,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000007",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  4096,
+                                          "max_completion_tokens":  3686,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "frequency_penalty",
+                                                  "max_tokens",
+                                                  "min_p",
+                                                  "presence_penalty",
+                                                  "repetition_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "stop",
+                                                  "temperature",
+                                                  "top_k",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "conversational_a",
+                                              "conversational_b",
+                                              "read_speech_a",
+                                              "read_speech_b",
+                                              "read_speech_c",
+                                              "read_speech_d",
+                                              "none"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/sesame/csm-1b/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "hexgrad/kokoro-82m",
+                     "canonical_slug":  "hexgrad/kokoro-82m",
+                     "hugging_face_id":  null,
+                     "name":  "hexgrad: Kokoro 82M",
+                     "created":  1776983167,
+                     "description":  "Kokoro 82M is a lightweight, open-weight text-to-speech model from hexgrad. It converts text to speech across 8 languages (American and British English, Spanish, French, Hindi, Italian, Japanese, Portuguese, and Chinese)...",
+                     "context_length":  4096,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Other",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000004",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  4096,
+                                          "max_completion_tokens":  3686,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "frequency_penalty",
+                                                  "logit_bias",
+                                                  "max_tokens",
+                                                  "min_p",
+                                                  "presence_penalty",
+                                                  "repetition_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "stop",
+                                                  "temperature",
+                                                  "top_k",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+
+                                            },
+                     "supported_voices":  [
+                                              "af_alloy",
+                                              "af_aoede",
+                                              "af_bella",
+                                              "af_heart",
+                                              "af_jessica",
+                                              "af_kore",
+                                              "af_nicole",
+                                              "af_nova",
+                                              "af_river",
+                                              "af_sarah",
+                                              "af_sky",
+                                              "am_adam",
+                                              "am_echo",
+                                              "am_eric",
+                                              "am_fenrir",
+                                              "am_liam",
+                                              "am_michael",
+                                              "am_onyx",
+                                              "am_puck",
+                                              "am_santa",
+                                              "bf_alice",
+                                              "bf_emma",
+                                              "bf_isabella",
+                                              "bf_lily",
+                                              "bm_daniel",
+                                              "bm_fable",
+                                              "bm_george",
+                                              "bm_lewis",
+                                              "ef_dora",
+                                              "em_alex",
+                                              "em_santa",
+                                              "ff_siwis",
+                                              "hf_alpha",
+                                              "hf_beta",
+                                              "hm_omega",
+                                              "hm_psi",
+                                              "if_sara",
+                                              "im_nicola",
+                                              "jf_alpha",
+                                              "jf_gongitsune",
+                                              "jf_nezumi",
+                                              "jf_tebukuro",
+                                              "jm_kumo",
+                                              "pf_dora",
+                                              "pm_alex",
+                                              "pm_santa",
+                                              "zf_xiaobei",
+                                              "zf_xiaoni",
+                                              "zf_xiaoxiao",
+                                              "zf_xiaoyi",
+                                              "zm_yunjian",
+                                              "zm_yunxi",
+                                              "zm_yunxia",
+                                              "zm_yunyang"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/hexgrad/kokoro-82m/endpoints"
+                               }
+                 },
+                 {
+                     "id":  "mistralai/voxtral-mini-tts-2603",
+                     "canonical_slug":  "mistralai/voxtral-mini-tts-2603",
+                     "hugging_face_id":  null,
+                     "name":  "Mistral: Voxtral Mini TTS",
+                     "created":  1776571337,
+                     "description":  "Voxtral Mini TTS is Mistral\u0027s text-to-speech model featuring zero-shot voice cloning and multilingual support. It converts text input into natural-sounding audio output.",
+                     "context_length":  4096,
+                     "architecture":  {
+                                          "modality":  "text-\u003espeech",
+                                          "input_modalities":  [
+                                                                   "text"
+                                                               ],
+                                          "output_modalities":  [
+                                                                    "speech"
+                                                                ],
+                                          "tokenizer":  "Mistral",
+                                          "instruct_type":  null
+                                      },
+                     "pricing":  {
+                                     "prompt":  "0.000016",
+                                     "completion":  "0"
+                                 },
+                     "top_provider":  {
+                                          "context_length":  4096,
+                                          "max_completion_tokens":  3276,
+                                          "is_moderated":  false
+                                      },
+                     "per_request_limits":  null,
+                     "supported_parameters":  [
+                                                  "frequency_penalty",
+                                                  "max_tokens",
+                                                  "presence_penalty",
+                                                  "response_format",
+                                                  "seed",
+                                                  "stop",
+                                                  "structured_outputs",
+                                                  "temperature",
+                                                  "top_p"
+                                              ],
+                     "default_parameters":  {
+                                                "temperature":  null,
+                                                "top_p":  null,
+                                                "top_k":  null,
+                                                "frequency_penalty":  null,
+                                                "presence_penalty":  null,
+                                                "repetition_penalty":  null
+                                            },
+                     "supported_voices":  [
+                                              "en_paul_sad",
+                                              "en_paul_neutral",
+                                              "en_paul_happy",
+                                              "en_paul_frustrated",
+                                              "en_paul_excited",
+                                              "en_paul_confident",
+                                              "en_paul_cheerful",
+                                              "en_paul_angry",
+                                              "gb_oliver_neutral",
+                                              "gb_oliver_sad",
+                                              "gb_oliver_excited",
+                                              "gb_oliver_curious",
+                                              "gb_oliver_confident",
+                                              "gb_oliver_cheerful",
+                                              "gb_oliver_angry",
+                                              "gb_jane_sarcasm",
+                                              "gb_jane_confused",
+                                              "gb_jane_shameful",
+                                              "gb_jane_sad",
+                                              "gb_jane_neutral",
+                                              "gb_jane_jealousy",
+                                              "gb_jane_frustrated",
+                                              "gb_jane_curious",
+                                              "gb_jane_confident",
+                                              "fr_marie_sad",
+                                              "fr_marie_neutral",
+                                              "fr_marie_happy",
+                                              "fr_marie_excited",
+                                              "fr_marie_curious",
+                                              "fr_marie_angry"
+                                          ],
+                     "knowledge_cutoff":  null,
+                     "expiration_date":  null,
+                     "links":  {
+                                   "details":  "/api/v1/models/mistralai/voxtral-mini-tts-2603/endpoints"
+                               }
+                 }
+             ],
+    "total_count":  18,
+    "links":  {
+                  "next":  null
+              }
+}

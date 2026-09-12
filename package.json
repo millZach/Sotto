@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:tts-bench": "node --test scripts/tts-bench/*.test.mjs",
     "memeval": "node scripts/memeval/bench-memeval.mjs --backend none --cases scripts/memeval/cases/v1.json",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test --workers=1",
