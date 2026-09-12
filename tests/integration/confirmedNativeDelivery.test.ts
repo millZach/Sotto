@@ -15,7 +15,7 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   try {
-    await f.host.connect(f.connection)
+    await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     await control.start(); await control.command({ type: 'connect' })

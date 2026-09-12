@@ -19,12 +19,6 @@ interface SubmissionFeedback {
   onSubmit: (submission: PendingSubmission) => void
   onSettle: (draftId: string, confirmed: boolean) => void
 }
-interface ManualDraftState {
-  drafts: Record<string, string>
-  setDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  images: Record<string, AgentAttachment[]>
-  setImages: React.Dispatch<React.SetStateAction<Record<string, AgentAttachment[]>>>
-}
 export interface ThreadsViewProps {
   readonly onOpenAgents: () => void
   readonly now?: number | undefined
@@ -67,9 +61,10 @@ function ThreadRequest({ row, command, busy, onAnswer, voiceAvailable }: {
   </div>
 }
 
-function ThreadPrompt({ row, state, command, onSubmit, onSettle, drafts, setDrafts, images, setImages }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command } & SubmissionFeedback & ManualDraftState): ReactNode {
-  const [sending, setSending] = useState(false)
-  const [readingImages, setReadingImages] = useState(false)
+/** Draft content, revision and receipt ownership survive switching between manual and managed composers together. */
+function useManualDrafts(receipts: AgentState['deliveredDrafts'], onSettle: SubmissionFeedback['onSettle']) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [images, setImages] = useState<Record<string, AgentAttachment[]>>({})
   const revisions = useRef<Record<string, string>>({})
   const submitted = useRef(new Map<string, string>())
   const receiveDeliveries = useCallback((receipts: AgentState['deliveredDrafts']): void => {
@@ -83,7 +78,14 @@ function ThreadPrompt({ row, state, command, onSubmit, onSettle, drafts, setDraf
       setImages(previous => ({ ...previous, [receipt.threadId]: [] }))
     }
   }, [onSettle])
-  useEffect(() => { receiveDeliveries(state.deliveredDrafts) }, [state.deliveredDrafts, receiveDeliveries])
+  useEffect(() => { receiveDeliveries(receipts) }, [receipts, receiveDeliveries])
+  return { drafts, setDrafts, images, setImages, revisions, submitted, receiveDeliveries }
+}
+
+function ThreadPrompt({ row, state, command, onSubmit, onSettle, manual }: { readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly manual: ReturnType<typeof useManualDrafts> } & SubmissionFeedback): ReactNode {
+  const { drafts, setDrafts, images, setImages, revisions, submitted, receiveDeliveries } = manual
+  const [sending, setSending] = useState(false)
+  const [readingImages, setReadingImages] = useState(false)
   const attachments = images[row.thread.id] ?? (state.draftThreadId === row.thread.id ? state.draftAttachments ?? [] : [])
   const text = drafts[row.thread.id] ?? (state.draftThreadId === row.thread.id ? state.draft : '')
   const question = row.request?.kind === 'question' ? row.request : undefined
@@ -148,8 +150,6 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [newThreadOpen, setNewThreadOpen] = useState(false)
   const [messageLimit, setMessageLimit] = useState(80)
   const [submissions, setSubmissions] = useState<PendingSubmission[]>([])
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [images, setImages] = useState<Record<string, AgentAttachment[]>>({})
   const onSubmit = useCallback((submission: PendingSubmission): void => {
     setSubmissions(previous => [...previous.filter(item => item.draftId !== submission.draftId), submission].slice(-MAX_DELIVERED_DRAFTS))
   }, [])
@@ -157,6 +157,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
     setSubmissions(previous => confirmed ? previous.filter(item => item.draftId !== draftId)
       : previous.map(item => item.draftId === draftId ? { ...item, pending: false } : item))
   }, [])
+  const manual = useManualDrafts(agents.state?.deliveredDrafts, onSettle)
+  const { drafts, setDrafts, images, setImages } = manual
   const onNewThread = (): void => setNewThreadOpen(true)
   const transcript = useRef<HTMLDivElement>(null)
   const state = agents.state
@@ -245,7 +247,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
           <ThreadRequest row={workspaceRow!} voiceAvailable={state.queue.some(item => item.threadId === selected.thread.id && item.requestId === workspaceRow?.request?.requestId)} command={agents.command} busy={state.busy || !connected} onAnswer={() => document.getElementById(managed ? 'agent-prompt' : 'thread-workspace-prompt')?.focus()} />
         </div>
         <div className="thread-workspace__compose">
-            {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} drafts={drafts} setDrafts={setDrafts} images={images} setImages={setImages} />}
+            {foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => void openThread(foreignDraft.id)}>Open draft thread</Button><ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /></div> : managed ? <AgentComposer state={state} command={agents.command} footerControls={state.host.capabilities.configureThread ? <ThreadOptions key={selected.thread.id} thread={selected.thread} state={state} command={agents.command} /> : undefined} /> : <ThreadPrompt row={workspaceRow!} state={state} command={agents.command} onSubmit={onSubmit} onSettle={onSettle} manual={manual} />}
         </div>
       </> : <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void agents.command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : `Connect ${PROVIDER_LABELS[state.configuration.provider]}`}</Button> : <Button onClick={onNewThread}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div>}
     </section>

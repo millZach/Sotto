@@ -214,6 +214,31 @@ describe('ThreadsView workspace', () => {
     expect(command).toHaveBeenCalledTimes(1)
   })
 
+  it('reconciles a late manual receipt while a managed thread has unmounted its composer', async () => {
+    const state = stateFixture(); state.activeThreadId = 'grok-previews'
+    state.assignments = state.assignments.filter(assignment => assignment.threadId === 'footer-links')
+    let draftId = ''
+    const command = vi.fn(async (...args: unknown[]) => {
+      const request = args[0] as AgentCommand
+      if (request.type === 'manual-send') draftId = request.draftId!
+      return { ...state, error: 'Not confirmed yet' }
+    })
+    const { rerender } = renderThreads(state, command)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Deliver this only once' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    state.activeThreadId = 'footer-links'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
+    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    state.activeThreadId = 'grok-previews'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(command).toHaveBeenCalledTimes(1)
+  })
+
   it('shows loading and retry states instead of describing unfetched history as empty', () => {
     const state = stateFixture()
     const thread = state.host.threads.find(item => item.id === state.activeThreadId)!

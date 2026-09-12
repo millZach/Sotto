@@ -37,6 +37,12 @@ async function capture(page: Page, name: string): Promise<void> {
   expect(bounds).not.toBeNull()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(761)
+  const send = page.getByRole('button', { name: 'Send prompt', exact: true })
+  if (await send.count()) {
+    const sendBounds = await send.boundingBox()
+    const footerBounds = await page.locator('.app-footer').boundingBox()
+    expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(footerBounds!.y)
+  }
   await page.setViewportSize({ width: 1080, height: 720 })
 }
 

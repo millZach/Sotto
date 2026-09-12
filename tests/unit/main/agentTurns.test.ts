@@ -95,6 +95,33 @@ afterEach(async () => {
 })
 
 describe('coordinator turn records', () => {
+  it('timestamps the first confirmed-message publication before a delayed command completes', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'A prompt whose acknowledgement is delayed.' })
+    let now = 100_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const acknowledged = gate(); const release = gate()
+    const execute = f.host.execute.bind(f.host)
+    vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+      const result = await execute(command)
+      if (command.type === 'send') { acknowledged.resolve(); await release.promise }
+      return result
+    })
+    const sending = f.control.command({ type: 'utterance', text: 'send it', voiceTiming: {
+      speechEndedAt: new Date(99_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })
+    try {
+      await acknowledged.promise
+      expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.messages.some(message => message.role === 'user')).toBe(true)
+      now = 105_000
+    } finally { release.resolve() }
+    await sending
+    const [record] = await f.recorder.recent(1)
+    expect(record?.timings.speechToFirstFeedbackMs).toBe(1_000)
+    expect(record?.timings.totalMs).toBe(5_000)
+  })
+
   it('does not record a resolved intent when reasoning fails', async () => {
     const f = await fixture(); await f.account()
     f.service.offline = true

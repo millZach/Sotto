@@ -73,6 +73,8 @@ export class AgentControl {
   private speechPreferenceRevision = 0
   private selectionRevision = 0
   private manualDraftId: string | null = null
+  private readonly dispatchTurns = new Map<string, ActiveTurn>()
+  private readonly feedbackReady = new Set<ActiveTurn>()
   private contextActivityAt = Date.now()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
@@ -177,6 +179,8 @@ export class AgentControl {
   private publish(): void {
     if (this.disposed) return
     const value = this.get()
+    for (const turn of this.feedbackReady) turn.firstFeedbackAtMs ??= Date.now()
+    this.feedbackReady.clear()
     for (const listener of this.listeners) listener(value)
   }
   private say(text: string, preview = false): void {
@@ -288,7 +292,7 @@ export class AgentControl {
         if (turn.projectId === undefined) turn.projectId = this.state.activeProjectId
       }
       this.publish()
-      if (turn) turn.firstFeedbackAtMs = Date.now()
+      if (turn) turn.firstFeedbackAtMs ??= Date.now()
       await this.finishTurn(turn, failure)
       return this.get()
     })
@@ -600,6 +604,11 @@ export class AgentControl {
     return threadId && host.refreshThread ? host.refreshThread(threadId) : host.snapshot()
   }
   private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
+    if (turn) this.dispatchTurns.set(command.commandId, turn)
+    try { await this.dispatchPending(command, turn, validate, draftId) }
+    finally { this.dispatchTurns.delete(command.commandId) }
+  }
+  private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
     if (this.outbox.some(item => item.threadId === threadId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
@@ -885,6 +894,8 @@ export class AgentControl {
             ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === value) : item.type === 'answer'
             ? thread !== undefined && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      const turn = this.dispatchTurns.get(item.id)
+      if (turn) this.feedbackReady.add(turn)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
       if (message && item.draftId && item.threadId) {
         this.state.deliveredDrafts = [...(this.state.deliveredDrafts ?? []).filter(receipt => receipt.threadId !== item.threadId || receipt.draftId !== item.draftId),
