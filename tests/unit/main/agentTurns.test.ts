@@ -95,6 +95,18 @@ afterEach(async () => {
 })
 
 describe('coordinator turn records', () => {
+  it('does not record a resolved intent when reasoning fails', async () => {
+    const f = await fixture(); await f.account()
+    f.service.offline = true
+    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
+      speechEndedAt: new Date(Date.now() - 800).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })
+    const [record] = await f.recorder.recent(1)
+    expect(record?.outcome).toBe('failed')
+    expect(record?.timings.intentMs).toBeGreaterThanOrEqual(0)
+    expect(record?.timings.speechToIntentMs).toBeNull()
+  })
+
   it('propagates voice timing and records useful state publication without inventing acoustic timing', async () => {
     const f = await fixture()
     await f.account()

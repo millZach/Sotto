@@ -819,8 +819,9 @@ export class AgentControl {
     let intent
     try {
       intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, this.state.configuration.defaultModelId, this.state.activeThreadId, preferences)
+      if (turn) turn.intentResolvedAtMs = Date.now()
     } finally {
-      if (turn) { turn.intentMs += Date.now() - intentStarted; turn.intentResolvedAtMs = Date.now() }
+      if (turn) turn.intentMs += Date.now() - intentStarted
     }
     if (turn && intent.type === 'clarify') turn.clarified = true
     if (intent.type === 'clarify') {
