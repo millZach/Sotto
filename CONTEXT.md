@@ -14,6 +14,8 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
+**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
+
 **Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
 
 **Provider retirement.** An upgrade that stops using an old thread provider while retaining recovery evidence and the user's draft. Old assignments, answers and uncertain actions are not transferred or replayed through a native client.
@@ -51,7 +53,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
-**Draft.** The one prompt or answer the user is composing, bound to a thread and optionally to a question request. A draft survives a restart.
+**Draft.** An unsent prompt or answer, including its attachments, owned by a thread and optionally a question request. Each thread retains its own draft across navigation and restart; accepting one submitted revision does not clear a newer revision.
 
 **Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
 
