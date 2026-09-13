@@ -116,7 +116,8 @@
 .thread-workspace__error { margin: 12px 24px 0; }
 
 .thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.thread-workspace__transcript { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
+.thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 14px; }

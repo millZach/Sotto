@@ -20,8 +20,8 @@ function managedAssignment(threadId: string): AgentAssignment {
 }
 
 /** The Threads workspace with a controller that hands a thread to Sotto and back, as main does for the saved draft. */
-function mount({ managed = false, running = false, capabilities = {}, followups = [] }: {
-  readonly managed?: boolean; readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities>; readonly followups?: AgentFollowup[]
+function mount({ managed = false, running = false, capabilities = {}, followups = [], holdSaves = false }: {
+  readonly managed?: boolean; readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities>; readonly followups?: AgentFollowup[]; readonly holdSaves?: boolean
 } = {}) {
   const initial = threadsStateFixture()
   initial.assignments = managed ? [managedAssignment(THREAD)] : []
@@ -30,7 +30,7 @@ function mount({ managed = false, running = false, capabilities = {}, followups 
   initial.host.capabilities = { ...CAPABILITIES, ...capabilities }
   initial.followups = followups
   if (running) initial.host.threads.find(item => item.id === THREAD)!.status = 'running'
-  const live = liveAgentState(initial)
+  const live = liveAgentState(initial, { holdSaves })
   // The draft store and the workspace share main's command, as in the app.
   const base = live.command.getMockImplementation()!
   const command = live.command.mockImplementation(async (request: AgentCommand): Promise<AgentState | null> => {
@@ -87,6 +87,41 @@ describe('management handoff focus', () => {
     expect(manual).not.toHaveAttribute('id', 'agent-prompt')
     await waitFor(() => expect(manual).toHaveFocus())
     expect(manual).toHaveValue('My unsent manual draft.')
+  })
+
+  it('while Manage waits for the save, this thread cannot submit or settle, another pane can, and a failed save keeps the manual draft', async () => {
+    const view = mount({ holdSaves: true })
+    await act(async () => { fireEvent.click(within(screen.getByRole('complementary', { name: 'Thread sidebar' })).getByRole('button', { name: 'Open Streaming WAV stall beside', exact: true })) })
+    await waitFor(() => expect(view.live.state.activeThreadId).toBe('wav-stall'))
+    const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })
+    await act(async () => { prompt.focus() })
+    await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
+    fireEvent.change(prompt, { target: { value: 'Held manual draft.' } })
+    await act(async () => { fireEvent.click(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })) })
+    await waitFor(() => expect(view.live.heldSaves.some(item => item.command.text === 'Held manual draft.')).toBe(true))
+
+    const pane = within(view.pane())
+    expect(pane.getByRole('button', { name: 'Manage', exact: true })).toBeDisabled()
+    expect(pane.getByRole('button', { name: 'Settle', exact: true })).toBeDisabled()
+    expect(pane.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    expect(pane.getByText('Handing this draft to Sotto…')).toBeInTheDocument()
+    await act(async () => { fireEvent.keyDown(prompt, { key: 'Enter' }) })
+    expect(view.live.manualSends()).toBe(0)
+    // Typing stays open; the handoff carries the latest revision.
+    expect(prompt).toBeEnabled()
+    // The other pane is not held.
+    const other = within(screen.getByRole('region', { name: 'Streaming WAV stall' }))
+    fireEvent.change(other.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'Other pane prompt.' } })
+    expect(other.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    expect(other.getByRole('button', { name: 'Settle', exact: true })).toBeEnabled()
+
+    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
+    await waitFor(() => expect(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })).toBeEnabled())
+    expect(view.command.mock.calls.map(([request]) => request.type)).not.toContain('assign')
+    expect(view.live.state.assignments).toEqual([])
+    expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Held manual draft.')
+    expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).not.toHaveAttribute('id', 'agent-prompt')
+    expect(within(view.pane()).getByRole('button', { name: 'Settle', exact: true })).toBeEnabled()
   })
 
   it('Write here in an unfocused managed pane focuses that pane’s managed composer once it holds the selection', async () => {

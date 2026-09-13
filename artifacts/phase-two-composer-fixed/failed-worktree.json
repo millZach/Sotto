@@ -1,0 +1,87 @@
+{
+  "worktree": {
+    "mode": "independent",
+    "status": "error",
+    "error": "This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder."
+  },
+  "status": "Available once the working folder is ready.",
+  "compose1280": "Worktree not ready. This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.\n\nRetry setup\nPrompt\nModel\nClaude Test\nReasoning\nLow\nHigh\nPermissions\nProvider default\nAsk for approval\nAllow edits\nAuto\nFull access\nAvailable once the working folder is ready.",
+  "metrics1280": {
+    "viewport": "1280x800",
+    "pane": {
+      "top": 60,
+      "bottom": 756,
+      "height": 696
+    },
+    "paneScroll": "696/696",
+    "transcriptClientHeight": 357,
+    "compose": {
+      "top": 492,
+      "bottom": 756,
+      "height": 264
+    },
+    "followups": null,
+    "card": {
+      "top": 574,
+      "bottom": 736,
+      "height": 162
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": null,
+    "status": "Available once the working folder is ready.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": null,
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "afterEnter": {
+    "value": "Draft kept while setup failed.",
+    "focus": "textarea:#thread-workspace-prompt",
+    "deliveries": 0,
+    "notSent": 0
+  },
+  "metrics820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 109,
+    "compose": {
+      "top": 280,
+      "bottom": 516,
+      "height": 236
+    },
+    "followups": null,
+    "card": {
+      "top": 380,
+      "bottom": 512,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:109/214"
+    ],
+    "outsideControls": [],
+    "queueHead": null,
+    "status": "Available once the working folder is ready.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": null,
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  }
+}

@@ -1,0 +1,455 @@
+{
+  "split1600x900": {
+    "left": {
+      "metrics": {
+        "viewport": "1600x900",
+        "pane": {
+          "top": 60,
+          "bottom": 856,
+          "height": 796
+        },
+        "paneScroll": "796/796",
+        "transcriptClientHeight": 306,
+        "compose": {
+          "top": 476,
+          "bottom": 856,
+          "height": 380
+        },
+        "followups": {
+          "top": 484,
+          "bottom": 690,
+          "height": 206
+        },
+        "card": {
+          "top": 689,
+          "bottom": 840,
+          "height": 151
+        },
+        "cardFullyVisible": true,
+        "picker": {
+          "top": 422,
+          "bottom": 684,
+          "height": 262
+        },
+        "scrollers": [
+          "thread-workspace__transcript:306/1064",
+          "skill-picker__list:216/345"
+        ],
+        "outsideControls": [],
+        "queueHead": "Queued 3",
+        "status": "Saving draft…",
+        "fonts": {
+          "prompt": "16px",
+          "queueRow": "14px",
+          "queueToggle": "14px",
+          "queueNote": null,
+          "status": "12px",
+          "pickerName": "14px"
+        }
+      },
+      "facts": {
+        "pickerTop": 422,
+        "pickerBottom": 684,
+        "cardTop": 689,
+        "paneTop": 60,
+        "visibleOptions": 5,
+        "activeInView": true
+      },
+      "room": {
+        "room": {
+          "top": 60,
+          "bottom": 856
+        },
+        "compose": {
+          "top": 476,
+          "bottom": 856
+        },
+        "queue": {
+          "top": 484,
+          "bottom": 690
+        },
+        "actions": [
+          {
+            "name": "Steer now",
+            "box": {
+              "top": 793,
+              "bottom": 829
+            }
+          },
+          {
+            "name": "Queue prompt",
+            "box": {
+              "top": 793,
+              "bottom": 829
+            }
+          }
+        ]
+      }
+    },
+    "right": {
+      "viewport": "1600x900",
+      "pane": {
+        "top": 60,
+        "bottom": 856,
+        "height": 796
+      },
+      "paneScroll": "796/796",
+      "transcriptClientHeight": 497,
+      "compose": {
+        "top": 668,
+        "bottom": 856,
+        "height": 188
+      },
+      "followups": null,
+      "card": {
+        "top": 676,
+        "bottom": 840,
+        "height": 164
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Draft not saved. Save again",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "rightRoom": {
+      "room": {
+        "top": 60,
+        "bottom": 856
+      },
+      "compose": {
+        "top": 668,
+        "bottom": 856
+      },
+      "queue": null,
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 793,
+            "bottom": 829
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 793,
+            "bottom": 829
+          }
+        }
+      ]
+    }
+  },
+  "split1280x800": {
+    "left": {
+      "metrics": {
+        "viewport": "1280x800",
+        "pane": {
+          "top": 60,
+          "bottom": 756,
+          "height": 696
+        },
+        "paneScroll": "696/696",
+        "transcriptClientHeight": 197,
+        "compose": {
+          "top": 368,
+          "bottom": 756,
+          "height": 388
+        },
+        "followups": {
+          "top": 376,
+          "bottom": 590,
+          "height": 214
+        },
+        "card": {
+          "top": 589,
+          "bottom": 740,
+          "height": 151
+        },
+        "cardFullyVisible": true,
+        "picker": {
+          "top": 316,
+          "bottom": 584,
+          "height": 268
+        },
+        "scrollers": [
+          "thread-workspace__transcript:197/998",
+          "skill-picker__list:216/345"
+        ],
+        "outsideControls": [],
+        "queueHead": "Queued 3",
+        "status": "Saving draft…",
+        "fonts": {
+          "prompt": "16px",
+          "queueRow": "14px",
+          "queueToggle": "14px",
+          "queueNote": null,
+          "status": "12px",
+          "pickerName": "14px"
+        }
+      },
+      "facts": {
+        "pickerTop": 316,
+        "pickerBottom": 584,
+        "cardTop": 589,
+        "paneTop": 60,
+        "visibleOptions": 5,
+        "activeInView": true
+      },
+      "room": {
+        "room": {
+          "top": 60,
+          "bottom": 756
+        },
+        "compose": {
+          "top": 368,
+          "bottom": 756
+        },
+        "queue": {
+          "top": 376,
+          "bottom": 590
+        },
+        "actions": [
+          {
+            "name": "Steer now",
+            "box": {
+              "top": 693,
+              "bottom": 729
+            }
+          },
+          {
+            "name": "Queue prompt",
+            "box": {
+              "top": 693,
+              "bottom": 729
+            }
+          }
+        ]
+      }
+    },
+    "right": {
+      "viewport": "1280x800",
+      "pane": {
+        "top": 60,
+        "bottom": 756,
+        "height": 696
+      },
+      "paneScroll": "696/696",
+      "transcriptClientHeight": 397,
+      "compose": {
+        "top": 568,
+        "bottom": 756,
+        "height": 188
+      },
+      "followups": null,
+      "card": {
+        "top": 576,
+        "bottom": 740,
+        "height": 164
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Draft not saved. Save again",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "rightRoom": {
+      "room": {
+        "top": 60,
+        "bottom": 756
+      },
+      "compose": {
+        "top": 568,
+        "bottom": 756
+      },
+      "queue": null,
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 693,
+            "bottom": 729
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 693,
+            "bottom": 729
+          }
+        }
+      ]
+    }
+  },
+  "split1280x560": {
+    "left": {
+      "metrics": {
+        "viewport": "1280x560",
+        "pane": {
+          "top": 60,
+          "bottom": 516,
+          "height": 456
+        },
+        "paneScroll": "456/456",
+        "transcriptClientHeight": 109,
+        "compose": {
+          "top": 280,
+          "bottom": 516,
+          "height": 236
+        },
+        "followups": {
+          "top": 288,
+          "bottom": 380,
+          "height": 92
+        },
+        "card": {
+          "top": 379,
+          "bottom": 500,
+          "height": 121
+        },
+        "cardFullyVisible": true,
+        "picker": {
+          "top": 222,
+          "bottom": 374,
+          "height": 152
+        },
+        "scrollers": [
+          "thread-workspace__transcript:109/998",
+          "thread-followups:91/105",
+          "skill-picker__list:100/345"
+        ],
+        "outsideControls": [],
+        "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+        "status": "Saving draft…",
+        "fonts": {
+          "prompt": "16px",
+          "queueRow": "14px",
+          "queueToggle": "14px",
+          "queueNote": null,
+          "status": "12px",
+          "pickerName": "14px"
+        }
+      },
+      "facts": {
+        "pickerTop": 222,
+        "pickerBottom": 374,
+        "cardTop": 379,
+        "paneTop": 60,
+        "visibleOptions": 2,
+        "activeInView": true
+      },
+      "room": {
+        "room": {
+          "top": 60,
+          "bottom": 516
+        },
+        "compose": {
+          "top": 280,
+          "bottom": 516
+        },
+        "queue": {
+          "top": 288,
+          "bottom": 380
+        },
+        "actions": [
+          {
+            "name": "Steer now",
+            "box": {
+              "top": 455,
+              "bottom": 491
+            }
+          },
+          {
+            "name": "Queue prompt",
+            "box": {
+              "top": 455,
+              "bottom": 491
+            }
+          }
+        ]
+      }
+    },
+    "right": {
+      "viewport": "1280x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 187,
+      "compose": {
+        "top": 358,
+        "bottom": 516,
+        "height": 158
+      },
+      "followups": null,
+      "card": {
+        "top": 366,
+        "bottom": 500,
+        "height": 134
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:187/343"
+      ],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Draft not saved. Save again",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "rightRoom": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 358,
+        "bottom": 516
+      },
+      "queue": null,
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,370 @@
+{
+  "onManage": {
+    "focus": "textarea:#agent-prompt",
+    "value": "My unsent manual draft for Docs.",
+    "queue": "Queued 2\n\nWaits while Sotto manages this thread.\n\nQueued before managing: run the tests.\n\nQueued before managing: update the changelog."
+  },
+  "managed1280": {
+    "viewport": "1280x800",
+    "pane": {
+      "top": 60,
+      "bottom": 756,
+      "height": 696
+    },
+    "paneScroll": "696/696",
+    "transcriptClientHeight": 275,
+    "compose": {
+      "top": 410,
+      "bottom": 756,
+      "height": 346
+    },
+    "followups": {
+      "top": 420,
+      "bottom": 574,
+      "height": 154
+    },
+    "card": {
+      "top": 573,
+      "bottom": 736,
+      "height": 163
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": "Queued 2",
+    "status": null,
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": "13px",
+      "status": null,
+      "pickerName": null
+    }
+  },
+  "managedTyped1280": {
+    "viewport": "1280x800",
+    "pane": {
+      "top": 60,
+      "bottom": 756,
+      "height": 696
+    },
+    "paneScroll": "696/696",
+    "transcriptClientHeight": 275,
+    "compose": {
+      "top": 410,
+      "bottom": 756,
+      "height": 346
+    },
+    "followups": {
+      "top": 420,
+      "bottom": 574,
+      "height": 154
+    },
+    "card": {
+      "top": 573,
+      "bottom": 736,
+      "height": 163
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": "Queued 2",
+    "status": null,
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": "13px",
+      "status": null,
+      "pickerName": null
+    }
+  },
+  "managedTyped820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 129,
+    "compose": {
+      "top": 300,
+      "bottom": 516,
+      "height": 216
+    },
+    "followups": {
+      "top": 308,
+      "bottom": 348,
+      "height": 40
+    },
+    "card": {
+      "top": 347,
+      "bottom": 500,
+      "height": 153
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:129/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 2NextQueued before managing: run the tests.Waiting for Sotto",
+    "status": null,
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": null,
+      "pickerName": null
+    }
+  },
+  "afterStop": {
+    "focus": "textarea:#thread-workspace-prompt",
+    "value": "My unsent manual draft for Docs. Coordinator note typed while managed.",
+    "threadDraft": "My unsent manual draft for Docs. Coordinator note typed while managed.",
+    "followups": [
+      "Queued before managing: run the tests.",
+      "Queued before managing: update the changelog."
+    ]
+  },
+  "splitUnfocused1600": {
+    "docs": {
+      "viewport": "1600x900",
+      "pane": {
+        "top": 60,
+        "bottom": 856,
+        "height": 796
+      },
+      "paneScroll": "796/796",
+      "transcriptClientHeight": 441,
+      "compose": {
+        "top": 612,
+        "bottom": 856,
+        "height": 244
+      },
+      "followups": {
+        "top": 620,
+        "bottom": 774,
+        "height": 154
+      },
+      "card": {
+        "top": 773,
+        "bottom": 840,
+        "height": 67
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": "Queued 2",
+      "status": null,
+      "fonts": {
+        "prompt": null,
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": "13px",
+        "status": null,
+        "pickerName": null
+      }
+    },
+    "workshop": {
+      "viewport": "1600x900",
+      "pane": {
+        "top": 60,
+        "bottom": 856,
+        "height": 796
+      },
+      "paneScroll": "796/796",
+      "transcriptClientHeight": 499,
+      "compose": {
+        "top": 670,
+        "bottom": 856,
+        "height": 186
+      },
+      "followups": null,
+      "card": {
+        "top": 678,
+        "bottom": 840,
+        "height": 162
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Enter to send · Shift+Enter for a new line",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    }
+  },
+  "writeHere": {
+    "focus": "textarea:#agent-prompt",
+    "metrics": {
+      "viewport": "1600x900",
+      "pane": {
+        "top": 60,
+        "bottom": 856,
+        "height": 796
+      },
+      "paneScroll": "796/796",
+      "transcriptClientHeight": 345,
+      "compose": {
+        "top": 516,
+        "bottom": 856,
+        "height": 340
+      },
+      "followups": {
+        "top": 524,
+        "bottom": 678,
+        "height": 154
+      },
+      "card": {
+        "top": 677,
+        "bottom": 840,
+        "height": 163
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": "Queued 2",
+      "status": null,
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": "13px",
+        "status": null,
+        "pickerName": null
+      }
+    }
+  },
+  "keyboardWriteHere": {
+    "focus": "textarea:#agent-prompt",
+    "error": null,
+    "value": "My unsent manual draft for Docs. Coordinator note typed while managed."
+  },
+  "splitNarrow820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 107,
+      "bottom": 516,
+      "height": 409
+    },
+    "paneScroll": "409/409",
+    "transcriptClientHeight": 98,
+    "compose": {
+      "top": 316,
+      "bottom": 516,
+      "height": 200
+    },
+    "followups": {
+      "top": 324,
+      "bottom": 364,
+      "height": 40
+    },
+    "card": {
+      "top": 363,
+      "bottom": 516,
+      "height": 153
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:98/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 2NextQueued before managing: run the tests.Waiting for Sotto",
+    "status": null,
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": null,
+      "pickerName": null
+    }
+  },
+  "splitNarrowManual820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 107,
+      "bottom": 516,
+      "height": 409
+    },
+    "paneScroll": "409/409",
+    "transcriptClientHeight": 104,
+    "compose": {
+      "top": 321,
+      "bottom": 516,
+      "height": 195
+    },
+    "followups": {
+      "top": 329,
+      "bottom": 369,
+      "height": 40
+    },
+    "card": {
+      "top": 368,
+      "bottom": 500,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:104/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 2NextQueued before managing: run the tests.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "reload": {
+    "beforeReload": "My unsent manual draft for Docs. Coordinator note typed while managed.",
+    "afterReload": "My unsent manual draft for Docs. Coordinator note typed while managed.",
+    "followups": [
+      [
+        "Queued before managing: run the tests.",
+        "queued"
+      ],
+      [
+        "Queued before managing: update the changelog.",
+        "queued"
+      ]
+    ]
+  },
+  "finalState": {
+    "error": null,
+    "busy": false,
+    "assignments": [],
+    "activeThreadId": "docs",
+    "drafts": [
+      {
+        "threadId": "docs",
+        "draftId": "867ac43a-bb07-48b7-b506-d16aed95ec8e",
+        "text": "My unsent manual draft for Docs. Coordinator note typed while managed.",
+        "attachments": [],
+        "requestId": null,
+        "updatedAt": "2026-09-13T05:49:12.360Z"
+      }
+    ]
+  }
+}

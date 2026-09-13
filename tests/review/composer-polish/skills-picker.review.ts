@@ -6,6 +6,8 @@ import { evidence, focusedLabel, paneMetrics, shot, size, type PaneMetrics } fro
 
 // The critic's component fixture (copied unmodified from the visual review): the real ThreadWorkspace with a synthetic
 // Codex-capable state (steer, skills, queued follow-ups) the E2E provider cannot produce. No native calls.
+// The fixture gives the workspace the whole window, so the spec reserves the production shell around it: the 60px strip
+// and 44px footer rows of .app-shell, with the workspace in a .app-room scrollport between them (labelled bars, not the app).
 
 type Scenario = 'compose' | 'catalog-error' | 'catalog-loading' | 'catalog-empty' | 'request-failed' | 'idle-queue'
 declare global { interface Window { phaseTwoFixture?: { show: (scenario: Scenario) => void } } }
@@ -22,7 +24,36 @@ async function launch(width = 1280, height = 800): Promise<LaunchedSotto> {
   await page.waitForLoadState('load')
   await page.evaluate(() => document.fonts.ready)
   await expect(page.getByRole('log', { name: 'Thread transcript' }).first()).toBeVisible()
+  await page.addStyleTag({ content: `
+    #root { display: grid; height: 100vh; grid-template-rows: 60px minmax(0, 1fr) 44px; overflow: hidden; }
+    #root::before, #root::after { display: flex; align-items: center; padding-left: 20px; font: 12px/1 system-ui, sans-serif; color: #8a948f; background: repeating-linear-gradient(135deg, #0c100e 0 8px, #111614 8px 16px); }
+    #root::before { content: 'Fixture: reserved production strip, 60px'; grid-row: 1; border-bottom: 1px solid #26302b; }
+    #root::after { content: 'Fixture: reserved production footer, 44px'; grid-row: 3; border-top: 1px solid #26302b; }
+    #root > div { grid-row: 2; height: auto !important; min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+  ` })
+  await expect.poll(() => page.evaluate(() => { const room = document.querySelector('#root > div')!.getBoundingClientRect(); return [room.top, window.innerHeight - room.bottom] })).toEqual([60, 44])
   return { app, page } as unknown as LaunchedSotto
+}
+
+/** The composer, its queue and its Queue/Send/Steer actions sit inside the room the shell allocates, not over the chrome. */
+async function expectInsideRoom(page: Page, pane: Locator): Promise<Record<string, unknown>> {
+  const facts = await pane.evaluate(element => {
+    const room = document.querySelector('#root > div')!.getBoundingClientRect()
+    const rect = (target: Element | null) => { const r = target?.getBoundingClientRect(); return r && r.height > 0 ? { top: Math.round(r.top), bottom: Math.round(r.bottom) } : null }
+    const name = (button: Element) => (button.getAttribute('aria-label') ?? button.textContent ?? '').trim()
+    const buttons = [...element.querySelectorAll('button')].filter(button => /^(Queue prompt|Send prompt|Steer now)$/u.test(name(button)))
+    return {
+      room: { top: Math.round(room.top), bottom: Math.round(room.bottom) },
+      compose: rect(element.querySelector('.thread-workspace__compose')), queue: rect(element.querySelector('.thread-followups')),
+      actions: buttons.map(button => ({ name: name(button), box: rect(button) })),
+    }
+  })
+  const inside = (box: { top: number; bottom: number } | null) => box === null || (box.top >= facts.room.top - 1 && box.bottom <= facts.room.bottom + 1)
+  expect(inside(facts.compose), JSON.stringify(facts)).toBe(true)
+  expect(inside(facts.queue), JSON.stringify(facts)).toBe(true)
+  expect(facts.actions.length, JSON.stringify(facts)).toBeGreaterThanOrEqual(1)
+  for (const action of facts.actions) expect(inside(action.box), JSON.stringify(facts)).toBe(true)
+  return facts
 }
 
 const theme = (page: Page, mode: 'dark' | 'light', accent = 'teal'): Promise<void> => page.evaluate(([mode, accent]) => {
@@ -46,19 +77,21 @@ async function expectOverlay(page: Page, pane: Locator, scope: string, before: P
   })
   expect(metrics.cardFullyVisible, JSON.stringify(metrics)).toBe(true)
   expect(metrics.outsideControls, JSON.stringify(metrics)).toEqual([])
+  expect(metrics.scrollers.filter(item => item.startsWith('thread-pane:')), 'the pane itself does not fall back to scrolling').toEqual([])
   expect(metrics.card, 'the card does not move when the picker opens').toEqual(before.card)
   expect(facts.pickerBottom).toBeLessThanOrEqual(facts.cardTop)
   expect(facts.pickerTop).toBeGreaterThanOrEqual(facts.paneTop)
   expect(facts.visibleOptions).toBeGreaterThanOrEqual(2)
+  const room = await expectInsideRoom(page, pane)
   if (facts.activeInView !== null) expect(facts.activeInView).toBe(true)
   for (const name of [/Queue prompt|Send prompt/u, /Steer now/u]) {
     const button = pane.getByRole('button', { name })
     if (await button.count()) await expect(button.first()).toBeInViewport({ ratio: 1 })
   }
-  return { metrics, facts }
+  return { metrics, facts, room }
 }
 
-test('skill picker overlays the transcript with a queue while Codex runs: 1280, 820x560, keyboard, catalog states', async () => {
+test('skill picker overlays the transcript with a queue while Codex runs, inside the production shell: 1280, 820x560, keyboard, catalog states', async () => {
   const launched = await launch()
   const { page } = launched
   const record: Record<string, unknown> = {}
@@ -71,6 +104,7 @@ test('skill picker overlays the transcript with a queue while Codex runs: 1280, 
 
     await prompt.click()
     record.closed1280 = await paneMetrics(page, scope)
+    record.closedRoom1280 = await expectInsideRoom(page, pane)
     await prompt.pressSequentially('Also run $')
     await expect(pane.getByRole('listbox', { name: 'Skills' })).toBeVisible()
     record.dollar1280 = await expectOverlay(page, pane, scope, record.closed1280 as PaneMetrics)
@@ -87,6 +121,7 @@ test('skill picker overlays the transcript with a queue while Codex runs: 1280, 
     await prompt.click()
     await prompt.pressSequentially('Then ')
     record.closed820 = await paneMetrics(page, scope)
+    record.closedRoom820 = await expectInsideRoom(page, pane)
     await prompt.pressSequentially('$')
     await expect(pane.getByRole('listbox', { name: 'Skills' })).toBeVisible()
     record.dollar820 = await expectOverlay(page, pane, scope, record.closed820 as PaneMetrics)
@@ -120,11 +155,13 @@ test('skill picker overlays the transcript with a queue while Codex runs: 1280, 
     await expect.poll(count).toBe(before + 1)
     await expect(queue.getByRole('button', { name: /Queued/u })).toContainText('Added')
     await expect(queue.getByRole('button', { name: /Queued/u })).toContainText('note the fix')
-    record.afterQueueEnter = { head: await queue.locator('.thread-followups__head').innerText(), focus: await focusedLabel(page), metrics: await paneMetrics(page, scope) }
+    record.afterQueueEnter = { head: await queue.locator('.thread-followups__head').innerText(), focus: await focusedLabel(page), metrics: await paneMetrics(page, scope), room: await expectInsideRoom(page, pane) }
     await shot(page, 'skills-5-after-steer-and-queue-820x560-dark')
     // Opened, the new row is the one in view.
     await queue.getByRole('button', { name: /Queued/u }).click()
     await expect(queue.locator('.thread-followup').last()).toBeInViewport()
+    record.queueOpenRoom820 = await expectInsideRoom(page, pane)
+    await shot(page, 'skills-5-queue-open-820x560-dark')
     await queue.getByRole('button', { name: /Queued/u }).click()
 
     for (const scenario of ['catalog-error', 'catalog-loading', 'catalog-empty', 'request-failed'] as const) {
@@ -138,7 +175,7 @@ test('skill picker overlays the transcript with a queue while Codex runs: 1280, 
       const metrics = await paneMetrics(page, scope)
       expect(metrics.cardFullyVisible).toBe(true)
       expect(metrics.card).toEqual(closed.card)
-      record[scenario] = metrics
+      record[scenario] = { metrics, room: await expectInsideRoom(page, pane) }
       await shot(page, `skills-6-${scenario}-820x560-dark`)
       await page.keyboard.press('Escape')
     }
@@ -170,9 +207,10 @@ test('split: the picker overlays one pane at 1600x900, 1280x800 and 1280x560', a
       await size(launched, width, height)
       await prompt.click()
       const closed = await paneMetrics(page, scope)
+      await expectInsideRoom(page, left)
       await prompt.pressSequentially('$')
       await expect(left.getByRole('listbox', { name: 'Skills' })).toBeVisible()
-      record[`split${width}x${height}`] = { left: await expectOverlay(page, left, scope, closed), right: await paneMetrics(page, 'section.thread-pane[data-thread-id="footer-links"]') }
+      record[`split${width}x${height}`] = { left: await expectOverlay(page, left, scope, closed), right: await paneMetrics(page, 'section.thread-pane[data-thread-id="footer-links"]'), rightRoom: await expectInsideRoom(page, right) }
       await shot(page, `skills-7-split-picker-${width}x${height}-dark`)
       await page.keyboard.press('Escape')
       await page.keyboard.press('Backspace')

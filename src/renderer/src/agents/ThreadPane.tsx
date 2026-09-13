@@ -134,8 +134,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
           : !assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => handOff(true, () => store.handoffToManagement(thread.id, 'assign'))}>Manage</Button> : null}
         {assigned ? <Button variant="ghost" disabled={state.busy || !connected || handingOff} onClick={() => handOff(false, () => command({ type: 'unassign', threadId: thread.id }))}>Stop managing</Button> : null}
-        {row.settledBy === null ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
-          : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
+        {/* While a handoff waits for its save, nothing else may act on this thread; other panes stay usable. */}
+        {row.settledBy === null ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
+          : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
         {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
         {thread.status === 'running' && !closed ? <Button variant="secondary" disabled={state.busy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
         {actions}
