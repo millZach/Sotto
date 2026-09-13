@@ -8,3 +8,7 @@
 .personal-chat__none p { max-width: 42ch; line-height: 1.5; }
 .personal-chat__none .tt-button { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 38px; font-size: 14px; }
 .personal-chat__start p { max-width: 48ch; line-height: 1.5; }
+.personal-chat__diagnostic { flex: 1 0 100%; min-width: 0; }
+.personal-chat__diagnostic summary { width: fit-content; border-radius: 6px; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.personal-chat__diagnostic summary:hover { color: var(--tt-text); }
+.personal-chat__diagnostic pre { margin: 8px 0 0; font-family: var(--tt-font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

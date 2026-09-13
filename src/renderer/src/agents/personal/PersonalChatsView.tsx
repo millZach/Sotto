@@ -66,9 +66,10 @@ function visibleSubmissions(chat: PersonalChat): readonly Submission[] {
 
 const SUBMISSION_LABEL: Record<Submission['status'], string> = { submitting: 'Sending', accepted: 'Sent', uncertain: 'Unconfirmed', failed: 'Not sent' }
 
-function PendingSubmission({ bridge, chat, store, submission, connected, refreshing, onRefresh }: {
+function PendingSubmission({ bridge, chat, store, submission, connected, refreshing, onRefresh, onDisclosure }: {
   readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly store: PersonalDraftStore
   readonly submission: Submission; readonly connected: boolean; readonly refreshing: boolean; readonly onRefresh: () => void
+  readonly onDisclosure: (control: HTMLElement) => void
 }): ReactNode {
   usePersonalDraft(store, chat)
   const failed = submission.status === 'failed'
@@ -76,7 +77,8 @@ function PendingSubmission({ bridge, chat, store, submission, connected, refresh
     store.recover(bridge, chat, submission)
     document.getElementById(PERSONAL_PROMPT_ID)?.focus()
   }
-  const detail = failed ? submission.error ?? `${PROVIDER} did not take this message.`
+  // The saved error is a raw diagnostic (paths, protocol text), so the card gives a plain reason and keeps it under Details.
+  const detail = failed ? `${PROVIDER} did not take this message.`
     : submission.status === 'uncertain' ? `Sotto could not confirm ${PROVIDER} received this, and will not send it twice.${connected ? '' : ` Connect ${PROVIDER} to check.`}`
       : null
   return <article className="thread-message thread-message--pending" data-role="user" data-status={submission.status} aria-label="Pending message">
@@ -89,6 +91,10 @@ function PendingSubmission({ bridge, chat, store, submission, connected, refresh
       {failed ? <div className="thread-message__delivery-actions">
         {store.holds(chat, submission) ? <span role="status">It is in the composer.</span>
           : <Button variant="secondary" onClick={recover}>Edit in composer</Button>}</div> : null}
+      {failed && submission.error ? <details className="personal-chat__diagnostic">
+        <summary className="tt-focusable" onClick={event => onDisclosure(event.currentTarget)}>Details</summary>
+        <pre>{submission.error}</pre>
+      </details> : null}
     </div> : null}
   </article>
 }
@@ -200,7 +206,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
             <h3>What’s on your mind?</h3><p>This chat has no project. {PROVIDER} brings its usual skills, and the conversation is saved here.</p></div>
           : <MessageList messages={messages} provider={PROVIDER} running={chat.status === 'running'} placement={placement} context={activity} />}
         <LiveActivity thread={chat} connected={state.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
-        {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} />)}
+        {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} onDisclosure={onDisclosure} />)}
         <PersonalRequests bridge={bridge} chat={chat} connected={state.connected} onWriteAnswer={onWriteAnswer} />
       </div>
     </div>

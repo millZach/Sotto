@@ -137,7 +137,8 @@ describe('Chats', () => {
 
       const pending = await screen.findByRole('article', { name: 'Pending message' })
       expect(pending.querySelector('.thread-message__status')).toHaveTextContent('Not sent')
-      expect(within(pending).getByText('Codex could not start this turn.')).toBeVisible()
+      expect(within(pending).getByText('Codex did not take this message.')).toBeVisible()
+      expect(within(pending).getByText('Codex could not start this turn.')).not.toBeVisible()
       expect(within(pending).queryByText(/Edit it in the composer/u)).not.toBeInTheDocument()
       expect(composer).toHaveValue('')
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
@@ -152,6 +153,43 @@ describe('Chats', () => {
       expect(within(pending).getByText('It is in the composer.')).toBeVisible()
       expect(bridge.send).toHaveBeenCalledTimes(1)
       expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    })
+
+    it('gives a long diagnostic a short reason, keeps it whole behind Details, and still recovers after a newer draft', async () => {
+      const diagnostic = String.raw`EPERM: operation not permitted, rename 'C:\Users\zache\AppData\Local\Temp\sotto-e2e-phase3-ui-failed-send-Xy12\e2e-personal-native.json.tmp-4812-1757790000000' -> 'C:\Users\zache\AppData\Local\Temp\sotto-e2e-phase3-ui-failed-send-Xy12\e2e-personal-native.json'`
+      const { bridge, calls, update } = mount(snapshot({ chats: [chat({ draft: { revision: 1, text: '$brainstorm a quiet October', skills: [BRAINSTORM] } })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      fireEvent.keyDown(composer, { key: 'Enter' })
+      await waitFor(() => expect(calls).toContain('draft:2:'))
+      fireEvent.change(composer, { target: { value: 'Somewhere cheap too' } })
+      // The refusal arrives later, from main, after the send was accepted.
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)) })
+      act(() => { update('trip', item => { const last = item.submissions.at(-1)!; last.status = 'failed'; last.error = diagnostic }) })
+
+      const pending = await screen.findByRole('article', { name: 'Pending message' })
+      expect(within(pending).getByText('$brainstorm a quiet October')).toBeVisible()
+      expect(within(pending).getByText('Codex did not take this message.')).toBeVisible()
+      const raw = within(pending).getByText(diagnostic)
+      expect(raw).not.toBeVisible()
+      expect(within(pending).getAllByText(/EPERM/u)).toHaveLength(1)
+      const summary = within(pending).getByText('Details')
+      expect(summary.tagName).toBe('SUMMARY')
+      // Edit in composer comes before Details in the reading and tab order.
+      const edit = within(pending).getByRole('button', { name: 'Edit in composer' })
+      expect(edit.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      fireEvent.click(summary)
+      expect(summary.closest('details')).toHaveAttribute('open')
+      expect(raw).toBeVisible()
+      expect(bridge.send).toHaveBeenCalledTimes(1)
+      expect(composer).toHaveValue('Somewhere cheap too')
+
+      fireEvent.click(edit)
+      expect(composer).toHaveValue('Somewhere cheap too\n\n$brainstorm a quiet October')
+      await waitFor(() => expect(bridge.saveDraft.mock.calls.at(-1)![0]).toEqual({ chatId: 'trip', revision: 4, text: 'Somewhere cheap too\n\n$brainstorm a quiet October', skills: [BRAINSTORM] }))
+      // The diagnostic stays with the card after recovery, for whoever investigates.
+      expect(within(pending).getByText(diagnostic)).toBeVisible()
+      expect(bridge.send).toHaveBeenCalledTimes(1)
     })
 
     it('keeps a draft typed while it was sending, and adds the message after it', async () => {
