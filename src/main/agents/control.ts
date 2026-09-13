@@ -850,14 +850,16 @@ export class AgentControl {
     }
     let result
     if (command.type === 'send' || command.type === 'answer') addTurnContext(turn, command.type === 'send' ? command.text : command.answer)
-    const delegatedAt = Date.now()
+    let providerLatencyMs: number | undefined
     try {
       this.canAct(); this.guardAuthority(command, turn); validate?.()
       if (command.type === 'send' && command.attachments?.length) {
         const attachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
         await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
       }
-      result = await this.dependencies.host.execute(command)
+      const providerStartedAt = Date.now()
+      try { result = await this.dependencies.host.execute(command) }
+      finally { providerLatencyMs = Math.max(0, Date.now() - providerStartedAt) }
     } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if (command.type === 'send' && draftId) this.setDelivery(command.threadId, draftId, 'failed')
@@ -865,10 +867,10 @@ export class AgentControl {
       if (command.type === 'send' && command.attachments?.length) await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
       throw error
     } finally {
-      if (turn) turn.delegationMs += Date.now() - delegatedAt
-      if (command.type === 'send' && draftId) {
+      if (turn) turn.delegationMs += providerLatencyMs ?? 0
+      if (command.type === 'send' && draftId && providerLatencyMs !== undefined) {
         const delivery = this.state.deliveries?.find(item => item.threadId === command.threadId && item.draftId === draftId)
-        this.setDelivery(command.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs: Math.max(0, Date.now() - delegatedAt) })
+        this.setDelivery(command.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
     // An exact native message already reconciled this outbox item. Delivery is
