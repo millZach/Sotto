@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -12,6 +13,42 @@ import type { AgentBridge, AgentState } from '../../../src/shared/agents'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('thread navigation through the real renderer connection and controller', () => {
+  it('persists a newer draft while a different thread waits for provider acknowledgement', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-connection-'))
+    if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-connection-')) throw new Error('Unexpected fixture directory')
+    const host = new E2EAgentHost()
+    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
+    const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner,
+      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    let release!: () => void
+    const gate = new Promise<void>(done => { release = done })
+    let sending: Promise<AgentState | null> | undefined
+    let saving: Promise<AgentState | null> | undefined
+    try {
+      await credentials.load(); await control.start(); await control.command({ type: 'connect' })
+      const execute = host.execute.bind(host)
+      vi.spyOn(host, 'execute').mockImplementation(async command => { if (command.type === 'send') await gate; return execute(command) })
+      const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: command => control.command(command) }
+      const { result } = renderHook(() => useAgentConnection(bridge))
+      await waitFor(() => expect(result.current.state).not.toBeNull())
+      act(() => { sending = result.current.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Pending provider acknowledgement.' }) })
+      await waitFor(() => expect(result.current.state?.deliveries?.at(-1)?.status).toBe('submitting'))
+      const revision = randomUUID()
+      act(() => { saving = result.current.command({ type: 'save-thread-draft', threadId: 'docs', draftId: revision, text: 'Continue drafting while Workshop sends.' }) })
+      await waitFor(() => expect(control.get().threadDrafts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ threadId: 'docs', draftId: revision, text: 'Continue drafting while Workshop sends.' }),
+      ])))
+      await act(async () => { await saving })
+      expect(control.get().deliveries?.at(-1)?.status).toBe('submitting')
+      await act(async () => { release(); await sending })
+      expect(control.get().threadDrafts?.find(draft => draft.threadId === 'docs')?.text).toBe('Continue drafting while Workshop sends.')
+    } finally {
+      await act(async () => { release(); await sending; await saving })
+      cleanup(); control.dispose(); await control.privacyChanged()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it.each(['refresh', 'reasoning'] as const)('renders authoritative cached selection while %s is still pending', async pending => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-connection-'))
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-connection-')) throw new Error('Unexpected fixture directory')

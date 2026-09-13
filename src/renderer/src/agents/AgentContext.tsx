@@ -50,11 +50,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         return null
       }
     }
-    // Audio controls must not wait for a provider operation or model response.
-    // The main-process controller gives these same commands an immediate lane.
+    // Local draft persistence and audio controls must not wait for a provider
+    // operation or model response. The controller gives them immediate lanes too.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    if (request.type === 'select-thread' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    if (request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
     const operation = tail.current.then(run)
     tail.current = operation
     return operation
