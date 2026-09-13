@@ -26,7 +26,7 @@ test('provider configuration and coordinator choices have separate settings', as
     await expect(panel.getByRole('combobox', { name: 'Reasoning account', exact: true })).toHaveCount(0)
     const before = await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration)
     const nav = page.getByRole('navigation', { name: 'Settings sections' })
-    await expect(nav.getByRole('link')).toHaveText(['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Application'])
+    await expect(nav.getByRole('link')).toHaveText(['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application'])
     const sections = page.locator('.settings-scroll > .settings-section')
     await expect(sections.nth(3)).toHaveAttribute('id', 'settings-providers')
     await expect(sections.nth(4)).toHaveAttribute('id', 'settings-agents')

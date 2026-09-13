@@ -32,7 +32,7 @@ async function capture(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `artifacts/provider-recovery/${name}-desktop.png`, animations: 'disabled' })
   await page.setViewportSize({ width: 760, height: 850 })
   await page.screenshot({ path: `artifacts/provider-recovery/${name}-760.png`, animations: 'disabled' })
-  const notice = page.getByRole('region', { name: 'Recovered work' })
+  const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
   const bounds = await (await notice.count() ? notice : page.getByRole('region', { name: 'Thread workspace' })).boundingBox()
   expect(bounds).not.toBeNull()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
@@ -54,7 +54,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
   page.on('pageerror', error => rendererErrors.push(error.message))
   try {
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
-    const notice = page.getByRole('region', { name: 'Recovered work' })
+    const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
     await expect(notice.getByRole('textbox', { name: 'Recovered draft' })).toHaveValue(draft)
     await expect(notice).toContainText(attachment.name)
     let state = await page.evaluate(async () => window.sotto!.agents!.get())
