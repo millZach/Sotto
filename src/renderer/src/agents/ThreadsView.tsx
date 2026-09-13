@@ -26,11 +26,32 @@ export interface ThreadToolsProps {
 }
 export type ThreadToolsSlot = (props: ThreadToolsProps) => ReactNode
 
+/** What a per-pane slot receives: that pane's thread, whether it holds focus, and a way to put the cursor in its composer. */
+export interface ThreadPaneSlotProps {
+  readonly row: ThreadRow
+  readonly state: AgentState
+  readonly command: Command
+  readonly focused: boolean
+  readonly focusPrompt: () => void
+}
+export type ThreadPaneSlot = (props: ThreadPaneSlotProps) => ReactNode
+
 export interface ThreadsViewProps {
   readonly onOpenAgents: () => void
   readonly now?: number | undefined
   /** One shared tools panel, rendered beside the thread panes. */
   readonly tools?: ThreadToolsSlot | undefined
+  /** Once, at the end of the focused pane's header actions (the tools panel's toggle). */
+  readonly focusedPaneActions?: ReactNode
+  /** In each pane's header, after the project title. */
+  readonly paneCrumb?: ThreadPaneSlot | undefined
+  /** In each pane, directly above its composer. */
+  readonly paneNotice?: ThreadPaneSlot | undefined
+  /**
+   * The threads shown in panes, including one hidden by narrow focus, whenever that list changes; an empty list
+   * when Threads closes. It is for keeping those threads current and never selects or grants anything.
+   */
+  readonly onPaneThreadsChange?: ((threadIds: readonly string[]) => void) | undefined
   readonly layoutStore?: SplitLayoutStore | undefined
   /** Test-only: the pane area's width where layout measurement is unavailable. */
   readonly paneAreaWidth?: number | undefined
@@ -45,7 +66,7 @@ function useClock(fixed: number | undefined): number {
   return fixed ?? tick
 }
 
-export function ThreadsView({ onOpenAgents, now: fixedNow, tools, layoutStore = splitLayoutStore, paneAreaWidth }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const now = useClock(fixedNow)
   const [query, setQuery] = useState('')
@@ -80,6 +101,19 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, layoutStore = 
   // Leaving a thread (or the page) saves its latest revision now instead of after the debounce.
   useEffect(() => () => { if (focusedId !== null) store.flush(focusedId) }, [focusedId, store])
   useEffect(() => () => store.flushAll(), [store])
+  // Report the threads on screen once per change, and clear them when Threads closes.
+  const paneThreads = useRef({ sent: '[]', notify: onPaneThreadsChange })
+  useEffect(() => { paneThreads.current.notify = onPaneThreadsChange })
+  const paneKey = JSON.stringify(paneIds)
+  useEffect(() => {
+    if (paneKey === paneThreads.current.sent) return
+    paneThreads.current.sent = paneKey
+    paneThreads.current.notify?.(JSON.parse(paneKey) as string[])
+  }, [paneKey])
+  useEffect(() => {
+    const current = paneThreads.current
+    return () => { if (current.sent !== '[]') current.notify?.([]) }
+  }, [])
 
   const openThread = useCallback((threadId: string): void => { setPending(null); void command({ type: 'select-thread', threadId }) }, [command])
   /** The user put this pane in focus: it takes the selection. Nothing else ever sends select-thread from here. */
@@ -145,9 +179,11 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, layoutStore = 
     const row: ThreadRow | undefined = rowsById.get(threadId)
     if (row === undefined) return null
     const focused = threadId === focusedId
+    const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenThread={openThread}
-      onClose={split ? () => close(threadId) : undefined} onFocusPane={() => focusPane(threadId)} />
+      onClose={split ? () => close(threadId) : undefined} onFocusPane={() => focusPane(threadId)}
+      crumb={paneCrumb?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
   }
 
   return <div className="management-view threads-view" onKeyDown={onKeyDown}>

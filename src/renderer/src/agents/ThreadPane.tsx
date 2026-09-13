@@ -58,13 +58,19 @@ export interface ThreadPaneProps {
   readonly onClose?: (() => void) | undefined
   /** An unfocused managed pane asks to take the selection before writing. */
   readonly onFocusPane?: (() => void) | undefined
+  /** Placed after the project title in the header. */
+  readonly crumb?: ReactNode
+  /** Placed at the end of the header actions. */
+  readonly actions?: ReactNode
+  /** Placed directly above the composer. */
+  readonly notice?: ReactNode
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, crumb, actions, notice }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const submissions = useSubmissions(store)
   const thread = row.thread
@@ -89,7 +95,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   return <>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
-        <span className="thread-workspace__crumb"><ProviderMark provider={row.providerId} name={row.provider} size={16} /><span>{row.project?.title ?? row.provider}</span>
+        <span className="thread-workspace__crumb"><ProviderMark provider={row.providerId} name={row.provider} size={16} /><span>{row.project?.title ?? row.provider}</span>{crumb}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
         </span>
@@ -103,6 +109,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
         {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
         {thread.status === 'running' && !closed ? <Button variant="secondary" disabled={state.busy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
+        {actions}
       </div>
       {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
@@ -116,10 +123,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         }} />
     </ThreadTranscript>
     <div className="thread-workspace__compose">
+      {notice}
       {managed && !focused ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary" onClick={() => { onFocusPane?.(); window.setTimeout(() => document.getElementById('agent-prompt')?.focus(), 0) }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} promptId={promptId} onSend={() => setFollowSignal(signal => signal + 1)} />}
+            : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} onSend={() => setFollowSignal(signal => signal + 1)} />}
     </div>
   </>
 }

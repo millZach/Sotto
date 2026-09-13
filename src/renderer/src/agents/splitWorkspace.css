@@ -3,7 +3,8 @@
    Selectors carry .threads-view because this sheet loads before threads.css. Type sizes follow threads.css. */
 .threads-view .thread-workspace__body { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
 .threads-view .thread-workspace__body > .thread-workspace__empty { flex: 1; }
-.threads-view .thread-workspace__tools { display: flex; flex: none; min-height: 0; border-left: 1px solid var(--tt-hairline); }
+/* The tools panel draws its own edge and may overlay the panes from here, so this box adds no border or clipping. */
+.threads-view .thread-workspace__tools { position: relative; display: flex; flex: none; min-height: 0; }
 .threads-view .thread-panes { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: thread-panes / inline-size; }
 .threads-view .thread-panes__row { position: relative; display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .threads-view .thread-pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; container: thread-pane / inline-size; }

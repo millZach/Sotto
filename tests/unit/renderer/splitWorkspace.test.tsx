@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { ThreadsView, type ThreadToolsProps } from '../../../src/renderer/src/agents/ThreadsView'
+import { ThreadsView, type ThreadToolsProps, type ThreadsViewProps } from '../../../src/renderer/src/agents/ThreadsView'
 import {
   MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE, clampShare, closePane, isNarrow, openBeside, prune, replacePane, resizeSplit, retarget, threadPromptId,
 } from '../../../src/renderer/src/agents/splitLayout'
@@ -54,7 +54,7 @@ describe('split layout model', () => {
 })
 
 /** Manual threads only, with a controller that moves the selection when asked. */
-function mount(options: { readonly width?: number; readonly store?: SplitLayoutStore; readonly tools?: (props: ThreadToolsProps) => React.ReactNode; readonly activeThreadId?: string } = {}) {
+function mount(options: { readonly width?: number; readonly store?: SplitLayoutStore; readonly tools?: (props: ThreadToolsProps) => React.ReactNode; readonly activeThreadId?: string; readonly slots?: Partial<ThreadsViewProps> } = {}) {
   const initial = threadsStateFixture()
   initial.assignments = []
   initial.queue = []
@@ -73,7 +73,7 @@ function mount(options: { readonly width?: number; readonly store?: SplitLayoutS
   })
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
   const store = options.store ?? new SplitLayoutStore()
-  const view = (width: number) => <ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={store} paneAreaWidth={width} tools={options.tools} />
+  const view = (width: number) => <ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={store} paneAreaWidth={width} tools={options.tools} {...options.slots} />
   const rendered = render(view(options.width ?? WIDE))
   const pane = (title: string) => screen.getByRole('region', { name: title })
   const prompt = (title: string) => within(pane(title)).getByRole('textbox', { name: 'Prompt', exact: true })
@@ -275,5 +275,36 @@ describe('split thread workspace', () => {
     render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={store} paneAreaWidth={WIDE} />)
     expect(within(screen.getByRole('group', { name: 'Thread panes' })).getAllByRole('region')).toHaveLength(2)
     expect(seen).toContain('wav-stall')
+  })
+
+  it('mounts per-pane slots on their own thread and reports the threads on screen without selecting', async () => {
+    const reported: (readonly string[])[] = []
+    const view = mount({ slots: {
+      onPaneThreadsChange: ids => reported.push(ids),
+      paneCrumb: pane => <span data-testid="crumb">{pane.row.thread.id}</span>,
+      paneNotice: pane => <button type="button" onClick={pane.focusPrompt}>Notice for {pane.row.thread.id}</button>,
+      focusedPaneActions: <button type="button">Files</button>,
+    } })
+    expect(reported).toEqual([['grok-previews']])
+    await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
+    expect(reported.at(-1)).toEqual(['grok-previews', 'wav-stall'])
+    for (const [title, id] of [['Grok voice previews', 'grok-previews'], ['Streaming WAV stall', 'wav-stall']] as const) {
+      expect(within(view.pane(title)).getByTestId('crumb')).toHaveTextContent(id)
+    }
+    expect(within(view.pane('Streaming WAV stall')).getByRole('button', { name: 'Files' })).toBeInTheDocument()
+    expect(within(view.pane('Grok voice previews')).queryByRole('button', { name: 'Files' })).toBeNull()
+    fireEvent.click(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Notice for grok-previews' }))
+    expect(view.prompt('Grok voice previews')).toHaveFocus()
+    // Narrow focus hides a pane but it is still on screen for this purpose; the list is unchanged and nothing is selected.
+    const [count, selections] = [reported.length, view.selections()]
+    view.resize(700)
+    view.resize(WIDE)
+    expect(reported).toHaveLength(count)
+    expect(view.selections()).toEqual(selections)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Close Grok voice previews pane' })) })
+    expect(reported.at(-1)).toEqual(['wav-stall'])
+    view.rendered.unmount()
+    expect(reported.at(-1)).toEqual([])
+    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([])
   })
 })
