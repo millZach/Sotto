@@ -1,0 +1,29 @@
+{
+  "platform": "win32",
+  "target": "win-unpacked",
+  "asarBytes": 41547062,
+  "asarSha256": "1560885b7375a97cac54ee093a0f17f114a0429f1e7efcbd36340acc8c6f0139",
+  "executableBytes": 225520128,
+  "provenance": {
+    "sourceCommit": "7a166299f2b855b83e1b6079b29a2e21b7f5f6a6",
+    "buildInputsRevision": "09b2438591da6eed213194cb501b5afd89237a41c9b5aed2e511e063deecd79a",
+    "buildSha256": "61c5ae1afe3b28f8145b4eaaee01b94cc40f51b1e5015d051c7c8c5d2c760b94",
+    "artifactCount": 84
+  },
+  "memoryStore": {
+    "sqliteVersion": "3.53.1",
+    "migrationVersion": 3,
+    "matchedId": "memory-probe",
+    "fts5": true,
+    "terminal": {
+      "modules": "148",
+      "napi": "10",
+      "exitCode": 0,
+      "output": "SOTTO_PTY_PACKAGE_OK"
+    }
+  },
+  "smoke": {
+    "language": "auto",
+    "workletUrl": "file:///D:/Talk%20to%20Text%20Application/release/phase-three-verification-7a16629/win-unpacked/resources/app.asar/out/renderer/audio-capture-worklet.js"
+  }
+}
