@@ -251,6 +251,60 @@ describe('appearance settings', () => {
     expect(await screen.findByLabelText('Theme name')).toHaveValue('Fern copy')
   })
 
+  it('returns keyboard focus to the button that opened the editor, however it closes', async () => {
+    const user = userEvent.setup()
+    const night = theme('Night', 'dark')
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', darkTheme: 'night', customThemes: [night] }
+    renderSettings(settings)
+    render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
+    const openWithKeyboard = async (label: string): Promise<HTMLElement> => {
+      const opener = screen.getByRole('button', { name: label })
+      opener.focus()
+      await user.keyboard('{Enter}')
+      await waitFor(() => expect(screen.getByLabelText('Theme name')).toHaveFocus())
+      return opener
+    }
+
+    const create = await openWithKeyboard('Create theme')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(create).toHaveFocus())
+
+    const duplicate = await openWithKeyboard('Duplicate Fern')
+    screen.getByRole('button', { name: 'Close the theme editor' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(duplicate).toHaveFocus())
+
+    const edit = await openWithKeyboard('Edit Night')
+    screen.getByRole('button', { name: 'Cancel' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(edit).toHaveFocus())
+  })
+
+  it('leaves a replacing editor its focus, and restores nothing once the opener is gone', async () => {
+    const user = userEvent.setup()
+    const page = render(<AppearanceSettings settings={DEFAULT_SETTINGS} platform="win32" onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
+    render(<ThemeEditorHost settings={DEFAULT_SETTINGS} onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
+    screen.getByRole('button', { name: 'Create theme' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByLabelText('Theme name')).toHaveFocus())
+
+    // The gallery stays usable beside the non-modal editor; opening another session replaces this one.
+    const duplicate = screen.getByRole('button', { name: 'Duplicate Fern' })
+    duplicate.focus()
+    await user.keyboard('{Enter}')
+    const name = await screen.findByDisplayValue('Fern copy')
+    await act(async () => { await Promise.resolve() })
+    expect(name).toHaveFocus()
+
+    page.unmount()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await act(async () => { await Promise.resolve() })
+    expect(document.body).toHaveFocus()
+    expect(duplicate).not.toBeInTheDocument()
+  })
+
   it('previews every slider step at once and saves only where the hand settles', async () => {
     const { save } = renderSettings({})
     const contrast = screen.getByRole('slider', { name: 'Contrast' })

@@ -249,14 +249,17 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   }, [activeAppearance, colorsByAppearance])
   useEffect(() => () => appearancePreview.setDraft(null), [])
 
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    return () => {
-      queueMicrotask(() => {
-        if (previous?.isConnected) previous.focus()
-      })
-    }
-  }, [])
+  // Read while rendering, before the name field's autoFocus moves focus into
+  // the panel, so this is the button that opened the editor.
+  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null))
+  useEffect(() => () => {
+    queueMicrotask(() => {
+      // Only focus the panel took down with it comes back; a replacing
+      // editor's name field or anything focused elsewhere keeps it.
+      const lost = document.activeElement === null || document.activeElement === document.body
+      if (lost && opener?.isConnected) opener.focus()
+    })
+  }, [opener])
 
   // Typing a name whose theme already owns this appearance flips the draft to the free side.
   const mergeKey = `${mergeTarget?.id ?? ''}:${takenAppearances.join(',')}`
