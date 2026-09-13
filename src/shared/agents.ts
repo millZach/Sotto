@@ -290,6 +290,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
   z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
   z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional() }).strict(),
   z.object({ type: z.literal('unassign'), threadId: id }).strict(),

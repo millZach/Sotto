@@ -86,6 +86,8 @@ export class AgentControl {
   private selectionRevision = 0
   private manualDraftId: string | null = null
   private readonly manualSends = new Map<string, Promise<AgentState>>()
+  /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
+  private viewedThreadIds: readonly string[] = []
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
   private readonly feedbackReady = new Set<ActiveTurn>()
   private contextActivityAt = Date.now()
@@ -306,6 +308,7 @@ export class AgentControl {
   private observe(...threadIds: string[]): void {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
       ...(this.state.activeThreadId ? [this.state.activeThreadId] : []),
+      ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
   }
   private thread(id: string | null): AgentThread {
@@ -392,6 +395,11 @@ export class AgentControl {
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
+    if (command.type === 'observe-threads') {
+      this.viewedThreadIds = [...new Set(command.threadIds)].filter(id => this.state.host.threads.some(thread => thread.id === id))
+      this.observe()
+      return Promise.resolve(this.get())
+    }
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     const receivedAt = performance.now()
     let admission: Promise<Error | undefined> | undefined

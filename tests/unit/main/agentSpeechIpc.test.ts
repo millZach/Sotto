@@ -72,6 +72,7 @@ describe('agent command IPC authorization', () => {
     { type: 'voice-state', status: 'idle', error: null },
     { type: 'check-reasoning', provider: 'codex' },
     { type: 'preview-voice' },
+    { type: 'observe-threads', threadIds: ['workshop', 'docs'] },
   ])('keeps privileged command %j main-only', async command => {
     const f = fixture()
     await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
