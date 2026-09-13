@@ -1,0 +1,108 @@
+/* The shared tools panel beside the thread panes, in the sidebar's tone so both edges of the workspace read
+   as supporting columns around the conversation. Type: tree rows and controls 14px, file text 14px mono,
+   paths and notices 12–13px. Narrow windows overlay the panel instead of shrinking the panes. */
+.tools-panel {
+  --tools-bg: var(--tt-sidebar, #050706);
+  --tools-hover: var(--tt-hover, rgb(255 255 255 / 6%));
+  position: relative; z-index: 5; display: flex; flex: none; width: var(--tools-width, 380px); min-height: 0; height: 100%;
+}
+.tools-panel[data-mode='overlay'] { width: 0; }
+.tools-panel__sheet {
+  position: absolute; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: var(--tools-width, 380px); min-width: 0;
+  border-left: 1px solid var(--tt-hairline); background: var(--tools-bg); color: var(--tt-text-2);
+}
+.tools-panel[data-mode='overlay'] .tools-panel__sheet { box-shadow: var(--tt-shadow-lg); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .tools-panel__sheet { animation: tools-arrive .16s ease-out; }
+  :root:not([data-reduced-motion='on']) .tools-panel [data-busy] svg { animation: tools-spin .8s linear infinite; }
+  :root:not([data-reduced-motion='on']) .tools-panel .files-tree__chevron { transition: transform .16s ease; }
+  :root:not([data-reduced-motion='on']) .tools-panel .files-tree__loading,
+  :root:not([data-reduced-motion='on']) .tools-panel .files-preview__loading { animation: tools-late .3s step-end both; }
+}
+@keyframes tools-arrive { from { opacity: 0; transform: translateX(12px); } }
+@keyframes tools-spin { to { transform: rotate(360deg); } }
+@keyframes tools-late { from { visibility: hidden; } }
+
+/* The left edge resizes; it shows the accent only while it is used. */
+.tools-panel__resize { position: absolute; top: 0; bottom: 0; left: -4px; z-index: 1; width: 8px; cursor: col-resize; touch-action: none; outline-offset: -3px; }
+.tools-panel__resize::before { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; content: ''; }
+.tools-panel__resize:is(:hover, :focus-visible)::before { background: var(--tt-activity); }
+
+.tools-panel__head { flex: none; border-bottom: 1px solid var(--tt-hairline); }
+.tools-panel__bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 6px 8px 0 10px; }
+.tools-surfaces { display: flex; gap: 2px; min-width: 0; }
+.tools-surfaces__tab { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.tools-surfaces__tab:hover { color: var(--tt-text-2); }
+.tools-surfaces__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
+.tools-panel__actions { display: flex; align-items: center; gap: 2px; padding-bottom: 5px; }
+
+.tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
+.tools-panel .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
+.tools-panel .files-icon--small { width: 28px; height: 28px; border-radius: 7px; }
+.tools-panel .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
+.tools-panel .files-link:hover { border-color: var(--tt-border); }
+.tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
+
+.tools-panel__identity { display: grid; gap: 2px; padding: 10px 8px 10px 16px; }
+.tools-panel__thread { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 8px; }
+.tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.tools-panel__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 999px; color: var(--tt-accent-text); font-size: 12px; }
+.tools-panel__path { display: flex; align-items: center; gap: 2px; min-width: 0; }
+/* Long paths lose their start, not the folder name at the end. */
+.tools-panel__path-text { flex: 1; min-width: 0; margin-right: 4px; overflow: hidden; color: var(--tt-text-muted); direction: rtl; font-family: var(--tt-font-mono); font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.tools-panel__path-text > bdi { direction: ltr; unicode-bidi: isolate; }
+
+.tools-panel__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; container: tools-body / inline-size; }
+.tools-panel__status:empty { display: none; }
+.tools-panel__status { position: absolute; bottom: 14px; left: 50%; z-index: 2; margin: 0; padding: 7px 14px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); font-size: 13px; white-space: nowrap; transform: translateX(-50%); }
+
+/* Files: the tree, and the open file stacked beneath it (side by side once the panel is wide). */
+.files-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.files-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 8px 0; padding: 4px 4px 4px 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-2); font-size: 13px; line-height: 1.4; }
+.files-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px 6px 18px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.files-surface[data-preview] > .files-tree { flex: 0 0 auto; height: clamp(120px, 36%, 340px); border-bottom: 1px solid var(--tt-hairline); padding-bottom: 6px; }
+@container tools-body (min-width: 600px) {
+  .files-surface[data-preview] { flex-direction: row; }
+  .files-surface[data-preview] > .files-tree { width: 240px; height: auto; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
+}
+.files-tree__list { display: flex; flex-direction: column; min-width: max-content; }
+.files-tree__item, .files-tree__status { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px 0 calc(6px + var(--files-depth, 0) * 16px); border-radius: 7px; font-size: 14px; }
+.files-tree__item { border: 1px solid transparent; color: var(--tt-text-2); cursor: pointer; user-select: none; }
+.files-tree__item > svg { flex: none; color: var(--tt-text-muted); }
+.files-tree__item:hover { background: var(--tools-hover); color: var(--tt-text); }
+.files-tree__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.files-tree__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
+.files-tree__item[data-kind='unavailable'] { color: var(--tt-text-muted); cursor: default; }
+.files-tree__chevron { display: grid; place-items: center; flex: none; width: 14px; color: var(--tt-text-muted); }
+.files-tree__item[aria-expanded='true'] .files-tree__chevron { transform: rotate(90deg); }
+.files-tree__name { white-space: nowrap; }
+.files-tree__status { gap: 10px; padding-left: calc(26px + var(--files-depth, 0) * 16px); color: var(--tt-text-muted); font-size: 13px; cursor: default; }
+.files-tree__status .files-link { min-height: 28px; font-size: 13px; }
+
+.files-preview { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.files-preview__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-height: 44px; padding: 0 6px 0 16px; border-bottom: 1px solid var(--tt-hairline); }
+.files-preview__title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.files-preview__name { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.files-preview__meta { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.files-preview__actions { display: flex; align-items: center; gap: 2px; }
+.files-preview__actions .files-toggle { margin-right: 4px; }
+.files-preview__body { position: relative; flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.files-preview__text { box-sizing: border-box; min-width: 100%; width: max-content; margin: 0; padding: 14px 16px 24px; color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: 14px; line-height: 1.6; tab-size: 2; white-space: pre; }
+.files-preview__text:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.files-preview__note { margin: 12px 16px 0; color: var(--tt-text-muted); font-size: 13px; }
+.files-preview__markdown { padding: 16px 18px 28px; color: var(--tt-text); }
+.files-preview__image { display: grid; place-items: center; min-height: 100%; padding: 16px; }
+.files-preview__image img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: var(--tt-code-bg); image-rendering: auto; }
+.files-preview__loading { margin: 0; padding: 16px; color: var(--tt-text-muted); font-size: 13px; }
+
+.tools-panel .files-problem { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 18px; }
+.tools-panel .files-problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.tools-panel .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.tools-panel .files-problem--root { padding-top: 28px; }
+
+/* Header toggle placed in a pane header by the workspace. */
+.tools-toggle[aria-pressed='true'] { color: var(--tt-text); border-color: var(--tt-border-faint); }
+
+@media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg { animation: none; } }
