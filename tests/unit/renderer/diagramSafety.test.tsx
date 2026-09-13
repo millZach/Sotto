@@ -6,13 +6,13 @@ import {
 import { svgDataUrl, toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
 import { clampPan, clampScale, fitScale } from '../../../src/renderer/src/agents/diagrams/DiagramViewer'
 
-const mermaid = vi.hoisted(() => ({ initialize: vi.fn(), parse: vi.fn(), render: vi.fn() }))
+const mermaid = vi.hoisted(() => ({ initialize: vi.fn(), mermaidAPI: { getDiagramFromText: vi.fn() }, render: vi.fn() }))
 vi.mock('mermaid', () => ({ default: mermaid }))
 
 afterEach(() => {
   vi.useRealTimers()
   mermaid.initialize.mockReset()
-  mermaid.parse.mockReset()
+  mermaid.mermaidAPI.getDiagramFromText.mockReset()
   mermaid.render.mockReset()
 })
 
@@ -162,6 +162,9 @@ describe('diagram palette and viewer geometry', () => {
 
 describe('diagram renderer', () => {
   const palette = readDiagramPalette(undefined)
+  // These renderer lifecycle tests start with an admitted parsed graph. The neighboring
+  // diagramSafety.test.ts exercises the real parser and all resource/complexity boundaries.
+  const parsedGraph = { type: 'stateDiagram', db: { getData: () => ({ nodes: [{ id: 'A' }], edges: [] }) } }
 
   async function renderer() {
     return import('../../../src/renderer/src/agents/diagrams/diagramRenderer')
@@ -169,7 +172,7 @@ describe('diagram renderer', () => {
 
   it('configures Mermaid strictly and returns an inert image with the Sotto label face', async () => {
     const { renderDiagram } = await renderer()
-    mermaid.parse.mockResolvedValue({ diagramType: 'flowchart-v2' })
+    mermaid.mermaidAPI.getDiagramFromText.mockResolvedValue(parsedGraph)
     mermaid.render.mockImplementation(async (id: string, _code: string, container: Element) => {
       expect(container.isConnected).toBe(true)
       expect(container).toHaveAttribute('inert')
@@ -193,7 +196,7 @@ describe('diagram renderer', () => {
 
   it('turns grammar errors into a short line reason', async () => {
     const { renderDiagram, readableDiagramError } = await renderer()
-    mermaid.parse.mockRejectedValue(new Error("Parse error on line 3:\n...B -->> C((\n-----^\nExpecting 'SQE', 'PIPE', got 'PS'"))
+    mermaid.mermaidAPI.getDiagramFromText.mockRejectedValue(new Error("Parse error on line 3:\n...B -->> C((\n-----^\nExpecting 'SQE', 'PIPE', got 'PS'"))
     await expect(renderDiagram('flowchart TD\n  bad', palette)).resolves.toEqual({ ok: false, reason: 'The source has a syntax error on line 3.' })
     expect(mermaid.render).not.toHaveBeenCalled()
     expect(readableDiagramError(new Error('Maximum text size in diagram exceeded'))).toBe('Maximum text size in diagram exceeded.')
@@ -203,7 +206,7 @@ describe('diagram renderer', () => {
   it('reports a slow render, keeps renders one at a time, and retries a slow source later', async () => {
     const { renderDiagram } = await renderer()
     let finishSlow!: (value: { svg: string }) => void
-    mermaid.parse.mockResolvedValue({})
+    mermaid.mermaidAPI.getDiagramFromText.mockResolvedValue(parsedGraph)
     mermaid.render.mockImplementationOnce(() => new Promise(resolve => { finishSlow = resolve }))
     const slow = renderDiagram('stateDiagram-v2\n  slow', palette, 30)
     const next = renderDiagram('stateDiagram-v2\n  next', palette, 30)

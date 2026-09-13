@@ -498,6 +498,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  // Static design fixtures include deliberately unavailable folders. Interactive E2E
+  // journeys need real, profile-owned folders and exercise the production cwd checks.
+  if (testAgentHost !== null && process.env['SOTTO_DESIGN_CAPTURE'] !== '1') {
+    await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
+  }
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = new WorkspaceHost(testAgentHost ?? new ConfiguredProviderHost({
     directory: userDataPath,

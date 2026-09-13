@@ -6,7 +6,8 @@ import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
 import { ProviderMark } from './ProviderMark'
-import { ThreadComposer } from './ThreadComposer'
+import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
+import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
 import { submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
@@ -124,6 +125,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </ThreadTranscript>
     <div className="thread-workspace__compose">
       {notice}
+      {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
+        onRetryAdmission={() => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue') }} /> : null}
       {managed && !focused ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary" onClick={() => { onFocusPane?.(); window.setTimeout(() => document.getElementById('agent-prompt')?.focus(), 0) }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />

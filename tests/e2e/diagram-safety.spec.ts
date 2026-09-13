@@ -87,7 +87,7 @@ test('ordinary admitted kinds still render and malformed input retains a bounded
   }
   const invalid = await probe('flowchart TD\nA[Start --> B')
   expect(invalid.ok).toBe(false)
-  expect(invalid.reason).toMatch(/parse/i)
+  expect(invalid.reason).toMatch(/syntax error on line 3/i)
   expect(invalid.reason!.length).toBeLessThanOrEqual(220)
 })
 

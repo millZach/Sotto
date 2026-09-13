@@ -4,7 +4,7 @@ import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
-import { deliveryFor, deliveryPending, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { ActivityGroupView, LiveActivity } from './ThreadActivity'
@@ -123,6 +123,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // Durable metadata survives a renderer restart; it carries no prompt content.
   // Recover it independently of the current draft and without inventing a message.
   const recovery = (state.deliveries ?? []).filter(item => item.threadId === thread.id && deliveryPending(item.status)
+    // Queue-owned revisions have one status in the queue until native history contains the message.
+    && !queuedRevision(state, thread.id, item.draftId) && !submissions.some(local => local.threadId === thread.id && local.draftId === item.draftId && local.mode === 'queue')
     && !pending.some(local => local.item.draftId === item.draftId)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === thread.id && receipt.draftId === item.draftId))
   const sameThread = firstRendered.current?.threadId === thread.id
