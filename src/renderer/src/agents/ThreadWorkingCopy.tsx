@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw } from 'lucide-react'
 import type { AgentProject, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
@@ -82,7 +82,9 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
 export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCopyProps): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const [open, setOpen] = useState(false)
+  const [alignEnd, setAlignEnd] = useState(false)
   const root = useRef<HTMLSpanElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
   const { running, error, run } = useWorkingCopyAction(thread.id, command)
@@ -93,6 +95,11 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     return () => document.removeEventListener('pointerdown', outside)
   }, [open])
   useEffect(() => { setOpen(false) }, [thread.id])
+  // A chip in a right-hand pane opens its details toward the pane instead of past the window edge.
+  useLayoutEffect(() => {
+    if (!open || !root.current || !panel.current) return
+    setAlignEnd(root.current.getBoundingClientRect().left + panel.current.offsetWidth > document.documentElement.clientWidth - 16)
+  }, [open])
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
   return <span className="working-copy" ref={root} data-status={facts.status}
     onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
@@ -100,7 +107,7 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
       aria-label={`Working copy: ${facts.label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
     </button>
-    {open ? <div id={panelId} className="working-copy__panel" role="group" aria-label="Working copy details">
+    {open ? <div ref={panel} id={panelId} className="working-copy__panel" data-align={alignEnd ? 'end' : undefined} role="group" aria-label="Working copy details">
       <dl>
         {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt>Branch</dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
