@@ -1,0 +1,14 @@
+/* A saved answer whose question is no longer on screen: the request card's ruled block, quieter, read rather than filled in. */
+.request-recovery { border-left-color: var(--tt-hairline); }
+.request-recovery[data-held] { border-left-color: var(--tt-warning); }
+.request-recovery--error { border-left-color: var(--tt-error); }
+.request-recovery__why { margin: -4px 0 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.request-recovery__answers { display: grid; gap: 10px; margin: 0; user-select: text; }
+.request-recovery__answers > div { display: grid; gap: 2px; min-width: 0; }
+.request-recovery__answers > div + div { padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.request-recovery__answers dt { color: var(--tt-text-muted); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.request-recovery__answers dd { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.request-recovery__answers [data-empty] dd { color: var(--tt-text-muted); font-style: italic; }
+.request-recovery__actions, .request-recovery__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.request-recovery__confirm p { margin: 0; flex: 1 1 260px; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+.request-recovery__actions .tt-button, .request-recovery__confirm .tt-button { min-height: 34px; padding: 0 15px; font-size: 14px; }

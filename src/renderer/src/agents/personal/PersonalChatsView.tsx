@@ -9,6 +9,7 @@ import { MessageContent } from '../MessageContent'
 import { ProviderMark } from '../ProviderMark'
 import { AgentRequestCard } from '../requests/AgentRequestCard'
 import { requestMode } from '../requests/requestAnswers'
+import { RequestDraftRecovery } from '../requests/RequestDraftRecovery'
 import { SkillPicker, skillOptionId, useCatalogSkillPicker } from '../SkillPicker'
 import { LiveActivity } from '../ThreadActivity'
 import { liveTurnId, nestActivities, placeActivities } from '../threadActivityView'
@@ -207,6 +208,11 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
         <LiveActivity thread={chat} connected={state.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
         {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} onDisclosure={onDisclosure} />)}
         <PersonalRequests bridge={bridge} chat={chat} connected={state.connected} onWriteAnswer={onWriteAnswer} />
+        {/* Answers saved for questions no live card shows, such as ones Codex closed while Sotto was shut. */}
+        <RequestDraftRecovery owner={{ kind: 'personal', ownerId: chat.id, providerId: chat.providerId }} live={chat.requests} provider={PROVIDER}
+          observation={state.connecting ? 'loading' : !state.connected ? 'disconnected' : chat.historyStatus === 'loading' ? 'loading' : chat.historyStatus === 'error' ? 'unavailable' : 'ready'}
+          observed={JSON.stringify([state.connected, state.connecting, chat.historyStatus, chat.status,
+            chat.requests.map(request => [request.id, request.delivery, request.questions]), chat.decisions?.map(decision => [decision.requestId, decision.status])])} />
       </div>
     </div>
     {away && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" onClick={toEnd}>

@@ -7,6 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
+import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './requests/requestAnswers'
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
@@ -157,6 +158,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           // A managed pane's composer appears only once the pane holds the selection.
           if (managed && !focused) { onFocusPane?.(); window.setTimeout(target, 0) } else target()
         }} />
+      {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
+      <RequestDraftRecovery owner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
+        live={closed ? [] : thread.requests} provider={row.provider}
+        observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
+        observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></ThreadWebLinks>
     <div className="thread-workspace__compose" ref={compose}>
       {notice}
