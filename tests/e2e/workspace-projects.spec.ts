@@ -249,13 +249,15 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await expect(pending.getByRole('button', { name: 'Check again' })).toBeVisible()
     await expect(prompt).toHaveValue('Maybe delivered.')
     await prompt.fill('Edited while unconfirmed.')
-    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    // Sending or queuing: nothing new leaves while the earlier prompt is unconfirmed.
+    await expect(page.getByRole('button', { name: /^(Send|Queue) prompt$/ })).toBeDisabled()
     await page.keyboard.press('Enter')
     await mkdir(ARTIFACTS, { recursive: true })
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'delivery-unconfirmed.png') })
     // Enter on newer text does not start a second send while the first is unconfirmed.
     const afterEnter = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(afterEnter.deliveries!.filter(delivery => delivery.threadId === 'docs').map(delivery => delivery.status).sort()).toEqual(['accepted', 'uncertain'])
+    expect(afterEnter.followups ?? []).toEqual([])
     expect(afterEnter.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text)).toEqual(['First, delivered.'])
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts ?? [])).find(draft => draft.threadId === 'docs')?.text).toBe('Edited while unconfirmed.')
 

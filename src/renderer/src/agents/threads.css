@@ -165,7 +165,7 @@
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
-.thread-prompt__footer > .tt-button { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
+.thread-prompt__actions > .tt-button--icon { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
 /* Model and option controls inside the Threads composer read at control size. */

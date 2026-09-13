@@ -1,0 +1,67 @@
+/* Queue and skills around the Threads composer. Same field, ink and accent as the prompt; nothing new competes with it. */
+
+.thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.thread-prompt__steer.tt-button { min-height: 36px; padding: 0 14px; font-size: 14px; }
+
+/* Follow-up queue: a short ordered list resting on the composer it came from. */
+.thread-followups { margin: 0 12px -1px; padding: 6px 6px 6px; border: 1px solid var(--threads-field-border); border-bottom: 0; border-radius: 14px 14px 0 0; background: color-mix(in srgb, var(--threads-field) 70%, transparent); }
+.thread-followups__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 8px; color: var(--tt-text-muted); font-size: 13px; }
+.thread-followups__count { margin-left: 4px; color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+.thread-followups__head .tt-button { min-height: 32px; font-size: 14px; }
+.thread-followups__error { margin: 2px 8px 6px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
+.thread-followups__list { max-height: 188px; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-followup { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 10px; border-radius: 10px; }
+.thread-followup:hover, .thread-followup:focus-within { background: var(--threads-hover); }
+.thread-followup + .thread-followup { margin-top: 2px; }
+.thread-followup__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.thread-followup__extra { color: var(--tt-text-muted); }
+.thread-followup__state { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.thread-followup__state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.thread-followup__state[data-status='uncertain'], .thread-followup__state[data-status='failed'], .thread-followup[data-status='failed'] > .thread-followup__state { color: var(--threads-warning-text); }
+.thread-followup__state[data-status='paused'] { color: var(--tt-text-2); }
+.thread-followup__tools { display: inline-flex; grid-column: 3; }
+.thread-followup__tools .tt-button--icon { width: 32px; min-height: 32px; }
+.thread-followup__detail { display: flex; flex-wrap: wrap; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 4px 10px; padding-bottom: 4px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.thread-followup__actions { display: inline-flex; gap: 6px; }
+.thread-followup__actions .tt-button, .thread-followup__editor-actions .tt-button { min-height: 32px; font-size: 14px; }
+.thread-followup[data-editing] { display: block; padding: 6px 8px; background: var(--threads-hover); }
+.thread-followup__editor textarea { display: block; width: 100%; field-sizing: content; min-height: 44px; max-height: 140px; padding: 6px 8px; border: 1px solid var(--threads-field-focus); border-radius: 8px; outline: 0; background: var(--threads-field); color: var(--tt-text); font: inherit; font-size: 14px; line-height: 1.5; resize: vertical; }
+.thread-followup__editor-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+/* Skills: a lookup list against the text it edits, inside the prompt field. */
+.thread-prompt > .skill-picker { grid-column: 1 / -1; margin: -6px -8px 8px; padding: 0 0 4px; border-bottom: 1px solid var(--tt-hairline); }
+.skill-picker__list { max-height: 216px; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.skill-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.skill-picker__option[data-active] { background: var(--tt-accent-wash); }
+.skill-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.skill-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.skill-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
+.skill-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; padding: 0 0 0 8px; color: var(--tt-text-muted); font-size: 12px; }
+.skill-picker__notes { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
+.skill-picker__notes [data-tone='warning'] { color: var(--threads-warning-text); }
+.skill-picker__foot[data-message] { min-height: 40px; }
+.skill-picker__notes .skill-picker__message { font-size: 14px; line-height: 1.45; }
+.skill-picker__notes .skill-picker__message:not([data-tone]) { color: var(--tt-text-2); }
+.skill-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.skill-picker__refresh:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
+.skill-picker__refresh:disabled { cursor: default; }
+
+/* The one motion: a queued message settles onto the composer it left. A refresh turns while it works. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-followup { animation: thread-followup-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) .skill-picker__refresh[data-loading] svg { animation: skill-picker-turn 900ms linear infinite; }
+}
+@keyframes thread-followup-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes skill-picker-turn { to { transform: rotate(360deg); } }
+
+@media (max-width: 980px) {
+  .thread-followups { margin-inline: 8px; }
+  .skill-picker__name { max-width: 22ch; }
+}
+/* Short windows and large display scaling: the prompt and its send button stay in view; the lists give up rows. */
+@media (max-height: 760px) {
+  .thread-followups { padding-block: 2px 4px; }
+  .thread-followups__head { min-height: 28px; }
+  .thread-followups__list { max-height: 84px; }
+  .skill-picker__list { max-height: 96px; }
+}

@@ -260,16 +260,17 @@ describe('Threads manual composer', () => {
     await waitFor(() => expect(prompt()).toHaveValue('Draft for the stall'))
   })
 
-  it('states only why a running thread cannot send, even with an empty composer', () => {
+  it('queues by default while a turn runs and says so, even with an empty composer', () => {
     const state = manualState()
     state.host.threads.find(item => item.id === 'grok-previews')!.status = 'running'
     state.host.capabilities = { ...state.host.capabilities, configureThread: true }
     mount(state)
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeInTheDocument()
-    expect(screen.getByText('You can send after this turn finishes.')).toBeVisible()
+    expect(screen.getByText(/^Enter to queue · Shift\+Enter for a new line\./)).toBeVisible()
     expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
     expect(screen.queryByText('Available after this turn finishes.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
   })
 
   it('writes a question’s answer as a request-bound draft and sends it with answer', async () => {

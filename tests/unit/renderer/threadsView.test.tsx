@@ -196,7 +196,8 @@ describe('ThreadsView workspace', () => {
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('My next prompt')
-    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    // A running thread queues the next prompt instead of refusing it.
+    expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
     expect(state.draft).toBe('Keep the saved draft')
   })
 
