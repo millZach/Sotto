@@ -167,6 +167,14 @@ describe('working copy choice', () => {
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
+  it('continues keyboard creation in the thread name once a folder is chosen', async () => {
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
+    setup(command, fixture([actual]))
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'ArrowDown' })
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'Enter' })
+    await waitFor(() => expect(screen.getByLabelText('Thread name')).toHaveFocus())
+  })
+
   it('locks the choice while creation is in flight', async () => {
     let finish: (state: AgentState) => void = () => undefined
     const command = vi.fn(() => new Promise<AgentState>(resolve => { finish = resolve }))

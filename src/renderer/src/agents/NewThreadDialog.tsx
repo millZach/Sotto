@@ -31,6 +31,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
 }): ReactNode {
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
+  const nameInput = useRef<HTMLInputElement>(null)
   const titleId = useId()
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
@@ -70,7 +71,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
     return () => { element?.close?.(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [])
   useEffect(() => { dialog.current?.querySelector('[data-highlighted]')?.scrollIntoView?.({ block: 'nearest' }) }, [highlight])
-  useEffect(() => { if (!selectedFolder) search.current?.focus() }, [selectedFolder])
+  // Keyboard creation continues in the form once a folder is chosen.
+  useEffect(() => { (selectedFolder ? nameInput : search).current?.focus() }, [selectedFolder])
   useEffect(() => { if (!modelId) setModelId(state.host.models.find(model => model.ready)?.id ?? '') }, [modelId, state.host.models])
   const browse = async (): Promise<void> => {
     setError(null)
@@ -143,7 +145,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
     </header>
     {selectedFolder ? <form className="new-thread-dialog__form" onSubmit={event => { event.preventDefault(); void create() }}>
       <div className="new-thread-dialog__folder"><Folder size={22} /><div><strong>{project?.title ?? selectedFolder.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1)}</strong><span>{selectedFolder}</span></div><Button variant="ghost" disabled={submitting} onClick={() => { setProject(null); setFolder(null) }}>Change</Button></div>
-      <label>Thread name<input className="tt-input" placeholder="New thread" value={title} disabled={submitting} onChange={event => setTitle(event.target.value)} /></label>
+      <label>Thread name<input ref={nameInput} className="tt-input" placeholder="New thread" value={title} disabled={submitting} onChange={event => setTitle(event.target.value)} /></label>
       <fieldset className="new-thread-working-copy" disabled={submitting} aria-describedby={workingCopyHint}>
         <legend>Working copy</legend>
         <div className="new-thread-working-copy__choices">
