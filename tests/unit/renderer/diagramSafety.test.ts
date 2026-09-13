@@ -78,10 +78,18 @@ describe('nesting and label work', () => {
     await denied('sequenceDiagram\nloop one\nloop two\nloop three\nloop four\nA->>B: hi\nend\nend\nend\nend')
     await denied('sequenceDiagram\nparticipant A\nactivate A\nactivate A\nactivate A\nactivate A\ndeactivate A\ndeactivate A\ndeactivate A\ndeactivate A')
   })
+  it('admits sibling critical blocks and options without treating options as block endings', async () => {
+    const diagram = await parsed('sequenceDiagram\ncritical First request\nA->>B: Send\noption Retry\nA->>B: Again\noption Stop\nB-->>A: Stop\nend\ncritical Second request\nA->>B: Send\nend')
+    expect(() => assertDiagramSafe(diagram)).not.toThrow()
+  })
   it('bounds a single huge label and many class/ER rows', async () => {
     await denied(`flowchart TD\nA[${'x'.repeat(401)}]`)
     await denied('classDiagram\nclass A {\n' + Array.from({ length: 121 }, (_, i) => `+String member${i}`).join('\n') + '\n}')
     await denied('erDiagram\nA {\n' + Array.from({ length: 121 }, (_, i) => `string member${i}`).join('\n') + '\n}')
+  })
+  it('counts ER display aliases in the per-label and total text budgets', async () => {
+    await denied(`erDiagram\nA["${'x'.repeat(401)}"]`)
+    await denied('erDiagram\n' + Array.from({ length: 14 }, (_, i) => `A${i}["${'x'.repeat(300)}"]`).join('\n'))
   })
 })
 

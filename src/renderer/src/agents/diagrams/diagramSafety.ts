@@ -75,7 +75,7 @@ function labels(values: unknown[]): void {
       seen.add(value)
       const entries = Array.isArray(value) ? value.map(item => ['', item] as const) : Object.entries(value)
       for (const [key, item] of entries) {
-        pending.push({ value: item, label: label || /^(?:label|description|text|message|name|members|methods|annotations|attributes)$/u.test(key) })
+        pending.push({ value: item, label: label || /^(?:label|alias|description|text|message|name|members|methods|annotations|attributes)$/u.test(key) })
       }
     }
   }
@@ -151,8 +151,11 @@ export function assertDiagramSafe(diagram: Pick<Diagram, 'type' | 'db'>): void {
       const actors = db.getActors()
       const messages = db.getMessages()
       limited(actors.size <= DIAGRAM_LAYOUT_LIMITS.actors && messages.length <= DIAGRAM_LAYOUT_LIMITS.messages)
-      const starts = new Set([10, 12, 15, 17, 19, 22, 27, 30, 32])
-      const ends = new Set([11, 14, 16, 18, 21, 23, 28, 31])
+      const kind = db.LINETYPE
+      const starts = new Set<number>([kind.LOOP_START, kind.ALT_START, kind.OPT_START, kind.ACTIVE_START,
+        kind.PAR_START, kind.RECT_START, kind.CRITICAL_START, kind.BREAK_START, kind.PAR_OVER_START])
+      const ends = new Set<number>([kind.LOOP_END, kind.ALT_END, kind.OPT_END, kind.ACTIVE_END,
+        kind.PAR_END, kind.RECT_END, kind.CRITICAL_END, kind.BREAK_END])
       let depth = 0
       let maximum = 0
       for (const message of messages) {
