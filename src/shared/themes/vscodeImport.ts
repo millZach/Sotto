@@ -23,6 +23,7 @@ interface VsCodeRgba extends ThemeRgb { readonly a: number }
 
 /** Every workbench colour the importer reads. Open VSX installs keep only these keys. */
 export const VSCODE_WORKBENCH_COLOR_KEYS = [
+  'focusBorder', 'foreground', 'descriptionForeground', 'disabledForeground', 'contrastBorder', 'errorForeground',
   'activityBar.background', 'activityBarBadge.background', 'badge.background', 'button.background',
   'button.foreground', 'dropdown.background', 'dropdown.border', 'editor.background', 'editor.foreground',
   'editor.selectionBackground', 'editorCursor.foreground', 'editorError.foreground', 'editorGroup.border',

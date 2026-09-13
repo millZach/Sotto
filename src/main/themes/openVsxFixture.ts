@@ -74,6 +74,8 @@ export function createThemeVsix(): Buffer {
   const manifest = {
     name: 'harbor-theme',
     publisher: 'sotto-fixtures',
+    version: '1.2.0',
+    license: 'MIT',
     contributes: {
       themes: [
         { label: 'Harbor Light', uiTheme: 'vs', path: './themes/harbor-light.json' },
@@ -127,6 +129,7 @@ export function createOpenVsxFixtureFetch(vsix: Buffer = createThemeVsix()): Fet
     files: {
       download: `${base}/sotto-fixtures/${name}/1.2.0/file/${name}.vsix`,
       sha256: `${base}/sotto-fixtures/${name}/1.2.0/file/${name}.sha256`,
+      manifest: `${base}/sotto-fixtures/${name}/1.2.0/file/package.json`,
     },
   })
   return async url => {
@@ -136,9 +139,13 @@ export function createOpenVsxFixtureFetch(vsix: Buffer = createThemeVsix()): Fet
     }
     if (parsed.pathname === '/api/sotto-fixtures/harbor-theme') return json(detail('harbor-theme', 'MIT'))
     if (parsed.pathname === '/api/sotto-fixtures/copyleft-theme') return json(detail('copyleft-theme', 'GPL-3.0-only'))
+    if (parsed.pathname === '/api/sotto-fixtures/harbor-theme/1.2.0/file/package.json') return json({
+      publisher: 'sotto-fixtures', name: 'harbor-theme', version: '1.2.0', license: 'MIT',
+      contributes: { themes: [{ path: './themes/harbor-light.json' }, { path: './themes/harbor-dark.json' }] },
+    })
     if (parsed.pathname.endsWith('/harbor-theme.sha256')) return new Response(`${checksum}  harbor-theme.vsix`)
-    if (parsed.pathname.endsWith('/harbor-theme.vsix')) return new Response(null, { status: 302, headers: { location: `${blob}/harbor-theme.vsix` } })
     if (parsed.hostname === 'openvsxorg.blob.core.windows.net') return new Response(new Uint8Array(vsix), { headers: { 'content-length': String(vsix.length) } })
+    if (parsed.pathname.endsWith('/harbor-theme.vsix')) return new Response(null, { status: 302, headers: { location: `${blob}/harbor-theme.vsix` } })
     return json({ error: 'not found' }, 404)
   }
 }
