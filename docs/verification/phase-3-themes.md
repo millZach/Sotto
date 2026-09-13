@@ -23,7 +23,7 @@ Scope: branch `work/phase3-themes`. The built-ins were renamed late at the user'
 
 ## Tests
 
-Focused unit run, 17 files, 348 tests passed:
+Focused unit run, 17 files, 350 tests passed:
 - `themesIpc`, `themesOpenVsx`, `themeOpenVsxCorrections`
 - `designCaptureMatrix`, `notices`
 - `app`, `appearance`, `designSystem`, `diagramSafety` (two files), `messageDiagrams`
@@ -56,6 +56,8 @@ Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e
    - then the bar is dragged, expanded with the keyboard (focus lands on Theme name), minimized again and dragged as low as it goes at 820x560;
    - expanded again, the panel is wholly inside the window with its action visible. This check fails without the fix.
 
+After the rename, `SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts --workers=1` gave 4 passed and 1 skipped; the skipped test needs a clear screen. Its keyboard selector now uses Dusk. That run rewrites tracked phase-1 evidence images, so I restored them rather than committing them. The themes journey asserts the gallery order Sotto, Rose, Fern, Tide, Copper, Dusk, with Tide chosen, and captures `themes-default-1600-dark.png`.
+
 Journey notes (`artifacts/phase-three-themes/journey-notes.txt`):
 - Hovering the Appearance heading labels it "Text".
 - A pick takes about half a second end to end.
@@ -65,6 +67,7 @@ Journey notes (`artifacts/phase-three-themes/journey-notes.txt`):
 ## Evidence
 
 All images are in `artifacts/phase-three-themes/`:
+- `themes-default-1600-dark.png` (first run, new names).
 - `themes-{1280,1600,820x560}-{light,dark,system}.png` and `threads-…` for the same nine combinations.
 - `theme-editor-820x560-light.png` and `theme-editor-resized-820x560-dark.png`.
 - `inspector-hover-1600-dark.png`, `inspector-spotlight-1600-dark.png` and `inspector-diagram-1280-dark.png`.
