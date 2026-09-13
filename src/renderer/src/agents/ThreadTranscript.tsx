@@ -91,6 +91,17 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   </article>
 }
 
+/** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
+const JUMP_BAND_PX = 60
+
+function reachesJumpBand(scroller: HTMLElement): boolean {
+  const view = scroller.getBoundingClientRect()
+  return [...scroller.querySelectorAll('.agent-request')].some(card => {
+    const box = card.getBoundingClientRect()
+    return box.bottom > view.bottom - JUMP_BAND_PX && box.top < view.bottom
+  })
+}
+
 /**
  * The selected thread's history. It follows new content only while the reader is at the end;
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
@@ -117,6 +128,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const [limit, setLimit] = useState(TRANSCRIPT_PAGE)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
+  const [requestUnderJump, setRequestUnderJump] = useState(false)
   const submissions = useSubmissions(store)
   const pending = submissions.filter(item => item.threadId === thread.id)
     .map(item => ({ item, ...submissionStatus(item, state) })).filter(item => item.visible)
@@ -182,6 +194,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (following.current && anchor.current === null && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+      if (scroller.current) setRequestUnderJump(reachesJumpBand(scroller.current))
     })
     observer.observe(element)
     return () => observer.disconnect()
@@ -195,6 +208,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
+    setRequestUnderJump(reachesJumpBand(element))
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
@@ -242,7 +256,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {children}
       </div>
     </div>
-    {away || unseen ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
+    {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
+    {(away || unseen) && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
       <ArrowDown size={16} aria-hidden="true" />{unseen ? 'New messages' : 'Jump to latest'}
     </button> : null}
   </div>

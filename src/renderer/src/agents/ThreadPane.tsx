@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -33,7 +33,7 @@ function ThreadRequests({ row, state, command, blocked, onAnswer }: {
     const voice = state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
     const mode = requestMode(request)
     return <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
-      hint={voice && (mode === 'permission' && !request.permissionChoices?.length || mode === 'legacy-text')
+      hint={voice && (mode === 'permission' && request.permissionChoices === undefined || mode === 'legacy-text')
         ? mode === 'permission' ? 'Say “allow” or “deny”, or choose here.' : 'Say your answer, then “send it”, or write it below.' : undefined}
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
@@ -96,6 +96,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // A send that failed or went unconfirmed is already told by its pending message in this thread; other errors still show.
   const deliveryExplains = error !== null && submissions.some(item => item.threadId === thread.id && item.error === error
     && ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
+  // A refused answer is told in its request card, where it can be answered again; the banner would say it twice.
+  const answerExplains = useSyncExternalStore(requestAnswerStore.subscribe,
+    () => error !== null && thread.requests.some(request => requestAnswerStore.get(thread.id, request.id).error === error))
   const options = <ThreadOptions key={thread.id} thread={thread} state={state} command={command} />
   useLayoutEffect(() => {
     const pending = handoff.current
@@ -145,7 +148,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       </div>
       {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
-    {error && !deliveryExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests row={row} state={state} command={command} blocked={state.busy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={() => {

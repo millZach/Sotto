@@ -75,9 +75,16 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   }
 }
 
+/** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
+function permissionsOnlyInProvider(row: ThreadRow): boolean {
+  const permissions = row.thread.requests.filter(request => request.kind === 'permission')
+  return permissions.length > 0 && permissions.every(request => request.permissionChoices?.length === 0)
+}
+
 /** Why the primary action is off, in one sentence; null when a prompt can go. */
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   if (row.thread.archivedAt) return 'This thread is archived.'
+  if ((row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')) && permissionsOnlyInProvider(row)) return `Sending returns once the request above is answered in ${row.provider}’s app.`
   if (row.request?.kind === 'permission') return 'Allow or deny the request above to continue.'
   // Choices shown in the transcript are answered there; only a plain question takes its answer from the composer.
   const inline = row.thread.requests.find(request => requestMode(request) !== 'legacy-text')
@@ -224,7 +231,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           aria-controls={picker.open && picker.options.length ? listId : undefined}
           aria-expanded={capabilities.skills === true && !answering ? picker.open : undefined}
           aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex) : undefined}
-          placeholder={row.thread.archivedAt ? 'This thread is archived.' : permission ? 'Allow or deny the request above to continue.' : answering ? 'Write your answer…' : 'What would you like to do next?'}
+          placeholder={row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : 'Allow or deny the request above to continue.' : answering ? 'Write your answer…' : 'What would you like to do next?'}
           onChange={event => { editText(event.target.value); picker.track(event.target) }}
           onSelect={event => picker.track(event.currentTarget)}
           onKeyDown={event => {
