@@ -839,6 +839,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           quit: () => app.quit(),
         },
         trustedSenders: () => windows.getTrustedRenderers(),
+        openExternalLink: url => shell.openExternal(url),
         dictation: {
           request(command): void {
             dispatchDictation(command)

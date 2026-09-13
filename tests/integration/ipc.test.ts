@@ -37,6 +37,7 @@ import {
   APP_MINIMIZE,
   APP_QUIT,
   APP_SHOW,
+  EXTERNAL_LINK_OPEN,
   DICTATION_COMMAND,
   DICTATION_REQUEST,
   HISTORY_ADD,
@@ -271,18 +272,21 @@ function createIpcHarness() {
     quit: vi.fn(),
   }
 
+  const openExternalLink = vi.fn<(url: string) => Promise<void>>(async () => undefined)
   const cleanup = registerIpc(ipc, {
     settings,
     history,
     startup,
     hotkeys,
     app,
+    openExternalLink,
     trustedSenders: () => [
       { role: 'main', webContents: trustedContents, url: trustedUrl },
     ],
   })
   return {
     app,
+    openExternalLink,
     cleanup,
     history,
     hotkeys,
@@ -305,6 +309,33 @@ const idleWidgetSnapshot = {
 } as const satisfies WidgetSnapshot
 
 describe('typed preload bridge', () => {
+  it('opens only validated web/mail links through the trusted main bridge', async () => {
+    const harness = createIpcHarness()
+    const bridge = createSottoBridge({
+      invoke: (channel, ...args) => harness.ipc.invokeArgs(channel, args),
+      on: () => undefined, removeListener: () => undefined,
+    }, 'win32')
+    try {
+      for (const url of ['https://example.com/docs?q=signal#state', 'http://localhost:3000/', 'mailto:hello@example.com?subject=Question']) {
+        await expect(bridge.openExternalLink!(url)).resolves.toEqual({ ok: true })
+        expect(harness.openExternalLink).toHaveBeenLastCalledWith(url)
+      }
+      expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
+      for (const url of ['javascript:alert(1)', 'file:///C:/Windows/system32/cmd.exe', 'data:text/html,test', 'ms-settings:privacy', '//example.com', 'https://user:secret@example.com', 'https://example.com\n', 'https:\\example.com', 'mailto:', 'https://']) {
+        expect(() => bridge.openExternalLink!(url)).toThrow()
+        await expect(harness.ipc.invoke(EXTERNAL_LINK_OPEN, url)).rejects.toThrow('Invalid IPC payload')
+      }
+      expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
+      const frame = { parent: null, url: 'file:///C:/Sotto/out/renderer/widget.html' }
+      await expect(harness.ipc.invoke(EXTERNAL_LINK_OPEN, 'https://example.com', {
+        sender: { mainFrame: frame, getURL: () => frame.url, isDestroyed: () => false }, senderFrame: frame,
+      })).rejects.toThrow('Unauthorized IPC sender')
+      expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
+      harness.openExternalLink.mockRejectedValueOnce(new Error('Private OS failure'))
+      await expect(bridge.openExternalLink!('https://example.com')).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    } finally { harness.cleanup() }
+  })
+
   beforeEach(() => {
     electronMock.ipcRenderer.invoke.mockClear()
     electronMock.ipcRenderer.on.mockClear()
@@ -339,6 +370,7 @@ describe('typed preload bridge', () => {
         'onRecoveryNotice',
         'onSettingsChanged',
         'onUpdateStatus',
+        'openExternalLink',
         'platform',
         'polishTranscript',
         'publishWidgetState',
