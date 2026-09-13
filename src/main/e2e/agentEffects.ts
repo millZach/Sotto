@@ -4,7 +4,7 @@ import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../agents/host'
 import type { AgentReasoner } from '../agents/reasoning'
 
-/** External T3 effects only. The real controller, persistence, IPC and both renderers remain in the test. */
+/** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
 export class E2EAgentHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly commands = new Set<string>()
@@ -12,7 +12,7 @@ export class E2EAgentHost implements AgentHost {
   private rejection: string | null = null
   private connectRejection: string | null = null
   private state: AgentHostSnapshot = {
-    ...structuredClone(EMPTY_AGENT_HOST), version: '0.0.38',
+    ...structuredClone(EMPTY_AGENT_HOST), version: 'fixture',
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
     models: [{ id: 'claude:test', provider: 'Claude', name: 'Claude Test', ready: true,
       reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }],

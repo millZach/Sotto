@@ -195,10 +195,10 @@ describe('workspace manual prompt authority and durable dispatch', () => {
     await f.control.command({ type: 'select-thread', threadId: 'docs' })
     await f.control.command({ type: 'compose', text: 'Original draft' })
     const result = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'Different draft' })
-    expect(result.error).toMatch(/existing draft/)
+    expect(result.error).toBeNull()
     expect(result.draft).toBe('Original draft')
     expect(result.draftThreadId).toBe('docs')
-    expect(f.host.attempts).toEqual([])
+    expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'send', threadId: 'workshop', text: 'Different draft' })])
   })
 
   it('answers a pending permission explicitly on an unassigned thread without granting management', async () => {

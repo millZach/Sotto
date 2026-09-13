@@ -8,6 +8,44 @@ import { designThreadsFixture } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
 
+test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
+      await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
+    })
+    await page.reload()
+    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
+    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('A separate manual message.')
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('A separate manual message.')
+    await expect(prompt).toHaveValue('')
+    await prompt.fill('Prepare the next message while Docs runs.')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    await prompt.press('Control+Enter')
+    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-foreign-draft.png' })
+    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: 'workshop', assignments: [] })
+    expect(state.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await expect(prompt).toHaveValue('Keep this saved draft in Workshop.')
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await expect(prompt).toHaveValue('Prepare the next message while Docs runs.')
+    await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Ready for the next message.' }))
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('Prepare the next message while Docs runs.')
+  } finally { await closeSotto(launched) }
+})
+
 test('workspace sends a manual prompt to the selected thread without granting management', async () => {
   const launched = await launchSotto()
   const { page } = launched
@@ -23,6 +61,8 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Explain the next small change.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
+    // Visible pending text precedes native confirmation; wait for the matching receipt to clear the draft.
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
@@ -73,7 +113,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     await speak.click()
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-    await expect(sidebar.getByRole('region', { name: 'Unsettled', exact: true }).getByRole('button')).toHaveCount(5)
+    await expect(sidebar.getByRole('region', { name: 'Projects', exact: true }).locator('.thread-nav__row')).toHaveCount(5)
     await expect(sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(0)
     await sidebar.getByRole('button', { name: /Settled 4/ }).click()
     const release = sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })
@@ -90,7 +130,7 @@ test('settled work stays off attention and session pills, with real timestamps a
 
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     expect(await page.locator('.side-sheet__body').evaluate(node => getComputedStyle(node).scrollbarColor)).toBe('rgb(42, 46, 44) rgba(0, 0, 0, 0)')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agent-configuration-scrollbar.png' })
   } finally {

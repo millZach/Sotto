@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { defaultHotkey } from '../../../src/shared/platform'
 import {
+  ACCENTS,
+  APPEARANCES,
   DEFAULT_SETTINGS,
   SETTINGS_VERSION,
   defaultSettings,
@@ -13,6 +15,8 @@ import {
 const customSettings = {
   version: 1,
   theme: 'light',
+  appearance: 'light',
+  accent: 'violet',
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -58,11 +62,40 @@ describe('settings', () => {
     expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
   })
 
+  it('opens a settings file written before appearance existed in the dark teal Crossing look, whatever its widget theme', () => {
+    for (const theme of ['system', 'light', 'dark'] as const) {
+      const legacy = { ...customSettings, theme } as Record<string, unknown>
+      delete legacy.appearance
+      delete legacy.accent
+      const parsed = parseSettings(legacy)
+      expect(parsed.appearance).toBe('dark')
+      expect(parsed.accent).toBe('teal')
+      // The widget keeps the scheme it already had; appearance never rewrites it.
+      expect(parsed.theme).toBe(theme)
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', accent: 'teal' })
+    }
+  })
+
+  it('keeps every valid appearance and accent choice and recovers an unusable one field by field', () => {
+    for (const appearance of APPEARANCES) expect(parseSettings({ appearance }).appearance).toBe(appearance)
+    for (const accent of ACCENTS) expect(parseSettings({ accent }).accent).toBe(accent)
+    expect(ACCENTS).toEqual(['teal', 'blue', 'violet', 'rose', 'amber', 'green'])
+    const recovered = parseSettings({ appearance: 'black', accent: 'chartreuse', autoPaste: false })
+    expect(recovered.appearance).toBe('dark')
+    expect(recovered.accent).toBe('teal')
+    expect(recovered.autoPaste).toBe(false)
+    expect(parseSettings({ appearance: 'light', accent: 42 })).toMatchObject({ appearance: 'light', accent: 'teal' })
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, appearance: 'sepia' }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, accent: 'TEAL' }).success).toBe(false)
+  })
+
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       version: 1,
       theme: 'system',
+      appearance: 'dark',
+      accent: 'teal',
       reducedMotion: 'system',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',

@@ -14,7 +14,7 @@ function stateFixture(): AgentState {
     configuration: { ...defaultAgentConfiguration(), defaultModelId: 'model', projectsDirectory: 'D:\\Projects' },
     connection: 'connected',
     host: {
-      connected: true, name: 'T3 Code', version: 'test',
+      connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [{ id: 'model', name: 'Available model', provider: 'provider', ready: true }],
       projects: [{ id: 'project', title: 'Workshop', path: 'D:\\Workshop' }, { id: 'docs', title: 'Documentation', path: 'D:\\Docs' }],
@@ -29,7 +29,7 @@ function stateFixture(): AgentState {
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
-    credentials: { t3: true, reasoning: false, grokSpeech: false, secure: true },
+    credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },
   }
@@ -141,7 +141,7 @@ describe('AgentView user workflows', () => {
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     expect(screen.getByLabelText('Reasoning effort')).toBeEnabled()
     fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
@@ -155,7 +155,7 @@ describe('AgentView user workflows', () => {
       models: [{ id: 'first', name: 'First model', reasoningEfforts: ['high'] }] }]
     vi.mocked(useAgents).mockReturnValue(connection(state))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     expect(screen.queryByRole('option', { name: 'Default (First model)' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Reasoning effort')).toBeDisabled()
     expect(screen.queryByRole('option', { name: 'High' })).not.toBeInTheDocument()
@@ -172,7 +172,7 @@ describe('AgentView user workflows', () => {
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     expect(screen.getByRole('option', { name: 'Default (GPT-6 Astra)' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Reasoning model'), { target: { value: 'gpt-6-astra' } })
     fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'ultra' } })
@@ -280,7 +280,7 @@ describe('AgentView user workflows', () => {
     const state = stateFixture()
     vi.mocked(useAgents).mockReturnValue(connection(state))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     expect(screen.getByRole('option', { name: 'ChatGPT subscription · Codex' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Claude subscription · Claude Code' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Grok subscription · Grok Build' })).toBeInTheDocument()
@@ -292,7 +292,7 @@ describe('AgentView user workflows', () => {
     state.credentials.reasoning = true
     vi.mocked(useAgents).mockReturnValue(connection(state))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     expect(screen.getByLabelText('Reasoning API key')).toHaveAttribute('placeholder', expect.stringContaining('Saved securely'))
     fireEvent.change(screen.getByLabelText('Reasoning API key'), { target: { value: 'unsaved-openrouter-key' } })
     fireEvent.change(screen.getByLabelText('Sotto reasoning'), { target: { value: 'openai' } })
@@ -309,7 +309,7 @@ describe('AgentView user workflows', () => {
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     fireEvent.change(screen.getByLabelText('Reasoning API key'), { target: { value: 'unsaved-api-key' } })
     fireEvent.change(screen.getByLabelText('Sotto reasoning'), { target: { value: 'claude' } })
     await waitFor(() => expect(screen.getByText('Claude Max connected')).toBeInTheDocument())
@@ -342,7 +342,7 @@ describe('AgentView user workflows', () => {
     const command = vi.fn(async () => state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     render(<AgentView onOpenThreads={() => undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure agents' }))
     fireEvent.change(screen.getByLabelText('Default projects directory'), { target: { value: 'D:\\New projects' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save connection settings' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: expect.objectContaining({ reasoning: 'claude', projectsDirectory: 'D:\\New projects' }) }))

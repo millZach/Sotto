@@ -1,5 +1,5 @@
 import React, { useState, type ReactNode } from 'react'
-import type { AgentModel, AgentRuntimeMode, AgentState, AgentThread } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { ModelPicker } from './ModelPicker'
 
@@ -35,10 +35,34 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   </div>
 }
 
-export function ThreadOptions({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
+/** Whether a provider can create threads now; hosts without per-provider status answer for themselves. */
+function canCreateWith(state: AgentState, model: AgentModel): boolean {
+  const status = state.host.providers?.find(provider => provider.id === model.providerId)
+  return model.ready && (status ? status.connection === 'connected' && status.capabilities.threads : state.host.connected && state.host.capabilities.threads)
+}
+
+/**
+ * The models a thread may use. Before its first send (`nativeSessionStarted === false`) any ready model
+ * from a connected provider that can create threads is a choice; once a native session exists (or its
+ * start is unknown) the thread stays with its own provider.
+ */
+export function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
+  if (thread.nativeSessionStarted === false) {
+    const models = state.host.models.filter(model => model.id === thread.modelId || canCreateWith(state, model))
+    return { models, locked: false }
+  }
+  return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
+}
+
+export function ThreadOptions({ thread, state, command, turnNote = true }: {
+  readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
+  /** Explain options locked by a running turn; off where the composer already says it cannot send. */
+  readonly turnNote?: boolean
+}): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const disabled = saving || state.busy || state.connection !== 'connected' || thread.status === 'running' || thread.requests.length > 0 || Boolean(thread.archivedAt)
+  const { models, locked } = threadModelChoices(state, thread)
+  const disabled = saving || state.busy || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
   const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
     setSaving(true); setError(null)
     try {
@@ -46,11 +70,16 @@ export function ThreadOptions({ thread, state, command }: { readonly thread: Age
       if (!result || result.error) setError(result?.error ?? 'Could not confirm this change. Try again.')
     } finally { setSaving(false) }
   }
-  if (!state.host.capabilities.configureThread) return null
-  return <div className="thread-options-bar">
-    <ThreadOptionFields models={state.host.models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
+  if (locked && !capabilitiesForThread(state.host, thread).configureThread) return null
+  const provider = state.host.models.find(model => model.id === thread.modelId)?.provider ?? state.host.providers?.find(item => item.id === thread.providerId)?.name
+  const otherProviders = locked && state.host.models.some(model => model.ready && model.providerId !== undefined && model.providerId !== thread.providerId)
+  return <div className="thread-options-bar" data-provider-locked={locked}>
+    <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
       disabled={disabled} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
-    {saving ? <small role="status">Saving...</small> : thread.status === 'running' ? <small>Available after this turn finishes.</small> : null}
+    {saving ? <small role="status">Saving...</small>
+      : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
+        : otherProviders ? <small className="thread-options__lock">This conversation stays with {provider ?? 'its provider'}.</small>
+          : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}
   </div>
 }

@@ -15,7 +15,7 @@ afterEach(async () => {
 })
 async function fixture(wrapped = false, timeout = 1000) {
   const f = await codexFixture(undefined, wrapped, timeout); fixtures.push(f)
-  await f.host.connect(f.connection)
+  await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   return f
 }
@@ -32,6 +32,35 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   return control
 }
 describe('Codex App Server provider adapter', () => {
+  it('reads a newly created unmaterialized thread without turns, then reads its first message normally', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    expect((await f.adapter.refreshThread(threadId)).threads[0]).toMatchObject({ id: threadId, status: 'idle', messages: [] })
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read').map(request => request.params?.includeTurns)).toEqual([true, false])
+    await f.host.execute({ type: 'send', commandId: 'first', threadId, messageId: 'first-message', text: 'First prompt' })
+    expect((await f.adapter.refreshThread(threadId)).threads[0]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'First prompt', commandId: 'first' })]))
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read').at(-1)?.params?.includeTurns).toBe(true)
+  })
+  it('does not treat unrelated thread read rejections as an empty transcript', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    await f.script({ reject: 'thread/read' })
+    await expect(f.adapter.refreshThread(threadId)).rejects.toThrow('Codex rejected the operation')
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read')).toHaveLength(1)
+  })
+  it('keeps a missing saved session unavailable without blocking connection or creating a replacement', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    const nativeId = await f.realId(threadId)
+    f.host.disconnect(); await f.adapter.closed()
+    await f.script({ reject: 'thread/resume', rejection: { code: -32600, message: `no rollout found for thread id ${nativeId}` } })
+    const connected = await f.host.connect()
+    expect(connected.connected).toBe(true)
+    expect(connected.threads[0]).toMatchObject({ id: threadId, status: 'error', historyStatus: 'error', historyError: expect.stringContaining('saved session') })
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/start')).toHaveLength(1)
+    const fresh = await create(f)
+    expect((await f.adapter.refreshThread(fresh.threadId)).connected).toBe(true)
+  })
   it('reads supported reasoning levels and preserves selected thread settings through real RPCs and restart', async () => {
     const f = await fixture()
     expect((await f.host.snapshot()).models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: false })
@@ -44,7 +73,7 @@ describe('Codex App Server provider adapter', () => {
     const rpc = (await f.driver.requests()).findLast(request => request.method === 'thread/resume')!
     expect(rpc.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', config: { model_reasoning_effort: 'low' } })
     f.host.disconnect(); await f.adapter.closed()
-    await f.host.connect(f.connection)
+    await f.host.connect()
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
     await f.host.execute({ type: 'send', commandId: 'send', threadId, messageId: 'message', text: 'Fixture prompt' })
     expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
@@ -54,7 +83,7 @@ describe('Codex App Server provider adapter', () => {
     await f.script({ delay: { method: 'thread/resume', ms: 1000 } })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     f.host.disconnect(); await f.adapter.closed()
-    await f.host.connect(f.connection)
+    await f.host.connect()
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ runtimeMode: 'full-access' })
     const resumes = (await f.driver.requests()).filter(request => request.method === 'thread/resume')
     expect(resumes.filter(request => request.params?.sandbox !== undefined)).toHaveLength(1)
@@ -70,12 +99,12 @@ describe('Codex App Server provider adapter', () => {
   it('reports model listing failure without inventing an available model', async () => {
     const f = await codexFixture(); fixtures.push(f)
     await f.script({ reject: 'model/list' })
-    const snapshot = await f.host.connect(f.connection)
+    const snapshot = await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
     expect(snapshot.models).toEqual([])
     expect(snapshot).toMatchObject({ error: expect.stringMatching(/models.*list|list.*models/iu) })
     await expect(create(f)).rejects.toThrow('Choose an available Codex model.')
-    expect((await f.host.connect(f.connection))).not.toHaveProperty('error')
+    expect((await f.host.connect())).not.toHaveProperty('error')
     expect((await create(f)).result).toEqual({ accepted: true })
   })
   it.each(['answer again', 'interrupt', 'disconnect'] as const)('writes only one accept when its write callback times out before %s', async next => {
@@ -222,7 +251,7 @@ describe('Codex App Server provider adapter', () => {
     await f.script({})
     const before = (await f.host.snapshot()).threads[0]!
     const restarted = await f.driver.restart(); fixtures.push(restarted)
-    await restarted.host.connect(f.connection)
+    await restarted.host.connect()
     expect((await restarted.host.snapshot()).threads[0]).toEqual(before)
   })
   it('rejects a definitive send failure and permits a corrected dispatch', async () => {
@@ -279,7 +308,7 @@ describe('Codex App Server provider adapter', () => {
     await f.host.execute({ type: 'send', commandId: 'send', messageId: 'message', threadId, text: 'Synthetic prompt' })
     const before = (await f.host.snapshot()).threads[0]!
     const restarted = await f.driver.restart(); fixtures.push(restarted)
-    restarted.host.observeThreads?.([threadId]); await restarted.host.connect(f.connection)
+    restarted.host.observeThreads?.([threadId]); await restarted.host.connect()
     expect((await restarted.host.snapshot()).threads[0]).toEqual(before)
     expect((await restarted.driver.requests()).filter(r => r.method === 'thread/resume').at(-1)!.params!.threadId).toBe(await restarted.realId(threadId))
   })

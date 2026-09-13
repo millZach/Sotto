@@ -8,6 +8,9 @@ import { claudeAnswer, claudePending } from '../../src/main/agents/claudeRequest
 import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
+import { AgentControl } from '../../src/main/agents/control'
+import { AgentCredentials } from '../../src/main/agents/credentials'
+import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 
 describe('Claude native request mapping', () => {
   it('rejects malformed permissions and questions', () => {
@@ -35,7 +38,7 @@ describe('Claude recovery and safety', () => {
   let id: string
   const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === id)!
   beforeEach(async () => {
-    f = await claudeFixture(); await f.host.connect(f.connection)
+    f = await claudeFixture(); await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     id = randomUUID(); await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId })
   })
@@ -50,7 +53,7 @@ describe('Claude recovery and safety', () => {
   })
   it.each([false, true])('waits for observed-thread initialization before sending (failed=%s)', async fail => {
     f.host.disconnect(); await f.adapter.closed()
-    f = await claudeFixture(f.root, 1000); await f.host.connect(f.connection)
+    f = await claudeFixture(f.root, 1000); await f.host.connect()
     await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true, fail }))
     f.host.observeThreads?.([id])
     await expect.poll(async () => readFile(join(f.root, 'initialize-waiting'), 'utf8').catch(() => '')).not.toBe('')
@@ -97,8 +100,38 @@ describe('Claude recovery and safety', () => {
     expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', text: '', attachments: [{ id: 'image', sizeBytes: image.length }] })
     const stored = await readFile(join(f.root, 'claude-threads.json'), 'utf8')
     expect(stored).not.toContain(image.toString('base64'))
-    f = await f.driver.restart() as typeof f; await f.host.connect(f.connection)
+    f = await f.driver.restart() as typeof f; await f.host.connect()
     expect((await thread()).messages[0]).toMatchObject({ id: 'image-message', commandId: 'image-command', attachments: [{ id: 'image', sizeBytes: image.length }] })
+  })
+  it('restores submitted image previews through control after native restart under the same Sotto thread and message', async () => {
+    const image = { id: 'preview', name: 'Screenshot.png', mimeType: 'image/png' as const,
+      dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZ0AAAAASUVORK5CYII=' }
+    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
+    await credentials.load()
+    let registry = new ThreadRegistry(f.root)
+    let wrapped = new SottoThreadHost('claude', f.adapter, registry)
+    const create = () => new AgentControl({ directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    let control = create()
+    try {
+      await control.start(); await control.command({ type: 'connect' })
+      const sottoId = registry.all().find(binding => binding.sessionId === id)!.threadId
+      expect(sottoId).not.toBe(id)
+      const result = await control.command({ type: 'manual-send', threadId: sottoId, text: '', attachments: [image] })
+      expect(result.error).toBeNull()
+      const message = result.host.threads.find(thread => thread.id === sottoId)!.messages[0]!
+      expect(message.attachments?.[0]?.preview).toEqual({ dataUrl: image.dataUrl })
+      const cache = await readFile(join(f.root, 'attachment-previews.json'), 'utf8')
+      expect(JSON.parse(cache).entries[0]).toMatchObject({ threadId: sottoId, messageId: message.id, commandId: message.commandId })
+      expect(cache).not.toContain(id)
+      expect(await readFile(join(f.root, 'claude-threads.json'), 'utf8')).not.toContain(image.dataUrl)
+      control.dispose(); await control.privacyChanged(); await f.adapter.closed(); await registry.flush()
+      f = await f.driver.restart() as typeof f
+      registry = new ThreadRegistry(f.root); wrapped = new SottoThreadHost('claude', f.adapter, registry)
+      control = create(); await control.start(); await control.command({ type: 'connect' })
+      expect(control.get().host.threads.find(thread => thread.id === sottoId)!.messages[0]).toEqual(message)
+      expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+    } finally { control.dispose(); await control.privacyChanged(); await f.adapter.closed(); await registry.flush() }
   })
   it('does not resend a repeated uncertain message', async () => {
     await f.driver.delayNextAck('user')
@@ -124,7 +157,7 @@ describe('Claude recovery and safety', () => {
   it('keeps native and adapter identifiers behind the durable Sotto thread registry', async () => {
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    await wrapped.connect(f.connection)
+    await wrapped.connect()
     const sottoId = randomUUID()
     await wrapped.execute({ type: 'create-thread', commandId: 'wrapped-create', threadId: sottoId, projectId: f.projectId, title: 'Wrapped', modelId: f.modelId })
     const binding = registry.byThread(sottoId)!
@@ -136,7 +169,7 @@ describe('Claude recovery and safety', () => {
     wrapped.disconnect(); await f.adapter.closed(); await registry.flush()
     f = await f.driver.restart() as typeof f
     registry = new ThreadRegistry(f.root); wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    await wrapped.connect(f.connection)
+    await wrapped.connect()
     expect((await wrapped.snapshot()).threads.find(thread => thread.id === sottoId)?.messages).toContainEqual(expect.objectContaining({ id: 'wrapped-message', commandId: 'wrapped-send' }))
     expect(registry.byThread(sottoId)).toEqual(binding)
     wrapped.disconnect(); await f.adapter.closed(); await registry.flush()

@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostConnection, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
@@ -39,7 +39,19 @@ const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEff
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional() })
 class Uncertain extends Error {}
-class Rejected extends Error {}
+class Rejected extends Error {
+  readonly unmaterializedThreadId: string | undefined
+  readonly missingThreadId: string | undefined
+  constructor(value: unknown) {
+    super('Codex rejected the operation. Review the thread before retrying.')
+    const error = z.object({ code: z.literal(-32600), message: z.string() }).safeParse(value)
+    this.unmaterializedThreadId = error.success
+      ? /^thread (\S+) is not materialized yet; includeTurns is unavailable before first user message$/.exec(error.data.message)?.[1]
+      : undefined
+    this.missingThreadId = error.success ? /^no rollout found for thread id (\S+)$/.exec(error.data.message)?.[1] : undefined
+    if (this.missingThreadId) this.message = 'Codex could not find this thread’s saved session. Create a new thread to continue.'
+  }
+}
 type Waiter = { resolve: () => void; reject: (error: Error) => void; apply: (value: unknown) => Promise<void> | void;
   onRejected: (() => Promise<void> | void) | undefined; timer: ReturnType<typeof setTimeout> }
 
@@ -57,6 +69,9 @@ export class CodexAppServerHost implements AgentHost {
   private readonly live = new Set<string>()
   private readonly observed = new Set<string>()
   private readonly resuming = new Map<string, Promise<void>>()
+  private readonly threadReads = new Map<string, Promise<void>>()
+  private readonly revisions = new Map<string, number>()
+  private readonly dispatching = new Set<string>()
   private readonly runningTurns = new Map<string, string>()
   private readonly terminalTurns = new Set<string>()
   private readonly turnDates = new Map<string, string>()
@@ -81,8 +96,7 @@ export class CodexAppServerHost implements AgentHost {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
   }
-  async connect(_connection: AgentHostConnection): Promise<AgentHostSnapshot> {
-    void _connection
+  async connect(): Promise<AgentHostSnapshot> {
     this.shutdown(false); await this.closed()
     const generation = this.generation
     const [aliases, projects, executable] = await Promise.all([this.aliasStore.read(), this.projectStore.read(), this.options.executable ?? findExecutable()])
@@ -95,7 +109,7 @@ export class CodexAppServerHost implements AgentHost {
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
-      if (sessionId) { this.addMessage(sessionId, message); this.emit() }
+      if (sessionId) { this.touch(sessionId); this.addMessage(sessionId, message); this.emit() }
     } })
     for (const [id, alias] of Object.entries(aliases)) {
       this.ensureThread(id)
@@ -150,7 +164,11 @@ export class CodexAppServerHost implements AgentHost {
       }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
-      await Promise.all(Object.keys(this.aliases).map(id => this.resume(id)))
+      await Promise.all(Object.keys(this.aliases).map(id => this.resume(id).catch(error => {
+        if (!(error instanceof Rejected) || error.missingThreadId !== this.aliases[id]!.codexThreadId) throw error
+        // An unavailable saved thread must not take the whole provider offline.
+        // Its alias remains intact; never replace the native session implicitly.
+      })))
       await this.watcher.poll(); this.watcher.start()
       this.emit(); return this.snapshot()
     } catch (error) { if (this.child === child) this.disconnect(); throw error }
@@ -172,15 +190,48 @@ export class CodexAppServerHost implements AgentHost {
   async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
   async snapshot(): Promise<AgentHostSnapshot> {
     await this.pollSessionLogs()
-    if (this.state.connected) await Promise.all(Object.entries(this.aliases).filter(([, alias]) => alias.pendingSettings).map(async ([id, alias]) => {
-      // Read back an uncertain save without replaying any configuration override.
-      await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: false }, value => this.applySettings(id, value)).catch(() => undefined)
-    }))
-    if (this.state.connected) await Promise.all([...this.unconfirmedDispatchSessionIds].map(async id => {
-      await this.rpc('thread/read', { threadId: this.aliases[id]!.codexThreadId, includeTurns: true }, value => this.applyThread(id, threadResponse.parse(value).thread)).catch(() => undefined)
-    }))
+    const pending = new Set([...Object.keys(this.aliases).filter(id => this.aliases[id]!.pendingSettings), ...this.unconfirmedDispatchSessionIds])
+    if (this.state.connected) await Promise.all([...pending].map(id => this.refreshThread(id).catch(() => undefined)))
     return this.current()
   }
+  async refreshThread(id: string): Promise<AgentHostSnapshot> {
+    if (!this.aliases[id]) throw new Error('That Codex thread is unavailable.')
+    const generation = this.generation
+    const work = (this.threadReads.get(id) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
+      await this.resume(id)
+      const alias = this.aliases[id]!
+      // Read an uncertain settings save without replaying its overrides.
+      if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: false }, value => this.applySettings(id, value))
+      let applied = false
+      for (let attempt = 0; attempt < 3 && !applied; attempt++) {
+        const revision = this.revisions.get(id)
+        let current = true
+        try {
+          const apply = (value: unknown): void => {
+            // A late read must not overwrite streamed text, a completion, or a permission.
+            if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
+            this.applyThread(id, threadResponse.parse(value).thread); applied = true
+          }
+          try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
+          catch (error) {
+            // Codex has live metadata but no transcript before the first message.
+            // Read that metadata only for this exact response on a pristine thread.
+            if (!(error instanceof Rejected) || error.unmaterializedThreadId !== alias.codexThreadId
+              || this.ensureThread(id).messages.length || this.runningTurns.has(id)) throw error
+            await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: false }, apply)
+          }
+        } finally { current = false }
+      }
+      if (!applied) throw new Error('The Codex thread changed while reading it. Review its current state before replying.')
+      await this.watcher?.pollThread(alias.codexThreadId)
+      if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
+    })
+    this.threadReads.set(id, work)
+    try { await work; return this.current() }
+    finally { if (this.threadReads.get(id) === work) this.threadReads.delete(id) }
+  }
+  private touch(id: string): void { this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1) }
   observeThreads(sessionIds: readonly string[]): void {
     for (const id of sessionIds) this.observed.add(id)
     if (this.state.connected) for (const id of this.observed) void this.resume(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
@@ -193,7 +244,16 @@ export class CodexAppServerHost implements AgentHost {
     const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
       ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
-      this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id); this.emit()
+      this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id)
+      const thread = this.ensureThread(id); delete thread.historyStatus; delete thread.historyError
+      this.emit()
+    }).catch(error => {
+      if (error instanceof Rejected && error.missingThreadId === alias.codexThreadId) {
+        const thread = this.ensureThread(id)
+        thread.status = 'error'; thread.historyStatus = 'error'; thread.historyError = error.message
+        this.emit()
+      }
+      throw error
     }).finally(() => { this.resuming.delete(id) })
     this.resuming.set(id, operation); return operation
   }
@@ -327,13 +387,30 @@ export class CodexAppServerHost implements AgentHost {
           // Image rollout origins need a separate authority-safe reconciliation
           // contract. Until supported, reject explicitly rather than drop images.
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
-          await this.resume(id); await this.pollSessionLogs()
+          try { await this.refreshThread(id) }
+          catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(m => m.role === 'user')?.id ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
           }
           if (alias.origins.some(o => o.messageId === command.messageId)) return this.ensureThread(id).messages.some(m => m.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
+          if (this.dispatching.has(id) || this.ensureThread(id).status === 'running') throw new Error('Codex is already running a turn.')
+          if (this.ensureThread(id).requests.length) throw new Error('Answer the pending Codex request before sending another prompt.')
+          this.dispatching.add(id)
+          const generation = this.generation
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString() }
-          alias.origins.push(origin); await this.persist()
+          alias.origins.push(origin)
+          try {
+            await this.persist()
+            // Runtime requests arrive on the subscribed native stream. Re-read authored
+            // input after persistence, before registering this prompt as our own input.
+            await this.watcher?.pollThread(alias.codexThreadId)
+            if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
+            if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(message => message.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
+            if (this.ensureThread(id).status === 'running' || this.ensureThread(id).requests.length) throw new Error('The Codex thread started working or needs an answer before another prompt.')
+          } catch (error) {
+            alias.origins = alias.origins.filter(candidate => candidate !== origin); this.dispatching.delete(id)
+            await this.persist(); throw error
+          }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
             await this.rpc('turn/start', { threadId: alias.codexThreadId, clientUserMessageId: command.messageId,
@@ -355,7 +432,7 @@ export class CodexAppServerHost implements AgentHost {
           } catch (error) {
             if (!(error instanceof Rejected)) this.unconfirmedDispatchSessionIds.add(id)
             throw error
-          }
+          } finally { this.dispatching.delete(id) }
         }
       }
       return { accepted: true }
@@ -367,14 +444,14 @@ export class CodexAppServerHost implements AgentHost {
       if (!waiter) return
       clearTimeout(waiter.timer); this.waiters.delete(key)
       try {
-        if (frame.error !== undefined) { await waiter.onRejected?.(); waiter.reject(new Rejected('Codex rejected the operation. Review the thread before retrying.')) }
+        if (frame.error !== undefined) { await waiter.onRejected?.(); waiter.reject(new Rejected(frame.error)) }
         else { await waiter.apply(frame.result); waiter.resolve() }
       } catch { waiter.reject(new Uncertain('Codex response could not be applied.')); this.lostChild() }
       return
     }
     if (frame.method === 'thread/started') {
       const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
-      if (id) { this.applyThread(id, thread); this.emit() }
+      if (id) { this.touch(id); this.applyThread(id, thread); this.emit() }
       return
     }
     if (frame.method && frame.id !== undefined) {
@@ -383,11 +460,12 @@ export class CodexAppServerHost implements AgentHost {
       const parsed = id ? pendingRequest(frame.id, frame.method, frame.params, id,
         this.fileSummaries.get(z.object({ itemId: z.string().optional() }).parse(frame.params).itemId ?? '')) : undefined
       if (!parsed) { this.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }); return }
-      this.requests.set(parsed.request.id, parsed); this.ensureThread(id!).requests.push(parsed.request); this.emit(); return
+      this.touch(id!); this.requests.set(parsed.request.id, parsed); this.ensureThread(id!).requests.push(parsed.request); this.emit(); return
     }
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved'].includes(frame.method ?? '')) return
     const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
     if (!id) return
+    this.touch(id)
     if (params.turn) this.applyTurn(id, params.turn)
     if (params.item) this.applyItem(id, params.item, params.turnId)
     if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined) {

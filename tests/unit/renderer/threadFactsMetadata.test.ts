@@ -12,7 +12,7 @@ function stateFor(fields: Record<string, unknown> = {}) {
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { t3: false, reasoning: false, secure: true }, membership: { status: 'beta', label: 'Test', expiresAt: null },
+    credentials: { reasoning: false, secure: true }, membership: { status: 'beta', label: 'Test', expiresAt: null },
   })
 }
 

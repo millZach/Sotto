@@ -1,6 +1,6 @@
 import React, { type ReactNode } from 'react'
 
-import { supportsAgentSupervision, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { isLiveAttention } from '../../../shared/agentAttention'
 import type { AgentConnection } from '../agents/AgentContext'
@@ -41,7 +41,7 @@ export function WidgetThreads({ state, command }: {
       {!isThreadClosed(active) && <>
         <AgentManualNotice state={visibleState} command={command} />
         {assignment === undefined && <button type="button" className="tt-button tt-button--secondary"
-          disabled={state.busy || state.connection !== 'connected' || !supportsAgentSupervision(state.host.capabilities)}
+          disabled={state.busy || !isThreadProviderConnected(state.host, active) || !supportsAgentSupervision(capabilitiesForThread(state.host, active))}
           onClick={() => { void command({ type: 'assign', threadId: active.id }) }}>Manage this thread</button>}
         <AgentComposer state={visibleState} command={command} compact />
       </>}

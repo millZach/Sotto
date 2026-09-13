@@ -16,6 +16,10 @@ Thumbs.db
 handoff/
 artifacts/agent-control-smoke/
 artifacts/natural-voice-qa/
+artifacts/native-threads-live/
+artifacts/provider-recovery/
+artifacts/native-providers/
+artifacts/voice-journey/
 
 # Generated local inference payloads (locks remain versioned).
 resources/runtime/*.wasm
@@ -33,3 +37,6 @@ scripts/memeval/results/*.json
 
 # scratch prompts and logs for delegated model runs
 .claude/tmp/
+
+# Isolated voice measurement bundles, audio and temporary reports
+artifacts/voice-perf/

@@ -1,5 +1,5 @@
-import type { AgentAssignment, AgentModel, AgentProject, AgentQueueItem, AgentState, AgentThread } from '../../../shared/agents'
-import { isThreadClosed } from '../../../shared/threadActivity'
+import { isThreadProviderConnected, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -30,6 +30,12 @@ export interface ThreadRow {
   /** "Claude, in workshop": the model's provider name, or the connected provider when the model is unknown. */
   readonly provider: string
   readonly providerKey: ProviderKey
+  /** The thread's native provider when Sotto can tell; undefined for an unrecognized provider. */
+  readonly providerId: ProviderId | undefined
+  /** Whether the thread's own provider is connected; history stays readable either way. */
+  readonly connected: boolean
+  /** Why the row sits in Settled: its project, its own choice, or the provider closed it. Null when open. */
+  readonly settledBy: 'project' | 'thread' | 'provider' | null
   readonly state: ThreadRowState
   readonly stateLabel: string
   /** The queue item waiting on a decision, when the row carries one inline. */
@@ -212,8 +218,13 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     text: lastUser.text,
   }
 
+  const key = providerKey(provider)
+  const settledBy: ThreadRow['settledBy'] = isWorkspaceThreadSettled({ workspaceSettledAt: null }, project) ? 'project'
+    : isWorkspaceThreadSettled(thread) ? 'thread' : closed ? 'provider' : null
   return {
-    thread, project, model, assignment, provider, providerKey: providerKey(provider), state: state_, stateLabel, request: decision, attention,
+    thread, project, model, assignment, provider, providerKey: key, state: state_, stateLabel, request: decision, attention,
+    providerId: thread.providerId ?? model?.providerId ?? (key === 'other' ? undefined : key),
+    connected: isThreadProviderConnected(state.host, thread), settledBy,
     sentence, activityAt,
     when: state_ === 'working' ? elapsedLabel(activityAt, now) : clockLabel(activityAt),
     facts: factsLine(assignment, model, provider, management, state.configuration.followupLimit, now),
@@ -243,7 +254,7 @@ export function listThreads(rows: readonly ThreadRow[], query: string): { readon
   return { matching, listed: rows.filter(row => row.attention || matching.includes(row)) }
 }
 
-/** Explicitly unsettled work and settled/archived history; unknown activity sorts last. */
+/** Open work and Settled history (workspace-settled, provider-settled or archived); unknown activity sorts last. */
 export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadGroup[] {
   // Retain the old clock argument for callers; lifecycle grouping does not use it.
   void _now
@@ -252,8 +263,8 @@ export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadG
     const secondAt = Number.isFinite(second.activityAt) ? second.activityAt : Number.NEGATIVE_INFINITY
     return (secondAt - firstAt) || first.thread.id.localeCompare(second.thread.id)
   })
-  const unsettled = sorted.filter(row => !isThreadClosed(row.thread))
-  const settled = sorted.filter(row => isThreadClosed(row.thread))
+  const unsettled = sorted.filter(row => row.settledBy === null)
+  const settled = sorted.filter(row => row.settledBy !== null)
   const groups: ThreadGroup[] = []
   if (unsettled.length > 0) groups.push({ id: 'unsettled', label: 'Unsettled', tone: 'plain', rows: unsettled })
   if (settled.length > 0) groups.push({ id: 'settled', label: 'Settled', tone: 'plain', rows: settled })
@@ -277,4 +288,76 @@ export function threadCounts(rows: readonly ThreadRow[], now: number): { readonl
     active: rows.filter(row => row.state === 'needs' || row.state === 'working').length,
     week: rows.filter(row => row.activityAt >= now - WEEK_MS).length,
   }
+}
+
+/** One project folder in the sidebar: a Sotto project ID and the threads listed beneath it. */
+export interface ProjectFolder {
+  /** The Sotto project ID; a thread whose project is unknown keeps its own project ID. */
+  readonly id: string
+  readonly project: AgentProject | undefined
+  readonly title: string
+  /** The whole project was settled; its folder sits in Settled with every thread. */
+  readonly settled: boolean
+  readonly rows: readonly ThreadRow[]
+  readonly working: number
+  readonly needs: number
+  readonly activityAt: number
+}
+
+export interface WorkspaceOrganization {
+  readonly open: readonly ProjectFolder[]
+  readonly settled: readonly ProjectFolder[]
+  /** Rows the query found, before attention rows are added back. */
+  readonly matching: number
+}
+
+const byActivity = (first: { readonly activityAt: number; readonly id: string }, second: { readonly activityAt: number; readonly id: string }): number => {
+  const firstAt = Number.isFinite(first.activityAt) ? first.activityAt : Number.NEGATIVE_INFINITY
+  const secondAt = Number.isFinite(second.activityAt) ? second.activityAt : Number.NEGATIVE_INFINITY
+  return (secondAt - firstAt) || first.id.localeCompare(second.id)
+}
+
+function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
+  const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+  return {
+    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted,
+    working: rows.filter(row => row.state === 'working').length,
+    needs: rows.filter(row => row.state === 'needs').length,
+    activityAt: rows.reduce((latest, row) => Number.isFinite(row.activityAt) && (!Number.isFinite(latest) || row.activityAt > latest) ? row.activityAt : latest, Number.NaN),
+  }
+}
+
+/**
+ * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
+ * Settled holds whole settled projects plus individually settled threads under their own project.
+ * A search keeps attention rows and projects whose name matches; without a search an open project
+ * with no threads yet (or the selected project) still shows so a thread can be started there.
+ */
+export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[], query: string, activeProjectId: string | null = null): WorkspaceOrganization {
+  const { matching, listed } = listThreads(rows, query)
+  const needle = query.trim().toLocaleLowerCase()
+  const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
+  const projects = new Map(state.host.projects.map(project => [project.id, project]))
+  const threadsByProject = new Map<string, ThreadRow[]>()
+  for (const row of rows) threadsByProject.set(row.thread.projectId, [...threadsByProject.get(row.thread.projectId) ?? [], row])
+  const ids = new Set([...projects.keys(), ...threadsByProject.keys()])
+  const open: ProjectFolder[] = []
+  const settled: ProjectFolder[] = []
+  for (const id of ids) {
+    const project = projects.get(id)
+    const all = threadsByProject.get(id) ?? []
+    const nameMatch = project !== undefined && projectMatches(project)
+    const shown = nameMatch ? all : all.filter(row => listed.includes(row))
+    if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
+      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
+      continue
+    }
+    const openRows = shown.filter(row => row.settledBy === null)
+    const settledRows = shown.filter(row => row.settledBy !== null)
+    const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
+    if (settledRows.length) settled.push(folder(id, project, settledRows, false))
+  }
+  const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
+  return { open: ordered(open), settled: ordered(settled), matching: matching.length }
 }

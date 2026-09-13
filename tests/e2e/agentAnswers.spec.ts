@@ -7,6 +7,7 @@ import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0] & {
@@ -39,16 +40,13 @@ async function event(page: Page, value: HostEvent): Promise<void> {
 }
 
 async function onboard(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
-  await page.getByRole('link', { name: 'Agents', exact: true }).click()
-  await page.getByRole('button', { name: 'Connect T3 Code' }).click()
+  await completeVoiceJourneySetup(page)
+  await openVoiceJourneyAgents(page)
+  await page.getByRole('button', { name: 'Connect providers' }).click()
   await command(page, { type: 'assign', threadId: 'workshop' })
   await command(page, { type: 'assign', threadId: 'docs' })
+  await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Workshop', exact: true })).toBeVisible()
 }
 
 const workshopQuestion: HostEvent = {
@@ -90,7 +88,7 @@ test('composes a spoken answer across pauses and advances only after explicit su
     expect(snapshot.activeThreadId).toBe('docs')
     await expect(page.locator('.agent-composer textarea')).toHaveValue('')
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
-    await expect(page.getByText(docsQuestion.text, { exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Docs', exact: true }).getByText(docsQuestion.text, { exact: true })).toBeVisible()
   } finally { await closeSotto(launched) }
 })
 
@@ -105,7 +103,9 @@ test('restores the pending question binding with its draft after an application 
     await closeSotto(launched)
 
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await openVoiceJourneyAgents(launched.page)
+    await launched.page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
+    await expect(launched.page.getByRole('dialog', { name: 'Workshop', exact: true })).toBeVisible()
     // Reconcile the same authoritative host request; restarting Sotto does not create a new request.
     await event(launched.page, workshopQuestion)
     await event(launched.page, docsQuestion)
@@ -150,22 +150,29 @@ test('retains a typed question answer across queue navigation, widget edits, and
     await event(launched.page, workshopQuestion)
     await event(launched.page, docsQuestion)
     await launched.page.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout')
-    await launched.page.getByRole('button', { name: 'Later', exact: true }).click()
+    await launched.page.getByRole('dialog', { name: 'Workshop', exact: true }).getByRole('button', { name: 'Later', exact: true }).click()
     await expect(launched.page.getByRole('alert').first()).toContainText('Send or clear your draft')
     expect((await state(launched.page)).activeThreadId).toBe('workshop')
 
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
+    await widget.getByTestId('widget-sliver').hover()
+    await widget.getByRole('button', { name: 'Expand threads', exact: true }).click()
     await expect(widget.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout')
     await widget.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout and controls.')
     await expect(launched.page.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout and controls.')
+    await widget.screenshot({ animations: 'disabled', path: 'artifacts/voice-journey/widget-answer-draft.png' })
 
-    await launched.page.getByRole('button', { name: 'Select Docs', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Close Workshop', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Open Docs', exact: true }).click()
+    await expect(launched.page.getByRole('dialog', { name: 'Docs', exact: true })).toBeVisible()
     await expect(launched.page.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout and controls.')
     await expect(launched.page.getByText('This draft stays with Workshop.', { exact: true })).toBeVisible()
     await closeSotto(launched)
 
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await openVoiceJourneyAgents(launched.page)
+    await launched.page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
+    await expect(launched.page.getByRole('dialog', { name: 'Workshop', exact: true })).toBeVisible()
     await event(launched.page, workshopQuestion)
     await event(launched.page, docsQuestion)
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('Keep the existing layout and controls.')

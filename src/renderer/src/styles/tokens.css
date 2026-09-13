@@ -1,17 +1,26 @@
 /* Sotto management-window palette — "Crossing".
 
-   One black room. Three text tiers on black, a hairline for every rule, one
-   teal for anything live (the dictation wave), and a white pill for the one
-   action on a page. There is no light theme and no theme choice: the window is
-   black whatever the system says, and `theme` in settings is kept only so old
-   files and the widget snapshot still load.
+   One room under a thin strip, set in Bricolage Grotesque, in the appearance
+   the user chose: dark (the original black room, and the default), light, or
+   whatever the system says. Three text tiers on the field, a hairline for
+   every rule, one accent for anything live (the dictation wave, focus,
+   selection, accent text) and a neutral pill for the one action on a page.
+
+   App.tsx puts the RESOLVED mode on the root as data-theme="dark|light" and
+   the accent as data-accent. Feature CSS never branches on either attribute:
+   it reads the tokens below, and this file is the only place they change.
+
+   Block order is the cascade: base (dark, teal) → light → dark accents →
+   light accents. Every accent block sets the same five properties, so a
+   light accent always replaces its dark counterpart.
+
+   tests/unit/renderer/themeTokens.test.ts parses this file and checks every
+   mode × accent: text tiers ≥4.5:1 on canvas, surfaces, panels and fields;
+   accent text and on-accent text ≥4.5:1; the control boundary, focus ring and
+   accent graphics ≥3:1. Hairlines and faint borders draw rules only.
 
    The floating widget does NOT read this file. It keeps its own frozen copy in
-   `widget/widget-tokens.css`.
-
-   Contrast on black: --tt-text 19:1, --tt-text-2 12:1, --tt-text-muted 6.1:1,
-   --tt-activity 8.7:1, --tt-border 4.3:1 (the control boundary), and the two
-   faint greys (--tt-hairline, --tt-border-faint) draw rules only, never text. */
+   `widget/widget-tokens.css` and follows the system scheme. */
 
 :root {
   color-scheme: dark;
@@ -19,6 +28,11 @@
   --tt-surface: #0c0e0d;
   --tt-surface-elevated: #121514;
   --tt-surface-sunken: #0c0e0d;
+  --tt-panel: #0b0c0b;
+  --tt-panel-border: #272c29;
+  --tt-sidebar: #050706;
+  --tt-field: #0c0e0d;
+  --tt-field-border: #2a302c;
   --tt-text: #f3f4f3;
   --tt-text-2: #c3c9c6;
   --tt-text-muted: #858c88;
@@ -27,21 +41,70 @@
   --tt-border-faint: #2a2e2c;
   --tt-hairline: #1a1d1b;
   --tt-hover: rgb(255 255 255 / 6%);
+  --tt-track: rgb(255 255 255 / 3%);
+  --tt-hover-strong: #171a18;
+  --tt-bubble: #0d1210;
+  --tt-kbd: #242724;
+  --tt-skeleton-a: #111713;
+  --tt-skeleton-b: #19201c;
+  --tt-scrollbar: #2a2e2c;
   --tt-pill: #f3f4f3;
   --tt-pill-ink: #000000;
-  --tt-primary: #47b8a9;
-  --tt-primary-hover: #7fd6ca;
-  --tt-primary-contrast: #000000;
-  --tt-activity: #47b8a9;
-  --tt-activity-wash: rgb(71 184 169 / 14%);
   --tt-success: #7fd6ca;
   --tt-warning: #f0b45c;
+  --tt-attention: #eda340;
   --tt-error: #f0a89c;
   --tt-error-contrast: #2a1112;
-  --tt-focus-ring: #9fe3d9;
+  --tt-error-surface: #1a0c0b;
+  --tt-error-border: #4a2a25;
+  --tt-error-text: #ffbcb0;
+  --tt-code-bg: #0a0d0b;
+  --tt-code-border: #242a26;
+  --tt-code-text: #dfe4e1;
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-ink: #080b0a;
   --tt-overlay: rgb(0 0 0 / 72%);
+  --tt-backdrop: rgb(0 0 0 / 38%);
   --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 65%);
+  --tt-shadow-overlay: 0 20px 70px rgb(0 0 0 / 67%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  /* The orb draws additive light, which only reads on a dark field. */
+  --tt-orb-filter: none;
+
+  /* Accent picker swatches: each accent as this mode paints it. */
+  --tt-swatch-teal: #47b8a9;
+  --tt-swatch-blue: #6fa8f2;
+  --tt-swatch-violet: #b39cf5;
+  --tt-swatch-rose: #f08fb0;
+  --tt-swatch-amber: #e3ad52;
+  --tt-swatch-green: #80c77d;
+  /* Edge on colour-choice swatches whose own colour can vanish into the room. */
+  --tt-swatch-edge: transparent;
+
+  /* Accent (teal). Accent blocks below override exactly these five. */
+  --tt-accent: #47b8a9;
+  --tt-accent-hover: #7fd6ca;
+  --tt-accent-text: #47b8a9;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #9fe3d9;
+
+  /* Derived from the accent; never overridden per accent. */
+  --tt-primary: var(--tt-accent);
+  --tt-primary-hover: var(--tt-accent-hover);
+  --tt-primary-contrast: var(--tt-on-accent);
+  --tt-activity: var(--tt-accent);
+  --tt-link: var(--tt-accent-text);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-activity-wash: var(--tt-accent-wash);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-selected: color-mix(in srgb, var(--tt-accent) 9%, var(--tt-canvas));
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-table-stripe: color-mix(in srgb, var(--tt-text) 3%, transparent);
+
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
   --tt-radius-lg: 14px;
@@ -52,4 +115,161 @@
   --tt-font-mono:
     'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
     Consolas, 'Liberation Mono', monospace;
+}
+
+/* Light: a cool paper field with near-black ink; the accent darkens so it
+   stays readable as text and carries white on its fills. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: #f5f6f3;
+  --tt-surface: #eceee9;
+  --tt-surface-elevated: #ffffff;
+  --tt-surface-sunken: #eceee9;
+  --tt-panel: #ffffff;
+  --tt-panel-border: #d3d7d2;
+  --tt-sidebar: #eef0ec;
+  --tt-field: #ffffff;
+  --tt-field-border: #c9cec8;
+  --tt-text: #141816;
+  --tt-text-2: #3a423e;
+  --tt-text-muted: #59625d;
+  --tt-text-faint: #59625d;
+  --tt-border: #7b847f;
+  --tt-border-faint: #d3d7d2;
+  --tt-hairline: #e1e4df;
+  --tt-hover: rgb(20 24 22 / 6%);
+  --tt-track: rgb(20 24 22 / 4%);
+  --tt-hover-strong: #e4e7e2;
+  --tt-bubble: #eaede8;
+  --tt-kbd: #e4e7e2;
+  --tt-skeleton-a: #e6e9e4;
+  --tt-skeleton-b: #f0f2ee;
+  --tt-scrollbar: #c3c8c2;
+  --tt-pill: #141816;
+  --tt-pill-ink: #f5f6f3;
+  --tt-success: #1b7447;
+  --tt-warning: #8a5300;
+  --tt-attention: #b86e00;
+  --tt-error: #b42318;
+  --tt-error-contrast: #ffffff;
+  --tt-error-surface: #fbeceb;
+  --tt-error-border: #e8b4ae;
+  --tt-error-text: #9a1f14;
+  --tt-code-bg: #eef0ec;
+  --tt-code-border: #d3d7d2;
+  --tt-code-text: #1f2522;
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-grok: #bfaefc;
+  --tt-provider-ink: #0b0d0c;
+  --tt-overlay: rgb(20 24 22 / 38%);
+  --tt-backdrop: rgb(20 24 22 / 22%);
+  --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 20px 70px rgb(20 24 22 / 20%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  /* Inverting luminance and turning the hue back keeps the orb's colour
+     while its additive glow becomes ink on paper. */
+  --tt-orb-filter: invert(1) hue-rotate(180deg);
+
+  --tt-swatch-teal: #146e63;
+  --tt-swatch-blue: #2860c4;
+  --tt-swatch-violet: #6a4bc9;
+  --tt-swatch-rose: #b5345f;
+  --tt-swatch-amber: #8c5600;
+  --tt-swatch-green: #2f7433;
+  --tt-swatch-edge: rgb(20 24 22 / 28%);
+
+  --tt-accent: #146e63;
+  --tt-accent-hover: #0f5a51;
+  --tt-accent-text: #146e63;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #146e63;
+}
+
+:root[data-accent='blue'] {
+  --tt-accent: #6fa8f2;
+  --tt-accent-hover: #a4c8f7;
+  --tt-accent-text: #6fa8f2;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #b0d0fa;
+}
+
+:root[data-accent='violet'] {
+  --tt-accent: #b39cf5;
+  --tt-accent-hover: #cfc0fa;
+  --tt-accent-text: #b39cf5;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #d6cafb;
+}
+
+:root[data-accent='rose'] {
+  --tt-accent: #f08fb0;
+  --tt-accent-hover: #f6b8cd;
+  --tt-accent-text: #f08fb0;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #f8c4d6;
+}
+
+:root[data-accent='amber'] {
+  --tt-accent: #e3ad52;
+  --tt-accent-hover: #efc986;
+  --tt-accent-text: #e3ad52;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #f2d39c;
+}
+
+:root[data-accent='green'] {
+  --tt-accent: #80c77d;
+  --tt-accent-hover: #a9dca7;
+  --tt-accent-text: #80c77d;
+  --tt-on-accent: #000000;
+  --tt-focus-ring: #b7e3b5;
+}
+
+:root[data-theme='light'][data-accent='blue'] {
+  --tt-accent: #2860c4;
+  --tt-accent-hover: #1f4ea3;
+  --tt-accent-text: #2860c4;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #2860c4;
+}
+
+:root[data-theme='light'][data-accent='violet'] {
+  --tt-accent: #6a4bc9;
+  --tt-accent-hover: #563aad;
+  --tt-accent-text: #6a4bc9;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #6a4bc9;
+}
+
+:root[data-theme='light'][data-accent='rose'] {
+  --tt-accent: #b5345f;
+  --tt-accent-hover: #962a4e;
+  --tt-accent-text: #b5345f;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #b5345f;
+}
+
+:root[data-theme='light'][data-accent='amber'] {
+  --tt-accent: #8c5600;
+  --tt-accent-hover: #744700;
+  --tt-accent-text: #8c5600;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #8c5600;
+}
+
+:root[data-theme='light'][data-accent='green'] {
+  --tt-accent: #2f7433;
+  --tt-accent-hover: #255d29;
+  --tt-accent-text: #2f7433;
+  --tt-on-accent: #ffffff;
+  --tt-focus-ring: #2f7433;
+}
+
+/* A mode switch repaints at once: no colour transition runs mid-switch. */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
 }

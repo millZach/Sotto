@@ -309,21 +309,21 @@ describe('credential storage and formatting migration', () => {
   it('preserves independent concurrent credential writes and decrypts them only through the native vault after restart', async () => {
     const f = await fixture()
     await Promise.all([
-      f.credentials.set('t3', 'fixture-t3-secret'),
+      f.credentials.set('grokSpeech', 'fixture-speech-secret'),
       f.credentials.set('reasoning', 'fixture-reasoning-secret'),
       f.credentials.set('membership', 'fixture-membership-secret'),
     ])
     const reloaded = new AgentCredentials(f.root, f.encryption)
     await reloaded.load()
-    expect(reloaded.get('t3')).toBe('fixture-t3-secret')
+    expect(reloaded.get('grokSpeech')).toBe('fixture-speech-secret')
     expect(reloaded.get('reasoning')).toBe('fixture-reasoning-secret')
     expect(reloaded.get('membership')).toBe('fixture-membership-secret')
     const stored = await readFile(join(f.root, 'credentials.json'), 'utf8')
-    expect(stored).not.toContain('fixture-t3-secret')
+    expect(stored).not.toContain('fixture-speech-secret')
     expect(stored).not.toContain('fixture-reasoning-secret')
     expect(stored).not.toContain('fixture-membership-secret')
     f.encryption.unlocked = false
-    expect(() => reloaded.get('t3')).toThrow('Unlock')
+    expect(() => reloaded.get('reasoning')).toThrow('Unlock')
     await expect(reloaded.set('reasoning', 'replacement-secret')).rejects.toThrow('unavailable')
     f.encryption.unlocked = true
     expect(reloaded.get('reasoning')).toBe('fixture-reasoning-secret')
@@ -335,9 +335,9 @@ describe('credential storage and formatting migration', () => {
     const repository = new SettingsRepository(settingsPath)
     await repository.update({ llmApiKey: 'fixture-legacy-formatting-key', llmFormatting: true })
     const settings = new SecureSettings(repository, f.credentials)
-    await Promise.all([settings.migrate(), f.credentials.set('t3', 'fixture-independent-t3-key')])
+    await Promise.all([settings.migrate(), f.credentials.set('reasoning', 'fixture-independent-reasoning-key')])
     expect((await settings.forFormatting()).llmApiKey).toBe('fixture-legacy-formatting-key')
-    expect(f.credentials.get('t3')).toBe('fixture-independent-t3-key')
+    expect(f.credentials.get('reasoning')).toBe('fixture-independent-reasoning-key')
     const publicSettings = await settings.get()
     expect(publicSettings.llmApiKey).toContain('operating system credential store')
     expect(JSON.stringify(publicSettings)).not.toContain('fixture-legacy-formatting-key')

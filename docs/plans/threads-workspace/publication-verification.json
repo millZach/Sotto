@@ -1,0 +1,310 @@
+{
+  "checkedAt": "2026-09-13T00:10:37.396Z",
+  "verified": true,
+  "issueCount": 31,
+  "nativeEdgeCount": 55,
+  "phaseCount": 6,
+  "milestone": "https://github.com/millZach/Sotto/milestone/1",
+  "issues": [
+    {
+      "number": 44,
+      "draftId": 1,
+      "phase": 1,
+      "blockers": [],
+      "url": "https://github.com/millZach/Sotto/issues/44"
+    },
+    {
+      "number": 45,
+      "draftId": 2,
+      "phase": 1,
+      "blockers": [],
+      "url": "https://github.com/millZach/Sotto/issues/45"
+    },
+    {
+      "number": 46,
+      "draftId": 3,
+      "phase": 1,
+      "blockers": [],
+      "url": "https://github.com/millZach/Sotto/issues/46"
+    },
+    {
+      "number": 47,
+      "draftId": 4,
+      "phase": 2,
+      "blockers": [
+        46
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/47"
+    },
+    {
+      "number": 48,
+      "draftId": 5,
+      "phase": 2,
+      "blockers": [
+        46
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/48"
+    },
+    {
+      "number": 49,
+      "draftId": 6,
+      "phase": 3,
+      "blockers": [
+        48
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/49"
+    },
+    {
+      "number": 50,
+      "draftId": 7,
+      "phase": 3,
+      "blockers": [
+        48
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/50"
+    },
+    {
+      "number": 51,
+      "draftId": 8,
+      "phase": 2,
+      "blockers": [
+        44
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/51"
+    },
+    {
+      "number": 52,
+      "draftId": 9,
+      "phase": 3,
+      "blockers": [
+        48
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/52"
+    },
+    {
+      "number": 53,
+      "draftId": 10,
+      "phase": 2,
+      "blockers": [
+        44,
+        45
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/53"
+    },
+    {
+      "number": 54,
+      "draftId": 11,
+      "phase": 3,
+      "blockers": [
+        53
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/54"
+    },
+    {
+      "number": 55,
+      "draftId": 12,
+      "phase": 2,
+      "blockers": [
+        45
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/55"
+    },
+    {
+      "number": 56,
+      "draftId": 13,
+      "phase": 3,
+      "blockers": [
+        55
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/56"
+    },
+    {
+      "number": 57,
+      "draftId": 14,
+      "phase": 3,
+      "blockers": [
+        55
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/57"
+    },
+    {
+      "number": 58,
+      "draftId": 15,
+      "phase": 2,
+      "blockers": [
+        45
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/58"
+    },
+    {
+      "number": 59,
+      "draftId": 16,
+      "phase": 3,
+      "blockers": [
+        55,
+        58
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/59"
+    },
+    {
+      "number": 60,
+      "draftId": 17,
+      "phase": 4,
+      "blockers": [
+        59
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/60"
+    },
+    {
+      "number": 61,
+      "draftId": 18,
+      "phase": 5,
+      "blockers": [
+        60
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/61"
+    },
+    {
+      "number": 62,
+      "draftId": 19,
+      "phase": 4,
+      "blockers": [
+        48,
+        49,
+        50,
+        58,
+        59
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/62"
+    },
+    {
+      "number": 63,
+      "draftId": 20,
+      "phase": 2,
+      "blockers": [
+        44
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/63"
+    },
+    {
+      "number": 64,
+      "draftId": 21,
+      "phase": 3,
+      "blockers": [
+        63
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/64"
+    },
+    {
+      "number": 65,
+      "draftId": 22,
+      "phase": 3,
+      "blockers": [
+        63
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/65"
+    },
+    {
+      "number": 66,
+      "draftId": 23,
+      "phase": 4,
+      "blockers": [
+        48,
+        49,
+        50
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/66"
+    },
+    {
+      "number": 67,
+      "draftId": 24,
+      "phase": 5,
+      "blockers": [
+        66
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/67"
+    },
+    {
+      "number": 68,
+      "draftId": 25,
+      "phase": 3,
+      "blockers": [
+        44,
+        46,
+        63
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/68"
+    },
+    {
+      "number": 69,
+      "draftId": 26,
+      "phase": 4,
+      "blockers": [
+        64,
+        68
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/69"
+    },
+    {
+      "number": 70,
+      "draftId": 27,
+      "phase": 4,
+      "blockers": [
+        65,
+        68
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/70"
+    },
+    {
+      "number": 71,
+      "draftId": 28,
+      "phase": 5,
+      "blockers": [
+        68,
+        69,
+        70
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/71"
+    },
+    {
+      "number": 72,
+      "draftId": 29,
+      "phase": 4,
+      "blockers": [
+        68
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/72"
+    },
+    {
+      "number": 73,
+      "draftId": 30,
+      "phase": 1,
+      "blockers": [],
+      "url": "https://github.com/millZach/Sotto/issues/73"
+    },
+    {
+      "number": 74,
+      "draftId": 31,
+      "phase": 6,
+      "blockers": [
+        24,
+        47,
+        51,
+        52,
+        54,
+        56,
+        57,
+        61,
+        62,
+        67,
+        69,
+        70,
+        71,
+        72,
+        73
+      ],
+      "url": "https://github.com/millZach/Sotto/issues/74"
+    }
+  ],
+  "errors": []
+}

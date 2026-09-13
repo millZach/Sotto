@@ -1,27 +1,27 @@
 .screenshot-input { min-width: 0; }
 .screenshot-previews { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.screenshot-previews figure { position: relative; width: 88px; margin: 0; padding: 4px; border: 1px solid #2c3730; border-radius: 9px; background: #101611; }
+.screenshot-previews figure { position: relative; width: 88px; margin: 0; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: var(--tt-field); }
 .screenshot-previews img { display: block; width: 78px; height: 60px; border-radius: 5px; object-fit: cover; }
 .screenshot-previews figcaption { margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 10px; }
-.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid #3c4840; border-radius: 50%; background: #171e19; color: var(--tt-text); cursor: pointer; }
+.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 50%; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
 .screenshot-input__tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .screenshot-input__tools .tt-button { width: 26px; min-height: 26px; padding: 0; color: var(--tt-text-muted); }
 .screenshot-input__tools small { color: var(--tt-text-muted); font-size: 11px; }
 .thread-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .thread-options label { display: grid; gap: 5px; min-width: 0; }
 .thread-options label > span { color: var(--tt-text-muted); font-size: 10.5px; }
-.thread-options select { max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid #27322b; border-radius: 7px; background: #0a0e0b; color: var(--tt-text-2); font: inherit; font-size: 11.5px; }
+.thread-options select { max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-field); color: var(--tt-text-2); font: inherit; font-size: 11.5px; }
 .thread-options select:disabled { opacity: .55; }
 .thread-options-bar { flex: 1; min-width: 0; }
 .thread-options-bar .thread-options { gap: 4px; }
 .thread-options-bar .thread-options label > span { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .thread-options-bar .thread-options select { max-width: 180px; padding: 4px 6px; border-color: transparent; background: transparent; }
-.thread-options-bar .thread-options select:hover:not(:disabled) { background: #151c17; border-color: #27322b; }
-.thread-options-bar .thread-options option { background: #0a0e0b; color: var(--tt-text-2); }
+.thread-options-bar .thread-options select:hover:not(:disabled) { background: var(--tt-hover-strong); border-color: var(--tt-field-border); }
+.thread-options-bar .thread-options option { background: var(--tt-field); color: var(--tt-text-2); }
 .thread-prompt__footer > .tt-button, .thread-workspace__compose .agent-composer__footer > .agent-actions { flex-shrink: 0; align-self: flex-end; }
 .thread-options-bar > small { display: block; margin-top: 7px; color: var(--tt-text-muted); font-size: 10.5px; }
 .thread-message__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid #29352e; border-radius: 6px; color: var(--tt-text-muted); font-size: 11px; }
+.thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; color: var(--tt-text-muted); font-size: 11px; }
 .new-thread-dialog .thread-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
 .new-thread-dialog .thread-options label:first-child { grid-column: 1 / -1; }
 .new-thread-dialog .thread-options select { max-width: none; width: 100%; }

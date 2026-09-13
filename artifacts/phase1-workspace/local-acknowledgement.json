@@ -1,0 +1,103 @@
+{
+  "scenario": "success (deterministic E2E provider host, Windows Electron)",
+  "rounds": 10,
+  "localAcknowledgement": {
+    "definition": "Enter keydown (document capture phase) to the pending message in the DOM, and to the next animation frame after it",
+    "domMs": {
+      "p50": 3.100000023841858,
+      "max": 16.299999982118607
+    },
+    "nextFrameMs": {
+      "p50": 3.9000000059604645,
+      "p95": 25.099999994039536,
+      "max": 25.099999994039536
+    },
+    "samples": [
+      {
+        "dom": 16.299999982118607,
+        "frame": 25.099999994039536
+      },
+      {
+        "dom": 3.5,
+        "frame": 4.0999999940395355
+      },
+      {
+        "dom": 2.2000000178813934,
+        "frame": 2.600000023841858
+      },
+      {
+        "dom": 3.800000011920929,
+        "frame": 18.80000001192093
+      },
+      {
+        "dom": 3.300000011920929,
+        "frame": 18.30000001192093
+      },
+      {
+        "dom": 2.800000011920929,
+        "frame": 3.4000000059604645
+      },
+      {
+        "dom": 3.0999999940395355,
+        "frame": 3.800000011920929
+      },
+      {
+        "dom": 3.199999988079071,
+        "frame": 17.900000005960464
+      },
+      {
+        "dom": 3.100000023841858,
+        "frame": 3.9000000059604645
+      },
+      {
+        "dom": 3,
+        "frame": 3.7999999821186066
+      }
+    ]
+  },
+  "typingNextFrameMs": {
+    "count": 130,
+    "p50": 2.4000000059604645,
+    "p95": 8,
+    "max": 16
+  },
+  "controller": {
+    "definition": "deliveries[].localFeedbackMs (main-process receipt to queued publish) and providerLatencyMs (provider dispatch), reported by the backend",
+    "localFeedbackMs": [
+      0.5230999999998858,
+      0.1351999999999407,
+      0.09740000000010696,
+      0.13590000000021973,
+      0.1449999999999818,
+      0.1145000000001346,
+      0.1580999999996493,
+      0.14679999999998472,
+      0.14570000000003347,
+      0.14110000000073342
+    ],
+    "providerLatencyMs": [
+      2,
+      1,
+      0,
+      0,
+      1,
+      1,
+      1,
+      0,
+      1,
+      1
+    ],
+    "statuses": [
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted"
+    ]
+  }
+}

@@ -1,0 +1,603 @@
+{
+  "repo": "millZach/Sotto",
+  "status": "published-and-verified",
+  "issues": [
+    {
+      "draftId": 1,
+      "number": 44,
+      "databaseId": 5436921897,
+      "url": "https://github.com/millZach/Sotto/issues/44",
+      "title": "Send messages immediately and restore per-thread drafts",
+      "phase": 1,
+      "blockers": []
+    },
+    {
+      "draftId": 2,
+      "number": 45,
+      "databaseId": 5436921971,
+      "url": "https://github.com/millZach/Sotto/issues/45",
+      "title": "Organize projects and settle threads or whole projects",
+      "phase": 1,
+      "blockers": []
+    },
+    {
+      "draftId": 3,
+      "number": 46,
+      "databaseId": 5436922056,
+      "url": "https://github.com/millZach/Sotto/issues/46",
+      "title": "Render readable answers and attachment previews",
+      "phase": 1,
+      "blockers": []
+    },
+    {
+      "draftId": 4,
+      "number": 47,
+      "databaseId": 5436922312,
+      "url": "https://github.com/millZach/Sotto/issues/47",
+      "title": "Render and inspect diagrams in answers",
+      "phase": 2,
+      "blockers": [
+        46
+      ]
+    },
+    {
+      "draftId": 5,
+      "number": 48,
+      "databaseId": 5436922484,
+      "url": "https://github.com/millZach/Sotto/issues/48",
+      "title": "Follow Codex tool activity and subagents",
+      "phase": 2,
+      "blockers": [
+        46
+      ]
+    },
+    {
+      "draftId": 6,
+      "number": 49,
+      "databaseId": 5436922750,
+      "url": "https://github.com/millZach/Sotto/issues/49",
+      "title": "Follow Claude tool activity and subagents",
+      "phase": 3,
+      "blockers": [
+        48
+      ]
+    },
+    {
+      "draftId": 7,
+      "number": 50,
+      "databaseId": 5436922984,
+      "url": "https://github.com/millZach/Sotto/issues/50",
+      "title": "Follow Grok tool activity and subagents",
+      "phase": 3,
+      "blockers": [
+        48
+      ]
+    },
+    {
+      "draftId": 8,
+      "number": 51,
+      "databaseId": 5436923180,
+      "url": "https://github.com/millZach/Sotto/issues/51",
+      "title": "Queue follow-up messages and explicitly steer a running turn",
+      "phase": 2,
+      "blockers": [
+        44
+      ]
+    },
+    {
+      "draftId": 9,
+      "number": 52,
+      "databaseId": 5436923467,
+      "url": "https://github.com/millZach/Sotto/issues/52",
+      "title": "Answer structured questions and approvals in the right thread",
+      "phase": 3,
+      "blockers": [
+        48
+      ]
+    },
+    {
+      "draftId": 10,
+      "number": 53,
+      "databaseId": 5436923600,
+      "url": "https://github.com/millZach/Sotto/issues/53",
+      "title": "Drag a second thread into a split workspace",
+      "phase": 2,
+      "blockers": [
+        44,
+        45
+      ]
+    },
+    {
+      "draftId": 11,
+      "number": 54,
+      "databaseId": 5436923915,
+      "url": "https://github.com/millZach/Sotto/issues/54",
+      "title": "Add three- and four-thread layouts and restore the workspace",
+      "phase": 3,
+      "blockers": [
+        53
+      ]
+    },
+    {
+      "draftId": 12,
+      "number": 55,
+      "databaseId": 5436924218,
+      "url": "https://github.com/millZach/Sotto/issues/55",
+      "title": "Browse files in a shared, pinnable tools panel",
+      "phase": 2,
+      "blockers": [
+        45
+      ]
+    },
+    {
+      "draftId": 13,
+      "number": 56,
+      "databaseId": 5436924362,
+      "url": "https://github.com/millZach/Sotto/issues/56",
+      "title": "Run a persistent terminal beside a thread",
+      "phase": 3,
+      "blockers": [
+        55
+      ]
+    },
+    {
+      "draftId": 14,
+      "number": 57,
+      "databaseId": 5436924810,
+      "url": "https://github.com/millZach/Sotto/issues/57",
+      "title": "Browse inside Sotto and choose where links open",
+      "phase": 3,
+      "blockers": [
+        55
+      ]
+    },
+    {
+      "draftId": 15,
+      "number": 58,
+      "databaseId": 5436924952,
+      "url": "https://github.com/millZach/Sotto/issues/58",
+      "title": "Create independent thread worktrees",
+      "phase": 2,
+      "blockers": [
+        45
+      ]
+    },
+    {
+      "draftId": 16,
+      "number": 59,
+      "databaseId": 5436925228,
+      "url": "https://github.com/millZach/Sotto/issues/59",
+      "title": "Review Git changes in the selected thread",
+      "phase": 3,
+      "blockers": [
+        55,
+        58
+      ]
+    },
+    {
+      "draftId": 17,
+      "number": 60,
+      "databaseId": 5436925403,
+      "url": "https://github.com/millZach/Sotto/issues/60",
+      "title": "Stage, commit and manage the active branch",
+      "phase": 4,
+      "blockers": [
+        59
+      ]
+    },
+    {
+      "draftId": 18,
+      "number": 61,
+      "databaseId": 5436925743,
+      "url": "https://github.com/millZach/Sotto/issues/61",
+      "title": "Push work and open the pull-request surface",
+      "phase": 5,
+      "blockers": [
+        60
+      ]
+    },
+    {
+      "draftId": 19,
+      "number": 62,
+      "databaseId": 5436926184,
+      "url": "https://github.com/millZach/Sotto/issues/62",
+      "title": "Inspect checkpoints and perform supported thread reverts",
+      "phase": 4,
+      "blockers": [
+        48,
+        49,
+        50,
+        58,
+        59
+      ]
+    },
+    {
+      "draftId": 20,
+      "number": 63,
+      "databaseId": 5436926628,
+      "url": "https://github.com/millZach/Sotto/issues/63",
+      "title": "Browse and invoke Codex skills",
+      "phase": 2,
+      "blockers": [
+        44
+      ]
+    },
+    {
+      "draftId": 21,
+      "number": 64,
+      "databaseId": 5436926904,
+      "url": "https://github.com/millZach/Sotto/issues/64",
+      "title": "Browse and invoke Claude skills",
+      "phase": 3,
+      "blockers": [
+        63
+      ]
+    },
+    {
+      "draftId": 22,
+      "number": 65,
+      "databaseId": 5436927173,
+      "url": "https://github.com/millZach/Sotto/issues/65",
+      "title": "Browse and invoke Grok skills",
+      "phase": 3,
+      "blockers": [
+        63
+      ]
+    },
+    {
+      "draftId": 23,
+      "number": 66,
+      "databaseId": 5436927337,
+      "url": "https://github.com/millZach/Sotto/issues/66",
+      "title": "Show live tokens, context and estimated thread cost",
+      "phase": 4,
+      "blockers": [
+        48,
+        49,
+        50
+      ]
+    },
+    {
+      "draftId": 24,
+      "number": 67,
+      "databaseId": 5436927746,
+      "url": "https://github.com/millZach/Sotto/issues/67",
+      "title": "Match T3's native compaction behavior",
+      "phase": 5,
+      "blockers": [
+        66
+      ]
+    },
+    {
+      "draftId": 25,
+      "number": 68,
+      "databaseId": 5436927995,
+      "url": "https://github.com/millZach/Sotto/issues/68",
+      "title": "Start and resume a project-free Sotto chat with Codex",
+      "phase": 3,
+      "blockers": [
+        44,
+        46,
+        63
+      ]
+    },
+    {
+      "draftId": 26,
+      "number": 69,
+      "databaseId": 5436928337,
+      "url": "https://github.com/millZach/Sotto/issues/69",
+      "title": "Use Claude for persistent Sotto chats",
+      "phase": 4,
+      "blockers": [
+        68,
+        64
+      ]
+    },
+    {
+      "draftId": 27,
+      "number": 70,
+      "databaseId": 5436928807,
+      "url": "https://github.com/millZach/Sotto/issues/70",
+      "title": "Use Grok for persistent Sotto chats",
+      "phase": 4,
+      "blockers": [
+        68,
+        65
+      ]
+    },
+    {
+      "draftId": 28,
+      "number": 71,
+      "databaseId": 5436928975,
+      "url": "https://github.com/millZach/Sotto/issues/71",
+      "title": "Talk and dictate in the active Sotto conversation",
+      "phase": 5,
+      "blockers": [
+        68,
+        69,
+        70
+      ]
+    },
+    {
+      "draftId": 29,
+      "number": 72,
+      "databaseId": 5436929310,
+      "url": "https://github.com/millZach/Sotto/issues/72",
+      "title": "Turn a brainstorming chat into an editable prompt",
+      "phase": 4,
+      "blockers": [
+        68
+      ]
+    },
+    {
+      "draftId": 30,
+      "number": 73,
+      "databaseId": 5436929727,
+      "url": "https://github.com/millZach/Sotto/issues/73",
+      "title": "Choose light, dark or system appearance and an accent",
+      "phase": 1,
+      "blockers": []
+    },
+    {
+      "draftId": 31,
+      "number": 74,
+      "databaseId": 5436929811,
+      "url": "https://github.com/millZach/Sotto/issues/74",
+      "title": "Verify the complete daily workspace and recovery journey",
+      "phase": 6,
+      "blockers": [
+        47,
+        51,
+        52,
+        54,
+        56,
+        57,
+        61,
+        62,
+        67,
+        69,
+        70,
+        71,
+        72,
+        73,
+        24
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "issue": 47,
+      "blockedBy": 46
+    },
+    {
+      "issue": 48,
+      "blockedBy": 46
+    },
+    {
+      "issue": 49,
+      "blockedBy": 48
+    },
+    {
+      "issue": 50,
+      "blockedBy": 48
+    },
+    {
+      "issue": 51,
+      "blockedBy": 44
+    },
+    {
+      "issue": 52,
+      "blockedBy": 48
+    },
+    {
+      "issue": 53,
+      "blockedBy": 44
+    },
+    {
+      "issue": 53,
+      "blockedBy": 45
+    },
+    {
+      "issue": 54,
+      "blockedBy": 53
+    },
+    {
+      "issue": 55,
+      "blockedBy": 45
+    },
+    {
+      "issue": 56,
+      "blockedBy": 55
+    },
+    {
+      "issue": 57,
+      "blockedBy": 55
+    },
+    {
+      "issue": 58,
+      "blockedBy": 45
+    },
+    {
+      "issue": 59,
+      "blockedBy": 55
+    },
+    {
+      "issue": 59,
+      "blockedBy": 58
+    },
+    {
+      "issue": 60,
+      "blockedBy": 59
+    },
+    {
+      "issue": 61,
+      "blockedBy": 60
+    },
+    {
+      "issue": 62,
+      "blockedBy": 48
+    },
+    {
+      "issue": 62,
+      "blockedBy": 49
+    },
+    {
+      "issue": 62,
+      "blockedBy": 50
+    },
+    {
+      "issue": 62,
+      "blockedBy": 58
+    },
+    {
+      "issue": 62,
+      "blockedBy": 59
+    },
+    {
+      "issue": 63,
+      "blockedBy": 44
+    },
+    {
+      "issue": 64,
+      "blockedBy": 63
+    },
+    {
+      "issue": 65,
+      "blockedBy": 63
+    },
+    {
+      "issue": 66,
+      "blockedBy": 48
+    },
+    {
+      "issue": 66,
+      "blockedBy": 49
+    },
+    {
+      "issue": 66,
+      "blockedBy": 50
+    },
+    {
+      "issue": 67,
+      "blockedBy": 66
+    },
+    {
+      "issue": 68,
+      "blockedBy": 44
+    },
+    {
+      "issue": 68,
+      "blockedBy": 46
+    },
+    {
+      "issue": 68,
+      "blockedBy": 63
+    },
+    {
+      "issue": 69,
+      "blockedBy": 68
+    },
+    {
+      "issue": 69,
+      "blockedBy": 64
+    },
+    {
+      "issue": 70,
+      "blockedBy": 68
+    },
+    {
+      "issue": 70,
+      "blockedBy": 65
+    },
+    {
+      "issue": 71,
+      "blockedBy": 68
+    },
+    {
+      "issue": 71,
+      "blockedBy": 69
+    },
+    {
+      "issue": 71,
+      "blockedBy": 70
+    },
+    {
+      "issue": 72,
+      "blockedBy": 68
+    },
+    {
+      "issue": 74,
+      "blockedBy": 47
+    },
+    {
+      "issue": 74,
+      "blockedBy": 51
+    },
+    {
+      "issue": 74,
+      "blockedBy": 52
+    },
+    {
+      "issue": 74,
+      "blockedBy": 54
+    },
+    {
+      "issue": 74,
+      "blockedBy": 56
+    },
+    {
+      "issue": 74,
+      "blockedBy": 57
+    },
+    {
+      "issue": 74,
+      "blockedBy": 61
+    },
+    {
+      "issue": 74,
+      "blockedBy": 62
+    },
+    {
+      "issue": 74,
+      "blockedBy": 67
+    },
+    {
+      "issue": 74,
+      "blockedBy": 69
+    },
+    {
+      "issue": 74,
+      "blockedBy": 70
+    },
+    {
+      "issue": 74,
+      "blockedBy": 71
+    },
+    {
+      "issue": 74,
+      "blockedBy": 72
+    },
+    {
+      "issue": 74,
+      "blockedBy": 73
+    },
+    {
+      "issue": 74,
+      "blockedBy": 24
+    }
+  ],
+  "labels": [
+    "threads-workspace",
+    "threads:phase-1",
+    "threads:phase-2",
+    "threads:phase-3",
+    "threads:phase-4",
+    "threads:phase-5",
+    "threads:phase-6"
+  ],
+  "milestone": {
+    "number": 1,
+    "url": "https://github.com/millZach/Sotto/milestone/1"
+  },
+  "verifiedAt": "2026-09-13T00:10:37.396Z"
+}

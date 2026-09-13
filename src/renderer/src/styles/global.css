@@ -3,12 +3,13 @@
 
 /* Sotto management window — "Crossing".
 
-   One black room between a thin top strip and a footer line. A switch in the
-   strip flips the room between Dictate and Agents; Threads, History, Settings
-   and Help are plain links in the footer. Type is Bricolage Grotesque, the
-   only colour is the dictation teal, and the one action on a page is a white
-   pill. The floating widget is deliberately excluded — it carries its own
-   frozen tokens in widget/widget-tokens.css. */
+   One room between a thin top strip and a footer line, dark or light as the
+   user chose. A switch in the strip flips the room between Dictate and
+   Agents; Threads, History, Settings and Help are plain links in the footer.
+   Type is Bricolage Grotesque, the only colour is the accent, and the one
+   action on a page is a neutral pill. Colours come from tokens.css only.
+   The floating widget is deliberately excluded — it carries its own frozen
+   tokens in widget/widget-tokens.css. */
 
 *,
 *::before,
@@ -41,6 +42,18 @@ select,
 textarea {
   color: inherit;
   font: inherit;
+}
+
+/* Native Windows popups can use a light background even for a dark select.
+   Keep the option surface and text paired instead of inheriting only the ink. */
+select option,
+select optgroup {
+  color: var(--tt-text);
+  background-color: var(--tt-surface-elevated);
+}
+
+select option:disabled {
+  color: var(--tt-text-muted);
 }
 
 button,
@@ -201,8 +214,8 @@ h1[tabindex='-1']:focus {
 }
 
 .tt-button--danger:hover:not(:disabled) {
-  border-color: #4a2a25;
-  color: #ffbcb0;
+  border-color: var(--tt-error-border);
+  color: var(--tt-error-text);
 }
 
 .tt-dialog__actions .tt-button--danger {
@@ -945,7 +958,7 @@ textarea.tt-input {
   display: inline-flex;
   border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-pill);
-  background: rgb(255 255 255 / 3%);
+  background: var(--tt-track);
   padding: 4px;
 }
 

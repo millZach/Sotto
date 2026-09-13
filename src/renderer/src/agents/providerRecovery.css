@@ -1,0 +1,9 @@
+.provider-recovery { flex: 0 1 auto; min-height: 0; display: grid; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 14px; line-height: 1.5; max-height: 45vh; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.provider-recovery p { margin: 0; }
+.provider-recovery label { display: grid; gap: 6px; color: var(--tt-text); }
+.provider-recovery textarea { width: 100%; resize: vertical; min-height: 72px; max-height: 160px; padding: 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text); font: inherit; }
+.provider-recovery details { min-width: 0; }
+.provider-recovery summary { cursor: pointer; color: var(--tt-text); }
+.provider-recovery details p, .provider-recovery code { margin-top: 10px; }
+.provider-recovery code { display: block; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+.account-rows > .provider-recovery { padding: 0 0 16px; max-height: none; }

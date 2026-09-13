@@ -12,9 +12,8 @@ import { findGrokExecutable, grokEnvironment } from '../../src/main/agents/grokR
 it.skipIf(process.env.SOTTO_GROK_LIVE !== '1')('native Grok creates, prompts, and resumes an owned synthetic session', async () => {
  const root = await mkdtemp(join(tmpdir(),'sotto-grok-live-'))
  let host = new GrokAcpHost(root,{pollIntervalMs:1000})
- const connection = {endpoint:'ignored',credential:'ignored'}
  try {
-  const initial = await host.connect(connection)
+  const initial = await host.connect()
   expect(initial.version).toBe('1.0.5 / ACP 1')
   const threadId = randomUUID()
   await host.execute({type:'create-project',commandId:randomUUID(),projectId:'smoke',title:'Synthetic smoke',path:root})
@@ -22,7 +21,7 @@ it.skipIf(process.env.SOTTO_GROK_LIVE !== '1')('native Grok creates, prompts, an
   expect(await host.execute({type:'send',commandId:randomUUID(),threadId,messageId:'smoke-prompt',text:'Reply with exactly SOTTO_GROK_SMOKE. Do not use tools, read files, or execute commands.'})).toEqual({accepted:true})
   // Disconnect immediately after authored echo, while the model turn is still in progress.
   expect((await host.snapshot()).threads[0]!.status).toBe('running')
-  host.disconnect();await host.closed();host=new GrokAcpHost(root,{pollIntervalMs:1000});await host.connect(connection)
+  host.disconnect();await host.closed();host=new GrokAcpHost(root,{pollIntervalMs:1000});await host.connect()
   await expect.poll(async()=> (await host.snapshot()).threads[0]!.status,{timeout:90000,interval:1000}).toBe('idle')
   await expect.poll(async()=> (await host.snapshot()).threads[0]!.messages.some(message=>message.role==='assistant'&&message.text.includes('SOTTO_GROK_SMOKE')),{timeout:10000,interval:500}).toBe(true)
   let before = (await host.snapshot()).threads[0]!
@@ -39,6 +38,6 @@ it.skipIf(process.env.SOTTO_GROK_LIVE !== '1')('native Grok creates, prompts, an
   before=(await host.snapshot()).threads[0]!
   host.disconnect();await host.closed()
   host = new GrokAcpHost(root)
-  expect((await host.connect(connection)).threads[0]).toEqual(before)
+  expect((await host.connect()).threads[0]).toEqual(before)
  } finally {host.disconnect();await host.closed();await rm(root,{recursive:true,force:true})}
 },120000)

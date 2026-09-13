@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const MAX_CORRUPT_BACKUP_ATTEMPTS = 100
 const MAX_TEMPORARY_FILE_ATTEMPTS = 100
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const
 
 function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
@@ -99,7 +101,7 @@ export class AtomicJsonStore<T> {
       await handle.sync()
       await handle.close()
       handle = undefined
-      await rename(temporaryPath, this.filePath)
+      await this.replaceFile(temporaryPath)
       temporaryPath = undefined
     } catch (error) {
       if (handle !== undefined) {
@@ -109,6 +111,23 @@ export class AtomicJsonStore<T> {
         await unlink(temporaryPath).catch(() => undefined)
       }
       throw error
+    }
+  }
+
+  private async replaceFile(temporaryPath: string): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await rename(temporaryPath, this.filePath)
+        return
+      } catch (error) {
+        const retryDelay = WINDOWS_RENAME_RETRY_DELAYS_MS[attempt]
+        // Windows can temporarily deny replacement while another handle is open.
+        // Retry only the atomic rename of the already-synced file, never unlink
+        // the destination. Permanent denial still fails after 310 ms of backoff.
+        if (process.platform !== 'win32' || retryDelay === undefined
+          || (!hasErrorCode(error, 'EPERM') && !hasErrorCode(error, 'EBUSY'))) throw error
+        await delay(retryDelay)
+      }
     }
   }
 

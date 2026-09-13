@@ -17,6 +17,7 @@ export class CodexSessionLogWatcher {
   private readonly tails = new Map<string, Tail>()
   private timer: ReturnType<typeof setInterval> | undefined
   private polling: Promise<void> | undefined
+  private readonly reading = new Map<string, Promise<void>>()
   private stopped = false
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
   observe(threadId: string): void {
@@ -30,12 +31,22 @@ export class CodexSessionLogWatcher {
     this.timer = setInterval(() => { void this.poll() }, this.options.pollIntervalMs ?? 1000)
     this.timer.unref()
   }
-  async stop(): Promise<void> { this.stopped = true; clearInterval(this.timer); this.timer = undefined; await this.polling }
+  async stop(): Promise<void> { this.stopped = true; clearInterval(this.timer); this.timer = undefined; await this.polling; await Promise.all(this.reading.values()) }
   poll(): Promise<void> {
     if (this.stopped) return Promise.resolve()
-    this.polling ??= this.read().finally(() => { this.polling = undefined })
+    this.polling ??= this.readAll().finally(() => { this.polling = undefined })
     return this.polling
   }
+  /** Queue a fresh read behind this tail only; a guarded send cannot reuse a pre-origin read. */
+  pollThread(threadId: string, complete = true): Promise<void> {
+    if (this.stopped) return Promise.resolve()
+    this.observe(threadId)
+    const work = (this.reading.get(threadId) ?? Promise.resolve()).then(() => this.read(threadId, complete))
+    this.reading.set(threadId, work)
+    void work.finally(() => { if (this.reading.get(threadId) === work) this.reading.delete(threadId) })
+    return work
+  }
+  private async readAll(): Promise<void> { for (const id of this.tails.keys()) await this.pollThread(id, false) }
   private async locate(directory: string, threadId: string, depth = 0): Promise<string | undefined> {
     if (depth > 3) return
     const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
@@ -44,19 +55,22 @@ export class CodexSessionLogWatcher {
       if (entry.isDirectory()) { const found = await this.locate(join(directory, entry.name), threadId, depth + 1); if (found) return found }
     }
   }
-  private async read(): Promise<void> {
-    for (const [threadId, tail] of this.tails) {
-      if (this.stopped) return
+  private async read(threadId: string, complete: boolean): Promise<void> {
+    const tail = this.tails.get(threadId)!
+    if (this.stopped) return
+    try {
+      tail.path ??= await this.locate(join(this.options.codexHome, 'sessions'), threadId)
+      if (!tail.path) return
+      const file = await open(tail.path, 'r')
       try {
-        tail.path ??= await this.locate(join(this.options.codexHome, 'sessions'), threadId)
-        if (!tail.path) continue
-        const file = await open(tail.path, 'r')
-        try {
-          const size = (await file.stat()).size
-          if (size < tail.offset) { tail.offset = 0; tail.buffer = Buffer.alloc(0) }
-          // Bound each poll and partial line; offsets are bytes, never UTF-16 string positions.
+        const size = (await file.stat()).size
+        if (size < tail.offset) { tail.offset = 0; tail.buffer = Buffer.alloc(0) }
+        // Background polls stay bounded. A guarded target read reaches the captured
+        // file size with bounded buffers so takeover evidence is never truncated.
+        do {
           const buffer = Buffer.alloc(Math.min(size - tail.offset, 1024 * 1024))
           const { bytesRead } = await file.read(buffer, 0, buffer.length, tail.offset)
+          if (!bytesRead) break
           tail.offset += bytesRead
           tail.buffer = Buffer.concat([tail.buffer, buffer.subarray(0, bytesRead)])
           let newline: number
@@ -66,9 +80,9 @@ export class CodexSessionLogWatcher {
             this.consume(threadId, tail, line)
           }
           if (tail.buffer.length > 1024 * 1024) tail.buffer = Buffer.alloc(0)
-        } finally { await file.close() }
-      } catch { /* A rollout may not exist yet, rotate, or be temporarily locked by Codex. */ }
-    }
+        } while (complete && tail.offset < size && !this.stopped)
+      } finally { await file.close() }
+    } catch { /* A rollout may not exist yet, rotate, or be temporarily locked by Codex. */ }
   }
   private consume(threadId: string, tail: Tail, line: string): void {
     try {

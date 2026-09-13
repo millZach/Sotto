@@ -1,0 +1,757 @@
+[
+  {
+    "id": 1,
+    "title": "Send messages immediately and restore per-thread drafts",
+    "deps": [],
+    "what": "Typing in any thread gives immediate, truthful delivery feedback and each thread keeps its own unsent draft.",
+    "criteria": [
+      "Enter sends; Shift+Enter inserts a newline; IME composition and skill-menu selection do not accidentally send.",
+      "Each thread independently restores its text and attachments after navigation and restart, including legacy draft migration without changing ownership.",
+      "Show queued/submitting/accepted/failed or uncertain delivery distinctly; a lost acknowledgement is reconciled without automatic duplicate submission.",
+      "Measure local send feedback separately from provider latency; target visible acknowledgement within 100 ms on the agreed Windows fixture and document actual measurements. Preserve disconnected-provider and managed-thread behavior."
+    ],
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 44,
+      "url": "https://github.com/millZach/Sotto/issues/44",
+      "blockers": []
+    }
+  },
+  {
+    "id": 2,
+    "title": "Organize projects and settle threads or whole projects",
+    "deps": [],
+    "what": "Navigate project folders containing multiple threads, with recognizable provider icons and reversible Settled groups.",
+    "criteria": [
+      "Create/open projects and create multiple threads under each; retain existing thread IDs, provider bindings, project memory scopes and disconnected-provider history.",
+      "Settle a thread and restore it under its owning project. Settle an entire project and restore its thread group without changing individual prior settled states.",
+      "Retain search and working/attention indicators. Settling or hiding a view never deletes history, working files, branches or running native work.",
+      "An empty unstarted thread may choose any ready provider; a started native conversation stays with its original provider. Same-provider controls respect native capabilities. Verify the existing provider/coordinator separation."
+    ],
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 45,
+      "url": "https://github.com/millZach/Sotto/issues/45",
+      "blockers": []
+    }
+  },
+  {
+    "id": 3,
+    "title": "Render readable answers and attachment previews",
+    "deps": [],
+    "what": "Read rich, streaming answers with usable code, tables, links and attachments in the existing Threads view.",
+    "criteria": [
+      "Render Markdown paragraphs, lists, tables, quotes, links and highlighted code with copy controls; preserve streaming partial content and existing history.",
+      "Show supported image attachments and useful file/link metadata rather than only filenames; preserve provider-specific attachment limits and explicit unsupported feedback.",
+      "Keep user scroll position while reading earlier messages; offer jump-to-latest without forcing scrolling. Long transcripts remain responsive.",
+      "Treat message markup as content, not executable UI; inspect real Windows renders and keyboard interactions at desktop and minimum sizes."
+    ],
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 46,
+      "url": "https://github.com/millZach/Sotto/issues/46",
+      "blockers": []
+    }
+  },
+  {
+    "id": 4,
+    "title": "Render and inspect diagrams in answers",
+    "deps": [
+      3
+    ],
+    "what": "Agent-generated Mermaid diagrams render inside answers and can be enlarged and copied.",
+    "criteria": [
+      "Render complete valid diagram blocks; show readable source while incomplete or invalid, with a useful error instead of a blank answer.",
+      "Support zoom/focused inspection and copying diagram source; retain accessible text/source and streaming behavior.",
+      "Diagram content cannot execute arbitrary scripts or fetch arbitrary resources through the renderer.",
+      "Verify representative sequence, flow and state diagrams, malformed input and light/dark presentation as themes become available."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 47,
+      "url": "https://github.com/millZach/Sotto/issues/47",
+      "blockers": [
+        46
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "title": "Follow Codex tool activity and subagents",
+    "deps": [
+      3
+    ],
+    "what": "See Codex's current work and expandable tool results alongside readable answers.",
+    "criteria": [
+      "Add activity records beside existing messages without rewriting historical identities; preserve order and deduplicate replayed native events.",
+      "Show available commands, file changes, results, errors, reasoning/status summaries and subagent lifecycle with elapsed time; never invent hidden reasoning or unavailable details.",
+      "Persist sufficient activity for reload/reconnect to restore the work log without re-running tools or duplicating the final answer.",
+      "Extract the shared activity presentation seam as part of this complete Codex path. Exercise native event fixtures and a bounded installed-client smoke journey."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 48,
+      "url": "https://github.com/millZach/Sotto/issues/48",
+      "blockers": [
+        46
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "title": "Follow Claude tool activity and subagents",
+    "deps": [
+      5
+    ],
+    "what": "Claude threads expose the same useful activity view through Claude's native event stream.",
+    "criteria": [
+      "Map native Claude events to the established activity view, retaining provider-specific details and actual ordering.",
+      "Show running/completed/failed commands, file operations and available subagent status with expandable output.",
+      "Reconnect/reload restores history and pending state without duplicate tool execution or messages.",
+      "Keep the current streaming CLI unless concrete capability evidence warrants the SDK used by T3; compare that decision with the reference and verify an installed-client smoke journey."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 49,
+      "url": "https://github.com/millZach/Sotto/issues/49",
+      "blockers": [
+        48
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "title": "Follow Grok tool activity and subagents",
+    "deps": [
+      5
+    ],
+    "what": "Grok threads expose native ACP work through the shared activity view.",
+    "criteria": [
+      "Map ACP tool and lifecycle updates plus supported native extensions into the existing activity view.",
+      "Display available commands, output, file changes, failures and subagents; unavailable fields remain unavailable rather than inferred as facts.",
+      "Recover from reconnect and replay without duplicated actions, output or answers.",
+      "Verify ACP event fixtures and a bounded installed-client smoke journey against the shared adapter contract."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 50,
+      "url": "https://github.com/millZach/Sotto/issues/50",
+      "blockers": [
+        48
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "title": "Queue follow-up messages and explicitly steer a running turn",
+    "deps": [
+      1
+    ],
+    "what": "Send another message while work is running, with a durable queue and an explicit Steer now action.",
+    "criteria": [
+      "Queue per thread by default; edit/remove items before dispatch and keep order across restart. Maintain separation from the attention queue and uncertain-command outbox.",
+      "Dispatch once when the current turn finishes; reconcile interrupted acknowledgements without silently replaying uncertain messages.",
+      "Steer now uses the selected provider's supported native mechanism. If unsupported, explain that limitation without silently cancelling or pretending steering succeeded.",
+      "Keep other threads usable during slow sends; test concurrent threads, interruption, failures, permissions waiting and managed-to-manual handoff."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 51,
+      "url": "https://github.com/millZach/Sotto/issues/51",
+      "blockers": [
+        44
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "title": "Answer structured questions and approvals in the right thread",
+    "deps": [
+      5
+    ],
+    "what": "Respond to complete native questions and approval requests while keeping their thread and tool context visible.",
+    "criteria": [
+      "Render all native question items, choices and supported free-text answers, not just the first question.",
+      "Show command/tool context and the approval choices actually supported by the owning provider; do not invent broader permission grants.",
+      "Route each answer to its original pending request even after pane changes or reconnect; resolve once and show failures without losing the request.",
+      "Verify Codex, Claude and Grok request fixtures, simultaneous requests in different threads, and keyboard accessibility. Preserve existing policy and assignment authority."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 52,
+      "url": "https://github.com/millZach/Sotto/issues/52",
+      "blockers": [
+        48
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "title": "Drag a second thread into a split workspace",
+    "deps": [
+      1,
+      2
+    ],
+    "what": "Drag a thread from the sidebar beside the current thread and use both independently.",
+    "criteria": [
+      "Dragging a second thread splits available space evenly; dividers resize and either thread can receive input without draft or selection leakage.",
+      "Both views retain their own message position, provider controls and activity; cross-project panes are supported.",
+      "Closing a pane closes only its view; the agent keeps working and remains reachable in the sidebar.",
+      "Provide a keyboard-accessible way to open/focus/close a split and verify minimum-width behavior. Extract a reusable thread-view boundary only as needed for this slice."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 53,
+      "url": "https://github.com/millZach/Sotto/issues/53",
+      "blockers": [
+        44,
+        45
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "title": "Add three- and four-thread layouts and restore the workspace",
+    "deps": [
+      10
+    ],
+    "what": "Arrange more threads with the agreed snapping rules and restore the arrangement after restart.",
+    "criteria": [
+      "A third thread spans the row below the first two; a fourth creates a 2-by-2 grid. A single-row arrangement is available with adjustable dividers.",
+      "Persist arrangement, selected threads and sizing; reopen existing threads without starting new native work.",
+      "Offer focus/zoom for smaller windows and return to the retained layout. One-through-four arrangements are defaults, not an implicit hard cap.",
+      "Handle closing, moving and adding panes without losing drafts or live state; verify cross-project layout and recovery at desktop/minimum sizes."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 54,
+      "url": "https://github.com/millZach/Sotto/issues/54",
+      "blockers": [
+        53
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "title": "Browse files in a shared, pinnable tools panel",
+    "deps": [
+      2
+    ],
+    "what": "Open a Files surface beside a thread and inspect files in that thread's actual working directory.",
+    "criteria": [
+      "Provide a reusable side-panel surface selector and file tree with readable text/Markdown/image previews and copyable paths.",
+      "Panel follows the focused thread and can be pinned; paths and workspace identity remain visible when focus changes.",
+      "Read the thread's bound working directory, including a worktree when present; missing files and unavailable folders produce recoverable states.",
+      "Retain panel state across focus changes and integrate with split panes when available. Verify actual Electron file browsing without exposing unrestricted renderer filesystem access."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 55,
+      "url": "https://github.com/millZach/Sotto/issues/55",
+      "blockers": [
+        45
+      ]
+    }
+  },
+  {
+    "id": 13,
+    "title": "Run a persistent terminal beside a thread",
+    "deps": [
+      12
+    ],
+    "what": "Open and use an interactive terminal in the active thread's working directory.",
+    "criteria": [
+      "Launch a real shell/PTY with input, output, resize, interrupt, scrollback and exit state; support multiple terminal instances needed for a dev server and commands.",
+      "Keep terminal sessions alive across thread focus and panel hiding; identify the owning directory and respect panel pinning.",
+      "On app restart show the true terminal lifecycle rather than claiming a dead process resumed; support a clear reopen action.",
+      "Verify on the target Windows desktop, including a running dev server and shell interruption, and preserve platform-appropriate launch behavior."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 56,
+      "url": "https://github.com/millZach/Sotto/issues/56",
+      "blockers": [
+        55
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "title": "Browse inside Sotto and choose where links open",
+    "deps": [
+      12
+    ],
+    "what": "Use the embedded browser for local apps and URLs while ordinary agent links open externally by default.",
+    "criteria": [
+      "Default normal web-link clicks to the user's system browser; persist a setting to use the in-app browser instead and expose either destination per link.",
+      "Embedded browser supports navigation, back/forward, reload, URL display and multiple retained pages needed for daily work.",
+      "Keep page state across panel focus/pinning; clearly identify the browser destination and handle unavailable local servers.",
+      "Use the desktop browser security boundary so visited pages do not inherit Sotto's privileged application bridge. Verify an actual local app and an external link."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 57,
+      "url": "https://github.com/millZach/Sotto/issues/57",
+      "blockers": [
+        55
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "title": "Create independent thread worktrees",
+    "deps": [
+      2
+    ],
+    "what": "New independent coding tasks get their own working copy and branch, with an explicit shared-working-copy option.",
+    "criteria": [
+      "Create/reuse a Git worktree during thread creation and bind all provider commands to the actual working directory.",
+      "Offer a deliberate shared-working-copy path for collaborating threads; existing threads remain in their current folders and non-Git folders remain usable.",
+      "Worktree setup failure leaves a recoverable thread draft and never routes a task into the wrong directory; preserve project-level memory scope across worktrees.",
+      "Verify concurrent native threads do not overwrite each other's working files. Include worktree status/open/reveal behavior and preserve user changes during cleanup."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 58,
+      "url": "https://github.com/millZach/Sotto/issues/58",
+      "blockers": [
+        45
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "title": "Review Git changes in the selected thread",
+    "deps": [
+      12,
+      15
+    ],
+    "what": "Inspect current working changes and diffs from the thread's own branch and worktree.",
+    "criteria": [
+      "Show changed, new and deleted files with readable diffs and selection that follows the focused or pinned thread.",
+      "Refresh when tools or terminal commands change files, without overwriting the user's reading position or showing another thread's worktree.",
+      "Support large/binary/unavailable files with explicit fallback and copy/open actions.",
+      "Verify two threads with different worktrees and a shared-working-copy case; this slice must be useful before commit and PR controls land."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 59,
+      "url": "https://github.com/millZach/Sotto/issues/59",
+      "blockers": [
+        55,
+        58
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "title": "Stage, commit and manage the active branch",
+    "deps": [
+      16
+    ],
+    "what": "Complete local Git work from Sotto using the selected thread's working copy.",
+    "criteria": [
+      "Show staged versus unstaged changes, allow deliberate staging/unstaging and create a commit with an editable message.",
+      "Expose current branch and appropriate checkout/create-branch controls; preserve dirty changes and report conflicts or detached state accurately.",
+      "Refresh the diff and branch state after actions; a failed action remains actionable and never reports success early.",
+      "Verify normal commit, empty commit prevention, dirty branch switching and separate worktree isolation using temporary repositories."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 60,
+      "url": "https://github.com/millZach/Sotto/issues/60",
+      "blockers": [
+        59
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "title": "Push work and open the pull-request surface",
+    "deps": [
+      17
+    ],
+    "what": "Push a branch, create/open its pull request and follow review/check status inside Sotto.",
+    "criteria": [
+      "Use the configured repository identity and existing authentication; show target remote/base branch and editable PR title/body before the user's action.",
+      "Create or open the existing PR without duplicates; display actual review and check status with refresh and useful authentication/network errors.",
+      "Open relevant PR links according to browser preference and associate the surface with the correct branch/worktree.",
+      "Verify against a controlled repository or faithful API fixtures plus an authorized end-to-end smoke action; do not silently merge or publish merely from viewing a thread."
+    ],
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 61,
+      "url": "https://github.com/millZach/Sotto/issues/61",
+      "blockers": [
+        60
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "title": "Inspect checkpoints and perform supported thread reverts",
+    "deps": [
+      5,
+      6,
+      7,
+      15,
+      16
+    ],
+    "what": "Review changes associated with completed work and explicitly revert when the native provider supports matching conversation rollback.",
+    "criteria": [
+      "Record/recover checkpoint associations without changing thread/provider identities; display the affected file changes before acting.",
+      "Coordinate working-file restoration with native conversation rollback, with clear confirmation of what will change.",
+      "Respect provider capability differences, including Grok's lack of native rollback in the pinned reference; never present a file-only change as a complete conversation rewind.",
+      "Guard active/pending work and preserve unrelated edits; verify interrupted revert recovery and unsupported-provider states."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 62,
+      "url": "https://github.com/millZach/Sotto/issues/62",
+      "blockers": [
+        48,
+        49,
+        50,
+        58,
+        59
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "title": "Browse and invoke Codex skills",
+    "deps": [
+      1
+    ],
+    "what": "Type / or $ to find and select Codex's available personal and project skills.",
+    "criteria": [
+      "Discover enabled, user-invocable skills for the selected Codex account and actual working directory; preserve native names, descriptions and scope precedence.",
+      "Search and select through the composer; selection inserts a skill invocation for review rather than immediately starting work.",
+      "Refresh changed catalogs and distinguish native commands from skills; preserve normal manual native syntax and keyboard send behavior.",
+      "Verify native invocation and catalog failures. Build the shared picker/capability seam within this complete Codex slice; no skill editing or installation UI."
+    ],
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 63,
+      "url": "https://github.com/millZach/Sotto/issues/63",
+      "blockers": [
+        44
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "title": "Browse and invoke Claude skills",
+    "deps": [
+      20
+    ],
+    "what": "Use the same picker for Claude's own global and project skills.",
+    "criteria": [
+      "Discover from Claude's configured native sources and honor enabled/invocable flags and duplicate-name precedence.",
+      "Translate the selected invocation as required by Claude, including multi-mention limitations, rather than assuming Codex syntax works unchanged.",
+      "Show only the selected provider's relevant catalog, including skills found in the thread's worktree scope.",
+      "Verify selected and manually typed invocation with native fixtures and an installed-client smoke journey; no skill management UI."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 64,
+      "url": "https://github.com/millZach/Sotto/issues/64",
+      "blockers": [
+        63
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "title": "Browse and invoke Grok skills",
+    "deps": [
+      20
+    ],
+    "what": "Use the shared picker for the skills Grok actually exposes and can invoke.",
+    "criteria": [
+      "Discover native personal/project/plugin skills through Grok's supported catalog interface, honoring invocation availability.",
+      "Send native invocations through ACP and verify real expansion rather than treating text transport as proof of skill use.",
+      "Refresh account/directory changes and show unavailable discovery or invocation honestly.",
+      "Cover catalog errors, multiple mentions and reconnect in fixtures plus an installed-client smoke journey; no new Sotto skill engine."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 65,
+      "url": "https://github.com/millZach/Sotto/issues/65",
+      "blockers": [
+        63
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "title": "Show live tokens, context and estimated thread cost",
+    "deps": [
+      5,
+      6,
+      7
+    ],
+    "what": "Read compact native usage indicators while working without opening a separate analytics dashboard.",
+    "criteria": [
+      "Display provider-reported token activity and current context usage near the composer, with elapsed time where available.",
+      "Accumulate supported usage into a clearly labeled estimated thread cost using versioned rate inputs; distinguish an API-equivalent estimate from actual subscription billing.",
+      "Handle missing fields, caching, provider resets and model changes without inventing counts, double-counting replayed events or presenting unavailable data as zero.",
+      "Verify known usage fixtures and compare installed-client observations; detailed usage reports remain outside scope."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 66,
+      "url": "https://github.com/millZach/Sotto/issues/66",
+      "blockers": [
+        48,
+        49,
+        50
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "title": "Match T3's native compaction behavior",
+    "deps": [
+      23
+    ],
+    "what": "Use the provider's normal compaction strategy and T3's context recommendation and controls.",
+    "criteria": [
+      "Offer native manual compaction only where supported, prevent duplicate in-flight requests and report actual completion/failure.",
+      "Match the pinned proactive Claude predicate: at least 100,000 context tokens and at least 70 minutes since the last context update; suppress during running/pending states as T3 does.",
+      "Match Keep full history dismissal per context snapshot and native Claude resume-return choices, including Don't ask again; do not claim the heuristic measures cache expiry.",
+      "Preserve native auto-compaction defaults and explicit overrides; verify clock-controlled boundary cases and Codex/Claude/Grok capability differences without a custom summarizer."
+    ],
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 67,
+      "url": "https://github.com/millZach/Sotto/issues/67",
+      "blockers": [
+        66
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "title": "Start and resume a project-free Sotto chat with Codex",
+    "deps": [
+      1,
+      3,
+      20
+    ],
+    "what": "Open the Sotto area, start a saved conversation without a project and talk to the configured Codex coordinator with its normal skills.",
+    "criteria": [
+      "Add durable personal-chat identity and history without inventing a fake user project or rebinding existing project threads; record the additive terminology/persistence decision.",
+      "Offer New chat and saved chats, preserving each native conversation and the rule that a started conversation stays with its provider.",
+      "Use normal native Codex skills and conversation behavior, not the constrained command parser. Retrieve relevant existing global memory without granting new authority or leaking project-private context.",
+      "Verify restart, provider disconnect, changed coordinator defaults for new chats and coexistence with explicit project-thread management. No automatic project creation or delegation."
+    ],
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 68,
+      "url": "https://github.com/millZach/Sotto/issues/68",
+      "blockers": [
+        44,
+        46,
+        63
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "title": "Use Claude for persistent Sotto chats",
+    "deps": [
+      25,
+      21
+    ],
+    "what": "Start project-free Sotto conversations with the configured Claude coordinator and resume them later.",
+    "criteria": [
+      "Use Claude's native persistent conversation path with normal available skills, not the tool-disabled ephemeral classification path.",
+      "Reuse saved-chat navigation, scoped memory and rich answer rendering while retaining provider-specific history and permissions.",
+      "Changing the configured coordinator affects new chats and leaves existing Codex/Claude bindings intact.",
+      "Verify native create/send/resume, restart, skills and errors, without introducing a separate workflow harness."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 69,
+      "url": "https://github.com/millZach/Sotto/issues/69",
+      "blockers": [
+        68,
+        64
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "title": "Use Grok for persistent Sotto chats",
+    "deps": [
+      25,
+      22
+    ],
+    "what": "Start and resume project-free Sotto conversations with Grok and its normal native skills.",
+    "criteria": [
+      "Use a durable native Grok conversation with its available skills and preserve ACP pending requests/history.",
+      "Reuse saved-chat navigation, scoped memory and rich rendering; coordinator changes do not move existing chats across providers.",
+      "Preserve project-thread management and global versus project memory boundaries.",
+      "Verify native create/send/resume, restart, skill invocation and connection failure without automatic project work."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 70,
+      "url": "https://github.com/millZach/Sotto/issues/70",
+      "blockers": [
+        68,
+        65
+      ]
+    }
+  },
+  {
+    "id": 28,
+    "title": "Talk and dictate in the active Sotto conversation",
+    "deps": [
+      25,
+      26,
+      27
+    ],
+    "what": "Type, dictate or have a spoken exchange in the selected personal Sotto chat.",
+    "criteria": [
+      "Route existing MAI dictation into the focused personal chat and allow review/editing; conversational voice turns and replies append to that same saved history.",
+      "Use the established Grok voice default and Kokoro option, with interruption/mute and clear listening/speaking state.",
+      "Prevent speech from being routed to a different chat after focus changes or interpreted as an implicit authorization to create/manage project work.",
+      "Verify all three coordinator providers and a physical microphone-to-response journey on Windows; report measured latency honestly and retain the existing voice-budget issue's unresolved limits."
+    ],
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 71,
+      "url": "https://github.com/millZach/Sotto/issues/71",
+      "blockers": [
+        68,
+        69,
+        70
+      ]
+    }
+  },
+  {
+    "id": 29,
+    "title": "Turn a brainstorming chat into an editable prompt",
+    "deps": [
+      25
+    ],
+    "what": "Generate a useful prompt from a Sotto conversation for the user to copy and use themselves.",
+    "criteria": [
+      "Produce objective, relevant decisions/context, constraints/non-goals, deliverables, acceptance checks and unresolved questions, omitting empty sections.",
+      "Honor the latest corrections and separate accepted decisions from suggestions; do not invent missing requirements or silently resolve contradictions.",
+      "Show editable/copyable output and preserve the original chat. The action never creates a project, starts a thread or delegates work.",
+      "Evaluate a representative fixture set of short/long brainstorming, changed decisions and missing details against a documented fidelity/usefulness rubric, including human review before declaring the format proven."
+    ],
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 72,
+      "url": "https://github.com/millZach/Sotto/issues/72",
+      "blockers": [
+        68
+      ]
+    }
+  },
+  {
+    "id": 30,
+    "title": "Choose light, dark or system appearance and an accent",
+    "deps": [],
+    "what": "Configure Sotto's appearance while retaining its typography, identity and readable native controls.",
+    "criteria": [
+      "Add persisted light/dark/system and accent choices with immediate preview and correct initial/migrated settings.",
+      "Apply themes across existing rooms, settings, provider controls and shared Threads surfaces; new feature slices must honor the same tokens.",
+      "Supersede the prior black-only product requirement explicitly while preserving dictation behavior and the floating widget's separate behavior unless technically required.",
+      "Visually verify contrast, focus, native dropdowns, motion preferences and scale coverage; evolve the capture matrix rather than deleting quality gates."
+    ],
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 73,
+      "url": "https://github.com/millZach/Sotto/issues/73",
+      "blockers": []
+    }
+  },
+  {
+    "id": 31,
+    "existingIssueBlockers": [
+      24
+    ],
+    "title": "Verify the complete daily workspace and recovery journey",
+    "deps": [
+      4,
+      8,
+      9,
+      11,
+      13,
+      14,
+      18,
+      19,
+      24,
+      26,
+      27,
+      28,
+      29,
+      30
+    ],
+    "what": "Demonstrate the complete agreed daily workflow with mixed providers, working tools and recoverable state.",
+    "criteria": [
+      "Using the agreed native foundation, open/create a project, run independent threads, inspect activity/diagrams, use terminal/browser/files, review changes, commit and open a PR; also exercise personal chat, voice, skills and prompt generation.",
+      "Verify pane pinning/focus, theme/browser preferences, thread/project settle/restore, unsent drafts, queued messages and reconnect/restart recovery without cross-thread actions or duplicate sends.",
+      "Measure local send feedback, stream rendering and pane responsiveness separately from provider/network latency on representative long histories; fix material regressions and retain explicit unsupported-provider states.",
+      "Inspect actual Windows desktop/minimum-size layouts and repeat important journeys on supported macOS before calling them cross-platform verified. Confirm final behavior against the user references; native delivery under existing #24 is a release gate."
+    ],
+    "status": "published",
+    "phase": 6,
+    "github": {
+      "number": 74,
+      "url": "https://github.com/millZach/Sotto/issues/74",
+      "blockers": [
+        47,
+        51,
+        52,
+        54,
+        56,
+        57,
+        61,
+        62,
+        67,
+        69,
+        70,
+        71,
+        72,
+        73,
+        24
+      ]
+    }
+  }
+]

@@ -4,7 +4,7 @@
 .settings-subnav a { min-height: 32px; padding: 6px 0; border: 0; background: none; color: var(--tt-text-muted); font-size: 14px; font-weight: 400; }
 .settings-subnav a[aria-current='true'], .settings-subnav a:hover { background: none; color: var(--tt-text); }
 .settings-version { margin: 30px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.65; }
-.settings-scroll { min-height: 0; overflow-y: auto; padding: 30px 0 60px; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; }
+.settings-scroll { min-height: 0; overflow-y: auto; padding: 30px 0 60px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .settings-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; scroll-margin-top: 30px; }
 .settings-section + .settings-section { margin-top: 68px; padding-top: 0; border: 0; }
 .settings-section__heading { display: block; margin: 0 0 20px; padding: 0; border: 0; }
@@ -16,7 +16,7 @@
 .settings-rows .tt-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 230px); column-gap: 20px; align-items: center; }
 .settings-rows .tt-field__label { font-size: 15px; font-weight: 500; }
 .settings-rows .tt-field__description { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.settings-rows .tt-input, .settings-rows .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; background: transparent; border-color: var(--tt-hairline); border-radius: 999px; }
+.settings-rows .tt-field > .tt-input, .settings-rows .tt-field > .tt-select { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 100%; min-width: 0; background: transparent; border-color: var(--tt-hairline); border-radius: 999px; }
 .settings-rows textarea.tt-input { border-radius: 14px; }
 .settings-rows .tt-toggle { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 24px; padding: 18px 0; }
 .settings-rows .tt-toggle__copy { flex: 1; }
@@ -38,7 +38,7 @@
 .settings-danger-row h3 { font-weight: 500; }
 .account-settings .settings-state { margin-bottom: 24px; }
 .account-rows > label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, 260px); align-items: center; gap: 12px 22px; padding: 18px 0; border-top: 1px solid var(--tt-hairline); font-size: 15px; }
-.account-rows input:not([type='checkbox']), .account-rows select { width: 100%; min-width: 0; height: 36px; padding: 6px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: #080a09; color: var(--tt-text); font: inherit; font-size: 13px; }
+.account-rows input:not([type='checkbox']), .account-rows select { width: 100%; min-width: 0; height: 36px; padding: 6px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
 .account-rows .agent-checkbox { display: flex; }
 .account-connection { display: flex; align-items: center; gap: 20px; padding: 16px 0; }
 .account-connection p { flex: 1; color: var(--tt-text-muted); }
@@ -59,7 +59,7 @@
 .help-aside { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .help-aside .tt-panel { border: 0; padding: 0; background: none; }
 .help-aside .tt-panel__header { padding: 0 0 14px; }
-@media (max-width: 880px) { .settings-layout { grid-template-columns: 140px minmax(0, 1fr); gap: 28px; padding: 0 24px; } .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(100px, 180px); } }
+@media (max-width: 880px) { .settings-layout { grid-template-columns: 140px minmax(0, 1fr); gap: 28px; padding: 0 24px; } .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(100px, 230px); } }
 @media (max-width: 620px) {
   .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 20px; }
   .settings-subnav { position: static; flex-direction: row; overflow-x: auto; padding-top: 8px; gap: 18px; }
@@ -72,6 +72,21 @@
 }
 
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 999px; gap: 2px; }
-.segmented-control button { min-height: 28px; padding: 2px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 13px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
-.segmented-control button[aria-checked='true'] { color: #000; background: var(--tt-text); }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
+.segmented-control button[aria-checked='true'] { color: var(--tt-pill-ink); background: var(--tt-pill); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
+
+/* Accent picker: one swatch per accent, painted as the current mode paints it.
+   The chosen swatch carries a check and a ring, so the choice never rests on
+   colour alone. */
+.accent-picker { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
+.accent-picker__swatch { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 50%; color: var(--tt-on-accent); cursor: pointer; }
+.accent-picker__swatch[aria-checked='true'] { box-shadow: 0 0 0 2px var(--tt-canvas), 0 0 0 4px var(--tt-text); }
+.accent-picker__swatch:focus-visible { outline-offset: 5px; }
+.accent-picker__swatch[data-accent-swatch='teal'] { background: var(--tt-swatch-teal); }
+.accent-picker__swatch[data-accent-swatch='blue'] { background: var(--tt-swatch-blue); }
+.accent-picker__swatch[data-accent-swatch='violet'] { background: var(--tt-swatch-violet); }
+.accent-picker__swatch[data-accent-swatch='rose'] { background: var(--tt-swatch-rose); }
+.accent-picker__swatch[data-accent-swatch='amber'] { background: var(--tt-swatch-amber); }
+.accent-picker__swatch[data-accent-swatch='green'] { background: var(--tt-swatch-green); }
+@media (max-width: 620px) { .accent-picker { grid-column: 1; grid-row: auto; justify-content: start; } }

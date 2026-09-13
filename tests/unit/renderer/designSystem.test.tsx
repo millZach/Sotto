@@ -13,43 +13,11 @@ import { ShortcutKey } from '../../../src/renderer/src/components/ShortcutKey'
 import { ToastRegion } from '../../../src/renderer/src/components/ToastRegion'
 import { Toggle } from '../../../src/renderer/src/components/Toggle'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { ACCENTS, MODES, contrast, over, resolveColor, rootDeclarations } from './themeTokenResolver'
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const onboardingSource = readFileSync(join(process.cwd(), 'src/renderer/src/features/onboarding/Onboarding.tsx'), 'utf8')
-
-function channelToLinear(channel: number): number {
-  const value = channel / 255
-  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
-}
-
-function luminance(hex: string): number {
-  const channels = hex.slice(1).match(/.{2}/gu)?.map((value) => Number.parseInt(value, 16))
-  if (channels?.length !== 3) throw new Error(`Invalid test color: ${hex}`)
-  return 0.2126 * channelToLinear(channels[0]!)
-    + 0.7152 * channelToLinear(channels[1]!)
-    + 0.0722 * channelToLinear(channels[2]!)
-}
-
-function contrastRatio(first: string, second: string): number {
-  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
-  return (lighter! + 0.05) / (darker! + 0.05)
-}
-
-function colorPalettes(): Array<Record<'canvas' | 'surface' | 'surface-elevated' | 'border' | 'text' | 'text-2' | 'text-muted' | 'activity', string>> {
-  const names = ['canvas', 'surface', 'surface-elevated', 'border', 'text', 'text-2', 'text-muted', 'activity'] as const
-  const declarations = [...tokensCss.matchAll(/--tt-(canvas|surface|surface-elevated|border|text|text-2|text-muted|activity):\s*(#[0-9a-f]{6});/giu)]
-  const palettes: Array<Partial<Record<(typeof names)[number], string>>> = []
-  for (const match of declarations) {
-    const name = match[1] as (typeof names)[number]
-    if (name === 'canvas') palettes.push({})
-    palettes.at(-1)![name] = match[2]!
-  }
-  return palettes.map((palette) => {
-    for (const name of names) if (palette[name] === undefined) throw new Error(`Missing ${name} token`)
-    return palette as Record<(typeof names)[number], string>
-  })
-}
 
 afterEach(cleanup)
 
@@ -168,7 +136,7 @@ describe('Sotto design-system primitives', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save')
   })
 
-  it('defines one black palette with the Crossing tokens, no theme switch, and both reduced-motion paths', () => {
+  it('defines the Crossing tokens for a dark and a light room, scoped to the root, and both reduced-motion paths', () => {
     for (const token of [
       'canvas', 'surface', 'surface-elevated', 'text', 'text-2', 'text-muted', 'border', 'hairline', 'pill', 'pill-ink',
       'primary', 'primary-hover', 'activity', 'success', 'warning', 'error',
@@ -178,9 +146,12 @@ describe('Sotto design-system primitives', () => {
     }
     expect(tokensCss).toContain('--tt-canvas: #000000;')
     expect(tokensCss).toContain('color-scheme: dark;')
-    expect(tokensCss).not.toContain('data-theme')
+    expect(tokensCss).toContain('color-scheme: light;')
+    // The resolved mode lives on the root; the stylesheet never queries the system itself.
+    expect(tokensCss).toContain(":root[data-theme='light']")
     expect(tokensCss).not.toContain('prefers-color-scheme')
-    expect(tokensCss).not.toContain('--tt-side')
+    // The retired Rail layout's side-panel token stays gone (--tt-sidebar is the nav-rail fill).
+    expect(tokensCss).not.toMatch(/--tt-side:/u)
     expect(globalCss).not.toContain('data-theme')
     expect(globalCss).not.toContain('prefers-color-scheme')
     expect(tokensCss).toMatch(/--tt-font-ui:\s*'Bricolage Grotesque'/u)
@@ -199,14 +170,18 @@ describe('Sotto design-system primitives', () => {
     expect(onboardingSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
   })
 
-  it('keeps control borders at 3:1 and every text tier at 4.5:1 against the black room and its surfaces', () => {
-    const palettes = colorPalettes()
-    expect(palettes).toHaveLength(1)
-    const [palette] = palettes
-    for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
-      expect(contrastRatio(palette!.border, palette![surface])).toBeGreaterThanOrEqual(3)
-      for (const ink of ['text', 'text-2', 'text-muted', 'activity'] as const) {
-        expect(contrastRatio(palette![ink], palette![surface]), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+  it('keeps control borders at 3:1 and every text tier and the activity accent at 4.5:1 in every room and accent', () => {
+    for (const mode of MODES) {
+      for (const accent of ACCENTS) {
+        const declarations = rootDeclarations(mode, accent)
+        const canvas = resolveColor('--tt-canvas', declarations)
+        const color = (name: string) => over(resolveColor(`--tt-${name}`, declarations), canvas)
+        for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
+          expect(contrast(color('border'), color(surface)), `${mode}/${accent} border on ${surface}`).toBeGreaterThanOrEqual(3)
+          for (const ink of ['text', 'text-2', 'text-muted', 'activity'] as const) {
+            expect(contrast(color(ink), color(surface)), `${mode}/${accent} ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+          }
+        }
       }
     }
   })

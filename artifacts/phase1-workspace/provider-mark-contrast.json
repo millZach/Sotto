@@ -1,0 +1,56 @@
+{
+  "dark": [
+    {
+      "provider": "claude",
+      "background": "selected",
+      "ratio": 10.29
+    },
+    {
+      "provider": "claude",
+      "background": "sidebar",
+      "ratio": 10.84
+    },
+    {
+      "provider": "codex",
+      "background": "sidebar",
+      "ratio": 14.54
+    },
+    {
+      "provider": "codex",
+      "background": "sidebar",
+      "ratio": 14.54
+    },
+    {
+      "provider": "grok",
+      "background": "sidebar",
+      "ratio": 11.5
+    }
+  ],
+  "light": [
+    {
+      "provider": "claude",
+      "background": "selected",
+      "ratio": 4.59
+    },
+    {
+      "provider": "claude",
+      "background": "sidebar",
+      "ratio": 4.91
+    },
+    {
+      "provider": "codex",
+      "background": "sidebar",
+      "ratio": 4.18
+    },
+    {
+      "provider": "codex",
+      "background": "sidebar",
+      "ratio": 4.18
+    },
+    {
+      "provider": "grok",
+      "background": "sidebar",
+      "ratio": 4.89
+    }
+  ]
+}

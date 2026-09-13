@@ -6,7 +6,6 @@ import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AgentHost } from '../../src/main/agents/host'
 
-export const connection = { endpoint: 'ignored', credential: 'ignored' }
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
@@ -36,7 +35,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   const action = async (sessionId: string, value: Record<string, unknown>) => {
     await writeFile(join(root, 'control.json'), JSON.stringify({ id: randomUUID(), threadId: await realId(sessionId), ...value }))
   }
-  const fixture = { root, adapter, registry, host, connection, projectId: 'project', modelId: 'fixture-model', script, realId,
+  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId,
     driver: {
       typeInProvider: async (id: string, text: string) => {
         const codexThreadId = await realId(id)

@@ -12,11 +12,11 @@ async function main() {
   if (process.env.SOTTO_CLAUDE_LIVE !== '1') throw new Error('Set SOTTO_CLAUDE_LIVE=1 to run a synthetic native subscription turn.')
   const root = await mkdtemp(join(tmpdir(), 'sotto-claude-live-')); const cwd = join(root, 'project'); await mkdir(cwd)
   let host = new ClaudeStreamJsonHost({ userDataPath: root, requestTimeoutMs: 15000, pollIntervalMs: 50 })
-  const connection = { endpoint: '', credential: '' }; const id = randomUUID()
+  const id = randomUUID()
   const thread = async () => (await host.snapshot()).threads.find(thread => thread.id === id)!
   const until = async (check: () => Promise<boolean>) => { const deadline = Date.now() + 45000; while (!await check()) { if (Date.now() > deadline) throw new Error('Live Claude smoke timed out'); await new Promise(resolve => setTimeout(resolve, 50)) } }
   try {
-    const status = await host.connect(connection); assert.equal(status.connected, true, status.error ?? 'Claude subscription unavailable')
+    const status = await host.connect(); assert.equal(status.connected, true, status.error ?? 'Claude subscription unavailable')
     assert.ok(status.models.some(model => model.id === 'default' && model.ready))
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'synthetic', title: 'Synthetic verification', path: cwd })
     await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'synthetic', title: 'Synthetic verification', modelId: 'default' })
@@ -25,7 +25,7 @@ async function main() {
     assert.equal((await thread()).status, 'idle')
     assert.ok((await thread()).messages.some(message => message.role === 'assistant' && message.text.includes('SOTTO_ADAPTER_OK')))
     const before = await thread(); host.disconnect(); await host.closed()
-    host = new ClaudeStreamJsonHost({ userDataPath: root, requestTimeoutMs: 15000, pollIntervalMs: 50 }); host.observeThreads([id]); await host.connect(connection)
+    host = new ClaudeStreamJsonHost({ userDataPath: root, requestTimeoutMs: 15000, pollIntervalMs: 50 }); host.observeThreads([id]); await host.connect()
     assert.deepEqual((await thread()).messages, before.messages)
     const aliases = JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8')); const sessionId = aliases[id].sessionId
     const client = new ClaudeSubscriptionClient(root); const executable = await client.findExecutable(); assert.ok(executable)

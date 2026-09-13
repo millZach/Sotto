@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -43,7 +43,7 @@ class FixtureHost extends E2EAgentHost {
   }
   async acknowledge() { await super.execute(this.attempts.at(-1)!) }
 }
-async function fixture() {
+async function fixture(receiptIds: string[] = []) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-delivery-')); roots.push(root)
   const host = new FixtureHost()
   const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
@@ -56,6 +56,13 @@ async function fixture() {
   }
   let control = create()
   await control.start(); await control.command({ type: 'connect' })
+  if (receiptIds.length) {
+    control.dispose(); await control.privacyChanged(); controls.delete(control)
+    const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
+    saved.deliveredDrafts = receiptIds.map(draftId => ({ threadId: 'workshop', draftId }))
+    await writeFile(join(root, 'agents.json'), JSON.stringify(saved))
+    control = create(); await control.start(); await control.command({ type: 'connect' })
+  }
   return { root, host, reasoner, get control() { return control }, async restart() {
     control.dispose(); await control.privacyChanged(); controls.delete(control)
     control = create(); await control.start()
@@ -63,6 +70,21 @@ async function fixture() {
 }
 
 describe('navigation independent of action latency', () => {
+  it('sends a manual prompt on B while preserving the saved draft on A', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'Keep A', attachments: [image] })
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    const draftId = randomUUID()
+    const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(result.error).toBeNull()
+    expect(f.host.attempts.at(-1)).toMatchObject({ type: 'send', threadId: 'docs', text: 'Only B' })
+    expect(result).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image], deliveredDrafts: [{ threadId: 'docs', draftId }] })
+    expect(result.assignments.map(assignment => assignment.threadId)).toEqual(['workshop'])
+    await f.restart()
+    expect(f.control.get()).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image] })
+  })
+
   it('publishes cached B and observes it during deferred refresh, retaining the draft and send authority on A', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })
@@ -164,6 +186,26 @@ describe('navigation independent of action latency', () => {
 })
 
 describe('manual delivery receipts', () => {
+  it('preserves a foreign answer and images through uncertain manual delivery, restart, and acknowledgement', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })
+    await f.control.command({ type: 'compose', text: 'Keep this answer', attachments: [image] })
+    const saved = f.control.get()
+    expect(saved.draftRequestId).toBe('question-a')
+    f.host.withheld = 'uncertain'
+    const draftId = randomUUID()
+    const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(result.error).toMatch(/confirm/)
+    const expected = { draft: saved.draft, draftThreadId: saved.draftThreadId, draftRequestId: saved.draftRequestId, draftAttachments: saved.draftAttachments }
+    expect(result).toMatchObject(expected)
+    await f.restart()
+    await f.host.acknowledge()
+    expect(f.control.get()).toMatchObject({ ...expected, deliveredDrafts: [{ threadId: 'docs', draftId }] })
+    await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Only B', draftId })
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
   it('accepts optional UUID identities and retains legacy callers', () => {
     const command = { type: 'manual-send', threadId: 'workshop', text: 'Hello' }
     expect(agentCommandSchema.safeParse(command).success).toBe(true)
@@ -257,8 +299,12 @@ describe('manual delivery receipts', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
   it('bounds receipt history to 128 persisted identities', async () => {
-    const f = await fixture(); const ids: string[] = []
-    for (let i = 0; i < 130; i++) {
+    // Load a full durable history, then cross its retention boundary through real
+    // sends. Recreating all 128 prior conversations only measures filesystem load.
+    const ids = Array.from({ length: 128 }, () => randomUUID())
+    const f = await fixture(ids)
+    expect(f.control.get().deliveredDrafts).toHaveLength(128)
+    for (let i = 0; i < 2; i++) {
       const draftId = randomUUID(); ids.push(draftId)
       await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: `Prompt ${i}` })
       f.host.event({ type: 'ready', threadId: 'workshop', text: 'Done', status: 'idle' })

@@ -1,3 +1,4 @@
+import type { AgentVoiceTiming } from '../../../src/shared/agents'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -17,6 +18,7 @@ function harness() {
   let captureOptions!: VoiceCaptureOptions
   const states: AgentVoiceState[] = []
   const utterances: string[] = []
+  const timings: Array<AgentVoiceTiming | undefined> = []
   const capture = {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
@@ -54,22 +56,33 @@ function harness() {
     getSettings: () => ({ microphoneId: null, language: 'en' }),
     onState: (state) => states.push(state),
     onWake,
-    onUtterance: async (text) => { utterances.push(text) },
+    onUtterance: async (text, timing) => { utterances.push(text); timings.push(timing) },
   }, dependencies)
-  async function hear(text: string) {
+  async function hear(text: string, timing?: Pick<AgentVoiceTiming, 'speechEndedAt' | 'basis'>) {
     heardText = text
     local.transcribe.mockResolvedValue({ text, language: 'en' })
-    captureOptions.onUtterance(new Float32Array(16_000).fill(0.2))
+    captureOptions.onUtterance(new Float32Array(16_000).fill(0.2), timing)
     // Drain async transcript delivery, including a caller's awaited command.
     for (let tick = 0; tick < 12; tick++) await Promise.resolve()
   }
-  return { session, states, utterances, onWake, capture, local, wake, speech, hear,
+  return { session, states, utterances, timings, onWake, capture, local, wake, speech, hear,
     emit: () => captureOptions.onUtterance(new Float32Array(16_000).fill(0.2)) }
 }
 
 afterEach(() => { vi.useRealTimers() })
 
 describe('desktop agent voice interaction', () => {
+  it('carries capture timestamps through transcription and labels first request versus reused session', async () => {
+    const h = harness()
+    const timing = { speechEndedAt: '2026-09-12T12:00:00.000Z', basis: 'detector-frame-received' as const }
+    await h.session.start()
+    await h.hear('ordinary room conversation', timing)
+    await h.hear('Hey Sotto open the project', timing)
+    await h.hear('show the next thread', timing)
+    expect(h.timings).toEqual([{ ...timing, phase: 'cold' }, { ...timing, phase: 'warm' }])
+    h.session.dispose()
+  })
+
   it('requires working local wake setup before opening the microphone', async () => {
     const h = harness()
     h.wake.load.mockRejectedValueOnce(new Error("Error invoking remote method 'sotto:agents:wake': Error: Wake setup required."))

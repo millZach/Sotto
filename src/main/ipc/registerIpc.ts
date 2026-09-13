@@ -1,10 +1,12 @@
 import { z } from 'zod'
+import { externalLinkSchema } from '../../shared/externalLinks'
 
 import {
   APP_HIDE,
   APP_MINIMIZE,
   APP_QUIT,
   APP_SHOW,
+  EXTERNAL_LINK_OPEN,
   DICTATION_REQUEST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -69,6 +71,8 @@ const noPayloadSchema = z.undefined()
 const settingKeys = [
   'version',
   'theme',
+  'appearance',
+  'accent',
   'reducedMotion',
   'microphoneId',
   'maxRecordingSeconds',
@@ -242,6 +246,7 @@ export interface RegisterIpcDependencies {
   readonly hotkeys: HotkeyIpcService
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
+  readonly openExternalLink?: (url: string) => Promise<void>
   readonly dictation?: DictationIpcService
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
@@ -460,6 +465,10 @@ export function registerIpc(
     )
 
     register(APP_SHOW, noPayloadSchema, 0, () => dependencies.app.show())
+    register(EXTERNAL_LINK_OPEN, externalLinkSchema, 1, async url => {
+      if (!dependencies.openExternalLink) return UNAVAILABLE
+      try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
+    })
     register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
     register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
     register(APP_QUIT, noPayloadSchema, 0, () => dependencies.app.quit())

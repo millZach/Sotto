@@ -380,6 +380,8 @@ export interface SottoBridge {
   setStartup(enabled: boolean): Promise<StartupState>
 
   showApp(): Promise<void>
+  /** Opens a validated web/mail link after explicit activation in the main renderer. */
+  openExternalLink?(url: string): Promise<CommandResult>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
   quitApp(): Promise<void>

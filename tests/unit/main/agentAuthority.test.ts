@@ -43,7 +43,7 @@ async function fixture(authority?: Authority, recordTurns = true) {
   const credentials = new AgentCredentials(join(root, 'vault'), encryption)
   await credentials.load()
   const recorder = new TurnRecorder({ directory: root, historyEnabled: () => true,
-    resolveSession: id => ({ provider: 't3', sessionId: `session-${id}` }) })
+    resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
   const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
   const host = new RecordingHost()
   const control = new AgentControl({ directory: root, host, credentials, reasoner,

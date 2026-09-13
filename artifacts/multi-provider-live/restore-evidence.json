@@ -1,0 +1,56 @@
+{
+  "root": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-Jjp1xU",
+  "project": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-Jjp1xU\\project",
+  "syntheticOnly": true,
+  "restoreOnly": true,
+  "startedAt": "2026-09-12T20:07:51.935Z",
+  "submittedProviders": [],
+  "created": [
+    {
+      "id": "28746658-a723-4af9-82d1-954d73dfacee",
+      "title": "Independent Claude Code acceptance",
+      "providerId": "claude",
+      "projectId": "native:claude:project:61f910efba6b85e72bb03e5f0a160aab235936cda12d6c9279d73f7cc8b131c2",
+      "modelId": "native:claude:model:default"
+    },
+    {
+      "id": "3a9e72ed-6039-4c61-b74e-31ec268901a6",
+      "title": "Independent Grok Build acceptance",
+      "providerId": "grok",
+      "projectId": "native:grok:project:282a13b9d35fc84abdda31d053410f11e992058c9e884144013a3f824c1b101b",
+      "modelId": "native:grok:model:grok-4.6"
+    },
+    {
+      "id": "830601cb-79bb-45ea-b4fc-0577bf228f6f",
+      "title": "Independent Codex acceptance",
+      "providerId": "codex",
+      "projectId": "878bc8bd-bdb7-4428-8820-321c1d4be51c",
+      "modelId": "native:codex:model:gpt-6-astra"
+    }
+  ],
+  "connected": [
+    {
+      "id": "codex",
+      "connection": "connected"
+    },
+    {
+      "id": "claude",
+      "connection": "connected"
+    },
+    {
+      "id": "grok",
+      "connection": "connected"
+    }
+  ],
+  "coordinatorOffPreservesProviders": true,
+  "disconnectIsolation": true,
+  "restored": {
+    "sameBindings": true,
+    "sameNativeSessions": true,
+    "sameModels": true,
+    "noAdditionalTurns": true,
+    "noProjectFiles": true,
+    "coordinatorStillOff": true
+  },
+  "passed": true
+}

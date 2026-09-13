@@ -61,9 +61,12 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('screen.png')
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
-    await expect(page.getByRole('img', { name: 'screen.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'screen.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Stop agent', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((node, base64) => {
       const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0))
       const data = new DataTransfer()
@@ -73,6 +76,9 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('img', { name: 'pasted.png' })).toBeVisible()
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('pasted.png')
+    // Pending transcript content appears before the native delivery receipt clears the draft.
+    await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'pasted.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'pasted.png' })).toBeVisible()
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     const created = state.host.threads.find(thread => thread.id === state.activeThreadId)!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)
@@ -90,7 +96,8 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('img', { name: 'managed.png' })).toBeVisible()
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('managed.png')
-    await expect(page.getByRole('img', { name: 'managed.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'managed.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'managed.png' })).toBeVisible()
   } finally {
     if (previousFolder === undefined) delete process.env.SOTTO_E2E_PROJECT_DIRECTORY
     else process.env.SOTTO_E2E_PROJECT_DIRECTORY = previousFolder

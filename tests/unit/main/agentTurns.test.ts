@@ -51,7 +51,7 @@ async function fixture() {
   const recorder = new TurnRecorder({
     directory: root,
     historyEnabled: () => historyEnabled,
-    resolveSession: id => ({ provider: 't3', sessionId: `session-${id}` }),
+    resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }),
   })
   const binding: { control: AgentControl } = {} as { control: AgentControl }
   const reasoner = new ConfiguredAgentReasoner(() => binding.control.get().configuration, credentials)
@@ -95,6 +95,72 @@ afterEach(async () => {
 })
 
 describe('coordinator turn records', () => {
+  it('timestamps the first confirmed-message publication before a delayed command completes', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'A prompt whose acknowledgement is delayed.' })
+    let now = 100_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const acknowledged = gate(); const release = gate()
+    const execute = f.host.execute.bind(f.host)
+    vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+      const result = await execute(command)
+      if (command.type === 'send') { acknowledged.resolve(); await release.promise }
+      return result
+    })
+    const sending = f.control.command({ type: 'utterance', text: 'send it', voiceTiming: {
+      speechEndedAt: new Date(99_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })
+    try {
+      await acknowledged.promise
+      expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.messages.some(message => message.role === 'user')).toBe(true)
+      now = 105_000
+    } finally { release.resolve() }
+    await sending
+    const [record] = await f.recorder.recent(1)
+    expect(record?.timings.speechToFirstFeedbackMs).toBe(1_000)
+    expect(record?.timings.totalMs).toBe(5_000)
+  })
+
+  it('does not record a resolved intent when reasoning fails', async () => {
+    const f = await fixture(); await f.account()
+    f.service.offline = true
+    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
+      speechEndedAt: new Date(Date.now() - 800).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })
+    const [record] = await f.recorder.recent(1)
+    expect(record?.outcome).toBe('failed')
+    expect(record?.timings.intentMs).toBeGreaterThanOrEqual(0)
+    expect(record?.timings.speechToIntentMs).toBeNull()
+  })
+
+  it('propagates voice timing and records useful state publication without inventing acoustic timing', async () => {
+    const f = await fixture()
+    await f.account()
+    const speechEndedAt = new Date(Date.now() - 800).toISOString()
+    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
+      speechEndedAt, phase: 'cold', basis: 'detector-frame-received',
+    } })
+    const [record] = await f.recorder.recent(1)
+    expect(record?.timings).toMatchObject({ speechEndedAt, voicePhase: 'cold', speechEndBasis: 'detector-frame-received', feedbackBasis: 'main-state-published' })
+    expect(record?.timings.speechToIntentMs).toBeGreaterThanOrEqual(800)
+    expect(record?.timings.speechToFirstFeedbackMs).toBeGreaterThanOrEqual(record!.timings.speechToIntentMs!)
+    expect(record?.timings.retrievalCount).toBe(0)
+  })
+
+  it('keeps unavailable and invalid milestone durations null', async () => {
+    const f = await fixture()
+    const turn = f.recorder.begin({ source: 'utterance', commandType: 'utterance', text: '', voiceTiming: {
+      speechEndedAt: new Date(Date.now() + 60_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
+    } })!
+    turn.intentResolvedAtMs = Date.now()
+    turn.firstFeedbackAtMs = Date.now()
+    await f.recorder.finish(turn, 'completed')
+    const [record] = await f.recorder.recent(1)
+    expect(record!.timings.speechToIntentMs).toBeNull()
+    expect(record!.timings.speechToFirstFeedbackMs).toBeNull()
+  })
+
   it('writes a completed utterance turn with Sotto thread ID and provider session ID', async () => {
     const f = await fixture()
     await f.account()

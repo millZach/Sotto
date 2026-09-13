@@ -1,3 +1,4 @@
+import type { AgentVoiceTiming } from '../../../shared/agents'
 import { calculateRms, resampleMono } from '../audio/audioMath'
 import {
   AUDIO_CAPTURE_PROCESSOR_NAME,
@@ -14,7 +15,7 @@ import {
 export interface VoiceCaptureOptions {
   readonly selectedDeviceId?: string
   /** Finite mono 16 kHz PCM in [-1, 1], with a short local pre-roll. */
-  readonly onUtterance: (audio: Float32Array) => void
+  readonly onUtterance: (audio: Float32Array, timing?: Pick<AgentVoiceTiming, 'speechEndedAt' | 'basis'>) => void
   readonly onLevel?: (level: number) => void
   readonly onError: (error: Error) => void
 }
@@ -77,6 +78,7 @@ export class BrowserVoiceCapture implements VoiceCapture {
   private voicedFrames = 0
   private silentFrames = 0
   private lastLevelAt = 0
+  private speechEndedAt: string | undefined
 
   constructor(private readonly options: VoiceCaptureOptions) {}
 
@@ -176,6 +178,8 @@ export class BrowserVoiceCapture implements VoiceCapture {
     this.chunks.push(chunk)
     this.frames += chunk.length
     if (voiced) {
+      // Observe the actual voiced-frame arrival; include endpoint silence in downstream latency.
+      this.speechEndedAt = new Date(now).toISOString()
       this.voicedFrames += chunk.length
       this.silentFrames = 0
     } else {
@@ -191,6 +195,8 @@ export class BrowserVoiceCapture implements VoiceCapture {
         joined.set(pending, offset)
         offset += pending.length
       }
+      // A length-capped segment can end while the person is still speaking.
+      const speechEndedAt = this.silentFrames >= END_SILENCE_SECONDS * sampleRate ? this.speechEndedAt : undefined
       this.clearAudio()
       const audio = resampleMono(joined, sampleRate)
       // Sinc resampling can ring beyond full scale even after the microphone
@@ -199,13 +205,14 @@ export class BrowserVoiceCapture implements VoiceCapture {
         const sample = audio[index]!
         audio[index] = Number.isFinite(sample) ? Math.max(-1, Math.min(1, sample)) : 0
       }
-      this.options.onUtterance(audio)
+      this.options.onUtterance(audio, speechEndedAt === undefined ? undefined : { speechEndedAt, basis: 'detector-frame-received' })
     } else {
       this.clearAudio()
     }
   }
 
   private clearAudio(): void {
+    this.speechEndedAt = undefined
     this.preRoll = []
     this.preRollFrames = 0
     this.chunks = []

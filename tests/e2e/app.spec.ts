@@ -151,17 +151,31 @@ test('keeps history disabled without blocking dictation', async () => {
   }
 })
 
-test('tolerates a persisted light theme', async () => {
+test('keeps the widget theme apart from the main window and applies a persisted appearance after reload', async () => {
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
+    const html = launched.page.locator('html')
     await launched.page.evaluate(async () => {
       const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto
       await bridge.updateSettings({ theme: 'light' })
     })
     await launched.page.reload()
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
-    await expect(launched.page.locator('html')).not.toHaveAttribute('data-theme')
+    // The widget theme never reaches the main window, which keeps the dark default.
+    await expect(html).toHaveAttribute('data-theme', 'dark')
+    await expect(html).toHaveAttribute('data-accent', 'teal')
+
+    await launched.page.evaluate(async () => {
+      const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto
+      await bridge.updateSettings({ appearance: 'light', accent: 'rose' })
+    })
+    await expect(html).toHaveAttribute('data-theme', 'light')
+    await launched.page.reload()
+    await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+    await expect(html).toHaveAttribute('data-theme', 'light')
+    await expect(html).toHaveAttribute('data-accent', 'rose')
+    expect(await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(245, 246, 243)')
   } finally {
     await closeSotto(launched)
   }
@@ -480,7 +494,7 @@ test('transcription failure is finite and leaves clipboard and history untouched
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('alert')).toContainText(/could not transcribe/i)
+    await expect(launched.page.getByRole('alert')).toContainText(/transcription failed/i)
     expect(await snapshot(launched.page)).toMatchObject({
       clipboardText: PRESERVED_CLIPBOARD_TEXT,
       pasteAttempts: 0,

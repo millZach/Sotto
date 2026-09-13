@@ -120,11 +120,11 @@ import { AGENT_STATE, AGENT_E2E } from '../shared/agents'
 import { z } from 'zod'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
-import { T3CodeHost } from './agents/t3'
 import { CodexAppServerHost } from './agents/codex'
 import { ClaudeStreamJsonHost } from './agents/claude'
 import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
+import { WorkspaceHost } from './agents/workspace'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
 import { TurnRecorder } from './agents/turns'
@@ -496,15 +496,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
-  const agentHost = testAgentHost ?? new ConfiguredProviderHost({
+  const agentHost = new WorkspaceHost(testAgentHost ?? new ConfiguredProviderHost({
+    directory: userDataPath,
     hosts: {
-      t3: new SottoThreadHost('t3', new T3CodeHost({ onCredential: value => credentials.set('t3', value) }), threadRegistry!),
       codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
       claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
       grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),
     },
     provider: () => agentControl.get().configuration.provider,
-  })
+    enabledProviders: () => { const configuration = agentControl.get().configuration; return configuration.enabledProviders ?? [configuration.provider] },
+    threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
+  }), userDataPath, () => agentHistoryEnabled)
   const turns = new TurnRecorder({
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
@@ -837,6 +839,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           quit: () => app.quit(),
         },
         trustedSenders: () => windows.getTrustedRenderers(),
+        openExternalLink: url => shell.openExternal(url),
         dictation: {
           request(command): void {
             dispatchDictation(command)

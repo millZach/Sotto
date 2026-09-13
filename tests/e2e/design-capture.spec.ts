@@ -7,16 +7,18 @@ import { _electron as electron, expect, test, type Locator, type Page } from '@p
 import sharp from 'sharp'
 
 import {
+  DESIGN_CAPTURE_ACCENTS,
+  DESIGN_CAPTURE_APP_THEMES,
+  DESIGN_CAPTURE_MINIMUM_WIDTH,
   DESIGN_CAPTURE_REQUIREMENTS,
   DESIGN_CAPTURE_SCALES,
-  DESIGN_CAPTURE_THEME,
   DESIGN_CAPTURE_WIDGET_THEMES,
   designCaptureTupleKey,
 } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
-import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { DEFAULT_SETTINGS, type Accent, type Appearance } from '../../src/shared/settings'
 import {
   closeSotto,
   firstSottoWindow,
@@ -34,18 +36,20 @@ const repositoryRoot = process.cwd()
 const baselineRoot = resolve(repositoryRoot, 'artifacts/design/app-review/baseline')
 const manifestPath = resolve(repositoryRoot, 'artifacts/design/app-review/manifest.json')
 const actualRoot = resolve(repositoryRoot, 'test-results/design-capture/actual')
-/** The application is black only; the untouched widget still follows the system scheme. */
+/** The main window has a dark and a light room; the untouched widget still follows the system scheme. */
+const appThemes = DESIGN_CAPTURE_APP_THEMES
 const widgetThemes = DESIGN_CAPTURE_WIDGET_THEMES
 const scales = DESIGN_CAPTURE_SCALES
 const externalWidgetStates = ['listening', 'processing', 'pasted', 'copied', 'error'] as const
 type WidgetTheme = (typeof widgetThemes)[number]
-type CaptureTheme = typeof DESIGN_CAPTURE_THEME | WidgetTheme
+type AppTheme = (typeof appThemes)[number]
+type CaptureTheme = AppTheme | WidgetTheme
 type CaptureScale = (typeof scales)[number]
 type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget'
+  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -120,7 +124,7 @@ type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
 function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown> {
   const fixture = designThreadsFixture()
   return {
-    configuration: { provider: 't3', enabled: true, endpoint: 'http://127.0.0.1:3773', projectsDirectory: '', defaultModelId: 'claude:sonnet',
+    configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
       followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
       reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
     assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],
@@ -135,6 +139,8 @@ async function createProfile(
     readonly history?: readonly HistoryEntry[]
     readonly motion?: CaptureMotion
     readonly agents?: DesignAgentsProfile
+    readonly appearance?: Appearance
+    readonly accent?: Accent
   },
 ): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
@@ -143,6 +149,8 @@ async function createProfile(
     reducedMotion: options.motion === 'reduced' ? 'on' : 'system',
     onboardingComplete: options.onboardingComplete,
     successDisplayMs: 5_000,
+    appearance: options.appearance ?? DEFAULT_SETTINGS.appearance,
+    accent: options.accent ?? DEFAULT_SETTINGS.accent,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
@@ -158,6 +166,8 @@ async function withSotto(
     readonly scenario?: E2EScenario
     readonly scalePercent?: CaptureScale
     readonly agents?: DesignAgentsProfile
+    readonly appearance?: Appearance
+    readonly accent?: Accent
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -181,8 +191,11 @@ async function withSotto(
     launched = await launchSotto(options.scenario ?? 'success', profile, dependencies)
     const motion = options.motion ?? 'normal'
     await launched.page.emulateMedia({ reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
-    // The window is black whatever the system says; nothing ever themes the root.
-    await expect(launched.page.locator('html')).not.toHaveAttribute('data-theme')
+    // The persisted mode and accent paint the root at launch. Only System reads
+    // the scheme, and no fixed-mode capture depends on the machine's setting.
+    const appearance = options.appearance ?? DEFAULT_SETTINGS.appearance
+    if (appearance !== 'system') await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
+    await expect(launched.page.locator('html')).toHaveAttribute('data-accent', options.accent ?? DEFAULT_SETTINGS.accent)
     await expect.poll(() => launched!.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches")).toBe(motion === 'reduced')
     if (motion === 'reduced') await expect(launched.page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     else await expect(launched.page.locator('html')).not.toHaveAttribute('data-reduced-motion')
@@ -315,6 +328,39 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
 }
 
 /** The Dictate room says its state in the one sentence and marks the section for styling. */
+/** Save an appearance choice the way Settings does and wait for the root to repaint. */
+async function setAppearance(page: Page, patch: { readonly appearance?: Appearance; readonly accent?: Accent }, resolved: AppTheme): Promise<void> {
+  await page.evaluate(async (next) => { await window.sotto!.updateSettings(next) }, patch)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', resolved)
+  if (patch.accent !== undefined) await expect(page.locator('html')).toHaveAttribute('data-accent', patch.accent)
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme-switching')
+}
+
+/** Every token the room paints resolves through the root, so the rendered colours prove the mode and native controls follow. */
+async function assertRenderedRoom(page: Page, theme: AppTheme): Promise<void> {
+  const painted = await page.evaluate(() => {
+    const select = document.querySelector('select')
+    return {
+      canvas: getComputedStyle(document.body).backgroundColor,
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      selectScheme: select === null ? null : getComputedStyle(select).colorScheme,
+    }
+  })
+  expect(painted.canvas).toBe(theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(245, 246, 243)')
+  expect(painted.scheme).toBe(theme)
+  if (painted.selectScheme !== null) expect(painted.selectScheme).toBe(theme)
+}
+
+/** Narrow the main window below its shipped minimum to the Phase 1 review width. */
+async function setMainWindowWidth(launched: LaunchedSotto, width: number): Promise<void> {
+  await launched.app.evaluate(({ BrowserWindow }, contentWidth) => {
+    const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
+    window.setMinimumSize(contentWidth, 560)
+    window.setContentSize(contentWidth, 720)
+  }, width)
+  await expect.poll(() => launched.page.evaluate<number>('innerWidth')).toBe(width)
+}
+
 async function assertDictateState(page: Page, status: string, sentence: RegExp): Promise<void> {
   await expect(page.locator('.dictate')).toHaveAttribute('data-status', status)
   await expect(page.getByRole('heading', { level: 1, name: sentence })).toBeVisible()
@@ -710,6 +756,7 @@ test.describe('authoritative design-review captures', () => {
 
     await withSotto({ onboardingComplete: true }, async ({ page }) => {
       await page.getByRole('tab', { name: 'Agents' }).click()
+      await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
@@ -751,16 +798,27 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
       const settingsSections = [
-        ['AI account', 'account'],
+        ['Providers', 'providers'],
+        ['Agents', 'agents'],
         ['Dictation', 'capture'],
         ['Transcription', 'transcription'],
         ['Cleanup', 'cleanup'],
         ['Output', 'output'],
+        ['Appearance', 'appearance'],
         ['Application', 'application-privacy'],
       ] as const
       for (const [heading, state] of settingsSections) {
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
         await expect(section).toHaveCount(1)
+        if (state === 'agents') {
+          await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true }).click()
+          await expect(section.getByLabel('Reasoning account', { exact: true })).toBeVisible()
+          // The navigation sets aria-current before native smooth scrolling ends.
+          await page.waitForTimeout(700)
+          await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true })).toHaveAttribute('aria-current', 'true')
+          await capturePage(page, 'settings-agents.png', { category: 'settings', state })
+          continue
+        }
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
@@ -778,8 +836,9 @@ test.describe('authoritative design-review captures', () => {
     })
   })
 
-  test('threads page states', async () => {
-    await withSotto({ onboardingComplete: true, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
+  for (const appearance of ['dark', 'light'] as const) test(`threads page states in ${appearance}`, async () => {
+    const suffix = appearance === 'light' ? '-light' : ''
+    await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
@@ -788,38 +847,169 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
       await expect(page.getByText('Waiting on you')).toBeVisible()
       const open = async (title: string): Promise<void> => {
-        const toggle = page.getByRole('button', { name: title })
+        const toggle = page.getByRole('button', { name: title, exact: true })
         await toggle.click()
         await expect(toggle).toHaveAttribute('aria-current', 'page')
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
       await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
-      await capturePage(page, 'threads-populated.png', { category: 'threads', state: 'populated' })
+      await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 
       await open('Footer links')
       await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
-      await capturePage(page, 'threads-open-running.png', { category: 'threads', state: 'open-running' })
+      await capturePage(page, `threads-open-running${suffix}.png`, { theme: appearance, category: 'threads', state: 'open-running' })
 
       await open('Streaming WAV stall')
       await expect(page.getByLabel('Thread transcript')).toContainText('The length marker fix still fails')
       await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
-      await capturePage(page, 'threads-stopped.png', { category: 'threads', state: 'stopped-open' })
+      await capturePage(page, `threads-stopped${suffix}.png`, { theme: appearance, category: 'threads', state: 'stopped-open' })
 
       await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
       await expect(page.getByRole('button', { name: /Settled/ })).toHaveAttribute('aria-expanded', 'true')
       // The attention queue stays listed whatever the query; a Codex-only result set follows it.
-      await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Weekly note' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Weekly note', exact: true })).toHaveCount(0)
       await page.evaluate("document.querySelector('.app-room')?.scrollTo(0, 0)")
-      await capturePage(page, 'threads-search.png', { category: 'threads', state: 'search' })
+      await capturePage(page, `threads-search${suffix}.png`, { theme: appearance, category: 'threads', state: 'search' })
     })
 
-    await withSotto({ onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
+    await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('heading', { name: /No threads yet|Nothing here yet/i })).toBeVisible()
-      await capturePage(page, 'threads-empty.png', { category: 'threads', state: 'empty' })
+      await capturePage(page, `threads-empty${suffix}.png`, { theme: appearance, category: 'threads', state: 'empty' })
+    })
+  })
+
+  test('light room, accents, System and the minimum width', async () => {
+    await withSotto({ onboardingComplete: false, appearance: 'light' }, async ({ page }) => {
+      const onboarding = page.locator('.onboarding-shell')
+      await assertRenderedRoom(page, 'light')
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await page.getByRole('button', { name: /test microphone/i }).click()
+      await expect(page.getByText(/microphone ready/i)).toBeVisible()
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-3-openrouter-light.png', { theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+      await assertDictateState(page, 'idle', /ready when you are/i)
+      await assertRenderedRoom(page, 'light')
+      await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
+      await assertFocusPresentation(page.getByRole('tab', { name: 'Agents' }))
+      await capturePage(page, 'focus-switch-tab-light.png', { focusTarget: 'tab', focus: true, theme: 'light' })
+      await assertFocusPresentation(page.getByRole('link', { name: 'History' }))
+      await capturePage(page, 'focus-navigation-light.png', { focusTarget: 'navigation', focus: true, theme: 'light' })
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await assertDictateState(page, 'listening', /^listening\./i)
+      await capturePage(page, 'dictate-listening-light.png', { theme: 'light' })
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await assertDictateState(page, 'success', /^pasted\.$/i)
+      await capturePage(page, 'dictate-pasted-light.png', { theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, scenario: 'transcription-failure', appearance: 'light' }, async ({ page }) => {
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await assertDictateState(page, 'error', /dictation needs attention/i)
+      await capturePage(page, 'dictate-error-light.png', { theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, motion: 'reduced', appearance: 'light' }, async ({ page }) => {
+      await page.getByRole('button', { name: 'Start dictation' }).click()
+      await assertDictateState(page, 'listening', /^listening\./i)
+      await capturePage(page, 'dictate-reduced-motion-light.png', { reducedMotion: true, theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, appearance: 'light' }, async ({ page }) => {
+      await page.getByRole('tab', { name: 'Agents' }).click()
+      await page.getByRole('button', { name: 'Not now', exact: true }).click()
+      await expect(page.locator('.agent-orb')).toBeVisible()
+      await capturePage(page, 'agents-room-light.png', { theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+      await page.getByRole('link', { name: 'History' }).click()
+      await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
+      await assertFocusPresentation(page.getByRole('searchbox', { name: 'Search transcripts' }))
+      await capturePage(page, 'focus-input-light.png', { focusTarget: 'input', focus: true, theme: 'light' })
+      await assertFocusPresentation(page.getByRole('button', { name: 'Clear history' }))
+      await capturePage(page, 'focus-destructive-light.png', { focusTarget: 'destructive', focus: true, theme: 'light' })
+      await page.locator('.history-entry__toggle').first().click()
+      await page.getByRole('button', { name: 'Copy transcript' }).first().click()
+      await expect(page.getByRole('status')).toContainText('Transcript copied')
+      await capturePage(page, 'history-populated-light.png', { theme: 'light' })
+
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+      await assertRenderedRoom(page, 'light')
+      const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
+      await pasteSwitch.scrollIntoViewIfNeeded()
+      await assertFocusPresentation(pasteSwitch)
+      await capturePage(page, 'focus-switch-light.png', { focusTarget: 'switch', focus: true, theme: 'light' })
+      await page.getByRole('switch', { name: 'Sound cues' }).click()
+      await expect(page.getByRole('status')).toHaveText('Setting saved.')
+      await capturePage(page, 'settings-feedback-light.png', { theme: 'light' })
+      for (const [heading, state] of [
+        ['Providers', 'providers'],
+        ['Dictation', 'capture'],
+        ['Appearance', 'appearance'],
+        ['Application', 'application-privacy'],
+      ] as const) {
+        const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+        await captureSection(page, section, `settings-${state}-light.png`, { category: 'settings', state, theme: 'light' })
+      }
+      await page.getByLabel('Paste delay').fill('10')
+      await page.getByLabel('Paste delay').press('Tab')
+      await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
+      await capturePage(page, 'settings-validation-error-light.png', { theme: 'light' })
+      await page.getByRole('link', { name: 'Help' }).click()
+      await expect(page.getByRole('heading', { name: 'Help' })).toBeVisible()
+      await captureFullSurface(page, page.locator('.help-view'), 'help-light.png', /Reset safely/i, { theme: 'light' })
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await assertDictateState(page, 'idle', /ready when you are/i)
+      for (const theme of appThemes) {
+        for (const accent of DESIGN_CAPTURE_ACCENTS.filter(candidate => candidate !== 'teal')) {
+          await setAppearance(page, { appearance: theme, accent }, theme)
+          await assertRenderedRoom(page, theme)
+          await capturePage(page, `accent-${accent}-${theme}.png`, { category: 'appearance', state: `accent-${accent}`, theme })
+        }
+      }
+
+      // System follows the scheme Windows reports, live, without a relaunch.
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.emulateMedia({ colorScheme: 'light' })
+      await setAppearance(page, { appearance: 'system', accent: 'teal' }, 'light')
+      const section = page.locator('#settings-appearance')
+      for (const theme of ['dark', 'light'] as const) {
+        await page.emulateMedia({ colorScheme: theme })
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+        await expect(section).toContainText(`Sotto follows Windows, ${theme} right now, with a teal accent.`)
+        await assertRenderedRoom(page, theme)
+        await captureSection(page, section, `appearance-system-${theme}.png`, { category: 'appearance', state: 'system-settings', theme })
+      }
+    })
+
+    await withSotto({ onboardingComplete: true, history: populatedHistory }, async (launched) => {
+      const { page } = launched
+      await setMainWindowWidth(launched, DESIGN_CAPTURE_MINIMUM_WIDTH)
+      for (const theme of appThemes) {
+        if (theme === 'light') await setAppearance(page, { appearance: 'light' }, 'light')
+        await page.getByRole('tab', { name: 'Dictate', exact: true }).click()
+        await assertDictateState(page, 'idle', /ready when you are/i)
+        await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-dictate-${theme}.png`, { theme })
+        await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+        const notNow = page.getByRole('button', { name: 'Not now', exact: true })
+        if (await notNow.isVisible()) await notNow.click()
+        await expect(page.locator('.agent-orb')).toBeVisible()
+        await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-agents-${theme}.png`, { theme })
+        await page.getByRole('link', { name: 'Settings' }).click()
+        await captureFullSurface(page, page.locator('.settings-view'), `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-settings-${theme}.png`, /^Application$/i, { theme })
+      }
     })
   })
 
@@ -827,6 +1017,7 @@ test.describe('authoritative design-review captures', () => {
     await withSotto({ onboardingComplete: true }, async ({ page }) => {
       await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
       await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+      await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'wake')
       await capturePage(page, 'agents-wake.png')
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sotto:e2e:microphone', { detail: 'Hey Sotto' })))
@@ -883,6 +1074,14 @@ test.describe('authoritative design-review captures', () => {
 
         await page.getByRole('link', { name: 'Help' }).click()
         await captureFullSurface(page, page.locator('.help-view'), `scale-${scalePercent}-help.png`, /Reset safely/i)
+
+        // The light room at the same scale, switched live.
+        await setAppearance(page, { appearance: 'light' }, 'light')
+        await page.getByRole('tab', { name: 'Dictate', exact: true }).click()
+        await assertDictateState(page, 'idle', /ready when you are/i)
+        await capturePage(page, `scale-${scalePercent}-dictate-light.png`, { theme: 'light' })
+        await page.getByRole('link', { name: 'Settings' }).click()
+        await captureFullSurface(page, page.locator('.settings-view'), `scale-${scalePercent}-settings-light.png`, /^Application$/i, { theme: 'light' })
       })
     }
   })
@@ -948,7 +1147,8 @@ test.describe('authoritative design-review captures', () => {
         'The idle widget renders the resting click-to-dictate sliver; idle captures are recorded after a completed session returns to idle.',
         'Established Task 12 widget baselines are referenced in place; they are not duplicated.',
         'Every tuple records explicit normal or reduced motion; normal launches emulate no-preference and reduced launches are separately asserted.',
-        'The application is black only, so every application tuple carries the theme black; the untouched widget follows the system scheme, emulated on its own window, so widget tuples keep light and dark.',
+        "Application tuples carry the main window's resolved mode, dark (the Crossing default existing installs keep) or light; accent and System tuples name the choice in their state. The untouched widget follows the system scheme, emulated on its own window, so widget tuples keep light and dark.",
+        'Width tuples narrow the main window to 760 logical pixels, below the shipped 820 minimum, to review the Phase 1 minimum width.',
         'Full Settings and Help surfaces include content outside the management scrollport, including every Settings section and Reset safely help.',
         'Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.',
         'Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta.',

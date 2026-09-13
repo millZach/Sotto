@@ -15,7 +15,6 @@ import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 const roots: string[] = []
 const controls: AgentControl[] = []
 const registries: ThreadRegistry[] = []
-const connection = { endpoint: 'http://localhost:3773', credential: 'fixture' }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
 async function directory(): Promise<string> {
@@ -60,8 +59,8 @@ afterEach(async () => {
 describe('Sotto thread interface', () => {
   it('exposes UUIDs and persists provider/session/project bindings before returning a snapshot', async () => {
     const f = await fixture()
-    const snapshot = await f.host.connect(connection)
-    expect(f.inner.connection).toEqual(connection)
+    const snapshot = await f.host.connect()
+    expect(f.inner.connectCalls).toBe(1)
     expect(snapshot).toEqual({ ...f.inner.state, threads: f.inner.state.threads.map((thread, index) => ({
       ...thread, id: snapshot.threads[index]!.id,
     })) })
@@ -80,7 +79,7 @@ describe('Sotto thread interface', () => {
 
   it('keeps IDs stable across snapshots and synchronous subscriber events, including discovered sessions', async () => {
     const f = await fixture()
-    const first = await f.host.connect(connection)
+    const first = await f.host.connect()
     const events: AgentHostSnapshot[] = []
     const unsubscribe = f.host.subscribe(snapshot => events.push(snapshot))
     f.inner.emit()
@@ -100,7 +99,7 @@ describe('Sotto thread interface', () => {
 
   it('translates send, answer and interrupt without changing other command fields', async () => {
     const f = await fixture()
-    const threadId = (await f.host.connect(connection)).threads[0]!.id
+    const threadId = (await f.host.connect()).threads[0]!.id
     const commands: AgentHostCommand[] = [
       { type: 'send', threadId, commandId: 'send-command', messageId: 'message', text: 'Hello', expectedLastUserMessageId: null },
       { type: 'answer', threadId, commandId: 'answer-command', requestId: 'request', answer: 'Yes', approved: true },
@@ -115,7 +114,7 @@ describe('Sotto thread interface', () => {
 
   it('durably reserves a separate provider session before creation and reuses it on retry', async () => {
     const f = await fixture()
-    await f.host.connect(connection)
+    await f.host.connect()
     const command: AgentHostCommand = { type: 'create-thread', threadId: randomUUID(), commandId: 'create-command',
       projectId: 'project', title: 'Created', modelId: 'fake:model' }
     const execute = f.inner.execute.bind(f.inner)
@@ -135,14 +134,14 @@ describe('Sotto thread interface', () => {
 
   it('forwards observed session IDs and skips unknown Sotto IDs', async () => {
     const f = await fixture()
-    const snapshot = await f.host.connect(connection)
+    const snapshot = await f.host.connect()
     f.host.observeThreads([snapshot.threads[0]!.id, 'unknown'])
     expect(f.inner.observed).toEqual(['session-workshop'])
   })
 
   it.each(['send', 'answer', 'interrupt'] as const)('rejects an unknown Sotto ID for %s', async type => {
     const f = await fixture()
-    await f.host.connect(connection)
+    await f.host.connect()
     await expect(f.host.execute({ type, threadId: 'session-workshop', commandId: 'command',
       messageId: 'message', requestId: 'request', text: 'Hello', answer: 'Yes' })).rejects.toThrow(
       'This thread is not known to Sotto. Refresh and select it again.')
@@ -151,11 +150,11 @@ describe('Sotto thread interface', () => {
 
   it('restores identical IDs and observations with a new registry and host after restart', async () => {
     const f = await fixture()
-    const first = await f.host.connect(connection)
+    const first = await f.host.connect()
     f.host.disconnect()
     const restarted = adapter(f.root, new FakeProviderHost(f.inner.state))
     restarted.host.observeThreads([first.threads[0]!.id])
-    expect(await restarted.host.connect(connection)).toEqual(first)
+    expect(await restarted.host.connect()).toEqual(first)
     expect(restarted.inner.observed).toEqual(['session-workshop'])
     expect(restarted.registry.all()).toEqual(f.registry.all())
   })
@@ -243,7 +242,7 @@ describe('ThreadRegistry durability', () => {
 
   it('does not dispatch creation when its binding cannot be saved and preserves the ID for a retry', async () => {
     const f = await fixture()
-    await f.host.connect(connection)
+    await f.host.connect()
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('Disk unavailable'))
     const command: AgentHostCommand = { type: 'create-thread', threadId: randomUUID(), commandId: 'create',
       projectId: 'project', title: 'Created', modelId: 'fake:model' }
@@ -279,34 +278,21 @@ describe('ThreadRegistry durability', () => {
 })
 
 describe('upgrade and event ordering', () => {
-  it('adopts provider IDs saved by a build without the registry so assignments keep resolving', async () => {
+  it('never adopts coincident provider IDs from a coordinator save without a registry', async () => {
     const root = await directory()
-    const provider = new FakeProviderHost()
-    // The previous build wired the provider adapter directly, so agents.json holds its session IDs.
-    const legacy = await startControl(root, provider as unknown as SottoThreadHost)
-    expect((await legacy.command({ type: 'assign', threadId: 'session-workshop' })).assignments[0]?.threadId).toBe('session-workshop')
-    legacy.dispose()
-    const upgraded = adapter(root, new FakeProviderHost(provider.state))
-    const control = await startControl(root, upgraded.host)
-    const state = await control.command({ type: 'refresh' })
-    expect(state.assignments[0]?.threadId).toBe('session-workshop')
-    expect(state.host.threads.find(thread => thread.id === 'session-workshop')?.title).toBe('Workshop')
-    expect(upgraded.registry.byThread('session-workshop')).toMatchObject({ provider: 'fake', sessionId: 'session-workshop' })
-    const created = await control.command({ type: 'create-thread', projectId: 'project', title: 'After upgrade', modelId: 'fake:model' })
-    expect(created.activeThreadId).toMatch(uuid)
-    expect(upgraded.inner.commands.at(-1)).toMatchObject({ type: 'create-thread', threadId: expect.not.stringMatching(created.activeThreadId!) })
-    control.dispose()
-    // Once the registry exists, newly discovered threads get Sotto UUIDs.
-    upgraded.inner.state.threads.push({ ...upgraded.inner.state.threads[0]!, id: 'session-later', title: 'Later' })
-    const restarted = adapter(root, new FakeProviderHost(upgraded.inner.state))
-    const snapshot = await restarted.host.connect(connection)
-    expect(snapshot.threads.find(thread => thread.title === 'Later')?.id).toMatch(uuid)
-    expect(snapshot.threads.find(thread => thread.title === 'Workshop')?.id).toBe('session-workshop')
+    await writeFile(join(root, 'agents.json'), JSON.stringify({ assignments: [{ threadId: 'session-workshop' }], activeThreadId: 'session-workshop' }))
+    const f = adapter(root)
+    const snapshot = await f.host.connect()
+    expect(snapshot.threads[0]!.id).toMatch(uuid)
+    expect(snapshot.threads[0]!.id).not.toBe('session-workshop')
+    expect(f.registry.byThread('session-workshop')).toBeUndefined()
+    await expect(f.host.execute({ type: 'send', commandId: 'old-send', threadId: 'session-workshop', messageId: 'old-message', text: 'Must not send' })).rejects.toThrow('not known')
+    expect(f.inner.commands).toEqual([])
   })
 
   it('mints UUIDs on a fresh install even though no registry file exists yet', async () => {
     const f = await fixture()
-    const snapshot = await f.host.connect(connection)
+    const snapshot = await f.host.connect()
     expect(snapshot.threads.map(thread => thread.id)).toEqual([expect.stringMatching(uuid), expect.stringMatching(uuid)])
   })
 
@@ -320,7 +306,7 @@ describe('upgrade and event ordering', () => {
     f.inner.emit()
     expect(events).toEqual([])
     expect(f.registry.all()).toEqual([])
-    const snapshot = await f.host.connect(connection)
+    const snapshot = await f.host.connect()
     expect(snapshot.threads[0]?.id).toBe('durable-workshop')
     f.inner.emit()
     expect(events[0]?.threads[0]?.id).toBe('durable-workshop')
@@ -334,7 +320,7 @@ describe('upgrade and event ordering', () => {
       { threadId: 'second', provider: 'fake', sessionId: 'session-workshop', projectId: 'project', createdAt },
       { threadId: 'first', provider: 'fake', sessionId: 'session-docs', projectId: 'project', createdAt },
     ] }))
-    const snapshot = await f.host.connect(connection)
+    const snapshot = await f.host.connect()
     expect(snapshot.threads[0]?.id).toBe('first')
     expect(snapshot.threads[1]?.id).toMatch(uuid)
     expect((await readdir(f.root)).some(name => name.includes('corrupt'))).toBe(false)

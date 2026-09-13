@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
@@ -8,6 +8,8 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
+import { liveAgentState } from './liveAgentState'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -20,7 +22,7 @@ function stateFixture(): AgentState {
     configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
     connection: 'connected',
     host: {
-      connected: true, name: 'T3 Code', version: 'test',
+      connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
@@ -30,14 +32,18 @@ function stateFixture(): AgentState {
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', busy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { t3: true, reasoning: false, grokSpeech: false, secure: true },
+    credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },
   }
 }
 
+let connectionStores = new WeakMap<ReturnType<typeof useAgents>['command'], ThreadDraftStore>()
 function connection(state: AgentState | null, command = vi.fn(async () => state)): ReturnType<typeof useAgents> {
-  return { state, command, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } }
+  let threadDrafts = connectionStores.get(command)
+  if (!threadDrafts) { threadDrafts = new ThreadDraftStore(command); connectionStores.set(command, threadDrafts) }
+  if (state) threadDrafts.receive(state)
+  return { state, command, threadDrafts, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } }
 }
 
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
@@ -47,7 +53,7 @@ function renderThreads(state: AgentState | null, command = vi.fn(async () => sta
   return { ...view, command, onOpenAgents }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap() })
 afterEach(cleanup)
 
 describe('thread grouping and states from Sotto state', () => {
@@ -86,7 +92,7 @@ describe('thread grouping and states from Sotto state', () => {
     expect(providerKey('OpenAI')).toBe('codex')
     expect(providerKey('Grok')).toBe('grok')
     expect(providerKey('xAI')).toBe('grok')
-    expect(providerKey('T3 Code')).toBe('other')
+    expect(providerKey('Unknown provider')).toBe('other')
     expect(providerKey('')).toBe('other')
     const state = stateFixture()
     state.host.models = state.host.models.map(model => model.id === 'claude:sonnet' ? { ...model, provider: 'Acme', name: 'Claude-ish 9' } : model)
@@ -143,6 +149,57 @@ describe('thread grouping and states from Sotto state', () => {
 })
 
 describe('ThreadsView workspace', () => {
+  it('keeps a working but disconnected thread’s fact in the sidebar with a warning cue', () => {
+    const state = stateFixture(); state.host.connected = false
+    renderThreads(state)
+    const status = screen.getByRole('button', { name: 'Footer links' }).querySelector('.thread-nav__status')!
+    expect(status).toHaveTextContent('Working · Disconnected')
+    expect(status).toHaveAttribute('data-state', 'working')
+    expect(status).toHaveAttribute('data-disconnected', 'true')
+  })
+
+  it('shows a pending manual message immediately and follows only its own delivery record', async () => {
+    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const live = liveAgentState(state)
+    vi.mocked(useAgents).mockImplementation(live.useLive)
+    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Show this pending message immediately.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Show this pending message immediately.')
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Queued')
+    act(() => live.deliver('grok-previews', 'submitting'))
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sending')
+    act(() => live.deliver('grok-previews', 'uncertain'))
+    await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed'))
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Show this pending message immediately.')
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep my replacement draft.' } })
+    // Another revision's receipt is not this message's receipt.
+    act(() => { live.publish({ deliveredDrafts: [{ threadId: 'grok-previews', draftId: crypto.randomUUID() }] }) })
+    expect(screen.getByLabelText('Pending message')).toBeVisible()
+    act(() => live.deliver('grok-previews', 'accepted', 'Show this pending message immediately.'))
+    await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Show this pending message immediately.')
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep my replacement draft.')
+    expect(live.manualSends()).toBe(1)
+  })
+
+  it('keeps an unmanaged composer available when another thread owns the saved draft', () => {
+    const state = stateFixture()
+    state.assignments = []; state.activeThreadId = 'grok-previews'
+    state.draft = 'Keep the saved draft'; state.draftThreadId = 'visual-gate'
+    const { rerender } = renderThreads(state)
+    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'My next prompt' } })
+    state.host.threads.find(thread => thread.id === 'grok-previews')!.status = 'running'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('My next prompt')
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(state.draft).toBe('Keep the saved draft')
+  })
+
   for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'replacement images preserved' : 'the unchanged draft cleared'}`, async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     state.host.models.forEach(model => { model.supportsImages = true })
@@ -158,17 +215,44 @@ describe('ThreadsView workspace', () => {
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
     await screen.findByRole('img', { name: 'same-name.png' })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     if (edited) {
       fireEvent.click(screen.getByRole('button', { name: 'Remove same-name.png' }))
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
       await screen.findByRole('img', { name: 'same-name.png' })
     }
-    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'Review this' : ''))
     expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
-    expect(command).toHaveBeenCalledTimes(1)
+    expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
+  })
+
+  it('reconciles a late manual receipt while a managed thread has unmounted its composer', async () => {
+    const state = stateFixture(); state.activeThreadId = 'grok-previews'
+    state.assignments = state.assignments.filter(assignment => assignment.threadId === 'footer-links')
+    let draftId = ''
+    const command = vi.fn(async (...args: unknown[]) => {
+      const request = args[0] as AgentCommand
+      if (request.type === 'manual-send') draftId = request.draftId!
+      return { ...state, error: 'Not confirmed yet' }
+    })
+    const { rerender } = renderThreads(state, command)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Deliver this only once' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    state.activeThreadId = 'footer-links'
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, activeThreadId: 'grok-previews', deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
+    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })
 
   it('shows loading and retry states instead of describing unfetched history as empty', () => {
@@ -248,7 +332,8 @@ describe('ThreadsView workspace', () => {
     const { command } = renderThreads(state)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'An edited unsent prompt' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt', exact: true }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled())
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
     expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'An edited unsent prompt' })
     expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('An edited unsent prompt')
   })
@@ -265,7 +350,7 @@ describe('ThreadsView workspace', () => {
     const state = stateFixture(); state.host.threads = []; state.queue = []
     renderThreads(state)
     expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Unsettled', exact: true })).toHaveTextContent('All caught up.')
+    expect(screen.getByRole('region', { name: 'Projects', exact: true })).toHaveTextContent('No open threads.')
   })
 
   it('searches settled history while preserving live attention in the sidebar', () => {

@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 test('saved attention does not cover the room while its provider is disconnected', async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-attention-'))
@@ -14,8 +15,8 @@ test('saved attention does not cover the room while its provider is disconnected
   await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), assignments: [], queue: savedQueue, activeThreadId: 'missing-thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [] }))
   const launched = await launchSotto('success', profile)
   try {
-    await launched.page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await expect(launched.page.getByRole('button', { name: 'Connect T3 Code', exact: true })).toBeVisible()
+    await openVoiceJourneyAgents(launched.page)
+    await expect(launched.page.getByRole('button', { name: 'Connect providers', exact: true })).toBeVisible()
     await expect(launched.page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).queue)).toEqual(savedQueue)
     await launched.page.screenshot({ path: 'artifacts/crossing/attention-disconnected.png' })
@@ -29,16 +30,17 @@ test('Later returns to the orb without answering a pending permission', async ()
   const launched = await launchSotto()
   const { page } = launched
   try {
-    await page.evaluate(async () => { await window.sotto!.updateSettings({ onboardingComplete: true }); await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
-    await page.reload()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await completeVoiceJourneySetup(page)
+    await openVoiceJourneyAgents(page)
+    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
+    await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'assign', threadId: 'workshop' }); await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', text: 'Allow this test change?' }) })
     await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
     const pending = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'workshop')!.requests)
     await page.getByRole('button', { name: 'Later', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'workshop')!.requests)).toEqual(pending)
-    await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { orbColor: 'violet' } }) })
+    await page.getByRole('button', { name: 'violet orb', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     await page.getByRole('link', { name: 'History', exact: true }).click()
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
@@ -61,9 +63,10 @@ test('Next finishes a review instead of cycling through the same requests', asyn
   const launched = await launchSotto()
   const { page } = launched
   try {
-    await page.evaluate(async () => { await window.sotto!.updateSettings({ onboardingComplete: true }); await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
-    await page.reload()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await completeVoiceJourneySetup(page)
+    await openVoiceJourneyAgents(page)
+    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
+    await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()
     await page.getByRole('button', { name: 'Enable spoken replies', exact: true }).click()
     await page.getByRole('button', { name: 'Mute spoken replies', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).configuration.speak)).toBe(false)
@@ -84,7 +87,7 @@ test('Next finishes a review instead of cycling through the same requests', asyn
     await page.getByRole('button', { name: /Review attention/ }).click()
     await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
     await page.reload()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await openVoiceJourneyAgents(page)
     await expect(page.getByRole('button', { name: 'Enable spoken replies', exact: true })).toHaveAttribute('aria-pressed', 'true')
   } finally { await closeSotto(launched) }
 })

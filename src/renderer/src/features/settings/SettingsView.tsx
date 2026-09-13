@@ -27,7 +27,9 @@ import { Toggle } from '../../components/Toggle'
 import { KNOWN_LANGUAGES } from '../../languages'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
-import { AgentAccountSettings, AgentSettingsLink } from '../../agents/AgentAccountSettings'
+import { AgentSetupFields } from '../../agents/AgentAccountSettings'
+import { ProvidersSettings } from '../../agents/ProvidersSettings'
+import { AppearanceSettings } from './AppearanceSettings'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -59,10 +61,11 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-capture', label: 'Dictation' },
   { id: 'settings-transcription', label: 'Transcription' },
   { id: 'settings-formatting', label: 'Cleanup' },
-  { id: 'settings-account', label: 'AI account' },
-  { id: 'settings-output', label: 'Output' },
-  { id: 'settings-privacy', label: 'Application' },
+  { id: 'settings-providers', label: 'Providers' },
   { id: 'settings-agents', label: 'Agents' },
+  { id: 'settings-output', label: 'Output' },
+  { id: 'settings-appearance', label: 'Appearance' },
+  { id: 'settings-privacy', label: 'Application' },
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
@@ -316,14 +319,18 @@ export function SettingsView({
   const updateActiveSection = useCallback((): void => {
     const scroller = scrollRef.current
     if (scroller === null) return
-    const edge = scroller.getBoundingClientRect().top + 24
+    const top = scroller.getBoundingClientRect().top
+    const padding = Number.parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0
     let current: SettingsSectionId = SETTINGS_SECTIONS[0].id
     for (const section of SETTINGS_SECTIONS) {
       const element = scroller.querySelector<HTMLElement>(`#${section.id}`)
-      if (element !== null && element.getBoundingClientRect().top <= edge) current = section.id
+      if (element !== null) {
+        const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0
+        if (element.getBoundingClientRect().top <= top + Math.max(24, padding + margin + 1)) current = section.id
+      }
     }
     if (scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
-      current = 'settings-agents'
+      current = SETTINGS_SECTIONS.at(-1)?.id ?? current
     }
     setActiveSection(current)
   }, [])
@@ -455,7 +462,9 @@ export function SettingsView({
             </div>
           </Card>
 
-          <Card className="settings-section" id="settings-account"><div className="settings-section__heading"><h2>AI account</h2></div><AgentAccountSettings /></Card>
+          <Card className="settings-section" id="settings-providers"><div className="settings-section__heading"><h2>Providers</h2></div><ProvidersSettings /></Card>
+
+          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2></div><AgentSetupFields /></Card>
 
           <Card className="settings-section" id="settings-output">
             <div className="settings-section__heading"><h2>Output</h2><p>{settings.autoPaste ? 'Sotto copies your words and pastes them at your cursor.' : 'Sotto copies your words so you can paste them yourself.'}</p></div>
@@ -466,6 +475,8 @@ export function SettingsView({
               <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onBlur={() => void saveSuccessDuration()} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field></div>
             </div>
           </Card>
+
+          <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} />
 
           <Card className="settings-section" id="settings-privacy">
             <div className="settings-section__heading"><h2>Application</h2><p>{settings.launchAtStartup ? 'Sotto opens when you sign in.' : 'Sotto opens when you launch it.'} {settings.historyEnabled ? 'Transcripts are kept on this computer.' : 'Transcript history is off.'}</p></div>
@@ -508,7 +519,6 @@ export function SettingsView({
               <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
             </div>
           </Card>
-          <Card className="settings-section" id="settings-agents"><div className="settings-section__heading"><h2>Agents</h2><p>Choose how Sotto connects to and manages your coding agents.</p></div><AgentSettingsLink /></Card>
         </div>
       </div>
 

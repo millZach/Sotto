@@ -8,13 +8,17 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The system that runs the agent for a thread: T3 Code (the default), Codex, Claude Code or Grok Build. One provider is active at a time; its installed client retains its own sign-in.
+**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 
-**Provider session.** The provider's own identifier for the same thread, for example a T3 thread ID or a Codex thread ID. Provider session IDs exist only inside the provider adapter and in the thread registry. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
+**Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
-**Thread binding.** The persisted record `Sotto thread ID → provider → provider session ID → project ID`. The **thread registry** stores bindings in `threads.json` in the user data folder, so the mapping survives a restart. Bindings are never deleted by Sotto; a provider that forgets a session leaves an orphan binding, which is harmless. On the first run after upgrading from a build without the registry (the saved coordinator state already refers to threads and the registry file does not exist), the provider's own IDs are adopted as Sotto thread IDs so saved assignments, drafts and queue items keep resolving.
+**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
+
+**Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
+
+**Provider retirement.** An upgrade that stops using an old thread provider while retaining recovery evidence and the user's draft. Old assignments, answers and uncertain actions are not transferred or replayed through a native client.
 
 **Thread interface.** The verbs the coordinator uses for any provider, with no provider identifiers in their signatures:
 
@@ -27,7 +31,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 | status | read every project, model and thread the provider knows | `snapshot` |
 | events | subscribe to status changes pushed by the provider | `subscribe` |
 
-Answering a question or permission request (`execute({ type: 'answer' })`) and creating a project are also part of the interface. `SottoThreadHost` in `src/main/agents/threads.ts` is the implementation that owns Sotto thread IDs and delegates to a provider adapter; `T3CodeHost` is the first provider adapter and `CodexAppServerHost` the second. `E2EAgentHost` is the fake adapter used by tests and end-to-end runs.
+Answering a question or permission request and creating a project are also part of the thread interface. The native provider adapters preserve Sotto thread identity across these actions.
 
 **Provider adapter.** An implementation of `AgentHost` that speaks one provider's protocol and identifiers. Every adapter must pass the shared adapter contract in `tests/integration/adapterContract.ts`. Avoid: "driver", "backend".
 
@@ -39,15 +43,17 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 ## Coordination
 
+**Coordinator.** The default reasoning agent Sotto uses for deep reasoning and managing assigned threads. Its account, model and reasoning effort are independent of the providers and models running those threads. Avoid: "thread provider" when referring to Sotto's reasoning agent.
+
 **Assignment.** Sotto's authority to reply automatically on a thread. Modes are `managed` (Sotto may send follow-ups within its limits) and `manual` (the user replied in the provider directly, so Sotto only watches). Selecting or reading a thread never creates an assignment. Avoid: "subscription", "watch".
 
 **Assignment facts.** What the coordinator records on an assignment so the app can say how it started and why it stopped: `startedAt`, `origin` (`voice`, `typed` or `unknown`), `stopReason` (`none`, `limit`, `repeat` or `error`) and `stoppedAt`. A takeover clears the stop facts; a save failure only stamps `error` when nothing else stopped the assignment first.
 
-**Threads page.** The management-window view that lists every thread the active provider knows, grouped as needs you, running, finished today and earlier days. Groups, states and the one-sentence summary derive only from the attention queue, assignments and thread status, never from provider-specific fields. Rows waiting on a decision carry the request inline with Allow and Deny; nothing else on the page answers a request. Attention rows are never hidden by search, and an open row's card shows the user's latest prompt. Avoid: "inbox", "dashboard".
+**Threads page.** The management-window view that lists threads across Sotto's providers, including retained threads whose provider is disconnected. A thread's messages and pending decisions stay with its original provider. Avoid: "inbox", "dashboard".
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
-**Draft.** The one prompt or answer the user is composing, bound to a thread and optionally to a question request. A draft survives a restart.
+**Draft.** An unsent prompt or answer, including its attachments, owned by a thread and optionally a question request. Each thread retains its own draft across navigation and restart; accepting one submitted revision does not clear a newer revision.
 
 **Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
 
@@ -107,7 +113,11 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 
 ## Main window
 
-**Crossing.** The main window's shell since redesign round 3: one black room under a thin strip, black only, set in Bricolage Grotesque. There is no light theme and no appearance setting; a persisted theme value is tolerated and ignored. The floating widget keeps its own look. Avoid: "dark mode" (there is no other mode).
+**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Bricolage Grotesque. It is dark by default and can be light; see Appearance. The floating widget keeps its own look.
+
+**Appearance.** The main window's mode setting: System, Light or Dark. Dark with the Teal accent is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is not appearance; it belongs to the floating widget. Avoid: "theme" for the main window.
+
+**Accent.** The one colour the main window uses for the dictation wave, primary actions, focus rings and selections: Teal, Blue, Violet, Rose, Amber or Green. Each accent has a dark-room and a light-room value.
 
 **Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
 
@@ -126,16 +136,15 @@ Answering a question or permission request (`execute({ type: 'answer' })`) and c
 - `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
 - `src/main/llm/transcriptPolishService.ts` — the cleanup pass.
 - `scripts/asr-bench/` — the transcription bench (`bench-stt.mjs`) and its results; `docs/perf/` holds the decision reports.
-- `src/renderer/src/styles/tokens.css` and `global.css` — the black token set and shared styles; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
-- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (one theme, scales, motion, focus).
+- `src/renderer/src/styles/tokens.css` and `global.css` — the dark, light and accent token sets and shared styles; `src/renderer/src/state/appearance.ts` applies the appearance to the window root; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
+- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (dark and light rooms, accents, minimum width, scales, motion, focus).
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.
 - `src/main/agents/threads.ts` — thread registry and `SottoThreadHost`.
 - `src/main/agents/turns.ts` — the turn recorder and turn record schema.
-- `src/main/agents/t3.ts` — the T3 Code provider adapter.
 - `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
-- `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which picks the active provider adapter at connect.
+- `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which aggregates independent provider connections and routes each thread to its bound adapter.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
 - `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state.
 - `docs/agent-control.md` — user-facing behaviour of agent control, including the Threads page.

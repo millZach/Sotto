@@ -1,0 +1,204 @@
+/* Rich message content — Markdown answers, code and submitted attachments.
+
+   Colours come from the theme tokens through the --rich-* properties below, so
+   an appearance theme can retune code or quote colours on .rich-message without
+   editing this file. Blocks that can be wider than the column (code, tables)
+   scroll inside themselves; the transcript never scrolls sideways. */
+
+.rich-message {
+  --rich-text: var(--tt-text-2);
+  --rich-strong: var(--tt-text);
+  --rich-muted: var(--tt-text-muted);
+  --rich-rule: var(--tt-code-border, var(--tt-border-faint));
+  --rich-block: var(--tt-code-bg, var(--tt-surface));
+  --rich-block-bar: var(--tt-surface-elevated);
+  --rich-link: var(--tt-link, var(--tt-primary));
+  --rich-link-hover: var(--tt-primary-hover);
+  --rich-caret: var(--tt-activity);
+  --rich-code-keyword: var(--tt-primary);
+  --rich-code-string: var(--tt-warning);
+  --rich-code-number: var(--tt-error);
+  --rich-code-title: var(--tt-text);
+  --rich-code-type: var(--tt-primary-hover);
+  --rich-code-comment: var(--tt-text-muted);
+  --rich-code-meta: var(--tt-text-muted);
+  --rich-code-text: var(--tt-code-text, var(--tt-text));
+  --rich-stripe: var(--tt-table-stripe, transparent);
+
+  min-width: 0;
+  color: var(--rich-text);
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.rich-message > :first-child { margin-top: 0; }
+/* The last child is always the link feedback line, so the last content block is second from the end. */
+.rich-message > :nth-last-child(2) { margin-bottom: 0; }
+
+/* Doubled class beats `.thread-message p`, which keeps pre-wrap for plain text. */
+.rich-message.rich-message p { margin: 0 0 12px; color: inherit; font-size: inherit; line-height: inherit; white-space: normal; overflow-wrap: anywhere; }
+.rich-message.rich-message > p:nth-last-child(2) { margin-bottom: 0; }
+
+.rich-message strong { color: var(--rich-strong); font-weight: 600; }
+.rich-message del { color: var(--rich-muted); }
+
+.rich-heading { margin: 22px 0 8px; color: var(--rich-strong); font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+.rich-heading--1 { font-size: 21px; }
+.rich-heading--2 { font-size: 18px; }
+.rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6 { font-size: 16px; }
+
+.rich-message ul, .rich-message ol { margin: 0 0 12px; padding-left: 24px; }
+.rich-message li { margin: 3px 0; padding-left: 2px; }
+.rich-message li > p { margin: 0; }
+.rich-message li > ul, .rich-message li > ol { margin: 2px 0 4px; }
+.rich-message li::marker { color: var(--rich-muted); }
+.rich-message li:has(> .rich-task) { list-style: none; margin-left: -22px; }
+.rich-task { width: 15px; height: 15px; margin: 0 9px 0 0; vertical-align: -2px; accent-color: var(--tt-primary); }
+
+.rich-message blockquote { margin: 0 0 12px; padding: 2px 0 2px 14px; border-left: 2px solid var(--rich-rule); color: var(--rich-muted); }
+.rich-message blockquote > :last-child { margin-bottom: 0; }
+
+.rich-message hr { height: 1px; margin: 20px 0; border: 0; background: var(--rich-rule); }
+
+.rich-link { color: var(--rich-link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: 2px; cursor: pointer; }
+.rich-link:hover { color: var(--rich-link-hover); text-decoration-color: currentColor; }
+.rich-link--inert { color: inherit; text-decoration-style: dotted; text-decoration-color: var(--rich-muted); cursor: help; }
+.rich-link--inert:hover { color: inherit; }
+
+.rich-message :not(pre) > code {
+  padding: 1px 5px;
+  border: 1px solid var(--rich-rule);
+  border-radius: 5px;
+  background: var(--rich-block);
+  color: var(--rich-code-text);
+  font-family: var(--tt-font-mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.rich-image-blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px dashed var(--rich-rule);
+  border-radius: 6px;
+  color: var(--rich-text);
+  vertical-align: baseline;
+}
+.rich-image-blocked svg { flex: none; color: var(--rich-muted); }
+.rich-image-blocked small { color: var(--rich-muted); font-size: 12px; }
+
+/* Code */
+
+.rich-code { margin: 14px 0; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); background: var(--rich-block); overflow: hidden; }
+.rich-code__bar { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--rich-block-bar); }
+.rich-code__language { flex: 1; min-width: 0; overflow: hidden; color: var(--rich-muted); font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.rich-code__status { color: var(--rich-muted); font-size: 14px; }
+.rich-code__copy {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-sm);
+  background: transparent;
+  color: var(--rich-muted);
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.rich-code__copy:hover { background: var(--tt-hover); color: var(--rich-strong); }
+.rich-code__copy[data-copied] { color: var(--tt-success); }
+.rich-code__copy[data-copied] svg { animation: rich-confirm 220ms cubic-bezier(.2, .9, .3, 1.3); }
+
+.rich-code__scroll {
+  margin: 0;
+  padding: 12px 14px 14px;
+  overflow-x: auto;
+  color: var(--rich-code-text);
+  font-family: var(--tt-font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+  scrollbar-width: thin;
+}
+.rich-code__scroll:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
+.rich-code__scroll code { font: inherit; }
+
+.rich-code .hljs-keyword, .rich-code .hljs-selector-tag, .rich-code .hljs-built_in, .rich-code .hljs-literal, .rich-code .hljs-doctag { color: var(--rich-code-keyword); }
+.rich-code .hljs-string, .rich-code .hljs-regexp, .rich-code .hljs-template-tag, .rich-code .hljs-addition, .rich-code .hljs-attr-value { color: var(--rich-code-string); }
+.rich-code .hljs-number, .rich-code .hljs-symbol, .rich-code .hljs-bullet, .rich-code .hljs-deletion, .rich-code .hljs-variable.language_ { color: var(--rich-code-number); }
+.rich-code .hljs-title, .rich-code .hljs-section, .rich-code .hljs-name, .rich-code .hljs-selector-id, .rich-code .hljs-selector-class { color: var(--rich-code-title); font-weight: 500; }
+.rich-code .hljs-type, .rich-code .hljs-class, .rich-code .hljs-attr, .rich-code .hljs-attribute, .rich-code .hljs-property, .rich-code .hljs-params { color: var(--rich-code-type); }
+.rich-code .hljs-comment, .rich-code .hljs-quote { color: var(--rich-code-comment); font-style: italic; }
+.rich-code .hljs-meta, .rich-code .hljs-punctuation, .rich-code .hljs-operator { color: var(--rich-code-meta); }
+.rich-code .hljs-emphasis { font-style: italic; }
+.rich-code .hljs-strong { font-weight: 600; }
+
+/* Tables */
+
+.rich-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); scrollbar-width: thin; }
+.rich-table:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.rich-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 16px; line-height: 1.5; }
+.rich-table th, .rich-table td { max-width: 42ch; min-width: 8ch; padding: 8px 14px; border-bottom: 1px solid var(--tt-hairline); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.rich-table th { background: var(--rich-block-bar); color: var(--rich-strong); font-weight: 600; white-space: nowrap; }
+.rich-table tbody tr:nth-child(even) td { background: var(--rich-stripe); }
+.rich-table tr:last-child td { border-bottom: 0; }
+.rich-table td + td, .rich-table th + th { border-left: 1px solid var(--tt-hairline); }
+
+/* Streaming caret: the last paragraph or list item carries it while the provider writes. */
+
+.rich-message[data-streaming] > p:nth-last-child(2)::after,
+.rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: var(--rich-caret);
+  vertical-align: -0.15em;
+  animation: rich-caret 1.1s ease-in-out infinite;
+}
+
+.rich-message__feedback { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--rich-muted); font-size: 14px; }
+.rich-message__feedback:empty { display: none; }
+.rich-message__feedback > span { color: var(--tt-error); }
+.rich-message__feedback-action { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
+.rich-message__feedback-action:hover { background: var(--tt-hover); }
+
+/* Attachments */
+
+.rich-attachments { margin-top: 12px; }
+.rich-attachments__list { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.rich-attachment { min-width: 0; margin: 0; color: var(--tt-text-2); }
+.rich-attachment--image { display: flex; flex-direction: column; gap: 6px; width: 208px; }
+.rich-attachment__frame { display: flex; align-items: center; justify-content: center; width: 208px; height: 140px; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); }
+.rich-attachment__frame img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.rich-attachment figcaption, .rich-attachment__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.rich-attachment__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.rich-attachment__meta { color: var(--tt-text-muted); font-size: 12px; }
+.rich-attachment--file { display: flex; align-items: center; gap: 10px; max-width: min(100%, 340px); min-height: 52px; padding: 7px 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); }
+.rich-attachment--file > svg { flex: none; color: var(--tt-text-muted); }
+/* Doubled class beats `.thread-message p` inside a user message. */
+.rich-attachments__notice.rich-attachments__notice { margin: 10px 0 0; color: var(--tt-text-muted); font-size: 14px; line-height: 1.5; white-space: normal; }
+
+@keyframes rich-caret { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes rich-confirm { from { transform: scale(.6); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+
+/* Both the system preference and Sotto's own reduced-motion setting hold the caret solid. */
+@media (prefers-reduced-motion: reduce) {
+  .rich-message[data-streaming] > p:nth-last-child(2)::after,
+  .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after { animation: none; }
+  .rich-code__copy, .rich-code__copy[data-copied] svg { transition: none; animation: none; }
+}
+
+:root[data-reduced-motion='on'] .rich-message[data-streaming] > p:nth-last-child(2)::after,
+:root[data-reduced-motion='on'] .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after,
+:root[data-reduced-motion='on'] .rich-code__copy[data-copied] svg { animation: none; }
+:root[data-reduced-motion='on'] .rich-code__copy { transition: none; }

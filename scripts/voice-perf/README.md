@@ -1,0 +1,29 @@
+# Windows voice budget measurement
+
+Run from the repository root:
+
+```powershell
+npm run perf:voice
+```
+
+Requires the installed Electron dependency, the existing Sotto OpenRouter transcription/Kokoro key and Grok speech key in Windows safeStorage, and MSVC C++ Build Tools plus the Windows SDK for the existing WASAPI helper (built automatically when absent). No new service, model download or settings change is required. The command creates a timestamped directory under `artifacts/voice-perf/`, measures production SQLite retrieval, builds an isolated Electron harness, captures 15 real voice pipeline turns plus 24 production Grok/Kokoro playback-and-stop trials, and writes `report.md`, `report.json`, `capture.json`, `retrieval.json`, redacted `turns.jsonl`, `speech.json`, and raw speech-loopback packet evidence. Synthesized fixture WAV files stay in the ignored artifact directory. Each of three fresh processes accepts five uploads of at most five seconds; the production transcription service permits one retry, so the ceiling is 150 audio seconds (about $0.005 at the MAI rate recorded in ADR-0006). The speech phase adds 12 fixed-fixture replies per provider (about $0.015 at the recorded speech rates), with three fresh processes per provider and four requests each. Fresh speech evidence replaces historical playback in the report; network-free replay of older captures without speech.json still uses the explicitly dated historical evidence.
+
+The benchmark opens an isolated hidden Electron profile. The production OS credential class reads the encrypted `formatting` and `grokSpeech` slots; only encrypted Chromium key metadata is copied to the temporary profile. No plaintext key reaches the renderer or disk. Personal settings, dictionary, transcripts, project state and the memory database are not read. The temporary profile is removed after its Electron process exits. The fixture provider cannot dispatch to any real coding agent. Only the checked-in `speech-tiny.wav` audio and `status-01` synthetic reply text are sent to their existing providers; fixture checksums/text are recorded. The speech phase plays those replies through the current audio output without changing system volume or devices.
+
+Fresh voice boundaries: a WebAudio source plays that WAV at real time into a MediaStream, which replaces physical `getUserMedia`. The shipped worklet, `BrowserVoiceCapture`, `AgentVoiceSession`, WAV encoder, MAI service, `AgentControl` draft composition and `TurnRecorder` execute normally. Wake detection is a fixture that always activates. A DOM draft in the hidden harness records a second diagnostic milestone after two animation frames; hidden-window scheduling can inflate it, so it is not shipping-UI evidence. No reasoning or agent delegation runs in this input workload. The separate speech workload uses the production Grok/Kokoro services, NativeSystemSpeech player and AgentVoiceSession. An injected Electron mouse down/up reaches a trusted click handler on the benchmark Stop speech button and calls the same immediate local stop path as AgentContext. Both the input dispatch and handler start have calibrated timestamps. Stop latency ends at the last actual Windows loopback output sample, not at the return from stop(). Each trial must show an active source around the stop, continuing source audio, valid timestamps and at least 300 ms observed silence. All 24 recorded trials met those conditions. No microphone or other process audio is captured.
+
+Cold means the first MAI request in a fresh Electron process, not a claim about remote provider residency. Warm reuses that process but reopens capture. Retrieval cold means the first query on each of 20 newly opened SQLite connections with Windows file cache intact; warm means 1,000 queries after 100 warmups on 10,000 synthetic memories. Connection creation/seeding is excluded. This is a bounded screen, especially the three cold voice samples; external load and network variation are uncontrolled.
+
+The production turn recorder distinguishes `detector-frame-received` from acoustic capture and `main-state-published` from renderer paint. Timestamp propagation retains endpoint silence and the renderer/main command queue in speech-to-feedback duration. The last voiced timestamp is not reconstructed by subtracting the configured silence timer. Length-capped continuous speech has no end-of-speech timestamp. Missing milestones, reversed clocks and stages never invoked remain null/excluded; older records parse with defaults. `retrievalCount` prevents zero-time absent retrieval from passing a budget.
+
+Replay a completed capture without network calls:
+
+```powershell
+node scripts/voice-perf/run.mjs --report-only --output artifacts/voice-perf/<run-directory>
+```
+
+Optionally add `--turns <explicit-turns.jsonl>` to summarize caller-selected turn telemetry. No default lookup opens personal history; imported text, errors and IDs are never written to the report. `--playback <evidence.json>` selects another compatible loopback export. Malformed input fails the command instead of becoming a zero-ms pass.
+
+`npm run test:voice-perf` verifies percentile/gate handling. Focused production tests are `tests/unit/main/agentTurns.test.ts`, `tests/unit/renderer/agentVoice.test.ts`, and `tests/unit/renderer/agentVoiceCapture.test.ts`. The harness main process is included in the standard Node typecheck.
+
+Remaining physical measurement gaps are deliberately UNMEASURED: acoustic speech end to shipping UI feedback and hardware input-switch/physical-speaker delay. Software input dispatch to actual Windows output silence and cold/warm first spoken audio are measured. A loaded-workload screen remains separate. See the existing `scripts/tts-bench/README.md` and `loopback.md` for the production playback/WASAPI procedure. A useful software proxy does not close those gaps.

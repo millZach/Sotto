@@ -9,6 +9,11 @@ import './agents/threads.css'
 import './agents/room.css'
 import './features/history/history.css'
 import './styles/crossing-settings.css'
+import { applyAppearance, readCachedAppearance } from './state/appearance'
+
+// Paint the last chosen look before settings arrive so a light room never
+// opens black for a frame; App re-applies from settings once they load.
+applyAppearance(readCachedAppearance())
 
 const rootElement = document.getElementById('root')
 
