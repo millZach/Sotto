@@ -62,7 +62,7 @@ it.each([false, true])('corroborated legacy input preserves management unless ex
   expect(c.get().assignments.find(a => a.threadId === threadId)?.mode).toBe(external ? 'manual' : 'managed')
   if (external) expect(current().messages).toContainEqual(expect.objectContaining({ text: 'External follow-up', role: 'user' }))
 })
-it('lagging full history preserves an already observed assistant tail', async () => {
+it.each([false, true])('lagging full history preserves an already completed assistant message, partial row=%s', async partial => {
   const { f, c, threadId, current } = await fixture()
   await c.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic' })
   const turnId = current().lastTurn!.id
@@ -71,7 +71,13 @@ it('lagging full history preserves an already observed assistant tail', async ()
   await f.action(threadId, { type: 'notify', method: 'item/completed', params: { turnId, item: { type: 'agentMessage', id: 'live-tail', text: 'Already displayed' } } })
   await event
   expect(current().messages.some(m => m.id === 'live-tail')).toBe(true)
+  if (partial) {
+    const state = JSON.parse(await readFile(join(f.root, 'state.json'), 'utf8'))
+    state.threads[await f.realId(threadId)].turns[0].items.push({ type: 'agentMessage', id: 'live-tail', text: 'Already' })
+    await writeFile(join(f.root, 'state.json'), JSON.stringify(state))
+  }
   await f.host.refreshThread!(threadId)
   const after = (await f.host.snapshot()).threads.find(t => t.id === threadId)!
   expect(after.messages.some(m => m.id === 'live-tail')).toBe(true)
+  expect(after.messages.find(m => m.id === 'live-tail')?.text).toBe('Already displayed')
 })
