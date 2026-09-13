@@ -1,0 +1,140 @@
+{
+  "connected": {
+    "connection": "connected",
+    "version": "",
+    "models": [
+      "native:codex:model:fixture-model"
+    ]
+  },
+  "liveLine": "Working for 1s",
+  "settledText": [
+    "Worked for 4.2sRan 2 commands, changed 1 file, 1 agent action, 1 reasoning summarynpm run lintExit 1"
+  ],
+  "settled": [
+    {
+      "kind": "turn",
+      "status": "completed",
+      "title": "Turn completed",
+      "timingSource": "provider",
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "startedAt": "2026-09-13T03:36:31.000Z",
+      "completedAt": "2026-09-13T03:36:35.227Z"
+    },
+    {
+      "kind": "reasoning",
+      "status": "completed",
+      "title": "Reasoning summary",
+      "durationMs": 220,
+      "timingSource": "provider",
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "startedAt": "2026-09-13T03:36:31.869Z",
+      "completedAt": "2026-09-13T03:36:32.089Z"
+    },
+    {
+      "kind": "command",
+      "status": "completed",
+      "title": "Command",
+      "durationMs": 412,
+      "timingSource": "provider",
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "startedAt": "2026-09-13T03:36:32.196Z",
+      "completedAt": "2026-09-13T03:36:34.782Z"
+    },
+    {
+      "kind": "subagent",
+      "status": "completed",
+      "title": "spawnAgent",
+      "durationMs": 2693,
+      "timingSource": "provider",
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "startedAt": "2026-09-13T03:36:32.411Z",
+      "completedAt": "2026-09-13T03:36:35.104Z"
+    },
+    {
+      "kind": "file-change",
+      "status": "completed",
+      "title": "File changes",
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "completedAt": "2026-09-13T03:36:34.889Z"
+    },
+    {
+      "kind": "command",
+      "status": "failed",
+      "title": "Command",
+      "durationMs": 6300,
+      "afterMessageId": "05b84e41-78d3-4780-afa6-2e2905e0a10b",
+      "completedAt": "2026-09-13T03:36:34.996Z"
+    }
+  ],
+  "order": [
+    "thread-message",
+    "thread-activity",
+    "thread-message"
+  ],
+  "commandNote": "Reported by Codex",
+  "secondLiveLine": "Working for 0s",
+  "disconnected": "Last seen working",
+  "restored": {
+    "status": "running",
+    "activities": [
+      {
+        "kind": "turn",
+        "status": "completed",
+        "title": "Turn completed",
+        "turnId": "fb7e4c"
+      },
+      {
+        "kind": "reasoning",
+        "status": "completed",
+        "title": "Reasoning summary",
+        "turnId": "fb7e4c",
+        "durationMs": 220
+      },
+      {
+        "kind": "command",
+        "status": "completed",
+        "title": "Command",
+        "turnId": "fb7e4c",
+        "durationMs": 412
+      },
+      {
+        "kind": "subagent",
+        "status": "completed",
+        "title": "spawnAgent",
+        "turnId": "fb7e4c",
+        "durationMs": 2693
+      },
+      {
+        "kind": "file-change",
+        "status": "completed",
+        "title": "File changes",
+        "turnId": "fb7e4c"
+      },
+      {
+        "kind": "command",
+        "status": "failed",
+        "title": "Command",
+        "turnId": "fb7e4c",
+        "durationMs": 6300
+      },
+      {
+        "kind": "turn",
+        "status": "running",
+        "title": "Working",
+        "turnId": "3f06e0"
+      },
+      {
+        "kind": "command",
+        "status": "unknown",
+        "title": "Command",
+        "turnId": "3f06e0"
+      }
+    ]
+  },
+  "restoredText": [
+    "Worked for 4.2sRan 2 commands, changed 1 file, 1 agent action, 1 reasoning summarynpm run lintExit 1",
+    "npm test -- --run tests/unit/audioOutcome unknown"
+  ],
+  "restoredLive": 1,
+  "turnStarts": 2
+}
