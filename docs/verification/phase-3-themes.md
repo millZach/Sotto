@@ -18,11 +18,12 @@ Scope: branch `work/phase3-themes`. The main window's Accent chooser is replaced
 - [x] Persistence through restart: halves, contrast, custom themes and the painted contrast variable on the first frame.
 - [x] Server environment themes, the `t3 theme` CLI and mobile appearance are recorded as not applicable, with reasons, in ADR-0011.
 - [x] Inspector and diagram repaint loop reported by root: fixed and measured idle (below).
+- [x] Visual critic finding 2: the minimized editor is one row (title, Expand, Close) resting in the footer's right end, clear of Send and the footer links at 820x560 and 1280.
 - [ ] Mark, voice sphere and widget following the selected palettes. The branding worker owns this; ADR-0011 and CONTEXT record the rule.
 
 ## Tests
 
-Focused unit run, 17 files, 346 tests passed:
+Focused unit run, 17 files, 348 tests passed:
 - `themesIpc`, `themesOpenVsx`, `themeOpenVsxCorrections`
 - `designCaptureMatrix`, `notices`
 - `app`, `appearance`, `designSystem`, `diagramSafety` (two files), `messageDiagrams`
@@ -35,7 +36,7 @@ Other checks:
 - `npm run notices:verify` verified 170 components.
 - The full suite is root's final gate and was not run here.
 
-Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 2 passed.
+Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 3 passed (37.4 s).
 
 1. **The whole themes journey (about 22 s).** Every item in the checklist above, plus:
    - keyboard activation of a theme card keeps focus;
@@ -48,6 +49,11 @@ Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e
    - "Show where Background is used" is pressed.
 
    After an 800 ms settle, the page does nothing on its own for 2600 ms: 0 probe spans, 0 spotlight redraws and 0 root style writes. A second reply refreshes the spotlight, then the page is quiet again. With the fix removed, the same test measured 5 probes, 5 spotlights and 30 style writes, root's numbers exactly. The unit regressions in `themeInspector.test.tsx` fail with either half of the fix removed.
+3. **A minimized editor (about 4 s).** At 820x560 and at 1280, over a thread with a draft:
+   - the bar is one row, at most 44px tall;
+   - it does not overlap Send or the footer links;
+   - Playwright trial clicks land on Send and on every footer link;
+   - then the bar is dragged, expanded with the keyboard (focus lands on Theme name) and closed with Escape.
 
 Journey notes (`artifacts/phase-three-themes/journey-notes.txt`):
 - Hovering the Appearance heading labels it "Text".
@@ -61,6 +67,7 @@ All images are in `artifacts/phase-three-themes/`:
 - `themes-{1280,1600,820x560}-{light,dark,system}.png` and `threads-…` for the same nine combinations.
 - `theme-editor-820x560-light.png` and `theme-editor-resized-820x560-dark.png`.
 - `inspector-hover-1600-dark.png`, `inspector-spotlight-1600-dark.png` and `inspector-diagram-1280-dark.png`.
+- `editor-minimized-threads-{820x560,1280}-dark.png`.
 - `sliders-1600-dark.png`, `import-error-1600-dark.png` and `open-vsx-results-1600-dark.png`.
 
 ## Visual review
@@ -72,6 +79,7 @@ I inspected the rendered images myself, against the user's T3 Code Themes screen
 - **Palette spread.** In Threads, light Grove and dark Iris or Aurora reach the sidebar, selection, message bubbles, composer, request card and footer. No teal accent is left in the room.
 - **Remaining teal.** The Sotto mark in the strip is still teal. That belongs to the branding worker.
 - **Editor at 820x560.** The editor fits with Save and Cancel reachable. After resizing, it stays inside the window. The spotlight glow outlines the used elements, and a picked row is highlighted and scrolled into view.
+- **Minimized editor.** At 820x560 it is a 175x35 pill in the footer's right end. It covers only the end of the footer status sentence; Send and the links are clear.
 - **Sliders.** They show their value and reset control on one line, with one description each.
 
 ## Tastify checks
