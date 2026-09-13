@@ -20,6 +20,7 @@ import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider, useAgents } from './agents/AgentContext'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
+import { PersonalChatsView } from './agents/personal/PersonalChatsView'
 import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
@@ -62,6 +63,7 @@ function FooterStatus({ navigation, settings }: {
     case 'agents': return <AgentAppearance />
     case 'threads':
       return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
+    case 'chats': return 'Chats are saved on this computer.'
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
@@ -78,7 +80,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
-  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | null>(null)
+  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | 'settings' | null>(null)
   const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
@@ -255,6 +257,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onOpenAgents={() => { setAgentSheet('session'); app.actions.navigate('agents') }}
           now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
         />
+        break
+      case 'chats':
+        view = <PersonalChatsView onOpenCoordinatorSettings={() => { setAgentSheet('settings'); app.actions.navigate('agents') }} />
         break
       case 'history':
         view = <HistoryView

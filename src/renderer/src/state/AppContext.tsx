@@ -39,7 +39,7 @@ import { createUnconfiguredTranscriber, OpenRouterTranscriber, type Transcriptio
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'chats' | 'memory' | 'settings' | 'help'
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'

@@ -42,8 +42,8 @@ describe('AppShell', () => {
     expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
     expect(screen.getByText('Sotto')).toBeInTheDocument()
     const links = screen.getByRole('navigation', { name: 'Pages' })
-    expect(links.querySelectorAll('a')).toHaveLength(5)
-    for (const name of ['Threads', 'History', 'Memory', 'Settings', 'Help']) {
+    expect(links.querySelectorAll('a')).toHaveLength(6)
+    for (const name of ['Threads', 'Chats', 'History', 'Memory', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name })).not.toHaveAttribute('aria-current')
     }
     expect(screen.queryByRole('link', { name: /home|dictionary|agents|dictate/i })).not.toBeInTheDocument()
@@ -122,6 +122,7 @@ describe('AppShell', () => {
     expect(roomFor('home')).toBe('dictate')
     expect(roomFor('agents')).toBe('agents')
     expect(roomFor('threads')).toBe('agents')
+    expect(roomFor('chats')).toBe('agents')
     expect(roomFor('history')).toBeNull()
     expect(roomFor(null)).toBeNull()
   })

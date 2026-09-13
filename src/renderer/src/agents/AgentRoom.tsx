@@ -26,7 +26,7 @@ export function AgentAppearance(): ReactNode {
   </div>
 }
 
-export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onOpenThreads: () => void; readonly initialSheet?: 'session' | 'new' | null }): ReactNode {
+export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onOpenThreads: () => void; readonly initialSheet?: 'session' | 'new' | 'settings' | null }): ReactNode {
   const agents = useAgents()
   const { state, command } = agents
   const [sheet, setSheet] = useState<'session' | 'new' | 'settings' | null>(initialSheet)

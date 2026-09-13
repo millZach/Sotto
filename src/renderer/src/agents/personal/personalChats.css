@@ -1,0 +1,10 @@
+/* Chats: the Threads workspace's sidebar and conversation, with no project folders. Type and spacing are the Threads view's. */
+.personal-chats--unavailable { display: grid; flex: 1; place-items: center; min-height: 0; }
+.personal-chats__list { margin: 0; padding: 0; list-style: none; }
+.personal-chats .thread-nav__item { grid-template-columns: 18px minmax(0, 1fr); }
+.personal-chats__availability { flex-direction: column; gap: 6px; }
+.personal-chats__availability .thread-prompt__link { color: var(--tt-text); font-size: 13px; }
+.personal-chat__none { gap: 12px; }
+.personal-chat__none p { max-width: 42ch; line-height: 1.5; }
+.personal-chat__none .tt-button { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 38px; font-size: 14px; }
+.personal-chat__start p { max-width: 48ch; line-height: 1.5; }

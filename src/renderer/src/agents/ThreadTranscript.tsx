@@ -20,7 +20,7 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
   queued: 'Queued', submitting: 'Sending', accepted: 'Sent', failed: 'Not sent', uncertain: 'Unconfirmed',
 }
 
-interface ActivityContext {
+export interface ActivityContext {
   readonly liveTurn: string | null
   readonly running: boolean
   readonly connected: boolean
@@ -37,7 +37,7 @@ function ActivityGroups({ groups, context }: { readonly groups: readonly Activit
  * Rendered history with each activity group after the message it followed. Memoized on the message
  * array and placement so composer keystrokes and status ticks do not repaint it.
  */
-const MessageList = memo(function MessageList({ messages, provider, running, placement, context }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext
 }): ReactNode {
@@ -94,7 +94,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
-function reachesJumpBand(scroller: HTMLElement): boolean {
+export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
