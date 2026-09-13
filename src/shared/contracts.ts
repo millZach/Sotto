@@ -339,6 +339,7 @@ export interface SottoBridge {
   readonly personalChats?: import('./personalChats').PersonalChatBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge
+  readonly themes?: import('./themes/bridge').ThemesBridge
   readonly gitChanges?: import('./gitChanges').GitChangesBridge
   readonly files?: import('./files').FilesBridge
   readonly memory?: import('./memory').MemoryBridge

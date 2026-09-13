@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   globalShortcut,
   ipcMain,
   Menu,
@@ -141,6 +142,9 @@ import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { resolveFilesBinding } from './files/binding'
 import { registerToolsIpc } from './tools/ipc'
+import { registerThemesIpc } from './themes/ipc'
+import { OpenVsxClient } from './themes/openVsx'
+import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
 import { BrowserService } from './tools/browser'
 import { GitChangesService } from './tools/gitChanges'
@@ -874,6 +878,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }),
         gitChanges: new GitChangesService({ files, copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } }),
       }, () => windows.getTrustedRenderers())
+      // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
+      const cleanupThemes = registerThemesIpc(ipcMain, {
+        openVsx: new OpenVsxClient(e2eConfiguration === null ? undefined : createOpenVsxFixtureFetch()),
+        chooseExportPath: async defaultName => {
+          if (e2eConfiguration !== null) return join(userDataPath, defaultName)
+          const parent = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())
+          const options = { defaultPath: defaultName, filters: [{ name: 'Theme', extensions: ['json'] }] }
+          const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+          return result.canceled || !result.filePath ? null : result.filePath
+        },
+      }, () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
@@ -949,6 +964,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupPersonalChats()
         cleanupFiles()
         cleanupTools()
+        cleanupThemes()
         cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.

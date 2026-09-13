@@ -2,6 +2,7 @@ import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONA
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
 import { contextBridge, ipcRenderer } from 'electron'
 import { createToolsBridges } from './tools'
+import { createThemesBridge } from './themes'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
@@ -248,6 +249,7 @@ export function createSottoBridge(
   )
   const bridge: SottoBridge = {
     ...createToolsBridges(renderer),
+    themes: createThemesBridge(renderer),
     files: Object.freeze<FilesBridge>({
       list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),
       preview: request => invokeParsed(renderer, FILES_PREVIEW, filesResultSchema(filePreviewSchema), fileRequestSchema.parse(request)),
