@@ -143,6 +143,22 @@ describe('rich message Markdown', () => {
 })
 
 describe('code blocks', () => {
+  it('uses the main-owned copy-only path when browser clipboard permission is denied', async () => {
+    const user = userEvent.setup()
+    const browserCopy = stubClipboard(async () => { throw new Error('Browser clipboard denied') })
+    const deliverOutput = vi.fn<NonNullable<Window['sotto']>['deliverOutput']>().mockResolvedValue('copied')
+    Object.defineProperty(window, 'sotto', { configurable: true, value: { deliverOutput } })
+    render(<MessageContent text={'```ts\n  const answer = 42;\n```'} />)
+    await user.click(screen.getByRole('button', { name: 'Copy ts code' }))
+    expect(await screen.findByText('Copied')).toBeInTheDocument()
+    expect(deliverOutput).toHaveBeenCalledWith({ text: '  const answer = 42;', autoPaste: false, pasteDelayMs: 50 })
+    expect(browserCopy).not.toHaveBeenCalled()
+    deliverOutput.mockResolvedValueOnce({ ok: false, reason: 'unavailable' })
+    await user.click(screen.getByRole('button', { name: 'Copy ts code' }))
+    expect(await screen.findByText('Copy failed')).toBeInTheDocument()
+    expect(browserCopy).not.toHaveBeenCalled()
+  })
+
   it('highlights declared languages without HTML injection and copies the exact code with feedback', async () => {
     const user = userEvent.setup()
     const writeText = stubClipboard()

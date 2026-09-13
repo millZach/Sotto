@@ -125,6 +125,13 @@ function useTransientFlag(): [string | null, (value: string) => void] {
 }
 
 async function writeClipboard(text: string): Promise<void> {
+  // The production renderer deliberately denies browser clipboard permission.
+  // Use the same main-owned, copy-only output path as the History page.
+  if (window.sotto?.deliverOutput) {
+    const result = await window.sotto.deliverOutput({ text, autoPaste: false, pasteDelayMs: 50 })
+    if (result !== 'copied') throw new Error('Clipboard unavailable')
+    return
+  }
   if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
   await navigator.clipboard.writeText(text)
 }

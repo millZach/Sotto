@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, MessageSquare } from 'lucide-react'
 import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -76,16 +76,26 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
   const followed = useRef(followSignal)
   const seen = useRef<string | undefined>(undefined)
+  const firstRendered = useRef<{ readonly threadId: string; readonly messageId: string } | null>(null)
   const [limit, setLimit] = useState(TRANSCRIPT_PAGE)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   const submissions = useSubmissions(store)
   const pending = submissions.filter(item => item.threadId === thread.id)
     .map(item => ({ item, ...submissionStatus(item, state) })).filter(item => item.visible)
-  const messages = thread.messages.length > limit ? thread.messages.slice(-limit) : thread.messages
+  const sameThread = firstRendered.current?.threadId === thread.id
+  const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
+  // While reading earlier history, retain the first rendered message. A sliding
+  // last-N slice would otherwise remove a row above the reader on every arrival.
+  const start = !following.current && retainedStart >= 0 ? retainedStart : Math.max(0, thread.messages.length - (sameThread ? limit : TRANSCRIPT_PAGE))
+  const messages = useMemo(() => thread.messages.slice(start), [thread.messages, start])
   const hidden = thread.messages.length - messages.length
   const lastMessageId = thread.messages.at(-1)?.id
   const pendingKey = pending.map(item => `${item.item.draftId}:${item.status}`).join(',')
+
+  useLayoutEffect(() => {
+    firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
+  }, [messages, thread.id])
 
   const toEnd = useCallback((): void => {
     const element = scroller.current
@@ -144,6 +154,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const element = scroller.current
     if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
     following.current = false
+    const first = thread.messages[Math.max(0, start - TRANSCRIPT_PAGE)]
+    firstRendered.current = first ? { threadId: thread.id, messageId: first.id } : null
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
