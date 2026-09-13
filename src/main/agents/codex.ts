@@ -13,6 +13,7 @@ import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
@@ -33,15 +34,17 @@ const aliasesSchema = z.record(z.string(), aliasSchema)
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
 const rpcSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
-const itemSchema = z.object({ id: z.string(), type: z.string(), clientId: z.string().nullish(), text: z.string().optional(),
-  content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
-  changes: z.array(z.object({ path: z.string(), kind: z.object({ type: z.string() }).optional() })).optional() })
-const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish() })
+const itemSchema = codexItemSchema
+const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
+  completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
 const threadSchema = z.object({ id: z.string(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
-const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional() })
+const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
+  startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
+  error: z.object({ message: z.string() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
+  explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).optional() })
 class Uncertain extends Error {}
 class Rejected extends Error {
   readonly unmaterializedThreadId: string | undefined
@@ -80,6 +83,8 @@ export class CodexAppServerHost implements AgentHost {
   private readonly terminalTurns = new Set<string>()
   private readonly turnDates = new Map<string, string>()
   private readonly fileSummaries = new Map<string, string>()
+  private activity = new CodexActivityProjection()
+  private readonly completedMessages = new Set<string>()
   private readonly requests = new Map<string, CodexPendingRequest>()
   private readonly inFlightRequestIds = new Set<string>()
   private readonly waiters = new Map<string, Waiter>()
@@ -112,6 +117,7 @@ export class CodexAppServerHost implements AgentHost {
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
+    this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
@@ -297,14 +303,20 @@ export class CodexAppServerHost implements AgentHost {
     if (index < 0) thread.messages.push(message)
     else thread.messages[index] = { ...message, createdAt: thread.messages[index]!.createdAt }
   }
-  private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string): void {
+  private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string,
+    lifecycle: { phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; afterMessageId?: string | undefined; terminal?: boolean | undefined } = { phase: 'history' }): void {
+    const thread = this.ensureThread(id)
+    if (turnId) this.activity.item(thread, item, { ...lifecycle, turnId, afterMessageId: lifecycle.afterMessageId ?? thread.messages.at(-1)?.id })
     if (item.type === 'fileChange') {
       this.fileSummaries.set(item.id, (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return
     }
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
+    const messageKey = JSON.stringify([id, item.id])
+    if (item.type === 'agentMessage' && lifecycle.phase === 'started' && this.completedMessages.has(messageKey)) return
+    if (item.type === 'agentMessage' && (lifecycle.phase === 'completed' || lifecycle.terminal)) this.completedMessages.add(messageKey)
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(item.content)
+    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))
     let origin: Origin | undefined
     if (item.type === 'userMessage') {
       origin = alias.origins.find(o => o.itemId === item.id || o.messageId === item.clientId)
@@ -313,15 +325,24 @@ export class CodexAppServerHost implements AgentHost {
     }
     this.addMessage(id, { id: origin?.messageId ?? item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', text,
       createdAt: origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+    if (item.type === 'userMessage' && turnId) this.activity.anchor(thread, turnId, origin?.messageId ?? item.id)
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
-  private applyTurn(id: string, turn: z.infer<typeof turnSchema>): void {
+  private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false): void {
     const thread = this.ensureThread(id)
     const createdAt = turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : this.aliases[id]!.createdAt
     this.turnDates.set(turn.id, createdAt)
-    for (const item of turn.items) this.applyItem(id, item, turn.id, createdAt)
     // A delayed start response must never resurrect a turn whose completion already arrived.
     if (turn.status === 'inProgress' && this.terminalTurns.has(turn.id)) return
+    let anchor = thread.messages.at(-1)?.id
+    for (const item of turn.items) {
+      this.applyItem(id, item, turn.id, createdAt, { phase: 'history', afterMessageId: anchor, terminal: turn.status !== 'inProgress' })
+      if (item.type === 'userMessage' || item.type === 'agentMessage') anchor = this.aliases[id]!.origins.find(origin => origin.itemId === item.id)?.messageId ?? item.id
+    }
+    this.activity.turn(thread, turn, live)
+    if (!this.runningTurns.has(id) || this.runningTurns.get(id) === turn.id || turn.status === 'inProgress') {
+      thread.lastTurn = { id: turn.id, status: turn.status === 'inProgress' ? 'running' : turn.status }
+    }
     if (turn.status === 'inProgress') { this.runningTurns.set(id, turn.id); thread.status = 'running' }
     else {
       this.terminalTurns.add(turn.id)
@@ -416,6 +437,8 @@ export class CodexAppServerHost implements AgentHost {
           await this.decline(id)
           const turnId = this.runningTurns.get(id)
           if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
+            this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
+            this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           })
         } else {
@@ -505,20 +528,43 @@ export class CodexAppServerHost implements AgentHost {
       if (!parsed) { this.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }); return }
       this.touch(id!); this.requests.set(parsed.request.id, parsed); this.ensureThread(id!).requests.push(parsed.request); this.emit(); return
     }
-    if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved'].includes(frame.method ?? '')) return
+    if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',
+      'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress',
+      'turn/plan/updated', 'thread/status/changed'].includes(frame.method ?? '')) return
     const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
-    if (!id) return
+    if (!id) {
+      const owner = this.activity.childNotification(params.threadId, frame.method!, params)
+      if (owner) { this.touch(owner.id); this.emit() }
+      return
+    }
     this.touch(id)
-    if (params.turn) this.applyTurn(id, params.turn)
-    if (params.item) this.applyItem(id, params.item, params.turnId)
-    if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined) {
+    if (params.turn) this.applyTurn(id, params.turn, true)
+    if (params.item) this.applyItem(id, params.item, params.turnId, undefined, { phase: frame.method === 'item/started' ? 'started' : 'completed', startedAtMs: params.startedAtMs, completedAtMs: params.completedAtMs })
+    if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined
+      && !this.completedMessages.has(JSON.stringify([id, params.itemId])) && !this.terminalTurns.has(params.turnId ?? '')) {
       const previous = this.ensureThread(id).messages.find(m => m.id === params.itemId)
       this.addMessage(id, { id: params.itemId, role: 'assistant', text: (previous?.text ?? '') + params.delta,
         createdAt: previous?.createdAt ?? this.turnDates.get(params.turnId ?? '') ?? this.aliases[id]!.createdAt })
     }
+    if (['item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress'].includes(frame.method!)) {
+      this.activity.delta(this.ensureThread(id), frame.method!, params)
+    }
+    if (frame.method === 'turn/plan/updated' && params.turnId && params.plan) this.activity.plan(this.ensureThread(id), params.turnId, params.plan, params.explanation)
+    if (frame.method === 'thread/status/changed' && params.status) {
+      const thread = this.ensureThread(id)
+      thread.status = params.status.type === 'active' ? 'running' : params.status.type === 'systemError' ? 'error' : 'idle'
+      if (thread.status !== 'running') this.runningTurns.delete(id)
+    }
     if (frame.method === 'error') {
-      this.ensureThread(id).status = 'error'
-      if (params.turnId) this.terminalTurns.add(params.turnId)
+      if (params.error && params.turnId) this.activity.error(this.ensureThread(id), params.turnId, params.error.message, params.willRetry === true)
+      if (!params.willRetry) {
+        this.ensureThread(id).status = 'error'
+        if (params.turnId) {
+          this.terminalTurns.add(params.turnId); this.runningTurns.delete(id)
+          this.ensureThread(id).lastTurn = { id: params.turnId, status: 'failed' }
+          this.activity.turn(this.ensureThread(id), { id: params.turnId, status: 'failed', error: params.error }, true)
+        }
+      }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(requestKey(params.requestId))
     this.emit()

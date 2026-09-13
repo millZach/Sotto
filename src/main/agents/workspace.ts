@@ -8,6 +8,7 @@ import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
+import { mergeAgentActivities } from '../../shared/agentActivity'
 
 const workspaceSchema = z.object({
   snapshot: agentHostSnapshotSchema,
@@ -60,7 +61,9 @@ export class WorkspaceHost implements AgentHost {
       snapshot.models.forEach(model => { model.ready = false })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      if (!this.historyEnabled()) for (const thread of snapshot.threads) { thread.messages = []; thread.requests = [] }
+      if (!this.historyEnabled()) for (const thread of snapshot.threads) { thread.messages = []; thread.requests = []; delete thread.activities }
+      // Cached running activity is evidence of an unfinished observation, not a live process.
+      for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
       await this.inner.initialize?.()
       this.ready = true
       await this.privacyChanged()
@@ -111,6 +114,7 @@ export class WorkspaceHost implements AgentHost {
       threads.set(thread.id, { ...thread,
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
+        ...(old?.activities || thread.activities ? { activities: mergeAgentActivities(old?.activities, thread.activities) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
         workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true })
     }
@@ -129,6 +133,7 @@ export class WorkspaceHost implements AgentHost {
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
             thread.messages = []
             thread.requests = []
+            delete thread.activities
             if (thread.nativeSessionStarted) {
               thread.historyStatus = 'loading'
               delete thread.historyError

@@ -253,7 +253,14 @@ describe('Codex App Server provider adapter', () => {
     const before = (await f.host.snapshot()).threads[0]!
     const restarted = await f.driver.restart(); fixtures.push(restarted)
     await restarted.host.connect()
-    expect((await restarted.host.snapshot()).threads[0]).toEqual(before)
+    const restored = (await restarted.host.snapshot()).threads[0]!
+    // Live observation times belong to WorkspaceHost's privacy-aware cache;
+    // this bare native adapter can restore only timing present in native history.
+    const { activities: beforeActivities, ...beforeThread } = before
+    const { activities: restoredActivities, ...restoredThread } = restored
+    expect(restoredThread).toEqual(beforeThread)
+    expect(restoredActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
+      .toEqual(beforeActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
   })
   it('rejects a definitive send failure and permits a corrected dispatch', async () => {
     const f = await fixture(); const { threadId } = await create(f)

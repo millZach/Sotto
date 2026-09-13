@@ -160,6 +160,16 @@ setInterval(() => {
   if (action.type === 'exit') process.exit(0)
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
-  else if (action.type === 'notify') notify(action.method, { threadId: thread.id, ...action.params })
+  else if (action.type === 'notify') {
+    if (action.persist && action.params?.item) {
+      const turn = thread.turns.find(turn => turn.id === action.params.turnId)
+      if (turn) {
+        const index = turn.items.findIndex(item => item.id === action.params.item.id)
+        if (index < 0) turn.items.push(action.params.item); else turn.items[index] = action.params.item
+        save()
+      }
+    }
+    notify(action.method, { threadId: thread.id, ...action.params })
+  }
   else raise(thread, action.type, action.text, action.method, action.params)
 }, 10)

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -118,6 +119,9 @@ export const agentThreadSchema = z.object({
   settledAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
   settledOverride: z.enum(['settled', 'active']).nullable().optional(),
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
+  activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+  /** Native outcome evidence for queue admission; never an authority to replay work. */
+  lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
 })
