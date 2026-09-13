@@ -116,4 +116,3 @@ export class ThreadWorktrees {
     return { ...metadata, status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
   }
 }
-
