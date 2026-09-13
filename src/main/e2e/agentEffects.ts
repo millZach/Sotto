@@ -3,7 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { EMPTY_AGENT_HOST, agentRuntimeModeSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from '../agents/host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from '../agents/host'
+import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import type { AgentReasoner } from '../agents/reasoning'
 
 /** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
@@ -22,11 +23,17 @@ export class E2EAgentHost implements AgentHost {
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
   }
   constructor(scenario: E2EScenario = 'success') {
-    if (scenario === 'design-threads' || scenario === 'design-threads-empty') {
+    if (scenario === 'design-threads' || scenario === 'design-threads-empty' || scenario === 'phase3-workspace') {
       const fixture = designThreadsFixture()
       this.state.models = structuredClone([...fixture.models])
       this.state.projects = structuredClone([...fixture.projects])
       this.state.threads = scenario === 'design-threads' ? structuredClone([...fixture.threads]) : []
+      if (scenario === 'phase3-workspace') {
+        this.state.capabilities.skills = true
+        this.state.threads = structuredClone([...fixture.threads])
+        for (const model of this.state.models) model.providerId = model.id.startsWith('claude:') ? 'claude' : model.id.startsWith('grok:') ? 'grok' : 'codex'
+        for (const thread of this.state.threads) thread.providerId = this.state.models.find(model => model.id === thread.modelId)!.providerId
+      }
     }
   }
   /** Interactive journeys use real folders inside their owned profile, so normal cwd validation stays active. */
@@ -46,6 +53,17 @@ export class E2EAgentHost implements AgentHost {
     return this.snapshot()
   }
   async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.state) }
+  async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    if (!this.state.connected || !this.state.capabilities.skills) throw new Error('Connect the phase-three fixture to browse skills.')
+    const thread = this.state.threads.find(value => value.id === threadId)
+    const providerId = scope?.providerId ?? thread?.providerId
+    const cwd = scope?.workingDirectory ?? thread?.workingDirectory ?? this.state.projects.find(project => project.id === thread?.projectId)?.path
+    if (!providerId || !cwd) throw new Error('This fixture workspace is unavailable.')
+    return { threadId, providerId, cwd, status: 'ready', errors: [],
+      ...(providerId !== 'codex' ? { maxSkillsPerMessage: 1, invocationNotice: 'Choose one native skill per message.' } : {}),
+      skills: ['review', 'plan'].map(name => ({ name, path: `e2e-skill:${threadId}:${name}`, scope: 'repo', enabled: true, userInvocable: true,
+        invocation: `${providerId === 'codex' ? '$' : '/'}${name}`, description: name === 'review' ? 'Review the current changes.' : 'Plan the next change.' })) }
+  }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   disconnect(): void { this.state.connected = false }
   private emit(): void { for (const listener of this.listeners) listener(structuredClone(this.state)) }
@@ -59,6 +77,7 @@ export class E2EAgentHost implements AgentHost {
     this.commands.add(command.commandId)
     if (command.type === 'create-project') this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
     else if (command.type === 'create-thread') this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId,
+      ...(this.state.models.find(model => model.id === command.modelId)?.providerId ? { providerId: this.state.models.find(model => model.id === command.modelId)!.providerId! } : {}),
       runtimeMode: command.runtimeMode ?? 'approval-required', reasoningEffort: command.reasoningEffort ?? 'low', status: 'idle', messages: [], requests: [] })
     else {
       const thread = this.state.threads.find(t => t.id === command.threadId)

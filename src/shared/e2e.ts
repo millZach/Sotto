@@ -29,6 +29,7 @@ export const e2eScenarioSchema = z.enum([
   'design-processing',
   'design-threads',
   'design-threads-empty',
+  'phase3-workspace',
 ])
 
 export const e2eSnapshotSchema = z.object({
