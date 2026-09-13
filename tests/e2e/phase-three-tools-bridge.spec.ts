@@ -157,6 +157,26 @@ test('real Git diffs stay in their working copy and embedded pages cannot access
       return page.executeJavaScript('({bridge: document.body.dataset.bridge, require: document.body.dataset.require})')
     }, url)
     expect(boundary).toEqual({ bridge: 'undefined', require: 'undefined' })
+    const secondPage = await launched.page.evaluate(async ({ browser, url }) => {
+      const bridge = window.sotto!.browser!
+      const bounds = { x: 450, y: 120, width: 600, height: 450 }
+      const mounted = await bridge.mount({ ...browser, bounds })
+      if (!mounted.ok) throw new Error(mounted.error.message)
+      const created = await bridge.create({ threadId: browser.threadId, workspaceId: browser.workspaceId, url: `${url}second` })
+      if (!created.ok) throw new Error(created.error.message)
+      const second = { ...browser, pageId: created.value.id }
+      const results = await Promise.all([
+        bridge.mount({ ...browser, bounds: null }),
+        bridge.mount({ ...second, bounds }),
+      ])
+      for (const result of results) if (!result.ok) throw new Error(result.error.message)
+      return second
+    }, { browser, url })
+    await expect.poll(() => launched.app.evaluate(({ BrowserWindow, WebContentsView }, url) => {
+      const host = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+      return host.contentView.children.filter(view => view instanceof WebContentsView && view.webContents.getURL() === `${url}second`).length
+    }, url)).toBe(1)
+    await launched.page.evaluate(async request => window.sotto!.browser!.close(request), secondPage)
     const unsafe = await launched.page.evaluate(async browser => {
       try { return await window.sotto!.browser!.navigate({ ...browser, url: 'file:///C:/Windows/win.ini' }) }
       catch { return { ok: false } }
