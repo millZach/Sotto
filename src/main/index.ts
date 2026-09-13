@@ -1,3 +1,6 @@
+import { PersonalChatService } from './agents/personalChats'
+import { registerPersonalChatIpc } from './agents/personalChatIpc'
+import { PERSONAL_CHAT_STATE } from '../shared/personalChats'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -557,7 +560,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     }) : e2eAgentReasoner,
   })
   await agentControl.start()
+  const personalChats = new PersonalChatService({ userDataPath, configuration: () => agentControl.get().configuration,
+    ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled, nativeEnabled: e2eConfiguration === null })
+  await personalChats.start()
+  const unsubscribePersonalChats = personalChats.subscribe(state => windows.sendToMain(PERSONAL_CHAT_STATE, state))
+  app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
   const unsubscribeAgents = agentControl.subscribe(state => {
+    personalChats.configurationChanged()
     windows.sendToMain(AGENT_STATE, state)
     windows.sendToWidget(AGENT_STATE, state)
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
@@ -740,6 +749,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     async onSettingsChanged(settings): Promise<void> {
       agentHistoryEnabled = settings.historyEnabled
       await agentControl.privacyChanged()
+      await personalChats.privacyChanged()
       showWidgetWhenIdle = settings.showWidgetWhenIdle
       if (settings.onboardingComplete && dictationLifecycle.isIdle()) {
         // Re-seed the resting sliver so theme/shortcut changes repaint it and
@@ -837,6 +847,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
+      const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
       const cleanupFiles = registerFilesIpc(ipcMain, new FilesService({
         resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
         copyPath: path => clipboard.writeText(path),
@@ -914,6 +925,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       updates.start()
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
+        cleanupPersonalChats()
         cleanupFiles()
         cleanupMemory()
         unsubscribeRecoveryNotices()

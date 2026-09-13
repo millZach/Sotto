@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT, mergeAgentActivities, isTerminalActivity, type AgentActivity } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
+type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'>
 
 // Display fields selected from installed codex-cli 0.154.0's generated schema.
 // Only displayable fields survive this
@@ -56,13 +57,13 @@ const contentText = (value: unknown[] | null | undefined): string | undefined =>
 /** Observational native activity. Never sends commands, reads child transcripts or creates threads. */
 export class CodexActivityProjection {
   private readonly summaries = new Map<string, Map<number, string>>()
-  private readonly children = new Map<string, { thread: AgentThread; turnId: string }>()
-  private readonly terminalTurns = new WeakMap<AgentThread, Set<string>>()
-  private readonly seen = new WeakMap<AgentThread, Set<string>>()
-  private readonly turnAnchors = new WeakMap<AgentThread, Map<string, string>>()
+  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string }>()
+  private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
+  private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
+  private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
   constructor(private readonly now: () => number = Date.now) {}
 
-  anchor(thread: AgentThread, turnId: string, messageId: string): void {
+  anchor(thread: ActivityConversation, turnId: string, messageId: string): void {
     const anchors = this.turnAnchors.get(thread) ?? new Map<string, string>()
     if (anchors.has(turnId)) return
     anchors.set(turnId, messageId); this.turnAnchors.set(thread, anchors)
@@ -70,7 +71,7 @@ export class CodexActivityProjection {
     if (record) this.put(thread, { ...record, afterMessageId: messageId })
   }
 
-  private put(thread: AgentThread, activity: AgentActivity): void {
+  private put(thread: ActivityConversation, activity: AgentActivity): void {
     const previous = thread.activities?.find(record => record.id === activity.id)
     const seen = this.seen.get(thread) ?? new Set<string>()
     // Keep tiny tombstones for evicted entries: rereading old native history
@@ -99,7 +100,7 @@ export class CodexActivityProjection {
     thread.activities = mergeAgentActivities(thread.activities, [activity])
   }
 
-  item(thread: AgentThread, item: Item, context: Context): void {
+  item(thread: ActivityConversation, item: Item, context: Context): void {
     const kinds: Record<string, [AgentActivity['kind'], string]> = {
       commandExecution: ['command', 'Command'], fileChange: ['file-change', 'File changes'],
       mcpToolCall: ['tool', [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
@@ -145,7 +146,7 @@ export class CodexActivityProjection {
     if (isTerminalActivity(status)) this.summaries.delete(id)
   }
 
-  delta(thread: AgentThread, method: string, params: { turnId?: string | undefined; itemId?: string | undefined; delta?: string | undefined; summaryIndex?: number | undefined; message?: string | undefined }): void {
+  delta(thread: ActivityConversation, method: string, params: { turnId?: string | undefined; itemId?: string | undefined; delta?: string | undefined; summaryIndex?: number | undefined; message?: string | undefined }): void {
     if (!params.turnId || !params.itemId) return
     if (this.terminalTurns.get(thread)?.has(params.turnId)) return
     const id = codexActivityId(params.turnId, params.itemId)
@@ -168,7 +169,7 @@ export class CodexActivityProjection {
     this.put(thread, record)
   }
 
-  turn(thread: AgentThread, turn: { id: string; status: string; startedAt?: number | null | undefined; completedAt?: number | null | undefined; durationMs?: number | null | undefined; error?: { message: string } | null | undefined }, live = false): void {
+  turn(thread: ActivityConversation, turn: { id: string; status: string; startedAt?: number | null | undefined; completedAt?: number | null | undefined; durationMs?: number | null | undefined; error?: { message: string } | null | undefined }, live = false): void {
     const id = codexActivityId(turn.id, '$turn')
     const previous = thread.activities?.find(record => record.id === id)
     const status = mappedStatus(turn.status, 'unknown')
@@ -190,18 +191,18 @@ export class CodexActivityProjection {
     }
   }
 
-  plan(thread: AgentThread, turnId: string, plan: { step: string; status: string }[], explanation?: string | null): void {
+  plan(thread: ActivityConversation, turnId: string, plan: { step: string; status: string }[], explanation?: string | null): void {
     if (this.terminalTurns.get(thread)?.has(turnId)) return
     this.put(thread, { id: codexActivityId(turnId, '$plan'), turnId, sequence: 0, kind: 'plan', title: 'Plan', status: 'running',
       afterMessageId: thread.messages.at(-1)?.id, text: [explanation, ...plan.map(step => `${step.status}: ${step.step}`)].filter(Boolean).join('\n') })
   }
 
-  error(thread: AgentThread, turnId: string, message: string, willRetry: boolean): void {
+  error(thread: ActivityConversation, turnId: string, message: string, willRetry: boolean): void {
     this.put(thread, { id: codexActivityId(turnId, `$error:${opaque(message)}`), turnId, sequence: 0, kind: 'status',
       title: willRetry ? 'Codex is retrying' : 'Codex error', status: 'failed', error: message, afterMessageId: thread.messages.at(-1)?.id })
   }
 
-  childNotification(child: string, method: string, params: unknown): AgentThread | undefined {
+  childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
     const owner = this.children.get(child)
     if (!owner) return undefined
     const payload = z.object({ turn: z.object({ status: z.string(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() }).safeParse(params)

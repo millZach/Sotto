@@ -1,0 +1,114 @@
+{
+  "checkedAt": "2026-09-13T17:45:46.448Z",
+  "calls": [
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "model/list"
+    },
+    {
+      "method": "skills/list"
+    },
+    {
+      "method": "thread/start",
+      "cwd": "<owned temporary directory>/personal-chat/native-workspace",
+      "ephemeral": false
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    },
+    {
+      "method": "turn/start",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343",
+      "cwd": "<owned temporary directory>/personal-chat/native-workspace"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    },
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "model/list"
+    },
+    {
+      "method": "thread/resume",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343",
+      "cwd": "<owned temporary directory>/personal-chat/native-workspace"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a09be0-0bdd-7a01-a46c-1646467b1343"
+    }
+  ],
+  "model": "gpt-6-astra",
+  "reasoningEffort": "high",
+  "version": "sotto/0.154.0 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)",
+  "skills": {
+    "status": "ready",
+    "count": 58,
+    "scopes": [
+      "user",
+      "system"
+    ],
+    "errors": 0
+  },
+  "nativeId": "01a09be0-0bdd-7a01-a46c-1646467b1343",
+  "before": {
+    "nativeState": "ready",
+    "status": "idle",
+    "submissions": [
+      {
+        "status": "accepted"
+      }
+    ],
+    "messages": [
+      {
+        "id": "ad8e5495-6227-406c-a41f-f3887931aca1",
+        "role": "user",
+        "text": "Synthetic persistence check. Reply exactly SOTTO_PERSONAL_OK. Do not call tools, read files, browse, delegate, or change anything.",
+        "createdAt": "2026-09-13T17:45:47.348Z",
+        "commandId": "3c4dd640-99d8-440b-b6cb-c904d87ba59c"
+      },
+      {
+        "id": "msg_0106cc11aaa95093016aa6e14fd91087d08527a42e2299f807",
+        "role": "assistant",
+        "text": "SOTTO_PERSONAL_OK",
+        "createdAt": "2026-09-13T17:45:47.000Z"
+      }
+    ],
+    "activities": [
+      {
+        "id": "codex-activity-f14a16522b1fca7d6173aa83456366e327817ca687ed4a629d959aba6009110a",
+        "turnId": "01a09be0-0e64-7fd0-a002-8b279848ba82",
+        "sequence": 0,
+        "kind": "turn",
+        "title": "Turn completed",
+        "status": "completed",
+        "startedAt": "2026-09-13T17:45:47.000Z",
+        "timingSource": "provider",
+        "afterMessageId": "ad8e5495-6227-406c-a41f-f3887931aca1",
+        "completedAt": "2026-09-13T17:45:51.000Z",
+        "durationMs": 4031
+      }
+    ]
+  },
+  "resumedSameId": true,
+  "noReplay": true,
+  "scope": "Synthetic owned native conversation only; temporary cwd paths redacted. No account/global config writes."
+}

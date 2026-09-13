@@ -4,7 +4,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 ## Threads
 
-**Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. Threads are a core Sotto function: memory, goals, assignments and the attention queue refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat".
+**Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. Threads are a core Sotto function: memory, goals, assignments and the attention queue refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
@@ -50,6 +50,12 @@ Answering a question or permission request and creating a project are also part 
 **Codex session log.** Codex's own persisted transcript of a provider session (`rollout-*.jsonl` under `$CODEX_HOME/sessions`). Sotto reads only its user-authored entries to tell its own dispatched messages from text typed directly in Codex: a dispatched message's digest suppresses every consecutive log entry with the same digest, and any other authored entry is a takeover. Sotto never copies or logs the log's content.
 
 **Takeover.** The user sends a message to an assigned thread directly through the provider (for example `codex resume` in the Codex CLI). The adapter reports that message as a user message with no command ID, so the coordinator switches the assignment to manual mode and keeps watching. Opening or reading a thread is not a takeover.
+
+## Personal conversations
+
+**Personal chat.** A saved, project-free conversation with Sotto's configured coordinator, distinct from a project-bound thread. A started personal chat stays with its original provider; changing coordinator defaults affects new chats only. Avoid: "project thread", "global project".
+
+**Personal chat ID.** The durable Sotto-owned identity of one personal chat, independent of its provider session and of every project thread. Selecting or resuming it grants no management, delegation or project-creation authority.
 
 ## Coordination
 

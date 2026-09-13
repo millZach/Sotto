@@ -1,3 +1,5 @@
+import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONAL_CHAT_STATE, personalChatStateSchema, personalChatCommandSchema, personalSkillsInputSchema, type PersonalChatBridge, type PersonalChatCommand } from '../shared/personalChats'
+import { agentSkillCatalogSchema } from '../shared/agentSkills'
 import { contextBridge, ipcRenderer } from 'electron'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
@@ -180,6 +182,23 @@ function createBufferedSubscription<Output>(
   }
 }
 
+function createPersonalChatBridge(renderer: IpcRendererAdapter): PersonalChatBridge {
+  const command = (input: PersonalChatCommand) => invokeParsed(renderer, PERSONAL_CHAT_COMMAND, personalChatStateSchema, personalChatCommandSchema.parse(input))
+  return Object.freeze({
+    get: () => invokeParsed(renderer, PERSONAL_CHAT_GET, personalChatStateSchema),
+    create: () => command({ type: 'create' }),
+    select: (chatId: string | null) => command({ type: 'select', chatId }),
+    saveDraft: (input: Parameters<PersonalChatBridge['saveDraft']>[0]) => command({ ...input, type: 'draft' }),
+    send: (input: Parameters<PersonalChatBridge['send']>[0]) => command({ ...input, type: 'send' }),
+    skills: (chatId: string, forceReload?: boolean) => invokeParsed(renderer, PERSONAL_CHAT_SKILLS, agentSkillCatalogSchema, personalSkillsInputSchema.parse({ chatId, forceReload })),
+    refresh: (chatId: string) => command({ type: 'refresh', chatId }),
+    interrupt: (chatId: string) => command({ type: 'interrupt', chatId }),
+    answer: (input: Parameters<PersonalChatBridge['answer']>[0]) => command({ ...input, type: 'answer' }),
+    connect: () => command({ type: 'connect' }), disconnect: () => command({ type: 'disconnect' }),
+    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE, personalChatStateSchema, listener),
+  })
+}
+
 function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentBridge {
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
@@ -239,6 +258,7 @@ export function createSottoBridge(
       onChanged: listener => subscribe(renderer, MEMORY_CHANGED, memorySnapshotSchema, listener),
     }),
     agents: createAgentBridge(renderer, 'main'),
+    personalChats: createPersonalChatBridge(renderer),
     platform,
 
     listRecoveryNotices: () =>
