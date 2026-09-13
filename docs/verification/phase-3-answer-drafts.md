@@ -1,5 +1,7 @@
 # Structured answer draft durability
 
+Correction: [draft recovery verification](phase-3-draft-recovery.md) supersedes the cleanup and request-free restart claims below. Native request disappearance or definition changes now retain answers; automatic cleanup requires exact positive attempt acceptance. The earlier reintroduced-request Electron evidence remains historical.
+
 Verified September 13, 2026 in `phase3-answer-drafts`, based on `0bde0441bc75bef64dc203af6f16c0382ec88cd2`. Production source and the tested build are at `55d905312b5ad630bd02919b979c1c5a76b7e733`.
 
 The original regression selected a structured radio option, recreated the renderer store, and failed because the option was unchecked. The send callback was never invoked. The same regression now passes through the draft bridge.
