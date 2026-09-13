@@ -14,7 +14,8 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-git-unit-'))
-  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  // dispose() kills an in-flight Git poll, but Windows releases its cwd handle after process exit.
+  cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const repo = join(root, 'repo'); await mkdir(repo)
   git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'test@example.invalid'); git(repo, 'config', 'user.name', 'Sotto owned test')
   await writeFile(join(repo, 'changed.txt'), 'before\n'); await writeFile(join(repo, 'deleted.txt'), 'delete me\n')
