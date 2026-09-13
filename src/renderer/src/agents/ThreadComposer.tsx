@@ -7,6 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey, skillMenuKeyAction } from './composerKeys'
 import { insertSkill, retainSkillReferences, sameSkillReferences } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
+import { requestMode } from './requests/requestAnswers'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -78,6 +79,9 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   if (row.thread.archivedAt) return 'This thread is archived.'
   if (row.request?.kind === 'permission') return 'Allow or deny the request above to continue.'
+  // Choices shown in the transcript are answered there; only a plain question takes its answer from the composer.
+  const inline = row.thread.requests.find(request => requestMode(request) !== 'legacy-text')
+  if (inline && !answering) return inline.kind === 'permission' ? 'Answer the request above to continue.' : 'Answer the question above to continue.'
   if (!row.connected) return 'Reconnect to send. Your draft stays here.'
   if (!capabilitiesForThread(state.host, row.thread).submit) return `${row.provider} cannot take prompts from Sotto.`
   // The notice above the composer says why setup stopped and offers the one recovery; this only says when sending returns.
@@ -111,8 +115,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const [answerState, setAnswerState] = useState<{ readonly sending: boolean; readonly error: string | null }>({ sending: false, error: null })
   const textarea = useRef<HTMLTextAreaElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
-  const question = row.request?.kind === 'question' && row.request.requestId ? row.request : undefined
-  const permission = row.request?.kind === 'permission'
+  const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
+  const question = row.request?.kind === 'question' && row.request.requestId && (pendingRequest === undefined || requestMode(pendingRequest) === 'legacy-text') ? row.request : undefined
+  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
   const capabilities = capabilitiesForThread(state.host, row.thread)

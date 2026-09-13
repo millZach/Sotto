@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -6,6 +6,8 @@ import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
 import { ProviderMark } from './ProviderMark'
+import { AgentRequestCard } from './requests/AgentRequestCard'
+import { requestAnswerStore, requestMode } from './requests/requestAnswers'
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
@@ -15,32 +17,27 @@ import { ThreadTranscript } from './ThreadTranscript'
 
 type Command = AgentConnection['command']
 
-/** The inline request: Allow and Deny answer it; nothing else on the page ever does. */
-function ThreadRequest({ row, command, busy, onAnswer, voiceAvailable }: {
-  readonly row: ThreadRow; readonly command: Command; readonly busy: boolean; readonly onAnswer: () => void; readonly voiceAvailable: boolean
+/**
+ * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
+ * A plain question points at the composer; everything the provider structured is answered in place.
+ */
+function ThreadRequests({ row, state, command, blocked, onAnswer }: {
+  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly blocked: string | null; readonly onAnswer: () => void
 }): ReactNode {
-  const request = row.request
-  if (request?.requestId === undefined) return null
-  const [title, ...detail] = request.text.split('\n')
-  const answer = (value: string, approved: boolean): void => {
-    void command({ type: 'answer', threadId: row.thread.id, requestId: request.requestId!, answer: value, approved })
-  }
-  const permission = request.kind === 'permission'
-  return <div className="thread-row__ask" data-kind={request.kind} aria-label={permission ? `Permission request for ${row.thread.title}` : `Question from ${row.thread.title}`}>
-    <div className="thread-row__ask-text">
-      <strong>{permission ? (title || 'Permission request') : 'Question'}</strong>
-      {permission
-        ? detail.length > 0 ? <code>{detail.join('\n').trim()}</code> : null
-        : <p>{request.text}</p>}
-    </div>
-    <div className="thread-row__ask-actions">
-      {permission
-        ? <><Button variant="secondary" disabled={busy} onClick={() => answer('Denied', false)}>Deny</Button>
-          <Button disabled={busy} onClick={() => answer('Approved', true)}>Allow</Button></>
-        : <Button variant="secondary" onClick={onAnswer}>Write an answer</Button>}
-    </div>
-    {voiceAvailable ? <span className="thread-row__say">{permission ? 'Say “allow” or “deny”, or choose here.' : 'Say your answer, then “send it”, or write it below.'}</span> : null}
-  </div>
+  const thread = row.thread
+  const requests = thread.requests
+  useEffect(() => { requestAnswerStore.prune(thread.id, requests.map(request => request.id)) }, [thread.id, requests])
+  if (isThreadClosed(thread) || requests.length === 0) return null
+  return <>{requests.map(request => {
+    const voice = state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
+    const mode = requestMode(request)
+    return <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
+      hint={voice && (mode === 'permission' && !request.permissionChoices?.length || mode === 'legacy-text')
+        ? mode === 'permission' ? 'Say “allow” or “deny”, or choose here.' : 'Say your answer, then “send it”, or write it below.' : undefined}
+      onWriteAnswer={onAnswer}
+      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
+      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
+  })}</>
 }
 
 export interface ThreadPaneProps {
@@ -149,7 +146,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </header>
     {error && !deliveryExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
-      <ThreadRequest row={workspaceRow} voiceAvailable={state.queue.some(item => item.threadId === thread.id && item.requestId === workspaceRow.request?.requestId)} command={command} busy={state.busy || !rowConnected}
+      <ThreadRequests row={row} state={state} command={command} blocked={state.busy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={() => {
           const target = (): void => document.getElementById(managed ? 'agent-prompt' : promptId)?.focus()
           // A managed pane's composer appears only once the pane holds the selection.
