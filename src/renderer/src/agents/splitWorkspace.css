@@ -1,62 +1,111 @@
-/* Thread panes. One thread fills the workspace; two sit side by side with a divider. When the area cannot
-   hold both at a usable width, one pane shows at a time with tabs, and the split returns when there is room.
+/* Thread panes. One thread fills the workspace; more snap into a grid (two side by side, a third across the row below,
+   four in a 2-by-2 grid) or a single row, with dividers between them. When the area cannot hold every pane at a usable
+   size, or one pane is zoomed, one pane shows at a time with tabs, and the arrangement returns when there is room.
    Selectors carry .threads-view because this sheet loads before threads.css. Type sizes follow threads.css. */
 .threads-view .thread-workspace__body { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
 .threads-view .thread-workspace__body > .thread-workspace__empty { flex: 1; }
 /* The tools panel draws its own edge and may overlay the panes from here, so this box adds no border or clipping. */
 .threads-view .thread-workspace__tools { position: relative; display: flex; flex: none; min-height: 0; }
 .threads-view .thread-panes { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: thread-panes / inline-size; }
-.threads-view .thread-panes__row { position: relative; display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); min-height: 0; }
-.threads-view .thread-pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; container: thread-pane / inline-size; }
+.threads-view .thread-panes__area { position: relative; flex: 1; min-width: 0; min-height: 0; }
+/* Every pane is placed by its box, so moving or hiding one never moves it in the DOM. Size containment lets a pane recompose by its height too. */
+.threads-view .thread-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; container: thread-pane / size; }
 /* Out of view but still laid out, so its transcript keeps its place and its composer its draft. */
-.threads-view .thread-pane[data-hidden] { position: absolute; inset: 0; visibility: hidden; }
+.threads-view .thread-pane[data-hidden] { visibility: hidden; }
 
-/* The focused pane carries the accent along its top edge; the other pane's title steps back. */
-.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: 60px; }
+/* The focused pane carries the accent along its top edge; the other panes' titles step back. */
+.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: 96px; }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) > .thread-workspace__head { padding-right: 130px; }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) > .thread-workspace__head { padding-right: 164px; }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] > .thread-workspace__head { box-shadow: inset 0 2px 0 var(--tt-activity); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
-.threads-view .thread-pane__close { position: absolute; top: 50%; right: 14px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transform: translateY(-50%); }
-.threads-view .thread-pane__close:hover { background: var(--threads-hover); color: var(--tt-text); }
 
-.threads-view .thread-panes__divider { position: relative; z-index: 2; min-height: 0; cursor: col-resize; touch-action: none; }
-.threads-view .thread-panes__divider::before { position: absolute; inset: 0 4px; width: 1px; background: var(--tt-hairline); content: ''; transition: background-color .16s ease, inset .16s ease; }
-.threads-view .thread-panes__divider:is(:hover, [data-dragging])::before { inset: 0 3px; width: 3px; background: var(--tt-activity); }
+/* Layout controls sit at the header's end, beside the title they act on. */
+.threads-view .thread-pane__controls { position: absolute; top: 19px; right: 12px; z-index: 1; display: flex; gap: 2px; }
+.threads-view .thread-pane__control { display: grid; place-items: center; width: 32px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.threads-view .thread-pane__control:hover, .threads-view .thread-pane__control[aria-pressed='true'] { background: var(--threads-hover); color: var(--tt-text); }
+.threads-view .thread-pane__grip { cursor: grab; }
+.threads-view .thread-pane__grip:active { cursor: grabbing; }
+
+.threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
+.threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
+.threads-view .thread-panes__divider[data-axis='rows'] { cursor: row-resize; }
+.threads-view .thread-panes__divider::before { position: absolute; background: var(--tt-hairline); content: ''; transition: background-color .16s ease, inset .16s ease; }
+.threads-view .thread-panes__divider[data-axis='columns']::before { inset: 0 4px; }
+.threads-view .thread-panes__divider[data-axis='rows']::before { inset: 4px 0; }
+.threads-view .thread-panes__divider[data-axis='columns']:is(:hover, [data-dragging])::before { inset: 0 3px; background: var(--tt-activity); }
+.threads-view .thread-panes__divider[data-axis='rows']:is(:hover, [data-dragging])::before { inset: 3px 0; background: var(--tt-activity); }
 /* Keyboard focus draws one wider bar in the focus ring colour instead of a ring around a 9px strip. */
 .threads-view .thread-panes__divider:focus-visible { outline: none; }
-.threads-view .thread-panes__divider:focus-visible::before { inset: 0 2px; width: 5px; background: var(--tt-focus-ring); }
+.threads-view .thread-panes__divider[data-axis='columns']:focus-visible::before { inset: 0 2px; background: var(--tt-focus-ring); }
+.threads-view .thread-panes__divider[data-axis='rows']:focus-visible::before { inset: 2px 0; background: var(--tt-focus-ring); }
 
-/* Narrow focus: the open panes as tabs, the focused one underlined with the accent. */
-.threads-view .thread-panes__tabs { display: flex; flex: none; gap: 2px; padding: 6px 12px 0; border-bottom: 1px solid var(--tt-hairline); }
-.threads-view .thread-panes__tab { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 50%; min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+/* One pane at a time: the open panes as tabs, the shown one underlined with the accent. */
+.threads-view .thread-panes__tabs { display: flex; flex: none; gap: 2px; padding: 6px 12px 0; overflow-x: auto; border-bottom: 1px solid var(--tt-hairline); scrollbar-width: none; }
+.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
 .threads-view .thread-panes__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
 
-/* Drop targets while a sidebar thread is dragged: every target is outlined, the one under the pointer fills. */
+/* Drop targets while a thread or pane is dragged. Each target is where a pane will sit after the drop:
+   every target is outlined, the one under the pointer fills. */
 .threads-view .thread-panes__drops { position: absolute; inset: 0; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr); background: color-mix(in srgb, var(--tt-surface) 82%, transparent); }
-.threads-view .thread-panes__drops[data-layout='sides'] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.threads-view .thread-panes__drop { display: grid; place-items: center; margin: 12px; border: 1px dashed color-mix(in srgb, var(--tt-activity) 45%, transparent); border-radius: 16px; transition: background-color .16s ease, border-color .16s ease; }
-.threads-view .thread-panes__drop[data-over] { border-style: solid; border-color: var(--tt-activity); background: var(--tt-activity-wash); }
-.threads-view .thread-panes__drop-label { padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); color: var(--tt-text); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+.threads-view .thread-panes__drops[data-layout='boxes'] { display: block; }
+.threads-view .thread-panes__drop { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
+.threads-view .thread-panes__drops[data-layout='boxes'] > .thread-panes__drop { position: absolute; }
+.threads-view .thread-panes__drop::before { position: absolute; inset: 10px; border: 1px dashed color-mix(in srgb, var(--tt-activity) 45%, transparent); border-radius: 16px; content: ''; transition: background-color .16s ease, border-color .16s ease; }
+.threads-view .thread-panes__drop[data-over]::before { border-style: solid; border-color: var(--tt-activity); background: var(--tt-activity-wash); }
+.threads-view .thread-panes__drop-label { position: relative; padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); color: var(--tt-text); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
 .threads-view .thread-panes__drop[data-over] .thread-panes__drop-label { opacity: 1; }
+/* A preview of a new arrangement covers the panes it rearranges, and names the thread each box keeps. */
+.threads-view .thread-panes__drops[data-preview] { background: var(--tt-surface); }
+.threads-view .thread-panes__drop-name { position: absolute; top: 28px; left: 30px; right: 30px; overflow: hidden; color: var(--tt-text-2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 
-/* A thread on screen in the other pane is outlined in the sidebar; the focused one keeps the filled row. */
+/* A thread on screen in another pane is outlined in the sidebar; the focused one keeps the filled row. */
 .threads-view .thread-nav__row[data-open] { border-color: var(--threads-selected-border); }
 
 /* A narrow pane recomposes its header like a narrow window does, and keeps the type sizes. Below 720px the header
-   actions no longer fit beside the title, so both panes of an even split stack the same way and start their transcripts level. */
-@container thread-pane (max-width: 720px) {
+   actions no longer fit beside the title, so panes of an even split stack the same way and start their transcripts level.
+   A short pane stacks up to 1000px too: its title shares a row with the crumb, and the actions and layout controls would wrap beside it. */
+@container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
   .threads-view .thread-pane .thread-workspace__head { flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 10px 18px; }
   .threads-view .thread-pane .thread-workspace__actions { justify-content: flex-start; margin-left: -8px; }
-  .threads-view .thread-pane .thread-pane__close { top: 10px; right: 10px; transform: none; }
-  /* The close button sits beside the crumb and title, so only they make room for it; the actions keep the full row. */
-  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__head { padding-right: 18px; }
-  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__title { padding-right: 30px; }
+  .threads-view .thread-pane .thread-pane__controls { top: 8px; right: 8px; }
+  /* The layout controls sit beside the crumb and title, so only they make room; the actions keep the full row. */
+  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count]) > .thread-workspace__head { padding-right: 18px; }
+  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__title { padding-right: 62px; }
+  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) .thread-workspace__title { padding-right: 96px; }
+  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) .thread-workspace__title { padding-right: 130px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px; }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
   .threads-view .thread-pane .thread-message[data-role='user'] { margin-left: 24px; }
   .threads-view .thread-pane .thread-row__ask { grid-template-columns: 1fr; }
+}
+
+/* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps
+   its height and the composer its actions: the title and its crumb share a row, the composer rests smaller. */
+@container thread-pane (max-height: 600px) {
+  .threads-view .thread-pane .thread-workspace__transcript { padding-block: 14px; }
+  /* The composer keeps its actions whole; the transcript above gives way. */
+  .threads-view .thread-pane .thread-workspace__compose { flex: none; padding-block: 4px 10px; }
+  .threads-view .thread-pane > .thread-transcript { min-height: min(96px, 24%); }
+  .threads-view .thread-pane > header.thread-workspace__head { gap: 2px; min-height: 0; padding-block: 6px; }
+  .threads-view .thread-pane > header .thread-workspace__title { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; gap: 12px; }
+  /* The title keeps its name up to most of the row; the crumb gives way first. */
+  .threads-view .thread-pane > header .thread-workspace__title h2 { flex: none; max-width: 70%; margin: 0; }
+  .threads-view .thread-pane > header .thread-workspace__crumb { flex: 0 1 auto; }
+  .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 4px; }
+  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) { padding: 10px 14px 8px; }
+  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) textarea { min-height: 50px; max-height: 120px; }
+  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt__footer, .agent-composer__footer) { margin-top: 4px; }
+  .threads-view .thread-pane .thread-workspace__compose .agent-composer__footer { flex-wrap: wrap; row-gap: 2px; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
+  /* In rows of panes, the panes not being written in rest their composers at one line and keep only warnings beneath;
+     focusing a pane restores its composer. */
+  .threads-view .thread-panes[data-rows] .thread-pane:not([data-focused]) .thread-workspace__compose :is(.thread-prompt, .agent-composer) textarea { min-height: 25px; max-height: 50px; }
+  .threads-view .thread-panes[data-rows] .thread-pane:not([data-focused]) .thread-workspace__compose .thread-prompt__status:not([data-tone='warning']) { display: none; }
 }
 
 /* Tab labels line up with the pane header text, whose padding narrows with the pane. */
@@ -65,6 +114,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .threads-view .thread-panes__divider::before, .threads-view .thread-panes__drop, .threads-view .thread-panes__drop-label { transition: none; }
+  .threads-view .thread-panes__divider::before, .threads-view .thread-panes__drop::before, .threads-view .thread-panes__drop-label { transition: none; }
 }
-:root[data-reduced-motion='on'] .threads-view .thread-panes__divider::before, :root[data-reduced-motion='on'] .threads-view :is(.thread-panes__drop, .thread-panes__drop-label) { transition: none; }
+:root[data-reduced-motion='on'] .threads-view .thread-panes__divider::before, :root[data-reduced-motion='on'] .threads-view :is(.thread-panes__drop::before, .thread-panes__drop-label) { transition: none; }

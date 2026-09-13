@@ -12,7 +12,7 @@ import { ThreadPane } from './ThreadPane'
 import { ThreadPanes, focusInPane, type DropTarget } from './ThreadPanes'
 import { ThreadSidebar } from './ThreadSidebar'
 import {
-  closePane, evenSplit, isSplit, openBeside, prune, replacePane, resizeSplit, retarget, splitLayoutStore, threadPromptId, useSplitLayout,
+  closePane, isSplit, openBeside, prune, replacePane, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout,
   type SplitLayoutStore,
 } from './splitLayout'
 
@@ -53,8 +53,9 @@ export interface ThreadsViewProps {
    */
   readonly onPaneThreadsChange?: ((threadIds: readonly string[]) => void) | undefined
   readonly layoutStore?: SplitLayoutStore | undefined
-  /** Test-only: the pane area's width where layout measurement is unavailable. */
+  /** Test-only: the pane area's size where layout measurement is unavailable. */
   readonly paneAreaWidth?: number | undefined
+  readonly paneAreaHeight?: number | undefined
 }
 function useClock(fixed: number | undefined): number {
   const [tick, setTick] = useState(() => Date.now())
@@ -66,7 +67,7 @@ function useClock(fixed: number | undefined): number {
   return fixed ?? tick
 }
 
-export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const now = useClock(fixedNow)
   const [query, setQuery] = useState('')
@@ -87,12 +88,18 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   const activeId = state?.activeThreadId != null && rowsById.has(state.activeThreadId) ? state.activeThreadId : null
   const pendingFocus = pending?.threadId ?? null
   const focusedId = pendingFocus !== null && rowsById.has(pendingFocus) ? pendingFocus : activeId
-  // Panes whose thread is gone close; a selection made elsewhere (voice, attention, a new thread) moves only the focused pane.
-  const layout = state === null || rows.length === 0 ? stored : retarget(prune(stored, id => rowsById.has(id)), lastFocused.current, focusedId)
+  // Panes whose thread is missing are left out without forgetting them, so a provider still connecting after a restart keeps
+  // its panes. A selection made elsewhere (voice, attention, a new thread) moves only the focused pane; after a restart that is
+  // the pane focused when the arrangement was saved.
+  const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
+  const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
   const paneIds = isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : []
 
-  useEffect(() => { if (layout !== stored) layoutStore.set(layout) }, [layout, stored, layoutStore])
-  useEffect(() => { if (focusedId === null || !isSplit(layout) || layout.panes.includes(focusedId)) lastFocused.current = focusedId }, [focusedId, layout])
+  useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
+  useEffect(() => {
+    if (focusedId === null || !isSplit(layout) || layout.panes.includes(focusedId)) lastFocused.current = focusedId
+    if (focusedId !== null && stored.panes.includes(focusedId)) layoutStore.set(setFocused(stored, focusedId))
+  }, [focusedId, layout, stored, layoutStore])
   useEffect(() => { stateRef.current = state })
   useEffect(() => {
     if (pending === null || state === null) return
@@ -138,6 +145,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
     if (!rowsById.has(threadId)) return
     if (target.kind === 'open') openThread(threadId)
     else if (target.kind === 'side') openBesideFocused(threadId, target.side)
+    else if (target.kind === 'add') openBesideFocused(threadId)
     else {
       if (!layout.panes.includes(threadId)) layoutStore.set(replacePane(layout, target.index, threadId))
       focusPane(threadId)
@@ -182,7 +190,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
     const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenThread={openThread}
-      onClose={split ? () => close(threadId) : undefined} onFocusPane={() => focusPane(threadId)}
+      onFocusPane={() => focusPane(threadId)}
       crumb={paneCrumb?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
   }
 
@@ -194,8 +202,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
       <div className="thread-workspace__body">
         {paneIds.length || dragging !== null
-          ? <ThreadPanes paneIds={paneIds} rows={rowsById} focusedId={focusedId} share={layout.sizes[0] ?? 0.5} dragging={dragging} renderPane={renderPane}
-            onFocusPane={focusPane} onResize={(share, width) => layoutStore.set(resizeSplit(layout, share, width))} onEven={() => layoutStore.set(evenSplit(layout))} onDrop={onDrop} measuredWidth={paneAreaWidth} />
+          ? <ThreadPanes layout={layout} paneIds={paneIds} rows={rowsById} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
+            onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={onDrop} onClosePane={close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
         {!paneIds.length ? <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : 'Connect providers'}</Button> : <Button onClick={() => setNewThread({ projectId: state.activeProjectId ?? undefined })}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
