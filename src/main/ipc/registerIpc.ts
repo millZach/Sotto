@@ -4,6 +4,8 @@ import { externalLinkSchema } from '../../shared/externalLinks'
 import {
   APP_HIDE,
   APP_MINIMIZE,
+  APP_TOGGLE_MAXIMIZE,
+  APP_MAXIMIZED,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
@@ -198,6 +200,8 @@ export interface AppIpcService {
   show(): void | Promise<void>
   hide(): void | Promise<void>
   minimize(): void | Promise<void>
+  toggleMaximize(): void | Promise<void>
+  isMaximized(): boolean
   quit(): void | Promise<void>
 }
 
@@ -471,6 +475,8 @@ export function registerIpc(
     })
     register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
     register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
+    register(APP_TOGGLE_MAXIMIZE, noPayloadSchema, 0, () => dependencies.app.toggleMaximize())
+    register(APP_MAXIMIZED, noPayloadSchema, 0, () => dependencies.app.isMaximized())
     register(APP_QUIT, noPayloadSchema, 0, () => dependencies.app.quit())
 
     register(

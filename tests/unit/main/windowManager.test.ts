@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
+import { APP_MAXIMIZED, WIDGET_VISIBILITY } from '../../../src/shared/channels'
 import type { WidgetPresentation } from '../../../src/shared/contracts'
 import {
   parseDevelopmentRendererSources,
@@ -13,7 +13,7 @@ import {
 import type { StoredWidgetPlacement } from '../../../src/main/storage/widgetPlacementRepository'
 import { platformProfile } from '../../../src/main/platformProfile'
 
-type WindowEvent = 'close' | 'closed' | 'moved'
+type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed' | 'moved'
 
 class FakeWindow implements BrowserWindowLike {
   readonly webContents = {
@@ -33,6 +33,9 @@ class FakeWindow implements BrowserWindowLike {
   readonly show = vi.fn()
   readonly focus = vi.fn()
   readonly setFocusable = vi.fn()
+  readonly maximize = vi.fn()
+  readonly unmaximize = vi.fn()
+  readonly isMaximized = vi.fn(() => false)
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
@@ -1231,6 +1234,25 @@ describe('WindowManager cursor monitor following', () => {
 })
 
 describe('WindowManager lifecycle', () => {
+  it('toggles only the main window and publishes native maximize changes', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWindows()
+    const main = windows[0]!
+    const widget = windows[1]!
+    manager.toggleMaximizeMain()
+    expect(main.maximize).toHaveBeenCalledOnce()
+    expect(widget.maximize).not.toHaveBeenCalled()
+    main.isMaximized.mockReturnValue(true)
+    main.emit('maximize')
+    expect(manager.isMainMaximized()).toBe(true)
+    expect(main.webContents.send).toHaveBeenLastCalledWith(APP_MAXIMIZED, true)
+    manager.toggleMaximizeMain()
+    expect(main.unmaximize).toHaveBeenCalledOnce()
+    main.isMaximized.mockReturnValue(false)
+    main.emit('unmaximize')
+    expect(main.webContents.send).toHaveBeenLastCalledWith(APP_MAXIMIZED, false)
+  })
+
   it('restores a minimized main window before showing and focusing it', async () => {
     const { manager, windows } = createHarness()
     await manager.createMainWindow()
@@ -2285,7 +2307,7 @@ describe('WindowManager lifecycle', () => {
 
     expect(windows[0]!.destroy).toHaveBeenCalledOnce()
     expect(windows[1]!.destroy).toHaveBeenCalledOnce()
-    expect(windows[0]!.removedListeners).toStrictEqual(['close', 'closed'])
+    expect(windows[0]!.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'close', 'closed'])
     expect(windows[0]!.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(windows[1]!.removedListeners).toStrictEqual(['closed', 'moved'])
     expect(windows[1]!.webContents.removeListener).toHaveBeenCalledTimes(3)
@@ -2361,7 +2383,7 @@ describe('WindowManager lifecycle', () => {
     crashed.emitRenderProcessGone()
 
     expect(crashed.destroy).toHaveBeenCalledOnce()
-    expect(crashed.removedListeners).toStrictEqual(['close', 'closed'])
+    expect(crashed.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'close', 'closed'])
     expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
     expect(manager.getMainWebContents()).toBeNull()

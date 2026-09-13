@@ -1,4 +1,4 @@
-import { WIDGET_VISIBILITY } from '../../shared/channels'
+import { APP_MAXIMIZED, WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type {
   WidgetDragPayload,
@@ -156,15 +156,18 @@ export interface WebContentsLike {
 
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
-  on(event: 'close' | 'closed' | 'moved', listener: (event: CloseEventLike) => void): void
+  on(event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize', listener: (event: CloseEventLike) => void): void
   removeListener(
-    event: 'close' | 'closed' | 'moved',
+    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
     listener: (event: CloseEventLike) => void,
   ): void
   hide(): void
   show(): void
   focus(): void
   setFocusable?(focusable: boolean): void
+  maximize(): void
+  unmaximize(): void
+  isMaximized(): boolean
   minimize(): void
   isMinimized(): boolean
   restore(): void
@@ -569,6 +572,17 @@ export class WindowManager {
     this.hideDock()
   }
 
+  isMainMaximized(): boolean {
+    return this.mainWindow?.isMaximized() ?? false
+  }
+
+  toggleMaximizeMain(): void {
+    const window = this.mainWindow
+    if (!window || window.isDestroyed()) return
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+  }
+
   minimizeMain(): void {
     this.mainWindow?.minimize()
   }
@@ -907,9 +921,15 @@ export class WindowManager {
       }
       this.runWindowCleanup(window)
     }
+    const onMaximized = (): void => window.webContents.send(APP_MAXIMIZED, window.isMaximized())
+    window.on('maximize', onMaximized)
+    const onUnmaximized = (): void => onMaximized()
+    window.on('unmaximize', onUnmaximized)
     window.on('close', onClose)
     window.on('closed', onClosed)
     this.addCleanup(window, () => {
+      window.removeListener('maximize', onMaximized)
+      window.removeListener('unmaximize', onUnmaximized)
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
     })

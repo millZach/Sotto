@@ -419,7 +419,7 @@ describe('Thread provider choice', () => {
       mount(state)
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
       expect(screen.queryByRole('button', { name: 'Codex', exact: true })).not.toBeInTheDocument()
-      expect(screen.getByText('This conversation stays with Claude.')).toBeVisible()
+      expect(screen.queryByText('This conversation stays with Claude.')).not.toBeInTheDocument()
       cleanup()
     }
   })

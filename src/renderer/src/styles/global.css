@@ -1037,6 +1037,17 @@ textarea.tt-input {
   color: var(--tt-text);
 }
 
+.app-controls .app-controls__maximize {
+  align-self: center;
+  min-height: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.app-controls .app-controls__maximize:hover:not(:disabled) {
+  background: var(--tt-hover);
+}
+
 .app-controls .tt-button:focus-visible {
   outline-offset: -3px;
 }

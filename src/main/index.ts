@@ -248,7 +248,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed' | 'moved',
+    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     if (event === 'close') {
@@ -257,10 +257,18 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
       this.windowListenerCleanups.set(listener, () => this.window.removeListener('close', wrapped))
       return
     }
-    if (event === 'moved') {
+    if (event === 'moved' || event === 'maximize' || event === 'unmaximize') {
       const wrapped = (): void => listener({ preventDefault: () => undefined })
-      this.window.on('moved', wrapped)
-      this.windowListenerCleanups.set(listener, () => this.window.removeListener('moved', wrapped))
+      if (event === 'maximize') {
+        this.window.on('maximize', wrapped)
+        this.windowListenerCleanups.set(listener, () => this.window.removeListener('maximize', wrapped))
+      } else if (event === 'unmaximize') {
+        this.window.on('unmaximize', wrapped)
+        this.windowListenerCleanups.set(listener, () => this.window.removeListener('unmaximize', wrapped))
+      } else {
+        this.window.on('moved', wrapped)
+        this.windowListenerCleanups.set(listener, () => this.window.removeListener('moved', wrapped))
+      }
       return
     }
 
@@ -270,7 +278,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   removeListener(
-    _event: 'close' | 'closed' | 'moved',
+    _event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     this.windowListenerCleanups.get(listener)?.()
@@ -350,6 +358,10 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.focus()
   }
   setFocusable(focusable: boolean): void { this.window.setFocusable(focusable) }
+
+  maximize(): void { this.window.maximize() }
+  unmaximize(): void { this.window.unmaximize() }
+  isMaximized(): boolean { return this.window.isMaximized() }
 
   minimize(): void {
     this.window.minimize()
@@ -854,6 +866,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
+          toggleMaximize: () => windows.toggleMaximizeMain(),
+          isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),
         },
         trustedSenders: () => windows.getTrustedRenderers(),

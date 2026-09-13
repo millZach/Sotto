@@ -190,7 +190,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
 
   const steerNote = running && capabilities.steer !== true ? ` ${row.provider} can’t steer a running turn.` : ''
-  const idleHint = answering ? 'Enter to send your answer' : queueing ? `Enter to queue · Shift+Enter for a new line.${steerNote}` : 'Enter to send · Shift+Enter for a new line'
+  const idleHint = answering ? 'Enter to send your answer' : queueing ? `Enter to queue · Shift+Enter for a new line.${steerNote}` : null
   const status = saveError !== null && save === 'unsaved'
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
@@ -198,7 +198,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // A blocked composer states only why; the transcript explains an unconfirmed prompt.
         : reason !== null ? <span className="thread-prompt__status">{reason}</span>
           : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
-            : <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : queueing ? `Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span>
+            : content || idleHint ? <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : queueing ? `Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
 
   return <>

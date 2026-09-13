@@ -385,6 +385,9 @@ export interface SottoBridge {
   openExternalLink?(url: string): Promise<CommandResult>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
+  toggleMaximizeApp(): Promise<void>
+  getWindowMaximized(): Promise<boolean>
+  onWindowMaximized(listener: (maximized: boolean) => void): () => void
   quitApp(): Promise<void>
 }
 

@@ -141,10 +141,12 @@ export interface AppActions {
   showApp(): Promise<void>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
+  toggleMaximizeApp(): Promise<void>
   quitApp(): Promise<void>
 }
 
 export interface AppContextValue {
+  readonly windowMaximized: boolean
   readonly platform: SottoPlatform
   readonly copy: PlatformCopy
   readonly status: AppStatus
@@ -188,6 +190,7 @@ export function AppProvider({
   bridge = window.sotto,
   createController = createProductionDictationController,
 }: AppProviderProps): ReactNode {
+  const [windowMaximized, setWindowMaximized] = useState(false)
   const [status, setStatus] = useState<AppStatus>('loading')
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading')
   const [failure, setFailure] = useState<AppFailureCode | null>(null)
@@ -301,6 +304,20 @@ export function AppProvider({
     },
     [commitHistory, isCurrentGeneration],
   )
+
+  useEffect(() => {
+    if (!bridge) return
+    let active = true
+    let eventReceived = false
+    const unsubscribe = bridge.onWindowMaximized(maximized => {
+      eventReceived = true
+      if (active) setWindowMaximized(maximized)
+    })
+    void bridge.getWindowMaximized().then(maximized => {
+      if (active && !eventReceived) setWindowMaximized(maximized)
+    }).catch(() => undefined)
+    return () => { active = false; unsubscribe() }
+  }, [bridge])
 
   useEffect(() => {
     const generation = ++lifecycleGenerationRef.current
@@ -616,6 +633,12 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
+    toggleMaximizeApp: async () => {
+      const generation = activeGenerationRef.current
+      try { await bridge?.toggleMaximizeApp() } catch {
+        if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
+      }
+    },
     minimizeApp: async () => {
       const generation = activeGenerationRef.current
       try { await bridge?.minimizeApp() } catch {
@@ -631,6 +654,7 @@ export function AppProvider({
   }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
 
   const value = useMemo<AppContextValue>(() => ({
+    windowMaximized,
     platform,
     copy,
     status,
@@ -644,7 +668,7 @@ export function AppProvider({
     update,
     dismissedUpdates,
     actions,
-  }), [actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update])
+  }), [windowMaximized, actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update])
 
   return createElement(AppContext.Provider, { value }, children)
 }

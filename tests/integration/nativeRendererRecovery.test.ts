@@ -16,7 +16,7 @@ import {
 import { WIDGET_STATE } from '../../src/shared/channels'
 import type { WidgetSnapshot } from '../../src/shared/dictation'
 
-type WindowEvent = 'close' | 'closed'
+type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed'
 
 class LifecycleWindow implements BrowserWindowLike {
   readonly webContents = {
@@ -29,6 +29,9 @@ class LifecycleWindow implements BrowserWindowLike {
   readonly hide = vi.fn()
   readonly show = vi.fn()
   readonly focus = vi.fn()
+  readonly maximize = vi.fn()
+  readonly unmaximize = vi.fn()
+  readonly isMaximized = vi.fn(() => false)
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()

@@ -71,15 +71,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
     } finally { setSaving(false) }
   }
   if (locked && !capabilitiesForThread(state.host, thread).configureThread) return null
-  const provider = state.host.models.find(model => model.id === thread.modelId)?.provider ?? state.host.providers?.find(item => item.id === thread.providerId)?.name
-  const otherProviders = locked && state.host.models.some(model => model.ready && model.providerId !== undefined && model.providerId !== thread.providerId)
   return <div className="thread-options-bar" data-provider-locked={locked}>
     <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
       disabled={disabled} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
     {saving ? <small role="status">Saving...</small>
       : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
-        : otherProviders ? <small className="thread-options__lock">This conversation stays with {provider ?? 'its provider'}.</small>
-          : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
+        : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}
   </div>
 }

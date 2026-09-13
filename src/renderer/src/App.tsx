@@ -323,6 +323,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
           onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
           onMinimize={app.actions.minimizeApp}
+          onMaximize={app.actions.toggleMaximizeApp}
+          maximized={app.windowMaximized}
           onClose={app.actions.hideApp}
         >
           {updatePrompt}
@@ -346,6 +348,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           navigation={null}
           platform={app.platform}
           onMinimize={app.actions.minimizeApp}
+          onMaximize={app.actions.toggleMaximizeApp}
+          maximized={app.windowMaximized}
           onClose={app.actions.hideApp}
         >
           {content}

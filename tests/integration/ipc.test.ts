@@ -160,6 +160,9 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   readonly hide = vi.fn()
   readonly show = vi.fn()
   readonly focus = vi.fn()
+  readonly maximize = vi.fn()
+  readonly unmaximize = vi.fn()
+  readonly isMaximized = vi.fn(() => false)
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
   readonly restore = vi.fn()
@@ -197,14 +200,14 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed' | 'moved',
+    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     void event
     void listener
   }
   removeListener(
-    event: 'close' | 'closed' | 'moved',
+    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     void event
@@ -269,6 +272,8 @@ function createIpcHarness() {
     show: vi.fn(),
     hide: vi.fn(),
     minimize: vi.fn(),
+    toggleMaximize: vi.fn(),
+    isMaximized: vi.fn(() => false),
     quit: vi.fn(),
   }
 
@@ -361,16 +366,19 @@ describe('typed preload bridge', () => {
         'getSettings',
         'getStartup',
         'getUpdateStatus',
+        'getWindowMaximized',
         'hideApp',
         'installUpdate',
         'listHistory',
         'listRecoveryNotices',
         'memory',
         'minimizeApp',
+        'toggleMaximizeApp',
         'onDictationCommand',
         'onRecoveryNotice',
         'onSettingsChanged',
         'onUpdateStatus',
+        'onWindowMaximized',
         'openExternalLink',
         'platform',
         'polishTranscript',

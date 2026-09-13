@@ -45,6 +45,8 @@ export const STARTUP_SET = 'sotto:startup:set' as const
 export const APP_SHOW = 'sotto:app:show' as const
 export const EXTERNAL_LINK_OPEN = 'sotto:external-link:open' as const
 export const APP_HIDE = 'sotto:app:hide' as const
+export const APP_TOGGLE_MAXIMIZE = 'sotto:app:toggle-maximize' as const
+export const APP_MAXIMIZED = 'sotto:app:maximized' as const
 export const APP_MINIMIZE = 'sotto:app:minimize' as const
 export const APP_QUIT = 'sotto:app:quit' as const
 
@@ -85,6 +87,8 @@ export const IPC_CHANNELS = Object.freeze({
   externalLinkOpen: EXTERNAL_LINK_OPEN,
   appHide: APP_HIDE,
   appMinimize: APP_MINIMIZE,
+  appToggleMaximize: APP_TOGGLE_MAXIMIZE,
+  appMaximized: APP_MAXIMIZED,
   appQuit: APP_QUIT,
 })
 

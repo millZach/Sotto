@@ -12,10 +12,22 @@ afterEach(cleanup)
 const chrome = {
   platform: 'win32' as const,
   onMinimize: vi.fn(),
+  onMaximize: vi.fn(),
   onClose: vi.fn(),
 }
 
 describe('AppShell', () => {
+  it('maximizes and restores from a keyboard-accessible window control', async () => {
+    const onMaximize = vi.fn()
+    const { rerender } = render(<AppShell {...chrome} onMaximize={onMaximize} navigation="home"><p /></AppShell>)
+    const button = screen.getByRole('button', { name: 'Maximize Sotto' })
+    button.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onMaximize).toHaveBeenCalledOnce()
+    rerender(<AppShell {...chrome} onMaximize={onMaximize} maximized navigation="home"><p /></AppShell>)
+    expect(screen.getByRole('button', { name: 'Restore Sotto' })).toHaveFocus()
+  })
+
   it('provides the strip, one main landmark, the footer links, and one status sentence', async () => {
     const user = userEvent.setup()
     const navigate = vi.fn()

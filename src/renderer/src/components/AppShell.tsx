@@ -1,5 +1,5 @@
 import React, { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { Minus, X } from 'lucide-react'
+import { Minus, Square, Copy, X } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../shared/platform'
 import type { AppNavigation } from '../state/AppContext'
@@ -19,6 +19,8 @@ export interface AppShellProps {
   /** One sentence for the footer's right-hand end. */
   readonly statusText?: ReactNode
   readonly onNavigate?: ((destination: ManagementNavigation) => void) | undefined
+  readonly maximized?: boolean
+  readonly onMaximize: () => Promise<void> | void
   readonly onMinimize: () => Promise<void> | void
   readonly onClose: () => Promise<void> | void
   readonly children: ReactNode
@@ -57,6 +59,8 @@ export function AppShell({
   statusText,
   onNavigate,
   onMinimize,
+  maximized = false,
+  onMaximize,
   onClose,
   children,
 }: AppShellProps): ReactNode {
@@ -118,6 +122,9 @@ export function AppShell({
           <div className="app-controls">
             <Button iconOnly variant="ghost" aria-label="Minimize Sotto" onClick={() => void onMinimize()}>
               <Minus size={18} />
+            </Button>
+            <Button iconOnly variant="ghost" className="app-controls__maximize" aria-label={maximized ? 'Restore Sotto' : 'Maximize Sotto'} title={maximized ? 'Restore' : 'Maximize'} onClick={() => void onMaximize()}>
+              {maximized ? <Copy size={16} /> : <Square size={16} />}
             </Button>
             <Button iconOnly variant="ghost" aria-label="Close Sotto to tray" onClick={() => void onClose()}>
               <X size={18} />

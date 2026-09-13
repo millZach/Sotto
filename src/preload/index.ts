@@ -9,6 +9,8 @@ import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_S
 import {
   APP_HIDE,
   APP_MINIMIZE,
+  APP_TOGGLE_MAXIMIZE,
+  APP_MAXIMIZED,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
@@ -289,6 +291,9 @@ export function createSottoBridge(
     openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
     hideApp: () => invokeParsed(renderer, APP_HIDE, voidSchema),
     minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
+    toggleMaximizeApp: () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
+    getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),
+    onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
   return Object.freeze(bridge)
