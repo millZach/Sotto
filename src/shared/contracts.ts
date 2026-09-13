@@ -336,6 +336,7 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
+  readonly files?: import('./files').FilesBridge
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentBridge
   readonly platform: SottoPlatform

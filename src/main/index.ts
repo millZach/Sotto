@@ -134,6 +134,9 @@ import { GrokSubscriptionClient } from './agents/subscriptionGrok'
 import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
+import { registerFilesIpc } from './files/ipc'
+import { FilesService } from './files/service'
+import { resolveFilesBinding } from './files/binding'
 import { NaturalSpeechModels } from './agents/speechModels'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
@@ -812,6 +815,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
+      const cleanupFiles = registerFilesIpc(ipcMain, new FilesService({
+        resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
+        copyPath: path => clipboard.writeText(path),
+        reveal: path => shell.showItemInFolder(path),
+      }), () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
@@ -882,6 +890,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       updates.start()
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
+        cleanupFiles()
         cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
