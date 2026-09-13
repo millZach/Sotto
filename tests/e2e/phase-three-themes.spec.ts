@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import sharp from 'sharp'
 
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
@@ -61,6 +62,28 @@ async function shot(page: Page, name: string, target?: Locator): Promise<void> {
   else await page.screenshot({ path, caret: 'hide', animations: 'disabled' })
 }
 
+type Rgb = readonly [number, number, number]
+
+/** The painted pixel just inside a mode tile's left edge, and the accent ink its chosen ring should use. */
+async function tileRing(page: Page, tile: Locator): Promise<{ edge: Rgb, accent: Rgb }> {
+  await page.mouse.move(1, 1)
+  await settled(page)
+  const frame = tile.locator('.theme-wireframe')
+  const accent = await frame.evaluate(element => {
+    const context = document.createElement('canvas').getContext('2d')!
+    context.fillStyle = getComputedStyle(element).getPropertyValue('--tt-accent-text').trim() || 'transparent'
+    context.fillRect(0, 0, 1, 1)
+    const [r = 0, g = 0, b = 0] = context.getImageData(0, 0, 1, 1).data
+    return [r, g, b] as const
+  })
+  const scale = await page.evaluate(() => window.devicePixelRatio)
+  const { data, info } = await sharp(await frame.screenshot({ animations: 'disabled', caret: 'hide' })).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+  const offset = (Math.floor(info.height / 2) * info.width + Math.floor(scale)) * info.channels
+  return { edge: [data[offset]!, data[offset + 1]!, data[offset + 2]!], accent }
+}
+
+const near = (a: Rgb, b: Rgb, tolerance = 28): boolean => a.every((channel, index) => Math.abs(channel - b[index]!) <= tolerance)
+
 const savedSettings = (page: Page): Promise<AppSettings> => page.evaluate(async () => (await window.sotto!.getSettings()) as AppSettings)
 const html = (page: Page): Locator => page.locator('html')
 const canvas = (page: Page): Promise<string> => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
@@ -111,10 +134,16 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
       return bounds.right > frame.right - 1 || bounds.left < frame.left
     })
     expect(clipped).toBe(false)
+    // The ring is really painted above the tile's panes, not hidden behind them.
+    const chosen = await tileRing(page, darkTile)
+    expect(near(chosen.edge, chosen.accent), JSON.stringify(chosen)).toBe(true)
+    notes.push(`The chosen Dark tile's edge pixel is rgb(${chosen.edge.join(', ')}), its accent ink rgb(${chosen.accent.join(', ')}).`)
 
     // Light and dark halves are chosen independently.
     await section.getByRole('button', { name: 'Use light mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    const unchosen = await tileRing(page, darkTile)
+    expect(near(unchosen.edge, unchosen.accent), JSON.stringify(unchosen)).toBe(false)
     await section.getByRole('button', { name: 'Use Grove light mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
     await section.getByRole('button', { name: 'Use Iris dark mode' }).click()
