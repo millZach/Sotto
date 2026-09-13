@@ -371,3 +371,17 @@ it('releases a failed queue admission so the retained revision can be retried', 
   expect(f.control.get().threadDrafts).toEqual([])
   expect(f.host.attempts).toEqual([])
 })
+
+it('requires explicit resume when an idle thread has no known turn outcome', async () => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  await f.control.command(queued('Review an unknown outcome'))
+  delete f.host.state.threads.find(thread => thread.id === 'workshop')!.lastTurn
+  f.host.update('workshop', { status: 'idle' })
+  await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('paused')
+  f.host.emit(); await f.control.command({ type: 'refresh' })
+  expect(f.control.get().followups?.[0]?.status).toBe('paused')
+  expect(f.host.attempts).toEqual([])
+  await f.control.command({ type: 'resume-followups', threadId: 'workshop' })
+  await expect.poll(() => f.control.get().followups?.length).toBe(0)
+  expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(1)
+})

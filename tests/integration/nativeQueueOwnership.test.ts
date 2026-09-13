@@ -2,9 +2,10 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
+import { FollowupStore } from '../../src/main/agents/followups'
 import { codexFixture } from '../fixtures/codexFixture'
 
 async function fixture() {
@@ -21,6 +22,43 @@ async function fixture() {
   const control = create(); await control.start(); await control.command({ type: 'connect' })
   return { f, threadId, control, create }
 }
+
+it.each(['before idle', 'after idle'] as const)('waits for native completion when a follow-up is queued %s and the last turn is still running', async admission => {
+  const { f, threadId, control } = await fixture()
+  const pause = vi.spyOn(FollowupStore.prototype, 'pause')
+  const claim = vi.spyOn(FollowupStore.prototype, 'claim')
+  try {
+    await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'First native turn' })
+    const turnId = control.get().host.threads.find(t => t.id === threadId)!.lastTurn!.id
+    const command = { type: 'queue-followup' as const, threadId, draftId: randomUUID(), text: 'After authoritative completion' }
+    if (admission === 'before idle') await control.command(command)
+    await f.action(threadId, { type: 'notify', method: 'thread/status/changed', params: { status: { type: 'idle' } } })
+    await expect.poll(() => control.get().host.threads.find(t => t.id === threadId)?.status).toBe('idle')
+    expect(control.get().host.threads.find(t => t.id === threadId)?.lastTurn).toEqual({ id: turnId, status: 'running' })
+    if (admission === 'after idle') await control.command(command)
+    expect(pause).not.toHaveBeenCalled()
+    expect(claim).not.toHaveBeenCalled()
+    expect(control.get().followups).toEqual([expect.objectContaining({ draftId: command.draftId, status: 'queued' })])
+    expect(JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')).items).toEqual(control.get().followups)
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+
+    await f.driver.completeTurn(threadId, 'Authoritative completion')
+    await expect.poll(() => control.get().followups?.length).toBe(0)
+    expect(claim).toHaveBeenCalledTimes(1)
+    // Repeated delivery of the terminal event must not replay the follow-up.
+    const observed = vi.fn(); const unsubscribe = f.host.subscribe(observed)
+    try {
+      await f.action(threadId, { type: 'notify', method: 'turn/completed', params: { turn: { id: turnId, status: 'completed', items: [] } } })
+      await expect.poll(() => observed.mock.calls.length).toBeGreaterThan(0)
+    } finally { unsubscribe() }
+    await control.command({ type: 'refresh' })
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(2)
+    expect(control.get().host.threads.find(t => t.id === threadId)?.messages.filter(m => m.role === 'user' && m.text === command.text)).toHaveLength(1)
+  } finally {
+    pause.mockRestore(); claim.mockRestore()
+    control.dispose(); await control.privacyChanged(); await f.cleanup()
+  }
+})
 
 it('clears the selected-skill draft after a process-backed native acceptance and restart', async () => {
   const { f, threadId, create, control } = await fixture()
@@ -74,5 +112,25 @@ it('keeps queued input out of native steering and sends it once after completion
     await expect.poll(() => control.get().followups?.length).toBe(0)
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(2)
     expect(control.get().host.threads.find(t => t.id === threadId)?.messages.filter(m => m.role === 'user' && m.text === command.text)).toHaveLength(1)
+  } finally { control.dispose(); await control.privacyChanged(); await f.cleanup() }
+})
+
+it.each(['failed', 'interrupted'] as const)('pauses for an authoritative %s outcome after native idle and requires explicit resume', async outcome => {
+  const { f, threadId, control } = await fixture()
+  try {
+    await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'First native turn' })
+    const command = { type: 'queue-followup' as const, threadId, draftId: randomUUID(), text: 'Requires review after terminal failure' }
+    await control.command(command)
+    await f.action(threadId, { type: 'notify', method: 'thread/status/changed', params: { status: { type: 'idle' } } })
+    await expect.poll(() => control.get().host.threads.find(t => t.id === threadId)?.status).toBe('idle')
+    await f.action(threadId, { type: 'complete', text: 'Terminal outcome', status: outcome })
+    await expect.poll(() => control.get().followups?.[0]?.status).toBe('paused')
+    expect(control.get().host.threads.find(t => t.id === threadId)?.lastTurn?.status).toBe(outcome)
+    await control.command({ type: 'refresh' })
+    expect(control.get().followups?.[0]?.status).toBe('paused')
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+    await control.command({ type: 'resume-followups', threadId })
+    await expect.poll(() => control.get().followups?.length).toBe(0)
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(2)
   } finally { control.dispose(); await control.privacyChanged(); await f.cleanup() }
 })

@@ -623,6 +623,7 @@ export class AgentControl {
     const thread = this.state.host.threads.find(t => t.id === threadId)
     const reviewed = thread && this.followupStore.get().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
+      && thread.lastTurn?.status !== 'running'
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
@@ -636,7 +637,10 @@ export class AgentControl {
       if (this.pumping.has(threadId) || this.threadActions.has(threadId)) continue
       const first = items.find(item => item.threadId === threadId)!
       const thread = this.state.host.threads.find(t => t.id === threadId)
-      const terminalBlocked = thread && thread.status !== 'running' && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== 'unknown')
+      // Native idle status can precede turn/completed. A still-running outcome is
+      // neither permission to dispatch nor a terminal failure requiring review.
+      const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
+        && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== 'unknown')
       if (first.status === 'queued' && terminalBlocked) {
         this.pumping.add(threadId)
         let paused = false
