@@ -80,7 +80,7 @@ export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly
   }, [ownerKey, liveSignature])
   const settled = useSyncExternalStore(answers.subscribe, () => departed.current.gone.map(request => {
     const entry = answers.get(requestAnswerOwnerKey(owner.ownerId, request, owner), request.id)
-    return entry.save === 'saving' || entry.save === 'loading' ? 'pending' : `${entry.revision}:${entry.save}`
+    return entry.save === 'saving' || entry.save === 'loading' ? `pending:${entry.phase}` : `${entry.revision}:${entry.save}:${entry.phase}`
   }).join())
   useEffect(() => {
     if (!bridge?.list) return
@@ -101,7 +101,13 @@ export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly
     } catch (error) { return readable(error, DISCARD_ERROR) } finally { reload() }
   }, [bridge, reload])
   const current = result?.ownerKey === ownerKey ? result : null
-  return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live)), error: current?.error ?? null, reload, discard }
+  // Main accepted this exact attempt in this session; its cleanup follows the provider's receipt, so it is not offered as unconfirmed.
+  // The answer store is keyed by the live request exactly as its card received it, so look that request up.
+  const accepted = (draft: RequestDraft): boolean => {
+    const request = draft.held ? departed.current.gone.find(item => item.id === draft.target.requestId && sameRequestQuestions(item.questions ?? [], draft.target.questions)) : undefined
+    return request !== undefined && answers.get(requestAnswerOwnerKey(owner.ownerId, request, owner), request.id).phase === 'sent'
+  }
+  return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live) && !accepted(draft)), error: current?.error ?? null, reload, discard }
 }
 
 export interface RequestDraftRecoveryProps {
