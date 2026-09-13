@@ -66,6 +66,36 @@ const save = (threadId: string, text: string, attachments: AgentAttachment[] = [
 const send = (draft: ReturnType<typeof save>) => ({ ...draft, type: 'manual-send' as const })
 
 describe('persistent per-thread drafts', () => {
+  it('shows the saved manual draft on management handoff and preserves edits after release and restart', async () => {
+    const f = await fixture()
+    const skills = [{ name: 'build', path: 'C:/synthetic/SKILL.md' }]
+    const draft = { ...save('docs', '$build Unsent manual draft', [image]), skills }
+    await f.control.command(draft)
+    await f.control.command({ type: 'assign', threadId: 'docs' })
+    expect(f.control.get()).toMatchObject({ draft: draft.text, draftThreadId: 'docs', draftAttachments: [image] })
+    await f.control.command({ type: 'compose', text: 'Unsent manual draft with managed edit' })
+    await f.control.command({ type: 'unassign', threadId: 'docs' })
+    const edited = f.control.get().threadDrafts?.find(item => item.threadId === 'docs')
+    expect(edited).toMatchObject({ text: 'Unsent manual draft with managed edit', attachments: [image], skills })
+    expect(edited?.draftId).not.toBe(draft.draftId)
+    await f.restart()
+    expect(f.control.get().threadDrafts).toContainEqual(edited)
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it('keeps a foreign draft with its owner when another thread enters managed mode', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'Workshop draft', attachments: [image] })
+    const foreign = f.control.get().threadDrafts?.find(item => item.threadId === 'workshop')
+    const docs = save('docs', 'Docs draft')
+    await f.control.command(docs)
+    await f.control.command({ type: 'assign', threadId: 'docs' })
+    expect(f.control.get()).toMatchObject({ draft: 'Workshop draft', draftThreadId: 'workshop', draftAttachments: [image] })
+    expect(f.control.get().threadDrafts).toContainEqual(foreign)
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: docs.draftId, text: docs.text }))
+  })
+
   it('restores independent text and exact attachment bytes across navigation, disconnect and restart', async () => {
     const f = await fixture()
     const a = save('workshop', 'A\nwith newline', [image]); const b = save('docs', '', [{ ...image, dataUrl: 'data:image/png;base64,d29ybGQ=' }])
@@ -231,11 +261,10 @@ describe('truthful durable draft delivery', () => {
     expect(f.control.get().threadDrafts![0]!.draftId).toBe(newer.draftId)
   })
 
-  it.each(['disconnected', 'managed', 'running', 'rejected'] as const)('reports %s as failed, keeps the complete draft and never silently queues a running turn', async condition => {
+  it.each(['disconnected', 'managed', 'rejected'] as const)('reports %s as failed, keeps the complete draft before dispatch', async condition => {
     const f = await fixture()
     if (condition === 'disconnected') await f.control.command({ type: 'disconnect' })
     if (condition === 'managed') await f.control.command({ type: 'assign', threadId: 'workshop' })
-    if (condition === 'running') await f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: 'workshop', text: 'Earlier turn' })
     if (condition === 'rejected') f.host.result = { accepted: false }
     const count = f.host.attempts.length; const draft = save('workshop', 'Keep me', [image])
     const result = await f.control.command(send(draft))

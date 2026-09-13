@@ -1,0 +1,433 @@
+{
+  "rapidQueue": [
+    {
+      "index": 0,
+      "value": "",
+      "followups": [
+        "Then run the full au"
+      ]
+    },
+    {
+      "index": 1,
+      "value": "",
+      "followups": [
+        "Then run the full au",
+        "After that, check wh"
+      ]
+    },
+    {
+      "index": 2,
+      "value": "",
+      "followups": [
+        "Then run the full au",
+        "After that, check wh",
+        "Finally update the c"
+      ]
+    }
+  ],
+  "stateAfterQueue": {
+    "followups": 3,
+    "deliveries": [
+      "accepted"
+    ]
+  },
+  "typical1280": {
+    "viewport": "1280x800",
+    "pane": {
+      "top": 60,
+      "bottom": 756,
+      "height": 696
+    },
+    "paneScroll": "696/696",
+    "transcriptClientHeight": 251,
+    "compose": {
+      "top": 386,
+      "bottom": 756,
+      "height": 370
+    },
+    "followups": {
+      "top": 396,
+      "bottom": 575,
+      "height": 179
+    },
+    "card": {
+      "top": 574,
+      "bottom": 736,
+      "height": 162
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": "Queued 3",
+    "status": "Saving draft…",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "wide1600": {
+    "viewport": "1600x900",
+    "pane": {
+      "top": 60,
+      "bottom": 856,
+      "height": 796
+    },
+    "paneScroll": "796/796",
+    "transcriptClientHeight": 351,
+    "compose": {
+      "top": 486,
+      "bottom": 856,
+      "height": 370
+    },
+    "followups": {
+      "top": 496,
+      "bottom": 675,
+      "height": 179
+    },
+    "card": {
+      "top": 674,
+      "bottom": 836,
+      "height": 162
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": "Queued 3",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "short820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 150,
+    "compose": {
+      "top": 321,
+      "bottom": 516,
+      "height": 195
+    },
+    "followups": {
+      "top": 329,
+      "bottom": 369,
+      "height": 40
+    },
+    "card": {
+      "top": 368,
+      "bottom": 500,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:150/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3AddedFinally update the changelog.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "short820Expanded": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 109,
+    "compose": {
+      "top": 280,
+      "bottom": 516,
+      "height": 236
+    },
+    "followups": {
+      "top": 288,
+      "bottom": 369,
+      "height": 81
+    },
+    "card": {
+      "top": 368,
+      "bottom": 500,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:109/155",
+      "thread-followups:80/166"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "focusAfterEditEscape": "button:Edit queued message 2",
+  "focusAfterEditSave": "button:Edit queued message 2",
+  "shiftTabFromPrompt": [
+    "button:Remove queued message 3",
+    "button:Edit queued message 3",
+    "button:Move queued message 3 down",
+    "button:Move queued message 3 up",
+    "button:Remove queued message 2",
+    "button:Edit queued message 2",
+    "button:Move queued message 2 down",
+    "button:Move queued message 2 up",
+    "button:Remove queued message 1",
+    "button:Edit queued message 1",
+    "button:Move queued message 1 down",
+    "button:Move queued message 1 up",
+    "button:Queued 3",
+    "div:Thread transcript"
+  ],
+  "stress760": {
+    "viewport": "760x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 150,
+    "compose": {
+      "top": 321,
+      "bottom": 516,
+      "height": 195
+    },
+    "followups": {
+      "top": 329,
+      "bottom": 369,
+      "height": 40
+    },
+    "card": {
+      "top": 368,
+      "bottom": 500,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:150/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3AddedFinally update the changelog.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "reducedMotionAnimations": [
+    "none"
+  ],
+  "zoom125": {
+    "viewport": "1024x640",
+    "pane": {
+      "top": 60,
+      "bottom": 596,
+      "height": 536
+    },
+    "paneScroll": "536/536",
+    "transcriptClientHeight": 273,
+    "compose": {
+      "top": 407,
+      "bottom": 596,
+      "height": 189
+    },
+    "followups": {
+      "top": 413,
+      "bottom": 453,
+      "height": 40
+    },
+    "card": {
+      "top": 452,
+      "bottom": 584,
+      "height": 132
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [],
+    "outsideControls": [],
+    "queueHead": "Queued 3AddedFinally update the changelog.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "zoom150": {
+    "viewport": "853x533",
+    "pane": {
+      "top": 60,
+      "bottom": 489,
+      "height": 429
+    },
+    "paneScroll": "429/429",
+    "transcriptClientHeight": 123,
+    "compose": {
+      "top": 294,
+      "bottom": 489,
+      "height": 196
+    },
+    "followups": {
+      "top": 302,
+      "bottom": 342,
+      "height": 40
+    },
+    "card": {
+      "top": 341,
+      "bottom": 473,
+      "height": 133
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:123/156"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3AddedFinally update the changelog.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "zoom150Unreachable": [],
+  "paused1280": {
+    "metrics": {
+      "viewport": "1280x800",
+      "pane": {
+        "top": 60,
+        "bottom": 756,
+        "height": 696
+      },
+      "paneScroll": "696/696",
+      "transcriptClientHeight": 358,
+      "compose": {
+        "top": 493,
+        "bottom": 756,
+        "height": 263
+      },
+      "followups": {
+        "top": 503,
+        "bottom": 575,
+        "height": 72
+      },
+      "card": {
+        "top": 574,
+        "bottom": 736,
+        "height": 162
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": "Queued 3AddedFinally update the changelog.PausedResume queue",
+      "status": "Enter to queue · Shift+Enter for a new line.",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": "14px",
+        "queueNote": "13px",
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "copy": {
+      "pauseSentences": 1,
+      "pausedChips": 1,
+      "answerVisible": true
+    }
+  },
+  "paused820": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 372,
+        "height": 84
+      },
+      "card": {
+        "top": 371,
+        "bottom": 503,
+        "height": 132
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:109/237"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3NextThen run the full audio suite and paste any failures here.PausedResume queue",
+      "status": "Enter to queue · Shift+Enter for a new line.",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": "14px",
+        "queueNote": "13px",
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "copy": {
+      "pauseSentences": 1,
+      "pausedChips": 1,
+      "answerVisible": true
+    }
+  },
+  "focusAfterResume": "button:Resume queue"
+}

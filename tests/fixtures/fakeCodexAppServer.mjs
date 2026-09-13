@@ -92,7 +92,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const reply = result => setTimeout(() => emit({ id, result }), delay)
+  if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
+  if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
   if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'initialize') reply({ userAgent: 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })
   else if (method === 'model/list') reply({ data: [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })
@@ -118,12 +121,19 @@ createInterface({ input: process.stdin }).on('line', line => {
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
         save()
       }
-      reply({ thread, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
+      const history = JSON.parse(JSON.stringify(thread))
+      if (script.historyItemIds) for (const turn of history.turns) {
+        turn.items = turn.items.map((item, index) => ['userMessage', 'agentMessage'].includes(item.type)
+          ? { ...item, id: `item-${index}` } : item)
+      }
+      reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
         reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
   } else if (method === 'turn/start') {
     const thread = state.threads[params.threadId]
+    // Explicit opt-in fixture writes prove the adapter's actual execution cwd.
+    if (script.writeCwd) writeFileSync(join(params.cwd ?? thread.cwd, 'native-cwd-proof.txt'), params.input.find(item => item.type === 'text')?.text ?? '')
     const item = { type: 'userMessage', id: randomUUID(), clientId: params.clientUserMessageId, content: params.input }
     const turn = { id: randomUUID(), status: 'inProgress', items: [item], startedAt: Math.floor(Date.now() / 1000) }
     thread.turns.push(turn)
@@ -138,6 +148,16 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (script.question) raise(thread, 'question', script.question)
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
+  } else if (method === 'turn/steer') {
+    const thread = state.threads[params.threadId]
+    const turn = thread?.turns.at(-1)
+    if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {
+      emit({ id, error: { code: -32600, message: 'Expected active turn does not match' } }); return
+    }
+    const item = { type: 'userMessage', id: randomUUID(), clientId: script.legacySteer ? undefined : params.clientUserMessageId, content: params.input }
+    turn.items.push(item); save()
+    if (!script.suppressNotifications) notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+    reply({ turnId: turn.id })
   } else if (method === 'turn/interrupt') {
     const thread = state.threads[params.threadId]
     const turn = thread.turns.find(turn => turn.id === params.turnId)
@@ -155,6 +175,16 @@ setInterval(() => {
   if (action.type === 'exit') process.exit(0)
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
-  else if (action.type === 'notify') notify(action.method, { threadId: thread.id, ...action.params })
+  else if (action.type === 'notify') {
+    if (action.persist && action.params?.item) {
+      const turn = thread.turns.find(turn => turn.id === action.params.turnId)
+      if (turn) {
+        const index = turn.items.findIndex(item => item.id === action.params.item.id)
+        if (index < 0) turn.items.push(action.params.item); else turn.items[index] = action.params.item
+        save()
+      }
+    }
+    notify(action.method, { threadId: thread.id, ...action.params })
+  }
   else raise(thread, action.type, action.text, action.method, action.params)
 }, 10)

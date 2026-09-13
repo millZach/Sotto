@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,6 +26,7 @@ async function draftFixture() {
   await credentials.load(); await control.start(); await control.command({ type: 'connect' })
   const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: request => control.command(request) }
   return { control, host, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
+    followupsOnDisk: async () => JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')),
     async close() {
       cleanup(); control.dispose(); await control.privacyChanged()
       if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-drafts-')) throw new Error('Unexpected fixture directory')
@@ -35,7 +36,7 @@ async function draftFixture() {
 }
 
 describe('thread draft recovery through the real connection and disk', () => {
-  it('keeps the controller busy guard when manual admission bypasses the renderer queue', async () => {
+  it('admits a direct send on its own thread lane while the coordinator is busy with other work', async () => {
     const f = await draftFixture()
     let release!: () => void
     const gate = new Promise<void>(done => { release = done })
@@ -51,15 +52,17 @@ describe('thread draft recovery through the real connection and disk', () => {
       const store = result.current.threadDrafts
       const row = describeThreads(f.control.get(), Date.now()).find(item => item.thread.id === 'workshop')!
       act(() => {
-        store.edit('workshop', { text: 'Clicked before busy state painted' })
+        store.edit('workshop', { text: 'Sent while the coordinator refreshes' })
         sending = sendThreadRevision(store, row, result.current.command, 1)
         store.edit('workshop', { text: 'Keep editing while busy' }); store.flush('workshop')
       })
+      await act(async () => { await sending })
+      expect(f.control.get().busy).toBe(true)
+      expect(execute.mock.calls.filter(([request]) => request.type === 'send')).toEqual([[expect.objectContaining({ text: 'Sent while the coordinator refreshes' })]])
+      expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', status: 'accepted' }))
       await waitFor(() => expect(store.snapshot('workshop').save).toBe('saved'))
-      await act(async () => { release(); await refreshing; await sending })
-      expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ status: 'failed' }))
-      expect(f.control.get().error).toMatch(/Another action is still in progress/)
-      expect(execute).not.toHaveBeenCalled()
+      expect(store.draft('workshop').text).toBe('Keep editing while busy')
+      await act(async () => { release(); await refreshing })
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ text: 'Keep editing while busy' }))
     } finally { await act(async () => { release(); await refreshing; await sending }); await f.close() }
   })
@@ -92,6 +95,35 @@ describe('thread draft recovery through the real connection and disk', () => {
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: newId, text: 'Independent newer draft' }))
       expect(execute).toHaveBeenCalledTimes(1)
     } finally { await f.close() }
+  })
+
+  it('sends queue, steer, skills and open-pane commands without waiting behind a held coordinator reply', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(done => { release = done })
+    const seen: string[] = []
+    const bridge: AgentBridge = { get: async () => null as unknown as AgentState, onState: () => () => undefined, command: async request => {
+      seen.push(request.type)
+      if (request.type === 'configure') await gate
+      return null
+    } }
+    const { result } = renderHook(() => useAgentConnection(bridge))
+    const threadId = 'workshop', draftId = randomUUID()
+    const held = result.current.command({ type: 'configure', patch: { enabled: true } })
+    const lane = [
+      result.current.command({ type: 'queue-followup', threadId, draftId, text: 'Next' }),
+      result.current.command({ type: 'edit-followup', threadId, itemId: randomUUID(), text: 'Edited' }),
+      result.current.command({ type: 'remove-followup', threadId, itemId: randomUUID() }),
+      result.current.command({ type: 'reorder-followups', threadId, itemIds: [] }),
+      result.current.command({ type: 'resume-followups', threadId }),
+      result.current.command({ type: 'steer', threadId, draftId: randomUUID(), text: 'Steer' }),
+      result.current.command({ type: 'refresh-thread-skills', threadId, forceReload: true }),
+      result.current.command({ type: 'observe-threads', threadIds: [threadId, 'docs'] }),
+    ]
+    await act(async () => { await Promise.all(lane) })
+    // All eight answered while the coordinator's reply is still held.
+    expect(seen.filter(type => type !== 'configure')).toEqual(['queue-followup', 'edit-followup', 'remove-followup', 'reorder-followups', 'resume-followups', 'steer', 'refresh-thread-skills', 'observe-threads'])
+    expect(seen).toContain('configure')
+    release(); await act(async () => { await held })
   })
 
   it('admits a send before newer edits while an earlier renderer IPC reply is still held', async () => {
@@ -289,5 +321,54 @@ describe('thread navigation through the real renderer connection and controller'
       await control.privacyChanged()
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it('queues a follow-up on a running thread with its skill through the real controller and disk, and sends it once after review', async () => {
+    const f = await draftFixture()
+    const skill = { name: 'deploy', path: 'C:/sotto-test/.agents/skills/deploy/SKILL.md' }
+    let controls!: ReturnType<typeof useAgents>
+    function Observer() { controls = useAgents(); return null }
+    const executeSpy = vi.spyOn(f.host, 'execute')
+    const sends = () => executeSpy.mock.calls.filter(([request]) => request.type === 'send')
+    try {
+      await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+      f.host.event({ type: 'manual', threadId: 'workshop', text: 'Start the long job' })
+      vi.stubGlobal('sotto', { agents: f.bridge })
+      render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><Observer /><ThreadsView onOpenAgents={() => undefined} /></AgentProvider>)
+      const prompt = await screen.findByRole('textbox', { name: 'Prompt', exact: true })
+      await screen.findByRole('button', { name: 'Queue prompt' })
+      act(() => controls.threadDrafts.edit('workshop', { text: 'Then run $deploy', skills: [skill] }))
+      fireEvent.keyDown(prompt, { key: 'Enter' })
+      const queue = await screen.findByRole('region', { name: 'Queued messages' })
+      await waitFor(() => expect(prompt).toHaveValue(''))
+      expect(f.control.get().followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill], status: 'queued' })])
+      expect((await f.followupsOnDisk()).items).toEqual([expect.objectContaining({ text: 'Then run $deploy', skills: [skill] })])
+      await waitFor(async () => expect((await f.disk()).threadDrafts).toEqual([]))
+      // Queue ownership is not a delivery: nothing reached the provider and the transcript tells no pending send.
+      expect(sends()).toEqual([])
+      expect(screen.queryByRole('group', { name: 'Pending message' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('article', { name: 'Pending message' })).not.toBeInTheDocument()
+      // The fixture turn ends without native completion evidence, so the queue waits for review.
+      act(() => f.host.event({ type: 'ready', threadId: 'workshop', text: 'The long job finished.' }))
+      await within(queue).findByText('Paused')
+      expect(sends()).toEqual([])
+      // Hold the provider while the follow-up is on its way: a newer revision still lines up behind it.
+      let deliver!: () => void
+      const provider = new Promise<void>(done => { deliver = done })
+      executeSpy.mockImplementation(async request => { if (request.type === 'send') await provider; return E2EAgentHost.prototype.execute.call(f.host, request) })
+      fireEvent.click(within(queue).getByRole('button', { name: 'Resume queue' }))
+      await waitFor(() => expect(sends()).toEqual([[expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill] })]]))
+      await within(queue).findByText('Sending')
+      act(() => controls.threadDrafts.edit('workshop', { text: 'And then post the link' }))
+      expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
+      fireEvent.keyDown(prompt, { key: 'Enter' })
+      await waitFor(() => expect(f.control.get().followups?.map(item => [item.text, item.status])).toEqual([['Then run $deploy', 'dispatching'], ['And then post the link', 'queued']]))
+      await waitFor(() => expect(prompt).toHaveValue(''))
+      await act(async () => { deliver() })
+      await waitFor(() => expect(f.control.get().followups?.map(item => item.text)).toEqual(['And then post the link']))
+      expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.text === 'Then run $deploy')).toHaveLength(1)
+      await act(async () => { await controls.command({ type: 'refresh' }) })
+      expect(sends()).toHaveLength(1)
+    } finally { await f.close() }
   })
 })

@@ -76,6 +76,7 @@ createInterface({input:process.stdin}).on('line', line => {
   send({id:frame.id,result:{updates:page,totalCount:updates.length,hasMore:p.offset+page.length<updates.length}})
  }
  else if (frame.method === 'session/prompt') {
+  if (script.writeCwd) writeFileSync(join(sessions[p.sessionId].cwd, 'native-cwd-proof.txt'), p.prompt[0].text)
   if (script.rejectPrompt) { send({id:frame.id,error:{code:-32602,message:'Rejected'}}); return }
   sessions[p.sessionId].promptId = frame.id; save()
   const apply = () => update(p.sessionId,{sessionUpdate:'user_message_chunk',content:p.prompt[0]},false,!script.suppressNotifications)

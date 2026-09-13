@@ -1,11 +1,12 @@
 import React, { useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Folder, FolderPlus, Search, SquarePen, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderPlus, Search, SquarePen, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { folderKey } from './NewThreadDialog'
 import { ProviderMark } from './ProviderMark'
 import type { ProjectFolder, ThreadRow, WorkspaceOrganization } from './threadFacts'
+import { THREAD_DRAG_TYPE } from './splitLayout'
 
 type Command = AgentConnection['command']
 type Section = 'open' | 'settled'
@@ -45,19 +46,38 @@ function Indicators({ working, needs }: { readonly working: number; readonly nee
   </span>
 }
 
-function ThreadNavRow({ row, current, busy, onOpen, command }: {
-  readonly row: ThreadRow; readonly current: boolean; readonly busy: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
+/** What the workspace offers a sidebar row beyond opening it: a place beside the focused thread. */
+export interface PaneActions {
+  /** The focused pane's thread; a row can open beside it. */
+  readonly currentThreadId: string | null
+  /** Threads open in the workspace, the focused one included. */
+  readonly openThreadIds: readonly string[]
+  readonly onOpenBeside: (threadId: string) => void
+  /** A row started (thread ID) or finished (null) being dragged toward the workspace. */
+  readonly onDragThread: (threadId: string | null) => void
+}
+
+function ThreadNavRow({ row, current, open, busy, onOpen, command, panes }: {
+  readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly busy: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
+  readonly panes: PaneActions
 }): ReactNode {
   const title = row.thread.title
   const status = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
-  return <li className="thread-nav__row" data-current={current || undefined}>
-    <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-current={current ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+  const besideAvailable = panes.currentThreadId !== null && !current
+  return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+    <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-current={current ? 'page' : undefined} draggable
+      aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
+      onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
+      onKeyDown={event => { if (besideAvailable && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); panes.onOpenBeside(row.thread.id) } }}
+      onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
+      onDragEnd={() => panes.onDragThread(null)}>
       <span className="thread-nav__mark" data-provider={row.providerId ?? 'other'} title={row.provider}><ProviderMark provider={row.providerId} name={row.provider} /></span>
       <span className="thread-nav__title">{title}</span>
       <time className="thread-nav__time" title={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toLocaleString() : 'Last activity unavailable'} dateTime={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toISOString() : undefined}>{row.when}</time>
       <span className="thread-nav__status" data-state={row.state} data-disconnected={row.connected ? undefined : true}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
     </button>
     <span className="thread-nav__row-actions">
+      {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(row.thread.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
       {row.settledBy === null
         ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle ${title}`} title="Settle thread" disabled={busy} onClick={() => void command({ type: 'settle-thread', threadId: row.thread.id })}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'
@@ -67,8 +87,8 @@ function ThreadNavRow({ row, current, busy, onOpen, command }: {
   </li>
 }
 
-function FolderView({ folder, section, activeThreadId, activeProjectId, expanded, onToggle, onOpen, onNewThread, command, busy }: {
-  readonly folder: ProjectFolder; readonly section: Section; readonly activeThreadId: string | null; readonly activeProjectId: string | null
+function FolderView({ folder, section, panes, activeProjectId, expanded, onToggle, onOpen, onNewThread, command, busy }: {
+  readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   readonly expanded: boolean; readonly onToggle: () => void; readonly onOpen: (threadId: string) => void
   readonly onNewThread: (projectId: string) => void; readonly command: Command; readonly busy: boolean
 }): ReactNode {
@@ -90,14 +110,14 @@ function FolderView({ folder, section, activeThreadId, activeProjectId, expanded
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={activeThreadId === row.thread.id} busy={busy} onOpen={onOpen} command={command} />)}
+      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={busy} onOpen={onOpen} command={command} panes={panes} />)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
 }
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, onQuery, onOpen, onNewThread }: {
+export function ThreadSidebar({ state, command, organization, query, onQuery, onOpen, onNewThread, ...panes }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
@@ -117,7 +137,7 @@ export function ThreadSidebar({ state, command, organization, query, onQuery, on
   })
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = `${section}:${folder.id}`
-    return <FolderView key={key} folder={folder} section={section} activeThreadId={state.activeThreadId} activeProjectId={state.activeProjectId}
+    return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId}
       expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewThread={onNewThread} command={command} busy={state.busy} />
   }
   const { open, settled } = organization

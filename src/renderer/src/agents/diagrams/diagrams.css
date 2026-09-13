@@ -1,0 +1,106 @@
+/* Diagrams in answers — a Mermaid block drawn in place, and the expanded viewer.
+
+   The block reuses the code block's frame and bar (.rich-code), so a diagram
+   reads as one more kind of answer block. The drawing itself is an <img> whose
+   colours come from the same tokens; only the canvas and viewer live here. */
+
+.rich-diagram { margin: 14px 0; }
+
+.rich-diagram__canvas {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 16px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+/* Wide drawings shrink to the column; tall ones stop at a reading height. Expand shows detail. */
+.rich-diagram__canvas img { display: block; width: auto; max-width: 100%; height: auto; max-height: 480px; object-fit: contain; user-select: none; }
+
+.rich-diagram__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 11px 14px 0;
+  color: var(--tt-text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+/* Doubled class beats `.rich-message.rich-message p`. */
+.rich-message .rich-diagram__notice.rich-diagram__notice { margin: 0; font-size: 14px; line-height: 1.45; color: var(--tt-text-muted); }
+.rich-message .rich-diagram__notice.rich-diagram__notice[data-tone='problem'] { color: var(--tt-text-2); }
+.rich-diagram__notice > svg { flex: none; margin-top: 2px; color: var(--tt-warning); }
+.rich-diagram__source { max-height: 360px; overflow: auto; }
+
+.rich-code__copy[aria-disabled='true'] { opacity: .4; cursor: default; }
+.rich-code__copy[aria-disabled='true']:hover { background: transparent; color: var(--tt-text-muted); }
+.rich-code__copy[aria-pressed='true'] { background: var(--tt-hover); color: var(--tt-text); }
+
+/* Viewer */
+
+.rich-diagram-viewer {
+  width: calc(100vw - 48px);
+  height: calc(100vh - 48px);
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--tt-panel-border);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-code-bg);
+  color: var(--tt-text);
+  box-shadow: var(--tt-shadow-overlay);
+  opacity: 1;
+  transform: none;
+  transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1), display 200ms allow-discrete, overlay 200ms allow-discrete;
+}
+.rich-diagram-viewer[open] { display: flex; flex-direction: column; }
+.rich-diagram-viewer::backdrop { background: var(--tt-backdrop); backdrop-filter: blur(5px); transition: opacity 160ms ease-out; }
+@starting-style {
+  .rich-diagram-viewer[open] { opacity: 0; transform: scale(.985); }
+  .rich-diagram-viewer[open]::backdrop { opacity: 0; }
+}
+
+.rich-diagram-viewer__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 8px 6px 18px;
+  border-bottom: 1px solid var(--tt-hairline);
+  background: var(--tt-surface-elevated);
+}
+.rich-diagram-viewer__title { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 16px; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.rich-diagram-viewer__controls { display: flex; align-items: center; gap: 2px; }
+.rich-diagram-viewer__controls .rich-code__copy { width: 36px; height: 36px; }
+.rich-diagram-viewer__zoom { min-width: 52px; color: var(--tt-text-2); font-size: 14px; font-variant-numeric: tabular-nums; text-align: center; }
+.rich-diagram-viewer__divider { width: 1px; height: 20px; margin: 0 6px; background: var(--tt-border-faint); }
+
+.rich-diagram-viewer__viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.rich-diagram-viewer__viewport[data-dragging] { cursor: grabbing; }
+.rich-diagram-viewer__viewport:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
+.rich-diagram-viewer__image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  pointer-events: none;
+  transition: width 140ms ease-out, height 140ms ease-out, transform 140ms ease-out;
+}
+.rich-diagram-viewer__viewport:is([data-dragging], :not([data-settled])) .rich-diagram-viewer__image { transition: none; }
+.rich-diagram-viewer__hint {
+  margin: 0;
+  padding: 8px 18px;
+  border-top: 1px solid var(--tt-hairline);
+  color: var(--tt-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* The global reduced-motion rule stills the viewer and image; it does not reach ::backdrop. */
+@media (prefers-reduced-motion: reduce) { .rich-diagram-viewer::backdrop { transition: none; } }
+:root[data-reduced-motion='on'] .rich-diagram-viewer::backdrop { transition: none; }

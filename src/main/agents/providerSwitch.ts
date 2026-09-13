@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -156,6 +156,16 @@ export class ConfiguredProviderHost implements AgentHost {
   private requireConnected(id: ProviderId): void {
     if (this.slots.get(id)!.status.connection !== 'connected') throw new Error(`Reconnect ${PROVIDER_LABELS[id]} before sending. Your draft is saved.`)
   }
+  async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope) {
+    const id = this.providerForThread(threadId) ?? scope?.providerId
+    if (!id) throw new Error('This thread is not known to Sotto.')
+    this.requireConnected(id)
+    const host = this.options.hosts[id]; const epoch = this.slots.get(id)!.epoch
+    if (!host.listThreadSkills || !this.slots.get(id)!.status.capabilities.skills) throw new Error('This provider does not expose skills.')
+    const catalog = await host.listThreadSkills(threadId, forceReload, scope)
+    if (epoch !== this.slots.get(id)!.epoch) throw new Error('The thread provider changed while loading skills.')
+    return catalog
+  }
   async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
     const id = this.owner(threadId); this.requireConnected(id)
     const slot = this.slots.get(id)!; const epoch = slot.epoch; const host = this.options.hosts[id]
@@ -173,6 +183,7 @@ export class ConfiguredProviderHost implements AgentHost {
     return providerEntityId(this.options.provider(), kind, id)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    if (command.type === 'send' && command.skills?.length && this.owner(command.threadId) !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
     if (command.type === 'create-project') {
       const id = command.provider ?? this.options.provider(); this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.projects) throw new Error('This provider does not support creating projects.')

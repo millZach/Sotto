@@ -1,14 +1,20 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
+import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { CodexActivityProjection, codexItemSchema } from './codexActivity'
+import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type IdentityItem } from './codexMessageIdentity'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
@@ -21,23 +27,27 @@ function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
 }
 const configArguments = Object.entries({ model_provider: 'openai', approval_policy: threadPolicy.approvalPolicy,
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional() })
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(),
   pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema }).optional(),
-  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]) })
+  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]),
+  messageIdentities: z.array(codexTurnIdentitySchema).default([]) })
 const aliasesSchema = z.record(z.string(), aliasSchema)
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
 const rpcSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() })
-const itemSchema = z.object({ id: z.string(), type: z.string(), clientId: z.string().nullish(), text: z.string().optional(),
-  content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
-  changes: z.array(z.object({ path: z.string(), kind: z.object({ type: z.string() }).optional() })).optional() })
-const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish() })
+const itemSchema = codexItemSchema
+const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
+  itemsView: z.enum(['notLoaded', 'summary', 'full']).default('full'),
+  completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
 const threadSchema = z.object({ id: z.string(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
-const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional() })
+const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
+  startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
+  error: z.object({ message: z.string() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
+  explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).optional() })
 class Uncertain extends Error {}
 class Rejected extends Error {
   readonly unmaterializedThreadId: string | undefined
@@ -76,6 +86,8 @@ export class CodexAppServerHost implements AgentHost {
   private readonly terminalTurns = new Set<string>()
   private readonly turnDates = new Map<string, string>()
   private readonly fileSummaries = new Map<string, string>()
+  private activity = new CodexActivityProjection()
+  private readonly completedMessages = new Set<string>()
   private readonly requests = new Map<string, CodexPendingRequest>()
   private readonly inFlightRequestIds = new Set<string>()
   private readonly waiters = new Map<string, Waiter>()
@@ -84,13 +96,16 @@ export class CodexAppServerHost implements AgentHost {
   private readonly creating = new Set<string>()
   private child: ChildProcessWithoutNullStreams | undefined
   private watcher: CodexSessionLogWatcher | undefined
+  private readonly pendingLogMessages = new Map<string, AgentMessage[]>()
   private stopping: Promise<void> = Promise.resolve()
   private frames: Promise<void> = Promise.resolve()
   private writing: Promise<void> = Promise.resolve()
   private nextId = 0
   private generation = 0
+  private skillsRevision = 0
+  private readonly loadedSkillCwds = new Set<string>()
   private state: AgentHostSnapshot = { connected: false, name: 'Codex', version: '', projects: [], models: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
@@ -106,10 +121,19 @@ export class CodexAppServerHost implements AgentHost {
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
+    this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
-      if (sessionId) { this.touch(sessionId); this.addMessage(sessionId, message); this.emit() }
+      if (sessionId) {
+        this.touch(sessionId)
+        if (!this.live.has(sessionId)) {
+          const pending = this.pendingLogMessages.get(sessionId) ?? []
+          pending.push(message); this.pendingLogMessages.set(sessionId, pending)
+          return
+        }
+        this.addMessage(sessionId, message); this.orderMessages(sessionId); this.emit()
+      }
     } })
     for (const [id, alias] of Object.entries(aliases)) {
       this.ensureThread(id)
@@ -173,9 +197,37 @@ export class CodexAppServerHost implements AgentHost {
       this.emit(); return this.snapshot()
     } catch (error) { if (this.child === child) this.disconnect(); throw error }
   }
+  async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    if (!this.state.connected) throw new Error('Reconnect Codex before browsing skills.')
+    const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'codex' ? scope.workingDirectory : undefined)
+    if (!cwd || !isAbsolute(cwd)) throw new Error('This thread has no available Codex working folder.')
+    const generation = this.generation; const revision = this.skillsRevision
+    let catalog: AgentSkillCatalog | undefined
+    let invalid = false
+    try {
+      if (!(await stat(cwd)).isDirectory()) throw new Error('The thread working folder is unavailable.')
+      await this.rpc('skills/list', { cwds: [cwd], forceReload: forceReload || !this.loadedSkillCwds.has(cwd) }, value => {
+        // A malformed read must not tear down running coding threads.
+        try { catalog = parseCodexSkillCatalog(value, threadId, cwd) } catch { invalid = true }
+      })
+      if (invalid || !catalog) throw new Error('Codex returned an invalid skill catalog.')
+      if (generation !== this.generation || revision !== this.skillsRevision || !this.state.connected) throw new Error('Codex skills changed while loading. Refresh the catalog.')
+      this.loadedSkillCwds.add(cwd)
+      return structuredClone(catalog)
+    } catch {
+      this.loadedSkillCwds.delete(cwd)
+      return { threadId, providerId: 'codex', cwd, status: 'error', skills: [], errors: [],
+        error: 'Codex skills could not be listed. Check Codex and refresh skills.' }
+    }
+  }
+  /** Send and steer share native reference validation and input mapping. */
+  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = []) {
+    if (!skills.length) return [{ type: 'text' as const, text }]
+    return codexSkillInput(text, skills, await this.listThreadSkills(threadId, true))
+  }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId,
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', messages: [], requests: [] })
     return this.threads.get(id)!
   }
@@ -201,6 +253,7 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
       await this.resume(id)
       const alias = this.aliases[id]!
+      await this.watcher?.pollThread(alias.codexThreadId)
       // Read an uncertain settings save without replaying its overrides.
       if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: false }, value => this.applySettings(id, value))
       let applied = false
@@ -208,10 +261,10 @@ export class CodexAppServerHost implements AgentHost {
         const revision = this.revisions.get(id)
         let current = true
         try {
-          const apply = (value: unknown): void => {
+          const apply = async (value: unknown): Promise<void> => {
             // A late read must not overwrite streamed text, a completion, or a permission.
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
-            this.applyThread(id, threadResponse.parse(value).thread); applied = true
+            this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); applied = true
           }
           try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
           catch (error) {
@@ -241,20 +294,30 @@ export class CodexAppServerHost implements AgentHost {
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
-    const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, value => {
+    const generation = this.generation
+    const operation = (async () => {
+      await this.watcher?.pollThread(alias.codexThreadId)
+      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
+      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, async value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
-      this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id)
+      this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id)
       const thread = this.ensureThread(id); delete thread.historyStatus; delete thread.historyError
       this.emit()
-    }).catch(error => {
+      })
+    })().catch(error => {
       if (error instanceof Rejected && error.missingThreadId === alias.codexThreadId) {
         const thread = this.ensureThread(id)
         thread.status = 'error'; thread.historyStatus = 'error'; thread.historyError = error.message
         this.emit()
       }
       throw error
-    }).finally(() => { this.resuming.delete(id) })
+    }).finally(() => {
+      this.resuming.delete(id)
+      // A failed history read cannot silently discard native-authored input.
+      if (generation === this.generation && this.pendingLogMessages.has(id)) {
+        this.flushLogMessages(id); this.orderMessages(id); this.emit()
+      }
+    })
     this.resuming.set(id, operation); return operation
   }
   private addMessage(id: string, message: AgentMessage): void {
@@ -263,31 +326,88 @@ export class CodexAppServerHost implements AgentHost {
     if (index < 0) thread.messages.push(message)
     else thread.messages[index] = { ...message, createdAt: thread.messages[index]!.createdAt }
   }
-  private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string): void {
+  private flushLogMessages(id: string): void {
+    for (const message of this.pendingLogMessages.get(id) ?? []) this.addMessage(id, message)
+    this.pendingLogMessages.delete(id)
+  }
+  private identityItem(item: z.infer<typeof itemSchema>): IdentityItem | undefined {
+    if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
+    return { id: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', clientId: item.clientId,
+      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))) }
+  }
+  private stableMessageId(id: string, turnId: string, itemId: string): string {
+    return this.aliases[id]!.messageIdentities.find(turn => turn.turnId === turnId)?.messages.find(m => m.nativeIds.includes(itemId))?.id ?? itemId
+  }
+  private orderMessages(id: string): void {
+    const thread = this.ensureThread(id)
+    const records = this.aliases[id]!.messageIdentities.flatMap(turn => turn.messages)
+    const order = new Map(records.map((m, index) => [m.id, index]))
+    thread.messages = thread.messages.filter(message => {
+      if (order.has(message.id)) return true
+      const aliases = records.filter(record => record.nativeIds.includes(message.id) && record.role === message.role && record.digest === promptDigest(message.text))
+      // Exact native/rollout aliases corroborated by a complete ordered snapshot;
+      // raw watcher input without that evidence remains a separate takeover event.
+      return aliases.length !== 1 || !thread.messages.some(m => m.id === aliases[0]!.id)
+    })
+    thread.messages.sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+  }
+  private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string,
+    lifecycle: { phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; afterMessageId?: string | undefined; terminal?: boolean | undefined } = { phase: 'history' }): void {
+    const thread = this.ensureThread(id)
+    if (turnId) this.activity.item(thread, item, { ...lifecycle, turnId, afterMessageId: lifecycle.afterMessageId ?? thread.messages.at(-1)?.id })
     if (item.type === 'fileChange') {
       this.fileSummaries.set(item.id, (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return
     }
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
+    const messageKey = JSON.stringify([id, turnId, item.id])
+    if (item.type === 'agentMessage' && lifecycle.phase === 'started' && this.completedMessages.has(messageKey)) return
+    if (item.type === 'agentMessage' && (lifecycle.phase === 'completed' || lifecycle.terminal)) this.completedMessages.add(messageKey)
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(item.content)
-    let origin: Origin | undefined
-    if (item.type === 'userMessage') {
-      origin = alias.origins.find(o => o.itemId === item.id || o.messageId === item.clientId)
-        ?? alias.origins.find(o => !o.itemId && o.digest === promptDigest(text) && (!o.turnId || o.turnId === turnId))
-      if (origin && origin.itemId !== item.id) { origin.itemId = item.id; origin.turnId = turnId; void this.persist().catch(() => this.lostChild()) }
+    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))
+    const input = this.identityItem(item)!
+    let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
+    const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
+    const known = identities?.messages.find(m => m.nativeIds.includes(item.id) && compatibleClient(m, input))
+    if (item.type === 'agentMessage' && lifecycle.phase === 'history' && !lifecycle.terminal &&
+      known?.complete && known.digest !== input.digest && thread.messages.some(message => message.id === known.id)) return
+    if (lifecycle.phase !== 'history' && (lifecycle.phase === 'started' && known?.complete ||
+      turnId && this.terminalTurns.has(turnId) && (known?.complete || identities?.sealed))) return
+    if (!origin && item.type === 'userMessage' && known) origin = alias.origins.find(o => o.messageId === known.id && o.turnId === turnId && o.digest === input.digest && (!item.clientId || o.messageId === item.clientId))
+    const record = identities ? messageIdentity(alias.messageIdentities, identities, input, origin,
+      createdAt ?? this.turnDates.get(turnId!) ?? alias.createdAt, item.type === 'userMessage' || lifecycle.phase === 'completed' || lifecycle.terminal === true) : undefined
+    if (origin) {
+      origin.itemId ??= item.id; origin.turnId = turnId
     }
-    this.addMessage(id, { id: origin?.messageId ?? item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', text,
-      createdAt: origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+    this.addMessage(id, { id: record?.id ?? origin?.messageId ?? item.id, role: input.role, text,
+      createdAt: record?.createdAt ?? origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+    if (item.type === 'userMessage' && turnId) this.activity.anchor(thread, turnId, record?.id ?? item.id)
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
-  private applyTurn(id: string, turn: z.infer<typeof turnSchema>): void {
+  private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false): void {
     const thread = this.ensureThread(id)
     const createdAt = turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : this.aliases[id]!.createdAt
     this.turnDates.set(turn.id, createdAt)
-    for (const item of turn.items) this.applyItem(id, item, turn.id, createdAt)
     // A delayed start response must never resurrect a turn whose completion already arrived.
     if (turn.status === 'inProgress' && this.terminalTurns.has(turn.id)) return
+    if (live && this.terminalTurns.has(turn.id) && this.aliases[id]!.messageIdentities.find(t => t.turnId === turn.id)?.sealed) return
+    if (turn.items.length && turn.itemsView === 'full') {
+      const alias = this.aliases[id]!
+      reconcileMessageIdentities(alias.messageIdentities, turn.id, turn.items.flatMap(item => { const message = this.identityItem(item); return message ? [message] : [] }),
+        alias.origins, createdAt, this.watcher?.identities(alias.codexThreadId, turn.id), turn.status !== 'inProgress')
+    }
+    let anchor = thread.messages.at(-1)?.id
+    for (const item of turn.items) {
+      // A display summary is not an authoritative message sequence or origin.
+      if (turn.itemsView !== 'full' && this.identityItem(item)) continue
+      this.applyItem(id, item, turn.id, createdAt, { phase: 'history', afterMessageId: anchor, terminal: turn.status !== 'inProgress' })
+      if (item.type === 'userMessage' || item.type === 'agentMessage') anchor = this.stableMessageId(id, turn.id, item.id)
+    }
+    this.activity.turn(thread, turn, live)
+    this.orderMessages(id)
+    if (!this.runningTurns.has(id) || this.runningTurns.get(id) === turn.id || turn.status === 'inProgress') {
+      thread.lastTurn = { id: turn.id, status: turn.status === 'inProgress' ? 'running' : turn.status }
+    }
     if (turn.status === 'inProgress') { this.runningTurns.set(id, turn.id); thread.status = 'running' }
     else {
       this.terminalTurns.add(turn.id)
@@ -299,6 +419,12 @@ export class CodexAppServerHost implements AgentHost {
   private applyThread(id: string, thread: z.infer<typeof threadSchema>): void {
     if (thread.id !== this.aliases[id]!.codexThreadId) throw new Error('Codex returned a different provider session.')
     for (const turn of thread.turns) this.applyTurn(id, turn)
+    const order = new Map(thread.turns.map((turn, index) => [turn.id, index]))
+    this.aliases[id]!.messageIdentities.sort((a, b) => (order.get(a.turnId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.turnId) ?? Number.MAX_SAFE_INTEGER))
+    // Corroborate aliases before exposing legacy rollout rows to authority
+    // observers. Unmatched rows remain visible as external input.
+    this.flushLogMessages(id)
+    this.orderMessages(id)
     if (thread.status?.type === 'systemError') this.ensureThread(id).status = 'error'
     else if (thread.status?.type === 'active') this.ensureThread(id).status = 'running'
     else if (thread.status?.type === 'idle') {
@@ -337,18 +463,19 @@ export class CodexAppServerHost implements AgentHost {
         if (!project) throw new Error('Choose a known Codex project.')
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
         validateThreadOptions(this.state, command)
+        const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
         this.creating.add(command.threadId)
-        await this.rpc('thread/start', { cwd: project.path, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
+        await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           ...runtimePolicy(command.runtimeMode), ...(command.reasoningEffort ? { config: { model_reasoning_effort: command.reasoningEffort } } : {}), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
             || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
-          this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd: project.path,
+          this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd,
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
-            createdAt: new Date().toISOString(), origins: [] }
+            createdAt: new Date().toISOString(), origins: [], messageIdentities: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
@@ -372,6 +499,48 @@ export class CodexAppServerHost implements AgentHost {
             ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: false }, value => this.applySettings(id, value), async () => {
             delete alias.pendingSettings; await this.persist()
           })
+        } else if (command.type === 'steer') {
+          const thread = this.ensureThread(id)
+          const expectedTurnId = this.runningTurns.get(id)
+          const generation = this.generation
+          let skillsRevision: number | undefined
+          const validate = (): void => {
+            if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before steering. Review this prompt.')
+            if (command.skills?.length && skillsRevision !== undefined && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before steering. Refresh skills and review the selection.')
+            if (!expectedTurnId || this.runningTurns.get(id) !== expectedTurnId || thread.status !== 'running') throw new Error('The active Codex turn changed. Queue this follow-up instead.')
+            if (thread.requests.length) throw new Error('Answer the pending Codex request explicitly before steering.')
+            if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex. Review it before steering.')
+          }
+          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          if (alias.origins.some(o => o.messageId === command.messageId)) return thread.messages.some(m => m.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
+          validate()
+          if (this.dispatching.has(id)) throw new Error('A Codex prompt is already being submitted.')
+          this.dispatching.add(id)
+          let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
+          try {
+            input = await this.prepareSkillInput(id, command.text, command.skills)
+            skillsRevision = this.skillsRevision
+            validate()
+          } catch (error) { this.dispatching.delete(id); throw error }
+          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId!, clientIdentity: true }
+          alias.origins.push(origin)
+          try {
+            try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
+            catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
+            this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+            await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, async value => {
+              const response = z.object({ turnId: z.string() }).parse(value)
+              if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
+              if (!thread.messages.some(m => m.id === origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt })
+              this.unconfirmedDispatchSessionIds.delete(id); this.emit(); await this.persist()
+            }, async () => {
+              alias.origins = alias.origins.filter(o => o !== origin)
+              this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); await this.persist()
+            })
+          } catch (error) {
+            if (error instanceof Uncertain) this.unconfirmedDispatchSessionIds.add(id)
+            throw error
+          } finally { this.dispatching.delete(id) }
         } else if (command.type === 'answer') {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
@@ -381,6 +550,8 @@ export class CodexAppServerHost implements AgentHost {
           await this.decline(id)
           const turnId = this.runningTurns.get(id)
           if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
+            this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
+            this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           })
         } else {
@@ -397,7 +568,11 @@ export class CodexAppServerHost implements AgentHost {
           if (this.ensureThread(id).requests.length) throw new Error('Answer the pending Codex request before sending another prompt.')
           this.dispatching.add(id)
           const generation = this.generation
-          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString() }
+          let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
+          try { input = await this.prepareSkillInput(id, command.text, command.skills) }
+          catch (error) { this.dispatching.delete(id); throw error }
+          const skillsRevision = this.skillsRevision
+          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true }
           alias.origins.push(origin)
           try {
             await this.persist()
@@ -405,6 +580,7 @@ export class CodexAppServerHost implements AgentHost {
             // input after persistence, before registering this prompt as our own input.
             await this.watcher?.pollThread(alias.codexThreadId)
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
+            if (command.skills?.length && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before sending. Refresh skills and review the selection.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(message => message.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
             if (this.ensureThread(id).status === 'running' || this.ensureThread(id).requests.length) throw new Error('The Codex thread started working or needs an answer before another prompt.')
           } catch (error) {
@@ -413,8 +589,8 @@ export class CodexAppServerHost implements AgentHost {
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
-            await this.rpc('turn/start', { threadId: alias.codexThreadId, clientUserMessageId: command.messageId,
-              input: [{ type: 'text', text: command.text }], approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+            await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
+              input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
               ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
@@ -449,6 +625,9 @@ export class CodexAppServerHost implements AgentHost {
       } catch { waiter.reject(new Uncertain('Codex response could not be applied.')); this.lostChild() }
       return
     }
+    if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
+      this.skillsRevision++; this.loadedSkillCwds.clear(); return
+    }
     if (frame.method === 'thread/started') {
       const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
       if (id) { this.touch(id); this.applyThread(id, thread); this.emit() }
@@ -462,22 +641,47 @@ export class CodexAppServerHost implements AgentHost {
       if (!parsed) { this.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }); return }
       this.touch(id!); this.requests.set(parsed.request.id, parsed); this.ensureThread(id!).requests.push(parsed.request); this.emit(); return
     }
-    if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved'].includes(frame.method ?? '')) return
+    if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',
+      'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress',
+      'turn/plan/updated', 'thread/status/changed'].includes(frame.method ?? '')) return
     const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
-    if (!id) return
+    if (!id) {
+      const owner = this.activity.childNotification(params.threadId, frame.method!, params)
+      if (owner) { this.touch(owner.id); this.emit() }
+      return
+    }
     this.touch(id)
-    if (params.turn) this.applyTurn(id, params.turn)
-    if (params.item) this.applyItem(id, params.item, params.turnId)
-    if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined) {
-      const previous = this.ensureThread(id).messages.find(m => m.id === params.itemId)
-      this.addMessage(id, { id: params.itemId, role: 'assistant', text: (previous?.text ?? '') + params.delta,
+    if (params.turn) this.applyTurn(id, params.turn, true)
+    if (params.item) this.applyItem(id, params.item, params.turnId, undefined, { phase: frame.method === 'item/started' ? 'started' : 'completed', startedAtMs: params.startedAtMs, completedAtMs: params.completedAtMs })
+    if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined
+      && !this.completedMessages.has(JSON.stringify([id, params.turnId, params.itemId])) && !this.terminalTurns.has(params.turnId ?? '')) {
+      const messageId = params.turnId ? this.stableMessageId(id, params.turnId, params.itemId) : params.itemId
+      const previous = this.ensureThread(id).messages.find(m => m.id === messageId)
+      this.addMessage(id, { id: messageId, role: 'assistant', text: (previous?.text ?? '') + params.delta,
         createdAt: previous?.createdAt ?? this.turnDates.get(params.turnId ?? '') ?? this.aliases[id]!.createdAt })
     }
+    if (['item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress'].includes(frame.method!)) {
+      this.activity.delta(this.ensureThread(id), frame.method!, params)
+    }
+    if (frame.method === 'turn/plan/updated' && params.turnId && params.plan) this.activity.plan(this.ensureThread(id), params.turnId, params.plan, params.explanation)
+    if (frame.method === 'thread/status/changed' && params.status) {
+      const thread = this.ensureThread(id)
+      thread.status = params.status.type === 'active' ? 'running' : params.status.type === 'systemError' ? 'error' : 'idle'
+      if (thread.status !== 'running') this.runningTurns.delete(id)
+    }
     if (frame.method === 'error') {
-      this.ensureThread(id).status = 'error'
-      if (params.turnId) this.terminalTurns.add(params.turnId)
+      if (params.error && params.turnId) this.activity.error(this.ensureThread(id), params.turnId, params.error.message, params.willRetry === true)
+      if (!params.willRetry) {
+        this.ensureThread(id).status = 'error'
+        if (params.turnId) {
+          this.terminalTurns.add(params.turnId); this.runningTurns.delete(id)
+          this.ensureThread(id).lastTurn = { id: params.turnId, status: 'failed' }
+          this.activity.turn(this.ensureThread(id), { id: params.turnId, status: 'failed', error: params.error }, true)
+        }
+      }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(requestKey(params.requestId))
+    if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') await this.persist()
     this.emit()
   }
   private write(value: unknown): void {
@@ -517,7 +721,8 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   private reset(): void {
-    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear()
+    this.skillsRevision++; this.loadedSkillCwds.clear()
+    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear(); this.pendingLogMessages.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
     this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()
     for (const thread of this.threads.values()) thread.requests = []

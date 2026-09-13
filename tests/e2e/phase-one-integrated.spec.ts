@@ -272,7 +272,8 @@ test('light provider controls remain readable and uncertain delivery can be chec
     await selectThread(page, 'Docs')
     await expect(prompt).toHaveValue('A newer draft while confirmation is pending.')
     await expect(page.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    // Sending or queuing: nothing new leaves while the earlier prompt is unconfirmed.
+    await expect(page.getByRole('button', { name: /^(Send|Queue) prompt$/ })).toBeDisabled()
     await page.getByRole('button', { name: 'Check again', exact: true }).focus()
     await captureModes(launched, 'uncertain-recovery-focus', 760)
     await page.getByRole('button', { name: 'Check again', exact: true }).click()

@@ -12,6 +12,7 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import type { AgentAttachment, AgentCommand } from '../../src/shared/agents'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -23,6 +24,7 @@ async function fixture() {
   let historyEnabled = true
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
   for (const adapter of Object.values(adapters)) {
+    adapter.state.projects[0]!.path = directory
     adapter.state.capabilities.configureThread = true
     adapter.state.models[0]!.supportsImages = true
   }
@@ -62,6 +64,25 @@ async function fixture() {
 }
 
 describe('integrated Phase 1 workspace persistence', () => {
+  it('retains the exact thread draft and attachment through failed worktree setup, navigation and restart', async () => {
+    const f = await fixture()
+    await git(f.directory, ['init'])
+    const initial = await f.command({ type: 'connect' })
+    const project = initial.host.projects.find(project => project.providerId === 'codex')!
+    const model = initial.host.models.find(model => model.providerId === 'codex')!
+    const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Recover setup', managed: false })
+    const threadId = created.activeThreadId!
+    expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('error')
+    const draft = { threadId, draftId: randomUUID(), text: 'Keep this exact unsent task', attachments: [image] }
+    await f.command({ type: 'save-thread-draft', ...draft })
+    const failed = await f.control.command({ type: 'manual-send', ...draft })
+    expect(failed.error).toContain('no commit')
+    await f.command({ type: 'select-thread', threadId: initial.host.threads[0]!.id })
+    await f.restart()
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining(draft))
+    expect(f.control.get().host.threads.find(thread => thread.id === threadId)).toMatchObject({ projectId: project.id, nativeSessionStarted: false, worktree: { status: 'error' } })
+    expect(Object.values(f.adapters).flatMap(adapter => adapter.commands)).toEqual([])
+  })
   it('does not retain private transcript copies during corrupt workspace recovery', async () => {
     const f = await fixture()
     f.control.dispose()

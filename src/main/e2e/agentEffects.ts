@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { EMPTY_AGENT_HOST, agentRuntimeModeSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../agents/host'
@@ -25,6 +27,13 @@ export class E2EAgentHost implements AgentHost {
       this.state.models = structuredClone([...fixture.models])
       this.state.projects = structuredClone([...fixture.projects])
       this.state.threads = scenario === 'design-threads' ? structuredClone([...fixture.threads]) : []
+    }
+  }
+  /** Interactive journeys use real folders inside their owned profile, so normal cwd validation stays active. */
+  async initializeWorkingFolders(root: string): Promise<void> {
+    for (const project of this.state.projects) {
+      project.path = join(root, project.id)
+      await mkdir(project.path, { recursive: true })
     }
   }
   async connect(): Promise<AgentHostSnapshot> {

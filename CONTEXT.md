@@ -14,6 +14,16 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
+**Thread working copy.** The folder in which a thread's provider works, either a separate Git worktree or a deliberately shared folder. Separate working copies can belong to the same project and share its project memory scope.
+
+**Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
+
+**Thread activity.** Provider-reported work alongside a thread's messages, including commands, file changes, visible summaries, tool results and subagent states. Activity is observational history, not a user message, an assignment or permission to act.
+
+**Native skill.** A reusable instruction set exposed by a provider for a thread's working copy. Selecting a skill adds reviewed text and a provider-recognized reference to that draft; it neither submits the draft nor grants authority.
+
+**Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy.
+
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
 
 **Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
@@ -54,6 +64,10 @@ Answering a question or permission request and creating a project are also part 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
 **Draft.** An unsent prompt or answer, including its attachments, owned by a thread and optionally a question request. Each thread retains its own draft across navigation and restart; accepting one submitted revision does not clear a newer revision.
+
+**Follow-up queue.** The ordered messages the user has prepared for a thread after its current provider turn, editable or removable until dispatch. It is distinct from the attention queue and the outbox of already-dispatched commands.
+
+**Steering.** The user's explicit submission of new input to a provider's current running turn through a supported native mechanism. It does not imply permission to cancel the turn or start a replacement conversation.
 
 **Turn.** One coordinator action from start to finish: a spoken utterance, a typed command, or an automatic follow-up sent by supervision. Every turn is recorded.
 

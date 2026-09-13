@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -95,10 +97,18 @@ export const agentMessageSchema = z.object({
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
+export const agentWorktreeSchema = z.object({
+  mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
+  path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
+  baseCommit: z.string().optional(), error: z.string().optional(), dirty: z.boolean().optional(),
+  projectRelativePath: z.string().optional(),
+})
+export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentThreadSchema = z.object({
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
+  workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -109,6 +119,9 @@ export const agentThreadSchema = z.object({
   settledAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
   settledOverride: z.enum(['settled', 'active']).nullable().optional(),
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
+  activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+  /** Native outcome evidence for queue admission; never an authority to replay work. */
+  lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
 })
@@ -116,7 +129,8 @@ export const agentCapabilitiesSchema = z.object({
   projects: z.boolean(), threads: z.boolean(), submit: z.boolean(),
   observe: z.boolean(), questions: z.boolean(), permissions: z.boolean(),
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
-  configureThread: z.boolean().optional(),
+  configureThread: z.boolean().optional(), skills: z.boolean().optional(),
+  steer: z.boolean().optional(),
 })
 export const agentProviderStatusSchema = z.object({
   id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
@@ -215,10 +229,18 @@ export const agentQueueItemSchema = z.object({
 export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
-  threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema,
+  threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
+/** User-authored follow-ups; independent of attention and dispatched outbox intent. */
+export const agentFollowupSchema = z.object({
+  id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
+  error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
+})
+export type AgentFollowup = z.infer<typeof agentFollowupSchema>
 export const agentDeliverySchema = z.object({
   threadId: id, draftId: z.uuid(),
   status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
@@ -231,6 +253,7 @@ export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draf
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
+  skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
@@ -246,6 +269,8 @@ export const agentStateSchema = z.object({
     threadId: id, draftId: z.uuid(), status: z.enum(['saved', 'saving', 'unsaved']),
   })).optional(),
   deliveries: z.array(agentDeliverySchema).optional(),
+  followups: z.array(agentFollowupSchema).optional(),
+  followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
@@ -266,6 +291,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
+  z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('preview-voice') }).strict(),
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
@@ -273,10 +299,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentsSchema.optional(), requestId: id.nullable().optional() }).strict(),
+    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
-  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
+  z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
+  z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
+  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
@@ -286,14 +318,17 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    workingCopy: z.enum(['independent', 'shared']).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
+  z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
   z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
-  z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional() }).strict(),
+  z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
   z.object({ type: z.literal('unassign'), threadId: id }).strict(),
-  z.object({ type: z.literal('resume'), threadId: id }).strict(),
+  z.object({ type: z.literal('resume'), threadId: id, expectedDraftId: z.uuid().nullable().optional() }).strict(),
   z.object({ type: z.literal('pause'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
   z.object({ type: z.enum(['next', 'later']) }).strict(),

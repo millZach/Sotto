@@ -3,14 +3,16 @@ import { open, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentMessage } from '../../shared/agents'
+import { CodexRolloutIdentities, type RolloutIdentity } from './codexMessageIdentity'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
 const entrySchema = z.object({ timestamp: z.string(), ordinal: z.number().optional(), type: z.string(), payload: z.unknown() })
 const textContent = z.array(z.object({ type: z.string(), text: z.string().optional() }))
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
+  client_id: z.string().nullish(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; offset: number; buffer: Buffer; own: Map<string, string>; seen: Set<string>; lastSuppressed?: string | undefined }
+type Tail = { path?: string | undefined; offset: number; buffer: Buffer; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
@@ -21,8 +23,9 @@ export class CodexSessionLogWatcher {
   private stopped = false
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
   observe(threadId: string): void {
-    if (!this.tails.has(threadId)) this.tails.set(threadId, { offset: 0, buffer: Buffer.alloc(0), own: new Map(), seen: new Set() })
+    if (!this.tails.has(threadId)) this.tails.set(threadId, { offset: 0, buffer: Buffer.alloc(0), own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
   }
+  identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   sent(threadId: string, messageId: string, text: string): void { this.sentDigest(threadId, messageId, promptDigest(text)) }
   sentDigest(threadId: string, messageId: string, digest: string): void { this.observe(threadId); this.tails.get(threadId)!.own.set(messageId, digest) }
   forget(threadId: string, messageId: string): void { this.tails.get(threadId)?.own.delete(messageId) }
@@ -64,7 +67,7 @@ export class CodexSessionLogWatcher {
       const file = await open(tail.path, 'r')
       try {
         const size = (await file.stat()).size
-        if (size < tail.offset) { tail.offset = 0; tail.buffer = Buffer.alloc(0) }
+        if (size < tail.offset) { tail.offset = 0; tail.buffer = Buffer.alloc(0); tail.identities = new CodexRolloutIdentities() }
         // Background polls stay bounded. A guarded target read reaches the captured
         // file size with bounded buffers so takeover evidence is never truncated.
         do {
@@ -87,6 +90,7 @@ export class CodexSessionLogWatcher {
   private consume(threadId: string, tail: Tail, line: string): void {
     try {
       const entry = entrySchema.parse(JSON.parse(line))
+      tail.identities.consume(entry)
       if (entry.type !== 'event_msg') return
       const event = userEvent.parse(entry.payload)
       const item = event.type === 'item_completed' && ['UserMessage', 'user_message'].includes(event.item?.type ?? '') ? event.item : undefined
@@ -97,10 +101,9 @@ export class CodexSessionLogWatcher {
       if (tail.seen.has(id)) return
       tail.seen.add(id)
       const digest = promptDigest(text)
-      if (tail.lastSuppressed === digest) return
-      tail.lastSuppressed = undefined
-      const own = [...tail.own].find(([, value]) => value === digest)
-      if (own) { tail.own.delete(own[0]); tail.lastSuppressed = digest; return }
+      if (event.client_id && tail.own.get(event.client_id) === digest) return
+      // No-client legacy rows stay unowned until complete turn history can
+      // corroborate an exact alias. Text alone must not hide native input.
       if (!this.stopped) this.options.onMessage(threadId, { id, role: 'user', text, createdAt: entry.timestamp })
     } catch { /* Partial, malformed and unrelated rollout entries do not transfer authority. */ }
   }

@@ -70,6 +70,44 @@ async function fixture(receiptIds: string[] = []) {
 }
 
 describe('navigation independent of action latency', () => {
+  it('keeps both open panes observed through refresh without moving focus or granting authority', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    const before = f.control.get()
+    const request = agentCommandSchema.parse({ type: 'observe-threads', threadIds: ['workshop', 'docs', 'workshop', 'missing'] })
+    await f.control.command(request)
+    expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
+    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', assignments: before.assignments, draft: before.draft })
+    expect(f.host.attempts).toEqual([])
+    await f.control.command({ type: 'refresh' })
+    expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
+    await f.restart()
+    expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs'])
+    await f.control.command(request)
+    await f.control.command(agentCommandSchema.parse({ type: 'observe-threads', threadIds: [] }))
+    expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs'])
+    expect(f.control.get().assignments).toEqual([])
+  })
+
+  it('updates pane observation immediately while coordinator reasoning is pending', async () => {
+    const f = await fixture()
+    const request = agentCommandSchema.parse({ type: 'observe-threads', threadIds: ['workshop', 'docs'] })
+    const gate = deferred<AgentIntent>()
+    f.reasoner.intent.mockReturnValueOnce(gate.promise)
+    const reasoning = f.control.command({ type: 'utterance', text: 'A slow coordinator request' })
+    await vi.waitFor(() => expect(f.reasoner.intent).toHaveBeenCalled())
+    const observed = f.control.command(request)
+    try {
+      expect(f.host.observeThreads).toHaveBeenLastCalledWith(['workshop', 'docs'])
+      expect(f.control.get().assignments).toEqual([])
+      expect(f.host.attempts).toEqual([])
+    } finally {
+      gate.resolve({ type: 'clarify', text: 'Choose a thread.' })
+      await reasoning
+      await observed
+    }
+  })
+
   it('sends a manual prompt on B while preserving the saved draft on A', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })

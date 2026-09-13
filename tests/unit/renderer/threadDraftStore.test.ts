@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
-import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
+import { ThreadDraftStore, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 
 type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
 
@@ -211,7 +211,7 @@ describe('ThreadDraftStore sending', () => {
   })
 
   it('derives pending message status from the delivery record, not from the command result', () => {
-    const submission = { threadId: 'thread', draftId: '33333333-3333-4333-8333-333333333333', text: 'hi', attachments: [], submittedAt: 0, resolved: false, error: null }
+    const submission = { threadId: 'thread', draftId: '33333333-3333-4333-8333-333333333333', text: 'hi', attachments: [], skills: [], mode: 'send' as const, submittedAt: 0, resolved: false, error: null }
     const at = new Date().toISOString()
     const delivery = (status: 'queued' | 'submitting' | 'failed' | 'uncertain' | 'accepted', messageId?: string) => [{ threadId: 'thread', draftId: submission.draftId, status, createdAt: at, updatedAt: at, ...(messageId ? { messageId } : {}) }]
     expect(submissionStatus(submission, baseState())).toEqual({ status: 'queued', visible: true })
@@ -225,5 +225,61 @@ describe('ThreadDraftStore sending', () => {
     const echoed = baseState({ deliveries: delivery('accepted', 'message-1') })
     echoed.host.threads[0]!.messages = [{ id: 'message-1', role: 'user', text: 'hi', createdAt: at }]
     expect(submissionStatus(submission, echoed)).toEqual({ status: 'accepted', visible: false })
+  })
+})
+
+describe('ThreadDraftStore skills and follow-up queue ownership', () => {
+  const deploy = { name: 'deploy', path: 'C:/skills/deploy/SKILL.md' }
+
+  it('saves selected skills with the revision and adopts them back from published state', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Run $deploy', skills: [deploy] })
+    vi.advanceTimersByTime(250)
+    const save = held.saves()[0]!
+    expect(save).toMatchObject({ text: 'Run $deploy', skills: [deploy] })
+    const restarted = new ThreadDraftStore(held.command, 250, uuids())
+    restarted.receive(baseState({ threadDrafts: [{ threadId: 'thread', draftId: save.draftId, text: save.text, attachments: [], skills: [deploy], requestId: null, updatedAt: new Date().toISOString() }] }))
+    expect(restarted.draft('thread')).toMatchObject({ draftId: save.draftId, skills: [deploy] })
+  })
+
+  it('clears only the exact revision the queue owns, which is not a delivery', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Queue me' })
+    const queued = store.submit('thread', 1, 'queue')!
+    // Until the queue owns it, the submission stays with the queue list and never shows in the transcript.
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'queued', visible: false })
+    expect(queueAdmissionOpen(store.submissions()[0]!, baseState())).toBe(true)
+    store.receive(baseState())
+    expect(store.submissions()).toHaveLength(1)
+
+    store.edit('thread', { text: 'Newer typing' })
+    const receipt = baseState({ followupReceipts: [{ threadId: 'thread', draftId: queued.draftId }] })
+    store.receive(receipt)
+    expect(store.draft('thread').text).toBe('Newer typing')
+    expect(store.submissions()).toHaveLength(0)
+    // A manual send that main queued instead is not a delivery the transcript waits on.
+    expect(submissionStatus({ threadId: 'thread', draftId: queued.draftId, mode: 'send', text: 'Queue me', attachments: [], skills: [], submittedAt: 1, resolved: true, error: null }, receipt).visible).toBe(false)
+    expect(receipt.deliveredDrafts).toEqual([])
+
+    const exact = new ThreadDraftStore(held.command, 250, uuids())
+    exact.edit('thread', { text: 'Queue me exactly' })
+    const owned = exact.submit('thread', 1, 'queue')!
+    const at = new Date().toISOString()
+    exact.receive(baseState({ followups: [{ id: '00000000-0000-4000-8000-00000000abcd', threadId: 'thread', draftId: owned.draftId, text: owned.text, attachments: [], createdAt: at, updatedAt: at, status: 'queued' }] }))
+    expect(exact.draft('thread').text).toBe('')
+    expect(exact.submissions()).toHaveLength(0)
+  })
+
+  it('reports a rejected queue admission as failed while keeping it out of the transcript and the draft in place', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    store.edit('thread', { text: 'Queue me' })
+    const draft = store.submit('thread', 1, 'queue')!
+    store.resolve('thread', draft.draftId, 'Could not save this follow-up.')
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'failed', visible: false })
+    store.receive(baseState())
+    expect(store.submissions()).toHaveLength(1)
+    expect(store.draft('thread').text).toBe('Queue me')
   })
 })

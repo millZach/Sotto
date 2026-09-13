@@ -882,6 +882,38 @@ test.describe('authoritative design-review captures', () => {
     })
   })
 
+  for (const appearance of ['dark', 'light'] as const) test(`phase two workspace composition in ${appearance}`, async () => {
+    await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async ({ page, app }) => {
+      const resize = async (width: number): Promise<void> => {
+        await app.evaluate(({ BrowserWindow }, next) => {
+          const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
+          window.setContentSize(next, 800)
+        }, width)
+        await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
+      }
+      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await page.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
+      await resize(1600)
+      await page.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
+      await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
+      await capturePage(page, `threads-split-workspace-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-workspace' })
+      await resize(820)
+      await expect(page.getByRole('tablist', { name: 'Open panes' })).toBeVisible()
+      await expect(page.locator('#thread-pane-grok-previews')).toHaveAttribute('inert')
+      await capturePage(page, `threads-split-focus-820-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-focus-820' })
+      await page.getByRole('button', { name: 'Files', exact: true }).click()
+      const tools = page.getByRole('complementary', { name: 'Tools', exact: true })
+      await expect(tools.getByText('The working folder is not available.', { exact: true })).toBeVisible()
+      await capturePage(page, `threads-files-unavailable-${appearance}.png`, { theme: appearance, category: 'threads', state: 'files-unavailable' })
+      await tools.getByRole('button', { name: 'Close tools panel' }).click()
+      await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
+      const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
+      await dialog.getByRole('button', { name: 'sotto-site C:/sotto-site', exact: true }).click()
+      await expect(dialog.getByRole('radio', { name: 'New worktree', exact: true })).toBeChecked()
+      await capturePage(page, `threads-working-copy-choice-${appearance}.png`, { theme: appearance, category: 'threads', state: 'working-copy-choice' })
+    })
+  })
+
   test('light room, accents, System and the minimum width', async () => {
     await withSotto({ onboardingComplete: false, appearance: 'light' }, async ({ page }) => {
       const onboarding = page.locator('.onboarding-shell')

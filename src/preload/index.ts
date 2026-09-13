@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
@@ -224,6 +225,12 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    files: Object.freeze<FilesBridge>({
+      list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),
+      preview: request => invokeParsed(renderer, FILES_PREVIEW, filesResultSchema(filePreviewSchema), fileRequestSchema.parse(request)),
+      copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
+      reveal: request => invokeParsed(renderer, FILES_REVEAL, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
+    }),
     memory: Object.freeze<MemoryBridge>({
       get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
       command: command => invokeParsed(renderer, MEMORY_COMMAND, memorySnapshotSchema, memoryCommandSchema.parse(command)),

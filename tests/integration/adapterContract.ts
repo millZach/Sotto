@@ -107,7 +107,11 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       if (f.skips?.restart) { context.skip(); return }
       await send(); const before = await thread()
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
-      expect(await thread()).toEqual({ ...before, status: f.restartStatus ?? before.status })
+      // Some protocols restore transcript but cannot prove the previous turn outcome.
+      // Optional live observation metadata must not be invented to satisfy replay equality.
+      const beforeCore = { ...before }; delete beforeCore.lastTurn
+      const restored = await thread(); delete restored.lastTurn
+      expect(restored).toEqual({ ...beforeCore, status: f.restartStatus ?? before.status })
       expect((await f.driver.requests()).some(r => r.method === (f.protocol?.resumeMethod ?? 'thread/resume'))).toBe(true)
     })
   })

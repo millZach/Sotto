@@ -79,8 +79,9 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
   })
   it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
-    const f = await fixture(false, 100); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'thread/resume', ms: 1000 } })
+    // Leave child initialization headroom while still forcing the settings acknowledgement to time out.
+    const f = await fixture(false, 500); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'thread/resume', ms: 1500 } })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     f.host.disconnect(); await f.adapter.closed()
     await f.host.connect()
@@ -252,7 +253,14 @@ describe('Codex App Server provider adapter', () => {
     const before = (await f.host.snapshot()).threads[0]!
     const restarted = await f.driver.restart(); fixtures.push(restarted)
     await restarted.host.connect()
-    expect((await restarted.host.snapshot()).threads[0]).toEqual(before)
+    const restored = (await restarted.host.snapshot()).threads[0]!
+    // Live observation times belong to WorkspaceHost's privacy-aware cache;
+    // this bare native adapter can restore only timing present in native history.
+    const { activities: beforeActivities, ...beforeThread } = before
+    const { activities: restoredActivities, ...restoredThread } = restored
+    expect(restoredThread).toEqual(beforeThread)
+    expect(restoredActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
+      .toEqual(beforeActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
   })
   it('rejects a definitive send failure and permits a corrected dispatch', async () => {
     const f = await fixture(); const { threadId } = await create(f)
@@ -350,7 +358,7 @@ describe('Codex App Server provider adapter', () => {
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     const path = join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
     await writeFile(path, rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
-      rolloutLine(2, { type: 'item_completed', item: { type: 'UserMessage', id: 'own-rollout', content: [{ type: 'text', text: 'Own prompt' }] } }) +
+      rolloutLine(2, { type: 'user_message', client_id: control.get().host.threads.find(t => t.id === threadId)!.messages.find(m => m.role === 'user')!.id, message: 'Own prompt' }) +
       rolloutLine(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
     await f.adapter.pollSessionLogs(); expect(control.get().assignments[0]!.mode).toBe('managed')
     await f.driver.raisePermission(threadId, 'Allow build?')

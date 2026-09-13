@@ -1,0 +1,51 @@
+{
+  "startedAt": "2026-09-13T04:40:26.289Z",
+  "syntheticOnly": true,
+  "plannedNativeTurns": 2,
+  "maxNativeTurns": 3,
+  "maxSteers": 1,
+  "passed": true,
+  "checkpoints": [
+    "production connected; ready economical model selected from installed catalog",
+    "independent worktree and native project skill catalog verified",
+    "one queued follow-up and one accepted steer in the same native turn",
+    "two real turns completed; tool proof, structured wire input and queue order verified",
+    "production app restarted; native resume preserved identities with no replay"
+  ],
+  "model": {
+    "name": "GPT-5.6-Luna",
+    "reasoningEffort": "low"
+  },
+  "version": "sotto/0.154.0 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)",
+  "worktree": {
+    "relativeCwd": "profile/thread-worktrees/b2a67f18-2d05-49ef-89a7-6f076ff7291c",
+    "independent": true,
+    "skillInActualCwd": true
+  },
+  "steer": {
+    "sameTurn": true,
+    "activeTurn": "597e27368f276215",
+    "queuedWhileRunning": true
+  },
+  "execution": {
+    "nativeTurns": [
+      "597e27368f276215",
+      "056f1f3584989e9f"
+    ],
+    "proofNonceMatches": true,
+    "sourceUntouched": true,
+    "completedToolCommands": 1,
+    "queuedAfterCompletion": true,
+    "structuredSkillOnSendQueueSteer": true
+  },
+  "reconnect": {
+    "sameNativeSession": true,
+    "sameMessagesAndActivities": true,
+    "sameCwd": true,
+    "noReplay": true
+  },
+  "nativeTurnRequests": 2,
+  "nativeTurnAcceptances": 2,
+  "steerRequests": 1,
+  "finishedAt": "2026-09-13T04:40:56.287Z"
+}

@@ -1,0 +1,872 @@
+{
+  "closed1280": {
+    "viewport": "1280x802",
+    "pane": {
+      "top": 60,
+      "bottom": 758,
+      "height": 698
+    },
+    "paneScroll": "698/698",
+    "transcriptClientHeight": 238,
+    "compose": {
+      "top": 372,
+      "bottom": 758,
+      "height": 386
+    },
+    "followups": {
+      "top": 382,
+      "bottom": 588,
+      "height": 206
+    },
+    "card": {
+      "top": 587,
+      "bottom": 738,
+      "height": 151
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:238/1098"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3",
+    "status": "Enter to queue · Shift+Enter for a new line.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "closedRoom1280": {
+    "room": {
+      "top": 60,
+      "bottom": 758
+    },
+    "compose": {
+      "top": 372,
+      "bottom": 758
+    },
+    "queue": {
+      "top": 382,
+      "bottom": 588
+    },
+    "actions": [
+      {
+        "name": "Steer now",
+        "box": {
+          "top": 691,
+          "bottom": 727
+        }
+      },
+      {
+        "name": "Queue prompt",
+        "box": {
+          "top": 691,
+          "bottom": 727
+        }
+      }
+    ]
+  },
+  "dollar1280": {
+    "metrics": {
+      "viewport": "1280x802",
+      "pane": {
+        "top": 60,
+        "bottom": 758,
+        "height": 698
+      },
+      "paneScroll": "698/698",
+      "transcriptClientHeight": 238,
+      "compose": {
+        "top": 372,
+        "bottom": 758,
+        "height": 386
+      },
+      "followups": {
+        "top": 382,
+        "bottom": 588,
+        "height": 206
+      },
+      "card": {
+        "top": 587,
+        "bottom": 738,
+        "height": 151
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 320,
+        "bottom": 582,
+        "height": 262
+      },
+      "scrollers": [
+        "thread-workspace__transcript:238/1098",
+        "skill-picker__list:216/345"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": "14px"
+      }
+    },
+    "facts": {
+      "pickerTop": 320,
+      "pickerBottom": 582,
+      "cardTop": 587,
+      "paneTop": 60,
+      "visibleOptions": 5,
+      "activeInView": true
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 758
+      },
+      "compose": {
+        "top": 372,
+        "bottom": 758
+      },
+      "queue": {
+        "top": 382,
+        "bottom": 588
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 691,
+            "bottom": 727
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 691,
+            "bottom": 727
+          }
+        }
+      ]
+    }
+  },
+  "closed820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 109,
+    "compose": {
+      "top": 280,
+      "bottom": 516,
+      "height": 236
+    },
+    "followups": {
+      "top": 288,
+      "bottom": 380,
+      "height": 92
+    },
+    "card": {
+      "top": 379,
+      "bottom": 500,
+      "height": 121
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:109/1029",
+      "thread-followups:91/105"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+    "status": "Saving draft…",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": "14px",
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "closedRoom820": {
+    "room": {
+      "top": 60,
+      "bottom": 516
+    },
+    "compose": {
+      "top": 280,
+      "bottom": 516
+    },
+    "queue": {
+      "top": 288,
+      "bottom": 380
+    },
+    "actions": [
+      {
+        "name": "Steer now",
+        "box": {
+          "top": 455,
+          "bottom": 491
+        }
+      },
+      {
+        "name": "Queue prompt",
+        "box": {
+          "top": 455,
+          "bottom": 491
+        }
+      }
+    ]
+  },
+  "dollar820": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 228,
+        "bottom": 374,
+        "height": 146
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105",
+        "skill-picker__list:100/345"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": "14px"
+      }
+    },
+    "facts": {
+      "pickerTop": 228,
+      "pickerBottom": 374,
+      "cardTop": 379,
+      "paneTop": 60,
+      "visibleOptions": 2,
+      "activeInView": true
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "arrowed820": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 228,
+        "bottom": 374,
+        "height": 146
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105",
+        "skill-picker__list:100/345"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": "14px"
+      }
+    },
+    "facts": {
+      "pickerTop": 228,
+      "pickerBottom": 374,
+      "cardTop": 379,
+      "paneTop": 60,
+      "visibleOptions": 2,
+      "activeInView": true
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "inserted820": {
+    "value": "Then $imagegen and summarise the result.",
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    }
+  },
+  "afterSteer": {
+    "commands": 1,
+    "focus": "textarea:#thread-workspace-prompt"
+  },
+  "afterQueueEnter": {
+    "head": "Queued 4\nAdded$changelog note the fix",
+    "focus": "textarea:#thread-workspace-prompt",
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:109/1141",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 4Added$changelog note the fix",
+      "status": "Enter to queue · Shift+Enter for a new line.",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "queueOpenRoom820": {
+    "room": {
+      "top": 60,
+      "bottom": 516
+    },
+    "compose": {
+      "top": 280,
+      "bottom": 516
+    },
+    "queue": {
+      "top": 288,
+      "bottom": 380
+    },
+    "actions": [
+      {
+        "name": "Steer now",
+        "box": {
+          "top": 455,
+          "bottom": 491
+        }
+      },
+      {
+        "name": "Queue prompt",
+        "box": {
+          "top": 455,
+          "bottom": 491
+        }
+      }
+    ]
+  },
+  "catalog-error": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 319,
+        "bottom": 374,
+        "height": 55
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "catalog-loading": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 322,
+        "bottom": 374,
+        "height": 51
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "catalog-empty": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 322,
+        "bottom": 374,
+        "height": 51
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  },
+  "request-failed": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 109,
+      "compose": {
+        "top": 280,
+        "bottom": 516,
+        "height": 236
+      },
+      "followups": {
+        "top": 288,
+        "bottom": 380,
+        "height": 92
+      },
+      "card": {
+        "top": 379,
+        "bottom": 500,
+        "height": 121
+      },
+      "cardFullyVisible": true,
+      "picker": {
+        "top": 322,
+        "bottom": 374,
+        "height": 51
+      },
+      "scrollers": [
+        "thread-workspace__transcript:109/1029",
+        "thread-followups:91/105"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 3Next$audio-suite Then run the full audio suite and paste any failures here.",
+      "status": "Saving draft…",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    },
+    "room": {
+      "room": {
+        "top": 60,
+        "bottom": 516
+      },
+      "compose": {
+        "top": 280,
+        "bottom": 516
+      },
+      "queue": {
+        "top": 288,
+        "bottom": 380
+      },
+      "actions": [
+        {
+          "name": "Steer now",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        },
+        {
+          "name": "Queue prompt",
+          "box": {
+            "top": 455,
+            "bottom": 491
+          }
+        }
+      ]
+    }
+  }
+}

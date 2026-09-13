@@ -101,6 +101,9 @@
 
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+/* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
+.threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
+.threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 .thread-workspace__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; min-height: 72px; padding: 12px 24px; border-bottom: 1px solid var(--tt-hairline); }
 .thread-workspace__title { min-width: 0; }
 .thread-workspace__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 13px; }
@@ -113,7 +116,8 @@
 .thread-workspace__error { margin: 12px 24px 0; }
 
 .thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.thread-workspace__transcript { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
+.thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 14px; }
@@ -144,7 +148,14 @@
 .threads-view .thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--tt-hairline); border-radius: 6px; color: var(--tt-text-muted); font-size: 12px; }
 
 /* Composer */
-.thread-workspace__compose { flex: none; max-height: 60%; overflow-y: auto; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* Height, in order: the composer card keeps its full size, the transcript keeps a readable minimum, and the queue
+   above the card gives up the rest (its rows scroll under its head). Only when even that cannot fit, as with large
+   display scaling below the window minimum, does the pane itself scroll; nothing is clipped out of reach. */
+.threads-view .thread-panes .thread-pane { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-pane > .thread-transcript { min-height: min(160px, 30%); }
+.thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+.thread-workspace__compose > * { flex: none; }
+.thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
@@ -165,7 +176,7 @@
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
-.thread-prompt__footer > .tt-button { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
+.thread-prompt__actions > .tt-button--icon { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
 /* Model and option controls inside the Threads composer read at control size. */
@@ -175,11 +186,19 @@
 .threads-view .screenshot-previews figcaption, .threads-view .screenshot-input__tools small { font-size: 12px; }
 .threads-view .screenshot-input__tools .tt-button { width: 32px; min-height: 32px; }
 
-.thread-workspace__compose .agent-composer { margin: 0; padding: 14px 16px; border-color: var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
-.thread-workspace__compose .agent-composer textarea { display: block; width: 100%; min-height: 80px; max-height: 200px; resize: vertical; padding: 8px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; }
+/* The managed composer has the manual prompt's shape: text that grows with what is written, attach beside the controls. */
+.thread-workspace__compose .agent-composer { display: grid; grid-template-columns: auto minmax(0, 1fr); margin: 0; padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
+.thread-workspace__compose .agent-composer:focus-within { border-color: var(--threads-field-focus); }
+.thread-workspace__compose .agent-composer > *, .thread-workspace__compose .agent-composer .screenshot-input > * { grid-column: 1 / -1; }
+.thread-workspace__compose .agent-composer .screenshot-input, .thread-workspace__compose .agent-composer .screenshot-input__tools { display: contents; }
+.thread-workspace__compose .agent-composer .screenshot-input__tools > .tt-button { grid-column: 1; align-self: end; margin: 0 2px 1px -8px; }
+.thread-workspace__compose .agent-composer .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
+.thread-workspace__compose .agent-composer > .agent-composer__footer { grid-column: 2; }
+.thread-workspace__compose .agent-composer textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; }
 .thread-workspace__compose .agent-composer textarea::placeholder { color: var(--tt-text-muted); }
-.thread-workspace__compose .agent-section-title > span { display: none; }
-.thread-workspace__compose .agent-composer__footer { margin-top: 8px; }
+/* The managed composer's label stays for assistive technology; the placeholder and field already say what it is. */
+.thread-workspace__compose .agent-section-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.thread-workspace__compose .agent-composer__footer { margin-top: 10px; }
 .thread-workspace__compose .agent-composer__footer .tt-button { min-height: 34px; font-size: 14px; }
 
 .thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
@@ -228,8 +247,32 @@
 @media (max-height: 760px) {
   .thread-workspace__transcript { padding-block: 18px; }
   .thread-workspace__compose { padding-block: 6px 12px; }
+  /* The pane header gives its height to the composer: the title and its project crumb share one row, the actions sit close. */
+  .threads-view .thread-pane > header.thread-workspace__head { gap: 2px; padding-block: 6px; }
+  .threads-view .thread-pane > header .thread-workspace__title { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; gap: 12px; }
+  .threads-view .thread-pane > header .thread-workspace__title h2 { flex: 0 1 auto; min-width: 4em; margin: 0; }
+  .threads-view .thread-pane > header .thread-workspace__crumb { flex: 0 100 auto; }
+  .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
   .thread-prompt textarea { min-height: 50px; max-height: 150px; }
+  .thread-workspace__compose .agent-composer { padding: 10px 14px 6px; }
+  .thread-workspace__compose .agent-composer textarea { min-height: 50px; max-height: 150px; }
+  /* Beside Clear and Send it the managed options wrap; their rows sit closer so the card fits the minimum window. */
+  .thread-workspace__compose .agent-composer__footer { margin-top: 4px; }
+  .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
+  .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
+  /* Sotto's card gives its options a row of their own, and their note sits beside Clear and Send it. */
+  .thread-workspace__compose .agent-composer__footer { flex-wrap: wrap; row-gap: 2px; }
+  .thread-workspace__compose .agent-composer__footer > .thread-options-bar { display: contents; }
+  .thread-workspace__compose .agent-composer__footer .thread-options { flex: 1 0 100%; }
+  .thread-workspace__compose .agent-composer__footer > .thread-options-bar > small { flex: 1 1 0; align-self: center; min-width: 0; }
+  /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
+  .threads-view .thread-workspace__compose .screenshot-previews { gap: 6px; margin-top: 6px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; gap: 8px; width: auto; max-width: 240px; padding: 3px; }
+  .threads-view .thread-workspace__compose .screenshot-previews img { width: 40px; height: 30px; border-radius: 5px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figcaption { margin-top: 0; }
+  .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
+  .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 }
 @media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__status[data-state='working'] i { animation: none; } }
 :root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }

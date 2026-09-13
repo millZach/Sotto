@@ -44,7 +44,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // checks busy state, provider locks and authority before dispatch.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    // A thread's own follow-up queue, steering and skills catalog never wait behind another thread's work;
+    // telling main which panes are open grants nothing and must not wait either.
+    const threadLane = request.type === 'queue-followup' || request.type === 'edit-followup' || request.type === 'remove-followup'
+      || request.type === 'reorder-followups' || request.type === 'resume-followups' || request.type === 'steer' || request.type === 'refresh-thread-skills'
+      || request.type === 'observe-threads'
+    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation || threadLane) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation

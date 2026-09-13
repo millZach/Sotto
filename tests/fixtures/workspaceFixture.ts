@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
@@ -12,6 +12,7 @@ export async function workspaceFixture(root?: string) {
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
   for (const [id, adapter] of Object.entries(adapters)) {
     adapter.state.projects[0]!.path = join(root, id)
+    await mkdir(adapter.state.projects[0]!.path, { recursive: true })
     adapter.state.models[0]!.reasoningEfforts = ['low', 'high']
     adapter.state.models[0]!.defaultReasoningEffort = 'low'
     adapter.state.models[0]!.runtimeModes = ['approval-required']

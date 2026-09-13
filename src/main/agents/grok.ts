@@ -1,3 +1,4 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -30,6 +31,10 @@ function messageOrigin(alias: Alias, key: string, text: string, timestampMs: num
 }
 function completedStatus(stopReason: string | undefined): AgentThread['status'] {
   return ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests', 'refusal'].includes(stopReason ?? '') ? 'idle' : 'error'
+}
+
+function turnOutcome(reason: string | undefined): 'completed' | 'interrupted' | 'failed' {
+  return reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'interrupted' : 'failed'
 }
 
 export interface GrokAcpOptions { executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number }
@@ -66,7 +71,7 @@ export class GrokAcpHost implements AgentHost {
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
     return this.threads.get(id)!
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
@@ -134,7 +139,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private async readHistory(id: string): Promise<void> {
     const generation = this.generation; const rpc = this.rpc!; const alias = this.aliases[id]!
-    const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false
+    const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false; let lastTurn: AgentThread['lastTurn']
     const persistedStatusEvents = new Set<string>()
     let assistant: AgentMessage | undefined
     while (more) {
@@ -155,6 +160,7 @@ export class GrokAcpHost implements AgentHost {
               assistant = undefined; status = 'running'
               const text = update.content.text
               const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
+              lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
               messages.push({ id: origin?.messageId ?? key, role: 'user', text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
@@ -163,7 +169,7 @@ export class GrokAcpHost implements AgentHost {
               assistant.text += update.content.text
             }
           }
-          if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); assistant = undefined }
+          if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); lastTurn = { id: lastTurn?.id ?? key, status: turnOutcome(update.stop_reason ?? update.stopReason) }; assistant = undefined }
         }
       })
     }
@@ -176,7 +182,7 @@ export class GrokAcpHost implements AgentHost {
     const liveStatus = this.liveStatus.get(id)
     if (liveStatus) {
       if (persistedStatusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
-      else status = liveStatus.status
+      else { status = liveStatus.status; lastTurn = thread.lastTurn }
     }
     // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
     for (const live of [...[...this.authored.values()].filter(entry => entry.threadId === id).map(entry => entry.message), ...[...this.streams.values()].filter(stream => stream.threadId === id).map(stream => stream.message)]) {
@@ -197,10 +203,12 @@ export class GrokAcpHost implements AgentHost {
         } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(live.id)
       }
     }
+    if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn
     thread.messages = messages; thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
     this.emit()
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected || !this.rpc) throw new Error('Connect Grok before managing threads.')
     const rpc = this.rpc
     try {
@@ -211,9 +219,9 @@ export class GrokAcpHost implements AgentHost {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
         const project = this.state.projects.find(project => project.id === command.projectId); if (!project) throw new Error('Choose a Grok project first.')
-        const alias: Alias = { projectId: project.id, cwd: project.path, title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
+        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
-        await rpc.request('session/new', { cwd: project.path, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
+        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
           alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
         })
@@ -257,7 +265,8 @@ export class GrokAcpHost implements AgentHost {
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
           void rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: command.text }] }, value => {
-            z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
+            const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
+            this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
             this.activePrompts.delete(command.threadId); this.thread(command.threadId).status = 'idle'; this.deliveries.get(command.messageId)?.resolve(); this.emit()
           }, true).catch(async error => {
             if (error instanceof GrokRejected) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist() }
@@ -330,7 +339,7 @@ export class GrokAcpHost implements AgentHost {
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: 'running' })
-        thread.status = 'running'
+        thread.status = 'running'; thread.lastTurn = { id: messageId, status: 'running' }
       }
       if (update.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
         const streamId = `grok-stream-${thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'unknown'}`
@@ -343,6 +352,7 @@ export class GrokAcpHost implements AgentHost {
       }
       if (update.sessionUpdate === 'turn_completed') {
         this.activePrompts.delete(id); thread.status = completedStatus(update.stop_reason ?? update.stopReason)
+        thread.lastTurn = { id: thread.lastTurn?.id ?? eventKey(parsed.data, 0), status: turnOutcome(update.stop_reason ?? update.stopReason) }
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: thread.status })
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)

@@ -126,7 +126,7 @@ test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () =>
   try {
     await reachFinalOnboardingStep(launched.page)
     await launched.page.getByRole('button', { name: /finish setup/i }).click()
-    await expect(launched.page.getByRole('heading', { name: 'Home' })).toBeVisible()
+    await expect(launched.page.getByRole('button', { name: 'Start dictation', exact: true })).toBeVisible()
 
     const idleWidget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
     if (idleWidget === undefined) throw new Error('Idle widget window unavailable')
@@ -141,7 +141,7 @@ test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () =>
       await assertWidgetNativeTopmost(launched.app, `dictation reveal ${cycle}`)
 
       await triggerShortcut(launched.page)
-      await expect(launched.page.getByRole('heading', { name: 'Text pasted' })).toBeVisible({
+      await expect(launched.page.getByText('Pasted.', { exact: true })).toBeVisible({
         timeout: 15_000,
       })
       await expect.poll(async () => {

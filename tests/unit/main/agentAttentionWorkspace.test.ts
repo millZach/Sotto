@@ -136,16 +136,28 @@ describe('workspace manual prompt authority and durable dispatch', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
 
-  it.each(['permission', 'question', 'running', 'disconnected', 'closed', 'managed'] as const)('rejects a manual prompt when %s without sending or answering', async guard => {
+  it.each(['permission', 'question', 'disconnected', 'closed', 'managed'] as const)('rejects a manual prompt when %s without sending or answering', async guard => {
     const f = await fixture()
     if (guard === 'permission' || guard === 'question') f.host.event({ type: guard, threadId: 'workshop', text: 'Explicit answer required' })
-    if (guard === 'running') f.host.event({ type: 'manual', threadId: 'workshop', text: 'Working' })
     if (guard === 'managed') await f.control.command({ type: 'assign', threadId: 'workshop' })
     if (guard === 'disconnected') f.host.event({ type: 'disconnect', threadId: 'workshop', text: '' })
     if (guard === 'closed') f.host.transform = snapshot => ({ ...snapshot, threads: snapshot.threads.map(t => ({ ...t, archivedAt: new Date().toISOString() })) })
     const result = await f.control.command(agentCommandSchema.parse({ type: 'manual-send', threadId: 'workshop', text: 'Saved prompt' }))
     expect(result.error).not.toBeNull()
     expect(result.draft).toBe('Saved prompt')
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it('durably queues a running manual prompt without dispatching before completion', async () => {
+    const f = await fixture()
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'Working' })
+    const result = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'Next prompt' })
+    expect(result.error).toBeNull()
+    expect(result.followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Next prompt', status: 'queued' })])
+    expect(JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')).items).toEqual(result.followups)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
+    await f.restart(); await f.control.command({ type: 'connect' })
+    expect(f.control.get().followups).toEqual(result.followups)
     expect(f.host.attempts).toEqual([])
   })
 
@@ -176,18 +188,24 @@ describe('workspace manual prompt authority and durable dispatch', () => {
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
   })
 
-  it('rejects overlapping manual actions instead of queuing a second dispatch', async () => {
+  it('allows a different thread to send while the first manual acknowledgement is pending', async () => {
     const f = await fixture()
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
     const original = f.host.execute.bind(f.host)
-    vi.spyOn(f.host, 'execute').mockImplementation(async command => { await gate; return original(command) })
+    vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+      if ('threadId' in command && command.threadId === 'workshop') await gate
+      return original(command)
+    })
     const first = f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'First task' })
     await vi.waitFor(() => expect(f.host.execute).toHaveBeenCalled())
-    const second = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Second task' })
-    release(); await first
-    expect((await second).error).toMatch(/still in progress/)
-    expect(f.host.attempts).toHaveLength(1)
+    try {
+      const second = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Second task' })
+      expect(second.error).toBeNull()
+      expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'send', threadId: 'docs' })])
+      expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([expect.objectContaining({ type: 'send', threadId: 'workshop' })])
+    } finally { release(); await first }
+    expect(f.host.attempts).toHaveLength(2)
   })
 
   it('preserves a different thread draft', async () => {

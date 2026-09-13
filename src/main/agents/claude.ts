@@ -1,5 +1,5 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
@@ -92,6 +92,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     })
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (command.type === 'create-project') {
       if (!isAbsolute(command.path)) throw new Error('Choose an absolute project folder.')
@@ -104,7 +105,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       validateThreadOptions(this.state, command)
       const project = this.state.projects.find(candidate => candidate.id === command.projectId)
       if (!project) throw new Error('Choose an existing project.')
-      const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await realpath(project.path), title: command.title, modelId: command.modelId,
+      const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, createdAt: new Date().toISOString(), origins: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
@@ -163,7 +164,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           timer = setTimeout(() => { this.acknowledgements.delete(origin.uuid); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
           this.acknowledgements.set(origin.uuid, () => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); resolve(true) })
         })
-        thread.status = 'running'
+        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
@@ -183,7 +184,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'interrupt') {
       await this.denyPending(id, runtime)
-      try { await runtime.protocol.control({ subtype: 'interrupt' }); thread.status = 'idle'; this.emit(); return { accepted: true } }
+      try { await runtime.protocol.control({ subtype: 'interrupt' }); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.emit(); return { accepted: true } }
       catch { return { accepted: false, uncertain: true } }
     }
     throw new Error('Unsupported Claude command.')
@@ -262,7 +263,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (frame.type === 'result') {
       const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : alias.origins.at(-1)?.uuid
-      if (origin) this.completedOrigins.add(origin)
+      if (origin) {
+        this.completedOrigins.add(origin)
+        if (thread.lastTurn?.id !== origin || thread.lastTurn.status !== 'interrupted') thread.lastTurn = { id: origin, status: frame.is_error === true ? 'failed' : 'completed' }
+      }
       thread.status = frame.is_error === true ? 'error' : 'idle'; runtime.requests.clear(); thread.requests = []
       if (frame.is_error === true) this.state.error = 'Claude could not complete this turn. Check its native subscription, model and usage limits.'
     }
@@ -303,7 +307,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return log
   }
   private ensureThread(id: string, alias: Alias): void {
-    this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
+    this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
   }
   private addMessage(id: string, message: AgentMessage): void {
     const thread = this.threads.get(id)!; const existing = thread.messages.find(value => value.id === message.id)

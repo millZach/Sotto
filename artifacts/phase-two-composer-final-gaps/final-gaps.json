@@ -1,0 +1,607 @@
+{
+  "manual820": {
+    "viewport": "820x560",
+    "pane": {
+      "top": 60,
+      "bottom": 516,
+      "height": 456
+    },
+    "paneScroll": "456/456",
+    "transcriptClientHeight": 142,
+    "compose": {
+      "top": 278,
+      "bottom": 516,
+      "height": 238
+    },
+    "followups": {
+      "top": 286,
+      "bottom": 326,
+      "height": 40
+    },
+    "card": {
+      "top": 325,
+      "bottom": 500,
+      "height": 175
+    },
+    "cardFullyVisible": true,
+    "picker": null,
+    "scrollers": [
+      "thread-workspace__transcript:142/155"
+    ],
+    "outsideControls": [],
+    "queueHead": "Queued 2AddedQueued before managing: update the changelog.",
+    "status": "Draft saved · Enter to queue. Claude can’t steer a running turn.",
+    "fonts": {
+      "prompt": "16px",
+      "queueRow": null,
+      "queueToggle": "14px",
+      "queueNote": null,
+      "status": "12px",
+      "pickerName": null
+    }
+  },
+  "pending": {
+    "focus": "textarea:#thread-workspace-prompt",
+    "manageDisabled": true,
+    "settleDisabled": true,
+    "submitDisabled": true,
+    "enterSentNothing": true,
+    "value": "My unsent manual draft for Docs:\n  keep  the  spacing, “quotes” and trailing space "
+  },
+  "refusedKeyboard": {
+    "hits": 1,
+    "probe": {
+      "timeline": [
+        "2ms button:Manage@docs",
+        "17ms textarea:#thread-workspace-prompt@docs"
+      ],
+      "bodyFrames": 0
+    },
+    "focus": "textarea:#thread-workspace-prompt",
+    "value": "My unsent manual draft for Docs:\n  keep  the  spacing, “quotes” and trailing space ",
+    "managedPromptCount": 0,
+    "image": 1,
+    "assignments": []
+  },
+  "movedAway": {
+    "focus": "textarea:#thread-workspace-prompt-workshop",
+    "docsValue": "My unsent manual draft for Docs:\n  keep  the  spacing, “quotes” and trailing space "
+  },
+  "managedKeyboard": {
+    "probe": {
+      "timeline": [
+        "21ms textarea:#thread-workspace-prompt@docs",
+        "48ms textarea:#agent-prompt@docs"
+      ],
+      "bodyFrames": 0
+    },
+    "focus": "textarea:#agent-prompt"
+  },
+  "managed1280": {
+    "metrics": {
+      "viewport": "1280x800",
+      "pane": {
+        "top": 60,
+        "bottom": 756,
+        "height": 696
+      },
+      "paneScroll": "696/696",
+      "transcriptClientHeight": 171,
+      "compose": {
+        "top": 306,
+        "bottom": 756,
+        "height": 450
+      },
+      "followups": {
+        "top": 316,
+        "bottom": 469,
+        "height": 154
+      },
+      "card": {
+        "top": 468,
+        "bottom": 736,
+        "height": 268
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": "Queued 2",
+      "status": null,
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": "14px",
+        "queueToggle": "14px",
+        "queueNote": "13px",
+        "status": null,
+        "pickerName": null
+      }
+    },
+    "facts": {
+      "footer": 756,
+      "image": {
+        "top": 574,
+        "bottom": 634,
+        "width": 78,
+        "height": 60
+      },
+      "figure": {
+        "top": 569,
+        "bottom": 661,
+        "width": 88,
+        "height": 92
+      },
+      "send": {
+        "top": 691,
+        "bottom": 725,
+        "width": 97,
+        "height": 34
+      },
+      "prompt": {
+        "top": 483,
+        "bottom": 557,
+        "width": 727,
+        "height": 74
+      },
+      "caption": "12px",
+      "remove": {
+        "top": 564,
+        "bottom": 594,
+        "width": 20,
+        "height": 30
+      },
+      "cardParts": [
+        "div.agent-section-title:482+1",
+        "div.screenshot-input:0+0",
+        "textarea.:483+74",
+        "div.screenshot-previews:569+92",
+        "div.screenshot-input__tools:0+0",
+        "input.:0+0",
+        "button.tt-button:692+32",
+        "div.agent-composer__footer:671+54",
+        "div.thread-options-bar:671+54",
+        "div.agent-actions:691+34"
+      ]
+    }
+  },
+  "managed820": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 135,
+      "compose": {
+        "top": 270,
+        "bottom": 516,
+        "height": 246
+      },
+      "followups": {
+        "top": 278,
+        "bottom": 318,
+        "height": 40
+      },
+      "card": {
+        "top": 317,
+        "bottom": 500,
+        "height": 183
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:135/155"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 2NextQueued before managing: run the tests.Waiting for Sotto",
+      "status": null,
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": null,
+        "pickerName": null
+      }
+    },
+    "facts": {
+      "footer": 516,
+      "image": {
+        "top": 388,
+        "bottom": 418,
+        "width": 40,
+        "height": 30
+      },
+      "figure": {
+        "top": 384,
+        "bottom": 421,
+        "width": 177,
+        "height": 37
+      },
+      "send": {
+        "top": 459,
+        "bottom": 493,
+        "width": 97,
+        "height": 34
+      },
+      "prompt": {
+        "top": 328,
+        "bottom": 378,
+        "width": 525,
+        "height": 50
+      },
+      "caption": "12px",
+      "remove": {
+        "top": 388,
+        "bottom": 418,
+        "width": 24,
+        "height": 30
+      },
+      "cardParts": [
+        "div.agent-section-title:327+1",
+        "div.screenshot-input:0+0",
+        "textarea.:328+50",
+        "div.screenshot-previews:384+37",
+        "div.screenshot-input__tools:0+0",
+        "input.:0+0",
+        "button.tt-button:460+32",
+        "div.agent-composer__footer:425+68",
+        "div.thread-options-bar:0+0",
+        "div.agent-actions:459+34"
+      ]
+    }
+  },
+  "split1280x720": {
+    "docs": {
+      "metrics": {
+        "viewport": "1280x720",
+        "pane": {
+          "top": 60,
+          "bottom": 676,
+          "height": 616
+        },
+        "paneScroll": "616/616",
+        "transcriptClientHeight": 150,
+        "compose": {
+          "top": 324,
+          "bottom": 676,
+          "height": 352
+        },
+        "followups": {
+          "top": 332,
+          "bottom": 478,
+          "height": 147
+        },
+        "card": {
+          "top": 477,
+          "bottom": 660,
+          "height": 183
+        },
+        "cardFullyVisible": true,
+        "picker": null,
+        "scrollers": [
+          "thread-workspace__transcript:150/155"
+        ],
+        "outsideControls": [],
+        "queueHead": "Queued 2",
+        "status": null,
+        "fonts": {
+          "prompt": "16px",
+          "queueRow": "14px",
+          "queueToggle": "14px",
+          "queueNote": "13px",
+          "status": null,
+          "pickerName": null
+        }
+      },
+      "facts": {
+        "footer": 676,
+        "image": {
+          "top": 548,
+          "bottom": 578,
+          "width": 40,
+          "height": 30
+        },
+        "figure": {
+          "top": 544,
+          "bottom": 581,
+          "width": 177,
+          "height": 37
+        },
+        "send": {
+          "top": 619,
+          "bottom": 653,
+          "width": 97,
+          "height": 34
+        },
+        "prompt": {
+          "top": 488,
+          "bottom": 538,
+          "width": 425,
+          "height": 50
+        },
+        "caption": "12px",
+        "remove": {
+          "top": 548,
+          "bottom": 578,
+          "width": 24,
+          "height": 30
+        },
+        "cardParts": [
+          "div.agent-section-title:487+1",
+          "div.screenshot-input:0+0",
+          "textarea.:488+50",
+          "div.screenshot-previews:544+37",
+          "div.screenshot-input__tools:0+0",
+          "input.:0+0",
+          "button.tt-button:620+32",
+          "div.agent-composer__footer:585+68",
+          "div.thread-options-bar:0+0",
+          "div.agent-actions:619+34"
+        ]
+      }
+    },
+    "workshop": {
+      "viewport": "1280x720",
+      "pane": {
+        "top": 60,
+        "bottom": 676,
+        "height": 616
+      },
+      "paneScroll": "616/616",
+      "transcriptClientHeight": 384,
+      "compose": {
+        "top": 520,
+        "bottom": 676,
+        "height": 156
+      },
+      "followups": null,
+      "card": {
+        "top": 528,
+        "bottom": 660,
+        "height": 132
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Draft saved",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    }
+  },
+  "split1280x560": {
+    "docs": {
+      "metrics": {
+        "viewport": "1280x560",
+        "pane": {
+          "top": 60,
+          "bottom": 516,
+          "height": 456
+        },
+        "paneScroll": "456/456",
+        "transcriptClientHeight": 109,
+        "compose": {
+          "top": 283,
+          "bottom": 516,
+          "height": 233
+        },
+        "followups": {
+          "top": 291,
+          "bottom": 331,
+          "height": 40
+        },
+        "card": {
+          "top": 330,
+          "bottom": 513,
+          "height": 183
+        },
+        "cardFullyVisible": true,
+        "picker": null,
+        "scrollers": [
+          "thread-workspace__transcript:109/155"
+        ],
+        "outsideControls": [],
+        "queueHead": "Queued 2NextQueued before managing: run the tests.Waiting for Sotto",
+        "status": null,
+        "fonts": {
+          "prompt": "16px",
+          "queueRow": null,
+          "queueToggle": "14px",
+          "queueNote": null,
+          "status": null,
+          "pickerName": null
+        }
+      },
+      "facts": {
+        "footer": 516,
+        "image": {
+          "top": 400,
+          "bottom": 430,
+          "width": 40,
+          "height": 30
+        },
+        "figure": {
+          "top": 397,
+          "bottom": 434,
+          "width": 177,
+          "height": 37
+        },
+        "send": {
+          "top": 472,
+          "bottom": 506,
+          "width": 97,
+          "height": 34
+        },
+        "prompt": {
+          "top": 341,
+          "bottom": 391,
+          "width": 425,
+          "height": 50
+        },
+        "caption": "12px",
+        "remove": {
+          "top": 400,
+          "bottom": 430,
+          "width": 24,
+          "height": 30
+        },
+        "cardParts": [
+          "div.agent-section-title:340+1",
+          "div.screenshot-input:0+0",
+          "textarea.:341+50",
+          "div.screenshot-previews:397+37",
+          "div.screenshot-input__tools:0+0",
+          "input.:0+0",
+          "button.tt-button:473+32",
+          "div.agent-composer__footer:438+68",
+          "div.thread-options-bar:0+0",
+          "div.agent-actions:472+34"
+        ]
+      }
+    },
+    "workshop": {
+      "viewport": "1280x560",
+      "pane": {
+        "top": 60,
+        "bottom": 516,
+        "height": 456
+      },
+      "paneScroll": "456/456",
+      "transcriptClientHeight": 224,
+      "compose": {
+        "top": 360,
+        "bottom": 516,
+        "height": 156
+      },
+      "followups": null,
+      "card": {
+        "top": 368,
+        "bottom": 500,
+        "height": 132
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [],
+      "outsideControls": [],
+      "queueHead": null,
+      "status": "Draft saved",
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": null,
+        "queueNote": null,
+        "status": "12px",
+        "pickerName": null
+      }
+    }
+  },
+  "split820": {
+    "metrics": {
+      "viewport": "820x560",
+      "pane": {
+        "top": 107,
+        "bottom": 516,
+        "height": 409
+      },
+      "paneScroll": "409/409",
+      "transcriptClientHeight": 98,
+      "compose": {
+        "top": 281,
+        "bottom": 516,
+        "height": 235
+      },
+      "followups": {
+        "top": 289,
+        "bottom": 329,
+        "height": 40
+      },
+      "card": {
+        "top": 328,
+        "bottom": 510,
+        "height": 183
+      },
+      "cardFullyVisible": true,
+      "picker": null,
+      "scrollers": [
+        "thread-workspace__transcript:98/155"
+      ],
+      "outsideControls": [],
+      "queueHead": "Queued 2NextQueued before managing: run the tests.Waiting for Sotto",
+      "status": null,
+      "fonts": {
+        "prompt": "16px",
+        "queueRow": null,
+        "queueToggle": "14px",
+        "queueNote": null,
+        "status": null,
+        "pickerName": null
+      }
+    },
+    "facts": {
+      "footer": 516,
+      "image": {
+        "top": 398,
+        "bottom": 428,
+        "width": 40,
+        "height": 30
+      },
+      "figure": {
+        "top": 394,
+        "bottom": 432,
+        "width": 177,
+        "height": 37
+      },
+      "send": {
+        "top": 470,
+        "bottom": 504,
+        "width": 97,
+        "height": 34
+      },
+      "prompt": {
+        "top": 338,
+        "bottom": 388,
+        "width": 525,
+        "height": 50
+      },
+      "caption": "12px",
+      "remove": {
+        "top": 398,
+        "bottom": 428,
+        "width": 24,
+        "height": 30
+      },
+      "cardParts": [
+        "div.agent-section-title:337+1",
+        "div.screenshot-input:0+0",
+        "textarea.:338+50",
+        "div.screenshot-previews:394+37",
+        "div.screenshot-input__tools:0+0",
+        "input.:0+0",
+        "button.tt-button:471+32",
+        "div.agent-composer__footer:436+68",
+        "div.thread-options-bar:0+0",
+        "div.agent-actions:470+34"
+      ]
+    }
+  },
+  "finalState": {
+    "error": null,
+    "assignments": [
+      "docs"
+    ],
+    "draft": "My unsent manual draft for Docs:\n  keep  the  spacing, “quotes” and trailing space ",
+    "attachments": [
+      "draft-image.png"
+    ]
+  }
+}

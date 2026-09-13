@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -118,6 +118,14 @@ export class SottoThreadHost implements AgentHost {
     return this.read(() => this.inner.snapshot())
   }
 
+  async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope) {
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (binding && binding.provider !== this.provider || !binding && scope?.providerId !== this.provider) throw new Error('This thread is not known to this provider.')
+    if (!this.inner.listThreadSkills) throw new Error('This provider does not expose skills.')
+    const catalog = await this.inner.listThreadSkills(binding?.sessionId ?? threadId, forceReload, binding ? undefined : scope)
+    return { ...catalog, threadId }
+  }
   async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
     await this.registry.load()
     const binding = this.registry.byThread(threadId)

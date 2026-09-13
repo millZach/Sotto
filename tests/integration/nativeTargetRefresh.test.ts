@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
@@ -59,6 +61,12 @@ it.each(['codex', 'claude', 'grok'] as const)('%s rechecks a permission arriving
     let injected = false
     vi.spyOn(seam, 'persist').mockImplementation(async () => {
       await persist()
+      if (provider === 'codex') {
+        const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8')) as Record<string, { origins: Array<{ messageId: string }> }>
+        // History identity writes also use this seam. Inject at the durable
+        // prompt-origin write promised by this test, after history RPC handling.
+        if (!aliases[id]?.origins.some(origin => origin.messageId === 'blocked-message')) return
+      }
       if (!injected) { injected = true; await f.driver.raisePermission(id, 'Synthetic permission during origin persistence'); await expect.poll(() => permission).toBe(true) }
     })
     await expect(f.host.execute({ type: 'send', commandId: 'blocked-command', threadId: id, messageId: 'blocked-message', text: 'Must not send', expectedLastUserMessageId: null })).rejects.toThrow(/request|answer|permission/i)

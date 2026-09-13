@@ -12,7 +12,7 @@ app.setPath('userData', profile)
 app.on('quit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch { /* Chromium may still hold files; the OS temp cleaner removes them. */ } })
 if (process.env.SOTTO_RICH_FIXTURE_SCALE) app.commandLine.appendSwitch('force-device-scale-factor', process.env.SOTTO_RICH_FIXTURE_SCALE)
 
-globalThis.richFixture = { opened: [], navigations: [], popups: [] }
+globalThis.richFixture = { opened: [], navigations: [], popups: [], requests: [] }
 
 ipcMain.handle('rich-fixture:open-link', (_event, url) => {
   globalThis.richFixture.opened.push(url)
@@ -26,6 +26,11 @@ app.whenReady().then(() => {
     useContentSize: true,
     backgroundColor: '#000000',
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, preload: resolve(__dirname, 'preload.cjs') },
+  })
+  // Everything the page asks the network for beyond its own files and inline data.
+  window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+    if (!/^(?:file|data|devtools|chrome-extension):/u.test(details.url)) globalThis.richFixture.requests.push(details.url)
+    callback({})
   })
   window.webContents.setWindowOpenHandler(details => { globalThis.richFixture.popups.push(details.url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { globalThis.richFixture.navigations.push(url); event.preventDefault() })

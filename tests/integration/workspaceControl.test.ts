@@ -13,16 +13,31 @@ async function fixture() {
   const f = await workspaceFixture()
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
+  const opened: string[] = []
   const control = new AgentControl({ directory: f.root, host: f.host, credentials,
+    openThreadFolder: async path => { opened.push(path) },
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   cleanup.push(async () => { control.dispose(); await control.privacyChanged(); await f.stop(); await f.remove() })
   await control.start(); await control.command({ type: 'connect' })
-  return { ...f, control }
+  return { ...f, control, opened }
 }
 function thread(state: AgentState) { return state.host.threads.find(thread => thread.id === state.activeThreadId)! }
 
 describe('workspace controller integration', () => {
+  it('opens only the known thread’s validated working folder and rejects arbitrary targets', async () => {
+    const f = await fixture()
+    const initial = f.control.get()
+    const created = await f.control.command({ type: 'create-thread', projectId: initial.host.projects[0]!.id,
+      modelId: initial.host.models.find(model => model.providerId === 'codex')!.id, title: 'Shared', workingCopy: 'shared', managed: false })
+    const id = created.activeThreadId!
+    expect((await f.control.command({ type: 'open-thread-folder', threadId: id })).error).toBeNull()
+    expect(f.opened).toEqual([created.host.threads.find(thread => thread.id === id)!.workingDirectory])
+    expect((await f.control.command({ type: 'open-thread-folder', threadId: '../arbitrary' })).error).toContain('not known')
+    expect(f.opened).toHaveLength(1)
+    expect((await f.control.command({ type: 'refresh-thread-worktree', threadId: id })).error).toBeNull()
+    expect(f.adapters.codex.commands).toHaveLength(0)
+  })
   it('allows an explicit retry after definitive native creation rejection without changing its binding', async () => {
     const f = await fixture()
     const initial = f.control.get()

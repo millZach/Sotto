@@ -134,6 +134,9 @@ import { GrokSubscriptionClient } from './agents/subscriptionGrok'
 import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
+import { registerFilesIpc } from './files/ipc'
+import { FilesService } from './files/service'
+import { resolveFilesBinding } from './files/binding'
 import { NaturalSpeechModels } from './agents/speechModels'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
@@ -495,6 +498,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  // Static design fixtures include deliberately unavailable folders. Interactive E2E
+  // journeys need real, profile-owned folders and exercise the production cwd checks.
+  if (testAgentHost !== null && process.env['SOTTO_DESIGN_CAPTURE'] !== '1') {
+    await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
+  }
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = new WorkspaceHost(testAgentHost ?? new ConfiguredProviderHost({
     directory: userDataPath,
@@ -519,7 +527,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     configuration: () => agentControl.get().configuration,
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
   })
+  let openedThreadFolder: string | null = null
   const agentControl: AgentControl = new AgentControl({
+    openThreadFolder: async path => {
+      if (e2eConfiguration !== null) { openedThreadFolder = path; return }
+      const error = await shell.openPath(path); if (error) throw new Error(error)
+    },
     directory: userDataPath, host: agentHost, credentials, membership,
     ...(authority === undefined ? {} : { authority }),
     ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
@@ -812,6 +825,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
+      const cleanupFiles = registerFilesIpc(ipcMain, new FilesService({
+        resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
+        copyPath: path => clipboard.writeText(path),
+        reveal: path => shell.showItemInFolder(path),
+      }), () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
@@ -882,6 +900,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       updates.start()
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
+        cleanupFiles()
         cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.
@@ -898,10 +917,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
           throw new Error('E2E_SENDER_REJECTED')
         }
-        return snapshotE2EState(
+        return { ...snapshotE2EState(
           e2eState,
           BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
-        )
+        ), openedThreadFolder }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {

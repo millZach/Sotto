@@ -47,7 +47,7 @@ describe('native folder project resolution', () => {
     fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
     await submit()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, reasoningEffort: 'high', runtimeMode: 'full-access' })
+    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', reasoningEffort: 'high', runtimeMode: 'full-access' })
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
@@ -134,5 +134,55 @@ describe('native folder project resolution', () => {
     await submit()
     expect(command.mock.calls.map(([request]) => request.type)).toEqual(['create-project', 'create-thread'])
     expect(view.onCreated).toHaveBeenCalledOnce()
+  })
+})
+
+describe('working copy choice', () => {
+  it('asks for a new worktree by default and says what an ordinary folder does', async () => {
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
+    setup(command, fixture([actual]))
+    await browse()
+    const group = screen.getByRole('group', { name: 'Working copy' })
+    expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked()
+    expect(group).toHaveAccessibleDescription(/Folders without Git are used as they are/)
+    expect(group.textContent).not.toMatch(/isolat|memory/i)
+    await submit()
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent' }))
+  })
+
+  it('sends a deliberately chosen shared project folder and keeps the choice after a rejected create', async () => {
+    let reject = true
+    const command = vi.fn(async (request: AgentCommand) => ({ ...fixture([actual]), error: request.type === 'create-thread' && reject ? 'Provider unavailable.' : null }))
+    const view = setup(command, fixture([actual]))
+    await browse()
+    fireEvent.click(screen.getByRole('radio', { name: 'Project folder' }))
+    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Edits the same files as other threads in this project.')
+    await submit()
+    expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable.')
+    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
+    reject = false
+    await submit()
+    expect(command.mock.calls.filter(([request]) => request.type === 'create-thread').map(([request]) => request))
+      .toEqual([expect.objectContaining({ workingCopy: 'shared' }), expect.objectContaining({ workingCopy: 'shared' })])
+    expect(view.onCreated).toHaveBeenCalledOnce()
+  })
+
+  it('continues keyboard creation in the thread name once a folder is chosen', async () => {
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
+    setup(command, fixture([actual]))
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'ArrowDown' })
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'Enter' })
+    await waitFor(() => expect(screen.getByLabelText('Thread name')).toHaveFocus())
+  })
+
+  it('locks the choice while creation is in flight', async () => {
+    let finish: (state: AgentState) => void = () => undefined
+    const command = vi.fn(() => new Promise<AgentState>(resolve => { finish = resolve }))
+    setup(command, fixture([actual]))
+    await browse()
+    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Project folder' })).toBeDisabled())
+    finish(fixture([actual]))
+    await waitFor(() => expect(command).toHaveBeenCalledOnce())
   })
 })
