@@ -226,12 +226,14 @@ export class GrokAcpHost implements AgentHost {
         const userIndex = messages.findIndex(message => message.id === userId)
         if (userIndex < 0) continue
         const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
-        const tail = messages.slice(userIndex + 1, nextUserIndex < 0 ? undefined : nextUserIndex).filter(message => message.role === 'assistant')
-        if (!tail.some(message => message.text.includes(live.text))) {
-          const partial = tail.at(-1)
-          if (partial && live.text.startsWith(partial.text)) partial.text = live.text
-          else messages.splice(nextUserIndex < 0 ? messages.length : nextUserIndex, 0, live)
-        } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(streamKey)
+        // Separate streams can repeat the same words around a tool. Only the
+        // native stream identity can tell us which durable message caught up.
+        const persisted = messages.slice(userIndex + 1, nextUserIndex < 0 ? undefined : nextUserIndex)
+          .find(message => message.role === 'assistant' && message.id === live.id)
+        if (!persisted) messages.splice(nextUserIndex < 0 ? messages.length : nextUserIndex, 0, live)
+        else if (persisted.text.startsWith(live.text)) {
+          if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(streamKey)
+        } else if (live.text.startsWith(persisted.text)) persisted.text = live.text
       }
     }
     if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn

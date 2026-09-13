@@ -50,3 +50,39 @@ it('Grok restores tool snapshots, failures and exact output once across replay/r
     expect((await f.driver.requests()).filter(r => r.method === 'session/prompt')).toHaveLength(1)
   } finally { await f.cleanup() }
 })
+
+it.each(['Done.', 'Done. Another result.'])('Grok retains a distinct live stream containing %s while history lags', async repeated => {
+  let f = await grokFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Use a tool' })
+    await f.action(id, { type: 'chunk', text: 'Done.', meta: { promptId: 'prompt', streamStartMs: 10 } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]?.messages.filter(message => message.role === 'assistant').length).toBe(1)
+    const firstId = (await f.host.snapshot()).threads[0]!.messages.find(message => message.role === 'assistant')!.id
+    await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'completed' } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]?.activities?.length).toBe(1)
+    await f.script({ historyVisibleCount: 3 }) // user, first assistant, tool; second assistant has not reached durable history
+    const liveIds = new Set<string>()
+    const unsubscribe = f.host.subscribe(state => {
+      for (const message of state.threads[0]?.messages ?? []) if (message.role === 'assistant') liveIds.add(message.id)
+    })
+    await f.action(id, { type: 'chunk', text: repeated, meta: { promptId: 'prompt', streamStartMs: 20 } })
+    await expect.poll(() => liveIds.size).toBe(2)
+    unsubscribe()
+    const read = async () => (await f.host.snapshot()).threads[0]!.messages.filter(message => message.role === 'assistant').map(({ id, text }) => ({ id, text }))
+    const expected = [{ id: firstId, text: 'Done.' }, { id: [...liveIds].find(value => value !== firstId)!, text: repeated }]
+    expect(await read()).toEqual(expected)
+    await f.script({ historyVisibleCount: 4 }) // the second stream's prefix is now durable, its next chunk is not
+    await f.action(id, { type: 'chunk', text: ' Later.', meta: { promptId: 'prompt', streamStartMs: 20 } })
+    expected[1]!.text += ' Later.'
+    await expect.poll(read).toEqual(expected)
+    await f.script({})
+    await f.action(id, { type: 'replay' })
+    expect(await read()).toEqual(expected)
+    f = await f.driver.restart(); await f.host.connect()
+    expect(await read()).toEqual(expected)
+    expect((await f.driver.requests()).filter(request => request.method === 'session/prompt')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
