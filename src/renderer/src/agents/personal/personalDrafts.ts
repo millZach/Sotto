@@ -31,6 +31,20 @@ export function personalError(error: unknown, fallback: string): string {
   return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') || fallback
 }
 
+/** Whether `text` has `block` whole, starting and ending at line boundaries, so a short message inside other words does not count. */
+function holdsBlock(text: string, block: string): boolean {
+  const needle = block.trim()
+  if (!needle) return true
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    if (/(?:^|\n)[ \t]*$/u.test(text.slice(0, at)) && /^[ \t]*(?:\r?\n|$)/u.test(text.slice(at + needle.length))) return true
+  }
+  return false
+}
+
+function missingSkills(present: readonly AgentSkillReference[], wanted: readonly AgentSkillReference[]): AgentSkillReference[] {
+  return wanted.filter(skill => !present.some(item => item.name === skill.name && item.path === skill.path))
+}
+
 /**
  * Each personal chat's composer draft. Every edit is a new revision; the saved revision is written
  * before a send names it, and a revision already sent is never offered again as the composer's text.
@@ -106,23 +120,25 @@ export class PersonalDraftStore {
     }
   }
 
-  /** Whether the composer already holds this submission's text. */
+  /** Whether the composer already holds this submission: its whole text on lines of their own, and every skill it named. */
   holds(chat: PersonalChat, submission: Submission): boolean {
-    return this.draft(chat).text.includes(submission.text)
+    const current = this.draft(chat)
+    return holdsBlock(current.text, submission.text) && missingSkills(current.skills, submission.skills).length === 0
   }
 
   /**
    * Puts a submission that did not go through back in the composer as a newer revision, after anything typed
-   * since, with its skills. It is only ever edited here; sending it again is the reader's choice.
+   * since, with its skills. Text or skills the composer already has are not added twice. It is only ever
+   * edited here; sending it again is the reader's choice.
    */
   recover(bridge: PersonalChatBridge, chat: PersonalChat, submission: Submission): void {
     if (this.holds(chat, submission)) return
     const current = this.draft(chat)
     const typed = current.text.trimEnd()
-    const skills = [...current.skills, ...submission.skills.filter(skill => !current.skills.some(item => item.name === skill.name && item.path === skill.path))]
-    this.edit(bridge, chat, { text: typed ? `${typed}
+    const text = holdsBlock(current.text, submission.text) ? current.text : typed ? `${typed}
 
-${submission.text}` : submission.text, skills })
+${submission.text}` : submission.text
+    this.edit(bridge, chat, { text, skills: [...current.skills, ...missingSkills(current.skills, submission.skills)] })
     void this.flush(bridge, chat.id)
   }
 

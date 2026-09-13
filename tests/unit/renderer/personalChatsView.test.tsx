@@ -179,6 +179,34 @@ describe('Chats', () => {
       await waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledWith({ chatId: 'trip', revision: 6, text: 'Book the cabin', skills: [] }))
       expect(bridge.send).not.toHaveBeenCalled()
     })
+
+    it('adds only the missing skill when the composer already has the message as its own paragraph', async () => {
+      const { bridge } = mount(snapshot({ chats: [chat({ draft: { revision: 5, text: 'Somewhere cheap too\n\n$brainstorm a quiet October', skills: [] },
+        submissions: [{ id: 's4', messageId: 'm4', revision: 4, text: '$brainstorm a quiet October', skills: [BRAINSTORM], status: 'failed', error: 'Codex could not start this turn.', createdAt: AT }] })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      const pending = screen.getByRole('article', { name: 'Pending message' })
+      expect(within(pending).queryByText('It is in the composer.')).not.toBeInTheDocument()
+
+      fireEvent.click(within(pending).getByRole('button', { name: 'Edit in composer' }))
+      expect(composer).toHaveValue('Somewhere cheap too\n\n$brainstorm a quiet October')
+      await waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledWith({ chatId: 'trip', revision: 6, text: 'Somewhere cheap too\n\n$brainstorm a quiet October', skills: [BRAINSTORM] }))
+      expect(within(pending).getByText('It is in the composer.')).toBeVisible()
+      expect(bridge.send).not.toHaveBeenCalled()
+    })
+
+    it('does not count a short message found inside other words as being in the composer', async () => {
+      const { bridge } = mount(snapshot({ chats: [chat({ draft: { revision: 5, text: 'Gondola rides', skills: [] },
+        submissions: [{ id: 's4', messageId: 'm4', revision: 4, text: 'Go', skills: [], status: 'failed', error: 'Codex could not start this turn.', createdAt: AT }] })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      const pending = screen.getByRole('article', { name: 'Pending message' })
+      expect(within(pending).queryByText('It is in the composer.')).not.toBeInTheDocument()
+
+      fireEvent.click(within(pending).getByRole('button', { name: 'Edit in composer' }))
+      expect(composer).toHaveValue('Gondola rides\n\nGo')
+      await waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledWith({ chatId: 'trip', revision: 6, text: 'Gondola rides\n\nGo', skills: [] }))
+      expect(within(pending).getByText('It is in the composer.')).toBeVisible()
+      expect(bridge.send).not.toHaveBeenCalled()
+    })
   })
 
   it('restores an unsent draft, and starts empty when the saved draft was already sent', async () => {
