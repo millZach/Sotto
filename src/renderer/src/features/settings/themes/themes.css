@@ -60,16 +60,27 @@
   cursor: pointer;
 }
 
-.theme-mode-tile .theme-wireframe {
-  border-radius: 10px;
+.theme-mode-tile .theme-wireframe { border-radius: 10px; }
+
+/*
+ * The tile's edge is a layer above the wireframe's positioned panes, which
+ * would otherwise paint over an inset shadow or outline. It sits inside the
+ * tile, so a scrolling container never clips the chosen ring.
+ */
+.theme-mode-tile .theme-wireframe::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
   box-shadow: inset 0 0 0 1px var(--tt-border);
+  pointer-events: none;
   transition: box-shadow 140ms ease;
 }
 
-.theme-mode-tile:hover .theme-wireframe { box-shadow: inset 0 0 0 1px var(--tt-text-faint); }
+.theme-mode-tile:hover .theme-wireframe::after { box-shadow: inset 0 0 0 1px var(--tt-text-faint); }
 .theme-mode-tile[aria-pressed='true'] { color: var(--tt-text); }
-/* The chosen ring is drawn inside the tile so a scrolling container never clips it. */
-.theme-mode-tile[aria-pressed='true'] .theme-wireframe { box-shadow: none; outline: 2px solid var(--tt-accent-text); outline-offset: -2px; }
+.theme-mode-tile[aria-pressed='true'] .theme-wireframe::after { box-shadow: inset 0 0 0 2px var(--tt-accent-text), inset 0 0 0 5px var(--tt-accent-wash); }
 .theme-mode-tile:focus-visible { outline-offset: 2px; border-radius: 10px; }
 .theme-mode-tile__label { font-weight: 500; }
 
@@ -125,8 +136,8 @@
 
 .theme-grid {
   display: grid;
-  /* T3 Code's gallery track: three columns at a wide settings page, then two, then one. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  /* T3 Code's auto-fit gallery track, sized for Sotto's 720px settings column: three columns there, then two, then one. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   gap: 12px;
 }
 
