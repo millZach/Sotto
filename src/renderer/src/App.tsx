@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { AppSettings } from '../../shared/settings'
 import { AppShell } from './components/AppShell'
@@ -23,6 +23,7 @@ import { ThreadsView } from './agents/ThreadsView'
 import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
+import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
@@ -35,12 +36,18 @@ export interface AppProps {
 }
 
 /**
- * The main window is black whatever `theme` says (the field is kept for old
- * settings files and the widget snapshot), so only reduced motion reaches the
- * root; a stale theme attribute from an earlier build is cleared.
+ * The main window paints the chosen appearance and accent (including edits
+ * whose saves are still in flight), with `system` resolved against the current
+ * operating system scheme, plus the motion preference. `theme` is the widget's
+ * and never reaches this root. Until settings load the root keeps whatever the
+ * first-frame cache applied.
  */
-export function applyDocumentPreferences(settings: AppSettings | null, root: HTMLElement = document.documentElement): void {
-  delete root.dataset.theme
+export function applyDocumentPreferences(
+  settings: AppSettings | null,
+  root: HTMLElement = document.documentElement,
+  systemDark: boolean = systemPrefersDark(),
+): void {
+  if (settings !== null) applyAppearance(appearancePreview.effective(settings), root, systemDark)
   if (settings?.reducedMotion === 'on') root.dataset.reducedMotion = 'on'
   else delete root.dataset.reducedMotion
 }
@@ -80,10 +87,14 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const microphoneSettledStateRef = useRef<Exclude<MicrophoneTestState, 'requesting'>>('idle')
   const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
+  const systemDark = useSystemPrefersDark()
+  const appearanceEdits = useAppearancePreviewVersion()
 
-  useEffect(() => {
-    applyDocumentPreferences(app.settings)
-  }, [app.settings])
+  // Layout effect: a new appearance is on the root before the browser paints
+  // the render that selected it, so the choice and the room never disagree.
+  useLayoutEffect(() => {
+    applyDocumentPreferences(app.settings, document.documentElement, systemDark)
+  }, [app.settings, systemDark, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {

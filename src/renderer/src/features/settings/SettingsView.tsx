@@ -29,6 +29,7 @@ import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
+import { AppearanceSettings } from './AppearanceSettings'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -63,6 +64,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-providers', label: 'Providers' },
   { id: 'settings-agents', label: 'Agents' },
   { id: 'settings-output', label: 'Output' },
+  { id: 'settings-appearance', label: 'Appearance' },
   { id: 'settings-privacy', label: 'Application' },
 ] as const
 
@@ -473,6 +475,8 @@ export function SettingsView({
               <div className="settings-input-action"><Field label="Success message duration" description="Milliseconds the success state remains visible (500-5000)." {...(successDurationError === undefined ? {} : { error: successDurationError })}><input className="tt-input" inputMode="numeric" value={successDurationDraft} onBlur={() => void saveSuccessDuration()} onChange={(event) => { const value = event.currentTarget.value; successDurationDraftRef.current = value; successDurationEditVersionRef.current += 1; setSuccessDurationDraft(value) }} /></Field></div>
             </div>
           </Card>
+
+          <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} />
 
           <Card className="settings-section" id="settings-privacy">
             <div className="settings-section__heading"><h2>Application</h2><p>{settings.launchAtStartup ? 'Sotto opens when you sign in.' : 'Sotto opens when you launch it.'} {settings.historyEnabled ? 'Transcripts are kept on this computer.' : 'Transcript history is off.'}</p></div>

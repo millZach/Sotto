@@ -2,7 +2,14 @@ import { z } from 'zod'
 
 import { DEFAULT_HOTKEY } from './constants'
 
+/** The floating widget's scheme; it follows the system and the main window never reads it. */
 export type Theme = 'system' | 'light' | 'dark'
+/** The main window's appearance mode. `system` follows the operating system scheme live. */
+export type Appearance = 'system' | 'light' | 'dark'
+export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
+/** The main window's accent: the live wave, focus, selection and accent-coloured text. */
+export const ACCENTS = ['teal', 'blue', 'violet', 'rose', 'amber', 'green'] as const
+export type Accent = (typeof ACCENTS)[number]
 export type ReducedMotion = 'system' | 'on'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
@@ -20,8 +27,10 @@ type MaxRecordingSeconds = 30 | 60 | 120 | 300
 
 export interface AppSettings {
   version: typeof SETTINGS_VERSION
-  // The black-only main window ignores this; tolerate persisted values for the widget snapshot and old settings files.
+  /** Feeds the widget snapshot only; the main window's look is `appearance` and `accent`. */
   theme: Theme
+  appearance: Appearance
+  accent: Accent
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -57,6 +66,8 @@ export type SettingsPatch = Partial<
 const fieldSchemas = {
   version: z.literal(SETTINGS_VERSION),
   theme: z.enum(['system', 'light', 'dark']),
+  appearance: z.enum(APPEARANCES),
+  accent: z.enum(ACCENTS),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -94,6 +105,11 @@ export const settingsSchema = z.object(fieldSchemas)
 export const DEFAULT_SETTINGS: AppSettings = {
   version: SETTINGS_VERSION,
   theme: 'system',
+  // Dark and teal are the Crossing look every install had before appearance
+  // became a choice, so neither a new install nor an upgraded settings file
+  // changes colour until the user picks something else (ADR-0009).
+  appearance: 'dark',
+  accent: 'teal',
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -151,6 +167,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
+    appearance: parseField(persisted, 'appearance', defaults),
+    accent: parseField(persisted, 'accent', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

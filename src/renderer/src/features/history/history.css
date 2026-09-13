@@ -1,5 +1,5 @@
 .history-view { display: flex; flex: 1; min-height: 0; width: 100%; padding: 0; }
-.history-roll { flex: 1; min-height: 0; overflow-y: auto; padding: 28px max(24px, calc((100% - 720px) / 2)) 48px; border: 0; background: none; scrollbar-width: thin; scrollbar-color: #2a2e2c transparent; }
+.history-roll { flex: 1; min-height: 0; overflow-y: auto; padding: 28px max(24px, calc((100% - 720px) / 2)) 48px; border: 0; background: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .history-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 24px; }
 .history-head__title { margin: 0; font-size: 28px; font-weight: 500; letter-spacing: -1px; line-height: 1.2; }
 .history-head__count { color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }

@@ -71,6 +71,8 @@ const noPayloadSchema = z.undefined()
 const settingKeys = [
   'version',
   'theme',
+  'appearance',
+  'accent',
   'reducedMotion',
   'microphoneId',
   'maxRecordingSeconds',

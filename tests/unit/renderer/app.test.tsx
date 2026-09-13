@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { App, applyDocumentPreferences } from '../../../src/renderer/src/App'
+import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
 import {
   AppProvider,
@@ -107,7 +108,10 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.theme
+  delete document.documentElement.dataset.accent
   delete document.documentElement.dataset.reducedMotion
+  appearancePreview.reset()
+  localStorage.clear()
 })
 
 describe('shared main-window frame', () => {
@@ -205,36 +209,143 @@ describe('Sotto application onboarding integration', () => {
     expect(document.body).not.toHaveTextContent('private storage detail')
   })
 
-  it('shows first-run onboarding, applies the motion preference, and never themes the root', async () => {
+  it('shows first-run onboarding and applies the motion preference and the chosen appearance, not the widget theme', async () => {
     const bridge = createBridge({
       getSettings: vi.fn(async () => ({
         ...DEFAULT_SETTINGS,
         theme: 'dark' as const,
+        appearance: 'light' as const,
+        accent: 'rose' as const,
         reducedMotion: 'on' as const,
       })),
     })
     renderApp(bridge)
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
-    // The heading commits with the settings render, but the preferences land in
-    // a passive effect, so the attributes need their own wait.
+    // The heading commits with the settings render; the preferences land in an
+    // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
-    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(document.documentElement).toHaveAttribute('data-accent', 'rose')
   })
 
-  it('removes forced root attributes when following system preferences', () => {
-    document.documentElement.dataset.theme = 'dark'
+  it('removes a forced motion attribute when following system motion', () => {
     document.documentElement.dataset.reducedMotion = 'on'
-    applyDocumentPreferences({ ...DEFAULT_SETTINGS, theme: 'system', reducedMotion: 'system' })
-    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    applyDocumentPreferences({ ...DEFAULT_SETTINGS, reducedMotion: 'system' })
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement).toHaveAttribute('data-accent', 'teal')
   })
 
-  it.each(['light', 'dark', 'system'] as const)('tolerates a persisted %s theme without theming the black window', (theme) => {
+  it.each(['light', 'dark', 'system'] as const)('paints an upgraded install dark whatever its persisted %s widget theme says', (theme) => {
     document.documentElement.dataset.theme = 'light'
-    applyDocumentPreferences({ ...DEFAULT_SETTINGS, theme, reducedMotion: 'on' })
-    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    applyDocumentPreferences({ ...DEFAULT_SETTINGS, theme, reducedMotion: 'on' }, document.documentElement, false)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(document.documentElement.dataset.reducedMotion).toBe('on')
+  })
+
+  it('resolves system appearance against the operating system scheme and follows it live', async () => {
+    const listeners = new Set<() => void>()
+    const query = { matches: false, addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) }
+    vi.stubGlobal('matchMedia', vi.fn((media: string) => media === '(prefers-color-scheme: dark)' ? query : { matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }))
+    try {
+      renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'system' as const, accent: 'blue' as const })) }))
+      await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'light'))
+      expect(document.documentElement).toHaveAttribute('data-accent', 'blue')
+      act(() => {
+        query.matches = true
+        for (const listener of listeners) listener()
+      })
+      await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('previews Light and then an accent together while both saves are delayed, and never repaints an older choice', async () => {
+    const user = userEvent.setup()
+    const saves: Array<{ patch: Partial<AppSettings>; result: ReturnType<typeof deferred<AppSettings>> }> = []
+    let persisted: AppSettings = { ...DEFAULT_SETTINGS, onboardingComplete: true }
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => persisted),
+      updateSettings: vi.fn((patch) => {
+        const result = deferred<AppSettings>()
+        saves.push({ patch, result })
+        return result.promise
+      }),
+    })
+    renderApp(bridge)
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
+    await user.click(screen.getByRole('link', { name: 'Settings' }))
+    const root = document.documentElement
+
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    expect(root).toHaveAttribute('data-theme', 'light')
+    await user.click(screen.getByRole('radio', { name: 'Violet' }))
+    expect(root).toHaveAttribute('data-theme', 'light')
+    expect(root).toHaveAttribute('data-accent', 'violet')
+    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Violet' })).toHaveAttribute('aria-checked', 'true')
+
+    // The settings queue sends the accent only after the mode save answers.
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]!.patch).toEqual({ appearance: 'light' })
+    persisted = { ...persisted, appearance: 'light' }
+    await act(async () => { saves[0]!.result.resolve(persisted) })
+    expect(root).toHaveAttribute('data-theme', 'light')
+    expect(root).toHaveAttribute('data-accent', 'violet')
+
+    await waitFor(() => expect(saves).toHaveLength(2))
+    expect(saves[1]!.patch).toEqual({ accent: 'violet' })
+    persisted = { ...persisted, accent: 'violet' }
+    await act(async () => { saves[1]!.result.resolve(persisted) })
+    expect(root).toHaveAttribute('data-theme', 'light')
+    expect(root).toHaveAttribute('data-accent', 'violet')
+    expect(screen.getByText(/Sotto is/u)).toHaveTextContent('Sotto is light with a violet accent.')
+  })
+
+  it('restores the truthful persisted look when the final overlapping appearance save fails', async () => {
+    const user = userEvent.setup()
+    const saves: Array<ReturnType<typeof deferred<AppSettings>>> = []
+    let persisted: AppSettings = { ...DEFAULT_SETTINGS, onboardingComplete: true }
+    renderApp(createBridge({
+      getSettings: vi.fn(async () => persisted),
+      updateSettings: vi.fn(() => {
+        const result = deferred<AppSettings>()
+        saves.push(result)
+        return result.promise
+      }),
+    }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-accent', 'teal'))
+    await user.click(screen.getByRole('link', { name: 'Settings' }))
+    const root = document.documentElement
+
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    await user.click(screen.getByRole('radio', { name: 'Amber' }))
+    expect(root).toHaveAttribute('data-theme', 'light')
+    expect(root).toHaveAttribute('data-accent', 'amber')
+
+    await waitFor(() => expect(saves).toHaveLength(1))
+    persisted = { ...persisted, appearance: 'light' }
+    await act(async () => { saves[0]!.resolve(persisted) })
+    await waitFor(() => expect(saves).toHaveLength(2))
+    await act(async () => { saves[1]!.reject(new Error('disk full')) })
+
+    await waitFor(() => expect(root).toHaveAttribute('data-accent', 'teal'))
+    expect(root).toHaveAttribute('data-theme', 'light')
+    expect(screen.getByRole('radio', { name: 'Teal' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i)
+  })
+
+  it('paints the next launch from the last applied look before settings answer', async () => {
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, accent: 'green' as const })) }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-accent', 'green'))
+    const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
+    expect(readCachedAppearance()).toEqual({ appearance: 'light', accent: 'green' })
+    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","accent":"green"}')
+    expect(readCachedAppearance()).toEqual({ appearance: 'dark', accent: 'green' })
+    localStorage.setItem('sotto.appearance', 'not json')
+    expect(readCachedAppearance()).toEqual({ appearance: 'dark', accent: 'teal' })
   })
 
   it('shows the complete management dashboard after onboarding is already complete', async () => {
