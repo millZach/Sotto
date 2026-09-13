@@ -90,3 +90,19 @@ Red-before-green evidence included: five live messages becoming nine after recon
 The repair stage initiated **zero turns and zero steers**. Lifetime wire totals remain **two accepted turn/start requests, one steer, one thread/start, zero interrupts**. The reusable recovery test now asserts that all these mutation requests remain unchanged and rejects combining identity-repair mode with queue resume. Historical failed evidence is retained separately from `identity-recovery-evidence.json`; no artifacts or native histories were deleted.
 
 To verify a retained synthetic session with its pre-established hashed golden expectation, build first, set `SOTTO_NATIVE_PHASE2_RECOVERY_ROOT`, `SOTTO_NATIVE_PHASE2_LIVE=1`, `SOTTO_NATIVE_IDENTITY_REPAIR=1`, and `SOTTO_NATIVE_PHASE2_RESUME_QUEUED=0`, then run `native-phase2-recovery.spec.ts` with `--workers=1 --retries=0`. This mode only reconnects. The new steer request field is schema- and fixture-verified; no new installed steer was permitted during repair. Legacy history without sufficient exact or ordered corroboration intentionally remains uncertain instead of gaining invented command authority. No queue controller files, UI, accounts, global settings or user projects were changed; no release or external write was performed.
+
+## Final integrated installed-client acceptance
+
+The parent repeated the original scenario once against integrated `2b3ecb9`, with stronger assertions from `9efd96a` covering every ordered message ID, all user command origins and every activity anchor. The fresh owned synthetic project/profile was separate from the retained initial failed run. `SOTTO_NATIVE_PHASE2_LIVE=1 npx playwright test tests/e2e/native-phase2-live.spec.ts --workers=1 --output=test-results/native-phase2-final` passed in 30.8 seconds (test body 30.3 seconds).
+
+Verified through production main/preload/bridge with installed Codex 0.154 and the catalog's GPT-5.6-Luna at low reasoning:
+
+- One native shell command wrote the nonce proof in the independent worktree and completed successfully. The original Git project was untouched.
+- The selected working-copy skill traveled as structured native input on the first send, the same-turn steer and the queued follow-up.
+- The follow-up dispatched automatically after the first authoritative completed turn, without an explicit queue resume. Exactly two distinct native turns completed, with `STEER_APPLIED` followed by `QUEUED_DONE`.
+- A full app restart resumed the same native session and preserved every message ID/role/command origin, ordered activity anchors, working directory and terminal outcome. No duplicate send, steer, thread creation or proof write occurred.
+- No assignments or pending queue items remained. The restored Windows render was inspected: both replies are readable and the composer is empty.
+
+This final run used exactly two turn/start requests and one turn/steer, with zero interrupts. Together with the original run, the Phase 2 live acceptance work used four accepted native turns and two steers in two separate synthetic sessions. Read-only repair reconnects added no turns. No user project, user skill, account settings or unrelated native thread was modified. Retained final evidence: `artifacts/phase-two-native/evidence.json` and `restored.png`; the synthetic source/wire/proof remain in the owned temporary root documented in the parent orchestration log.
+
+Final independent backend review and UI acceptance continue separately; this result verifies the native workflow and does not claim installer, deployment or release completion.
