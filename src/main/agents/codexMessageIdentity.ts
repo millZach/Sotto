@@ -143,7 +143,14 @@ export function reconcileMessageIdentities(turns: CodexTurnIdentity[], turnId: s
       const native = corroborated ? rollout[index]?.nativeId : undefined
       record = messageIdentity(turns, turn, item, origin, createdAt, terminal || item.role === 'user', native ?? (corroborated ? rollout[index]?.eventId : undefined) ?? item.id)
       if (native) bindNativeId(record, native)
-    } else { bindNativeId(record, item.id); record.complete = terminal || item.role === 'user' || record.complete && record.digest === item.digest; record.digest = item.digest }
+    } else {
+      bindNativeId(record, item.id)
+      // An in-progress snapshot can lag a completed live item. Learn its alias
+      // without discarding the completion evidence or replacing its content hash.
+      if (terminal || item.role === 'user' || !record.complete) {
+        record.complete = terminal || item.role === 'user'; record.digest = item.digest
+      }
+    }
     if (corroborated && rollout[index]?.eventId) bindNativeId(record, rollout[index]!.eventId!)
     if (origin) {
       origin.itemId ??= item.id; origin.turnId = turnId

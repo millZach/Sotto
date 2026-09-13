@@ -369,6 +369,8 @@ export class CodexAppServerHost implements AgentHost {
     let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
     const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
     const known = identities?.messages.find(m => m.nativeIds.includes(item.id) && compatibleClient(m, input))
+    if (item.type === 'agentMessage' && lifecycle.phase === 'history' && !lifecycle.terminal &&
+      known?.complete && known.digest !== input.digest && thread.messages.some(message => message.id === known.id)) return
     if (lifecycle.phase !== 'history' && (lifecycle.phase === 'started' && known?.complete ||
       turnId && this.terminalTurns.has(turnId) && (known?.complete || identities?.sealed))) return
     if (!origin && item.type === 'userMessage' && known) origin = alias.origins.find(o => o.messageId === known.id && o.turnId === turnId && o.digest === input.digest && (!item.clientId || o.messageId === item.clientId))

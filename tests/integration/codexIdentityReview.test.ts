@@ -66,6 +66,10 @@ it.each([false, true])('lagging full history preserves an already completed assi
   const { f, c, threadId, current } = await fixture()
   await c.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic' })
   const turnId = current().lastTurn!.id
+  if (partial) {
+    await f.action(threadId, { type: 'notify', persist: true, method: 'item/started', params: { turnId, item: { type: 'agentMessage', id: 'live-tail', text: 'Already' } } })
+    await expect.poll(() => current().messages.find(m => m.id === 'live-tail')?.text).toBe('Already')
+  }
   const event = new Promise<void>(resolve => { const off = f.host.subscribe(() => { off(); resolve() }) })
   // Native event arrives before its persisted history row, a normal write lag.
   await f.action(threadId, { type: 'notify', method: 'item/completed', params: { turnId, item: { type: 'agentMessage', id: 'live-tail', text: 'Already displayed' } } })
@@ -73,8 +77,7 @@ it.each([false, true])('lagging full history preserves an already completed assi
   expect(current().messages.some(m => m.id === 'live-tail')).toBe(true)
   if (partial) {
     const state = JSON.parse(await readFile(join(f.root, 'state.json'), 'utf8'))
-    state.threads[await f.realId(threadId)].turns[0].items.push({ type: 'agentMessage', id: 'live-tail', text: 'Already' })
-    await writeFile(join(f.root, 'state.json'), JSON.stringify(state))
+    expect(state.threads[await f.realId(threadId)].turns[0].items.at(-1).text).toBe('Already')
   }
   await f.host.refreshThread!(threadId)
   const after = (await f.host.snapshot()).threads.find(t => t.id === threadId)!
