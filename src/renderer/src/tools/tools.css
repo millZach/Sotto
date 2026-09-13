@@ -191,7 +191,8 @@
 .terminal-view { flex: 1; min-height: 0; padding: 8px 4px 4px 12px; background: var(--tools-bg); }
 .terminal-view__screen { width: 100%; height: 100%; }
 .terminal-view .xterm { height: 100%; }
-.terminal-view .xterm .xterm-viewport { scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+/* xterm paints its viewport #000 whatever the theme; the part below the last whole row would show as a black band. */
+.terminal-view .xterm .xterm-viewport { background-color: transparent; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .terminal-view:focus-within { box-shadow: inset 2px 0 0 var(--tt-activity); }
 .terminal-view[data-replaying] { opacity: .6; }
 .terminal-ended { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
