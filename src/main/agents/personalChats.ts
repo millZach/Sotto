@@ -13,10 +13,11 @@ type Saved = z.infer<typeof savedSchema>
 function definedFields<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> }
 }
+type PersonalConversationHost = Pick<CodexAppServerHost, 'closed' | 'connect' | 'createPersonalConversation' | 'disconnect' | 'execute' | 'listThreadSkills' | 'personalSnapshot' | 'refreshThread' | 'sendPersonalConversation' | 'subscribe'>
 export interface PersonalChatOptions {
   userDataPath: string
   configuration: () => { reasoning: string; reasoningModel: string; reasoningEffort: string }
-  host?: CodexAppServerHost
+  host?: PersonalConversationHost
   preferences?: Pick<MemoryProfile, 'retrieve'>
   historyEnabled?: () => boolean
   nativeEnabled?: boolean
@@ -26,7 +27,7 @@ export interface PersonalChatOptions {
 export class PersonalChatService {
   private saved: Saved = { selectedChatId: null, chats: [] }
   private readonly store: AtomicJsonStore<Saved>
-  private readonly host: CodexAppServerHost
+  private readonly host: PersonalConversationHost
   private readonly cwd: string
   private readonly directory: string
   private readonly listeners = new Set<(state: PersonalChatState) => void>()

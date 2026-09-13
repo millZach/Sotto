@@ -145,6 +145,7 @@ import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
+import { E2EPersonalChatHost } from './e2e/personalChatHost'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -561,7 +562,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   await agentControl.start()
   const personalChats = new PersonalChatService({ userDataPath, configuration: () => agentControl.get().configuration,
-    ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled, nativeEnabled: e2eConfiguration === null })
+    ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
+    ...(e2eConfiguration ? { host: new E2EPersonalChatHost(userDataPath) } : {}) })
   await personalChats.start()
   const unsubscribePersonalChats = personalChats.subscribe(state => windows.sendToMain(PERSONAL_CHAT_STATE, state))
   app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
