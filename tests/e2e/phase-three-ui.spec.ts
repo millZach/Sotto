@@ -175,6 +175,8 @@ test('reviews changes, runs a terminal and browses a local page for a real worki
     await expect.poll(() => stat(join(folder, 'terminal-proof.txt')).then(() => true, () => false), { timeout: 20_000 }).toBe(true)
     // No part of the terminal paints outside the theme: xterm's own #000 viewport must not show under the last row.
     expect(await panel.locator('.xterm-viewport').evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
+    // The keyboard way out of the terminal is read in full, never cut off.
+    expect(await panel.locator('.terminal-hint').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     await shoot(page, 'terminal-1280')
     await resize(launched, 820, 560)
     await expectContained(page, ['.tools-panel', '.terminal-view'])

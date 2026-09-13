@@ -202,7 +202,7 @@
 .terminal-ended strong { color: var(--tt-text); font-weight: 500; }
 .terminal-ended .files-link { display: inline-flex; align-items: center; gap: 6px; }
 .terminal-restoring { position: absolute; top: 50%; left: 50%; margin: 0; padding: 6px 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); color: var(--tt-text-2); font-size: 13px; transform: translate(-50%, -50%); }
-.terminal-hint { flex: none; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-hint { flex: none; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
 @media (max-height: 640px) { .terminal-hint { display: none; } }
 
 /* Browser: page tabs, then the address bar, then the page main draws into the viewport. The viewport stays
