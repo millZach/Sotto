@@ -116,7 +116,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Posted.' }))
     // The fixture thread is not a Codex thread, so the host refuses the selected skill. The item stays, with its reference, for review.
     await expect(queue).toContainText('Not sent')
-    await expect(queue).toContainText('Selected Codex skills cannot be sent to another provider.')
+    await expect(queue).toContainText('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
     const done = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(done.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text))
       .toEqual(['Start the long job.', 'Then post the preview link.'])
@@ -209,7 +209,12 @@ test('settled work stays off attention and session pills, with real timestamps a
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
-    expect(await page.locator('.side-sheet__body').evaluate(node => getComputedStyle(node).scrollbarColor)).toBe('rgb(42, 46, 44) rgba(0, 0, 0, 0)')
+    const scrollbar = await page.locator('.side-sheet__body').evaluate(node => {
+      const style = getComputedStyle(node)
+      return { actual: style.scrollbarColor, thumb: style.getPropertyValue('--tt-scrollbar').trim() }
+    })
+    expect(scrollbar.thumb).not.toBe('')
+    expect(scrollbar.actual).toBe(`${scrollbar.thumb} rgba(0, 0, 0, 0)`)
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agent-configuration-scrollbar.png' })
   } finally {
     await closeSotto(launched)
