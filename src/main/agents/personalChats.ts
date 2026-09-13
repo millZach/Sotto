@@ -166,7 +166,14 @@ export class PersonalChatService {
       if (this.options.historyEnabled?.() === false) for (const chat of disk.chats) {
         chat.messages = []; chat.requests = []; chat.title = 'Personal chat'; delete chat.activities
         for (const submission of chat.submissions) { submission.text = ''; submission.skills = [] }
-        chat.decisions = []
+        // Delivery identity is durable even without history: answer() commits
+        // this reservation before writing to the native pipe. Allowlist only
+        // recovery metadata so request/structured-answer content (including
+        // diagnostics that may echo it) cannot return on a later native event.
+        chat.decisions = chat.decisions?.map(({ id, requestId, status, createdAt, error }) => ({
+          id, requestId, status, createdAt, answer: '',
+          ...(error !== undefined ? { error: 'Answer could not be confirmed. Local history is off.' } : {}),
+        }))
       }
       await this.store.write(savedSchema.parse(disk))
       this.saved = validated; this.emit()
