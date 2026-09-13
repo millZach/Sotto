@@ -362,6 +362,14 @@ ${await read('node_modules/@xterm/xterm/LICENSE')}
 
 @xterm/addon-fit
 ${await read('node_modules/@xterm/addon-fit/LICENSE')}`],
+  ['Native terminal MIT licenses', `node-pty
+${await read('node_modules/node-pty/LICENSE')}
+
+winpty
+${await read('node_modules/node-pty/deps/winpty/LICENSE')}
+
+node-addon-api
+${await read('node_modules/node-addon-api/LICENSE.md')}`],
   ['Windows updater dependency MIT licenses', updaterMit],
   ['Windows updater dependency ISC licenses', updaterIsc],
   ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
@@ -439,7 +447,7 @@ ${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
 
 const output = `# Third-Party Notices
 
-Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and natural speech worker, the ONNX Web runtime used by Transformers.js for local natural speech, the Windows updater tree compiled into the main-process bundle, and the one external Node runtime dependency retained in app.asar. Versions are pinned by package-lock.json and the runtime lock manifest.
+Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and natural speech worker, the ONNX Web runtime used by Transformers.js for local natural speech, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal helpers. Versions are pinned by package-lock.json and the runtime lock manifest.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 

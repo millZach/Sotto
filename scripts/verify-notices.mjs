@@ -324,6 +324,11 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Copyright © 2004, John Gruber',
     'Copyright (c) 2006, Ivan Sagalaev.',
     '## T3 Code MIT license',
+    '## xterm.js MIT licenses',
+    '## Native terminal MIT licenses',
+    'Copyright (c) 2011-2016 Ryan Prichard',
+    'Copyright (c) 2016, Daniel Imms',
+    'Copyright (c) 2017 [Node.js API collaborators]',
     'Copyright (c) 2026 T3 Tools Inc.',
     'Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
