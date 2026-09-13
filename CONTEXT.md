@@ -69,7 +69,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
-**Draft.** An unsent prompt or answer, including its attachments, owned by a thread and optionally a question request. Each thread retains its own draft across navigation and restart; accepting one submitted revision does not clear a newer revision.
+**Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart; accepting one submitted revision does not clear a newer revision.
+
+**Answer draft.** Saved choices and text for a particular provider question in its original conversation, recoverable even if the provider closes or changes that question. Retaining or copying an answer does not recreate the question, confirm delivery, or grant authority to send it.
 
 **Follow-up queue.** The ordered messages the user has prepared for a thread after its current provider turn, editable or removable until dispatch. It is distinct from the attention queue and the outbox of already-dispatched commands.
 
