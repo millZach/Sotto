@@ -1,5 +1,6 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentAssignment, AgentCapabilities, AgentCommand, AgentFollowup, AgentState } from '../../../src/shared/agents'
@@ -122,6 +123,47 @@ describe('management handoff focus', () => {
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Held manual draft.')
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).not.toHaveAttribute('id', 'agent-prompt')
     expect(within(view.pane()).getByRole('button', { name: 'Settle', exact: true })).toBeEnabled()
+  })
+
+  it('keyboard Manage keeps focus in the prompt while the save is held and after it fails, unless the user moved to another pane', async () => {
+    const view = mount({ holdSaves: true })
+    const user = userEvent.setup()
+    await act(async () => { fireEvent.click(within(screen.getByRole('complementary', { name: 'Thread sidebar' })).getByRole('button', { name: 'Open Streaming WAV stall beside', exact: true })) })
+    await waitFor(() => expect(view.live.state.activeThreadId).toBe('wav-stall'))
+    const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })
+    await act(async () => { prompt.focus() })
+    await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
+    fireEvent.change(prompt, { target: { value: 'Keyboard manual draft.' } })
+    const manage = within(view.pane()).getByRole('button', { name: 'Manage', exact: true })
+
+    // Held, then refused: the button disables under the keyboard, and focus is in this thread's prompt throughout.
+    await act(async () => { manage.focus() })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(view.live.heldSaves.some(item => item.command.text === 'Keyboard manual draft.')).toBe(true))
+    expect(manage).toBeDisabled()
+    expect(document.activeElement).toBe(prompt)
+    await user.keyboard('{Enter}')
+    expect(view.live.manualSends()).toBe(0)
+    expect(within(view.pane()).getByRole('button', { name: 'Settle', exact: true })).toBeDisabled()
+    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
+    await waitFor(() => expect(manage).toBeEnabled())
+    expect(document.activeElement).toBe(prompt)
+    expect(prompt).toHaveValue('Keyboard manual draft.')
+    expect(view.live.state.assignments).toEqual([])
+
+    // Held again, but the user moves to the other pane before the failure: focus stays where they went.
+    await act(async () => { manage.focus() })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(view.live.heldSaves.length).toBeGreaterThan(0))
+    expect(document.activeElement).toBe(prompt)
+    const other = within(screen.getByRole('region', { name: 'Streaming WAV stall' })).getByRole('textbox', { name: 'Prompt', exact: true })
+    await user.click(other)
+    await user.keyboard('Other pane typing')
+    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
+    await waitFor(() => expect(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })).toBeEnabled())
+    expect(document.activeElement).toBe(other)
+    expect(other).toHaveValue('Other pane typing')
+    expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keyboard manual draft.')
   })
 
   it('Write here in an unfocused managed pane focuses that pane’s managed composer once it holds the selection', async () => {

@@ -76,6 +76,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [handingOff, setHandingOff] = useState(false)
   const [holdingWriteHere, setHoldingWriteHere] = useState(false)
   const compose = useRef<HTMLDivElement>(null)
+  const head = useRef<HTMLElement>(null)
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
   const handoff = useRef<{ readonly managed: boolean; readonly focused?: true; readonly until: number } | null>(null)
   const submissions = useSubmissions(store)
@@ -115,12 +116,15 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const handOff = (managedNext: boolean, request: () => Promise<AgentState | null>): void => {
     const pending = { managed: managedNext, until: performance.now() + 5000 }
     handoff.current = pending
+    // The activated button disables while this waits. Focus moves to this thread's composer now, so it stays there if the
+    // handoff is refused; a user who has moved elsewhere by then keeps their place.
+    if (head.current?.contains(document.activeElement)) compose.current?.querySelector<HTMLElement>('textarea:not(:disabled)')?.focus()
     setHandingOff(true)
     void request().then(result => { if ((result === null || result.error !== null) && handoff.current === pending) handoff.current = null },
       () => { if (handoff.current === pending) handoff.current = null }).finally(() => setHandingOff(false))
   }
   return <>
-    <header className="thread-workspace__head">
+    <header className="thread-workspace__head" ref={head}>
       <div className="thread-workspace__title">
         <span className="thread-workspace__crumb"><ProviderMark provider={row.providerId} name={row.provider} size={16} /><span>{row.project?.title ?? row.provider}</span>{crumb}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
@@ -157,9 +161,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
         onRetryAdmission={() => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue') }} /> : null}
       {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
-        // The pane takes the selection on pointerdown or focus, which would replace this button before its click or Enter. A
-        // pointer arms the handoff in that same capture pass; keyboard focus keeps the button until Enter or Space uses it.
-        onPointerDownCapture={writeHere} onFocus={() => setHoldingWriteHere(true)} onBlur={() => setHoldingWriteHere(false)}
+        // The pane takes the selection in the capture pass of pointerdown or focus, and that update lands before the event
+        // reaches this button, which it would replace. So both are handled in the same capture pass: a pointer arms the
+        // handoff, and keyboard focus (Tab or Shift+Tab) holds the button until Enter or Space uses it.
+        onPointerDownCapture={writeHere} onFocusCapture={() => setHoldingWriteHere(true)} onBlur={() => setHoldingWriteHere(false)}
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />

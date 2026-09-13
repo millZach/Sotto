@@ -247,6 +247,11 @@
 @media (max-height: 760px) {
   .thread-workspace__transcript { padding-block: 18px; }
   .thread-workspace__compose { padding-block: 6px 12px; }
+  /* The pane header gives its height to the composer: the title and its project crumb share one row, the actions sit close. */
+  .threads-view .thread-pane > header.thread-workspace__head { gap: 2px; padding-block: 6px; }
+  .threads-view .thread-pane > header .thread-workspace__title { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; gap: 12px; }
+  .threads-view .thread-pane > header .thread-workspace__title h2 { flex: 0 1 auto; min-width: 4em; margin: 0; }
+  .threads-view .thread-pane > header .thread-workspace__crumb { flex: 0 100 auto; }
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
   .thread-prompt textarea { min-height: 50px; max-height: 150px; }
@@ -256,6 +261,18 @@
   .thread-workspace__compose .agent-composer__footer { margin-top: 4px; }
   .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
+  /* Sotto's card gives its options a row of their own, and their note sits beside Clear and Send it. */
+  .thread-workspace__compose .agent-composer__footer { flex-wrap: wrap; row-gap: 2px; }
+  .thread-workspace__compose .agent-composer__footer > .thread-options-bar { display: contents; }
+  .thread-workspace__compose .agent-composer__footer .thread-options { flex: 1 0 100%; }
+  .thread-workspace__compose .agent-composer__footer > .thread-options-bar > small { flex: 1 1 0; align-self: center; min-width: 0; }
+  /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
+  .threads-view .thread-workspace__compose .screenshot-previews { gap: 6px; margin-top: 6px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; gap: 8px; width: auto; max-width: 240px; padding: 3px; }
+  .threads-view .thread-workspace__compose .screenshot-previews img { width: 40px; height: 30px; border-radius: 5px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figcaption { margin-top: 0; }
+  .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
+  .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 }
 @media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__status[data-state='working'] i { animation: none; } }
 :root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }
