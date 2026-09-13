@@ -81,7 +81,7 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
 
     // An existing thread keeps its folder and gains no setup notice.
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Working copy: sotto-test' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Working copy: Project folder' })).toBeVisible()
     await expect(page.locator('.working-copy-notice')).toHaveCount(0)
 
     // The creation form with the working-copy choice.
@@ -123,13 +123,13 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
     // Shared: deliberately works in the project folder.
     await createByKeyboard(page, 'repo-app', 'Shared task', 'Project folder')
     expect((await activeThread(page)).worktree).toMatchObject({ mode: 'shared', status: 'ready' })
-    await expect(page.getByRole('button', { name: 'Working copy: repo-app' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Working copy: Project folder' })).toBeVisible()
     await capture(launched, 'shared')
 
     // Ordinary folder: New worktree remains usable in the folder itself.
     await createByKeyboard(page, 'plain-notes', 'Notes task', 'New worktree')
     expect((await activeThread(page)).worktree).toMatchObject({ mode: 'shared', status: 'ready' })
-    await expect(page.getByRole('button', { name: 'Working copy: plain-notes' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Working copy: Project folder' })).toBeVisible()
     expect(existsSync(join(plain, '.git'))).toBe(false)
 
     // Failure: the local thread and its draft stay; nothing is sent or redirected.

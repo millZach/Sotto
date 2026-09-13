@@ -156,7 +156,7 @@ describe('working copy choice', () => {
     const view = setup(command, fixture([actual]))
     await browse()
     fireEvent.click(screen.getByRole('radio', { name: 'Project folder' }))
-    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Works in the project folder alongside its other threads.')
+    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Edits the same files as other threads in this project.')
     await submit()
     expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable.')
     expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()

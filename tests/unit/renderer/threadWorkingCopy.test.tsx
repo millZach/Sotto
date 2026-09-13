@@ -19,13 +19,16 @@ afterEach(cleanup)
 describe('describeWorkingCopy', () => {
   it('names the actual branch or folder a ready thread works in', () => {
     expect(describeWorkingCopy(ready, project)).toMatchObject({ status: 'ready', mode: 'independent', directory: worktreePath, label: branch })
-    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: project.path } }, project))
-      .toMatchObject({ status: 'ready', mode: 'shared', directory: project.path, label: 'sotto-app' })
+    // Realpath spelling differences still name the project's own folder.
+    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: 'c:/users/zache/projects/sotto-app/' } }, project))
+      .toMatchObject({ status: 'ready', mode: 'shared', directory: 'c:/users/zache/projects/sotto-app/', label: 'Project folder' })
+    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: 'D:/elsewhere/notes' } }, project))
+      .toMatchObject({ label: 'notes' })
   })
 
   it('keeps an existing thread in its own folder before the project folder', () => {
     expect(describeWorkingCopy({ id: 't', nativeSessionStarted: true, workingDirectory: 'D:/work/legacy/' }, project)).toMatchObject({ status: 'legacy', directory: 'D:/work/legacy/', label: 'legacy' })
-    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: true }, project)).toMatchObject({ status: 'legacy', directory: project.path })
+    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: true }, project)).toMatchObject({ status: 'legacy', directory: project.path, label: 'Project folder' })
   })
 
   it('never answers pending or failed setup with the project or reserved folder', () => {

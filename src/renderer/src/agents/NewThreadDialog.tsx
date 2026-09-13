@@ -9,7 +9,7 @@ import { ThreadOptionFields } from './ThreadOptions'
 type WorkingCopyChoice = 'independent' | 'shared'
 const WORKING_COPY_CHOICES: ReadonlyArray<{ readonly value: WorkingCopyChoice; readonly label: string; readonly hint: string; readonly Icon: typeof Folder }> = [
   { value: 'independent', label: 'New worktree', hint: 'Its own Git branch and folder. Folders without Git are used as they are.', Icon: FolderGit2 },
-  { value: 'shared', label: 'Project folder', hint: 'Works in the project folder alongside its other threads.', Icon: Folder },
+  { value: 'shared', label: 'Project folder', hint: 'Edits the same files as other threads in this project.', Icon: Folder },
 ]
 
 /** One key per folder on disk, so a project is never added twice under different spellings. */

@@ -1,5 +1,5 @@
 .working-copy { position: relative; display: inline-flex; min-width: 0; }
-.working-copy__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 280px; min-height: 26px; padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.working-copy__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 280px; min-height: 24px; margin: -2px 0; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
 .working-copy__trigger > svg { flex: none; }
 .working-copy__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .working-copy__trigger:hover, .working-copy__trigger[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-hover-strong); color: var(--tt-text-2); }

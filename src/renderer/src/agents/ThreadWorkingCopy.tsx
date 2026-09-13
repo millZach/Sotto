@@ -3,6 +3,7 @@ import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw } from 'lucide-rea
 import type { AgentProject, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
+import { folderKey } from './NewThreadDialog'
 import './workingCopy.css'
 
 /** The working-copy metadata a thread may carry; older threads have none and keep their folder. */
@@ -37,7 +38,9 @@ export interface WorkingCopyFacts {
   readonly error?: string | undefined
 }
 
-function folderName(path: string): string {
+/** The project already names itself beside this label, so its own folder is called what it is. */
+function folderLabel(path: string, project: Pick<AgentProject, 'path'> | undefined): string {
+  if (project && folderKey(project.path) === folderKey(path)) return 'Project folder'
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || path
 }
 
@@ -46,13 +49,13 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   const worktree = thread.worktree
   if (!worktree) {
     const directory = thread.workingDirectory ?? project?.path
-    return { status: 'legacy', mode: undefined, directory, label: directory ? folderName(directory) : 'Working folder' }
+    return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : 'Working folder' }
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: 'Preparing worktree...' }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
   const directory = thread.workingDirectory ?? worktree.path
-  const label = worktree.mode === 'independent' && worktree.branch ? worktree.branch : directory ? folderName(directory) : 'Working folder'
+  const label = worktree.mode === 'independent' && worktree.branch ? worktree.branch : directory ? folderLabel(directory, project) : 'Working folder'
   return { ...common, status: 'ready', directory, label }
 }
 
