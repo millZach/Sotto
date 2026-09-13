@@ -9,6 +9,7 @@ import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from './diagrams/diagramSource'
 import { useTransientFlag, writeClipboard } from './richActions'
+import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import './rich-messages.css'
 
 /** Anything the Threads page can show for one attachment: a full reference, or the `{ id, name }` of a pending send. */
@@ -19,7 +20,7 @@ export interface MessageContentProps {
   readonly text: string
   /** The provider is still writing this message. */
   readonly streaming?: boolean
-  /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the main-process `openExternalLink` bridge. */
+  /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the surrounding link router: a thread's browser setting, else the system browser. */
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
 }
 
@@ -89,7 +90,11 @@ export function trustedPreviewSource(attachment: MessageAttachment): string | nu
   return valid ? dataUrl : null
 }
 
-const LinkContext = createContext<{ open: (url: string) => void }>({ open: () => undefined })
+interface LinkActions {
+  readonly open: (url: string, destination?: WebLinkDestination) => void
+  readonly menu: (url: string, anchor: HTMLElement, at: { x: number; y: number }) => void
+}
+const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
 const MarkdownSourceContext = createContext<{ text: string; streaming: boolean }>({ text: '', streaming: false })
 
@@ -142,13 +147,25 @@ function DiagramBlock({ source, start, end }: { source: string; start: number | 
 }
 
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
-  const { open } = useContext(LinkContext)
+  const { open, menu } = useContext(LinkContext)
   const url = safeLinkUrl(href)
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
   if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden"> (link not opened: not a web address)</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
     onClick={event => { event.preventDefault(); open(url) }}
-    onAuxClick={event => event.preventDefault()}>{children}</a>
+    onAuxClick={event => event.preventDefault()}
+    onContextMenu={event => {
+      event.preventDefault()
+      // A keyboard-invoked context menu reports no pointer position, so it opens beside the link.
+      const rect = event.currentTarget.getBoundingClientRect()
+      menu(url, event.currentTarget, event.clientX === 0 && event.clientY === 0 ? { x: rect.left, y: rect.bottom + 4 } : { x: event.clientX, y: event.clientY })
+    }}
+    onKeyDown={event => {
+      if (!(event.key === 'F10' && event.shiftKey) && event.key !== 'ContextMenu') return
+      event.preventDefault()
+      const rect = event.currentTarget.getBoundingClientRect()
+      menu(url, event.currentTarget, { x: rect.left, y: rect.bottom + 4 })
+    }}>{children}</a>
 }
 
 function BlockedImage({ src, alt }: { src?: string | undefined; alt?: string | undefined }): ReactNode {
@@ -191,18 +208,32 @@ const remarkPlugins = [remarkGfm]
 export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
   const deferredText = useDeferredValue(text)
   const [failedLink, setFailedLink] = useState<string | null>(null)
+  const [linkNotice, setLinkNotice] = useState<string | null>(null)
+  const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
   const [copyFeedback, showCopyFeedback] = useTransientFlag()
-  const opener = useRef(onOpenLink ?? openWithBridge)
-  opener.current = onOpenLink ?? openWithBridge
-  const context = useMemo(() => ({
-    open: (url: string) => {
+  const router = useWebLinkRouter()
+  const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
+  opener.current = onOpenLink ?? ((url, destination) => router.open(url, destination))
+  const context = useMemo<LinkActions>(() => ({
+    open: (url, destination) => {
       setFailedLink(null)
-      void Promise.resolve().then(() => opener.current(url)).then(
-        result => { if (!result.ok) setFailedLink(url) },
+      setLinkNotice(null)
+      void Promise.resolve().then(() => destination === undefined ? opener.current(url) : opener.current(url, destination)).then(
+        result => { if (!result.ok) { setFailedLink(url); setLinkNotice(result.message ?? null) } else setLinkNotice(result.message ?? null) },
         () => setFailedLink(url),
       )
     },
+    menu: (url, anchor, at) => setLinkMenu({ url, anchor, at }),
   }), [])
+  const menuItems = (url: string): LinkMenuItem[] => {
+    const web = !url.startsWith('mailto:')
+    return [
+      ...(web && router.canEmbed && !onOpenLink ? [{ id: 'embedded', label: 'Open in Sotto browser', run: () => context.open(url, 'embedded') }] : []),
+      { id: 'external', label: web ? 'Open in system browser' : 'Open in mail app', run: () => context.open(url, 'external') },
+      { id: 'copy', label: web ? 'Copy link' : 'Copy address', run: () => { void writeClipboard(web ? url : linkLabel(url)).then(() => showCopyFeedback('Link copied'), () => showCopyFeedback('Could not copy the link')) } },
+    ]
+  }
+  const closeLinkMenu = useMemo(() => () => setLinkMenu(null), [])
   const copyFailedLink = (): void => {
     if (!failedLink) return
     void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyFeedback('Link copied') }, () => showCopyFeedback('Could not copy the link'))
@@ -213,9 +244,10 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {rendered}
       <div className="rich-message__feedback" role="status" aria-live="polite">
-        {failedLink ? <><span>Could not open {linkLabel(failedLink)}.</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>Copy link</button></> : copyFeedback}
+        {failedLink ? <><span>{linkNotice ?? `Could not open ${linkLabel(failedLink)}.`}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>Copy link</button></> : linkNotice ?? copyFeedback}
       </div>
     </div>
+    {linkMenu ? <LinkMenu at={linkMenu.at} label={`Link: ${linkLabel(linkMenu.url)}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
   </MarkdownSourceContext.Provider></LinkContext.Provider>
 })
 

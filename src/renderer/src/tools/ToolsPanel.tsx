@@ -1,11 +1,13 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, PanelRight, Pin, PinOff, RotateCw, SquareTerminal, X, type LucideIcon } from 'lucide-react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, Globe, PanelRight, Pin, PinOff, RotateCw, SquareTerminal, X, type LucideIcon } from 'lucide-react'
 import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
+import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { TerminalBridge } from '../../../shared/terminal'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
+import { BrowserSurface } from './BrowserSurface'
 import { ChangesSurface } from './ChangesSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
@@ -33,6 +35,7 @@ export interface ToolsPanelProps {
   readonly files?: FilesBridge | undefined
   readonly gitChanges?: GitChangesBridge | undefined
   readonly terminal?: TerminalBridge | undefined
+  readonly browser?: BrowserBridge | undefined
   /** How a terminal session is drawn; tests pass a light stand-in for xterm. */
   readonly terminalView?: TerminalViewFactory
   readonly store?: ToolsPanelStore
@@ -44,6 +47,10 @@ function bridgeFiles(): FilesBridge | undefined {
 
 function bridgeChanges(): GitChangesBridge | undefined {
   return (window.sotto as { gitChanges?: GitChangesBridge } | undefined)?.gitChanges
+}
+
+function bridgeBrowser(): BrowserBridge | undefined {
+  return (window.sotto as { browser?: BrowserBridge } | undefined)?.browser
 }
 
 function bridgeTerminal(): TerminalBridge | undefined {
@@ -119,11 +126,12 @@ function WorkingCopyLine({ thread, project }: { readonly thread: AgentThread; re
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, terminal: SquareTerminal }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, terminal: SquareTerminal, browser: Globe }
 
 /** What the panel says when there is no thread to show, in the words of the surface that is open. */
 const NO_THREAD: Record<ToolSurfaceId, string> = {
   files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.', terminal: 'Open a thread to use its terminal.',
+  browser: 'Open a thread to browse its pages.',
 }
 
 /** The panel's surface tabs. Only implemented surfaces are listed. */
@@ -160,11 +168,12 @@ function useTransientStatus(): [string, (message: string) => void] {
  * thread's browsing for the session, and docks only while the panes keep a readable width; otherwise it
  * overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, terminalView = createXtermView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView = createXtermView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
   const terminalBridge = terminal ?? bridgeTerminal()
+  const browserBridge = browser ?? bridgeBrowser()
   const platform = bridgePlatform()
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
@@ -202,6 +211,9 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   useEffect(() => {
     if (open && threadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, threadId)
   }, [open, threadId, chrome.surface, terminalBridge, store])
+  useEffect(() => {
+    if (open && threadId !== undefined && chrome.surface === 'browser') void store.browser.activate(browserBridge, threadId)
+  }, [open, threadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the panel's tabs, so keyboard users land where the toggle pointed.
   const wasOpen = useRef(open)
@@ -257,6 +269,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   if (target === null) body = <div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div>
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
+  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={terminalView} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />

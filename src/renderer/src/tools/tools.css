@@ -202,6 +202,31 @@
 .terminal-hint { flex: none; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-height: 640px) { .terminal-hint { display: none; } }
 
+/* Browser: page tabs, then the address bar, then the page main draws into the viewport. The viewport stays
+   empty DOM; while a menu or dialog covers it, the page steps aside and a quiet note holds its place. */
+.browser-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.browser-toolbar { position: relative; display: flex; flex: none; align-items: center; gap: 2px; min-height: 44px; padding: 0 6px; border-bottom: 1px solid var(--tt-hairline); }
+.browser-toolbar[data-loading]::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--tt-activity), transparent); content: ''; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .browser-toolbar[data-loading]::after { background-size: 50% 100%; background-repeat: no-repeat; animation: browser-loading 1.1s ease-in-out infinite; }
+}
+@keyframes browser-loading { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+.browser-address { flex: 1; min-width: 0; height: 32px; margin: 0 4px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 13px; }
+.browser-address::placeholder { color: var(--tt-text-muted); }
+.browser-address:focus { border-color: var(--tt-field-border-focus); outline: none; }
+.browser-address:focus-visible { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+.browser-address[aria-invalid='true'] { border-color: var(--tt-error); }
+.browser-go { flex: none; min-height: 32px; }
+.browser-problem { flex: none; margin: 0; padding: 6px 16px; color: var(--tt-error-text); font-size: 13px; }
+.browser-tabs__tab[data-status='unavailable'] .terminal-tabs__name { color: var(--tt-error-text); }
+.browser-empty { flex: 1; }
+.browser-page { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.browser-viewport { position: relative; flex: 1; min-height: 0; background: var(--tt-code-bg); }
+.browser-viewport__covered { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+.browser-unavailable { flex: 1; }
+.browser-unavailable__url { font-family: var(--tt-font-mono); font-size: 12px !important; overflow-wrap: anywhere; }
+.browser-unavailable__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 /* The panel draws its own edge, so a workspace slot around it adds none, and an empty slot takes no room. */
 .threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }
 .threads-view .thread-workspace__tools:empty { display: none; }
@@ -210,4 +235,4 @@
 .tools-toggle[aria-pressed='true']:not([data-pinned-elsewhere]) { color: var(--tt-text); border-color: var(--tt-border-faint); }
 .tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 
-@media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg, .browser-toolbar[data-loading]::after { animation: none; } }

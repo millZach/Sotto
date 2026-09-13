@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react'
+import type { BrowserPage } from '../../../shared/browser'
+import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
 import { TerminalStore } from './terminalStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'terminal', label: 'Terminal' }] as const
+export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'terminal', label: 'Terminal' }, { id: 'browser', label: 'Browser' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 export const TOOLS_PANEL_DEFAULT_WIDTH = 380
@@ -33,6 +35,7 @@ export class ToolsPanelStore {
   readonly files = new FilesBrowserStore()
   readonly changes = new ChangesStore()
   readonly terminals = new TerminalStore()
+  readonly browser = new BrowserStore()
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0
@@ -49,6 +52,18 @@ export class ToolsPanelStore {
   pin(threadId: string): void { this.update({ pinnedThreadId: threadId }) }
   unpin(): void { this.update({ pinnedThreadId: null }) }
   setWidth(width: number): void { this.update({ width: clampPanelWidth(width) }) }
+
+  /**
+   * Shows a page main just opened for a thread. The panel opens on Browser; a panel pinned to another thread
+   * keeps its pin, and the answer is false so the caller can say where the page went.
+   */
+  showBrowserPage(page: BrowserPage): boolean {
+    this.browser.adopt(page)
+    const pinned = this.chrome.pinnedThreadId
+    if (pinned !== null && pinned !== page.workspace.threadId) return false
+    this.update({ open: true, surface: 'browser' })
+    return true
+  }
 
   /** Closing moved focus to the toggle; a toggle mounted shortly after (the panes re-laid out) takes it if nothing else has. */
   requestToggleFocus(now = Date.now()): void { this.focusReturnUntil = now + TOGGLE_FOCUS_RETURN_MS }

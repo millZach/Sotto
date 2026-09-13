@@ -14,6 +14,7 @@ import { ThreadOptions } from './ThreadOptions'
 import { submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
+import { ThreadWebLinks } from '../tools/webLinks'
 
 type Command = AgentConnection['command']
 
@@ -145,14 +146,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {error && !deliveryExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests row={row} state={state} command={command} blocked={state.busy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={() => {
           const target = (): void => document.getElementById(managed ? 'agent-prompt' : promptId)?.focus()
           // A managed pane's composer appears only once the pane holds the selection.
           if (managed && !focused) { onFocusPane?.(); window.setTimeout(target, 0) } else target()
         }} />
-    </ThreadTranscript>
+    </ThreadTranscript></ThreadWebLinks>
     <div className="thread-workspace__compose" ref={compose}>
       {notice}
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
