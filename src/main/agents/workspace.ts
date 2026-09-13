@@ -233,7 +233,7 @@ export class WorkspaceHost implements AgentHost {
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
-    if (command.type === 'send' && command.skills?.length && this.state.snapshot.threads.find(thread => thread.id === command.threadId)?.providerId !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
+    if ((command.type === 'send' || command.type === 'steer') && command.skills?.length && this.state.snapshot.threads.find(thread => thread.id === command.threadId)?.providerId !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
     if (command.type === 'create-project') {
       const result = await this.inner.execute(command)
       // The existing coordinator reconciles creation; a cache failure cannot change
@@ -341,7 +341,7 @@ export class WorkspaceHost implements AgentHost {
     // Native command uncertainty belongs to the existing outbox; do not add a failing
     // history read after dispatch that could turn unknown delivery into a rejection.
     // Never send into a deleted/failed working copy, even if the native client is still live.
-    if (command.type === 'send') await this.threadWorkingDirectory(thread.id)
+    if (command.type === 'send' || command.type === 'steer') await this.threadWorkingDirectory(thread.id)
     return this.inner.execute(command)
   }
   private requireCreation(provider?: ProviderId): void {

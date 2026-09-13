@@ -431,7 +431,11 @@ export class CodexAppServerHost implements AgentHost {
         } else if (command.type === 'steer') {
           const thread = this.ensureThread(id)
           const expectedTurnId = this.runningTurns.get(id)
+          const generation = this.generation
+          let skillsRevision: number | undefined
           const validate = (): void => {
+            if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before steering. Review this prompt.')
+            if (command.skills?.length && skillsRevision !== undefined && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before steering. Refresh skills and review the selection.')
             if (!expectedTurnId || this.runningTurns.get(id) !== expectedTurnId || thread.status !== 'running') throw new Error('The active Codex turn changed. Queue this follow-up instead.')
             if (thread.requests.length) throw new Error('Answer the pending Codex request explicitly before steering.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex. Review it before steering.')
@@ -439,14 +443,14 @@ export class CodexAppServerHost implements AgentHost {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           if (alias.origins.some(o => o.messageId === command.messageId)) return thread.messages.some(m => m.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
           validate()
-          // The skills lane supplies this catalog-validated input builder. A standalone
-          // queue checkout must fail explicitly if that capability has not landed.
-          const skillHost = this as typeof this & { prepareSkillInput?: (id: string, text: string, skills?: readonly AgentSkillReference[]) => Promise<unknown[]> }
-          if (command.skills?.length && !skillHost.prepareSkillInput) throw new Error('Native skill invocation is unavailable. Keep this prompt until skills support is connected.')
-          const input = skillHost.prepareSkillInput ? await skillHost.prepareSkillInput(id, command.text, command.skills) : [{ type: 'text', text: command.text }]
-          validate()
           if (this.dispatching.has(id)) throw new Error('A Codex prompt is already being submitted.')
           this.dispatching.add(id)
+          let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
+          try {
+            input = await this.prepareSkillInput(id, command.text, command.skills)
+            skillsRevision = this.skillsRevision
+            validate()
+          } catch (error) { this.dispatching.delete(id); throw error }
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId! }
           alias.origins.push(origin)
           try {

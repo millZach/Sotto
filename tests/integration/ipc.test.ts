@@ -356,6 +356,7 @@ describe('typed preload bridge', () => {
         'downloadUpdate',
         'deleteHistory',
         'deliverOutput',
+        'files',
         'getHotkey',
         'getSettings',
         'getStartup',

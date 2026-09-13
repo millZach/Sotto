@@ -1,10 +1,21 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { afterEach, expect, it } from 'vitest'
+import { join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
-afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
+afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.cleanup() })
+function gate() {
+  let release!: () => void
+  const promise = new Promise<void>(resolve => { release = resolve })
+  return { promise, release }
+}
+async function selectedSkill(f: Awaited<ReturnType<typeof codexFixture>>) {
+  const skill = { name: 'native-review', path: join(f.root, 'SKILL.md') }
+  await f.script({ skills: [{ ...skill, description: 'Synthetic review', enabled: true, scope: 'repo' }] })
+  return skill
+}
 async function fixture(timeout = 1000) {
   const f = await codexFixture(undefined, true, timeout); fixtures.push(f)
   const threadId = randomUUID()
@@ -47,4 +58,58 @@ it('rejects absent active turns and pending permissions before writing steer or 
   await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId })
   await expect(f.host.execute(steer)).rejects.toThrow(/active Codex turn changed/)
   expect((await f.driver.requests()).filter(r => r.method === 'turn/steer')).toHaveLength(0)
+})
+
+it('steers with the exact selected native skill without starting another turn', async () => {
+  const { f, threadId } = await fixture()
+  const skill = await selectedSkill(f)
+  const text = '$native-review Focus on tests'
+  expect(await f.host.execute({ type: 'steer', threadId, commandId: randomUUID(), messageId: randomUUID(), text, skills: [skill] })).toEqual({ accepted: true })
+  const requests = await f.driver.requests()
+  expect(requests.findLast(request => request.method === 'turn/steer')?.params?.input).toEqual([
+    { type: 'text', text }, { type: 'skill', ...skill },
+  ])
+  expect(requests.filter(request => request.method === 'turn/start')).toHaveLength(1)
+})
+
+it('reserves steering while asynchronous skill validation is pending', async () => {
+  const { f, threadId } = await fixture()
+  const skill = await selectedSkill(f)
+  const validation = gate()
+  const prepare = f.adapter.prepareSkillInput.bind(f.adapter)
+  const pending = vi.spyOn(f.adapter, 'prepareSkillInput').mockImplementationOnce(async (...args) => { await validation.promise; return prepare(...args) })
+  const command = { type: 'steer' as const, threadId, commandId: randomUUID(), messageId: randomUUID(), text: '$native-review First correction', skills: [skill] }
+  const first = f.host.execute(command)
+  let firstResult: unknown
+  try {
+    await vi.waitFor(() => expect(pending).toHaveBeenCalled())
+    await expect(f.host.execute({ ...command, commandId: randomUUID(), messageId: randomUUID(), text: '$native-review Concurrent correction' })).rejects.toThrow('already being submitted')
+  } finally {
+    validation.release()
+    firstResult = await first.catch(error => error)
+  }
+  expect(firstResult).toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(request => request.method === 'turn/steer')).toHaveLength(1)
+})
+
+it('rejects a catalog invalidated while the steering origin is being saved', async () => {
+  const { f, threadId } = await fixture()
+  const skill = await selectedSkill(f)
+  const save = gate()
+  const persistence = f.adapter as unknown as { persist(): Promise<void> }
+  const persist = persistence.persist.bind(f.adapter)
+  const saving = vi.spyOn(persistence, 'persist').mockImplementationOnce(async () => { await save.promise; await persist() })
+  const result = f.host.execute({ type: 'steer', threadId, commandId: randomUUID(), messageId: randomUUID(), text: '$native-review Check once', skills: [skill] })
+  let outcome: unknown
+  try {
+    await vi.waitFor(() => expect(saving).toHaveBeenCalled())
+    await f.script({ skillsChanged: true, skills: [{ ...skill, description: 'Synthetic review', enabled: false, scope: 'repo' }] })
+    expect((await f.host.listThreadSkills!(threadId, true)).status).toBe('error')
+  } finally {
+    save.release()
+    outcome = await result.catch(error => error)
+  }
+  expect(outcome).toBeInstanceOf(Error)
+  expect((outcome as Error).message).toMatch(/skills changed/)
+  expect((await f.driver.requests()).filter(request => request.method === 'turn/steer')).toHaveLength(0)
 })
