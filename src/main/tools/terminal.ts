@@ -106,7 +106,7 @@ export class TerminalService extends ToolOperations {
     } catch {
       this.stop(record)
       this.sessions.delete(record.session.id)
-      return fail('unavailable', 'The native terminal could not start or save its lifecycle. Check the shell and node-pty installation.')
+      return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     }
   }
   read(payload: unknown) { return this.run(async () => this.snapshot(await this.owned(parse(terminalRequestSchema, payload), false))) }
@@ -141,9 +141,16 @@ export class TerminalService extends ToolOperations {
     if (record.pty) return fail('not-running', 'This terminal is still running; select it instead.')
     if (record.reopening) return fail('busy', 'This terminal is already reopening.')
     record.reopening = true
-    // The dead record remains available if creating the replacement fails.
+    // Replace the dead session's slot; reopening must also work at the session limit.
+    // start reserves its new slot synchronously before yielding.
+    this.sessions.delete(record.session.id)
     let replacement: LiveTerminal
     try { replacement = await this.start(record.session.workspace, record.session.cols, record.session.rows) }
+    catch (error) {
+      this.sessions.set(record.session.id, record)
+      await this.save()
+      throw error
+    }
     finally { record.reopening = false }
     this.stop(record); this.sessions.delete(record.session.id)
     await this.save()

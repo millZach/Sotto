@@ -78,4 +78,20 @@ describe('persistent terminal service', () => {
     expect(replacement.session.status).toBe('running')
     expect(unwrap(await restored.list({ threadId: 'a' })).sessions).toHaveLength(1)
   })
+  it('reopens a dead shell at the session limit and retains its hint when replacement fails', async () => {
+    const f = await fixture()
+    for (let count = 0; count < 32; count++) unwrap(await f.service.create(f.target))
+    f.service.dispose()
+    const restored = f.createService()
+    const original = unwrap(await restored.list(f.target)).sessions[0]!
+    const request = { ...f.target, sessionId: original.id }
+    f.spawn.mockImplementationOnce(() => { throw new Error('Shell missing') })
+    expect(await restored.reopen(request)).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    expect(unwrap(await restored.read(request)).session.status).toBe('interrupted')
+    const replacement = unwrap(await restored.reopen(request))
+    expect(replacement.session.id).not.toBe(original.id)
+    expect(unwrap(await restored.list(f.target)).sessions).toHaveLength(32)
+    const restarted = f.createService()
+    expect(unwrap(await restarted.list(f.target)).sessions).toHaveLength(32)
+  })
 })
