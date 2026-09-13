@@ -20,6 +20,8 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Thread activity.** Provider-reported work alongside a thread's messages, including commands, file changes, visible summaries, tool results and subagent states. Activity is observational history, not a user message, an assignment or permission to act.
 
+**Native skill.** A reusable instruction set exposed by a provider for a thread's working copy. Selecting a skill adds reviewed text and a provider-recognized reference to that draft; it neither submits the draft nor grants authority.
+
 **Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy.
 
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
