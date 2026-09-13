@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
@@ -8,6 +8,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
+import { liveAgentState } from './liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -143,32 +144,31 @@ describe('thread grouping and states from Sotto state', () => {
 })
 
 describe('ThreadsView workspace', () => {
-  it('shows a pending manual message immediately and reconciles only its matching delivery receipt', async () => {
+  it('shows a pending manual message immediately and follows only its own delivery record', async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
-    let finish!: (value: AgentState) => void
-    let draftId = ''
-    const command = vi.fn((...args: unknown[]) => {
-      const request = args[0] as AgentCommand
-      if (request.type === 'manual-send') draftId = request.draftId!
-      return new Promise<AgentState>(resolve => { finish = resolve })
-    })
-    const { rerender } = renderThreads(state, command)
+    const live = liveAgentState(state)
+    vi.mocked(useAgents).mockImplementation(live.useLive)
+    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Show this pending message immediately.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Show this pending message immediately.')
-    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sending…')
-    finish({ ...state, error: 'Delivery is uncertain.' })
-    await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Not confirmed'))
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Queued')
+    act(() => live.deliver('grok-previews', 'submitting'))
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sending')
+    act(() => live.deliver('grok-previews', 'uncertain'))
+    await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed'))
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Show this pending message immediately.')
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep my replacement draft.' } })
-    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId: crypto.randomUUID() }]
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    // Another revision's receipt is not this message's receipt.
+    act(() => { live.publish({ deliveredDrafts: [{ threadId: 'grok-previews', draftId: crypto.randomUUID() }] }) })
     expect(screen.getByLabelText('Pending message')).toBeVisible()
-    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    act(() => live.deliver('grok-previews', 'accepted', 'Show this pending message immediately.'))
     await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Show this pending message immediately.')
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep my replacement draft.')
-    expect(command).toHaveBeenCalledTimes(1)
+    expect(live.manualSends()).toBe(1)
   })
 
   it('keeps an unmanaged composer available when another thread owns the saved draft', () => {
@@ -207,11 +207,11 @@ describe('ThreadsView workspace', () => {
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
       await screen.findByRole('img', { name: 'same-name.png' })
     }
-    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'Review this' : ''))
     expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
-    expect(command).toHaveBeenCalledTimes(1)
+    expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })
 
   it('reconciles a late manual receipt while a managed thread has unmounted its composer', async () => {
@@ -230,13 +230,13 @@ describe('ThreadsView workspace', () => {
     state.activeThreadId = 'footer-links'
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
-    state.deliveredDrafts = [{ threadId: 'grok-previews', draftId }]
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    state.activeThreadId = 'grok-previews'
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, activeThreadId: 'grok-previews', deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
-    expect(command).toHaveBeenCalledTimes(1)
+    expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })
 
   it('shows loading and retry states instead of describing unfetched history as empty', () => {
@@ -333,7 +333,7 @@ describe('ThreadsView workspace', () => {
     const state = stateFixture(); state.host.threads = []; state.queue = []
     renderThreads(state)
     expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Unsettled', exact: true })).toHaveTextContent('All caught up.')
+    expect(screen.getByRole('region', { name: 'Projects', exact: true })).toHaveTextContent('No open threads.')
   })
 
   it('searches settled history while preserving live attention in the sidebar', () => {

@@ -6,26 +6,29 @@ import { Button } from '../components/Button'
 import './newThread.css'
 import { ThreadOptionFields } from './ThreadOptions'
 
-function folderKey(path: string): string {
+/** One key per folder on disk, so a project is never added twice under different spellings. */
+export function folderKey(path: string): string {
   // Native Windows paths can arrive with either separator. POSIX paths retain case.
   const windows = /^[a-z]:[\\/]|^[\\/]{2}/i.test(path)
   const normalized = (windows ? path.replace(/\\/g, '/') : path).replace(/\/+$/, '')
   return windows ? normalized.toLowerCase() : normalized
 }
 
-export function NewThreadDialog({ state, command, onClose, onCreated, managed = false }: {
+export function NewThreadDialog({ state, command, onClose, onCreated, managed = false, initialProjectId }: {
   readonly state: AgentState
   readonly command: AgentConnection['command']
   readonly onClose: () => void
   readonly onCreated: () => void
   readonly managed?: boolean
+  /** Opens straight to the thread form for this project, as "New thread here" does. */
+  readonly initialProjectId?: string | undefined
 }): ReactNode {
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const titleId = useId()
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
-  const [project, setProject] = useState<AgentProject | null>(null)
+  const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === initialProjectId) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [modelId, setModelId] = useState(() => state.host.models.find(model => model.id === state.configuration.defaultModelId && model.ready)?.id ?? state.host.models.find(model => model.ready)?.id ?? '')

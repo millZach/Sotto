@@ -7,6 +7,7 @@ import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
 import { VoiceSettings } from './VoiceSettings'
 import { ScreenshotInput } from './ScreenshotInput'
+import { composerEnterIntent, readComposerKey } from './composerKeys'
 
 type Command = AgentConnection['command']
 
@@ -21,8 +22,10 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   </section>
 }
 
-export function AgentComposer({ state, command, compact = false, footerControls }: {
+export function AgentComposer({ state, command, compact = false, footerControls, enterToSend = false }: {
   readonly state: AgentState; readonly command: Command; readonly compact?: boolean; readonly footerControls?: ReactNode
+  /** The Threads workspace sends on Enter (Shift+Enter for a new line); dictation surfaces keep Enter as a newline. */
+  readonly enterToSend?: boolean
 }): ReactNode {
   const [draft, setDraft] = useState(state.draft)
   const [attachments, setAttachments] = useState<AgentAttachment[]>(state.draftAttachments ?? [])
@@ -68,6 +71,7 @@ export function AgentComposer({ state, command, compact = false, footerControls 
     const result = await command({ type: 'send' })
     if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
   }
+  const sendDisabled = state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
   if ((target === undefined || !assigned) && !hasDraft) return null
   return <section className="agent-composer">
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
@@ -78,12 +82,17 @@ export function AgentComposer({ state, command, compact = false, footerControls 
       disabled={state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
       rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : answering ? 'Dictate or type your answer. It stays saved until you send or clear it.' : 'Dictate or type your prompt. Pauses won’t send it.'}
-      disabled={target === undefined || !assigned} spellCheck />
+      disabled={target === undefined || !assigned} spellCheck
+      onKeyDown={enterToSend ? event => {
+        if (composerEnterIntent(readComposerKey(event)) !== 'send') return
+        event.preventDefault()
+        if (!sendDisabled) void send()
+      } : undefined} />
     </ScreenshotInput>
     <div className="agent-composer__footer">{footerControls ?? <span>Say “send it” when you’re ready.</span>}
       <div className="agent-actions">
         {hasDraft ? <Button variant="ghost" disabled={readingImages || state.busy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
-        <Button disabled={state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)} onClick={() => void send()}>
+        <Button disabled={sendDisabled} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
       </div>
