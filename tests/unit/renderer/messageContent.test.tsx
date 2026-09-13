@@ -87,6 +87,8 @@ describe('rich message Markdown', () => {
     expect([...anchors].map(anchor => anchor.getAttribute('href'))).toEqual(['https://example.com/docs?q=1', 'https://auto.example/path', 'mailto:team@example.com'])
     for (const anchor of anchors) expect(anchor).toHaveAttribute('rel', 'noopener noreferrer')
     unsafe.forEach((_url, index) => expect(screen.getByText(`bad ${index}`).closest('a')).toBeNull())
+    // The reason is part of the text for keyboard and screen reader users, not only a hover title.
+    expect(screen.getByText('bad 0')).toHaveTextContent('bad 0 (link not opened: not a web address)')
     assertInert(container)
     expect(safeLinkUrl(' https://example.com ')).toBe('https://example.com/')
     expect(safeLinkUrl('https:\\\\example.com')).toBeNull()

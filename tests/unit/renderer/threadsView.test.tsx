@@ -149,6 +149,15 @@ describe('thread grouping and states from Sotto state', () => {
 })
 
 describe('ThreadsView workspace', () => {
+  it('keeps a working but disconnected thread’s fact in the sidebar with a warning cue', () => {
+    const state = stateFixture(); state.host.connected = false
+    renderThreads(state)
+    const status = screen.getByRole('button', { name: 'Footer links' }).querySelector('.thread-nav__status')!
+    expect(status).toHaveTextContent('Working · Disconnected')
+    expect(status).toHaveAttribute('data-state', 'working')
+    expect(status).toHaveAttribute('data-disconnected', 'true')
+  })
+
   it('shows a pending manual message immediately and follows only its own delivery record', async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     const live = liveAgentState(state)

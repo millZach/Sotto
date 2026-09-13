@@ -48,7 +48,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   if (row.thread.archivedAt) return 'This thread is archived.'
   if (row.request?.kind === 'permission') return 'Allow or deny the request above to continue.'
-  if (!row.connected) return `${row.provider} is disconnected. Your draft is saved; reconnect to send.`
+  if (!row.connected) return 'Reconnect to send. Your draft stays here.'
   if (!capabilitiesForThread(state.host, row.thread).submit) return `${row.provider} cannot take prompts from Sotto.`
   if (!answering && row.thread.status === 'running') return 'You can send after this turn finishes.'
   if (!answering && inFlight) return 'Waiting for your last prompt to be confirmed.'
@@ -112,11 +112,10 @@ export function ThreadComposer({ row, state, command, store, onSend }: {
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
       : answerState.sending ? <span className="thread-prompt__status" role="status">Sending answer…</span>
-        : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
-          : delivery?.status === 'uncertain' ? <span className="thread-prompt__status" data-tone="warning">The provider has not confirmed this prompt. It will not be sent twice.</span>
-            : delivery?.status === 'queued' || delivery?.status === 'submitting' ? <span className="thread-prompt__status" role="status">Sending…</span>
-              : reason !== null && (content || !row.connected) ? <span className="thread-prompt__status">{reason}</span>
-                : <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : 'Draft saved') : answering ? 'Enter to send your answer' : 'Enter to send · Shift+Enter for a new line'}</span>
+        // A blocked composer states only why; the transcript explains an unconfirmed prompt.
+        : reason !== null ? <span className="thread-prompt__status">{reason}</span>
+          : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
+            : <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : 'Draft saved') : answering ? 'Enter to send your answer' : 'Enter to send · Shift+Enter for a new line'}</span>
 
   return <form className="thread-prompt" data-answering={answering || undefined} onSubmit={event => { event.preventDefault(); send(performance.now()) }}>
     {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
@@ -139,7 +138,7 @@ export function ThreadComposer({ row, state, command, store, onSend }: {
     <div className="thread-prompt__footer">
       <div className="thread-prompt__meta" id={`${THREAD_PROMPT_ID}-status`}>
         {row.thread.nativeSessionStarted === false || capabilitiesForThread(state.host, row.thread).configureThread
-          ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} />
+          ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} />
           : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
         {status}
       </div>

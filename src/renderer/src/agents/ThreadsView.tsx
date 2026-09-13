@@ -11,7 +11,7 @@ import { ThreadOptions } from './ThreadOptions'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 import { ProviderMark } from './ProviderMark'
 import { THREAD_PROMPT_ID, ThreadComposer } from './ThreadComposer'
-import { hasDraftContent } from './threadDraftStore'
+import { hasDraftContent, submissionStatus, useSubmissions } from './threadDraftStore'
 import { ThreadSidebar } from './ThreadSidebar'
 import { ThreadTranscript } from './ThreadTranscript'
 
@@ -65,6 +65,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined } | null>(null)
   const [followSignal, setFollowSignal] = useState(0)
   const store = agents.threadDrafts
+  const submissions = useSubmissions(store)
   const state = agents.state
   const rows = useMemo(() => state === null ? [] : describeThreads(state, now), [state, now])
   const organization = useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query])
@@ -95,6 +96,10 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const selectedCapabilities = selected ? capabilitiesForThread(state.host, selected.thread) : state.host.capabilities
   const canManage = selectedConnected && !state.busy && supportsAgentSupervision(selectedCapabilities) && selected !== undefined && !isThreadClosed(selected.thread)
   const reconnect = selected?.providerId && state.host.providers ? { provider: selected.providerId } : {}
+  const error = state.error ?? agents.error
+  // A send that failed or went unconfirmed is already told by its pending message in this thread; other errors still show.
+  const deliveryExplains = error !== null && submissions.some(item => item.threadId === selected?.thread.id && item.error === error
+    && ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
   return <div className="management-view threads-view">
     {newThread && <NewThreadDialog state={state} command={agents.command} initialProjectId={newThread.projectId} onClose={() => setNewThread(null)} onCreated={() => { setNewThread(null); window.setTimeout(() => document.getElementById(THREAD_PROMPT_ID)?.focus(), 0) }} />}
     <ThreadSidebar state={state} command={agents.command} organization={organization} query={query} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })} />
@@ -119,7 +124,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
             {selected.thread.status === 'running' && !isThreadClosed(selected.thread) ? <Button variant="secondary" disabled={state.busy || !selectedConnected || !selectedCapabilities.interrupt} onClick={() => void agents.command({ type: 'interrupt', threadId: selected.thread.id })}>Stop agent</Button> : null}
           </div>
         </header>
-        {state.error || agents.error ? <p className="agent-error thread-workspace__error" role="alert">{state.error ?? agents.error}</p> : null}
+        {error && !deliveryExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
         <ThreadTranscript row={selected} state={state} command={agents.command} store={store} followSignal={followSignal}>
           <ThreadRequest row={workspaceRow} voiceAvailable={state.queue.some(item => item.threadId === selected.thread.id && item.requestId === workspaceRow.request?.requestId)} command={agents.command} busy={state.busy || !selectedConnected} onAnswer={() => document.getElementById(managed ? 'agent-prompt' : THREAD_PROMPT_ID)?.focus()} />
         </ThreadTranscript>

@@ -39,22 +39,29 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   const messageId = deliveryFor(state, row.thread.id, draftId)?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
   if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
-  const detail = status === 'failed' ? (submission?.error ?? 'The provider did not take this prompt.')
-    : status === 'uncertain' ? inHistory ? 'Your prompt above is in the thread, but the provider has not confirmed it. Sotto will not send it twice.' : 'The provider has not confirmed this prompt. Sotto will not send it twice.'
-      : submission === undefined && deliveryPending(status) ? 'Sotto is waiting for confirmation of your last prompt.' : null
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} data-in-history={inHistory || undefined} aria-label="Pending message">
-    <header><span className="thread-message__who">You</span><span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span></header>
-    {inHistory || submission === undefined ? null : <><MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} /></>}
-    {detail !== null ? <div className="thread-message__delivery">
-      <span>{detail}{status === 'failed' && !holdsRevision ? ' Your newer draft is in the composer.' : ''}</span>
-      <div className="thread-message__delivery-actions">
-        {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || state.busy} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
-        {status === 'uncertain' || submission === undefined && deliveryPending(status) ? row.connected
-          ? <Button variant="secondary" disabled={state.busy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button>
-          : <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...provider })}>Reconnect</Button> : null}
-        {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
-      </div>
-    </div> : null}
+  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span>
+  const unresolved = status === 'uncertain' || submission === undefined && deliveryPending(status)
+  // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
+  const detail = status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${holdsRevision ? '' : ' Your newer draft is in the composer.'}`
+    : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
+      : null
+  const delivery = detail === null ? null : <div className="thread-message__delivery">
+    <span>{detail}</span>
+    <div className="thread-message__delivery-actions">
+      {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || state.busy} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
+      {unresolved && row.connected ? <Button variant="secondary" disabled={state.busy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
+    </div>
+  </div>
+  // With no prompt text to show (already in the history, or recovered after a restart),
+  // the state is a compact line under the conversation rather than an empty second bubble.
+  if (inHistory || submission === undefined) {
+    return <div className="thread-delivery" role="group" aria-label="Pending message" data-status={status} data-in-history={inHistory || undefined}>{label}{delivery}</div>
+  }
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
+    <header><span className="thread-message__who">You</span>{label}</header>
+    <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
+    {delivery}
   </article>
 }
 

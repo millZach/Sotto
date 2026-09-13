@@ -61,7 +61,11 @@
 .thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
 /* With a pointer, folder actions overlay the count instead of taking width from the name. */
-@media (hover: hover) { .thread-folder__actions { position: absolute; top: 3px; right: 0; border-radius: 8px; background: var(--threads-hover); } }
+@media (hover: hover) {
+  .thread-folder__actions { position: absolute; top: 3px; right: 0; border-radius: 8px; background: var(--threads-hover); }
+  /* Fade (not hide) the count and indicators under the actions: they stay in the toggle's accessible name. */
+  .thread-folder__head:has(.thread-folder__actions):is(:hover, :focus-within) :is(.thread-folder__count, .thread-nav__indicators) { opacity: 0; }
+}
 @media (hover: none) { .thread-folder__actions, .thread-nav__row-actions { opacity: 1; } }
 
 .thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 8px; }
@@ -87,9 +91,9 @@
 .thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }
-.thread-nav__status[data-state='needs'] { color: var(--threads-warning-text); }
+.thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected] { color: var(--threads-warning-text); }
 .thread-nav__status[data-state='working'] i, .thread-nav__status[data-state='needs'] i { display: block; }
-@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__status[data-state='working'] i { animation: thread-working 1.6s ease-in-out infinite; } }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__status[data-state='working']:not([data-disconnected]) i { animation: thread-working 1.6s ease-in-out infinite; } }
 @keyframes thread-working { 50% { opacity: .35; } }
 
 .provider-mark { display: block; flex: none; fill: currentColor; }
@@ -130,17 +134,26 @@
 .thread-message__status[data-status='failed'], .thread-message__status[data-status='uncertain'] { color: var(--threads-warning-text); }
 .thread-message__delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .thread-message__delivery-actions { display: flex; gap: 6px; }
-.thread-message--pending[data-in-history] { margin-top: -16px; }
-.thread-message--pending[data-in-history] .thread-message__delivery { margin-top: 4px; padding-top: 0; border-top: 0; }
 .thread-message__delivery .tt-button { min-height: 32px; font-size: 14px; }
+/* A delivery state with no prompt text to repeat: one line in the user's column, under their message. */
+.thread-delivery { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 28px max(24px, 12%); padding: 0 18px; }
+.thread-message[data-role='user'] + .thread-delivery { margin-top: -18px; }
+.thread-delivery .thread-message__status { margin-left: 0; }
+.thread-delivery .thread-message__delivery { flex: 1 1 auto; margin: 0; padding: 0; border: 0; }
 .threads-view .thread-message__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .threads-view .thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--tt-hairline); border-radius: 6px; color: var(--tt-text-muted); font-size: 12px; }
 
 /* Composer */
 .thread-workspace__compose { flex: none; max-height: 60%; overflow-y: auto; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-prompt { padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
+/* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
+.thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
+.thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
+.thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
+.thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: start; margin: 10px 2px 0 -8px; }
+.thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
+.thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt:focus-within { border-color: var(--threads-field-focus); }
-.thread-prompt textarea { display: block; width: 100%; min-height: 72px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-prompt textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-prompt textarea::placeholder { color: var(--tt-text-muted); }
 .thread-prompt textarea:disabled { cursor: not-allowed; }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
@@ -210,6 +223,13 @@
   .thread-folder__rows { padding-left: 8px; }
   .thread-nav__item { grid-template-columns: 18px minmax(0, 1fr); }
   .thread-nav__time { display: none; }
+}
+/* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
+@media (max-height: 760px) {
+  .thread-workspace__transcript { padding-block: 18px; }
+  .thread-workspace__compose { padding-block: 6px 12px; }
+  .thread-prompt { padding: 10px 14px 8px; }
+  .thread-prompt textarea { min-height: 50px; max-height: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__status[data-state='working'] i { animation: none; } }
 :root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }

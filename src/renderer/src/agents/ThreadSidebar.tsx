@@ -55,7 +55,7 @@ function ThreadNavRow({ row, current, busy, onOpen, command }: {
       <span className="thread-nav__mark" data-provider={row.providerId ?? 'other'} title={row.provider}><ProviderMark provider={row.providerId} name={row.provider} /></span>
       <span className="thread-nav__title">{title}</span>
       <time className="thread-nav__time" title={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toLocaleString() : 'Last activity unavailable'} dateTime={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toISOString() : undefined}>{row.when}</time>
-      <span className="thread-nav__status" data-state={row.state}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
+      <span className="thread-nav__status" data-state={row.state} data-disconnected={row.connected ? undefined : true}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
     </button>
     <span className="thread-nav__row-actions">
       {row.settledBy === null

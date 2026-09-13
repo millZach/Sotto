@@ -84,6 +84,9 @@ describe('Threads manual composer', () => {
     const { live, view, prompt } = mount(state)
     const check = () => within(screen.getByLabelText('Pending message')).getByRole('button', { name: 'Check again' })
     expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('My newer draft')
+    // Without prompt text there is no second, empty "You" bubble: only the state line and its action.
+    expect(screen.getByLabelText('Pending message').closest('article')).toBeNull()
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sotto will not send your last prompt twice.')
     expect(screen.getByLabelText('Pending message').querySelector('.rich-message')).toBeNull()
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     fireEvent.click(check())
@@ -96,7 +99,10 @@ describe('Threads manual composer', () => {
     expect(prompt()).toHaveValue('')
     expect(check()).toBeEnabled()
     act(() => live.publish({ host: { ...live.state.host, providers: live.state.host.providers!.map(provider => provider.id === 'claude' ? { ...provider, connection: 'disconnected' } : provider) } }))
-    fireEvent.click(within(screen.getByLabelText('Pending message')).getByRole('button', { name: 'Reconnect' }))
+    // Disconnected, the pending line points to the one Reconnect in the thread header.
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Reconnect to check it.')
+    expect(within(screen.getByLabelText('Pending message')).queryByRole('button')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'connect', provider: 'claude' })
     expect(live.manualSends()).toBe(0)
     act(() => live.publish({ deliveredDrafts: [{ threadId: thread.id, draftId }] }))
@@ -203,8 +209,14 @@ describe('Threads manual composer', () => {
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh' })
-    act(() => { live.publish({ host: { ...live.state.host, connected: false } }) })
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reconnect' }).find(button => button.closest('[aria-label="Pending message"]'))!)
+    // The send's own unconfirmed error is told once, by the pending message; an unrelated error still shows.
+    act(() => { live.publish({ error: 'The provider did not confirm the result.' }) })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    act(() => { live.publish({ error: 'Could not save the spoken reply setting.' }) })
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not save the spoken reply setting.')
+    act(() => { live.publish({ error: null, host: { ...live.state.host, connected: false } }) })
+    expect(screen.getAllByRole('button', { name: 'Reconnect' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'connect' })
     expect(live.manualSends()).toBe(1)
     expect(prompt()).toHaveValue('A new prompt')
@@ -224,6 +236,8 @@ describe('Threads manual composer', () => {
     })
     const pending = await screen.findByLabelText('Pending message')
     expect(pending).toHaveTextContent('Unconfirmed')
+    expect(pending.closest('article')).toBeNull()
+    expect(within(pending).queryByText('You')).not.toBeInTheDocument()
     expect(pending).not.toHaveTextContent('Maybe delivered')
     expect(within(screen.getByLabelText('Thread transcript')).getAllByText('Maybe delivered')).toHaveLength(1)
     expect(within(pending).getByRole('button', { name: 'Check again' })).toBeEnabled()
@@ -244,6 +258,18 @@ describe('Threads manual composer', () => {
     expect(prompt()).toHaveValue('Draft for previews')
     act(() => { live.publish({ activeThreadId: 'wav-stall' }) })
     await waitFor(() => expect(prompt()).toHaveValue('Draft for the stall'))
+  })
+
+  it('states only why a running thread cannot send, even with an empty composer', () => {
+    const state = manualState()
+    state.host.threads.find(item => item.id === 'grok-previews')!.status = 'running'
+    state.host.capabilities = { ...state.host.capabilities, configureThread: true }
+    mount(state)
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeInTheDocument()
+    expect(screen.getByText('You can send after this turn finishes.')).toBeVisible()
+    expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Available after this turn finishes.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
   })
 
   it('writes a question’s answer as a request-bound draft and sends it with answer', async () => {
@@ -267,7 +293,8 @@ describe('Threads manual composer', () => {
     fireEvent.change(prompt(), { target: { value: 'Later' } })
     expect(prompt()).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
-    expect(screen.getByText(/disconnected\. Your draft is saved; reconnect to send\./)).toBeVisible()
+    expect(screen.getByText('Reconnect to send. Your draft stays here.')).toBeVisible()
+    expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
     expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Add a preview button')
   })
 })

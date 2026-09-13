@@ -54,7 +54,11 @@ export function threadModelChoices(state: AgentState, thread: AgentThread): { re
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
 }
 
-export function ThreadOptions({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
+export function ThreadOptions({ thread, state, command, turnNote = true }: {
+  readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
+  /** Explain options locked by a running turn; off where the composer already says it cannot send. */
+  readonly turnNote?: boolean
+}): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { models, locked } = threadModelChoices(state, thread)
@@ -73,7 +77,7 @@ export function ThreadOptions({ thread, state, command }: { readonly thread: Age
     <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
       disabled={disabled} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
     {saving ? <small role="status">Saving...</small>
-      : locked && thread.status === 'running' ? <small>Available after this turn finishes.</small>
+      : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
         : otherProviders ? <small className="thread-options__lock">This conversation stays with {provider ?? 'its provider'}.</small>
           : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}

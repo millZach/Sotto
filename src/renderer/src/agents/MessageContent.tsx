@@ -157,7 +157,8 @@ const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; la
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
   const { open } = useContext(LinkContext)
   const url = safeLinkUrl(href)
-  if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}</span>
+  // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
+  if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden"> (link not opened: not a web address)</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
     onClick={event => { event.preventDefault(); open(url) }}
     onAuxClick={event => event.preventDefault()}>{children}</a>
