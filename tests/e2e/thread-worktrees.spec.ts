@@ -20,6 +20,10 @@ async function activeThread(page: Page) {
     return state.host.threads.find(thread => thread.id === state.activeThreadId)!
   })
 }
+async function openedFolder(page: Page): Promise<string | null | undefined> {
+  return page.evaluate(async () => (await window.sottoE2E!.snapshot()).openedThreadFolder)
+}
+const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/, '').toLowerCase() === right.replace(/[\\/]+$/, '').toLowerCase()
 async function resize(launched: LaunchedSotto, width: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, width) => {
     const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
@@ -61,6 +65,7 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
   const repo = join(root, 'repo-app'); const plain = join(root, 'plain-notes'); const fresh = join(root, 'fresh-repo')
   await mkdir(repo); await mkdir(plain); await mkdir(fresh)
   git(repo, 'init', '-q'); await commitFile(repo, 'README.md', 'Original checkout\n')
+  await mkdir(join(repo, 'packages', 'app'), { recursive: true }); await commitFile(repo, 'packages/app/package.json', '{}\n')
   await writeFile(join(plain, 'notes.txt'), 'Not a repository\n')
   git(fresh, 'init', '-q')
   const previousFolder = process.env.SOTTO_E2E_PROJECT_DIRECTORY
@@ -74,7 +79,7 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
       for (const [title, path] of folders) await window.sotto!.agents!.command({ type: 'create-project', title, path, useExisting: true })
-    }, [['repo-app', repo], ['plain-notes', plain], ['fresh-repo', fresh]])
+    }, [['repo-app', repo], ['app-package', join(repo, 'packages', 'app')], ['plain-notes', plain], ['fresh-repo', fresh]] as const)
     await page.reload()
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await resize(launched, 1280)
@@ -106,12 +111,17 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
     await expect(page.getByRole('button', { name: `Working copy: ${branch}` })).toBeVisible()
     expect(git(repo, 'branch', '--show-current').trim()).toBe('main')
     expect(git(repo, 'worktree', 'list', '--porcelain')).toContain(`branch refs/heads/${branch}`)
-    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toBe('Original checkout\n')
+    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toMatch(/^Original checkout\r?\n$/)
     const chip = page.getByRole('button', { name: `Working copy: ${branch}` })
     await chip.focus(); await page.keyboard.press('Enter')
     const details = page.getByRole('group', { name: 'Working copy details' })
-    await expect(details).toContainText(worktreePath)
+    expect(sameFolder(independent.workingDirectory!, worktreePath)).toBe(true)
+    await expect(details).toContainText(independent.workingDirectory!)
     await expect(details).toContainText('No uncommitted changes')
+    // Open folder goes through main's resolver; E2E records the folder instead of launching Explorer.
+    await details.getByRole('button', { name: 'Open folder' }).focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => sameFolder((await openedFolder(page)) ?? '', independent.workingDirectory!)).toBe(true)
     await capture(launched, 'independent-details')
     await resize(launched, 820)
     await capture(launched, 'independent-details-minimum')
@@ -119,6 +129,19 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
     await expect(details).toHaveCount(0)
     await expect(chip).toBeFocused()
     await resize(launched, 1280)
+
+    // Subfolder project: the thread works in packages/app inside its own checkout, not the checkout root.
+    await createByKeyboard(page, 'app-package', 'Package task', 'New worktree')
+    const packageThread = await activeThread(page)
+    expect(packageThread.worktree).toMatchObject({ mode: 'independent', status: 'ready', projectRelativePath: expect.stringMatching(/packages[\\/]app/) })
+    expect(sameFolder(packageThread.workingDirectory!, join(packageThread.worktree!.path!, 'packages', 'app'))).toBe(true)
+    await page.getByRole('button', { name: `Working copy: ${packageThread.worktree!.branch}` }).click()
+    const packageDetails = page.getByRole('group', { name: 'Working copy details' })
+    await expect(packageDetails).toContainText(packageThread.workingDirectory!)
+    await packageDetails.getByRole('button', { name: 'Open folder' }).click()
+    await expect.poll(async () => sameFolder((await openedFolder(page)) ?? '', packageThread.workingDirectory!)).toBe(true)
+    await capture(launched, 'subfolder-details')
+    await page.keyboard.press('Escape')
 
     // Shared: deliberately works in the project folder.
     await createByKeyboard(page, 'repo-app', 'Shared task', 'Project folder')
@@ -145,6 +168,8 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
     await page.getByRole('button', { name: 'Notes task', exact: true }).click()
     await page.getByRole('button', { name: 'Fresh task', exact: true }).click()
     await expect(prompt).toHaveValue('Draft kept after failed setup.')
+    // Returning to the thread shows one notice, not one per visit.
+    await expect(page.locator('.working-copy-notice')).toHaveCount(1)
     await capture(launched, 'failed')
     await resize(launched, 820)
     await capture(launched, 'failed-minimum')
@@ -153,7 +178,9 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
     // Retry after the repository gains a commit.
     await commitFile(fresh, 'START.md', 'First commit\n')
     const retry = notice.getByRole('button', { name: 'Retry setup' })
-    await retry.focus()
+    // The notice sits just before the composer in keyboard order.
+    await prompt.focus(); await page.keyboard.press('Shift+Tab')
+    await expect(retry).toBeFocused()
     await capture(launched, 'retry-focus')
     await page.keyboard.press('Enter')
     await expect(notice).toHaveCount(0)
