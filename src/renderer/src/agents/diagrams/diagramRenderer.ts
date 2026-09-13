@@ -5,7 +5,8 @@ import mermaid, { type MermaidConfig } from 'mermaid'
 import bricolageLatin from '../../assets/fonts/bricolage-grotesque-latin.woff2?inline'
 import bricolageLatinExt from '../../assets/fonts/bricolage-grotesque-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
-import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH } from './diagramSource'
+import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from './diagramSource'
+import { assertDiagramSafe } from './diagramSafety'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
 
 export type DiagramRenderResult =
@@ -175,19 +176,24 @@ function measureOn(stage: HTMLElement): (root: SVGSVGElement) => DiagramBounds |
 }
 
 async function renderNow(code: string, palette: DiagramPalette): Promise<DiagramRenderResult> {
+  // Enforce at the renderer boundary too; callers cannot bypass kind/length/config inspection.
+  const inspection = inspectDiagramSource(code)
+  if (inspection.problem) return { ok: false, reason: inspection.problem }
+  code = inspection.code
   const key = paletteKey(palette)
   if (configuredFor !== key) {
     mermaid.initialize(configFor(palette))
     configuredFor = key
   }
   try {
-    await document.fonts?.load?.(`15px ${FONT_FAMILY}`)
-  } catch { /* Measurement falls back to the system face; the drawing still renders. */ }
-  try {
-    await mermaid.parse(code)
+    const parsed = await mermaid.mermaidAPI.getDiagramFromText(code)
+    assertDiagramSafe(parsed)
   } catch (error) {
     return { ok: false, reason: readableDiagramError(error) }
   }
+  try {
+    await document.fonts?.load?.(`15px ${FONT_FAMILY}`)
+  } catch { /* Measurement falls back to the system face; the drawing still renders. */ }
   const stage = createStage()
   try {
     sequence += 1
@@ -209,8 +215,10 @@ const MAX_CACHED_RESULTS = 24
 /**
  * Renders `code` (already inspected and stripped of configuration) with `palette`. Results are
  * cached per source and palette, so moving between threads or re-mounting a transcript does not
- * redraw. A render that has not finished within the time limit resolves with a reason; the next
- * render still waits for it, so Mermaid never runs twice at once.
+ * redraw. Parsed complexity limits are the synchronous layout admission boundary. The timer
+ * only handles asynchronous stalls; it cannot interrupt synchronous work. Elapsed-time checking
+ * prevents a late synchronous completion from reporting success. Neither check preempts layout.
+ * The next render still waits for actual completion, so Mermaid never runs twice at once.
  */
 export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs = DIAGRAM_RENDER_TIMEOUT_MS): Promise<DiagramRenderResult> {
   const cacheKey = `${paletteKey(palette)}\n${code}`
@@ -221,7 +229,11 @@ export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs =
     return cached
   }
   const previous = queue
-  const run = previous.then(() => renderNow(code, palette))
+  const run = previous.then(async () => {
+    const started = performance.now()
+    const result = await renderNow(code, palette)
+    return performance.now() - started > timeoutMs ? { ok: false as const, reason: TOO_SLOW } : result
+  })
   queue = run.catch(() => undefined)
   let timer: ReturnType<typeof setTimeout> | undefined
   // The clock starts when this render starts, not while it waits behind another.

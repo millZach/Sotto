@@ -3,11 +3,13 @@
 
 export type DiagramKind = 'sequence' | 'flowchart' | 'state' | 'class' | 'er'
 
-/** Longer sources are shown as text; a single answer cannot make the renderer lay out a huge graph. */
+/** Bounds parser input. Parsed layout complexity is separately checked in diagramSafety. */
 export const MAX_DIAGRAM_SOURCE_LENGTH = 12_000
+/** Coarse parser-work budget, in addition to (never instead of) parsed graph limits. */
+export const MAX_DIAGRAM_SOURCE_UNITS = 600
 /** Mermaid stops a flowchart with more edges than this. */
 export const MAX_DIAGRAM_EDGES = 300
-/** A render that has not settled by then is reported as too slow, and its source stays visible. */
+/** Async stall / elapsed-time reporting only; a same-thread timer cannot interrupt layout. */
 export const DIAGRAM_RENDER_TIMEOUT_MS = 8_000
 
 export interface DiagramSourceInspection {
@@ -38,7 +40,12 @@ const CONTROL_CHARACTERS = /[\p{Cc}\p{Bidi_Control}]/gu
 function frontMatterTitle(block: string): string | null {
   const line = /^title:[ \t]*(.+)$/mu.exec(block)?.[1]?.trim()
   if (!line) return null
-  const unquoted = /^(["'])(.*)\1$/u.exec(line)?.[2] ?? line
+  let unquoted = /^(["'])(.*)\1$/u.exec(line)?.[2] ?? line
+  // Our own serialized title is JSON quoted. Keep inspection idempotent when the renderer
+  // independently rechecks an already inspected source (including quotes/backslashes).
+  if (line.startsWith('"')) {
+    try { const parsed: unknown = JSON.parse(line); if (typeof parsed === 'string') unquoted = parsed } catch { /* Non-JSON YAML title. */ }
+  }
   const title = unquoted.replace(CONTROL_CHARACTERS, '').trim().slice(0, 120)
   return title || null
 }
@@ -73,6 +80,12 @@ export function inspectDiagramSource(source: string): DiagramSourceInspection {
     return { kind: null, label: 'Diagram', code: '', title: null, problem: `Too long to draw. Diagrams over ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters are shown as source.` }
   }
   const { code, title } = stripDiagramConfiguration(source)
+  // Mermaid's state parser builds/expands its database before returning it. Bound that work too.
+  // Count word runs and individual punctuation even inside labels; this is deliberately a
+  // conservative source budget, not a claimed Mermaid tokenizer or an edge/node counter.
+  if ([...code.matchAll(/[\p{L}\p{N}_]+|[^\s]/gu)].length > MAX_DIAGRAM_SOURCE_UNITS) {
+    return { kind: null, label: 'Diagram', code, title, problem: 'Too complex to draw safely. The source exceeds the parser work limit; it is shown as source.' }
+  }
   const statement = firstStatement(code)
   if (!statement) return { kind: null, label: 'Diagram', code, title, problem: 'This diagram is empty.' }
   const match = KINDS.find(entry => entry.pattern.test(statement))
