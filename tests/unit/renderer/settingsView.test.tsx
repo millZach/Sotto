@@ -121,7 +121,9 @@ describe('SettingsView', () => {
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
     expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
-    expect(within(section).getByText(/Sotto is/u)).toHaveTextContent('Sotto is light, using Iris.')
+    // One short line explains the choice; the pressed tiles and cards say what is chosen.
+    expect(within(section).getByText(/^Choose light, dark or system/u)).toHaveTextContent('Choose light, dark or system, then a theme for each. The floating widget always follows the Windows light or dark setting.')
+    expect(section).not.toHaveTextContent(/using Iris/u)
     expect(within(section).queryByRole('radiogroup', { name: 'Accent' })).not.toBeInTheDocument()
     expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
     for (const label of ['T3 Code', 'T3 Chat', 'Grove', 'Ocean', 'Ember', 'Iris']) {

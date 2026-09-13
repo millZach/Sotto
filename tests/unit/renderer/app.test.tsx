@@ -307,7 +307,8 @@ describe('Sotto application onboarding integration', () => {
     await act(async () => { saves[1]!.result.resolve(persisted) })
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'iris')
-    expect(screen.getByText(/Sotto is/u)).toHaveTextContent('Sotto is light, using Iris.')
+    expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Iris light mode' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('restores the truthful persisted look when the final overlapping appearance save fails', async () => {

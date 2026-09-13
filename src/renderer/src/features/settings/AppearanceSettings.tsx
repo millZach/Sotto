@@ -3,7 +3,7 @@ import { RotateCcw } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { APPEARANCE_CONTRAST, GLASS_OPACITY, findTheme, type ThemeDefinition } from '../../../../shared/themes/library'
+import { APPEARANCE_CONTRAST, GLASS_OPACITY, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
@@ -72,18 +72,11 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
     else if (result.value.saved) setStatus({ text: `${theme.label} exported.`, error: false })
   }
 
-  const lightLabel = findTheme(shown.lightTheme, shown.customThemes)?.label ?? shown.lightTheme
-  const darkLabel = findTheme(shown.darkTheme, shown.customThemes)?.label ?? shown.darkTheme
-  const activeLabel = resolved === 'light' ? lightLabel : darkLabel
-
   return (
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
         <h2>Appearance</h2>
-        <p>{shown.appearance === 'system'
-          ? <>Sotto follows {system}, <b>{resolved}</b> right now, using <b>{activeLabel}</b>.</>
-          : <>Sotto is <b>{resolved}</b>, using <b>{activeLabel}</b>.</>}{' '}
-          Light uses {lightLabel}; dark uses {darkLabel}. The floating widget always follows {system}.</p>
+        <p>Choose light, dark or system, then a theme for each. The floating widget always follows the {system} light or dark setting.</p>
       </div>
 
       <ThemeGallery
@@ -173,11 +166,11 @@ function AppearanceSlider({ label, description, bounds, value, onPreview, onComm
           {value === bounds.default
             ? null
             : (
-                <Button variant="ghost" iconOnly aria-label={`Reset ${label.toLowerCase()} to ${bounds.default}`} onClick={() => { change(bounds.default); flush() }}>
+                <Button variant="ghost" iconOnly aria-label={`Reset ${label.toLowerCase()} to ${bounds.default}%`} onClick={() => { change(bounds.default); flush() }}>
                   <RotateCcw size={13} aria-hidden="true" />
                 </Button>
               )}
-          <output htmlFor={id}>{value}</output>
+          <output htmlFor={id}>{value}%</output>
         </span>
       </div>
       <p className="tt-field__description" id={`${id}-description`}>{description}</p>

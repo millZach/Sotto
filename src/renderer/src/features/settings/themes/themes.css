@@ -66,7 +66,8 @@
 
 .theme-mode-tile:hover .theme-wireframe { box-shadow: 0 0 0 1px var(--tt-text-faint); }
 .theme-mode-tile[aria-pressed='true'] { color: var(--tt-text); }
-.theme-mode-tile[aria-pressed='true'] .theme-wireframe { box-shadow: 0 0 0 2px var(--tt-accent-text), 0 0 0 5px var(--tt-accent-wash); }
+/* The chosen ring is drawn inside the tile so a scrolling container never clips it. */
+.theme-mode-tile[aria-pressed='true'] .theme-wireframe { box-shadow: none; outline: 2px solid var(--tt-accent-text); outline-offset: -2px; }
 .theme-mode-tile:focus-visible { outline-offset: 4px; border-radius: 10px; }
 .theme-mode-tile__label { font-weight: 500; }
 
@@ -122,7 +123,8 @@
 
 .theme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  /* T3 Code's gallery track: three columns at a wide settings page, then two, then one. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: 12px;
 }
 
@@ -312,7 +314,7 @@
 }
 
 .theme-slider__value .tt-button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; }
-.theme-slider__value output { min-width: 3ch; text-align: right; }
+.theme-slider__value output { min-width: 4.5ch; text-align: right; }
 
 .theme-slider__input {
   grid-column: 2;
