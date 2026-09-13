@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rmdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -154,5 +154,63 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} full-process
     await card(page).getByRole('button', { name: 'Check again' }).click()
     await expect(card(page)).toHaveAttribute('data-phase', 'idle')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+  } finally { await closeSotto(launched) }
+})
+
+test('a real atomic save failure retains the visible answer, blocks sending and recovers through Save again', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-draft-save-failure-'))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+  const launched = await launchSotto('success', profile)
+  try {
+    const { page } = launched
+    await page.evaluate(async () => {
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    await emit(page, 'thread', 'workshop'); await open(page, 'thread'); await record(launched, 'thread')
+    // An empty directory at the exact owned fixture file path forces the real atomic rename to fail.
+    await mkdir(join(profile, 'request-drafts.json'))
+    await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
+    await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
+    await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Recover this answer after the disk failure')
+    await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
+    await expect(card(page).getByRole('alert')).toContainText('Could not save this answer draft')
+    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
+    await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Recover this answer after the disk failure')
+    await mkdir('artifacts/request-drafts', { recursive: true })
+    await card(page).getByRole('button', { name: 'Save again' }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/request-drafts/save-failure.png' })
+    await rmdir(join(profile, 'request-drafts.json'))
+    await card(page).getByRole('button', { name: 'Save again' }).click()
+    await expect(card(page)).toHaveAttribute('data-save', 'saved')
+    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeEnabled()
+    expect((await drafts(profile))[0]?.selections.notes?.text).toBe('Recover this answer after the disk failure')
+    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+  } finally { await closeSotto(launched) }
+})
+
+test('invalid request draft storage remains unchanged and is honestly shown as unsaved in the complete app', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-draft-corrupt-'))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+  const invalid = '{ invalid storage containing an unsent private answer'
+  await writeFile(join(profile, 'request-drafts.json'), invalid)
+  const launched = await launchSotto('success', profile)
+  try {
+    const { page } = launched
+    await page.evaluate(async () => {
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    await emit(page, 'thread', 'workshop'); await open(page, 'thread'); await record(launched, 'thread')
+    await expect(card(page).getByRole('alert')).toContainText('original request-drafts.json is unchanged')
+    await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Preserve newer local text too')
+    await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
+    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
+    expect(await readFile(join(profile, 'request-drafts.json'), 'utf8')).toBe(invalid)
+    expect((await readdir(profile)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
+    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+    await mkdir('artifacts/request-drafts', { recursive: true })
+    await card(page).getByRole('alert').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: 'artifacts/request-drafts/invalid-storage.png' })
   } finally { await closeSotto(launched) }
 })

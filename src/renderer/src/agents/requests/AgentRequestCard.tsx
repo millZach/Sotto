@@ -63,7 +63,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
     ? <div className="agent-request__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
       {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button> : null}</div>
     : entry.phase === 'unconfirmed'
-      ? <div className="agent-request__hold" role="status"><p>Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.</p>
+      ? <div className="agent-request__hold" role="status"><p>{entry.save === 'unsaved' && entry.error ? entry.error
+        : 'Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.'}</p>
         {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button> : null}</div>
       : entry.phase === 'failed' ? <p className="agent-request__error" role="alert">{entry.error}</p>
         : entry.phase === 'sending' ? <p className="agent-request__status" role="status">Sending…</p>

@@ -60,6 +60,7 @@ describe('request draft renderer ordering', () => {
     const send = vi.fn(async () => ({ error: null }))
     await store.submit('thread', 'req', null, send)
     expect(store.get('thread', 'req').phase).toBe('unconfirmed')
+    expect(store.get('thread', 'req').error).toContain('was not sent')
     expect(send).not.toHaveBeenCalled()
     api.get = vi.fn(async () => draft('Was being sent', 4, true))
     const restarted = new RequestAnswerStore(() => api); await restarted.connect('thread', 'req', target)

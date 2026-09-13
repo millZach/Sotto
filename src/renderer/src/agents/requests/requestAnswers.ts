@@ -263,7 +263,7 @@ export class RequestAnswerStore {
     this.set(ownerId, requestId, { ...entry, revision: entry.revision + 1, phase: 'sending', error: null, choice })
     if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
       // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
-      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed' })
+      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: 'This answer was not sent because its draft could not be saved. Check again after storage is available.' })
       return
     }
     let outcome: SubmitOutcome
