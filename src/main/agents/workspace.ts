@@ -6,6 +6,8 @@ import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, t
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { validateThreadOptions } from './threadOptions'
+import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
 
 const workspaceSchema = z.object({
   snapshot: agentHostSnapshotSchema,
@@ -27,9 +29,11 @@ export class WorkspaceHost implements AgentHost {
   private saveError: string | undefined
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly lanes = new Map<string, Promise<unknown>>()
+  private readonly worktrees: ThreadWorktrees
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true) {
     this.concurrentProviders = inner.concurrentProviders === true
+    this.worktrees = new ThreadWorktrees(directory)
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
     inner.subscribe(snapshot => {
       if (!this.ready) return
@@ -92,6 +96,7 @@ export class WorkspaceHost implements AgentHost {
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       threads.set(thread.id, { ...thread,
+        ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
         workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true })
@@ -159,6 +164,48 @@ export class WorkspaceHost implements AgentHost {
     if (!thread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
     return thread
   }
+  private async prepareWorkingCopy(thread: AgentThread): Promise<void> {
+    if (!thread.worktree) return // Existing threads keep their native directory.
+    try {
+      if (!thread.worktree.path) {
+        const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
+        if (!project) throw new Error('The original project is unavailable.')
+        thread.worktree = await this.worktrees.allocate(project.path, thread.worktree.mode)
+        this.dirty = true
+        await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
+      }
+      thread.worktree = await this.worktrees.ensure(thread.worktree)
+      thread.workingDirectory = await this.worktrees.workingDirectory(thread.worktree)
+    } catch (error) {
+      thread.worktree = { ...thread.worktree, status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
+    }
+    this.dirty = true; await this.flush(); this.publish()
+  }
+  async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
+    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      await this.initialize()
+      const thread = this.thread(threadId)
+      if (retry && thread.nativeSessionStarted === false) await this.prepareWorkingCopy(thread)
+      else if (thread.worktree) {
+        // Native events can replace the thread object while Git is pending.
+        let metadata = thread.worktree
+        try { metadata = await this.worktrees.inspect(metadata) }
+        catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
+        this.thread(threadId).worktree = metadata
+        this.dirty = true; await this.flush(); this.publish()
+      }
+      return this.workspaceSnapshot()
+    })
+    this.lanes.set(threadId, pending)
+    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
+    return pending
+  }
+  async threadWorkingDirectory(threadId: string): Promise<string> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') await this.worktrees.inspect(thread.worktree)
+    return existingWorkingDirectory(resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)))
+  }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     const key = 'threadId' in command ? command.threadId : command.projectId
     const pending = (this.lanes.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => this.executeOne(command))
@@ -186,6 +233,7 @@ export class WorkspaceHost implements AgentHost {
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
+        worktree: { mode: command.workingCopy ?? 'independent', status: 'pending' },
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       this.state.snapshot.threads.push(thread)
       this.state.creations.push({ threadId: thread.id, projectId: thread.projectId, commandId: randomUUID(), phase: 'unstarted' })
@@ -196,7 +244,10 @@ export class WorkspaceHost implements AgentHost {
         this.state.creations = this.state.creations.filter(item => item.threadId !== thread.id)
         throw error
       }
-      this.publish(); return { accepted: true }
+      this.publish()
+      // The local thread is already durable; setup failure must not turn its creation into rejection.
+      await this.prepareWorkingCopy(thread).catch(() => { this.saveError = 'Working-copy setup could not be saved. Restore local storage and retry setup.'; this.publish() })
+      return { accepted: true }
     }
     let thread = this.thread(command.threadId)
     const creation = this.state.creations.find(item => item.threadId === thread.id)
@@ -224,6 +275,8 @@ export class WorkspaceHost implements AgentHost {
         await this.refreshThread(thread.id)
         if (this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
       } else {
+        if (thread.worktree?.status !== 'ready') await this.prepareWorkingCopy(thread)
+        const workingDirectory = await this.threadWorkingDirectory(thread.id)
         validateThreadOptions(this.state.snapshot, thread)
         this.requireCreation(thread.providerId)
         const priorPhase = creation.phase
@@ -247,6 +300,7 @@ export class WorkspaceHost implements AgentHost {
         try {
           result = await this.inner.execute({ type: 'create-thread', commandId: creation.commandId, threadId: thread.id,
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
+            workingDirectory,
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
             ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
         } catch (error) { await rejected(); throw error }
@@ -267,6 +321,8 @@ export class WorkspaceHost implements AgentHost {
     }
     // Native command uncertainty belongs to the existing outbox; do not add a failing
     // history read after dispatch that could turn unknown delivery into a rejection.
+    // Never send into a deleted/failed working copy, even if the native client is still live.
+    if (command.type === 'send') await this.threadWorkingDirectory(thread.id)
     return this.inner.execute(command)
   }
   private requireCreation(provider?: ProviderId): void {

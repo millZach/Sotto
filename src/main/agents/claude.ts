@@ -1,5 +1,5 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
@@ -104,7 +104,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       validateThreadOptions(this.state, command)
       const project = this.state.projects.find(candidate => candidate.id === command.projectId)
       if (!project) throw new Error('Choose an existing project.')
-      const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await realpath(project.path), title: command.title, modelId: command.modelId,
+      const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, createdAt: new Date().toISOString(), origins: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
@@ -303,7 +303,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return log
   }
   private ensureThread(id: string, alias: Alias): void {
-    this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
+    this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
   }
   private addMessage(id: string, message: AgentMessage): void {
     const thread = this.threads.get(id)!; const existing = thread.messages.find(value => value.id === message.id)

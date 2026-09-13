@@ -1,3 +1,4 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -175,7 +176,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.modelId,
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', messages: [], requests: [] })
     return this.threads.get(id)!
   }
@@ -241,7 +242,7 @@ export class CodexAppServerHost implements AgentHost {
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
-    const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
+    const operation = this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
       ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); this.live.add(id)
@@ -337,15 +338,16 @@ export class CodexAppServerHost implements AgentHost {
         if (!project) throw new Error('Choose a known Codex project.')
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
         validateThreadOptions(this.state, command)
+        const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
         this.creating.add(command.threadId)
-        await this.rpc('thread/start', { cwd: project.path, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
+        await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           ...runtimePolicy(command.runtimeMode), ...(command.reasoningEffort ? { config: { model_reasoning_effort: command.reasoningEffort } } : {}), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
             || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
-          this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd: project.path,
+          this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd,
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
             createdAt: new Date().toISOString(), origins: [] }
@@ -413,7 +415,7 @@ export class CodexAppServerHost implements AgentHost {
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
-            await this.rpc('turn/start', { threadId: alias.codexThreadId, clientUserMessageId: command.messageId,
+            await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
               input: [{ type: 'text', text: command.text }], approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
               ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {

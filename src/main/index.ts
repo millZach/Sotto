@@ -522,7 +522,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     configuration: () => agentControl.get().configuration,
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
   })
+  let openedThreadFolder: string | null = null
   const agentControl: AgentControl = new AgentControl({
+    openThreadFolder: async path => {
+      if (e2eConfiguration !== null) { openedThreadFolder = path; return }
+      const error = await shell.openPath(path); if (error) throw new Error(error)
+    },
     directory: userDataPath, host: agentHost, credentials, membership,
     ...(authority === undefined ? {} : { authority }),
     ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
@@ -907,10 +912,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
           throw new Error('E2E_SENDER_REJECTED')
         }
-        return snapshotE2EState(
+        return { ...snapshotE2EState(
           e2eState,
           BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
-        )
+        ), openedThreadFolder }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {

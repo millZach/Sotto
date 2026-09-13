@@ -30,6 +30,7 @@ export const e2eScenarioSchema = z.enum([
 ])
 
 export const e2eSnapshotSchema = z.object({
+  openedThreadFolder: z.string().nullable().optional(),
   clipboardText: z.string(),
   pasteAttempts: z.number().int().nonnegative(),
   mainVisible: z.boolean(),

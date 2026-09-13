@@ -124,6 +124,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
   } else if (method === 'turn/start') {
     const thread = state.threads[params.threadId]
+    // Explicit opt-in fixture writes prove the adapter's actual execution cwd.
+    if (script.writeCwd) writeFileSync(join(params.cwd ?? thread.cwd, 'native-cwd-proof.txt'), params.input.find(item => item.type === 'text')?.text ?? '')
     const item = { type: 'userMessage', id: randomUUID(), clientId: params.clientUserMessageId, content: params.input }
     const turn = { id: randomUUID(), status: 'inProgress', items: [item], startedAt: Math.floor(Date.now() / 1000) }
     thread.turns.push(turn)

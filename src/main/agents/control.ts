@@ -97,6 +97,7 @@ export class AgentControl {
     turns?: TurnRecorder
     authority?: Authority
     preferences?: Pick<MemoryProfile, 'retrieve'>
+    openThreadFolder?: (path: string) => Promise<void>
   }) {
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -698,6 +699,17 @@ export class AgentControl {
         this.state.activeProjectId = command.projectId; this.state.activeThreadId = null; this.state.pendingRequest = ''
         this.queueSelectionPinned = true; this.presentedQueueId = null
         this.observe(); return
+      case 'retry-thread-worktree':
+      case 'refresh-thread-worktree': {
+        if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
+        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
+        return
+      }
+      case 'open-thread-folder': {
+        if (!this.dependencies.host.threadWorkingDirectory || !this.dependencies.openThreadFolder) throw new Error('Opening the working folder is unavailable.')
+        await this.dependencies.openThreadFolder(await this.dependencies.host.threadWorkingDirectory(command.threadId))
+        return
+      }
       case 'create-thread': {
         if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
         const model = this.state.host.models.find(model => model.id === command.modelId)
@@ -712,6 +724,7 @@ export class AgentControl {
         if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = true
         try {
           await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+            ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
             ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}) }, turn)
         } catch (error) { if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = previousSelectionPinned; throw error }

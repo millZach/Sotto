@@ -1,3 +1,4 @@
+import { existingWorkingDirectory } from './threadWorktrees'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -66,7 +67,7 @@ export class GrokAcpHost implements AgentHost {
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
     return this.threads.get(id)!
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
@@ -211,9 +212,9 @@ export class GrokAcpHost implements AgentHost {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
         const project = this.state.projects.find(project => project.id === command.projectId); if (!project) throw new Error('Choose a Grok project first.')
-        const alias: Alias = { projectId: project.id, cwd: project.path, title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
+        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
-        await rpc.request('session/new', { cwd: project.path, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
+        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
           alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
         })

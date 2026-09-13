@@ -95,10 +95,18 @@ export const agentMessageSchema = z.object({
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
+export const agentWorktreeSchema = z.object({
+  mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
+  path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
+  baseCommit: z.string().optional(), error: z.string().optional(), dirty: z.boolean().optional(),
+  projectRelativePath: z.string().optional(),
+})
+export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentThreadSchema = z.object({
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
+  workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -286,7 +294,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    workingCopy: z.enum(['independent', 'shared']).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
+  z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
