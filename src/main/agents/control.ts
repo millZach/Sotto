@@ -21,7 +21,7 @@ import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
-import { requestQuestionsDigest } from './requestDrafts'
+import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider } from '../../shared/requestDrafts'
 
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
@@ -41,7 +41,7 @@ const savedSchema = z.object({
   manualDraftId: z.uuid().nullable().default(null),
   deliveredDrafts: agentDeliveryReceiptsSchema.default([]),
   deliveredPromptDigests: z.array(z.object({ threadId: z.string(), draftId: z.uuid(), digest: z.string() })).default([]),
-  answeredRequests: z.array(z.object({ threadId: z.string(), provider: providerIdSchema, requestId: z.string(), questionsDigest: z.string() })).max(MAX_DELIVERED_DRAFTS).default([]),
+  answeredRequests: z.array(z.object({ threadId: z.string(), provider: providerIdSchema, requestId: z.string(), questionsDigest: z.string(), decisionId: z.string().optional() })).max(MAX_DELIVERED_DRAFTS).default([]),
   threadDrafts: z.array(agentThreadDraftSchema).default([]),
   deliveries: z.array(agentDeliverySchema).default([]),
   pendingRequest: z.string().max(20_000).default(''),
@@ -105,6 +105,7 @@ export class AgentControl {
   private contextActivityAt = Date.now()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
+    bindRequestDraftDecision?: BindRequestDraftDecision
     historyEnabled?: () => boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -338,11 +339,11 @@ export class AgentControl {
   }
 
   /** Main-only evidence for request drafts; no answer or question text is retained in receipts. */
-  requestAnswerRecovery(threadId: string, provider: ProviderId): { uncertainRequestIds: string[]; completed: { requestId: string; questionsDigest: string }[] } {
+  requestAnswerRecovery(threadId: string, provider: ProviderId): { uncertainRequestIds: string[]; completed: { requestId: string; questionsDigest: string; decisionId?: string }[] } {
     return {
       uncertainRequestIds: this.outbox.filter(item => item.type === 'answer' && item.threadId === threadId
         && (item.provider ?? this.state.configuration.provider) === provider).flatMap(item => item.requestId ? [item.requestId] : []),
-      completed: this.answeredRequests.filter(item => item.threadId === threadId && item.provider === provider).map(({ requestId, questionsDigest }) => ({ requestId, questionsDigest })),
+      completed: this.answeredRequests.filter(item => item.threadId === threadId && item.provider === provider).map(({ requestId, questionsDigest, decisionId }) => ({ requestId, questionsDigest, ...(decisionId ? { decisionId } : {}) })),
     }
   }
 
@@ -357,7 +358,7 @@ export class AgentControl {
   private recordAnsweredRequest(item: Saved['outbox'][number]): void {
     if (item.type !== 'answer' || !item.threadId || !item.requestId || !item.questionsDigest) return
     const receipt = { threadId: item.threadId, provider: item.provider ?? this.state.configuration.provider,
-      requestId: item.requestId, questionsDigest: item.questionsDigest }
+      requestId: item.requestId, questionsDigest: item.questionsDigest, decisionId: item.id }
     this.answeredRequests = [...this.answeredRequests.filter(previous => JSON.stringify(previous) !== JSON.stringify(receipt)), receipt].slice(-MAX_DELIVERED_DRAFTS)
   }
   private assignment(id: string): AgentAssignment {
@@ -1185,6 +1186,7 @@ export class AgentControl {
     }
     if ((command.type === 'send' || command.type === 'steer')) draftId ??= randomUUID()
     if (this.outbox.some(item => threadId ? item.threadId === threadId : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
+    const answerRequest = command.type === 'answer' ? this.thread(command.threadId).requests.find(item => item.id === command.requestId) : undefined
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -1196,6 +1198,7 @@ export class AgentControl {
       ...((command.type === 'send' || command.type === 'steer') ? { draftDigest: this.promptDigest(command.text, command.attachments, command.skills), ...(draftId ? { draftId } : {}) } : {}),
       ...(command.type === 'create-project' ? { entityId: command.projectId } : command.type === 'create-thread' ? { entityId: command.threadId } : {}),
     })
+    const answerIntent = command.type === 'answer' ? this.outbox.find(item => item.id === command.commandId) : undefined
     if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, 'submitting', { commandId: command.commandId, messageId: command.messageId })
     try { await this.persist() }
     catch (error) {
@@ -1215,6 +1218,10 @@ export class AgentControl {
       if ((command.type === 'send' || command.type === 'steer') && command.attachments?.length) {
         const attachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
         await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
+      }
+      if (command.type === 'answer' && answerRequest?.questions?.length && provider) {
+        await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerRequest.questions }, command.commandId)
+        this.canAct(); this.guardAuthority(command, turn); validate?.()
       }
       const providerStartedAt = Date.now()
       try { result = await this.dependencies.host.execute(command) }
@@ -1257,8 +1264,7 @@ export class AgentControl {
       await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
     }
     if (command.type === 'answer' && result.accepted && !result.uncertain) {
-      const intent = this.outbox.find(item => item.id === command.commandId)
-      if (intent) this.recordAnsweredRequest(intent)
+      if (answerIntent) this.recordAnsweredRequest(answerIntent)
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
@@ -1528,7 +1534,8 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
-      this.recordAnsweredRequest(item)
+      // A disappeared question does not prove that our answer was accepted.
+      // Only the exact adapter acknowledgement above can retire retained content.
       const turn = this.dispatchTurns.get(item.id)
       if (turn) this.feedbackReady.add(turn)
       // Match both representations while the selected skills and revision owner still exist.

@@ -2,10 +2,11 @@ import { readFile, readdir, unlink } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
+import type { PersonalChatState } from '../../shared/personalChats'
 import type { AgentRequest } from '../../shared/agents'
 import {
-  requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestQuestionsSignature, sameRequestQuestions,
-  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget,
+  requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
+  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard,
 } from '../../shared/requestDrafts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -16,12 +17,24 @@ const unreadable = 'Answer draft storage could not be read. The original request
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
+export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string) => Promise<void>
+
 export interface RequestDraftOwnerState {
   readonly connected: boolean
   readonly ready: boolean
   readonly requests: readonly AgentRequest[]
   readonly uncertainRequestIds?: readonly string[]
-  readonly completed?: readonly { readonly requestId: string; readonly questionsDigest?: string }[]
+  readonly completed?: readonly { readonly requestId: string; readonly questionsDigest?: string; readonly decisionId?: string }[]
+}
+
+/** Shared production projection: legacy redacted decisions deliberately have no digest fallback. */
+export function personalRequestDraftState(state: PersonalChatState, owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
+  const chat = state.chats.find(item => owner.kind === 'personal' && item.id === owner.ownerId && item.providerId === owner.providerId)
+  return chat ? { connected: state.connected && !state.connecting, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
+    requests: chat.requests,
+    uncertainRequestIds: (chat.decisions ?? []).filter(item => item.status === 'submitting' || item.status === 'uncertain').map(item => item.requestId),
+    completed: (chat.decisions ?? []).filter(item => item.status === 'accepted').map(item => ({ requestId: item.requestId,
+      decisionId: item.id, ...(item.questionsDigest ? { questionsDigest: item.questionsDigest } : {}) })) } : undefined
 }
 
 /** Unsent structured answers have their own durable aggregate, independent of both composers and history.
@@ -33,8 +46,6 @@ export class RequestDraftService {
   private readonly path: string
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
-  private readonly seen = new Set<string>()
-  private readonly retired = new Set<string>()
 
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
     private readonly refresh: (owner: RequestDraftOwner) => Promise<void>,
@@ -84,31 +95,42 @@ export class RequestDraftService {
         && sameRequestQuestions(request.questions ?? [], target.questions))
   }
 
-  /** Only an observed live request can subsequently disappear. Empty startup/disconnected/loading snapshots
-   * cannot retire restored drafts. An accepted older attempt cannot clear a newer editing revision.
-   */
+  /** Only positive acceptance of the exact bound native attempt can erase held content.
+   * Disappearance, changed definitions and legacy receipts are recovery evidence, not acceptance. */
   reconcile(): Promise<void> {
     return this.serial(async () => {
-      const remove: RequestDraft[] = []
-      for (const draft of this.saved.drafts) {
-        const key = requestDraftKey(draft.target), state = this.lookup(draft.target)
-        if (draft.held && state?.completed?.some(item => item.requestId === draft.target.requestId
-          && (item.questionsDigest === undefined || item.questionsDigest === requestQuestionsDigest(draft.target.questions)))) {
-          remove.push(draft); continue
-        }
-        if (!state?.connected || !state.ready) { this.seen.delete(key); continue }
-        const request = state.requests.find(item => item.id === draft.target.requestId)
-        if (request) {
-          if (!sameRequestQuestions(request.questions ?? [], draft.target.questions)) remove.push(draft)
-          else this.seen.add(key)
-        } else if (this.seen.has(key) && draft.held && !state.uncertainRequestIds?.includes(draft.target.requestId)) remove.push(draft)
-      }
-      if (remove.length === 0) return
-      await this.commit(this.saved.drafts.filter(draft => !remove.includes(draft)))
-      for (const draft of remove) {
-        // Retire the definition, not a newly offered form which reused its request ID.
-        this.retired.add(JSON.stringify(draft.target)); this.seen.delete(requestDraftKey(draft.target))
-      }
+      const drafts = this.saved.drafts.filter(draft => !draft.held || !draft.decisionId
+        || !this.lookup(draft.target)?.completed?.some(item => item.requestId === draft.target.requestId
+          && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
+      if (drafts.length !== this.saved.drafts.length) await this.commit(drafts)
+    })
+  }
+
+  list(input: RequestDraftOwner): Promise<RequestDraft[]> {
+    const owner = requestDraftOwnerSchema.parse(input)
+    return this.serial(async () => this.lookup(owner)
+      ? structuredClone(this.saved.drafts.filter(draft => requestDraftOwnerKey(draft.target) === requestDraftOwnerKey(owner))) : [])
+  }
+
+  discard(input: RequestDraftDiscard): Promise<boolean> {
+    const { target, revision } = requestDraftDiscardSchema.parse(input)
+    return this.serial(async () => {
+      if (!this.lookup(target)) throw new Error('This answer owner is unavailable.')
+      const previous = this.current(target)
+      if (!previous) return false
+      if (previous.revision !== revision) throw new Error('A newer answer draft may be saved. Reload retained answers before discarding.')
+      await this.commit(this.saved.drafts.filter(draft => draft !== previous))
+      return true
+    })
+  }
+
+  /** Main only: bind the persisted held form before the native write. No answer content enters receipts. */
+  bindDecision(target: RequestDraftTarget, decisionId: string): Promise<void> {
+    return this.serial(async () => {
+      const previous = this.current(target)
+      if (!previous?.held || !this.lookup(target)) return
+      if (previous.decisionId && previous.decisionId !== decisionId) throw new Error('This answer already belongs to another delivery attempt. Check it before retrying.')
+      await this.commit(this.saved.drafts.map(draft => draft === previous ? { ...previous, decisionId } : draft))
     })
   }
 
@@ -116,7 +138,7 @@ export class RequestDraftService {
     const target = requestDraftTargetSchema.parse(input)
     return this.serial(async () => {
       const draft = this.current(target)
-      return draft && sameRequestQuestions(draft.target.questions, target.questions) ? structuredClone(draft) : null
+      return this.lookup(target) && draft && sameRequestQuestions(draft.target.questions, target.questions) ? structuredClone(draft) : null
     })
   }
 
@@ -124,8 +146,9 @@ export class RequestDraftService {
     const draft = requestDraftSchema.parse(input)
     return this.serial(async () => {
       const previous = this.current(draft.target), state = this.lookup(draft.target)
+      if (draft.decisionId !== previous?.decisionId) throw new Error('Delivery identity is owned by main. Reload this answer before saving.')
       const request = state?.requests.find(item => item.id === draft.target.requestId)
-      if (!state || this.retired.has(JSON.stringify(draft.target))) throw new Error('This answer belongs to a request that is no longer available.')
+      if (!state) throw new Error('This answer belongs to a request that is no longer available.')
       const matches = request && sameRequestQuestions(request.questions ?? [], draft.target.questions)
       if (!matches && (!previous || !sameRequestQuestions(previous.target.questions, draft.target.questions)
         || state.connected && state.ready)) throw new Error('This question changed or is no longer pending. Your local answer has been kept.')
@@ -139,7 +162,6 @@ export class RequestDraftService {
       }
       if (draft.held && !this.offered(draft.target)) throw new Error('Reconnect and check this question before sending your answer.')
       await this.commit([...this.saved.drafts.filter(item => requestDraftKey(item.target) !== requestDraftKey(draft.target)), draft])
-      if (state.connected && state.ready && matches) this.seen.add(requestDraftKey(draft.target))
       return structuredClone(draft)
     })
   }
@@ -154,7 +176,9 @@ export class RequestDraftService {
       const previous = this.current(target)
       if (!previous || !sameRequestQuestions(previous.target.questions, target.questions)) return null
       if (!previous.held) return structuredClone(previous)
-      const next = { ...previous, revision: previous.revision + 1, held: false }
+      const { decisionId, ...editable } = previous
+      void decisionId
+      const next = { ...editable, revision: previous.revision + 1, held: false }
       await this.commit(this.saved.drafts.map(item => item === previous ? next : item))
       return structuredClone(next)
     })

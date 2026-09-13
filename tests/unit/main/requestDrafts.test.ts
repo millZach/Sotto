@@ -12,6 +12,7 @@ const questions = [
   { id: 'notes', question: 'Notes?', multiSelect: false, allowFreeText: true, options: [] },
 ]
 const target: RequestDraftTarget = { kind: 'thread', ownerId: 'owner', providerId: 'codex', requestId: 'request', questions }
+const owner = { kind: target.kind, ownerId: target.ownerId, providerId: target.providerId }
 const request: AgentRequest = { id: target.requestId, kind: 'question', text: 'Native context', options: [], questions }
 const draft = (patch: Partial<RequestDraft> = {}): RequestDraft => requestDraftSchema.parse({ target, revision: 1, held: false,
   selections: { choice: { optionIds: ['coast'], other: true, text: 'A quiet beach' }, notes: { optionIds: [], other: false, text: 'Keep this unsent' } }, ...patch })
@@ -58,7 +59,8 @@ describe('request-owned atomic drafts', () => {
     let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
     const service = new RequestDraftService(directory, () => state, async () => {})
     await service.start(); await service.save(draft({ held: true }))
-    const accepted = { requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions) }
+    await service.bindDecision(target, 'attempt-1')
+    const accepted = { requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions), decisionId: 'attempt-1' }
     state = { connected: false, ready: false, requests: [], completed: [accepted] }
     const restarted = new RequestDraftService(directory, () => state, async () => {})
     await restarted.start(); await restarted.reconcile()
@@ -73,14 +75,14 @@ describe('request-owned atomic drafts', () => {
     expect((await newer.get(target))?.selections.notes?.text).toBe('Newer local edit')
   })
 
-  it('removes only observed completed held requests, never another request or a reused ID with different questions', async () => {
+  it('retains observed disappeared held requests and a reused ID with different questions', async () => {
     let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request, { ...request, id: 'second' }] }
     const service = new RequestDraftService(directory, () => state, async () => {})
     await service.start(); await service.save(draft({ held: true })); await service.save(draft({ target: { ...target, requestId: 'second' } }))
     state = { ...state, requests: [{ ...request, id: 'second' }] }; await service.reconcile()
-    expect(await service.get(target)).toBeNull()
+    expect((await service.get(target))?.held).toBe(true)
     expect(await service.get({ ...target, requestId: 'second' })).not.toBeNull()
-    await expect(service.save(draft({ held: true, revision: 2 }))).rejects.toThrow('no longer available')
+    await expect(service.save(draft({ held: true, revision: 2 }))).rejects.toThrow('no longer pending')
     const changed = { ...target, questions: [{ ...questions[1]!, question: 'An entirely new question' }] }
     state = { ...state, requests: [{ ...request, questions: changed.questions }] }
     expect(await service.get(changed)).toBeNull()
@@ -147,4 +149,67 @@ describe('request-owned atomic drafts', () => {
     expect(await readdir(directory)).not.toContain(abandoned)
     expect(await readFile(join(directory, unrelated), 'utf8')).toBe('user-owned recovery')
   })
+})
+
+it('retains old and redefined forms across native shutdown and lists only the exact known owner', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const lookup = (owner: RequestDraftTarget | { ownerId: string; providerId: string; kind: string }) =>
+    owner.ownerId === target.ownerId && owner.providerId === target.providerId && owner.kind === target.kind ? state : undefined
+  const service = new RequestDraftService(directory, lookup, async () => {})
+  await service.start(); await service.save(draft())
+  const changed = { ...target, questions: [{ ...questions[1]!, question: 'A different form' }] }
+  state = { ...state, requests: [{ ...request, questions: changed.questions }] }
+  await service.reconcile()
+  expect((await disk()).drafts).toHaveLength(1)
+  await service.save(draft({ target: changed, selections: { notes: { optionIds: [], other: false, text: 'Second form' } } }))
+  state = { connected: false, ready: false, requests: [] }
+  const refresh = vi.fn()
+  const restarted = new RequestDraftService(directory, lookup, refresh)
+  await restarted.start(); await restarted.reconcile()
+  expect(await restarted.list(owner)).toEqual([draft(), draft({ target: changed, selections: { notes: { optionIds: [], other: false, text: 'Second form' } } })])
+  state = { connected: true, ready: true, requests: [] }
+  await restarted.reconcile()
+  expect(await restarted.list(owner)).toHaveLength(2)
+  expect(await restarted.list({ ...owner, ownerId: 'foreign' })).toEqual([])
+  expect(await restarted.list({ ...owner, providerId: 'claude' })).toEqual([])
+  expect(refresh).not.toHaveBeenCalled()
+  await expect(restarted.discard({ target, revision: 2 })).rejects.toThrow('newer')
+  expect(await restarted.discard({ target, revision: 1 })).toBe(true)
+  expect((await disk()).drafts).toEqual([draft({ target: changed, selections: { notes: { optionIds: [], other: false, text: 'Second form' } } })])
+})
+
+it.each([undefined, requestQuestionsDigest(questions)])('never applies an old receipt to a newer reused-ID held form (digest %s)', async digest => {
+  const oldReceipt = { requestId: target.requestId, ...(digest ? { questionsDigest: digest } : {}) }
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request], completed: [oldReceipt] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start()
+  const changed = { ...target, kind: 'personal' as const, questions: [{ ...questions[1]!, question: 'New private question' }] }
+  state = { ...state, requests: [{ ...request, questions: changed.questions }] }
+  await service.save(draft({ target: changed, held: true, selections: { notes: { optionIds: [], other: false, text: 'New private answer' } } }))
+  // The personal service publishes submitting before the new native write.
+  state = { ...state, uncertainRequestIds: [target.requestId] }
+  await service.reconcile()
+  expect((await disk()).drafts[0]?.selections.notes?.text).toBe('New private answer')
+  state = { ...state, connected: false, ready: false, requests: [] }
+  const restarted = new RequestDraftService(directory, () => state, async () => {})
+  await restarted.start(); await restarted.reconcile()
+  expect((await restarted.get(changed))?.held).toBe(true)
+})
+
+
+it('binds acceptance to the exact same-definition attempt, retaining newer holds and legacy receipts', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'first')
+  await service.check(target)
+  await service.save(draft({ revision: 3, held: true }))
+  await service.bindDecision(target, 'second')
+  const receipt = { requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions) }
+  state = { ...state, completed: [receipt, { ...receipt, decisionId: 'first' }] }
+  await service.reconcile()
+  expect((await disk()).drafts[0]).toMatchObject({ revision: 3, held: true, decisionId: 'second' })
+  state = { ...state, completed: [...state.completed!, { ...receipt, decisionId: 'second' }] }
+  await service.reconcile()
+  expect((await disk()).drafts).toEqual([])
 })

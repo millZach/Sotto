@@ -1,5 +1,5 @@
 import { PersonalChatService } from './agents/personalChats'
-import { RequestDraftService } from './agents/requestDrafts'
+import { RequestDraftService, personalRequestDraftState } from './agents/requestDrafts'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
 import { isThreadProviderConnected } from '../shared/agents'
 import { requestDraftProvider } from '../shared/requestDrafts'
@@ -571,6 +571,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(authority === undefined ? {} : { authority }),
     ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
     historyEnabled: () => agentHistoryEnabled,
+    bindRequestDraftDecision: (target, decisionId) => requestDrafts.bindDecision(target, decisionId),
     turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
       claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
@@ -580,17 +581,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   await agentControl.start()
   const testPersonalChatHost = e2eConfiguration ? new E2EPersonalChatHost(userDataPath) : undefined
-  const personalChats = new PersonalChatService({ userDataPath, configuration: () => agentControl.get().configuration,
+  const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId) => requestDrafts.bindDecision(target, decisionId), configuration: () => agentControl.get().configuration,
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
     ...(testPersonalChatHost ? { host: testPersonalChatHost } : {}) })
   await personalChats.start()
-  const requestDrafts = new RequestDraftService(userDataPath, owner => {
-    if (owner.kind === 'personal') {
-      const state = personalChats.get(), chat = state.chats.find(item => item.id === owner.ownerId && item.providerId === owner.providerId)
-      return chat ? { connected: state.connected && !state.connecting, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
-        requests: chat.requests, uncertainRequestIds: (chat.decisions ?? []).filter(item => item.status === 'submitting' || item.status === 'uncertain').map(item => item.requestId),
-        completed: (chat.decisions ?? []).filter(item => item.status === 'accepted').map(item => ({ requestId: item.requestId })) } : undefined
-    }
+  const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
+    if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
     const state = agentControl.get(), thread = state.host.threads.find(item => item.id === owner.ownerId
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
     const recovery = agentControl.requestAnswerRecovery(owner.ownerId, owner.providerId)

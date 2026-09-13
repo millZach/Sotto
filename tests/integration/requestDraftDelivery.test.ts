@@ -15,7 +15,7 @@ it('persists privacy-safe main answer receipts across restart without copying st
   f.host.event({ type: 'question', threadId: 'workshop', text: '', request })
   const result = await f.command({ type: 'answer', threadId: 'workshop', requestId: request.id, answer: '', questionAnswers: { q: { optionIds: [], text: 'Private answer' } } })
   expect(result.error).toBeNull()
-  const receipt = { requestId: request.id, questionsDigest: requestQuestionsDigest(request.questions!) }
+  const receipt = { requestId: request.id, questionsDigest: requestQuestionsDigest(request.questions!), decisionId: expect.any(String) }
   expect(f.control.requestAnswerRecovery('workshop', 'claude')).toEqual({ uncertainRequestIds: [], completed: [receipt] })
   expect(f.control.requestAnswerRecovery('workshop', 'codex').completed).toEqual([])
   const contents = JSON.stringify((await f.disk()).answeredRequests)

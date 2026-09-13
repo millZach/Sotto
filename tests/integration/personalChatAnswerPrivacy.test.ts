@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { codexFixture } from '../fixtures/codexFixture'
+import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
 import { PersonalChatService } from '../../src/main/agents/personalChats'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { personalChatStateSchema, type PersonalChat } from '../../src/shared/personalChats'
@@ -49,6 +50,7 @@ it.each(['question', 'permission'] as const)('saves a redacted %s reservation be
   else await fixture.driver.raisePermission(chat.id, 'PRIVATE command')
   await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
   const request = service.get().chats[0]!.requests[0]!
+  const digest = request.questions?.length ? { questionsDigest: requestQuestionsDigest(request.questions) } : {}
   const answer = kind === 'question'
     ? { answer: '', questionAnswers: { [request.questions![0]!.id]: { optionIds: [], text: 'PRIVATE structured answer' } } }
     : { answer: '', approved: false, permissionChoice: 'decline' }
@@ -56,7 +58,7 @@ it.each(['question', 'permission'] as const)('saves a redacted %s reservation be
   const spy = vi.spyOn(fixture.adapter, 'execute').mockImplementation(async command => {
     if (command.type === 'answer') {
       const disk = await diskChat(path)
-      expect(disk.decisions).toEqual([{ id: command.commandId, requestId: request.id, answer: '', status: 'submitting', createdAt: expect.any(String) }])
+      expect(disk.decisions).toEqual([{ id: command.commandId, requestId: request.id, ...digest, answer: '', status: 'submitting', createdAt: expect.any(String) }])
       expect(command).toEqual({ ...answer, type: 'answer', threadId: chat.id, requestId: request.id, commandId: command.commandId })
     }
     return execute(command)
@@ -70,7 +72,7 @@ it.each(['question', 'permission'] as const)('saves a redacted %s reservation be
   }).toBe(true)
   await service.settled()
   const disk = await diskChat(path)
-  expect(disk.decisions).toEqual([{ id: expect.any(String), requestId: request.id, answer: '', status: 'accepted', createdAt: expect.any(String) }])
+  expect(disk.decisions).toEqual([{ id: expect.any(String), requestId: request.id, ...digest, answer: '', status: 'accepted', createdAt: expect.any(String) }])
   expect(service.get().chats[0]!.decisions![0]).toMatchObject({ ...answer, request })
   spy.mockRestore()
   await stop(service)
@@ -89,6 +91,7 @@ it.each(['uncertain', 'submitting checkpoint'] as const)('retains %s through dis
   await fixture.driver.raiseQuestion(chat.id, 'PRIVATE uncertain question')
   await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
   const request = service.get().chats[0]!.requests[0]!
+  const digest = request.questions?.length ? { questionsDigest: requestQuestionsDigest(request.questions) } : {}
   const execute = fixture.adapter.execute.bind(fixture.adapter)
   let checkpoint = ''
   const spy = vi.spyOn(fixture.adapter, 'execute').mockImplementation(async command => {
@@ -121,7 +124,7 @@ it.each(['uncertain', 'submitting checkpoint'] as const)('retains %s through dis
   await expect(restored.answer({ chatId: chat.id, requestId: request.id, answer: 'PRIVATE duplicate' })).rejects.toThrow(/uncertain/)
   await expect(restored.answer({ chatId: chat.id, requestId: 'unowned-request', answer: 'PRIVATE wrong request' })).rejects.toThrow(/no longer pending/)
   expect(dispatch).not.toHaveBeenCalled()
-  expect(personalChatStateSchema.parse(restored.get()).chats[0]!.decisions).toEqual([{ id: before.id, requestId: request.id, status: 'uncertain', createdAt: before.createdAt, answer: '' }])
+  expect(personalChatStateSchema.parse(restored.get()).chats[0]!.decisions).toEqual([{ id: before.id, requestId: request.id, ...digest, status: 'uncertain', createdAt: before.createdAt, answer: '' }])
   expect((await diskChat(path)).decisions).toEqual(restored.get().chats[0]!.decisions)
   expect((await restarted.driver.requests()).filter(r => r.result?.answers)).toHaveLength(1)
   expect((await restarted.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)

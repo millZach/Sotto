@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -67,6 +68,7 @@ export interface PersonalChatOptions {
   configuration: () => { reasoning: string; reasoningModel: string; reasoningEffort: string }
   host?: PersonalConversationHost
   preferences?: Pick<MemoryProfile, 'retrieve'>
+  bindRequestDraftDecision?: BindRequestDraftDecision
   historyEnabled?: () => boolean
 }
 /** A separate durable conversation aggregate. No project registry, policy writer,
@@ -170,8 +172,9 @@ export class PersonalChatService {
         // this reservation before writing to the native pipe. Allowlist only
         // recovery metadata so request/structured-answer content (including
         // diagnostics that may echo it) cannot return on a later native event.
-        chat.decisions = chat.decisions?.map(({ id, requestId, status, createdAt, error }) => ({
+        chat.decisions = chat.decisions?.map(({ id, requestId, questionsDigest, status, createdAt, error }) => ({
           id, requestId, status, createdAt, answer: '',
+          ...(questionsDigest !== undefined ? { questionsDigest } : {}),
           ...(error !== undefined ? { error: 'Answer could not be confirmed. Local history is off.' } : {}),
         }))
       }
@@ -349,13 +352,15 @@ export class PersonalChatService {
       if (!this.connected || !request) throw new Error('This request is no longer pending in this conversation.')
       if (chat.decisions?.some(d => d.requestId === answer.requestId && (d.status === 'submitting' || d.status === 'uncertain'))) throw new Error('Answer delivery is uncertain. Refresh without replaying the answer.')
       const decisions = chat.decisions ??= []
-      decisions.push({ ...answer, request, id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
+      decisions.push({ ...answer, request, ...(request.questions?.length ? { questionsDigest: requestQuestionsDigest(request.questions) } : {}), id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
     })
     let status: 'accepted' | 'uncertain' | 'failed' = 'uncertain'
     let failure: unknown
     try {
+      const request = this.chat(chatId).decisions!.find(d => d.id === decisionId)!.request!
+      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: 'codex', requestId: request.id, questions: request.questions }, decisionId)
       const result = await this.host.execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
-      status = result.accepted ? 'accepted' : 'uncertain'
+      status = result.accepted && !result.uncertain ? 'accepted' : 'uncertain'
       if (!result.accepted) this.error = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'
     } catch (error) { status = 'failed'; failure = error }
     await this.mutate(saved => {

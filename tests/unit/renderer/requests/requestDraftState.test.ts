@@ -7,7 +7,7 @@ const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', provider
 const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
 function gate<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
-function bridge(): RequestDraftBridge { return { get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
+function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
 
 describe('request draft renderer ordering', () => {
   it('keeps local text written after an initial load failure when retry restores an older draft', async () => {

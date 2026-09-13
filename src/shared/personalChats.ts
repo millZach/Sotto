@@ -7,7 +7,7 @@ const revision = z.number().int().nonnegative()
 // (structured questions and exact permission choices) flow through unchanged.
 const agentAnswerSchema = agentCommandSchema.options.find((option): option is Extract<typeof option, { shape: { type: z.ZodLiteral<'answer'> } }> => option.shape.type.safeParse('answer').success)!
 export const personalAnswerInputSchema = agentAnswerSchema.omit({ type: true, threadId: true }).extend({ chatId: id }).strict()
-const personalDecisionSchema = personalAnswerInputSchema.omit({ chatId: true }).extend({ id, request: agentRequestSchema.optional(), createdAt: z.string(), status: z.enum(['submitting', 'accepted', 'uncertain', 'failed']), error: z.string().optional() })
+const personalDecisionSchema = personalAnswerInputSchema.omit({ chatId: true }).extend({ id, questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(), request: agentRequestSchema.optional(), createdAt: z.string(), status: z.enum(['submitting', 'accepted', 'uncertain', 'failed']), error: z.string().optional() })
 export const personalDraftSchema = z.object({ revision, text: z.string().max(24000), skills: agentSkillReferencesSchema }).strict()
 export const personalSubmissionSchema = personalDraftSchema.extend({ id, messageId: id, status: z.enum(['submitting', 'accepted', 'uncertain', 'failed']), createdAt: z.string(), error: z.string().optional() })
 // Native transcript text is not a bounded command input. Preserve complete
