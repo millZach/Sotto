@@ -157,7 +157,8 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
 
 /** One sentence: whether the answer went anywhere, and what Sotto can honestly say about its question now. */
 export function recoveryExplanation(held: boolean, changed: boolean, observation: RecoveryObservation, provider: string): string {
-  const delivery = held ? 'Sotto could not confirm whether this answer arrived, and won’t send it again.' : 'This answer was not sent.'
+  // The title already says a held answer is unconfirmed; the sentence gives its consequence.
+  const delivery = held ? 'The answer may have arrived, so Sotto won’t send it again.' : 'This answer was not sent.'
   if (observation === 'disconnected') return `${delivery} Reconnect ${provider} to see whether its question is still open.`
   if (observation === 'loading') return `${delivery} Checking whether ${provider} still shows its question…`
   if (observation === 'unavailable') return `${delivery} Sotto can’t tell whether ${provider} still shows its question until this conversation loads.`

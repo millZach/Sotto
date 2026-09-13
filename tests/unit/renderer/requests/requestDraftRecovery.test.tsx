@@ -105,7 +105,7 @@ describe('saved answers without a live request', () => {
   it('omits a form that holds no answer but keeps every held attempt', async () => {
     view(fakeBridge([draft({ selections: {} }), draft({ held: true, selections: {} }, { requestId: 'held-form' })]))
     const card = await screen.findByRole('region', { name: 'Unconfirmed answer' })
-    expect(within(card).getByText('Codex no longer shows this question. Sotto could not confirm whether this answer arrived, and won’t send it again.')).toBeTruthy()
+    expect(within(card).getByText('Codex no longer shows this question. The answer may have arrived, so Sotto won’t send it again.')).toBeTruthy()
     expect(screen.queryByRole('region', { name: 'Saved answer' })).toBeNull()
   })
 
