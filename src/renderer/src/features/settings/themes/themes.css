@@ -247,12 +247,14 @@
 
 /*
  * The name comes first. When it and the actions do not fit on one line, the
- * actions wrap below and the name takes the whole width, up to two lines. The
- * footer keeps to the card's bottom edge, so names line up across a row.
+ * actions wrap onto their own line above it and the name takes the whole
+ * width, up to two lines. The footer keeps to the card's bottom edge, so the
+ * name rests where a built-in card's does and the hidden actions leave no gap
+ * under it.
  */
 .theme-card__footer {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: wrap-reverse;
   align-items: center;
   gap: 2px;
   min-width: 0;

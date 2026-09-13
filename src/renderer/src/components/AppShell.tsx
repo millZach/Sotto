@@ -1,4 +1,4 @@
-import React, { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { Minus, Square, Copy, X } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../shared/platform'
@@ -149,11 +149,33 @@ export function AppShell({
               </a>
             ))}
           </nav>
-          <div className="app-footer__status" aria-live="polite" aria-atomic="true" title={typeof statusText === 'string' ? statusText : undefined}>
-            {statusText}
-          </div>
+          <FooterStatus>{statusText}</FooterStatus>
         </footer>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The footer's sentence. When the window is narrow, or a minimized theme editor
+ * rests beside it, the sentence ends in an ellipsis; only then does it carry
+ * the whole sentence as its tooltip.
+ */
+function FooterStatus({ children }: { readonly children: ReactNode }): ReactNode {
+  const ref = useRef<HTMLDivElement>(null)
+  const [clipped, setClipped] = useState<string | undefined>(undefined)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = (): void => setClipped(element.scrollWidth > element.clientWidth ? element.textContent ?? undefined : undefined)
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(element)
+    return () => observer?.disconnect()
+  }, [children])
+  return (
+    <div ref={ref} className="app-footer__status" aria-live="polite" aria-atomic="true" title={clipped}>
+      {children}
     </div>
   )
 }
