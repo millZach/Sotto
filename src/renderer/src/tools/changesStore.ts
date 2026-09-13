@@ -36,6 +36,7 @@ export class ChangesStore {
   private readonly tokens = new Map<string, { list: number; diff: number }>()
   private readonly scroll = new Map<string, number>()
   private watched: { threadId: string; workspaceId: string } | null = null
+  private active: { threadId: string; bridge: GitChangesBridge | undefined } | null = null
   private unsubscribe: (() => void) | null = null
 
   subscribe = (listener: () => void): (() => void) => {
@@ -51,6 +52,7 @@ export class ChangesStore {
 
   /** Show a thread's changes and watch its working copy until `deactivate`. */
   activate(bridge: GitChangesBridge | undefined, threadId: string): void {
+    this.active = { threadId, bridge }
     if (!this.threads.has(threadId)) this.set({ threadId, workspace: null, list: { status: 'loading' }, selectedPath: null, diff: null, refreshing: false })
     if (bridge && this.unsubscribe === null) {
       this.unsubscribe = bridge.onChanged(event => {
@@ -60,11 +62,12 @@ export class ChangesStore {
         void this.refresh(bridge, event.threadId)
       })
     }
-    void this.refresh(bridge, threadId).then(() => this.watch(bridge, threadId))
+    void this.refresh(bridge, threadId)
   }
 
   /** Stop watching: the surface was hidden, the panel closed or the target changed. */
   deactivate(bridge: GitChangesBridge | undefined): void {
+    this.active = null
     const watched = this.watched
     this.watched = null
     if (watched && bridge) void bridge.watch({ ...watched, enabled: false }).catch(() => undefined)
@@ -94,6 +97,8 @@ export class ChangesStore {
     const replaced = latest.workspace !== null && latest.workspace.workspaceId !== workspace.workspaceId
     const selectedPath = replaced ? null : latest.selectedPath
     this.set({ ...latest, workspace, list: { status: 'ready', branch, revision, files, truncated }, selectedPath, diff: replaced ? null : latest.diff, refreshing: false })
+    // Only the displayed working copy owns the watcher, including after its folder is replaced.
+    void this.watch(bridge, threadId)
     if (selectedPath !== null) void this.loadDiff(bridge, threadId, selectedPath, true)
   }
 
@@ -136,7 +141,7 @@ export class ChangesStore {
 
   private async watch(bridge: GitChangesBridge | undefined, threadId: string): Promise<void> {
     const workspace = this.threads.get(threadId)?.workspace
-    if (!bridge || !workspace || this.unsubscribe === null) return
+    if (!bridge || !workspace || this.unsubscribe === null || this.active?.threadId !== threadId || this.active.bridge !== bridge) return
     const next = { threadId, workspaceId: workspace.workspaceId }
     if (this.watched?.threadId === next.threadId && this.watched.workspaceId === next.workspaceId) return
     if (this.watched) void bridge.watch({ ...this.watched, enabled: false }).catch(() => undefined)

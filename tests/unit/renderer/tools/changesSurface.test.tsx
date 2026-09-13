@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../../src/shared/gitChanges'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
-import { parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
+import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { threadsStateFixture } from '../liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
@@ -72,6 +72,38 @@ describe('unified diff rows', () => {
 })
 
 describe('Changes surface', () => {
+  it('keeps watching the active working copy when an earlier activation finishes late', async () => {
+    const git = fakeGit()
+    const store = new ChangesStore()
+    let finishFirst!: () => void
+    vi.mocked(git.bridge.list).mockImplementation(async ({ threadId }) => {
+      if (threadId === 'first') await new Promise<void>(resolve => { finishFirst = resolve })
+      return { ok: true, value: { workspace: { ...workspace, threadId, workspaceId: threadId }, branch: 'main', revision: 'r1', files: [], truncated: false } }
+    })
+    store.activate(git.bridge, 'first')
+    store.deactivate(git.bridge)
+    store.activate(git.bridge, 'second')
+    await waitFor(() => expect(git.bridge.watch).toHaveBeenCalledWith({ threadId: 'second', workspaceId: 'second', enabled: true }))
+    finishFirst()
+    await waitFor(() => expect(store.thread('first')?.list.status).toBe('ready'))
+    expect(git.bridge.watch).toHaveBeenCalledTimes(1)
+    expect(git.listeners.size).toBe(1)
+    store.deactivate(git.bridge)
+    expect(git.bridge.watch).toHaveBeenLastCalledWith({ threadId: 'second', workspaceId: 'second', enabled: false })
+  })
+
+  it('moves the active watch to a replaced working copy without waiting for the panel to reopen', async () => {
+    const git = fakeGit()
+    const store = new ChangesStore()
+    store.activate(git.bridge, 'visual-gate')
+    await waitFor(() => expect(git.bridge.watch).toHaveBeenCalledTimes(1))
+    vi.mocked(git.bridge.list).mockResolvedValue({ ok: true, value: { workspace: { ...workspace, workspaceId: 'replacement' }, branch: 'main', revision: 'r2', files: [], truncated: false } })
+    await store.refresh(git.bridge, 'visual-gate')
+    expect(git.bridge.watch).toHaveBeenNthCalledWith(2, { threadId: 'visual-gate', workspaceId: TOKEN_A, enabled: false })
+    expect(git.bridge.watch).toHaveBeenLastCalledWith({ threadId: 'visual-gate', workspaceId: 'replacement', enabled: true })
+    store.deactivate(git.bridge)
+  })
+
   it('lists the working copy, opens a readable diff from the keyboard and returns focus when it closes', async () => {
     const { git } = setup()
     const list = await within(panel()).findByRole('listbox', { name: 'Changed files' })
