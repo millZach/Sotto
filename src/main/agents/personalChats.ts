@@ -20,7 +20,6 @@ export interface PersonalChatOptions {
   host?: PersonalConversationHost
   preferences?: Pick<MemoryProfile, 'retrieve'>
   historyEnabled?: () => boolean
-  nativeEnabled?: boolean
 }
 /** A separate durable conversation aggregate. No project registry, policy writer,
  * coordinator command parser or management capability is reachable from here. */
@@ -121,7 +120,6 @@ export class PersonalChatService {
     })
   }
   async connect(): Promise<PersonalChatState> {
-    if (this.options.nativeEnabled === false) { this.error = 'Native personal chats are unavailable in the fixture runtime.'; return this.get() }
     if (this.connecting || this.connected) return this.get()
     const generation = this.generation
     this.connecting = true; this.error = undefined; this.emit()
