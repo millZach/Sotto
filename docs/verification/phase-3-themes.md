@@ -18,7 +18,7 @@ Scope: branch `work/phase3-themes`. The main window's Accent chooser is replaced
 - [x] Persistence through restart: halves, contrast, custom themes and the painted contrast variable on the first frame.
 - [x] Server environment themes, the `t3 theme` CLI and mobile appearance are recorded as not applicable, with reasons, in ADR-0011.
 - [x] Inspector and diagram repaint loop reported by root: fixed and measured idle (below).
-- [x] Visual critic finding 2: the minimized editor is one row (title, Expand, Close) resting in the footer's right end, clear of Send and the footer links at 820x560 and 1280.
+- [x] Visual critic finding 2: the minimized editor is one row (title, Expand, Close) resting in the footer's right end, clear of Send and the footer links at 820x560 and 1280. Dragged low and then expanded, the whole panel is pulled back inside the window (visual-fixes observation).
 - [ ] Mark, voice sphere and widget following the selected palettes. The branding worker owns this; ADR-0011 and CONTEXT record the rule.
 
 ## Tests
@@ -36,7 +36,7 @@ Other checks:
 - `npm run notices:verify` verified 170 components.
 - The full suite is root's final gate and was not run here.
 
-Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 3 passed (37.4 s).
+Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 3 passed (about 37 s). One earlier run of the whole file failed test 1 at 8.4 s on a visibility check, and that run's output was overwritten. The next two whole-file runs and three repeats of test 1 passed.
 
 1. **The whole themes journey (about 22 s).** Every item in the checklist above, plus:
    - keyboard activation of a theme card keeps focus;
@@ -53,7 +53,8 @@ Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e
    - the bar is one row, at most 44px tall;
    - it does not overlap Send or the footer links;
    - Playwright trial clicks land on Send and on every footer link;
-   - then the bar is dragged, expanded with the keyboard (focus lands on Theme name) and closed with Escape.
+   - then the bar is dragged, expanded with the keyboard (focus lands on Theme name), minimized again and dragged as low as it goes at 820x560;
+   - expanded again, the panel is wholly inside the window with its action visible. This check fails without the fix.
 
 Journey notes (`artifacts/phase-three-themes/journey-notes.txt`):
 - Hovering the Appearance heading labels it "Text".
@@ -67,7 +68,7 @@ All images are in `artifacts/phase-three-themes/`:
 - `themes-{1280,1600,820x560}-{light,dark,system}.png` and `threads-…` for the same nine combinations.
 - `theme-editor-820x560-light.png` and `theme-editor-resized-820x560-dark.png`.
 - `inspector-hover-1600-dark.png`, `inspector-spotlight-1600-dark.png` and `inspector-diagram-1280-dark.png`.
-- `editor-minimized-threads-{820x560,1280}-dark.png`.
+- `editor-minimized-threads-{820x560,1280}-dark.png` and `editor-expanded-after-low-drag-820x560-dark.png`.
 - `sliders-1600-dark.png`, `import-error-1600-dark.png` and `open-vsx-results-1600-dark.png`.
 
 ## Visual review
