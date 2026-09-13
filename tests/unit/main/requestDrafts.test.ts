@@ -130,4 +130,21 @@ describe('request-owned atomic drafts', () => {
     expect(await service.save(draft({ revision: 2 }))).toMatchObject({ revision: 2 })
     expect((await disk()).drafts[0]?.revision).toBe(2)
   })
+
+  it('loads a repaired file on restart and removes only its own abandoned atomic copies', async () => {
+    const state = { connected: false, ready: false, requests: [] }
+    await writeFile(join(directory, 'request-drafts.json'), '{broken')
+    const service = new RequestDraftService(directory, () => state, async () => {})
+    await service.start(); await expect(service.get(target)).rejects.toThrow('could not be read')
+    await writeFile(join(directory, 'request-drafts.json'), JSON.stringify({ version: 1, drafts: [draft()] }))
+    const abandoned = 'request-drafts.json.tmp-123-12345678-1234-1234-1234-123456789012'
+    const unrelated = 'request-drafts.json.tmp-user-recovery'
+    await writeFile(join(directory, abandoned), 'previously submitted private text')
+    await writeFile(join(directory, unrelated), 'user-owned recovery')
+    const restarted = new RequestDraftService(directory, () => state, async () => {})
+    await restarted.start()
+    expect(await restarted.get(target)).toEqual(draft())
+    expect(await readdir(directory)).not.toContain(abandoned)
+    expect(await readFile(join(directory, unrelated), 'utf8')).toBe('user-owned recovery')
+  })
 })

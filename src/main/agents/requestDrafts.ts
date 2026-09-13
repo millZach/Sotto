@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, unlink } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { AgentRequest } from '../../shared/agents'
 import {
@@ -47,6 +47,15 @@ export class RequestDraftService {
     // Do not use read()/peek(): invalid input must never become an empty, writable store or a plaintext backup.
     try { this.saved = savedSchema.parse(JSON.parse(await readFile(this.path, 'utf8'))) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.storageError = unreadable }
+    if (this.storageError) return
+    // A process killed during atomic replacement can leave its old unsent snapshot beside the file.
+    // Once the primary is readable, discard only this store's abandoned copies, including submitted text.
+    const directory = dirname(this.path)
+    try {
+      for (const name of await readdir(directory)) {
+        if (/^request-drafts\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) await unlink(join(directory, name))
+      }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.storageError = unreadable }
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
