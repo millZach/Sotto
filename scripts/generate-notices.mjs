@@ -199,6 +199,95 @@ style-to-object
 Copyright (c) 2017 Menglin "Mark" Xu <mark@remarkablemark.org>`,
 )
 
+// Mermaid and the modules it loads to lay out and draw diagrams in answers, bundled into a renderer
+// chunk loaded on first use, grouped by copyright line. Licenses with their own wording follow as
+// separate sections.
+const mermaidMit = microsoftMit.replace(
+  'Copyright (c) Microsoft Corporation. All rights reserved.',
+  `@braintree/sanitize-url
+Copyright (c) 2017 Braintree
+
+@iconify/utils
+Copyright (c) 2021-PRESENT Vjacheslav Trushkin
+
+@mermaid-js/parser
+Copyright (c) 2023 Yokozuna59
+
+@upsetjs/venn.js
+Copyright (c) 2013 Ben Frederickson
+Copyright (c) 2021 Samuel Gratzl
+
+cose-base 2.2.0, cose-base
+Copyright (c) 2019 - present, iVis@Bilkent.
+
+dayjs
+Copyright (c) 2018-present, iamkun
+
+katex
+Copyright (c) 2013-2020 Khan Academy and other contributors
+
+khroma
+Copyright (c) 2019-present Fabio Spampinato, Andrew Maney
+
+layout-base 2.0.1, layout-base
+Copyright (c) 2019 iVis@Bilkent
+
+mermaid
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+roughjs
+Copyright (c) 2019 Preet Shihn
+
+stylis
+Copyright (c) 2016-present Sultan Tarimo
+
+ts-dedent
+Copyright (c) 2018 Tamino Martinius
+
+uuid
+Copyright (c) 2010-2020 Robert Kieffer and other contributors`,
+)
+
+const mermaidIsc = `ISC License
+
+d3-array
+Copyright 2010-2023 Mike Bostock
+
+d3-axis, d3-dispatch, d3-hierarchy, d3-interpolate, d3-scale, d3-selection, d3-time-format, d3-timer, d3-transition, d3-zoom
+Copyright 2010-2021 Mike Bostock
+
+d3-color, d3-shape, d3-time
+Copyright 2010-2022 Mike Bostock
+
+d3-format
+Copyright 2010-2026 Mike Bostock
+
+d3-path
+Copyright 2015-2022 Mike Bostock
+
+internmap, internmap 1.0.1
+Copyright 2021 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
+
+// fastdom ships no license file; its README carries the MIT license.
+const fastdomMit = (await read('node_modules/fastdom/README.md')).replace(/\r/g, '').split('## License')[1].replace('(The MIT License)', 'fastdom\nMIT License').trim()
+
+// DOMPurify is dual licensed (Apache-2.0 OR MPL-2.0); Sotto uses it under the Apache License 2.0 reproduced above.
+const dompurifyNotice = `${/@license (DOMPurify[^*\n]*)/u.exec(await read('node_modules/dompurify/dist/purify.es.mjs'))[1].trim()}
+
+Used under the Apache License 2.0, reproduced in full in the "Apache License 2.0" section.`
+
 // Provider icon paths in src/renderer/src/agents/ProviderMark.tsx are adapted from T3 Code
 // apps/web/src/components/Icons.tsx at d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3.
 const t3CodeMit = microsoftMit.replace('Copyright (c) Microsoft Corporation. All rights reserved.', 'Copyright (c) 2026 T3 Tools Inc.')
@@ -281,6 +370,36 @@ const licenseSections = [
   ['Markdown rendering ISC license', `@ungap/structured-clone
 ${await read('node_modules/@ungap/structured-clone/LICENSE')}`],
   ['highlight.js BSD 3-Clause license', await read('node_modules/highlight.js/LICENSE')],
+  ['Mermaid diagram MIT licenses', mermaidMit],
+  ['Mermaid diagram ISC licenses', mermaidIsc],
+  ['cytoscape license', `cytoscape
+${await read('node_modules/cytoscape/LICENSE')}`],
+  ['cytoscape-cose-bilkent license', `cytoscape-cose-bilkent
+${await read('node_modules/cytoscape-cose-bilkent/LICENSE')}`],
+  ['cytoscape-fcose license', `cytoscape-fcose
+${await read('node_modules/cytoscape-fcose/LICENSE')}`],
+  ['d3-array 2.12.1 license', `d3-array 2.12.1
+${await read('node_modules/d3-sankey/node_modules/d3-array/LICENSE')}`],
+  ['d3-ease license', `d3-ease
+${await read('node_modules/d3-ease/LICENSE')}`],
+  ['d3-path 1.0.9 license', `d3-path 1.0.9
+${await read('node_modules/d3-sankey/node_modules/d3-path/LICENSE')}`],
+  ['d3-sankey license', `d3-sankey
+${await read('node_modules/d3-sankey/LICENSE')}`],
+  ['d3-scale-chromatic license', `d3-scale-chromatic
+${await read('node_modules/d3-scale-chromatic/LICENSE')}`],
+  ['d3-shape 1.3.7 license', `d3-shape 1.3.7
+${await read('node_modules/d3-sankey/node_modules/d3-shape/LICENSE')}`],
+  ['dagre-d3-es license', `dagre-d3-es
+${await read('node_modules/dagre-d3-es/LICENSE.md')}`],
+  ['es-toolkit license', `es-toolkit
+${[await read('node_modules/es-toolkit/LICENSE'), await read('node_modules/es-toolkit/NOTICE')].map((text) => text.trim()).join('\n\n')}`],
+  ['lodash-es license', `lodash-es
+${await read('node_modules/lodash-es/LICENSE')}`],
+  ['marked license', `marked
+${await read('node_modules/marked/LICENSE.md')}`],
+  ['fastdom MIT license', fastdomMit],
+  ['DOMPurify Apache License 2.0', dompurifyNotice],
   ['T3 Code MIT license', t3CodeMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
   ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],

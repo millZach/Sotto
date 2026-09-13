@@ -53,6 +53,7 @@
     "jsdom": "29.1.1",
     "lowlight": "3.3.0",
     "lucide-react": "1.24.0",
+    "mermaid": "11.17.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "10.1.0",

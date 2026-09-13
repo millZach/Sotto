@@ -1,4 +1,4 @@
-import React, { createContext, memo, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
@@ -6,6 +6,9 @@ import remarkGfm from 'remark-gfm'
 import { common, createLowlight } from 'lowlight'
 import { agentAttachmentPreviewSchema, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
+import { MermaidDiagram } from './diagrams/MermaidDiagram'
+import { isFenceClosed } from './diagrams/diagramSource'
+import { useTransientFlag, writeClipboard } from './richActions'
 import './rich-messages.css'
 
 /** Anything the Threads page can show for one attachment: a full reference, or the `{ id, name }` of a pending send. */
@@ -30,7 +33,6 @@ export type LinkOpenResult = Readonly<{ ok: boolean }>
 
 /** Code longer than this is shown without highlighting so a huge paste cannot stall the transcript. */
 export const MAX_HIGHLIGHTED_CODE_LENGTH = 20_000
-const FEEDBACK_MS = 1_600
 const lowlight = createLowlight(common)
 const LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 // Bidirectional overrides can make "gpj.exe" read as "exe.jpg".
@@ -88,6 +90,8 @@ export function trustedPreviewSource(attachment: MessageAttachment): string | nu
 }
 
 const LinkContext = createContext<{ open: (url: string) => void }>({ open: () => undefined })
+/** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
+const MarkdownSourceContext = createContext<{ text: string; streaming: boolean }>({ text: '', streaming: false })
 
 function hastText(node: ElementContent | Element | undefined): string {
   if (!node) return ''
@@ -112,30 +116,6 @@ function highlight(code: string, language: string | undefined): ReactNode {
   } catch { return code }
 }
 
-function useTransientFlag(): [string | null, (value: string) => void] {
-  const [value, setValue] = useState<string | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
-  const show = useCallback((next: string) => {
-    if (timer.current) clearTimeout(timer.current)
-    setValue(next)
-    timer.current = setTimeout(() => { setValue(null); timer.current = null }, FEEDBACK_MS)
-  }, [])
-  return [value, show]
-}
-
-async function writeClipboard(text: string): Promise<void> {
-  // The production renderer deliberately denies browser clipboard permission.
-  // Use the same main-owned, copy-only output path as the History page.
-  if (window.sotto?.deliverOutput) {
-    const result = await window.sotto.deliverOutput({ text, autoPaste: false, pasteDelayMs: 50 })
-    if (result !== 'copied') throw new Error('Clipboard unavailable')
-    return
-  }
-  if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
-  await navigator.clipboard.writeText(text)
-}
-
 const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; language: string | undefined }) {
   const [feedback, showFeedback] = useTransientFlag()
   const highlighted = useMemo(() => highlight(code, language), [code, language])
@@ -153,6 +133,13 @@ const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; la
     <pre className="rich-code__scroll" tabIndex={0} aria-label={`${label} code block`}><code className={language ? `hljs language-${language}` : 'hljs'}>{highlighted}</code></pre>
   </div>
 })
+
+function DiagramBlock({ source, start, end }: { source: string; start: number | undefined; end: number | undefined }): ReactNode {
+  const { text, streaming } = useContext(MarkdownSourceContext)
+  // A finished message draws whatever it holds; a streaming one waits for the closing fence.
+  const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
+  return <MermaidDiagram source={source} complete={complete} />
+}
 
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
   const { open } = useContext(LinkContext)
@@ -188,7 +175,9 @@ const components: Components = {
     const code = node?.children.find((child): child is Element => child.type === 'element' && child.tagName === 'code')
     const classes = Array.isArray(code?.properties.className) ? code.properties.className.map(String) : []
     const language = classes.find(name => name.startsWith('language-'))?.slice('language-'.length)
-    return <CodeBlock code={hastText(code).replace(/\n$/u, '')} language={language} />
+    const source = hastText(code).replace(/\n$/u, '')
+    if (language?.toLowerCase() === 'mermaid') return <DiagramBlock source={source} start={node?.position?.start.offset} end={node?.position?.end.offset} />
+    return <CodeBlock code={source} language={language} />
   },
   table: ({ children }) => <div className="rich-table tt-focusable" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
   input: ({ type, checked }) => type === 'checkbox'
@@ -219,14 +208,15 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyFeedback('Link copied') }, () => showCopyFeedback('Could not copy the link'))
   }
   const rendered = useMemo(() => <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{deferredText}</ReactMarkdown>, [deferredText])
-  return <LinkContext.Provider value={context}>
+  const markdownSource = useMemo(() => ({ text: deferredText, streaming }), [deferredText, streaming])
+  return <LinkContext.Provider value={context}><MarkdownSourceContext.Provider value={markdownSource}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {rendered}
       <div className="rich-message__feedback" role="status" aria-live="polite">
         {failedLink ? <><span>Could not open {linkLabel(failedLink)}.</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>Copy link</button></> : copyFeedback}
       </div>
     </div>
-  </LinkContext.Provider>
+  </MarkdownSourceContext.Provider></LinkContext.Provider>
 })
 
 function AttachmentTile({ attachment }: { attachment: MessageAttachment }): ReactNode {
