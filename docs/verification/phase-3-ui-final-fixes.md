@@ -1,0 +1,19 @@
+# Phase 3 UI recovery and retained theme updates
+
+The final UI follow-up was verified by the separate Claude Opus 5 worker on Windows and integrated through `9177169`. Main's combined visual review and final suite are tracked in [the implementation checklist](phase-3-implementation.md). These checks use isolated Electron profiles and explicit provider fixtures; PowerShell, Git, the native browser, application services, persistence and IPC are real. No native provider turn was needed.
+
+Failed personal submissions now count as recovered only when the composer contains their complete text as a block and every original skill reference. Recovering identical text with missing skills adds the skills without duplicating text; a short message inside a different word does not suppress recovery. Newer drafts remain intact and recovery never sends. The two added regressions failed before the fix; all 13 personal-view tests passed. The earlier complete-app asynchronous refusal/recovery journey also passes on main.
+
+A retained terminal follows the theme's own terminal roles, same-mode editor changes and reduced-motion settings without replacing its xterm instance or PTY. xterm 6's DOM renderer uses a CSS cursor animation; changing `cursorBlink` removes or restores the class on its existing cursor row. The global reduced-motion CSS already constrained animation, and the new option synchronization also prevents that animation restarting on redraw. Focused tests cover both the app setting and system preference, disposal and palette-independent changes.
+
+The actual theme-controls journey starts a PowerShell terminal in Ocean, selects Ember, switches light and dark modes, edits the terminal background to `#3a1f2b` in the floating theme editor, and closes the editor to restore Ember. The same terminal and shell survive; a later command runs. Reduced motion removes the blink class and keeps a stable cursor fill across 24 samples over 1.2 seconds. A red check using the prior terminal implementation failed at the missing blink-class update. An intermittent assertion was traced to a detached cursor span during redraw and corrected in the test. Both new Electron journeys then passed four consecutive repetitions (8 tests, 57.8 seconds).
+
+At 820×560, the working-folder path now occupies one row, with its beginning ellipsized and the full path retained in text, tooltip and copy behavior. Hiding the existing `wbr` elements at short heights was necessary: Chromium still wrapped at them with `white-space: nowrap`. The measured diff body gained about 52 pixels, from roughly 147 to 199; Copy, Reveal and Pin remain reachable. At 1280×860 the full path wraps normally. The original stylesheet fails the focused height assertion. The browser placement test's asynchronous final assertion now waits for its next-frame placement; the Tools unit folder passed all 49 tests on five repeated runs after that correction.
+
+The worker inspected the saved light/dark short-window images and live-editor terminal capture. Evidence:
+
+- [Short Tools view, light](../../artifacts/phase-three-ui-final-fixes/tools-path-diff-820x560-light.png), [dark](../../artifacts/phase-three-ui-final-fixes/tools-path-diff-820x560-dark.png).
+- [Retained terminal during live editing](../../artifacts/phase-three-ui-final-fixes/terminal-live-editor-1280-dark.png), [same shell after changes](../../artifacts/phase-three-ui-final-fixes/terminal-after-themes-dark.png).
+- `tests/e2e/phase-three-ui-final-fixes.spec.ts` verifies the two actual application journeys. `phase-three-ui-recovery.spec.ts` separately verifies browser refusal/retry, asynchronous personal-send recovery and selected terminal text contrast.
+
+Node/web typechecks, scoped lint and the worker build passed. This checkpoint does not claim final widget branding verification, the final repository suite or macOS behavior.

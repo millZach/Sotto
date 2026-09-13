@@ -11,8 +11,8 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 // browser, terminal and personal chat services are real. Coding providers and the personal Codex connection come from the
 // explicit unpackaged E2E fixtures; no native account or installed client runs. Each refusal is produced for real: the
 // browser's working folder is moved away, and the personal fixture's own storage is made unwritable so its send fails
-// after the service has accepted it. The theme engine lives in another worktree, so the terminal check writes that
-// engine's terminal roles (Ocean, from its tokens.css) onto the root exactly as it does: attributes plus inline properties.
+// after the service has accepted it. The terminal selection check writes explicit Ocean roles to isolate color conversion
+// and contrast. phase-three-ui-final-fixes.spec.ts separately verifies the retained terminal through real theme controls.
 
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-ui-recovery')
 type Mode = 'dark' | 'light'
