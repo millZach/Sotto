@@ -1,11 +1,12 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Image, MessageSquare } from 'lucide-react'
+import { ArrowDown, MessageSquare } from 'lucide-react'
 import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
+import { MessageContent, AttachmentPreviews } from './MessageContent'
 
 type Command = AgentConnection['command']
 
@@ -17,21 +18,12 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
   queued: 'Queued', submitting: 'Sending', accepted: 'Sent', failed: 'Not sent', uncertain: 'Unconfirmed',
 }
 
-// Rich lane swap point: `MessageContent`/`AttachmentPreviews` from './MessageContent' replace these two.
-function MessageBody({ text }: { readonly text: string }): ReactNode {
-  return <p className="thread-message__text">{text}</p>
-}
-function MessageAttachments({ attachments }: { readonly attachments: readonly { readonly id: string; readonly name: string }[] }): ReactNode {
-  if (!attachments.length) return null
-  return <div className="thread-message__attachments" aria-label="Message screenshots">{attachments.map(attachment => <span key={attachment.id}><Image size={14} aria-hidden="true" />{attachment.name}</span>)}</div>
-}
-
 /** Rendered history. Memoized on the message array so composer keystrokes and status ticks do not repaint it. */
-const MessageList = memo(function MessageList({ messages, provider }: { readonly messages: readonly AgentMessage[]; readonly provider: string }): ReactNode {
+const MessageList = memo(function MessageList({ messages, provider, running }: { readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean }): ReactNode {
   return <>{messages.map(message => <article className="thread-message" key={message.id} data-role={message.role}>
     <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
-    <MessageBody text={message.text} />
-    <MessageAttachments attachments={message.attachments ?? []} />
+    <MessageContent text={message.text} streaming={running && message.role === 'assistant' && message.id === messages.at(-1)?.id} />
+    <AttachmentPreviews attachments={message.attachments ?? []} />
   </article>)}</>
 })
 
@@ -47,8 +39,8 @@ function PendingMessage({ submission, status, row, state, command, store }: {
       : null
   return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
     <header><span className="thread-message__who">You</span><span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span></header>
-    <MessageBody text={submission.text} />
-    <MessageAttachments attachments={submission.attachments} />
+    <MessageContent text={submission.text} />
+    <AttachmentPreviews attachments={submission.attachments} />
     {detail !== null ? <div className="thread-message__delivery">
       <span>{detail}{status === 'failed' && !holdsRevision ? ' Your newer draft is in the composer.' : ''}</span>
       <div className="thread-message__delivery-actions">
@@ -163,7 +155,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length ? <MessageList messages={messages} provider={row.provider} />
+        {thread.messages.length ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
