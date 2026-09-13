@@ -9,6 +9,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send successful when streaming invalidates post-send reads (%s)', async confirmation => {
   const f = await codexFixture()
   const id = randomUUID()
+  const draftId = randomUUID()
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const control = new AgentControl({ directory: f.root, host: f.host, credentials,
@@ -51,8 +52,10 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
       }
       return rpc(method, params, apply, rejected)
     })
-    const result = await control.command({ type: 'manual-send', threadId: id, text: 'Confirmed native prompt', draftId: 'confirmed-draft' })
-    expect(result.deliveredDrafts).toContainEqual({ threadId: id, draftId: 'confirmed-draft' })
+    const result = await control.command({ type: 'manual-send', threadId: id, text: 'Confirmed native prompt', draftId })
+    expect(result.deliveredDrafts).toContainEqual({ threadId: id, draftId })
+    expect(result.deliveries).toContainEqual(expect.objectContaining({ threadId: id, draftId, status: 'accepted' }))
+    expect(result.threadDrafts).toEqual([])
     expect(result.draft).toBe('')
     expect(result.error, 'a confirmed native message must not become a failed send when display reads stay busy').toBeNull()
     expect(result.host.threads.find(thread => thread.id === id)?.messages.filter(message => message.role === 'user')).toHaveLength(1)

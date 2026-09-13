@@ -192,6 +192,19 @@ export const agentQueueItemSchema = z.object({
 })
 export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
+export const agentThreadDraftSchema = z.object({
+  threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema,
+  requestId: id.nullable(), updatedAt: z.string().datetime(),
+})
+export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
+export const agentDeliverySchema = z.object({
+  threadId: id, draftId: z.uuid(),
+  status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  commandId: id.optional(), messageId: id.optional(),
+  localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
+})
+export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
@@ -204,6 +217,8 @@ export const agentStateSchema = z.object({
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
   draftAttachments: agentAttachmentsSchema.optional(),
   deliveredDrafts: agentDeliveryReceiptsSchema.optional(),
+  threadDrafts: z.array(agentThreadDraftSchema).optional(),
+  deliveries: z.array(agentDeliverySchema).optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
@@ -230,6 +245,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
+  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
+    attachments: agentAttachmentsSchema.optional(), requestId: id.nullable().optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
