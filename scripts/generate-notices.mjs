@@ -143,6 +143,66 @@ const manropeOfl = ofl('Copyright 2018 The Manrope Project Authors (https://gith
 const splineSansMonoOfl = ofl('Copyright 2022 The Spline Sans Mono Project Authors (https://github.com/SorkinType/SplineSansMono)')
 const bricolageGrotesqueOfl = ofl('Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)')
 
+// Markdown rendering and highlighting packages bundled into the renderer, grouped by copyright line.
+const markdownMit = microsoftMit.replace(
+  'Copyright (c) Microsoft Corporation. All rights reserved.',
+  `bail, ccount, mdast-util-to-string, unified, unist-util-is, unist-util-position, unist-util-visit, vfile
+Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+
+comma-separated-tokens, hast-util-whitespace, mdast-util-to-hast, space-separated-tokens, trough, unist-util-stringify-position, unist-util-visit-parents
+Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+
+decode-named-character-reference, hast-util-to-jsx-runtime, lowlight, markdown-table, mdast-util-find-and-replace, mdast-util-from-markdown, mdast-util-gfm, mdast-util-gfm-footnote, mdast-util-to-markdown, micromark, micromark-core-commonmark, micromark-extension-gfm-table, micromark-factory-destination, micromark-factory-label, micromark-factory-space, micromark-factory-title, micromark-factory-whitespace, micromark-util-character, micromark-util-chunked, micromark-util-classify-character, micromark-util-combine-extensions, micromark-util-decode-numeric-character-reference, micromark-util-decode-string, micromark-util-html-tag-name, micromark-util-normalize-identifier, micromark-util-resolve-all, micromark-util-sanitize-uri, micromark-util-subtokenize, remark-gfm, remark-rehype, vfile-message
+Copyright (c) Titus Wormer <tituswormer@gmail.com>
+
+devlop
+Copyright (c) 2023 Titus Wormer <tituswormer@gmail.com>
+
+escape-string-regexp, is-plain-obj
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+estree-util-is-identifier-name, mdast-util-gfm-autolink-literal, mdast-util-gfm-strikethrough, mdast-util-gfm-table, mdast-util-gfm-task-list-item, micromark-extension-gfm, micromark-extension-gfm-autolink-literal, micromark-extension-gfm-strikethrough, micromark-extension-gfm-task-list-item
+Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+
+extend
+Copyright (c) 2014 Stefan Thomas
+
+html-url-attributes
+Copyright (c) Titus Wormer
+
+inline-style-parser
+Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+
+longest-streak, trim-lines
+Copyright (c) 2015 Titus Wormer <mailto:tituswormer@gmail.com>
+
+mdast-util-phrasing
+Copyright (c) 2017 Titus Wormer <tituswormer@gmail.com>
+Copyright (c) 2017 Victor Felder <victor@draft.li>
+
+micromark-extension-gfm-footnote
+Copyright (c) 2021 Titus Wormer <tituswormer@gmail.com>
+
+property-information
+Copyright (c) Titus Wormer <mailto:tituswormer@gmail.com>
+
+react-markdown
+Copyright (c) Espen Hovlandsdal
+
+remark-parse
+Copyright (c) 2014 Titus Wormer <tituswormer@gmail.com>
+
+style-to-js
+Copyright (c) 2020 Menglin "Mark" Xu <mark@remarkablemark.org>
+
+style-to-object
+Copyright (c) 2017 Menglin "Mark" Xu <mark@remarkablemark.org>`,
+)
+
+// Provider icon paths in src/renderer/src/agents/ProviderMark.tsx are adapted from T3 Code
+// apps/web/src/components/Icons.tsx at d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3.
+const t3CodeMit = microsoftMit.replace('Copyright (c) Microsoft Corporation. All rights reserved.', 'Copyright (c) 2026 T3 Tools Inc.')
+
 // Preserve the updater dependency notices when regenerating the bundled inventory.
 const updaterMit = microsoftMit.replace(
   'Copyright (c) Microsoft Corporation. All rights reserved.',
@@ -217,6 +277,11 @@ const licenseSections = [
   ['GUID TypeScript ISC license', guidIsc],
   ['Protocol Buffers BSD 3-Clause license', await read('node_modules/protobufjs/LICENSE')],
   ['Apache License 2.0', await read('node_modules/@huggingface/transformers/LICENSE')],
+  ['Markdown rendering MIT licenses', markdownMit],
+  ['Markdown rendering ISC license', `@ungap/structured-clone
+${await read('node_modules/@ungap/structured-clone/LICENSE')}`],
+  ['highlight.js BSD 3-Clause license', await read('node_modules/highlight.js/LICENSE')],
+  ['T3 Code MIT license', t3CodeMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
   ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],
   ['Bricolage Grotesque SIL Open Font License 1.1', bricolageGrotesqueOfl],
