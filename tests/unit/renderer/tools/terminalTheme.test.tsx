@@ -113,7 +113,7 @@ describe('a live terminal', () => {
     root.dataset.theme = 'dark'
     root.dataset.themeId = 'ocean'
     paint(root, OCEAN_DARK)
-    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }))
     const view = createXtermView({ onInput: () => undefined, onInterrupt: () => undefined }, { resolveColor: resolve })
     view.mount(document.body.appendChild(document.createElement('div')))
     expect(xterm.instances).toHaveLength(1)
@@ -143,5 +143,46 @@ describe('a live terminal', () => {
     paint(root, OCEAN_DARK)
     await flush()
     expect(terminal.themes).toHaveLength(repaints)
+  })
+
+  it('stops and restarts the same xterm’s cursor blink when reduced motion changes, from Sotto’s setting or the system', async () => {
+    const root = document.documentElement
+    root.dataset.theme = 'dark'
+    paint(root, OCEAN_DARK)
+    const system = { matches: false, listeners: new Set<() => void>() }
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return system.matches },
+      addEventListener: (_: string, listener: () => void) => { system.listeners.add(listener) },
+      removeEventListener: (_: string, listener: () => void) => { system.listeners.delete(listener) },
+    }))
+    const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+    const view = createXtermView({ onInput: () => undefined, onInterrupt: () => undefined }, { resolveColor: resolve })
+    view.mount(document.body.appendChild(document.createElement('div')))
+    const terminal = xterm.instances[0]!
+    expect(terminal.options.cursorBlink).toBe(true)
+    const repaints = terminal.themes.length
+
+    // Settings writes only the attribute: the palette is unchanged, and the blink still stops.
+    root.dataset.reducedMotion = 'on'
+    await flush()
+    expect(terminal.options.cursorBlink).toBe(false)
+    expect(terminal.themes).toHaveLength(repaints)
+
+    // The system still asks for reduced motion after Sotto's own setting goes back to following it.
+    system.matches = true
+    delete root.dataset.reducedMotion
+    await flush()
+    expect(terminal.options.cursorBlink).toBe(false)
+    system.matches = false
+    system.listeners.forEach(listener => listener())
+    expect(terminal.options.cursorBlink).toBe(true)
+    expect(xterm.instances).toHaveLength(1)
+
+    view.dispose()
+    expect(system.listeners.size).toBe(0)
+    root.dataset.reducedMotion = 'on'
+    await flush()
+    expect(terminal.options.cursorBlink).toBe(true)
+    vi.unstubAllGlobals()
   })
 })

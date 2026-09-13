@@ -113,11 +113,12 @@ function monoFont(): string {
  */
 export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor = defaultResolver() }: { readonly resolveColor?: ColorResolver } = {}): TerminalViewLike => {
   const platform = (window.sotto as { platform?: string } | undefined)?.platform
-  const reducedMotion = document.documentElement.dataset.reducedMotion === 'on' || matchMedia('(prefers-reduced-motion: reduce)').matches
+  const systemMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  const blinks = (): boolean => document.documentElement.dataset.reducedMotion !== 'on' && !systemMotion.matches
   let theme = terminalTheme(document.documentElement, resolveColor)
   let painted = JSON.stringify(theme)
   const terminal = new Terminal({
-    fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: !reducedMotion, allowProposedApi: false,
+    fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
     theme, disableStdin: true, convertEol: false, screenReaderMode: false,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
@@ -153,9 +154,18 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     return true
   })
 
+  // xterm's DOM renderer blinks the cursor with a CSS animation it adds only while cursorBlink is on, and redraws
+  // the cursor row when the option changes, so reduced motion is applied to this same terminal as it changes.
+  const followMotion = (): void => {
+    const blink = blinks()
+    if (terminal.options.cursorBlink !== blink) terminal.options.cursorBlink = blink
+  }
+  systemMotion.addEventListener('change', followMotion)
+
   // Appearance writes the mode and theme as root attributes and each colour as a root custom property, so a theme,
   // mode, contrast or editor change repaints this same terminal. A root change that leaves its colours alone does not.
   const retheme = new MutationObserver(() => {
+    followMotion()
     const next = terminalTheme(document.documentElement, resolveColor)
     const key = JSON.stringify(next)
     if (key === painted) return
@@ -163,7 +173,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     painted = key
     terminal.options.theme = theme
   })
-  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'style', 'class'] })
+  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'style', 'class'] })
 
   const view: TerminalViewLike = {
     mount(container) {
@@ -186,7 +196,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       return { cols: terminal.cols, rows: terminal.rows }
     },
     focus() { terminal.focus() },
-    dispose() { retheme.disconnect(); terminal.dispose(); element.remove() },
+    dispose() { retheme.disconnect(); systemMotion.removeEventListener('change', followMotion); terminal.dispose(); element.remove() },
   }
   return view
 }
