@@ -436,3 +436,67 @@ test('themes: a spotlight over a drawn diagram goes quiet, and still follows new
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }
 })
+
+test('themes: a minimized editor is one row that leaves Send and the footer links reachable', async () => {
+  test.setTimeout(120_000)
+  const profile = await createProfile()
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launchSotto('phase3-workspace', profile)
+    const { page } = launched
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+    await openAppearance(page)
+    await page.locator('#settings-appearance').getByRole('button', { name: 'Create theme' }).click()
+    const editor = page.getByRole('dialog', { name: 'Create theme' })
+    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await page.locator('.thread-prompt textarea').first().fill('Checking the theme editor stays clear')
+    await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
+    await expect(editor).toHaveAttribute('data-minimized', 'true')
+    await expect(editor.getByRole('button', { name: 'Inspect app colors' })).toHaveCount(0)
+
+    for (const size of [{ name: '820x560', width: 820, height: 560 }, { name: '1280', width: 1280, height: 860 }]) {
+      await setWindowSize(launched, size.width, size.height)
+      await settled(page)
+      // The bar rests in the footer once the shell has laid out at the new size.
+      await expect.poll(async () => { const box = (await editor.boundingBox())!; return box.y + box.height <= size.height && box.y >= size.height - 44 }, { message: size.name }).toBe(true)
+      const bar = (await editor.boundingBox())!
+      const title = (await editor.getByRole('heading', { name: 'Create theme' }).boundingBox())!
+      const expand = (await editor.getByRole('button', { name: 'Expand the theme editor' }).boundingBox())!
+      // One row: the title and the buttons share a line, and the bar hugs them.
+      expect(Math.abs((title.y + title.height / 2) - (expand.y + expand.height / 2)), size.name).toBeLessThan(4)
+      expect(bar.height, size.name).toBeLessThanOrEqual(44)
+      expect(bar.x + bar.width).toBeLessThanOrEqual(size.width)
+
+      const send = page.getByRole('button', { name: 'Send prompt' })
+      const sendBox = (await send.boundingBox())!
+      const links = (await page.locator('.app-footer nav').boundingBox())!
+      const overlaps = (a: typeof bar, b: typeof bar) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+      expect(overlaps(bar, sendBox), `${size.name} Send`).toBe(false)
+      expect(overlaps(bar, links), `${size.name} footer links`).toBe(false)
+      // The pointer really lands on Send and on every footer link, not on the bar.
+      await send.click({ trial: true, timeout: 2000 })
+      for (const link of await page.locator('.app-footer nav a').all()) await link.click({ trial: true, timeout: 2000 })
+      await shot(page, `editor-minimized-threads-${size.name}-dark`)
+    }
+
+    // Still a working bar: drag it, expand it with the keyboard, close it.
+    const header = editor.locator('.theme-editor__header')
+    const before = (await editor.boundingBox())!
+    await page.mouse.move(before.x + 30, before.y + before.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(before.x - 200, before.y - 200, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await editor.boundingBox())!.y).toBeLessThan(before.y - 100)
+    await expect(header).toBeVisible()
+    await editor.getByRole('button', { name: 'Expand the theme editor' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(editor.getByRole('button', { name: 'Inspect app colors' })).toBeVisible()
+    // Expanding lands on the form's first field.
+    await expect(editor.getByLabel('Theme name', { exact: true })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(editor).toHaveCount(0)
+  } finally {
+    if (launched !== undefined) await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})

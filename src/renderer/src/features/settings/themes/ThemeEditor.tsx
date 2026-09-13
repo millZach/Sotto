@@ -15,7 +15,7 @@
  * view, so a native page never paints over the editor.
  */
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, MousePointer2, Paintbrush, Plus, X } from 'lucide-react'
 
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
@@ -110,6 +110,23 @@ export function themeEditorColorFamily(role: ThemeColorRole): ColorFamily | null
 }
 
 /** The smallest the corner grip makes the panel. */
+export interface ThemeEditorDock { readonly right: number; readonly bottom: number }
+
+type Box = Pick<DOMRect, 'top' | 'bottom' | 'right' | 'height'>
+
+/**
+ * Where the minimized editor rests: centred in the footer's right end, over its
+ * status line only. When the bar would reach the footer links or is taller than
+ * the footer, it sits just above the footer instead.
+ */
+export function minimizedThemeEditorDock(bar: { width: number; height: number }, footer: Box | null, links: Pick<DOMRect, 'right'> | null, viewport: { width: number; height: number }): ThemeEditorDock {
+  const right = EDGE + 4
+  if (!footer) return { right: 20, bottom: 20 }
+  const clearOfLinks = links === null || viewport.width - right - bar.width >= links.right + 16
+  if (clearOfLinks && bar.height <= footer.height) return { right, bottom: viewport.height - footer.bottom + (footer.height - bar.height) / 2 }
+  return { right, bottom: viewport.height - footer.top + EDGE }
+}
+
 export const THEME_EDITOR_MIN_SIZE = { width: 280, height: 220 } as const
 /** The gap the panel keeps from the window edge. */
 const EDGE = 8
@@ -185,6 +202,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const [minimized, setMinimized] = useState(false)
   const [roleQuery, setRoleQuery] = useState('')
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const [dock, setDock] = useState<ThemeEditorDock | null>(null)
   // Null keeps the stylesheet's size; a value is a corner-grip resize.
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const [inspecting, setInspecting] = useState(false)
@@ -540,6 +558,41 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     onPointerCancel: () => { resizeStart.current = null },
   }
 
+  // Minimized and never dragged, the bar rests in the footer's free end instead of over the composer's Send.
+  useLayoutEffect(() => {
+    if (!minimized || position !== null) {
+      setDock(null)
+      return
+    }
+    const place = (): void => {
+      const panel = panelRef.current?.getBoundingClientRect()
+      if (!panel) return
+      const footer = document.querySelector('.app-footer')
+      setDock(minimizedThemeEditorDock(
+        { width: panel.width, height: panel.height },
+        footer?.getBoundingClientRect() ?? null,
+        footer?.querySelector('nav')?.getBoundingClientRect() ?? null,
+        { width: window.innerWidth, height: window.innerHeight },
+      ))
+    }
+    place()
+    // The shell lays out after the window's resize event, so measure once it has.
+    let frame: number | null = null
+    const later = (): void => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => { frame = null; place() })
+    }
+    const shell = document.querySelector('.app-footer')?.parentElement
+    const observer = typeof ResizeObserver === 'undefined' || !shell ? null : new ResizeObserver(later)
+    if (shell) observer?.observe(shell)
+    window.addEventListener('resize', later)
+    return () => {
+      window.removeEventListener('resize', later)
+      observer?.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [minimized, position])
+
   const query = roleQuery.trim().toLowerCase()
   const groups = THEME_EDITOR_ROLE_GROUPS
     .map(group => ({ ...group, families: group.families.filter(family => !query || [family.label, ...family.roles.map(themeRoleLabel)].join(' ').toLowerCase().includes(query)) }))
@@ -564,7 +617,9 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       data-inspecting={inspecting || undefined}
       style={{
         ...(position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : {}),
-        ...(size ? { width: size.width } : {}),
+        ...(dock ?? {}),
+        // Minimized, the bar is as wide as its title and two buttons.
+        ...(size && !minimized ? { width: size.width } : {}),
         // A chosen height applies only expanded; minimized, the panel hugs its header.
         ...(size && !minimized ? { height: size.height, maxHeight: `calc(100vh - ${EDGE * 2}px)` } : {}),
       }}
@@ -579,21 +634,27 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       <div className="theme-editor__header" {...dragHandlers}>
         <h2 id={titleId}>{title}</h2>
         {minimized ? null : <p aria-live="polite">{status}</p>}
-        <Button
-          variant={inspecting ? 'secondary' : 'ghost'}
-          className="theme-editor__inspect"
-          aria-pressed={inspecting}
-          aria-label={inspecting ? 'Cancel inspecting app colors' : 'Inspect app colors'}
-          title={inspecting ? 'Cancel and clear the selection' : 'Pick a color from the app'}
-          onClick={() => {
-            if (inspecting) clearInspector()
-            else setInspecting(true)
-          }}
-        >
-          <MousePointer2 size={14} aria-hidden="true" />
-          {inspecting ? 'Cancel' : 'Inspect'}
-        </Button>
-        <Button variant="ghost" iconOnly aria-label={minimized ? 'Expand the theme editor' : 'Minimize the theme editor'} onClick={() => setMinimized(current => !current)}>
+        {minimized ? null : (
+          <Button
+            variant={inspecting ? 'secondary' : 'ghost'}
+            className="theme-editor__inspect"
+            aria-pressed={inspecting}
+            aria-label={inspecting ? 'Cancel inspecting app colors' : 'Inspect app colors'}
+            title={inspecting ? 'Cancel and clear the selection' : 'Pick a color from the app'}
+            onClick={() => {
+              if (inspecting) clearInspector()
+              else setInspecting(true)
+            }}
+          >
+            <MousePointer2 size={14} aria-hidden="true" />
+            {inspecting ? 'Cancel' : 'Inspect'}
+          </Button>
+        )}
+        <Button variant="ghost" iconOnly aria-label={minimized ? 'Expand the theme editor' : 'Minimize the theme editor'} onClick={() => {
+          // A minimized bar has no Inspect button, so it cannot be left picking.
+          if (!minimized) setInspecting(false)
+          setMinimized(current => !current)
+        }}>
           {minimized ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
         </Button>
         <Button variant="ghost" iconOnly aria-label="Close the theme editor" onClick={close}><X size={15} aria-hidden="true" /></Button>

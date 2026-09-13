@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { THEME_EDITOR_MIN_SIZE, THEME_EDITOR_ROLE_GROUPS, ThemeEditorHost, themeEditorColorFamily } from '../../../src/renderer/src/features/settings/themes/ThemeEditor'
+import { THEME_EDITOR_MIN_SIZE, THEME_EDITOR_ROLE_GROUPS, ThemeEditorHost, minimizedThemeEditorDock, themeEditorColorFamily } from '../../../src/renderer/src/features/settings/themes/ThemeEditor'
 import { closeThemeEditor, openThemeEditor } from '../../../src/renderer/src/features/settings/themes/themeEditorSession'
 import * as inspector from '../../../src/renderer/src/features/settings/themes/themeInspector'
 import { changedPaintKinds, creditedRole } from '../../../src/renderer/src/features/settings/themes/themeInspector'
@@ -138,6 +138,31 @@ describe('theme editor inspector and resizing', () => {
     // Minimized, the panel hugs its header whatever size was chosen.
     fireEvent.click(screen.getByRole('button', { name: 'Minimize the theme editor' }))
     expect(dialog.style.height).toBe('')
+    expect(dialog.style.width).toBe('')
+  })
+
+  it('minimizes to a title and two buttons, and stops inspecting', async () => {
+    const user = userEvent.setup()
+    const dialog = renderEditor()
+    await user.click(screen.getByRole('button', { name: 'Inspect app colors' }))
+    await user.click(screen.getByRole('button', { name: 'Minimize the theme editor' }))
+    expect(dialog).toHaveAttribute('data-minimized')
+    expect(dialog).not.toHaveAttribute('data-inspecting')
+    expect(screen.queryByRole('button', { name: /inspecting app colors/u })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button').filter(button => dialog.contains(button)).map(button => button.getAttribute('aria-label'))).toEqual(['Expand the theme editor', 'Close the theme editor'])
+    await user.click(screen.getByRole('button', { name: 'Expand the theme editor' }))
+    expect(screen.getByRole('button', { name: 'Inspect app colors' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('rests a minimized editor in the footer beside its links, or above the footer when it cannot fit', () => {
+    const viewport = { width: 820, height: 560 }
+    const footer = { top: 516, bottom: 560, right: 820, height: 44 }
+    // 36px tall in a 44px footer: centred, 4px from the bottom, 12px from the right.
+    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 4 })
+    // Wide enough to reach the links, it sits 8px above the footer instead.
+    expect(minimizedThemeEditorDock({ width: 480, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52 })
+    expect(minimizedThemeEditorDock({ width: 210, height: 60 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52 })
+    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, null, null, viewport)).toEqual({ right: 20, bottom: 20 })
   })
 })
 
