@@ -42,6 +42,8 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  /* A gutter for the focus ring, which the settings scroller would otherwise clip at its edges. */
+  padding: 4px;
 }
 
 .theme-mode-tile {
@@ -60,15 +62,15 @@
 
 .theme-mode-tile .theme-wireframe {
   border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--tt-border);
+  box-shadow: inset 0 0 0 1px var(--tt-border);
   transition: box-shadow 140ms ease;
 }
 
-.theme-mode-tile:hover .theme-wireframe { box-shadow: 0 0 0 1px var(--tt-text-faint); }
+.theme-mode-tile:hover .theme-wireframe { box-shadow: inset 0 0 0 1px var(--tt-text-faint); }
 .theme-mode-tile[aria-pressed='true'] { color: var(--tt-text); }
 /* The chosen ring is drawn inside the tile so a scrolling container never clips it. */
 .theme-mode-tile[aria-pressed='true'] .theme-wireframe { box-shadow: none; outline: 2px solid var(--tt-accent-text); outline-offset: -2px; }
-.theme-mode-tile:focus-visible { outline-offset: 4px; border-radius: 10px; }
+.theme-mode-tile:focus-visible { outline-offset: 2px; border-radius: 10px; }
 .theme-mode-tile__label { font-weight: 500; }
 
 .theme-wireframe {
