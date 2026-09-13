@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -7,7 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
-import { requestAnswerStore, requestMode } from './requests/requestAnswers'
+import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './requests/requestAnswers'
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
@@ -27,12 +27,12 @@ function ThreadRequests({ row, state, command, blocked, onAnswer }: {
 }): ReactNode {
   const thread = row.thread
   const requests = thread.requests
-  useEffect(() => { requestAnswerStore.prune(thread.id, requests.map(request => request.id)) }, [thread.id, requests])
   if (isThreadClosed(thread) || requests.length === 0) return null
   return <>{requests.map(request => {
     const voice = state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
     const mode = requestMode(request)
     return <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
+      draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
       hint={voice && (mode === 'permission' && request.permissionChoices === undefined || mode === 'legacy-text')
         ? mode === 'permission' ? 'Say “allow” or “deny”, or choose here.' : 'Say your answer, then “send it”, or write it below.' : undefined}
       onWriteAnswer={onAnswer}
@@ -98,7 +98,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     && ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
   // A refused answer is told in its request card, where it can be answered again; the banner would say it twice.
   const answerExplains = useSyncExternalStore(requestAnswerStore.subscribe,
-    () => error !== null && thread.requests.some(request => requestAnswerStore.get(thread.id, request.id).error === error))
+    () => error !== null && thread.requests.some(request => requestAnswerStore.get(requestAnswerOwnerKey(thread.id, request,
+      { kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }), request.id).error === error))
   const options = <ThreadOptions key={thread.id} thread={thread} state={state} command={command} />
   useLayoutEffect(() => {
     const pending = handoff.current

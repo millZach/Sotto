@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
+import { requestDraftOwnerKey, requestDraftSchema, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -144,15 +145,35 @@ export interface RequestEntry {
   readonly error: string | null
   /** Which choice is being sent, for the pressed state. */
   readonly choice: string | null
+  readonly revision: number
+  readonly save: 'saved' | 'saving' | 'unsaved' | 'loading'
+  readonly saveError: string | null
 }
 
-const EMPTY_ENTRY: RequestEntry = { selections: {}, phase: 'idle', error: null, choice: null }
+const EMPTY_ENTRY: RequestEntry = { selections: {}, phase: 'idle', error: null, choice: null, revision: 0, save: 'saved', saveError: null }
+const SAVE_ERROR = 'Could not confirm this answer draft was saved. Keep this window open and try Save again.'
+const draftError = (error: unknown): string => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : SAVE_ERROR
+
+/** Include the question definition: a provider reusing IDs must never inherit another form's answers. */
+export function requestAnswerOwnerKey(ownerId: string, request: AgentRequest, owner?: RequestDraftOwner): string {
+  return owner && requestMode(request) === 'structured' ? `${requestDraftOwnerKey(owner)}\0${JSON.stringify(request.questions)}` : ownerId
+}
+
+interface DraftBinding {
+  readonly target: RequestDraftTarget
+  readonly bridge: RequestDraftBridge
+  loading: Promise<void> | null
+  writing: Promise<boolean>
+  loaded: boolean
+}
 
 export type SubmitOutcome = { readonly error: string | null } | null
 
 export class RequestAnswerStore {
   private readonly entries = new Map<string, RequestEntry>()
   private readonly listeners = new Set<() => void>()
+  private readonly bindings = new Map<string, DraftBinding>()
+  constructor(private readonly bridge: () => RequestDraftBridge | undefined = () => window.sotto?.requestDrafts) {}
 
   static key(ownerId: string, requestId: string): string { return `${ownerId}\0${requestId}` }
 
@@ -165,29 +186,115 @@ export class RequestAnswerStore {
     return this.entries.get(RequestAnswerStore.key(ownerId, requestId)) ?? EMPTY_ENTRY
   }
 
+  connect(ownerId: string, requestId: string, target: RequestDraftTarget): Promise<void> {
+    const key = RequestAnswerStore.key(ownerId, requestId), bridge = this.bridge()
+    if (!bridge) return Promise.resolve()
+    const existing = this.bindings.get(key)
+    if (existing?.loaded) return Promise.resolve()
+    if (existing?.loading) return existing.loading
+    const binding = existing ?? { target, bridge, loading: null, writing: Promise.resolve(true), loaded: false }
+    this.bindings.set(key, binding)
+    const before = this.get(ownerId, requestId)
+    this.set(ownerId, requestId, { ...before, save: 'loading', saveError: null })
+    const load = bridge.get(target).then(draft => {
+      const current = this.get(ownerId, requestId)
+      binding.loaded = true
+      // Edits made while a read was pending win per question. Normal controls wait for this initial read.
+      const edited = current.revision !== before.revision || before.revision > 0
+      this.set(ownerId, requestId, { ...current,
+        selections: edited ? { ...draft?.selections, ...current.selections } : draft?.selections ?? current.selections,
+        revision: edited ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft?.revision ?? current.revision,
+        phase: draft?.held ? 'unconfirmed' : current.phase,
+        save: edited ? 'saving' : 'saved', saveError: null,
+      })
+    }).catch((error: unknown) => {
+      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), save: 'unsaved', saveError: draftError(error) })
+    }).finally(() => { binding.loading = null })
+    binding.loading = load
+    return load
+  }
+
   select(ownerId: string, requestId: string, questionId: string, selection: QuestionSelection): void {
     const entry = this.get(ownerId, requestId)
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
-    this.set(ownerId, requestId, { ...entry, selections: { ...entry.selections, [questionId]: selection }, ...(entry.phase === 'failed' ? { phase: 'idle', error: null } : {}) })
+    this.set(ownerId, requestId, { ...entry, revision: entry.revision + 1, selections: { ...entry.selections, [questionId]: selection }, ...(entry.phase === 'failed' ? { phase: 'idle', error: null } : {}) })
+    void this.flush(ownerId, requestId)
+  }
+
+  /** Each edit queues immediately, independent of pane lifetime. Only its own atomic acknowledgement marks it saved. */
+  async flush(ownerId: string, requestId: string): Promise<boolean> {
+    const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+    if (!binding) return true
+    if (!binding.loaded) {
+      await this.connect(ownerId, requestId, binding.target)
+      if (!binding.loaded) return false
+    }
+    const entry = this.get(ownerId, requestId)
+    const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),
+      selections: Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }])),
+      held: entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed' })
+    if (!parsed.success) {
+      this.set(ownerId, requestId, { ...entry, save: 'unsaved', saveError: 'This answer could not be saved. Use the offered choices and at most 24,000 characters per answer.' })
+      return false
+    }
+    const draft = parsed.data
+    this.set(ownerId, requestId, { ...entry, revision: draft.revision, save: 'saving', saveError: null })
+    const work = binding.writing.then(async () => {
+      try {
+        const saved = await binding.bridge.save(draft)
+        if (saved.revision !== draft.revision || JSON.stringify(saved) !== JSON.stringify(draft)) throw new Error(SAVE_ERROR)
+        const current = this.get(ownerId, requestId)
+        if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'saved', saveError: null })
+        return true
+      } catch (error) {
+        const current = this.get(ownerId, requestId)
+        if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: draftError(error) })
+        return false
+      }
+    })
+    binding.writing = work
+    return work
   }
 
   /** Sends once: a second call while one is sending, sent or unconfirmed does nothing. */
   async submit(ownerId: string, requestId: string, choice: string | null, send: () => Promise<SubmitOutcome>): Promise<void> {
     const entry = this.get(ownerId, requestId)
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
-    this.set(ownerId, requestId, { ...entry, phase: 'sending', error: null, choice })
+    this.set(ownerId, requestId, { ...entry, revision: entry.revision + 1, phase: 'sending', error: null, choice })
+    if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
+      // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
+      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed' })
+      return
+    }
     let outcome: SubmitOutcome
     try { outcome = await send() } catch { outcome = null }
     const current = this.get(ownerId, requestId)
     if (outcome === null) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: null })
-    else if (outcome.error !== null) this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
+    else if (outcome.error !== null) {
+      const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+      if (binding) {
+        // A command error alone is not evidence of nondelivery. Main checks the original request/intent.
+        try {
+          const draft = await binding.bridge.check(binding.target)
+          this.set(ownerId, requestId, { ...current, revision: draft?.revision ?? current.revision, phase: 'failed', error: outcome.error, choice: null })
+        } catch { this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: outcome.error }) }
+      } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
+    }
     else this.set(ownerId, requestId, { ...current, phase: 'sent', error: null })
   }
 
   /** After a successful re-read, a request main still offers without an uncertain delivery may be answered again. */
-  release(ownerId: string, requestId: string): void {
+  async release(ownerId: string, requestId: string): Promise<void> {
     const entry = this.get(ownerId, requestId)
     if (entry.phase !== 'unconfirmed' && entry.phase !== 'sent') return
+    const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+    if (binding) {
+      try {
+        const draft = await binding.bridge.check(binding.target)
+        this.set(ownerId, requestId, { ...entry, revision: draft?.revision ?? entry.revision, phase: 'idle', choice: null, error: null, save: 'saved', saveError: null })
+      } catch (error) { this.set(ownerId, requestId, { ...entry, saveError: draftError(error) }) }
+      return
+    }
     this.set(ownerId, requestId, { ...entry, phase: 'idle', choice: null })
   }
 
@@ -196,7 +303,8 @@ export class RequestAnswerStore {
     const prefix = `${ownerId}\0`
     let changed = false
     for (const key of [...this.entries.keys()]) {
-      if (key.startsWith(prefix) && !liveRequestIds.includes(key.slice(prefix.length))) { this.entries.delete(key); changed = true }
+      // Renderer snapshots are not authoritative. Durable records are retired only by main.
+      if (!this.bindings.has(key) && key.startsWith(prefix) && !liveRequestIds.includes(key.slice(prefix.length))) { this.entries.delete(key); changed = true }
     }
     if (changed) this.emit()
   }
@@ -211,6 +319,8 @@ export class RequestAnswerStore {
 
 export const requestAnswerStore = new RequestAnswerStore()
 
-export function useRequestEntry(ownerId: string, requestId: string, store: RequestAnswerStore = requestAnswerStore): RequestEntry {
+export function useRequestEntry(ownerId: string, requestId: string, store: RequestAnswerStore = requestAnswerStore, target?: RequestDraftTarget): RequestEntry {
+  const targetKey = target ? JSON.stringify(target) : ''
+  useEffect(() => { if (targetKey) void store.connect(ownerId, requestId, JSON.parse(targetKey) as RequestDraftTarget) }, [ownerId, requestId, store, targetKey])
   return useSyncExternalStore(store.subscribe, () => store.get(ownerId, requestId))
 }

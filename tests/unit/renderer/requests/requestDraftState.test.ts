@@ -1,0 +1,81 @@
+import { describe, expect, it, vi } from 'vitest'
+import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
+import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
+const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'codex', requestId: 'req', questions: [
+  { id: 'q', question: 'Notes', options: [], allowFreeText: true, multiSelect: false },
+] }
+const selection = (text: string) => ({ text, optionIds: [], other: false })
+const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
+function gate<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
+function bridge(): RequestDraftBridge { return { get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
+
+describe('request draft renderer ordering', () => {
+  it('keeps local text written after an initial load failure when retry restores an older draft', async () => {
+    const api = bridge(); api.get = vi.fn().mockRejectedValueOnce(new Error('Disconnected bridge')).mockResolvedValue(draft('Old saved text', 5))
+    const store = new RequestAnswerStore(() => api)
+    await store.connect('thread', 'req', target)
+    expect(store.get('thread', 'req').save).toBe('unsaved')
+    store.select('thread', 'req', 'q', selection('New text after failed load'))
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+    expect(store.get('thread', 'req')).toMatchObject({ selections: { q: selection('New text after failed load') }, revision: 6 })
+  })
+
+  it('protects newer local text from a delayed restore and advances the durable revision', async () => {
+    const restore = gate<RequestDraft | null>(), api = bridge(); api.get = () => restore.promise
+    const store = new RequestAnswerStore(() => api)
+    const loading = store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('New local edit'))
+    restore.resolve(draft('Older saved text', 8)); await loading; await store.flush('thread', 'req')
+    expect(store.get('thread', 'req')).toMatchObject({ selections: { q: selection('New local edit') }, revision: 9, save: 'saved' })
+  })
+
+  it('does not let an older acknowledgement mark newer typing saved', async () => {
+    const first = gate<RequestDraft>(), second = gate<RequestDraft>(), api = bridge()
+    const saves: RequestDraft[] = []
+    api.save = vi.fn(input => { saves.push(input); return saves.length === 1 ? first.promise : second.promise })
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('Older'))
+    await vi.waitFor(() => expect(saves).toHaveLength(1))
+    store.select('thread', 'req', 'q', selection('Newer'))
+    first.resolve(saves[0]!); await vi.waitFor(() => expect(saves).toHaveLength(2))
+    expect(store.get('thread', 'req')).toMatchObject({ selections: { q: selection('Newer') }, save: 'saving' })
+    second.resolve(saves[1]!); await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+  })
+
+  it('retains failed saves for retry, rejects invalid local text honestly, and does not autosend', async () => {
+    const api = bridge(); api.save = vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async value => value)
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('Keep me'))
+    await vi.waitFor(() => expect(store.get('thread', 'req')).toMatchObject({ save: 'unsaved', saveError: 'Disk unavailable' }))
+    await store.flush('thread', 'req')
+    expect(store.get('thread', 'req')).toMatchObject({ save: 'saved', selections: { q: selection('Keep me') } })
+    store.select('thread', 'req', 'q', selection('x'.repeat(24001)))
+    await vi.waitFor(() => expect(store.get('thread', 'req')).toMatchObject({ save: 'unsaved' }))
+    expect(store.get('thread', 'req').saveError).toContain('24,000')
+  })
+
+  it('holds instead of delivering when the pre-send save fails; reloads an interrupted attempt without replay', async () => {
+    const api = bridge(); api.save = vi.fn().mockRejectedValue(new Error('Disk unavailable'))
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    const send = vi.fn(async () => ({ error: null }))
+    await store.submit('thread', 'req', null, send)
+    expect(store.get('thread', 'req').phase).toBe('unconfirmed')
+    expect(send).not.toHaveBeenCalled()
+    api.get = vi.fn(async () => draft('Was being sent', 4, true))
+    const restarted = new RequestAnswerStore(() => api); await restarted.connect('thread', 'req', target)
+    await restarted.submit('thread', 'req', null, send)
+    expect(restarted.get('thread', 'req')).toMatchObject({ phase: 'unconfirmed', selections: { q: selection('Was being sent') } })
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('does not prune durable records on empty renderer snapshots or clear a hold on a stale check', async () => {
+    const api = bridge(); api.get = vi.fn(async () => draft('Held', 3, true)); api.check = vi.fn().mockRejectedValue(new Error('Still uncertain'))
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    store.prune('thread', [])
+    await store.release('thread', 'req')
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'unconfirmed', saveError: 'Still uncertain' })
+    api.check = vi.fn(async () => draft('Held', 4))
+    await store.release('thread', 'req')
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', revision: 4 })
+  })
+})

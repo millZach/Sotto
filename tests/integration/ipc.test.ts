@@ -391,6 +391,7 @@ describe('typed preload bridge', () => {
         'quitApp',
         'replaceHotkey',
         'requestDictation',
+        'requestDrafts',
         'resetSettings',
         'searchHistory',
         'setStartup',

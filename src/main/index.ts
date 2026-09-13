@@ -1,4 +1,8 @@
 import { PersonalChatService } from './agents/personalChats'
+import { RequestDraftService } from './agents/requestDrafts'
+import { registerRequestDraftIpc } from './agents/requestDraftIpc'
+import { isThreadProviderConnected } from '../shared/agents'
+import { requestDraftProvider } from '../shared/requestDrafts'
 import { registerPersonalChatIpc } from './agents/personalChatIpc'
 import { PERSONAL_CHAT_STATE } from '../shared/personalChats'
 import { version as appVersion } from '../../package.json'
@@ -580,9 +584,29 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
     ...(testPersonalChatHost ? { host: testPersonalChatHost } : {}) })
   await personalChats.start()
-  const unsubscribePersonalChats = personalChats.subscribe(state => windows.sendToMain(PERSONAL_CHAT_STATE, state))
+  const requestDrafts = new RequestDraftService(userDataPath, owner => {
+    if (owner.kind === 'personal') {
+      const state = personalChats.get(), chat = state.chats.find(item => item.id === owner.ownerId && item.providerId === owner.providerId)
+      return chat ? { connected: state.connected && !state.connecting, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
+        requests: chat.requests, uncertainRequestIds: (chat.decisions ?? []).filter(item => item.status === 'submitting' || item.status === 'uncertain').map(item => item.requestId),
+        completed: (chat.decisions ?? []).filter(item => item.status === 'accepted').map(item => ({ requestId: item.requestId })) } : undefined
+    }
+    const state = agentControl.get(), thread = state.host.threads.find(item => item.id === owner.ownerId
+      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
+    const recovery = agentControl.requestAnswerRecovery(owner.ownerId, owner.providerId)
+    return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
+      requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
+  }, async owner => {
+    if (owner.kind === 'personal') await personalChats.refresh(owner.ownerId)
+    else await agentControl.refreshRequestDraft(owner.ownerId)
+  })
+  await requestDrafts.start()
+  await requestDrafts.reconcile().catch(() => undefined)
+  const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
+  const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
   app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
   const unsubscribeAgents = agentControl.subscribe(state => {
+    reconcileRequestDrafts()
     personalChats.configurationChanged()
     windows.sendToMain(AGENT_STATE, state)
     windows.sendToWidget(AGENT_STATE, state)
@@ -868,6 +892,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }),
     registerIpc: () => {
       const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
+      const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
         resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
         copyPath: path => clipboard.writeText(path),
@@ -968,6 +993,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
         cleanupPersonalChats()
+        cleanupRequestDrafts()
         cleanupFiles()
         cleanupTools()
         cleanupThemes()

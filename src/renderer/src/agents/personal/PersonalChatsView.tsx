@@ -8,7 +8,7 @@ import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReac
 import { MessageContent } from '../MessageContent'
 import { ProviderMark } from '../ProviderMark'
 import { AgentRequestCard } from '../requests/AgentRequestCard'
-import { requestAnswerStore, requestMode } from '../requests/requestAnswers'
+import { requestMode } from '../requests/requestAnswers'
 import { SkillPicker, skillOptionId, useCatalogSkillPicker } from '../SkillPicker'
 import { LiveActivity } from '../ThreadActivity'
 import { liveTurnId, nestActivities, placeActivities } from '../threadActivityView'
@@ -102,14 +102,13 @@ function PendingSubmission({ bridge, chat, store, submission, connected, refresh
 function PersonalRequests({ bridge, chat, connected, onWriteAnswer }: {
   readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly connected: boolean; readonly onWriteAnswer: () => void
 }): ReactNode {
-  const ids = useMemo(() => chat.requests.map(request => request.id), [chat.requests])
-  useEffect(() => { requestAnswerStore.prune(chat.id, ids) }, [chat.id, ids])
   return <>{chat.requests.map(request => {
     const unconfirmed = (state: PersonalChatState): boolean => state.chats.find(item => item.id === chat.id)?.decisions
       ?.some(decision => decision.requestId === request.id && (decision.status === 'submitting' || decision.status === 'uncertain')) === true
     // A durable answer intent the service could not confirm holds the card, across restarts too.
     const held = chat.decisions?.some(decision => decision.requestId === request.id && decision.status === 'uncertain')
     return <AgentRequestCard key={request.id} ownerId={chat.id} ownerTitle={chat.title} request={held ? { ...request, delivery: 'uncertain' } : request}
+      draftOwner={{ kind: 'personal', ownerId: chat.id, providerId: chat.providerId }}
       blocked={connected ? null : `Connect ${PROVIDER} to answer.`}
       onWriteAnswer={onWriteAnswer}
       onSubmit={answer => bridge.answer({ chatId: chat.id, requestId: request.id, ...answer })

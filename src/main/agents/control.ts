@@ -21,6 +21,8 @@ import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
+import { requestQuestionsDigest } from './requestDrafts'
+import { requestDraftProvider } from '../../shared/requestDrafts'
 
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
@@ -39,6 +41,7 @@ const savedSchema = z.object({
   manualDraftId: z.uuid().nullable().default(null),
   deliveredDrafts: agentDeliveryReceiptsSchema.default([]),
   deliveredPromptDigests: z.array(z.object({ threadId: z.string(), draftId: z.uuid(), digest: z.string() })).default([]),
+  answeredRequests: z.array(z.object({ threadId: z.string(), provider: providerIdSchema, requestId: z.string(), questionsDigest: z.string() })).max(MAX_DELIVERED_DRAFTS).default([]),
   threadDrafts: z.array(agentThreadDraftSchema).default([]),
   deliveries: z.array(agentDeliverySchema).default([]),
   pendingRequest: z.string().max(20_000).default(''),
@@ -48,6 +51,7 @@ const savedSchema = z.object({
     provider: providerIdSchema.optional(),
     threadId: z.string().optional(), messageId: z.string().optional(), entityId: z.string().optional(), requestId: z.string().optional(),
     options: agentThreadOptionsSchema.optional(), draftDigest: z.string().optional(), draftId: z.uuid().optional(),
+    questionsDigest: z.string().optional(),
   })),
 })
 type Saved = z.infer<typeof savedSchema>
@@ -93,6 +97,7 @@ export class AgentControl {
   private manualDraftId: string | null = null
   private readonly promptAdmissions = new Map<string, { digest: string; task: Promise<AgentState> }>()
   private deliveredPromptDigests: Saved['deliveredPromptDigests'] = []
+  private answeredRequests: Saved['answeredRequests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
   private viewedThreadIds: readonly string[] = []
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
@@ -135,8 +140,9 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(saved.threadDrafts)
     await this.attachmentPreviews.load()
     this.contextActivityAt = saved.contextSavedAt
-    const { outbox, contextSavedAt, manualDraftId, deliveredPromptDigests, ...restored } = saved
+    const { outbox, contextSavedAt, manualDraftId, deliveredPromptDigests, answeredRequests, ...restored } = saved
     this.deliveredPromptDigests = deliveredPromptDigests
+    this.answeredRequests = answeredRequests
     this.manualDraftId = manualDraftId
     Object.assign(this.state, restored)
     // Upgrade the native singleton in place, never from the currently selected thread.
@@ -238,6 +244,7 @@ export class AgentControl {
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
       contextSavedAt: this.contextActivityAt, outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       deliveredPromptDigests: this.deliveredPromptDigests,
+      answeredRequests: this.answeredRequests,
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
   }
   async privacyChanged(): Promise<void> {
@@ -328,6 +335,30 @@ export class AgentControl {
     const thread = this.state.host.threads.find(t => t.id === id)
     if (!thread) throw new Error('Select an available thread first.')
     return thread
+  }
+
+  /** Main-only evidence for request drafts; no answer or question text is retained in receipts. */
+  requestAnswerRecovery(threadId: string, provider: ProviderId): { uncertainRequestIds: string[]; completed: { requestId: string; questionsDigest: string }[] } {
+    return {
+      uncertainRequestIds: this.outbox.filter(item => item.type === 'answer' && item.threadId === threadId
+        && (item.provider ?? this.state.configuration.provider) === provider).flatMap(item => item.requestId ? [item.requestId] : []),
+      completed: this.answeredRequests.filter(item => item.threadId === threadId && item.provider === provider).map(({ requestId, questionsDigest }) => ({ requestId, questionsDigest })),
+    }
+  }
+
+  async refreshRequestDraft(threadId: string): Promise<void> {
+    const thread = this.thread(threadId)
+    if (!isThreadProviderConnected(this.state.host, thread)) throw new Error('Reconnect the original provider before checking this answer.')
+    this.acceptSnapshot(await this.readThread(threadId))
+    await this.persist()
+    this.publish()
+  }
+
+  private recordAnsweredRequest(item: Saved['outbox'][number]): void {
+    if (item.type !== 'answer' || !item.threadId || !item.requestId || !item.questionsDigest) return
+    const receipt = { threadId: item.threadId, provider: item.provider ?? this.state.configuration.provider,
+      requestId: item.requestId, questionsDigest: item.questionsDigest }
+    this.answeredRequests = [...this.answeredRequests.filter(previous => JSON.stringify(previous) !== JSON.stringify(receipt)), receipt].slice(-MAX_DELIVERED_DRAFTS)
   }
   private assignment(id: string): AgentAssignment {
     const assignment = this.state.assignments.find(a => a.threadId === id)
@@ -1141,7 +1172,8 @@ export class AgentControl {
     const threadId = 'threadId' in command ? command.threadId : undefined
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
-        ? this.state.host.models.find(model => model.id === command.modelId)?.providerId : this.thread(command.threadId).providerId
+        ? this.state.host.models.find(model => model.id === command.modelId)?.providerId : command.type === 'answer'
+          ? requestDraftProvider(this.state.host, this.thread(command.threadId), this.state.configuration.provider) : this.thread(command.threadId).providerId
     if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.canAct(threadId)
     if ((command.type === 'send' || command.type === 'steer') || command.type === 'answer') {
       const thread = this.thread(command.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)
@@ -1156,6 +1188,8 @@ export class AgentControl {
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
+      ...(command.type === 'answer' && this.thread(command.threadId).requests.find(item => item.id === command.requestId)?.questions
+        ? { questionsDigest: requestQuestionsDigest(this.thread(command.threadId).requests.find(item => item.id === command.requestId)!.questions!) } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command,
         ...(command.modelId !== undefined && command.reasoningEffort === undefined && this.state.host.models.find(model => model.id === command.modelId)?.defaultReasoningEffort
           ? { reasoningEffort: this.state.host.models.find(model => model.id === command.modelId)!.defaultReasoningEffort } : {}) }) } : {}),
@@ -1221,6 +1255,10 @@ export class AgentControl {
     }
     if ((command.type === 'send' || command.type === 'steer') && !result.accepted && !result.uncertain && command.attachments?.length) {
       await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
+    }
+    if (command.type === 'answer' && result.accepted && !result.uncertain) {
+      const intent = this.outbox.find(item => item.id === command.commandId)
+      if (intent) this.recordAnsweredRequest(intent)
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
@@ -1487,8 +1525,10 @@ export class AgentControl {
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? snapshot.threads.some(t => t.id === item.entityId) : item.type === 'configure-thread'
             ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
-            ? thread !== undefined && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
+            ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
+              && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      this.recordAnsweredRequest(item)
       const turn = this.dispatchTurns.get(item.id)
       if (turn) this.feedbackReady.add(turn)
       // Match both representations while the selected skills and revision owner still exist.

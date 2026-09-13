@@ -1,9 +1,10 @@
 import React, { useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentRequest } from '../../../../shared/agents'
+import type { RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, hasNoSendableChoice, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
-  permissionSummary, pickOption, pickOther, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
+  permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
 import './requests.css'
@@ -12,6 +13,7 @@ export interface AgentRequestCardProps {
   /** The thread or personal chat that owns the request; answers always carry this and `request.id`. */
   readonly ownerId: string
   readonly ownerTitle: string
+  readonly draftOwner?: RequestDraftOwner
   readonly request: AgentRequest
   /** Why the choices cannot be used right now (disconnected, busy); null when they can. */
   readonly blocked: string | null
@@ -29,24 +31,26 @@ export interface AgentRequestCardProps {
  * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
-  const entry = useRequestEntry(ownerId, request.id, store)
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+  const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
+  const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && requestMode(request) === 'structured'
+    ? { ...draftOwner, requestId: request.id, questions: request.questions! } : undefined)
   const [checking, setChecking] = useState(false)
   const baseId = useId()
   const mode = requestMode(request)
   const permission = mode === 'permission'
   const uncertain = request.delivery === 'uncertain' || entry.phase === 'unconfirmed'
   const locked = uncertain || entry.phase === 'sending' || entry.phase === 'sent'
-  const disabled = locked || blocked !== null
+  const disabled = locked || blocked !== null || entry.save === 'loading'
   const titleId = `${baseId}-title`
   const send = (choice: string | null, answer: RequestAnswer): void => {
-    if (disabled) return
-    void store.submit(ownerId, request.id, choice, () => onSubmit(answer))
+    if (disabled || entry.save === 'unsaved') return
+    void store.submit(entryOwner, request.id, choice, () => onSubmit(answer))
   }
   const check = (): void => {
     if (!onCheck || checking) return
     setChecking(true)
-    void onCheck().then(ok => { if (ok) store.release(ownerId, request.id) }, () => undefined).finally(() => setChecking(false))
+    void onCheck().then(async ok => { if (ok) await store.release(entryOwner, request.id) }, () => undefined).finally(() => setChecking(false))
   }
   const summary = permission ? permissionSummary(request) : null
   const questions = request.questions ?? []
@@ -66,7 +70,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
           : entry.phase === 'sent' ? <p className="agent-request__status" role="status">Answer sent.</p>
             : blocked !== null ? <p className="agent-request__status">{blocked}</p> : null
 
-  return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-uncertain={uncertain || undefined}
+  return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
     aria-labelledby={titleId} aria-busy={entry.phase === 'sending' || undefined}>
     <span className="tt-visually-hidden">{permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
     {summary ? <>
@@ -83,12 +87,12 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
       <div className="agent-request__head"><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong></div>
       {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question}
         selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
-        onChange={selection => store.select(ownerId, request.id, question.id, selection)}
+        onChange={selection => store.select(entryOwner, request.id, question.id, selection)}
         onSubmitKey={() => { if (answer) send(null, answer) }} />)}
       <div className="agent-request__footer">
         <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
           : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : ''}</span>
-        <Button type="submit" disabled={disabled || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
+        <Button type="submit" disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
       </div>
     </form> : <>
       <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
@@ -101,6 +105,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
       </div>
     </>}
     {status}
+    {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
+      {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
+      : mode === 'structured' && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
+        : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
     {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
   </section>
 }
