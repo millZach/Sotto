@@ -185,6 +185,7 @@ export class ConfiguredProviderHost implements AgentHost {
       const id = model.providerId; this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.threads) throw new Error('This provider cannot create threads.')
       const project = this.aggregate().projects.find(project => project.id === this.resolveProjectId(command.projectId))
+        ?? (command.project?.id === command.projectId ? command.project : undefined)
       if (!project) throw new Error('Choose an available project.')
       const slot = this.slots.get(id)!; const epoch = slot.epoch
       let target = slot.snapshot.projects.find(candidate => folderKey(candidate.path) === folderKey(project.path))

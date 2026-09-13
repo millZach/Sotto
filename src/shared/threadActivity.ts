@@ -1,4 +1,9 @@
-import type { AgentThread } from './agents'
+import type { AgentProject, AgentThread } from './agents'
+
+/** Project settlement is inherited for display, never written onto its individual threads. */
+export function isWorkspaceThreadSettled(thread: Pick<AgentThread, 'workspaceSettledAt'>, project?: Pick<AgentProject, 'workspaceSettledAt'>): boolean {
+  return hasTimestamp(thread.workspaceSettledAt) || hasTimestamp(project?.workspaceSettledAt)
+}
 
 type ThreadLifecycle = Pick<AgentThread, 'settledAt' | 'settledOverride' | 'archivedAt'>
 

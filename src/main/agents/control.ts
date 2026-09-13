@@ -119,6 +119,7 @@ export class AgentControl {
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
     await this.dependencies.host.initialize?.()
+    if (this.dependencies.host.workspaceSnapshot) this.state.host = this.dependencies.host.workspaceSnapshot()
     const cutoff = Date.now() - 7 * 86_400_000
     const historyDisabled = this.dependencies.historyEnabled?.() === false
     for (const assignment of this.state.assignments) {
@@ -198,6 +199,7 @@ export class AgentControl {
   }
   async privacyChanged(): Promise<void> {
     await maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false)
+    await this.dependencies.host.privacyChanged?.()
     await this.persist()
   }
   private async persist(): Promise<void> {
@@ -580,6 +582,16 @@ export class AgentControl {
         const path = resolve(target)
         const existing = await stat(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return null })
         if (existing && (!existing.isDirectory() || !command.useExisting)) throw new Error('That folder already exists. Select “Use existing folder” to attach it without overwriting its contents.')
+        const folderKey = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
+        const known = command.useExisting ? this.state.host.projects.find(project => folderKey(project.path) === folderKey(path) && (!project.providerId || project.providerId === provider)) : undefined
+        if (known) {
+          if (selectionRevision === this.selectionRevision) {
+            this.state.activeProjectId = known.id; this.state.activeThreadId = null
+            this.queueSelectionPinned = true; this.presentedQueueId = null
+          }
+          this.state.pendingRequest = ''; this.observe(); this.say(`Opened ${known.title}.`)
+          return
+        }
         if (!existing) await mkdir(path, { recursive: true })
         const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
@@ -595,6 +607,17 @@ export class AgentControl {
         this.observe()
         this.state.pendingRequest = ''
         this.say(`Created ${command.title} in ${path}.`)
+        return
+      }
+      case 'settle-project':
+      case 'restore-project':
+      case 'settle-thread':
+      case 'restore-thread': {
+        const host = this.dependencies.host
+        if (!host.setWorkspaceSettled) throw new Error('Workspace organization is unavailable.')
+        const project = 'projectId' in command
+        this.acceptSnapshot(await host.setWorkspaceSettled(project ? 'project' : 'thread', project ? command.projectId : command.threadId, command.type.startsWith('settle-')))
+        this.state.notice = command.type.startsWith('settle-') ? 'Moved to Settled.' : 'Restored.'
         return
       }
       case 'select-project':
@@ -641,13 +664,13 @@ export class AgentControl {
       case 'configure-thread': {
         this.canAct()
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined) throw new Error('Choose a thread setting to change.')
-        if (!capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
+        if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         this.observe(command.threadId)
         this.acceptSnapshot(await this.readThread(command.threadId))
         const validate = (): void => {
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
-          if (command.modelId && thread.providerId && this.state.host.models.find(model => model.id === command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
+          if (thread.nativeSessionStarted !== false && command.modelId && thread.providerId && this.state.host.models.find(model => model.id === command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
           validateThreadOptions(this.state.host, command, thread.modelId)
         }
         validate()
@@ -777,8 +800,10 @@ export class AgentControl {
   private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
     this.canAct()
     const threadId = 'threadId' in command ? command.threadId : undefined
-    const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider : command.type === 'create-thread' ? this.state.host.models.find(model => model.id === command.modelId)?.providerId : this.thread(command.threadId).providerId
-    if (threadId && command.type !== 'create-thread') this.canAct(threadId)
+    const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
+      : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
+        ? this.state.host.models.find(model => model.id === command.modelId)?.providerId : this.thread(command.threadId).providerId
+    if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.canAct(threadId)
     if (command.type === 'send' || command.type === 'answer') {
       const thread = this.thread(command.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)
       if (command.type === 'send' && (!capabilities.submit || !capabilities.reconcile)) throw new Error('This connection cannot safely send and reconcile a prompt.')

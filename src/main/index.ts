@@ -124,6 +124,7 @@ import { CodexAppServerHost } from './agents/codex'
 import { ClaudeStreamJsonHost } from './agents/claude'
 import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
+import { WorkspaceHost } from './agents/workspace'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl } from './agents/control'
 import { TurnRecorder } from './agents/turns'
@@ -495,7 +496,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
-  const agentHost = testAgentHost ?? new ConfiguredProviderHost({
+  const agentHost = new WorkspaceHost(testAgentHost ?? new ConfiguredProviderHost({
     directory: userDataPath,
     hosts: {
       codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
@@ -505,7 +506,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     provider: () => agentControl.get().configuration.provider,
     enabledProviders: () => { const configuration = agentControl.get().configuration; return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  })
+  }), userDataPath, () => agentHistoryEnabled)
   const turns = new TurnRecorder({
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
