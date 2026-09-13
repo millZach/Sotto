@@ -218,6 +218,8 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await edit.getByRole('button', { name: 'Inspect app colors' }).click()
     await expect(edit).toContainText('Select an element · Esc to cancel')
     const heading = section.getByRole('heading', { level: 2, name: 'Appearance' })
+    // Scrolled first: the inspector drops a hover label when the page scrolls, and hover() would scroll after pointing.
+    await heading.scrollIntoViewIfNeeded()
     await heading.hover()
     await expect(page.locator('#theme-inspector-hover')).toBeVisible()
     const hoverLabel = await page.locator('#theme-inspector-hover').innerText()
