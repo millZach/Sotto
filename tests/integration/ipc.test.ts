@@ -356,6 +356,7 @@ describe('typed preload bridge', () => {
       [
         'addHistory',
         'agents',
+        'browser',
         'cancelTranscription',
         'checkForUpdates',
         'checkTranscriptionKey',
@@ -369,6 +370,7 @@ describe('typed preload bridge', () => {
         'getStartup',
         'getUpdateStatus',
         'getWindowMaximized',
+        'gitChanges',
         'hideApp',
         'installUpdate',
         'listHistory',
@@ -382,6 +384,7 @@ describe('typed preload bridge', () => {
         'onUpdateStatus',
         'onWindowMaximized',
         'openExternalLink',
+        'personalChats',
         'platform',
         'polishTranscript',
         'publishWidgetState',
@@ -392,6 +395,8 @@ describe('typed preload bridge', () => {
         'searchHistory',
         'setStartup',
         'showApp',
+        'terminal',
+        'themes',
         'transcribe',
         'updateSettings',
       ].sort(),
@@ -403,6 +408,9 @@ describe('typed preload bridge', () => {
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.agents)).toBe(true)
     expect(Object.isFrozen(bridge.memory)).toBe(true)
+    for (const surface of [bridge.browser, bridge.gitChanges, bridge.personalChats, bridge.terminal, bridge.themes]) {
+      expect(Object.isFrozen(surface)).toBe(true)
+    }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
     expect(Object.keys(bridge.agents!).sort()).toEqual(['cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'voiceModel'])
   })
@@ -1149,6 +1157,14 @@ describe('IPC validation and lifecycle', () => {
       ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', injectedChannel: 'app:quit' }),
     ).rejects.toThrow('Invalid IPC payload')
     expect(settings.update).toHaveBeenCalledTimes(2)
+  })
+
+  it('persists an explicit Sotto browser preference through settings IPC', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { webLinkDestination: 'embedded' })).resolves.toMatchObject({
+      webLinkDestination: 'embedded',
+    })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ webLinkDestination: 'embedded' })
   })
 
   it.each([

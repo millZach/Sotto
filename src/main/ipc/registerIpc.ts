@@ -102,6 +102,7 @@ const settingKeys = [
   'llmMinWords',
   'streamingAsr',
   'autoUpdateCheck',
+  'webLinkDestination',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema
