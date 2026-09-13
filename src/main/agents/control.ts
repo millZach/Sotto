@@ -60,6 +60,9 @@ export class AgentControl {
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private readonly store: AtomicJsonStore<Saved>
+  private persistedDrafts = new Map<string, string>()
+  private readonly pendingDraftWrites = new Set<Map<string, string>>()
+  private readonly emptyDraftRevisions = new Map<string, string>()
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
@@ -118,6 +121,7 @@ export class AgentControl {
       throw error
     }
     const saved = await this.store.read()
+    this.persistedDrafts = this.draftSignatures(saved.threadDrafts)
     await this.attachmentPreviews.load()
     this.contextActivityAt = saved.contextSavedAt
     const { outbox, contextSavedAt, manualDraftId, ...restored } = saved
@@ -195,6 +199,14 @@ export class AgentControl {
   }
   get(): AgentState {
     const state = structuredClone(this.state)
+    const current = this.draftSignatures(state.threadDrafts ?? [])
+    const revisions = new Map(this.emptyDraftRevisions)
+    for (const draft of state.threadDrafts ?? []) revisions.set(draft.threadId, draft.draftId)
+    state.threadDraftPersistence = [...revisions].map(([threadId, draftId]) => {
+      const signature = current.get(threadId)
+      return { threadId, draftId, status: this.persistedDrafts.get(threadId) === signature ? 'saved'
+        : [...this.pendingDraftWrites].some(write => write.get(threadId) === signature) ? 'saving' : 'unsaved' }
+    })
     this.attachmentPreviews.decorate(state.host)
     return state
   }
@@ -236,7 +248,24 @@ export class AgentControl {
   }
   private async persist(): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
-    await this.store.write(this.saved())
+    const saved = this.saved()
+    const drafts = this.draftSignatures(saved.threadDrafts)
+    this.pendingDraftWrites.add(drafts)
+    try {
+      await this.store.write(saved)
+      // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
+      // completed, never newer state that changed while this write was outstanding.
+      this.persistedDrafts = drafts
+    } finally {
+      this.pendingDraftWrites.delete(drafts)
+      // Some full-state writes are fire-and-forget; a fresh renderer still needs
+      // their completion evidence, even when no command response reaches it.
+      this.publish()
+    }
+  }
+  private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
+    return new Map(drafts.map(({ threadId, draftId, text, attachments, requestId }) => [threadId,
+      createHash('sha256').update(JSON.stringify({ draftId, text, attachments, requestId })).digest('hex')]))
   }
   private publish(feedback?: { receivedAt: number; threadId: string; draftId: string }): void {
     if (this.disposed) return
@@ -303,7 +332,10 @@ export class AgentControl {
   }
   private putThreadDraft(draft: AgentThreadDraft): void {
     this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(item => item.threadId !== draft.threadId)
-    if (draft.text.length || draft.attachments.length) this.state.threadDrafts.push(structuredClone(draft))
+    if (draft.text.length || draft.attachments.length) {
+      this.emptyDraftRevisions.delete(draft.threadId)
+      this.state.threadDrafts.push(structuredClone(draft))
+    } else this.emptyDraftRevisions.set(draft.threadId, draft.draftId)
   }
   private syncLegacyDraft(): void {
     if (!this.state.draftThreadId) return

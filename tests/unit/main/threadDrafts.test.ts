@@ -75,7 +75,25 @@ describe('persistent per-thread drafts', () => {
     expect(f.control.get().threadDrafts).toEqual([a, b].map(draft => expect.objectContaining({ threadId: draft.threadId, draftId: draft.draftId, text: draft.text, attachments: draft.attachments })))
     expect(f.control.get().assignments).toEqual([])
     expect(f.host.attempts).toEqual([])
+    expect(f.control.get().threadDraftPersistence).toEqual([a, b].map(draft => ({ threadId: draft.threadId, draftId: draft.draftId, status: 'saved' })))
+    expect(await f.disk()).not.toHaveProperty('threadDraftPersistence')
     expect(agentStateSchema.safeParse(f.control.get()).success).toBe(true)
+  })
+
+  it('initializes evidence from disk even if the startup rewrite fails, ignoring serialized evidence', async () => {
+    const f = await fixture()
+    const draft = save('workshop', 'Already on disk', [image])
+    await f.control.command(draft)
+    await expect(f.restart(saved => {
+      Object.assign(saved, { threadDraftPersistence: [{ threadId: 'workshop', draftId: randomUUID(), status: 'saved' }] })
+      const original = AtomicJsonStore.prototype.write
+      vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function(this: AtomicJsonStore<unknown>, value) {
+        if ('threadDrafts' in (value as object)) return Promise.reject(new Error('Startup rewrite failed'))
+        return original.call(this, value)
+      })
+    })).rejects.toThrow('Startup rewrite failed')
+    expect(f.control.get().threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ text: draft.text, attachments: [image] }))
   })
 
   it('migrates a legacy native answer under its original owner and request, never current selection', async () => {

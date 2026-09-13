@@ -240,6 +240,11 @@ export const agentStateSchema = z.object({
   draftAttachments: agentAttachmentsSchema.optional(),
   deliveredDrafts: agentDeliveryReceiptsSchema.optional(),
   threadDrafts: z.array(agentThreadDraftSchema).optional(),
+  /** Main-only, ephemeral evidence for these exact revisions, including empty draft clears.
+   * Missing evidence never confirms persistence. It is rebuilt from disk on startup. */
+  threadDraftPersistence: z.array(z.object({
+    threadId: id, draftId: z.uuid(), status: z.enum(['saved', 'saving', 'unsaved']),
+  })).optional(),
   deliveries: z.array(agentDeliverySchema).optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),

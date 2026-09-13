@@ -26,6 +26,7 @@ function heldCommand() {
 
 const published = (save: SaveCommand, patch: Partial<AgentState> = {}): AgentState => baseState({
   threadDrafts: [{ threadId: save.threadId, draftId: save.draftId, text: save.text, attachments: save.attachments ?? [], requestId: save.requestId ?? null, updatedAt: new Date().toISOString() }],
+  threadDraftPersistence: [{ threadId: save.threadId, draftId: save.draftId, status: 'saved' }],
   ...patch,
 })
 
@@ -71,11 +72,11 @@ describe('ThreadDraftStore revisions and saves', () => {
     vi.advanceTimersByTime(250)
     const save = held.saves()[0]!
     // The controller publishes the draft before persisting it, then reports the persistence error.
-    store.receive(published(save))
+    store.receive(published(save, { threadDraftPersistence: [{ threadId: save.threadId, draftId: save.draftId, status: 'saving' }] }))
     expect(store.snapshot('thread').save).toBe('saving')
-    held.calls[0]!.resolve(published(save, { error: 'Could not save this thread draft.' }))
+    held.calls[0]!.resolve(published(save, { error: 'Could not save this thread draft.', threadDraftPersistence: [{ threadId: save.threadId, draftId: save.draftId, status: 'unsaved' }] }))
     await vi.runAllTimersAsync()
-    expect(store.snapshot('thread')).toMatchObject({ save: 'unsaved', saveError: 'Could not save this thread draft.' })
+    expect(store.snapshot('thread')).toMatchObject({ save: 'unsaved', saveError: expect.stringContaining('Save again') })
     store.flush('thread', true)
     expect(held.saves()).toHaveLength(2)
     expect(held.saves()[1]!.draftId).toBe(save.draftId)
@@ -98,7 +99,7 @@ describe('ThreadDraftStore revisions and saves', () => {
     expect(held.saves().at(-1)!.text).toBe('one two')
     held.calls.at(-1)!.resolve(null)
     await Promise.resolve(); await Promise.resolve()
-    expect(store.snapshot('thread')).toMatchObject({ save: 'unsaved', saveError: 'Could not save this draft.' })
+    expect(store.snapshot('thread')).toMatchObject({ save: 'unsaved', saveError: expect.stringContaining('Save again') })
     expect(store.draft('thread').text).toBe('one two')
   })
 
@@ -111,6 +112,33 @@ describe('ThreadDraftStore revisions and saves', () => {
     held.calls[0]!.resolve(published(held.saves()[0]!))
     await Promise.resolve(); await Promise.resolve()
     expect(store.snapshot('thread').save).toBe('saving')
+  })
+
+  it('requires explicit evidence even when a returned or adopted state has no global error', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Unconfirmed' }); store.flush('thread')
+    const state = published(held.saves()[0]!, { threadDraftPersistence: undefined })
+    held.calls[0]!.resolve(state)
+    await Promise.resolve(); await Promise.resolve()
+    expect(store.snapshot('thread').save).toBe('unsaved')
+    const fresh = new ThreadDraftStore(held.command)
+    fresh.receive(state)
+    expect(fresh.snapshot('thread').save).toBe('unsaved')
+    fresh.flush('thread', true)
+    expect(held.saves()).toHaveLength(2)
+  })
+
+  it('keeps exact published confirmation when an older failed IPC reply arrives later', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Persisted by another write' }); store.flush('thread')
+    const save = held.saves()[0]!
+    store.receive(published(save, { error: 'Unrelated error still present' }))
+    expect(store.snapshot('thread').save).toBe('saved')
+    held.calls[0]!.resolve(published(save, { threadDraftPersistence: [{ threadId: save.threadId, draftId: save.draftId, status: 'unsaved' }] }))
+    await Promise.resolve(); await Promise.resolve()
+    expect(store.snapshot('thread')).toMatchObject({ save: 'saved', saveError: null })
   })
 
   it('flushes a pending debounce immediately when the page leaves', () => {
@@ -127,7 +155,7 @@ describe('ThreadDraftStore revisions and saves', () => {
   it('restores published drafts per thread for a new window', () => {
     const store = new ThreadDraftStore(vi.fn(), 250, uuids())
     const draftId = '11111111-1111-4111-8111-111111111111'
-    store.receive(baseState({ threadDrafts: [{ threadId: 'thread', draftId, text: 'after restart', attachments: [], requestId: null, updatedAt: new Date().toISOString() }] }))
+    store.receive(baseState({ threadDrafts: [{ threadId: 'thread', draftId, text: 'after restart', attachments: [], requestId: null, updatedAt: new Date().toISOString() }], threadDraftPersistence: [{ threadId: 'thread', draftId, status: 'saved' }] }))
     expect(store.snapshot('thread')).toMatchObject({ draft: { draftId, text: 'after restart' }, save: 'saved' })
     expect(store.draft('other').text).toBe('')
   })

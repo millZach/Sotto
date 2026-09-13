@@ -13,7 +13,7 @@ export interface ComposerDraft {
 
 export interface ThreadComposerSnapshot {
   readonly draft: ComposerDraft
-  /** `unsaved` means the latest save for this exact revision reported an error; `saving` until a save succeeds. */
+  /** `saved` requires main's durability evidence for this exact revision. */
   readonly save: 'saved' | 'saving' | 'unsaved'
   readonly saveError: string | null
 }
@@ -40,7 +40,7 @@ interface Entry {
   /** A published state has shown this exact revision, so later states are newer than the edit. */
   observed: boolean
   /**
-   * The save for this exact revision reported success, or the revision came from published state.
+   * Main has confirmed persistence for this exact revision.
    * A state echo alone is not proof: the controller publishes a draft before persisting it.
    */
   saved: boolean
@@ -50,8 +50,11 @@ interface Entry {
 }
 
 const EMPTY: ComposerDraft = { draftId: '', text: '', attachments: [], requestId: null }
+const SAVE_ERROR = 'Could not confirm this draft was saved. Keep your text and images and try Save again.'
 const key = (threadId: string, draftId: string): string => `${threadId}\n${draftId}`
 const isEmpty = (draft: ComposerDraft): boolean => draft.text === '' && draft.attachments.length === 0
+const persistence = (state: AgentState, threadId: string, draftId: string): ThreadComposerSnapshot['save'] =>
+  state.threadDraftPersistence?.find(item => item.threadId === threadId && item.draftId === draftId)?.status ?? 'unsaved'
 
 export function hasDraftContent(draft: ComposerDraft): boolean {
   return draft.text.trim() !== '' || draft.attachments.length > 0
@@ -115,7 +118,7 @@ export class ThreadDraftStore {
     const draft = entry?.draft ?? EMPTY
     const value: ThreadComposerSnapshot = {
       draft,
-      save: entry === undefined ? 'saved' : entry.error !== null ? 'unsaved' : entry.saving === draft.draftId || this.timers.has(threadId) ? 'saving' : entry.saved ? 'saved' : 'saving',
+      save: entry === undefined || entry.saved ? 'saved' : entry.error !== null ? 'unsaved' : 'saving',
       saveError: entry?.error ?? null,
     }
     this.snapshots.set(threadId, value)
@@ -130,6 +133,9 @@ export class ThreadDraftStore {
     for (const delivery of state.deliveries ?? []) if (delivery.status === 'accepted') this.markAccepted(delivery.threadId, delivery.draftId)
     const remote = new Map<string, ComposerDraft>()
     for (const item of state.threadDrafts ?? []) remote.set(item.threadId, { draftId: item.draftId, text: item.text, attachments: item.attachments, requestId: item.requestId })
+    // Clears have no persisted content row, but still need exact-revision evidence
+    // while a live controller is trying to remove the previous disk draft.
+    for (const item of state.threadDraftPersistence ?? []) if (!remote.has(item.threadId)) remote.set(item.threadId, { ...EMPTY, draftId: item.draftId })
     if (state.threadDrafts === undefined && state.draftThreadId !== null && (state.draft || state.draftAttachments?.length)) {
       // Older state without per-thread drafts: the singleton belongs to its thread under a stable local revision.
       const legacy = key(state.draftThreadId, state.draft)
@@ -140,25 +146,39 @@ export class ThreadDraftStore {
     for (const threadId of new Set([...this.entries.keys(), ...remote.keys()])) {
       const entry = this.entries.get(threadId)
       const published = remote.get(threadId)
+      const status = published ? persistence(state, threadId, published.draftId) : 'saved'
       if (entry === undefined) {
-        if (published) { this.entries.set(threadId, { draft: published, observed: true, saved: true, saving: null, error: null, superseded: [] }); changed.add(threadId) }
+        if (published) {
+          const adopted: Entry = { draft: published, observed: true, saved: false, saving: null, error: null, superseded: [] }
+          this.replace(adopted, published, status)
+          this.entries.set(threadId, adopted); changed.add(threadId)
+        }
         continue
       }
       const current = entry.draft
       if (current.draftId !== '' && this.accepted.has(key(threadId, current.draftId))) {
         // The composer still holds exactly the delivered revision; never clear anything newer.
-        this.replace(entry, published && published.draftId !== current.draftId ? published : EMPTY)
+        const next = published && published.draftId !== current.draftId ? published : EMPTY
+        this.replace(entry, next, next === EMPTY ? 'saved' : status)
         changed.add(threadId)
         continue
       }
       const shown = published ? published.draftId === current.draftId : isEmpty(current)
       if (shown) {
         if (!entry.observed) { entry.observed = true; changed.add(threadId) }
+        if (published && (status === 'saved' || !entry.saved)) {
+          // A local in-flight request can precede main's first evidence. Once
+          // confirmed, a late failed response cannot revoke that confirmation.
+          const error = status === 'unsaved' && entry.saving !== current.draftId ? SAVE_ERROR : null
+          if (entry.saved !== (status === 'saved') || entry.error !== error) {
+            entry.saved = status === 'saved'; entry.error = error; changed.add(threadId)
+          }
+        }
         continue
       }
       if (!entry.observed) continue
       if (published && entry.superseded.includes(published.draftId)) continue
-      this.replace(entry, published ?? EMPTY)
+      this.replace(entry, published ?? EMPTY, status)
       changed.add(threadId)
     }
     const pruned = this.submissionList.filter(item => submissionStatus(item, state).visible)
@@ -198,16 +218,17 @@ export class ThreadDraftStore {
     entry.saving = draft.draftId
     entry.error = null
     this.emit(new Set([threadId]))
-    const settle = (error: string | null): void => {
+    const settle = (result: AgentState | null): void => {
       const current = this.entries.get(threadId)
       if (current?.draft.draftId !== draft.draftId) return
       current.saving = null
-      current.error = error
-      current.saved = error === null
+      const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
+      current.saved ||= status === 'saved'
+      current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }
     this.command({ type: 'save-thread-draft', threadId, draftId: draft.draftId, text: draft.text, attachments: [...draft.attachments], requestId: draft.requestId })
-      .then(result => settle(result === null ? 'Could not save this draft.' : result.error), () => settle('Could not save this draft.'))
+      .then(settle, () => settle(null))
   }
 
   flushAll(): void { for (const threadId of [...this.timers.keys()]) this.flush(threadId) }
@@ -250,12 +271,12 @@ export class ThreadDraftStore {
     if (this.accepted.size > MAX_DELIVERED_DRAFTS * 4) this.accepted.delete(this.accepted.values().next().value!)
   }
 
-  private replace(entry: Entry, draft: ComposerDraft): void {
+  private replace(entry: Entry, draft: ComposerDraft, status: ThreadComposerSnapshot['save']): void {
     entry.draft = draft
     entry.observed = true
-    entry.saved = true
+    entry.saved = status === 'saved'
     entry.saving = null
-    entry.error = null
+    entry.error = status === 'unsaved' ? SAVE_ERROR : null
   }
 
   private emit(threads: ReadonlySet<string>): void {
