@@ -1,0 +1,4 @@
+Create theme via escape: focus on open=INPUT ; after close=BUTTON Create theme
+Duplicate Dusk via escape: focus on open=INPUT ; after close=BUTTON Duplicate Dusk
+Duplicate Dusk via close-enter: focus on open=INPUT ; after close=BUTTON Duplicate Dusk
+Duplicate Dusk via cancel-enter: focus on open=INPUT ; after close=BUTTON Duplicate Dusk

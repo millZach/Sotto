@@ -1,29 +1,29 @@
-{
-  "platform": "win32",
-  "target": "win-unpacked",
-  "asarBytes": 41547062,
-  "asarSha256": "1560885b7375a97cac54ee093a0f17f114a0429f1e7efcbd36340acc8c6f0139",
-  "executableBytes": 225520128,
-  "provenance": {
-    "sourceCommit": "7a166299f2b855b83e1b6079b29a2e21b7f5f6a6",
-    "buildInputsRevision": "09b2438591da6eed213194cb501b5afd89237a41c9b5aed2e511e063deecd79a",
-    "buildSha256": "61c5ae1afe3b28f8145b4eaaee01b94cc40f51b1e5015d051c7c8c5d2c760b94",
-    "artifactCount": 84
-  },
-  "memoryStore": {
-    "sqliteVersion": "3.53.1",
-    "migrationVersion": 3,
-    "matchedId": "memory-probe",
-    "fts5": true,
-    "terminal": {
-      "modules": "148",
-      "napi": "10",
-      "exitCode": 0,
-      "output": "SOTTO_PTY_PACKAGE_OK"
-    }
-  },
-  "smoke": {
-    "language": "auto",
-    "workletUrl": "file:///D:/Talk%20to%20Text%20Application/release/phase-three-verification-7a16629/win-unpacked/resources/app.asar/out/renderer/audio-capture-worklet.js"
-  }
-}
+{
+  "platform": "win32",
+  "target": "win-unpacked",
+  "asarBytes": 42095334,
+  "asarSha256": "161e91eb26fb4a4ac62f3cd6ef17bacfdc593267bfe462186a8ec283e9a3c21b",
+  "executableBytes": 225520128,
+  "provenance": {
+    "sourceCommit": "707b2535f6325c083ee85fc2230a8c58cb92ed21",
+    "buildInputsRevision": "87dc808aaba06e1ecd6e3009e05beee398c2fd9bb17b729642c0565f4fcec9d8",
+    "buildSha256": "e058ba958c12fef34c5da65c24af66ffd24917a9bc047298daa4f35345191545",
+    "artifactCount": 84
+  },
+  "memoryStore": {
+    "sqliteVersion": "3.53.1",
+    "migrationVersion": 3,
+    "matchedId": "memory-probe",
+    "fts5": true,
+    "terminal": {
+      "modules": "148",
+      "napi": "10",
+      "exitCode": 0,
+      "output": "SOTTO_PTY_PACKAGE_OK"
+    }
+  },
+  "smoke": {
+    "language": "auto",
+    "workletUrl": "file:///D:/Talk%20to%20Text%20Application/.worktrees/phase3-final/release/phase-three-final-707b253/win-unpacked/resources/app.asar/out/renderer/audio-capture-worklet.js"
+  }
+}

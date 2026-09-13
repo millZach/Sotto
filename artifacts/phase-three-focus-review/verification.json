@@ -1,0 +1,235 @@
+{
+  "testedSourceCommit": "e5d0a53168a51dfe4ab1c5af830ca2bc90460adc",
+  "packagedSourceCommit": "707b2535f6325c083ee85fc2230a8c58cb92ed21",
+  "buildSha256": "e058ba958c12fef34c5da65c24af66ffd24917a9bc047298daa4f35345191545",
+  "identicalApplicationArtifacts": 84,
+  "electronJourneysPassed": 6,
+  "independentOpusFindingReproductionsPassed": 4,
+  "scope": "Create/Escape; Duplicate/Escape, Close and Cancel; Edit/Escape and Close at 1600/1280/820 via committed Electron test. No application output changed in the subsequent explicit Node compression inventory correction.",
+  "files": [
+    {
+      "path": "create-theme-escape.png",
+      "sha256": "e20c1755beb823e3dea48071116dec32b3559089d9f45fece284db0871fd24c4"
+    },
+    {
+      "path": "duplicate-dusk-cancel-enter.png",
+      "sha256": "27941d3e391c49107036f4e6078deaf511cfc7bbaabac89516e27b48c66cd627"
+    },
+    {
+      "path": "duplicate-dusk-close-enter.png",
+      "sha256": "27941d3e391c49107036f4e6078deaf511cfc7bbaabac89516e27b48c66cd627"
+    },
+    {
+      "path": "duplicate-dusk-escape.png",
+      "sha256": "27941d3e391c49107036f4e6078deaf511cfc7bbaabac89516e27b48c66cd627"
+    },
+    {
+      "path": "electron-focus.log",
+      "sha256": "df16c8741f75201143e225241a467c8e84c9aeebaa5a7e0353535fabb9c7e2b4"
+    },
+    {
+      "path": "electron-journeys.log",
+      "sha256": "588b2c10ee074154e358b735194c6354569cc84ae86452f2a3eb5e5b8eb531c1"
+    },
+    {
+      "path": "implementation.md",
+      "sha256": "6479b9f2e412da6e7640ac246c5ca0684ca98a3a789e890c34287fcbd49cecd5"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/card-harbor-review-both-halves-1600-dark.png",
+      "sha256": "2e3dafe2146a5b38509f8b72c42ac00c42b6f65ac5846ed5169d9ff143b20030"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/card-long-name-keyboard-remove-1600-dark.png",
+      "sha256": "597e4b8df3893c4287c77c93cf5d040a5877ad8d2e98638b471d8868bc0e0dbc"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/card-tide-both-halves-1600-dark.png",
+      "sha256": "34db2c17035c462a189e7cedb49e3e59d0fca20d7259a53ff025b935a7f11706"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/footer-status-after-bar-dragged-820-dark.png",
+      "sha256": "fd3b084c86eb0fb5eb3bc728f1141c162c50d665cf6dc278d66e65cd0e74fe3b"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/footer-status-beside-minimized-editor-1280-dark.png",
+      "sha256": "8a82e4d405dbeb1841ee7eb7e06612e60d169a3a5b00125e2441aa0332bc774d"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/footer-status-beside-minimized-editor-1600-dark.png",
+      "sha256": "2e185af80ea9c9dcc63e2606281504e73e5f97f8743f6c5d9f48a1abaa6e75e9"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/footer-status-beside-minimized-editor-820-dark.png",
+      "sha256": "4f527830400005ceb6d4fcf03979ee29d067cf86622d26344d4cedb57273c425"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/footer-status-beside-minimized-editor-820-light.png",
+      "sha256": "696ead2f9dfb1cb30773b27454b62b642a7cabcc31a85f6cf5753ce9e03da019"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/form-and-permission-grid-1280x800-dark.png",
+      "sha256": "b5ac7578b316bc6fc46db5cd18e3b2035f34177d12a8453613856bf794373221"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/gallery-custom-1280-dark.png",
+      "sha256": "31ac922bbc4fbdede9aa9905dc923f722862efd8fca0eb63f1cbb7add15d50ad"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/gallery-custom-1600-dark.png",
+      "sha256": "ea1a522358f1609ef41a4521bfcaf3a2aed3b068b2e268f9e724ee85503d797f"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/gallery-custom-820-dark.png",
+      "sha256": "b37ae8f582ec5261944885c6915b752222017f196b2621c4e0872b6508610228"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/gallery-custom-hover-1280-light.png",
+      "sha256": "27fc8d3497af118f510231a933eb62e69b013c2066d2ee652ef351e143440865"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/gallery-custom-hover-820-light.png",
+      "sha256": "7541888195a11f62b48cc3d9a193ac6bea385faecbbe5efd1df5de78e15329b6"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/permission-compact-820x560-dark.png",
+      "sha256": "cc6ce2f81b68212a06d7f779e7183ce63bdca9fa5b20e26bb9e6b60e7889f481"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/permission-compact-820x560-light.png",
+      "sha256": "03e352457ff0f778dab5a36ef78fe53aaefb00a363d5e30ee80ba02a18afd324"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/permission-grid-1280x800-dark.png",
+      "sha256": "2892e2e62638d2b84af4ceada35a305b6f9c982c999db4c6cca592febf6b31f6"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/permission-grid-1600-dark.png",
+      "sha256": "dac5313cb6fc35a1a57a6210fc7ecd4ae7728b29f8f1827b8724ff2523180749"
+    },
+    {
+      "path": "electron-journeys/phase-three-final-visual-fixes/permission-row-compact-1280x800-dark.png",
+      "sha256": "66a035176ffd4e9860ec10139dcb71e2072b5cd98c70c656668e046ff529c303"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/editor-expanded-after-low-drag-820x560-dark.png",
+      "sha256": "8ddc6f8255dd75ce455d107b8b78a1fd408160d47aa2514a877c8a0debdcec25"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/editor-minimized-threads-1280-dark.png",
+      "sha256": "a417d093bb5d4da097ff39b7a5ec832448049a522f9887e8879ce08e91179d6c"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/editor-minimized-threads-820x560-dark.png",
+      "sha256": "c75f6b6c1651a77fd47aa5bd4b8b9c253695b02127c0518f872635f2c633ff94"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/import-error-1600-dark.png",
+      "sha256": "4d841347707b938ec8bd59b2939b1b4234dd380af7f7bf7bf7890e86f5473930"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/inspector-diagram-1280-dark.png",
+      "sha256": "3aed2ec58dd9d46e51994dbc934632107d9cb92397fd41cac01377c0e26754ea"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/inspector-hover-1600-dark.png",
+      "sha256": "f3b8ffd7470726e244caf151a6bc738f849b934c376daa96259fc1ab04288ab9"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/inspector-spotlight-1600-dark.png",
+      "sha256": "7cd3b64eeeafd267ed0f8b6c6ae704a254a9f4e26cd8f0455495c7652985baac"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/open-vsx-results-1600-dark.png",
+      "sha256": "8e72c7a66b5395e749d985418535d6bb03e3490e0b86ab46d16c014ef2f1d78a"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/sliders-1600-dark.png",
+      "sha256": "1165efb80fcd6c97c2ae81e213a7c5c8e6382e9587f5b289cc5dc893ff53a0f2"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/theme-editor-820x560-light.png",
+      "sha256": "fe5ef1b9113094006d1668c932455dad349749a4bc9fff93bf87e4274a4fc6a5"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/theme-editor-resized-820x560-dark.png",
+      "sha256": "854fcd9a50d31e867dce02c5f4419dd817f1ef237b2d2c2c305247b60eeffdfb"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1280-dark.png",
+      "sha256": "b3907171f5e612d446a6bbe9bd69ff59d38968438f5ef3a4605bae9d760c9f21"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1280-light.png",
+      "sha256": "6f5bef34494738f9bb9f25d9ce1d64505a2b9a3e5e239869a1077673b0db6bbe"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1280-system.png",
+      "sha256": "e7067505ea2c0befaa1d6ca091b161d4c8d3e58d13e287dacb7b210cdf476ee2"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1600-dark.png",
+      "sha256": "f3d862d43e81c2f2f7a982eb89e87c873553ebd864eada03b826cd992e38039d"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1600-light.png",
+      "sha256": "91daf713d7fe8894dbc82b40b4cafb8bfc047d9430f0baf610fa27b94c60b603"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-1600-system.png",
+      "sha256": "69f9e244b0d72e822af6e725e6869b6281fc663b19f309adec83badaa0ddf4f7"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-820x560-dark.png",
+      "sha256": "1f7b65b2ff82031e0be6637c595bba0f95e336d7f0be21cb3f4ed272f2ed1025"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-820x560-light.png",
+      "sha256": "a3591232ba44e49a91e78208f433ad79033663bb6a779c653864a826c5c1e386"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-820x560-system.png",
+      "sha256": "a3591232ba44e49a91e78208f433ad79033663bb6a779c653864a826c5c1e386"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/themes-default-1600-dark.png",
+      "sha256": "fa83a499756a8de1fe76bc17a2ac1a335e8abcced2f029ff10b41e30e2ebbb91"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1280-dark.png",
+      "sha256": "57ff7114fd5903c903d96058c009a17434e66b61a23c67f35f2845b161279439"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1280-light.png",
+      "sha256": "a5e4490a25ea0c4233a6f39d66a4219527614511fb00f15f1aac0d0a04a06ce7"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1280-system.png",
+      "sha256": "a5e4490a25ea0c4233a6f39d66a4219527614511fb00f15f1aac0d0a04a06ce7"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1600-dark.png",
+      "sha256": "c65e8c33f732513ff9c2444b85dbe519b49e554c3020581fdf5ab81033f1dfcc"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1600-light.png",
+      "sha256": "56db9ef3e195dd1537f31815cb2dd4562f1118cf7c8423611c7d375004af96a8"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-1600-system.png",
+      "sha256": "56db9ef3e195dd1537f31815cb2dd4562f1118cf7c8423611c7d375004af96a8"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-820x560-dark.png",
+      "sha256": "9fc7285a35a9332a7ddd8ecbe5913b822494a0f08ca59999f08eaa07c5635d6c"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-820x560-light.png",
+      "sha256": "117602557f61fe0cc5d27b8ea1f747e2e6f3a21ed18b24c7a3b5886e30d75d58"
+    },
+    {
+      "path": "electron-journeys/phase-three-themes/threads-820x560-system.png",
+      "sha256": "117602557f61fe0cc5d27b8ea1f747e2e6f3a21ed18b24c7a3b5886e30d75d58"
+    }
+  ]
+}

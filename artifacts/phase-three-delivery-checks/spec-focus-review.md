@@ -1,0 +1,12 @@
+SPEC focus-only review: **0 open findings; worst severity: none.**
+
+Exact final source: `e5d0a53168a51dfe4ab1c5af830ca2bc90460adc`.
+Reviewed `git diff 387cbb8643239c9eb7cf5a8675bd0f1b52006855...e5d0a53168a51dfe4ab1c5af830ca2bc90460adc`: one commit, `e5d0a53`, plus necessary opener/session/close lifecycle. Original baseline: `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`. Read only my prior `spec-final-resolution-result.md`; unchanged Phase 3 was not re-audited.
+
+Requirement: the supplied focus correction must return keyboard users to the opening button without stealing replacement-editor focus. The current working acceptance document, `docs/verification/phase-3-implementation.md:38`, requires resolving “theme-editor keyboard focus restoration”; line 45 specifies “typical 1600/1280 widths and minimum 820x560, pointer and keyboard.” Theme capability and names/palettes remain the context (lines 23–25).
+
+Source resolution: `src/renderer/src/features/settings/themes/ThemeEditor.tsx:252–263` captures the opener during initial render, before the name input's `autoFocus` at line 698. Unmount queues restoration until removal has completed, requires BODY/null focus, and checks that the opener remains connected. Session IDs increment in `themeEditorSession.ts:34–36`; the panel is keyed by that ID (`ThemeEditor.tsx:192`), so replacement receives its own opener and retains its newly focused input. Escape, Close and Cancel converge on session closure (`ThemeEditor.tsx:303,652–657,686,770`; `themeEditorSession.ts:39–42`). No concrete missing/wrong behavior or material unasked scope creep found in this delta.
+
+Independent verification: executed `npm exec -- vitest run tests/unit/renderer/themeLibrary.test.tsx -t 'returns keyboard focus|leaves a replacing editor' --maxWorkers=1`: **2 passed, 17 excluded by filter**. Tests at lines 254–307 cover Create/Escape, Duplicate/Close, Edit/Cancel, replacement autofocus and disconnected opener. Reviewed the gallery E2E autofocus/Edit restoration assertions at `tests/e2e/phase-three-final-visual-fixes.spec.ts:194–205` as source only. Relevant reviewed/tested files match the exact SHA.
+
+Limits: JSDOM focus verification only; no actual Electron, pointer/viewport matrix, build or package execution. Root owns those checks. Builder red/green and mutation results were supplied context, not independently reproduced. No source changes, subagents, providers, remote writes or Standards assessment.

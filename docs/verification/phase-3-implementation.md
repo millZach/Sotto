@@ -1,76 +1,58 @@
-# Phase 3 implementation checklist
+# Phase 3 implementation and verification
 
-Scope: all ten Phase 3 GitHub tickets plus Zach's requested replacement of the standalone accent picker with T3 Code desktop themes. Repository millZach/Sotto; implementation baseline `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`. All prerequisite tickets were verified closed. #24 remains a separate release gate. Authorized delivery is local commits on main; no push, issue updates, merge, publication or release.
+All ten Phase 3 tickets are implemented locally, together with the requested desktop theme system and theme colors on Sotto's in-app mark, voice sphere and floating widget. Implementation baseline: `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`. Delivery is local commits on main and a verified Windows application directory. No push, issue updates, publication or release is authorized; #24 remains a separate release gate.
 
-## Deliverables and current state
+## Deliverables
 
-| Ticket | Acceptance | State |
+| Ticket | Implemented behavior | Evidence |
 | --- | --- | --- |
-| #49 | Claude native activity, subagents, order and reconnect | Implemented; native/fixture evidence, final review pending |
-| #50 | Grok ACP activity, subagents and retained history | Implemented; native evidence and identity reconciliation regression pass |
-| #52 | Complete native questions and exact once-only approvals | Implemented; thread and personal full-app journeys pass |
-| #54 | Three/four/more pane layouts, row dividers, persistence and zoom | Implemented; focused tests and integrated Windows restart journeys pass |
-| #56 | Retained real PTY terminals, hide/reopen/restart and Windows Ctrl+C | Implemented; actual and packaged PTY pass; live palette and reduced-motion updates implemented; actual theme-control journey passes in UI worktree; main confirmation pending |
-| #57 | Retained isolated HTTP(S) browser and external-default link routing | Implemented; real native view verified; mount-failure recovery implemented and complete-app verified |
-| #59 | Actual working-copy Git changes/diffs and honest unavailable states | Implemented; full-app journey passes; short tools-header correction implemented and rendered |
-| #64 | Claude native skill catalog, scope and expansion | Implemented; installed-native expansion and picker journey pass |
-| #65 | Grok native catalog and expansion or truthful limitation | Implemented; installed-native expansion and picker journey pass |
-| #68 | Durable project-free Codex chats, global memory and stable provider identity | Implemented; storage recovery and full-app restart pass; failed-send recovery and whole-block/skill merge verified |
-| Themes | T3 mode previews, six dual-palette themes, independent halves, create/edit/duplicate/delete/import/export, community themes, contrast/glass | Implemented and integrated; full theme library and icon/orb/widget journeys pass in isolated Windows build |
+| #49 | Claude native activity, subagent projection, event ordering and reconnect | [Providers](phase-3-providers.md) |
+| #50 | Grok ACP activity, subagent projection, retained history and stable stream identity | [Providers](phase-3-providers.md), [backend audit](phase-3-backend-audit.md) |
+| #52 | Complete native questions/context, free text and exact once-only permissions; durable answer recovery without replay | [Requests](phase-3-requests.md), [answer recovery UI](phase-3-draft-recovery-ui.md) |
+| #54 | Three-pane bottom span, four-pane grid, row dividers, more panes, retained arrangement and zoom | [Layouts](phase-3-layout.md) |
+| #56 | Real retained PTY terminals, focus/resize/hide/reopen, Windows Ctrl+C and live theme updates | [Tools](phase-3-tools.md), [Windows package](phase-3-packaged-windows.md) |
+| #57 | Retained isolated HTTP(S) browser, pinning, external links by default and saved destination preference | [Tools](phase-3-tools.md), [UI recovery](phase-3-ui.md) |
+| #59 | Actual working-copy Git changes, diff/refresh/read position, copy/reveal and honest unavailable states | [Tools](phase-3-tools.md), [review corrections](phase-3-final-review.md) |
+| #64 | Claude native skill catalog, scope/precedence, availability and expansion | [Providers](phase-3-providers.md) |
+| #65 | Grok native catalog and expansion, with truthful unsupported states | [Providers](phase-3-providers.md) |
+| #68 | Durable project-free Codex chats, global memory, stable provider identity, drafts/history/restart and no automatic delegation | [Chats](phase-3-chat.md), [storage recovery](phase-3-chat-recovery.md) |
+| Themes | Mode previews; independent light/dark palettes; create/edit/duplicate/delete; local import/export and Open VSX; contrast/glass; themed mark/orb/widget | [Themes](phase-3-themes.md), [branding](phase-3-theme-branding.md), [network](phase-3-themes-network.md) |
 
-- [x] Focused regressions and periodic typechecks throughout implementation.
-- [x] Independent backend audit; personal cache loss and Grok stream identity corrected and verified.
-- [x] Windows native provider, PTY, browser, Git and full-app request/chat/layout checks.
-- [x] Resolve browser refusal, failed-send text/skill recovery, live terminal palette/motion, and live Open VSX findings.
-- [x] Verify the short Tools header correction and terminal through actual theme controls in the integrated UI worker; main confirmation and independent critic pending.
-- [ ] Integrate and inspect final themes, icon/orb/widget, and inspector/minimized-editor corrections across normal and short Windows views.
-- [x] Resolve independent visual critic findings: browser visibility for a nonintersecting minimized editor, Send overlap, and long failed-message diagnostics. All ten combined theme/branding/recovery journeys pass at 7b0aec4. Expansion after a low drag is an additional correction still being verified.
-- [ ] Independent parallel Standards and Spec reviews against the fixed baseline; resolve material findings.
-- [ ] Final repository suite, lint, typecheck, build, runtime/notices and current Windows packaged verification.
-- [ ] Final evidence and local commits; actual completion report.
+## Theme requirements
 
-## Design and reference acceptance
+The standalone accent picker is replaced by the reference's desktop theme capability. Built-in display names are **Sotto, Rose, Fern, Tide, Copper and Dusk**. Stable internal IDs and palettes remain unchanged, so existing selections survive the rename; custom/imported names are preserved. New or migrated selections use Tide for both halves, while existing mode and subsequent selections remain intact.
 
-Target: existing Windows Electron application at 1600/1280 and minimum 820x560, pointer and keyboard, light/dark/system and reduced motion. Use semantic palette colors throughout. Preserve the established transcript-led workspace, typography and behavior while replacing the rejected accent system. Keep controls readable, content dominant and short-window actions reachable; no clipped composers, obscured request actions or empty native views presented as verified rendering. Inspect actual captures, not only geometry assertions.
+The in-app Sotto mark and voice sphere use the live palette. The widget uses the saved palette corresponding to its OS-resolved light/dark mode, including its mark and voice visualization. Taskbar, tray and installer image assets are static; these are not represented as dynamically themed.
 
-T3 source is pinned at `.claude/tmp/t3-reference-24`, commit `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3`. User supplied the appearance reference and selected Ocean in that image; root disclosed Ocean as the reversible initial/migrated palette for both halves. Preserve mode and saved future selections. Latest user correction: the app icon and voice sphere, including the widget icon and voice visualization, must follow the selected theme. The widget can retain its system-resolved mode while consuming the corresponding selected palette. The former frozen-widget palette is superseded. Desktop theme capability includes local T3/VS Code import/export and Open VSX; server publication CLI and mobile-specific controls do not apply to this local desktop architecture.
+Reference: the user's T3 Appearance screenshot and T3 Code source at `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3`. Required MIT attribution to T3 Tools Inc. remains in source and notices. Local T3/VS Code import/export and Open VSX apply to this desktop product; a server publication CLI and mobile-specific controls do not.
 
-## Evidence index
+## Acceptance and verification state
 
-- `phase-3-providers.md`: installed Claude/Grok activity/catalog/expansion and reconnect; live subagent execution was not exercised (source/fixtures cover projection).
-- `phase-3-chat.md`: native Codex personal turn/resume and global-memory separation.
-- `phase-3-chat-recovery.md`, `phase-3-backend-audit.md`: long-reply and corrupt-storage recovery; preserved original bytes and stable identities, no replay.
-- `phase-3-tools.md`: real Windows PTY, Git and retained isolated WebContentsView.
-- `phase-3-requests.md`, `phase-3-ui.md`, `phase-3-layout.md`: focused and complete-app UI journeys plus inspected captures. Earlier worker checkpoints are distinct from final combined acceptance. The three browser/chat/terminal recovery journeys also pass on the integrated theme build; real theme-control and latest widget checks remain pending.
-- `phase-3-packaged-windows.md/.json`: full package verifier passed at source `7a16629`; later UI/theme/Grok/storage changes require a new final package checkpoint. Production modules, actual PTY and SQLite were verified. Mac remains unverified here.
-- Root `phase-three-personal-bridge.spec.ts`: two saved conversations/restart/default-provider change, and corrupt-cache startup leaves other app functions usable without altering original bytes.
-- Root `phase-three-personal-requests.spec.ts`: complete personal form, refused-answer retry, omitted optional field, exact native permission and durable decision IDs; no extra user message or project.
-- Root `phase-three-tools-bridge.spec.ts`: PTY output/identity across renderer reload, real Ctrl+C, working-copy isolation, browser confinement and stale-view mount ordering.
-- Root `phase-three-skills-bridge.spec.ts`: all three native picker token/reference contracts; provider effects are explicitly synthetic, installed-native expansion is separate evidence.
-- `artifacts/phase-three-integrated/native-browser-composed.png`: root inspected actual composed Windows native browser via Electron desktopCapturer after sky's native pipe was unavailable. Final theme recapture pending.
+- [x] All ten implementations integrated, with focused red/green regressions for material findings.
+- [x] Own theme names and palette propagation verified in actual Windows Electron journeys and inspected captures.
+- [x] Independent Standards and Spec reviews: zero open findings through `e5d0a53`; separate reports and resolved findings are recorded in [final review](phase-3-final-review.md).
+- [x] Full repository suite at `17d8f0f`: **3,252 tests passed**, 15 existing gated skips; 223 files passed, 9 gated files skipped. Subsequent answer-remount correction: 49 focused request tests passed; independent Spec reviewer reran all 16 recovery tests successfully.
+- [x] Build, node/web typecheck and repository lint pass at `387cbb8`. Runtime verification covers four files; notices cover 172 components.
+- [x] **29 integrated Electron journeys passed** at `387cbb8`, including full-process answer recovery/restart, themes/branding/widget, native form context, compact arrangements, browser/editor intersection, retained terminal updates and link preference persistence. [Exact build and capture hashes](../../artifacts/phase-three-delivery-checks/verification.json).
+- [x] Independent Opus 5 rendered reviews inspected normal and minimum Windows sizes, light/dark/system, pointer/keyboard and reduced motion. Root also inspected integrated captures. [Latest bounded review](../../artifacts/phase-three-delivery-review/visual-review-result.md).
+- [x] Theme-editor focus correction `e5d0a53`: 41 focused tests pass; all six affected Electron journeys pass, including Edit restoration at 1600/1280/820. The independent Opus finding's four Create/Duplicate close paths pass in actual Electron with focus back on their opener. [Captures and exact output hashes](../../artifacts/phase-three-focus-review/verification.json).
+- [x] Final Windows package verified at `707b253`: exact production dependency inventory, source/build/ASAR provenance, native PTY, SQLite migration/FTS, normal startup and installed audio worklet. The delivery copy matches all 259 files. [Package evidence](phase-3-packaged-windows.md).
+- [x] Final evidence saved for local delivery. No remote actions performed.
 
-## Work ownership and boundaries
+The final package retains the same 84 application artifacts and build hash exercised by the six final Electron journeys at `e5d0a53`. The sole subsequent change, `707b253`, adds the already-used `node:zlib` community-theme compression builtin to the explicit release inventory, with five passing regressions. Exact-list and builtin-availability enforcement remain intact. Node/web typecheck and repository lint pass at `e5d0a53`; the two inventory files also pass scoped lint.
 
-Implementation uses isolated CLI workers, max three alongside root. Backend/reasoning: gpt-6-astra high. UI and visual review: exact Claude Opus 5, expressly authorized after Fable quota failure. Current workers: themes, icon/orb/widget theme propagation, and fixes from the completed independent workspace visual critique, all exact Opus 5. Final UI corrections are integrated through9177169. Open VSX corrections are integrated as b8995d8: 66 focused tests pass on main and the unmodified default client completed live search/install of GitHub.github-vscode-theme 6.3.5; see phase-3-themes-network.md. Earlier diagnostic-only extraction is superseded by this verified client run.
+The initial broad Electron matrix passed 128 journeys with 21 existing opt-in/platform gates skipped. Two stale workspace expectations were corrected and all four affected journeys passed. Intermediate full-suite failures were investigated: the synthetic Claude acknowledgement passed all 16 safety tests on isolated rerun; Windows Git fixture cleanup received bounded retries while its child's cwd handle is released. The later complete 3,252-test run passed both. No failing tests were removed or skipped to obtain the result.
 
-The implement, Tastify, domain-modeling, computer-use and OpenAI-docs skills were applied where relevant; final code-review remains pending. No installed tdd skill was found after search, so focused red/green regressions were written directly.
+## Rendered design checks
 
-Preserve unrelated untracked images `artifacts/composer-dev-live.png` and `artifacts/formatting-quality-native-menu.png`. Task-generated screenshots may be updated for final integrated evidence. Keep project-private memory, provider identities, explicit authority and uncertain delivery semantics intact. No installer publication or remote changes are authorized.
+Target: the existing Windows Electron interface, typical 1600/1280 widths and minimum 820x560, pointer and keyboard, light/dark/system and reduced motion. The transcript remains dominant; short-window actions remain reachable. The reference's mode previews and three-by-two dual-palette gallery are retained, with separate selected-half rings and badges. Long custom names receive two lines plus their full tooltip; actions wrap above them. The minimized editor reserves footer space, and native browser composition was inspected with Electron desktopCapturer rather than inferred from a renderer-only screenshot.
 
-Final build isolation: an existing main-checkout `electron-vite dev --watch` process rewrites `out/`. Preserve that user session. Final production build, complete-app verification and package provenance must use an isolated worktree at the final code commit with its own output directory. Earlier main renderer checks remain checkpoint evidence, not final artifact provenance.
+Appearance's first viewport is task-led: heading, one introductory sentence, Color scheme label, and the three necessary mode labels. Theme names/actions and contrast/glass labels enter as the page scrolls. These are required selection controls, not decorative copy. Duplicate permission instructions were removed. Saved-answer recovery states the delivery consequence once, then shows original questions/answers and Copy/Discard actions; it never creates new sending authority or overwrites a newer composer draft. Detailed per-size observations and limits are retained in the linked Opus reports.
 
-## Integrated verification checkpoint 7b0aec4
+## Scope and delivery limits
 
-Isolated checkout .worktrees/phase3-verification, with its own production output. Node/web typecheck, repository lint, build, runtime verification (4 files) and notice verification (172 components) pass. Full Vitest suite: 214 files passed, 9 gated files skipped; 3,184 tests passed and 15 skipped. Skips are opt-in installed-native/provider/paste checks and two FakeProvider contract seams; no failing tests were excluded. The 13 standalone TTS/voice metrics tests also pass.
+Installed Claude and Grok activity/catalog/expansion and a native Codex personal turn/resume were exercised separately from deterministic fixture journeys. Live subagent execution was not spawned; projection is covered by source and fixtures. Real Windows PTY, Git and retained WebContentsView paths were exercised. Some paste/provider/installed-native checks remain explicitly opt-in. macOS packaging and native behavior are unverified on this Windows machine; #24 and publication remain separate.
 
-The ten Electron theme, branding, preference and visual-fix journeys all pass (1.8 minutes), with SOTTO_THEMES_E2E=1 and SOTTO_THEME_BRANDING_EVIDENCE=1. They exercise actual main/renderer IPC and settings restart, live icon/orb/widget palettes, theme halves/system/contrast/glass/editor/inspector/import/community fixtures, zero idle inspector mutation cycles, compact editor controls, native browser intersection and retained identity, failed-message recovery, short Tools headers, and retained terminal live palette/reduced motion. Open VSX live-network and native-provider evidence remain separately identified above. Root inspected the integrated Iris app/orb/widget and theme-gallery captures.
+UI builders and critics used exact Claude Opus 5 as requested; backend and independent code reviewers used gpt-6-astra/high CLI workers. The implement, Tastify, domain-modeling, computer-use, OpenAI-docs and code-review skills were applied where relevant. No installed tdd skill was found after search; focused red/green regressions were written directly.
 
-Integration caught a real missing webLinkDestination settings allowlist key. Commit 53762fa fixes persistence and adds a direct IPC regression plus the full Settings/ordinary-link/restart journey. The latter verifies external-by-default and embedded-after-saving behavior without launching a real external browser.
-
-Independent Standards and Spec reviewers are reviewing baseline through 7b0aec4, with later changes to receive a delta review. The remaining 151 Electron journeys are in progress. Final package and independent Opus visual review remain pending.
-
-## User naming correction and review remediation
-
-Built-in display names are now Sotto, Rose, Fern, Tide, Copper and Dusk (4c4d36e). Their existing IDs and palettes remain unchanged, including saved selections; user custom/imported names and required T3 attribution remain intact. The initial/default Ocean palette is now displayed as Tide. Root ran 73 focused theme/settings/library tests successfully; fresh integrated named-theme captures and journeys are in progress.
-
-The final independent reviews reported Standards: two P2 findings; Spec: three P2 findings. See phase-3-final-review.md. Git watcher activation/replacement is fixed (1272b6e, six tests passed), and history-disabled personal answer intent now retains redacted recovery identities (0c13e2b, six new regressions pass on main; worker58focusedpass). Durable structured answer drafts and the two UI findings (compact arrangement selector/native form explanation) remain in progress. The isolated broad Electron run passed128, skipped21 opt-in/platform gates, and exposed2staleexpectations; corrected workspace expectations passall4journeys. No app behavior was disabled or failed test skipped.
+Final production output and packaging use `.worktrees/phase3-final`, preserving the user's existing main-checkout dev watcher. Verification source/build checkpoints are recorded explicitly rather than treating earlier captures as final package evidence. Unrelated user images `artifacts/composer-dev-live.png` and `artifacts/formatting-quality-native-menu.png` are preserved and excluded from task commits.

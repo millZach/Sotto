@@ -1,0 +1,19 @@
+
+Running 6 tests using 1 worker
+
+node.exe : (node:85772) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:85772) Wa... env being set.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\e2e\phase-three-final-visual-fixes.spec.ts:116:5 › custom names read in full beside their actions, and each preview circle keeps its own ring and badge, at 1600, 1280 and 820 (4.2s)
+  ok 2 tests\e2e\phase-three-final-visual-fixes.spec.ts:225:5 › the footer status ends before a minimized editor docked in the footer, beside the links, Send and the live page (10.4s)
+  ok 3 tests\e2e\phase-three-final-visual-fixes.spec.ts:375:5 › the composer beside a pending permission says to allow or deny once, through the grid, the compact row and a structured form (3.8s)
+  ok 4 tests\e2e\phase-three-themes.spec.ts:102:5 › themes: halves, system, contrast, glass, editor, inspector, import, Open VSX, removal and restart (22.0s)
+  ok 5 tests\e2e\phase-three-themes.spec.ts:400:5 › themes: a spotlight over a drawn diagram goes quiet, and still follows new replies (10.7s)
+  ok 6 tests\e2e\phase-three-themes.spec.ts:447:5 › themes: a minimized editor is one row that leaves Send and the footer links reachable (3.9s)
+
+  6 passed (56.2s)

@@ -1,0 +1,697 @@
+{
+  "sourceCommit": "387cbb8643239c9eb7cf5a8675bd0f1b52006855",
+  "buildInputsRevision": "cb5b581f03f6cf4ae567b3b9d1bdb7aad5b758f05c66393a174c75f9bffa58ac",
+  "buildSha256": "757f1b82d038e93a973eadac4c734936ed936a5b229323187426a064156f1d49",
+  "electronJourneysPassed": 29,
+  "duration": "2.6 minutes",
+  "files": [
+    {
+      "path": "crossing/agent-configuration-scrollbar.png",
+      "sha256": "3a58b6e0de71d8edfb65e6b0db957bd79fda76cc02bd1784a07047cddf838aa6"
+    },
+    {
+      "path": "crossing/phase3-requests-docs-required-unavailable-1280-dark.png",
+      "sha256": "9c3ccfb2be40769b1dc76d981f972425072b93f7bc1d1c31a9dee4c6b09344ef"
+    },
+    {
+      "path": "crossing/phase3-requests-docs-required-unavailable-1280-light.png",
+      "sha256": "b5df609f8e1334bfe8b38a71275bc6fd89cc2ae3328af8a789b1955713b1fd5a"
+    },
+    {
+      "path": "crossing/phase3-requests-docs-required-unavailable-820-dark.png",
+      "sha256": "c7faf6b9b6cbe2e8a377d17f2b3a3ce80dae0495c923e2c2949bd754c4b4f7c0"
+    },
+    {
+      "path": "crossing/phase3-requests-docs-required-unavailable-820-light.png",
+      "sha256": "cc428a2b44f55a5e945a8ac7acb32e13bc47e81a1e04444b09da50da0e0fe9d4"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-choices-1280-dark.png",
+      "sha256": "cae1aaa1b2bfa08d666c1abe59cf5052f32b5a7f3e944deeea76e85d29094dc8"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-choices-1280-light.png",
+      "sha256": "c490a060e000d1cf2a4d560a09549a7f9f5ec1a0c17aa69e5f04b4d782733f13"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-choices-820-dark.png",
+      "sha256": "dbf05a665751fc1953abeba356b0faddf87ee803bd6158979b15924b201109dc"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-choices-820-light.png",
+      "sha256": "31ccd3cb354630a49d43db3eda42c977b1a794cc1075087b2f9db0a00d5a068f"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-no-choices-1280-dark.png",
+      "sha256": "223fbdc0138fc8a74361f96ce34786bf4a7d1504b3d3ecd1cc94b5e07b2d29d5"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-no-choices-1280-light.png",
+      "sha256": "36319dc1447ab5d2e02da1a2dd93f38e7be347030a2334c5371201cdaafef9c9"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-no-choices-820-dark.png",
+      "sha256": "2605039854c03a2eb25e9c2d990f341f6760ead34d956811773755c90e5eaea3"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-no-choices-820-light.png",
+      "sha256": "8bfc1f31f8fcd6d8e06c1811c3939a9f8d870b6681cc5c821b1cca6a9b50a6ab"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-refused-1280-dark.png",
+      "sha256": "004810efaa4e692da0d76ec9fa11b971ce6316d636f3a22db43ef60b18538b73"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-refused-1280-light.png",
+      "sha256": "4da6c7f2b4dcc1fa4c5cdc5c3b1d4ae12aa161dd24afb432d208ac8a110b92c1"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-refused-820-dark.png",
+      "sha256": "dace1873cabec97f2ca423b064dc79d0eae29769d95f2a4e3d632e9769175632"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-refused-820-light.png",
+      "sha256": "9d3aa06ee6ab1f05f5a2be8e4bfc0535e84300133fc3ae4ebee76710e1b97b02"
+    },
+    {
+      "path": "crossing/phase3-requests-permission-sending-1280-dark.png",
+      "sha256": "4c0059946f9a4dcb754083bf434a8fff183fc639e482a5e6c11182e8e5395286"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-1280-dark.png",
+      "sha256": "5767f1c6743cdfc5de40a93025e33ddff2dbe4b6592c0cf5701a81411f4474d9"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-1280-light.png",
+      "sha256": "2c13cfb8e514050c9852dc1e822ea758dfd44bb820afbfd56a4fdd48e426a0aa"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-820-dark.png",
+      "sha256": "7e8a4bb2b89139a3ee28d3f3a8a947be71b5b596ef4290aee533eae87161414d"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-820-light.png",
+      "sha256": "25b9e4802c512a2757f61c34b035075c02fe652b820ee280aea1e76c48579b01"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-footer-1280-dark.png",
+      "sha256": "587a5c9226a2dff30532d6e14f3b4813539388ec4c368bfab9deb164f0ba87cb"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-footer-1280-light.png",
+      "sha256": "b3b5729f18cac88b8b01c41d39e276496447d2f37cb987015a36f4dfb8d7da56"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-footer-820-dark.png",
+      "sha256": "e83cfb44bf4b95af11a324bb505b8d89073de838bfaf6fbffca25915bfd3bdbb"
+    },
+    {
+      "path": "crossing/phase3-requests-workshop-form-footer-820-light.png",
+      "sha256": "087ea5362dac469fff927f9ea98559b6eb92895ca607136a0b50f26bf9319bbd"
+    },
+    {
+      "path": "crossing/thread-workspace-foreign-draft.png",
+      "sha256": "c0481226e7ab073f8205fe40a5f4348e3b13f39950543dbb9c84fc5eb7bea164"
+    },
+    {
+      "path": "crossing/thread-workspace-manual.png",
+      "sha256": "14b3e809fdcb30bfa1567c724a89f7ca99615f4790246f648730b8007550543a"
+    },
+    {
+      "path": "crossing/thread-workspace-queue.png",
+      "sha256": "edeae144ac3ecf1276a9cbee01d7378273c0b1207f05c66b49ffa4f2c1009b9b"
+    },
+    {
+      "path": "crossing/thread-workspace-settled.png",
+      "sha256": "3a838a2831d0ecea66eb566e72d574e8bf9d1d9516172b7287a95c3046ae4103"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-changed-question-1280-dark.png",
+      "sha256": "8a6e354a1ca1f51827411d8015363365d6bb9f532e1803102471feea54e63dc8"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-discard-confirm-1280-dark.png",
+      "sha256": "a9ed8624bcbcf9798e10280d4b4b1e86cc3959e9debd4420efe5f6a527b60e15"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-disconnected-1280-dark.png",
+      "sha256": "e080c2f024f68d4880de20c2a1c5b5c33d19c6f1337623f745f5407d64bad23a"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-1280-dark.png",
+      "sha256": "d1a17c007114d2b3966ad0c9bb0bead6c7be677f4af02d3c685abdea404c95a3"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-1280-light.png",
+      "sha256": "666e6b2398f290caa35f8b0dd27e4b4f60193dcb1c9a9f87dc67f5a70aa36c52"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-820-dark-actions.png",
+      "sha256": "4c0a3d399686fc3741203222f1bf7f8aeecc98120e5c93860f4fcf413f43a2f2"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-820-dark.png",
+      "sha256": "5f183ca39845e84bf1c0b63d9cfb8e9955f7d4ab1a8dd3d2f66e29ba510c994f"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-820-light-actions.png",
+      "sha256": "e8ee41f2b5e60057a49b87cf84059df040db0a0204a667af0c27cf6b2b6912bd"
+    },
+    {
+      "path": "phase-three-draft-recovery/personal-question-closed-820-light.png",
+      "sha256": "0f03b8feb46eda71a9a290ed69fe0ac8e6edea6fd6ca7686da581d4b2a33b745"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-changed-question-1280-dark.png",
+      "sha256": "35daed20fab444a0c8411ebc3d4ff619c207c29454b3dee3da8d52040885b01c"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-discard-confirm-1280-dark.png",
+      "sha256": "cfd5572440cfbcd7a6c7b3b3f1ad18b0ce9bced0016d71ba8fe959175ba65240"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-disconnected-1280-dark.png",
+      "sha256": "3627554703d26026be21e156d4659a482531228745cb4446b0bd7f42c5da0e3b"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-held-question-closed-1280-dark.png",
+      "sha256": "8a73080d8bf43257b233326d0335b453078345fa60288f451aafbe3a31662ecc"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-1280-dark.png",
+      "sha256": "93937e1f5e3ed1fd4e0c2c470fc9dcb86a32ee494f914779361bd60582ee6a65"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-1280-light.png",
+      "sha256": "852f8892f9b60e41ef518ed91ed1f48d812b3b37671fd4fce8a9524c10d280f7"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-820-dark-actions.png",
+      "sha256": "8a062bd6080e10642abb67aa18828150ba70e0e00efd2e4c6851d121a9477d48"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-820-dark.png",
+      "sha256": "fd0f0a10abb3ec3e1f438ea429a6ee224af0042459c065625ee56992a53e97bb"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-820-light-actions.png",
+      "sha256": "d38475078c6fd646f4478d1eafc58af058670a48c29d4231717c7ea9e0d82551"
+    },
+    {
+      "path": "phase-three-draft-recovery/thread-question-closed-820-light.png",
+      "sha256": "6427f7d33e5e6e2e56be401fbf75e3d40b490cb2df2ba0d4007852811d1f2155"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/card-harbor-review-both-halves-1600-dark.png",
+      "sha256": "2e3dafe2146a5b38509f8b72c42ac00c42b6f65ac5846ed5169d9ff143b20030"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/card-long-name-keyboard-remove-1600-dark.png",
+      "sha256": "597e4b8df3893c4287c77c93cf5d040a5877ad8d2e98638b471d8868bc0e0dbc"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/card-tide-both-halves-1600-dark.png",
+      "sha256": "34db2c17035c462a189e7cedb49e3e59d0fca20d7259a53ff025b935a7f11706"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/footer-status-after-bar-dragged-820-dark.png",
+      "sha256": "cb0b6bccfdd4842c69fa5f7a25d8a1f339b3cc3c77f008d5740b3a50aec10a5e"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/footer-status-beside-minimized-editor-1280-dark.png",
+      "sha256": "54573f94b5c650698b43f9ba0ee474f89e40c449a8b307c87f48e1219357676b"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/footer-status-beside-minimized-editor-1600-dark.png",
+      "sha256": "f27bf3b834a55a362cfb1c2fc9f8b27b7524ea1cff73bdf2735b8fe025d70b40"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/footer-status-beside-minimized-editor-820-dark.png",
+      "sha256": "3fdf294186e28889d01906ccfea56b4245c212b8d13228356d3e779eb17e96fc"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/footer-status-beside-minimized-editor-820-light.png",
+      "sha256": "680731e0c7f4c11ff463046d05bfa21675c2c7064cadf003feaf6579b51bb964"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/form-and-permission-grid-1280x800-dark.png",
+      "sha256": "b5ac7578b316bc6fc46db5cd18e3b2035f34177d12a8453613856bf794373221"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/gallery-custom-1280-dark.png",
+      "sha256": "31ac922bbc4fbdede9aa9905dc923f722862efd8fca0eb63f1cbb7add15d50ad"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/gallery-custom-1600-dark.png",
+      "sha256": "ea1a522358f1609ef41a4521bfcaf3a2aed3b068b2e268f9e724ee85503d797f"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/gallery-custom-820-dark.png",
+      "sha256": "b37ae8f582ec5261944885c6915b752222017f196b2621c4e0872b6508610228"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/gallery-custom-hover-1280-light.png",
+      "sha256": "27fc8d3497af118f510231a933eb62e69b013c2066d2ee652ef351e143440865"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/gallery-custom-hover-820-light.png",
+      "sha256": "7541888195a11f62b48cc3d9a193ac6bea385faecbbe5efd1df5de78e15329b6"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/permission-compact-820x560-dark.png",
+      "sha256": "cc6ce2f81b68212a06d7f779e7183ce63bdca9fa5b20e26bb9e6b60e7889f481"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/permission-compact-820x560-light.png",
+      "sha256": "03e352457ff0f778dab5a36ef78fe53aaefb00a363d5e30ee80ba02a18afd324"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/permission-grid-1280x800-dark.png",
+      "sha256": "2892e2e62638d2b84af4ceada35a305b6f9c982c999db4c6cca592febf6b31f6"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/permission-grid-1600-dark.png",
+      "sha256": "dac5313cb6fc35a1a57a6210fc7ecd4ae7728b29f8f1827b8724ff2523180749"
+    },
+    {
+      "path": "phase-three-final-visual-fixes/permission-row-compact-1280x800-dark.png",
+      "sha256": "66a035176ffd4e9860ec10139dcb71e2072b5cd98c70c656668e046ff529c303"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-personal-codex-820-dark.png",
+      "sha256": "bbd546c0bd94e659e62411fea8d172621d8b619ec83da4e80f4af25943f33009"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-personal-codex-820-light.png",
+      "sha256": "8cc19c3ab7a35bc60e4ac42bff94e83aec50da8ae0822d217fed41dd571cd132"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-claude-820-dark.png",
+      "sha256": "59784f0469cabccb725e3dbe798020b2eff83d3e962dcc5f13bfc3b2ead73e21"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-claude-820-light.png",
+      "sha256": "7446142a0ea59eebc00d95e4c60d17fc0ded05839da9ccb739341af278344428"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-codex-820-dark.png",
+      "sha256": "18fdabd7241f6a5f1640d7cfc908ac7b62151b77687c08e87f4ba42688b6f2f6"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-codex-820-light.png",
+      "sha256": "20d99d17f4fbdd708e6dfdffea52f0cfbab905697d6332987e293a1c1b7207a6"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-codex-send-820-dark.png",
+      "sha256": "5f395678debb415a01c3ce699a492c8b5391216d11a81dcb6972e85c36753bf7"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/form-threaded-codex-send-820-light.png",
+      "sha256": "ca9db0c3abebefe7993ed908e37fd3d4dc138964bcda7673dd66ec531a991992"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-1280-dark.png",
+      "sha256": "b2645474832b81a40c939d39a551d7b6b813053407bd4f167e5b4bc1e5ae32c9"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-1280-light.png",
+      "sha256": "14a2ab1f3f3d59a8366f569ef036a3fb98606aae35909609c288f62f5f65bb1b"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-compact-820-dark.png",
+      "sha256": "cc084ee5611c974f4899d4db9350969ce9ac4ad16843fc5737c79757253e7e6f"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-compact-820-light.png",
+      "sha256": "c39116765ad2dde080183d153a376adcb2a434ebe804277f49f9d08d2d70c21f"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-returned-1280-dark.png",
+      "sha256": "ea653af01cb1486f6de8b1a950c0f0dbc9c60ef2998910d2adf3887c28c320e9"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-grid-returned-1280-light.png",
+      "sha256": "6fa91cfc5cb20a4be759fa227aa6fef7f82616214f2958428cec70d9234a77bf"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-row-compact-1280-dark.png",
+      "sha256": "a396a0edfb29d3f13a8c02e9063799c0e86087b5923e914e5317c51fa89635e4"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-row-compact-1280-light.png",
+      "sha256": "fe419045091e419a557b9ebec747829b1bca6fc8c3d7ccbacf199f6a0d160000"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-row-compact-820-dark.png",
+      "sha256": "32866a1cd33587bfa50946f77a9cc8ae6f3c8b4b1ab9290a2fa1757066d9cf86"
+    },
+    {
+      "path": "phase-three-review-ui-fixes/panes-row-compact-820-light.png",
+      "sha256": "c25ebd34c3e6413e4285b3957822531a3a6dadae927318b9d84862f2ae5b370c"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-live-agents-orb.png",
+      "sha256": "78ff1a7eabc7db62e67ecc88e7500984dce10095a3e41c5ee9cd30ae0edf76f3"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-live-agents-room.png",
+      "sha256": "4c05990d79f0875b6a4c791f7671f43f9529f39c0eaec2dc65fd9c862aec6cf4"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-live-app-mark.png",
+      "sha256": "8fc2ebd56fdeb7a24561c37d68a5807c1dc84212a5577a6560fe989edd0fcca5"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-widget-listening.png",
+      "sha256": "adedb96def8cc7378b1b892b04ab56c2323b429cc0df5419c37cfe00bae68555"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-widget-mark.png",
+      "sha256": "1091d611c37bfb8dea783d465c0649d2bdaf56f792c6c9416c7dc781b1ff2586"
+    },
+    {
+      "path": "phase-three-theme-branding/custom-light-widget-voice-bars.png",
+      "sha256": "77ae42055024eac1d9c1264bff9b6e56c9bca6fc0e050efb2025c8c944e5c159"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-idle-widget-idle-hover.png",
+      "sha256": "1cb6811ea4c0791db1147dd838bc2d3d2d7aa9476b6ef858ead2a174722b186d"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-live-agents-orb.png",
+      "sha256": "8935b66744389ad1a99dde1e59ad60a53a470a4aa183a17522ad0800c8aa9069"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-live-agents-room.png",
+      "sha256": "0c7f179f0003d23a63dbbd29a01baf20a15e96369cbd3f1aa8e177e97f0b9754"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-live-app-mark.png",
+      "sha256": "884e63709c0957254060c9525b0297ec56dffe025e4e8afc6893435e1677b6ad"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-widget-listening.png",
+      "sha256": "96780fb7007af741b18d39aa3472a699aa4d6d4bd71ffcddcb48efc7c7113531"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-widget-mark.png",
+      "sha256": "192dadd29b368db7ff97801fc1ae38d424f722803ce798119e5428441f89317f"
+    },
+    {
+      "path": "phase-three-theme-branding/ember-light-widget-voice-bars.png",
+      "sha256": "e6dcefecbcb6f8a979307a98e55f7882652e10335b7b770842576e5ead0d48fd"
+    },
+    {
+      "path": "phase-three-theme-branding/error-ember-light-widget.png",
+      "sha256": "69ec5f1e6b83ab883ddf6a4fb05219b8d058176f11bb446ce32424d0e59adc8f"
+    },
+    {
+      "path": "phase-three-theme-branding/error-iris-dark-widget.png",
+      "sha256": "610ede5da16a4db0c1278085ffc4d641d4064b61b031f8114ec4d54d0872c8c5"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-agents-orb.png",
+      "sha256": "02cddcfc8b48f2950ddda54d17ae0492e15ed0d980a640ae68fa0243bc873648"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-agents-room.png",
+      "sha256": "dfd55bc959bc21da5a4e25a83f445d1710fe89d704a9e71e9b58f58408117d26"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-app-mark.png",
+      "sha256": "31d0abd211454ec9df40109ef3f34a43b45dae25835b152e6268b4a27b1401c3"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-widget-listening.png",
+      "sha256": "05c7e927204a5ad2c3cc19447488e553decfbd1c755a78a1f814dd96a6afd620"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-widget-mark.png",
+      "sha256": "cedaadca82d9a225d5cb420a729c9d0dc0fcdbe456c78d739644ce0316949476"
+    },
+    {
+      "path": "phase-three-theme-branding/iris-dark-live-widget-voice-bars.png",
+      "sha256": "e00b172de551aa65e06cae317735c9dad67ce2ea93cb5d1404823f8d62227923"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-agents-orb.png",
+      "sha256": "ee46497f2269bcb1f8a40e076f0408212e5507eabed2d936f99666db171c9e0c"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-agents-room.png",
+      "sha256": "1b93ecad2967ef3a1a1837b32eb16ffe7c5e1a32ba46e373ac891156b2256989"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-app-mark.png",
+      "sha256": "75a6546932fc445169c68e4ecf7099a9af53bc52bf8bb24bae989a46ed0799d1"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-widget-idle-hover.png",
+      "sha256": "8692bf5d5764fc615908c3a3049eb4ef2dc253fc1c56d1939ed25d4370e77a9c"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-widget-listening.png",
+      "sha256": "2cf00b325fe23a8dd8e4134816171e93688a328603f4ab923a2b4020f038dac7"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-widget-mark.png",
+      "sha256": "67fde1f61f085758f393c54a207dc2ab7573de37a260439bf6fdb165c6acbb81"
+    },
+    {
+      "path": "phase-three-theme-branding/ocean-dark-widget-voice-bars.png",
+      "sha256": "75b4d161fb4bae85f6819f1c5d4f5cd405069758898e84f86c44f47a4046dcef"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-agents-orb.png",
+      "sha256": "78ff1a7eabc7db62e67ecc88e7500984dce10095a3e41c5ee9cd30ae0edf76f3"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-agents-room.png",
+      "sha256": "4c05990d79f0875b6a4c791f7671f43f9529f39c0eaec2dc65fd9c862aec6cf4"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-app-mark.png",
+      "sha256": "8fc2ebd56fdeb7a24561c37d68a5807c1dc84212a5577a6560fe989edd0fcca5"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-widget-listening.png",
+      "sha256": "adedb96def8cc7378b1b892b04ab56c2323b429cc0df5419c37cfe00bae68555"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-widget-mark.png",
+      "sha256": "1091d611c37bfb8dea783d465c0649d2bdaf56f792c6c9416c7dc781b1ff2586"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-custom-light-widget-voice-bars.png",
+      "sha256": "77ae42055024eac1d9c1264bff9b6e56c9bca6fc0e050efb2025c8c944e5c159"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-agents-orb.png",
+      "sha256": "02cddcfc8b48f2950ddda54d17ae0492e15ed0d980a640ae68fa0243bc873648"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-agents-room.png",
+      "sha256": "dfd55bc959bc21da5a4e25a83f445d1710fe89d704a9e71e9b58f58408117d26"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-app-mark.png",
+      "sha256": "31d0abd211454ec9df40109ef3f34a43b45dae25835b152e6268b4a27b1401c3"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-idle-widget-idle-hover.png",
+      "sha256": "1ac596a7e6a8c99306ed4bb7a8e1d416cd6b2632cdb75aaa8708b1e1636afef2"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-widget-listening.png",
+      "sha256": "0e37e71ee77fc7326addd3419f7eed48c9a38d75fabd628fe11564c7ad3e3c76"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-widget-mark.png",
+      "sha256": "cedaadca82d9a225d5cb420a729c9d0dc0fcdbe456c78d739644ce0316949476"
+    },
+    {
+      "path": "phase-three-theme-branding/restart-iris-dark-widget-voice-bars.png",
+      "sha256": "e00b172de551aa65e06cae317735c9dad67ce2ea93cb5d1404823f8d62227923"
+    },
+    {
+      "path": "phase-three-theme-branding/samples.json",
+      "sha256": "6918423b48bce7fadf356a4ddcfc3c97886eb4470ba542ff5e01abeb74e4f90d"
+    },
+    {
+      "path": "phase-three-theme-branding/system-dark-iris-widget-listening.png",
+      "sha256": "0e37e71ee77fc7326addd3419f7eed48c9a38d75fabd628fe11564c7ad3e3c76"
+    },
+    {
+      "path": "phase-three-theme-branding/system-dark-iris-widget-mark.png",
+      "sha256": "cedaadca82d9a225d5cb420a729c9d0dc0fcdbe456c78d739644ce0316949476"
+    },
+    {
+      "path": "phase-three-theme-branding/system-dark-iris-widget-voice-bars.png",
+      "sha256": "e00b172de551aa65e06cae317735c9dad67ce2ea93cb5d1404823f8d62227923"
+    },
+    {
+      "path": "phase-three-themes/editor-expanded-after-low-drag-820x560-dark.png",
+      "sha256": "8ddc6f8255dd75ce455d107b8b78a1fd408160d47aa2514a877c8a0debdcec25"
+    },
+    {
+      "path": "phase-three-themes/editor-minimized-threads-1280-dark.png",
+      "sha256": "d05e3a12c35a2e34c86a71f1f8ef6775347d619c0994a20e3cb007406187a395"
+    },
+    {
+      "path": "phase-three-themes/editor-minimized-threads-820x560-dark.png",
+      "sha256": "9e43b58e9f798fa2fe6bbd70329e3b047c80737ba7d52255067ecc3fa87096d6"
+    },
+    {
+      "path": "phase-three-themes/import-error-1600-dark.png",
+      "sha256": "748530a2ce8d2d22489bb0c7317d717388839c8de9e63cc76ba7eeaaf7e8b4d9"
+    },
+    {
+      "path": "phase-three-themes/inspector-diagram-1280-dark.png",
+      "sha256": "f64d284319e219c2c5262a247090baaf546861890f8d6561db6823e181137087"
+    },
+    {
+      "path": "phase-three-themes/inspector-hover-1600-dark.png",
+      "sha256": "f3b8ffd7470726e244caf151a6bc738f849b934c376daa96259fc1ab04288ab9"
+    },
+    {
+      "path": "phase-three-themes/inspector-spotlight-1600-dark.png",
+      "sha256": "7cd3b64eeeafd267ed0f8b6c6ae704a254a9f4e26cd8f0455495c7652985baac"
+    },
+    {
+      "path": "phase-three-themes/open-vsx-results-1600-dark.png",
+      "sha256": "17dc2e00b9c3fce10a190eb58a6f7ec83908bfeb3cad55e34a71ac1e96044bbf"
+    },
+    {
+      "path": "phase-three-themes/sliders-1600-dark.png",
+      "sha256": "1165efb80fcd6c97c2ae81e213a7c5c8e6382e9587f5b289cc5dc893ff53a0f2"
+    },
+    {
+      "path": "phase-three-themes/theme-editor-820x560-light.png",
+      "sha256": "f84877e364ce38ed761a264b349de96369ba814a3a6bac95ded082cbbea02fdd"
+    },
+    {
+      "path": "phase-three-themes/theme-editor-resized-820x560-dark.png",
+      "sha256": "854fcd9a50d31e867dce02c5f4419dd817f1ef237b2d2c2c305247b60eeffdfb"
+    },
+    {
+      "path": "phase-three-themes/themes-1280-dark.png",
+      "sha256": "4c1d5483a885c18b1c3d06c637e8f295abdc1538b761f1bdbb396f1a31a77479"
+    },
+    {
+      "path": "phase-three-themes/themes-1280-light.png",
+      "sha256": "5f32b91ae4afa28a113337edd646b7d7f4c8bc32a006b237e5aefd317e28d221"
+    },
+    {
+      "path": "phase-three-themes/themes-1280-system.png",
+      "sha256": "e7067505ea2c0befaa1d6ca091b161d4c8d3e58d13e287dacb7b210cdf476ee2"
+    },
+    {
+      "path": "phase-three-themes/themes-1600-dark.png",
+      "sha256": "06c5b1f64419acce41376014c9ce1e03c2d844c77540e08993fe0d70d5ec7dce"
+    },
+    {
+      "path": "phase-three-themes/themes-1600-light.png",
+      "sha256": "91daf713d7fe8894dbc82b40b4cafb8bfc047d9430f0baf610fa27b94c60b603"
+    },
+    {
+      "path": "phase-three-themes/themes-1600-system.png",
+      "sha256": "69f9e244b0d72e822af6e725e6869b6281fc663b19f309adec83badaa0ddf4f7"
+    },
+    {
+      "path": "phase-three-themes/themes-820x560-dark.png",
+      "sha256": "5cd34f3ed3582d1dca6a0e03fac8b531c826ef040fa92bcf1bfaa8c6136c135f"
+    },
+    {
+      "path": "phase-three-themes/themes-820x560-light.png",
+      "sha256": "a3591232ba44e49a91e78208f433ad79033663bb6a779c653864a826c5c1e386"
+    },
+    {
+      "path": "phase-three-themes/themes-820x560-system.png",
+      "sha256": "a3591232ba44e49a91e78208f433ad79033663bb6a779c653864a826c5c1e386"
+    },
+    {
+      "path": "phase-three-themes/themes-default-1600-dark.png",
+      "sha256": "fa83a499756a8de1fe76bc17a2ac1a335e8abcced2f029ff10b41e30e2ebbb91"
+    },
+    {
+      "path": "phase-three-themes/threads-1280-dark.png",
+      "sha256": "feca9a16be05e8bd7eff40d80cc2e85c6eb141e4744b51f8d228933e5e295fbc"
+    },
+    {
+      "path": "phase-three-themes/threads-1280-light.png",
+      "sha256": "a5e4490a25ea0c4233a6f39d66a4219527614511fb00f15f1aac0d0a04a06ce7"
+    },
+    {
+      "path": "phase-three-themes/threads-1280-system.png",
+      "sha256": "a5e4490a25ea0c4233a6f39d66a4219527614511fb00f15f1aac0d0a04a06ce7"
+    },
+    {
+      "path": "phase-three-themes/threads-1600-dark.png",
+      "sha256": "080c17e061f7393a9254547df6b8a31067a2ddff0d225dc25d03db60fbbc3e5f"
+    },
+    {
+      "path": "phase-three-themes/threads-1600-light.png",
+      "sha256": "56db9ef3e195dd1537f31815cb2dd4562f1118cf7c8423611c7d375004af96a8"
+    },
+    {
+      "path": "phase-three-themes/threads-1600-system.png",
+      "sha256": "56db9ef3e195dd1537f31815cb2dd4562f1118cf7c8423611c7d375004af96a8"
+    },
+    {
+      "path": "phase-three-themes/threads-820x560-dark.png",
+      "sha256": "9fc7285a35a9332a7ddd8ecbe5913b822494a0f08ca59999f08eaa07c5635d6c"
+    },
+    {
+      "path": "phase-three-themes/threads-820x560-light.png",
+      "sha256": "117602557f61fe0cc5d27b8ea1f747e2e6f3a21ed18b24c7a3b5886e30d75d58"
+    },
+    {
+      "path": "phase-three-themes/threads-820x560-system.png",
+      "sha256": "117602557f61fe0cc5d27b8ea1f747e2e6f3a21ed18b24c7a3b5886e30d75d58"
+    },
+    {
+      "path": "phase-three-ui-final-fixes/terminal-after-themes-dark.png",
+      "sha256": "acde434d3218c54d3c0e1c31209a3a6c58d2a12a2a6fab02370d79080e67c69f"
+    },
+    {
+      "path": "phase-three-ui-final-fixes/terminal-live-editor-1280-dark.png",
+      "sha256": "02ad04df3d142b1d8325cab1d05e56426c99a42bcd3a3630cab58061dc2a5f51"
+    },
+    {
+      "path": "phase-three-ui-final-fixes/tools-path-diff-1280-light.png",
+      "sha256": "ebe36f8d093e2d6edd9ba64994059adbec9fb327ffe75cbdd140f45fcb27ef5b"
+    },
+    {
+      "path": "phase-three-ui-final-fixes/tools-path-diff-820x560-dark.png",
+      "sha256": "7856050ce1f0496baba35d6ea4528a0890ed691910ba75f7b7c658355adfadc5"
+    },
+    {
+      "path": "phase-three-ui-final-fixes/tools-path-diff-820x560-light.png",
+      "sha256": "45163e17f89aa39f2f6dd4b37cff6aa1e2fe4316cb548919ce4a4d5b9dbef8d2"
+    },
+    {
+      "path": "request-drafts/invalid-storage.png",
+      "sha256": "7a165bb6acd0631caf680bb3f729f6cd25d7aea50ea6461361f8b0831a49e6b3"
+    },
+    {
+      "path": "request-drafts/personal-held-restarted.png",
+      "sha256": "c61b08fbe1bd4ac3d6a8de8c23f7b4007d067e972e797585420843fabd673bc5"
+    },
+    {
+      "path": "request-drafts/personal-restarted.png",
+      "sha256": "2cd33df23c712c470617b3f67e39f97a720e6e18081e8a25f628941d9f3451aa"
+    },
+    {
+      "path": "request-drafts/save-failure.png",
+      "sha256": "fff9b15ffa04ce0b19c6da337b9e0b4d2dbfa49ee219bc0ae793883aab970a16"
+    },
+    {
+      "path": "request-drafts/thread-held-restarted.png",
+      "sha256": "8ed954bbc2f9b4e730d04d06523167e62ce96e364370b538310d429cd4986502"
+    },
+    {
+      "path": "request-drafts/thread-restarted.png",
+      "sha256": "71d9ed26114507baa76b0e9f7dad8b9dd08d6c8ddf87d3be609b8a18997cd735"
+    }
+  ]
+}
