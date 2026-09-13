@@ -27,13 +27,16 @@ function folders() {
   }
 }
 
-function setup(options: { focused?: string | null; bridge?: FilesBridge | undefined; state?: AgentState } = {}) {
-  const { focused = 'visual-gate', state = threadsStateFixture() } = options
+function setup(options: { focused?: string | null; bridge?: FilesBridge | undefined; state?: AgentState; inPane?: boolean } = {}) {
+  const { focused = 'visual-gate', state = threadsStateFixture(), inPane = false } = options
   const bridge = 'bridge' in options ? options.bridge : fakeFilesBridge(folders())
   const store = new ToolsPanelStore()
   const command = vi.fn()
+  // With `inPane`, the toggle sits in the focused pane's header, as the workspace places it.
   const ui = (focusedThreadId: string | null) => <div className="thread-workspace__body">
-    <ToolsPanelToggle store={store} />
+    {inPane && focusedThreadId !== null
+      ? <section key={focusedThreadId} className="thread-pane" data-thread-id={focusedThreadId}><ToolsPanelToggle store={store} state={state} /></section>
+      : <ToolsPanelToggle store={store} state={state} />}
     <ToolsPanel focusedThreadId={focusedThreadId} state={state} command={command} files={bridge} store={store} />
   </div>
   const view = render(ui(focused))
@@ -42,6 +45,13 @@ function setup(options: { focused?: string | null; bridge?: FilesBridge | undefi
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 const tree = () => within(panel()).getByRole('tree')
+/** The working folder line; its folder names are separate spans so it wraps between them. */
+const getPath = (path: string): HTMLElement => {
+  const element = panel().querySelector<HTMLElement>('.tools-panel__path-text')
+  expect(element?.textContent).toBe(path)
+  return element!
+}
+const findPath = (path: string): Promise<HTMLElement> => waitFor(() => getPath(path))
 
 describe('shared tools panel', () => {
   it('opens from the toggle with only the implemented Files surface and focuses its tab', async () => {
@@ -54,7 +64,7 @@ describe('shared tools panel', () => {
     expect(TOOL_SURFACES).toHaveLength(1)
     expect(tabs[0]).toHaveFocus()
     expect(within(panel()).getByRole('tabpanel')).toBeInTheDocument()
-    expect(await within(panel()).findByText('D:\\work\\workshop')).toBeInTheDocument()
+    expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
     expect(store.getSnapshot().open).toBe(false)
   })
@@ -68,7 +78,7 @@ describe('shared tools panel', () => {
     expect(within(panel()).getByText('Visual gate flake')).toBeInTheDocument()
 
     rerender('grok-previews')
-    expect(await within(panel()).findByText('D:\\work\\previews-worktree')).toBeInTheDocument()
+    expect(await findPath('D:\\work\\previews-worktree')).toBeInTheDocument()
     expect(await within(tree()).findByRole('treeitem', { name: 'notes.txt' })).toBeInTheDocument()
     expect(within(panel()).queryByText('export const ready = true')).toBeNull()
 
@@ -82,14 +92,14 @@ describe('shared tools panel', () => {
   it('stays on a pinned thread while focus moves and follows again when unpinned', async () => {
     const { store, rerender } = setup()
     act(() => store.setOpen(true))
-    await within(panel()).findByText('D:\\work\\workshop')
+    await findPath('D:\\work\\workshop')
     expect(store.getSnapshot().pinnedThreadId).toBeNull()
     await userEvent.click(within(panel()).getByRole('button', { name: /^Pin to / }))
     rerender('grok-previews')
     expect(within(panel()).getByText('Pinned')).toBeInTheDocument()
-    expect(within(panel()).getByText('D:\\work\\workshop')).toBeInTheDocument()
+    expect(getPath('D:\\work\\workshop')).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: /^Unpin from / }))
-    expect(await within(panel()).findByText('D:\\work\\previews-worktree')).toBeInTheDocument()
+    expect(await findPath('D:\\work\\previews-worktree')).toBeInTheDocument()
     expect(within(panel()).queryByText('Pinned')).toBeNull()
   })
 
@@ -186,7 +196,7 @@ describe('shared tools panel', () => {
     expect(await within(panel()).findByText('The working folder changed, so Files started over.')).toBeInTheDocument()
     expect(await within(tree()).findByRole('treeitem', { name: 'fresh.txt' })).toBeInTheDocument()
     expect(within(panel()).queryByRole('region', { name: /Preview of/ })).toBeNull()
-    expect(within(panel()).getByText('D:\\work\\workshop-2')).toBeInTheDocument()
+    expect(getPath('D:\\work\\workshop-2')).toBeInTheDocument()
   })
 
   it('has recoverable states with no thread, a missing pinned thread, no bridge or an unavailable folder', async () => {
@@ -200,7 +210,7 @@ describe('shared tools panel', () => {
     act(() => { pinned.store.setOpen(true); pinned.store.pin('removed-thread') })
     expect(within(panel()).getByText('The pinned thread is no longer listed.')).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Unpin' }))
-    expect(await within(panel()).findByText('D:\\work\\workshop')).toBeInTheDocument()
+    expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()
     cleanup()
 
     const bridgeless = setup({ bridge: undefined })
@@ -215,6 +225,95 @@ describe('shared tools panel', () => {
     expect(await within(panel()).findByText('The working folder is not available.')).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Retry' }))
     expect(await within(tree()).findByRole('treeitem', { name: 'src' })).toBeInTheDocument()
+  })
+
+  it('returns focus straight to the toggle when Close is activated, docked, pinned or overlaid', async () => {
+    const { store, rerender } = setup({ inPane: true })
+    const toggle = () => screen.getByRole('button', { name: 'Files', exact: true })
+    const closeFromKeyboard = (): void => {
+      const button = within(panel()).getByRole('button', { name: 'Close tools panel' })
+      button.focus()
+      // Enter activates a focused button as a click; focus must already be on the toggle when the panel unmounts.
+      fireEvent.click(button)
+      expect(screen.queryByRole('complementary', { name: 'Tools' })).toBeNull()
+      expect(toggle()).toHaveFocus()
+    }
+    act(() => store.setOpen(true))
+    await findPath('D:\\work\\workshop')
+    closeFromKeyboard()
+
+    act(() => { store.setOpen(true); store.pin('visual-gate') })
+    rerender('grok-previews')
+    expect(within(panel()).getByText('Pinned')).toBeInTheDocument()
+    closeFromKeyboard()
+
+    const area = document.querySelector('.thread-workspace__body') as HTMLElement
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 600 })
+    act(() => store.setOpen(true))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'overlay'))
+    closeFromKeyboard()
+    act(() => store.setOpen(true))
+    fireEvent.keyDown(within(panel()).getAllByRole('tab')[0]!, { key: 'Escape' })
+    expect(toggle()).toHaveFocus()
+  })
+
+  it('hands focus to a toggle the closing layout re-mounted, but never takes it from where the user went', async () => {
+    const { store, rerender } = setup({ inPane: true })
+    act(() => store.setOpen(true))
+    await findPath('D:\\work\\workshop')
+    within(panel()).getByRole('button', { name: 'Close tools panel' }).focus()
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
+    // The panes re-lay out after closing and the header holding the toggle is replaced.
+    rerender('grok-previews')
+    expect(screen.getByRole('button', { name: 'Files', exact: true })).toHaveFocus()
+
+    act(() => store.setOpen(true))
+    within(panel()).getByRole('button', { name: 'Close tools panel' }).focus()
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
+    const elsewhere = document.body.appendChild(document.createElement('button'))
+    elsewhere.focus()
+    rerender('visual-gate')
+    expect(elsewhere).toHaveFocus()
+    elsewhere.remove()
+  })
+
+  it('names the working copy it reads: project and branch, with the whole actual folder to copy', async () => {
+    const state = threadsStateFixture()
+    const worktree = 'C:\\Users\\me\\AppData\\Roaming\\Sotto\\thread-worktrees\\f2a30b8c-b55b-41ac-878c-d81608f6afb0'
+    const thread = state.host.threads.find(item => item.id === 'visual-gate')!
+    Object.assign(thread, { nativeSessionStarted: false, workingDirectory: worktree,
+      worktree: { mode: 'independent', status: 'ready', path: worktree, repositoryRoot: 'C:/workshop', branch: 'sotto/thread-f2a30b8c', dirty: false } })
+    const data = folders()
+    const bridge = fakeFilesBridge({ ...data, 'visual-gate': { ...data['visual-gate'], root: worktree } })
+    const { store } = setup({ state, bridge })
+    act(() => store.setOpen(true))
+    const path = await findPath(worktree)
+    expect(path).toHaveAttribute('title', worktree)
+    expect(path.querySelectorAll('wbr').length).toBeGreaterThan(4)
+    const copy = panel().querySelector('.tools-panel__copy')!
+    expect(copy.textContent).toBe('workshop\u00b7sotto/thread-f2a30b8c')
+    expect(copy).toHaveAttribute('title', 'workshop \u00b7 Worktree branch sotto/thread-f2a30b8c')
+    // One copy and one reveal for the folder; nothing else in the head repeats the path.
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Copy working folder path' }))
+    expect(bridge.copyPath).toHaveBeenCalledWith({ threadId: 'visual-gate', path: '', workspaceId: TOKEN_A })
+    expect(panel().querySelector('header')!.textContent!.split(worktree)).toHaveLength(2)
+  })
+
+  it('shows the pane\u2019s toggle as not its own while the panel is pinned to another thread', async () => {
+    const { store, rerender } = setup({ inPane: true })
+    const toggle = () => screen.getByRole('button', { name: 'Files', exact: true })
+    act(() => store.setOpen(true))
+    await findPath('D:\\work\\workshop')
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Pin to Visual gate flake' }))
+    expect(toggle()).not.toHaveAttribute('data-pinned-elsewhere')
+    rerender('grok-previews')
+    await waitFor(() => expect(toggle()).toHaveAttribute('data-pinned-elsewhere'))
+    expect(toggle()).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle()).toHaveAttribute('aria-description', 'Showing Visual gate flake, pinned')
+    expect(toggle()).toHaveAttribute('title', 'Files is pinned to Visual gate flake')
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Unpin from Visual gate flake' }))
+    expect(toggle()).not.toHaveAttribute('data-pinned-elsewhere')
+    expect(toggle()).not.toHaveAttribute('aria-description')
   })
 
   it('overlays the panes instead of shrinking them below a readable width, and Escape closes the overlay', async () => {

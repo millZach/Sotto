@@ -23,11 +23,15 @@ export function clampPanelWidth(width: number): number {
   return Math.round(Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, width)))
 }
 
+/** How long a closed panel keeps asking for its toggle to take focus, for a toggle re-mounted by the layout change. */
+export const TOGGLE_FOCUS_RETURN_MS = 1_500
+
 /** The shared tools panel for this session: its chrome plus each thread's retained Files browsing. */
 export class ToolsPanelStore {
   readonly files = new FilesBrowserStore()
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH }
   private readonly listeners = new Set<() => void>()
+  private focusReturnUntil = 0
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -41,6 +45,11 @@ export class ToolsPanelStore {
   pin(threadId: string): void { this.update({ pinnedThreadId: threadId }) }
   unpin(): void { this.update({ pinnedThreadId: null }) }
   setWidth(width: number): void { this.update({ width: clampPanelWidth(width) }) }
+
+  /** Closing moved focus to the toggle; a toggle mounted shortly after (the panes re-laid out) takes it if nothing else has. */
+  requestToggleFocus(now = Date.now()): void { this.focusReturnUntil = now + TOGGLE_FOCUS_RETURN_MS }
+  togglePendingFocus(now = Date.now()): boolean { return !this.chrome.open && now < this.focusReturnUntil }
+  clearToggleFocus(): void { this.focusReturnUntil = 0 }
 
   private update(patch: Partial<ToolsPanelChrome>): void {
     const next = { ...this.chrome, ...patch }

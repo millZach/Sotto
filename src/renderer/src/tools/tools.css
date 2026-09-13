@@ -45,14 +45,20 @@
 .tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
-.tools-panel__identity { display: grid; gap: 2px; padding: 10px 8px 10px 16px; }
+.tools-panel__identity { display: grid; gap: 3px; padding: 10px 8px 10px 16px; }
 .tools-panel__thread { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 8px; }
 .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .tools-panel__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 999px; color: var(--tt-accent-text); font-size: 12px; }
-.tools-panel__path { display: flex; align-items: center; gap: 2px; min-width: 0; }
-/* Long paths lose their start, not the folder name at the end. */
-.tools-panel__path-text { flex: 1; min-width: 0; margin-right: 4px; overflow: hidden; color: var(--tt-text-muted); direction: rtl; font-family: var(--tt-font-mono); font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.tools-panel__path-text > bdi { direction: ltr; unicode-bidi: isolate; }
+/* The working copy in the pane chip's words: project, then branch or folder. The branch loses its end, never the project. */
+.tools-panel__copy { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 8px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.tools-panel__copy > svg { flex: none; color: var(--tt-text-muted); }
+.tools-panel__project { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.tools-panel__sep { flex: none; color: var(--tt-text-muted); }
+.tools-panel__label { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+/* The actual folder is shown whole, wrapping between folder names, with its copy and reveal actions beside it. */
+.tools-panel__path { display: flex; align-items: flex-start; gap: 2px; min-width: 0; margin-top: 2px; }
+.tools-panel__path-text { flex: 1; min-width: 0; margin-right: 4px; padding-top: 5px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; user-select: text; }
+.tools-panel__path-part { white-space: nowrap; }
 
 .tools-panel__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; container: tools-body / inline-size; }
 .tools-panel__status:empty { display: none; }
@@ -107,7 +113,8 @@
 .threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }
 .threads-view .thread-workspace__tools:empty { display: none; }
 
-/* Header toggle placed in a pane header by the workspace. */
-.tools-toggle[aria-pressed='true'] { color: var(--tt-text); border-color: var(--tt-border-faint); }
+/* Header toggle placed in a pane header by the workspace. Pinned to another pane's thread, it is not this pane's panel. */
+.tools-toggle[aria-pressed='true']:not([data-pinned-elsewhere]) { color: var(--tt-text); border-color: var(--tt-border-faint); }
+.tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 
 @media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg { animation: none; } }

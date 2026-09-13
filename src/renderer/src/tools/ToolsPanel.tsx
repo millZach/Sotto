@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, FolderOutput, FolderTree, Pin, PinOff, RotateCw, X } from 'lucide-react'
-import type { AgentState } from '../../../shared/agents'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, Pin, PinOff, RotateCw, X } from 'lucide-react'
+import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
 import type { FilesBridge } from '../../../shared/files'
-import type { AgentConnection } from '../agents/AgentContext'
+import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
+import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
 import type { PathAction } from './filesBrowser'
@@ -44,13 +45,59 @@ function focusToggle(): void {
   document.querySelector<HTMLElement>(`[aria-controls="${TOOLS_PANEL_ID}"]`)?.focus()
 }
 
-/** Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread. */
-export function ToolsPanelToggle({ store = toolsPanelStore }: { readonly store?: ToolsPanelStore }): ReactNode {
+/**
+ * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
+ * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
+ */
+export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
   const chrome = useToolsPanelChrome(store)
-  return <button type="button" className="tt-button tt-focusable tt-button--ghost tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
+  const agents = useOptionalAgents()
+  const agentState = state ?? agents?.state ?? null
+  const button = useRef<HTMLButtonElement>(null)
+  const [paneThreadId, setPaneThreadId] = useState<string | null>(null)
+  // The header the toggle sits in belongs to one pane's thread.
+  useLayoutEffect(() => { setPaneThreadId(button.current?.closest('[data-thread-id]')?.getAttribute('data-thread-id') ?? null) })
+  // A panel closed from the keyboard hands focus here, including to a toggle the resulting layout change re-mounted.
+  useLayoutEffect(() => {
+    const element = button.current
+    if (!element || !store.togglePendingFocus()) return
+    const active = document.activeElement
+    if (active === element) return
+    if (active === null || active === document.body || !active.isConnected) element.focus()
+    else store.clearToggleFocus()
+  }, [chrome.open, store])
+  const pinned = chrome.pinnedThreadId
+  const pinnedElsewhere = chrome.open && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
+  const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
+  return <button ref={button} type="button" className="tt-button tt-focusable tt-button--ghost tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
+    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={pinnedTitle === null ? undefined : `Showing ${pinnedTitle}, pinned`}
+    title={pinnedTitle === null ? undefined : `Files is pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
-    <FolderTree size={16} aria-hidden="true" />Files
+    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <FolderTree size={16} aria-hidden="true" />}Files
   </button>
+}
+
+/** A folder name longer than this may wrap inside itself; shorter names (a thread's UUID folder) stay whole. */
+const WHOLE_PATH_PART = 40
+
+/** Break a path after each separator, so a wrapped path splits between folder names rather than at their hyphens. */
+function breakablePath(path: string): ReactNode[] {
+  return path.split(/(?<=[\\/])/u).flatMap((part, index) => [
+    index === 0 ? null : <wbr key={`break-${index}`} />,
+    part.length > WHOLE_PATH_PART ? part : <span key={index} className="tools-panel__path-part">{part}</span>,
+  ])
+}
+
+/** Which working copy the panel reads, in the pane chip's words: the project, then its branch or folder. */
+function WorkingCopyLine({ thread, project }: { readonly thread: AgentThread; readonly project: AgentProject | undefined }): ReactNode {
+  const facts = describeWorkingCopy(thread, project)
+  const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
+  const kind = facts.mode === 'independent' && facts.branch ? `Worktree branch ${facts.branch}` : facts.label
+  return <div className="tools-panel__copy" title={project ? `${project.title} · ${kind}` : kind}>
+    <Icon size={14} aria-hidden="true" />
+    {project ? <><span className="tools-panel__project">{project.title}</span><span className="tools-panel__sep" aria-hidden="true">·</span></> : null}
+    <span className="tools-panel__label">{facts.label}</span>
+  </div>
 }
 
 /** The panel's surface tabs. Only implemented surfaces are listed. */
@@ -127,7 +174,12 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
   const pinned = chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? null
 
-  const close = (): void => { store.setOpen(false); window.setTimeout(focusToggle, 0) }
+  // Focus moves before the panel unmounts, so closing never leaves keyboard focus on the page.
+  const close = (): void => {
+    if (aside.current?.contains(document.activeElement)) focusToggle()
+    store.requestToggleFocus()
+    store.setOpen(false)
+  }
   const pathAction = (action: PathAction, path: string): void => {
     if (!thread) return
     void store.files.pathAction(bridge, thread.id, action, path).then(result => {
@@ -162,7 +214,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
   let body: ReactNode
   if (target === null) body = <div className="files-problem files-problem--root" role="status"><strong>Open a thread to browse its files.</strong></div>
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
-    <button type="button" className="files-link tt-focusable" onClick={() => store.unpin()}>Unpin</button></div>
+    <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 
   return <aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'}
@@ -188,8 +240,9 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
             <span className="tools-panel__thread-title" title={thread.title}>{thread.title}</span>
             {pinned ? <span className="tools-panel__tag">Pinned</span> : null}
           </div>
+          <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} />
           {workspace ? <div className="tools-panel__path">
-            <span className="tools-panel__path-text" title={workspace.workingDirectory}><bdi>{workspace.workingDirectory}</bdi></span>
+            <span className="tools-panel__path-text" title={workspace.workingDirectory}><bdi>{breakablePath(workspace.workingDirectory)}</bdi></span>
             <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Copy working folder path" title="Copy path"
               onClick={() => pathAction('copyPath', '')}><Copy size={14} aria-hidden="true" /></button>
             <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={`${revealLabel(platform)}: working folder`} title={revealLabel(platform)}

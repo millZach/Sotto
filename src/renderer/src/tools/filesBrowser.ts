@@ -282,6 +282,11 @@ export function sortEntries(entries: readonly FileEntry[]): FileEntry[] {
   return [...entries].sort((a, b) => rank(a) - rank(b) || collator.compare(a.name, b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
+/** Git's administrative entry (a folder in a checkout, a file in a worktree) is not part of the working copy, so the tree leaves it out. */
+export function isGitAdministrative(entry: FileEntry): boolean {
+  return entry.name.toLowerCase() === '.git'
+}
+
 /** The visible tree as flat rows: open folders contribute their children, status rows explain the rest. */
 export function visibleRows(files: ThreadFiles): TreeRow[] {
   const rows: TreeRow[] = []
@@ -289,7 +294,7 @@ export function visibleRows(files: ThreadFiles): TreeRow[] {
     const listing = files.listings.get(path)
     if (!listing || listing.status === 'loading') { rows.push({ kind: 'loading', key: `${path} loading`, depth, parent: path }); return }
     if (listing.status === 'error') { rows.push({ kind: 'error', key: `${path} error`, depth, parent: path, error: listing.error }); return }
-    const entries = sortEntries(listing.entries)
+    const entries = sortEntries(listing.entries.filter(entry => !isGitAdministrative(entry)))
     if (!entries.length) rows.push({ kind: 'empty', key: `${path} empty`, depth, parent: path })
     entries.forEach((entry, index) => {
       const expanded = entry.kind === 'directory' ? files.expanded.has(entry.path) : undefined
