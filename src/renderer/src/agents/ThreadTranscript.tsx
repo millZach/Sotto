@@ -7,6 +7,8 @@ import { sendThreadRevision } from './ThreadComposer'
 import { deliveryFor, deliveryPending, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
+import { ActivityGroupView, LiveActivity } from './ThreadActivity'
+import { liveTurnId, placeActivities, type ActivityGroup, type ActivityPlacement } from './threadActivityView'
 
 type Command = AgentConnection['command']
 
@@ -18,13 +20,37 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
   queued: 'Queued', submitting: 'Sending', accepted: 'Sent', failed: 'Not sent', uncertain: 'Unconfirmed',
 }
 
-/** Rendered history. Memoized on the message array so composer keystrokes and status ticks do not repaint it. */
-const MessageList = memo(function MessageList({ messages, provider, running }: { readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean }): ReactNode {
-  return <>{messages.map(message => <article className="thread-message" key={message.id} data-role={message.role}>
-    <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
-    <MessageContent text={message.text} streaming={running && message.role === 'assistant' && message.id === messages.at(-1)?.id} />
-    <AttachmentPreviews attachments={message.attachments ?? []} />
-  </article>)}</>
+interface ActivityContext {
+  readonly liveTurn: string | null
+  readonly running: boolean
+  readonly connected: boolean
+  readonly provider: string
+  readonly onDisclosure: (element: HTMLElement) => void
+}
+
+function ActivityGroups({ groups, context }: { readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext }): ReactNode {
+  return groups?.map(group => <ActivityGroupView key={group.key} group={group} live={group.turnId === context.liveTurn} threadRunning={context.running}
+    connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} />) ?? null
+}
+
+/**
+ * Rendered history with each activity group after the message it followed. Memoized on the message
+ * array and placement so composer keystrokes and status ticks do not repaint it.
+ */
+const MessageList = memo(function MessageList({ messages, provider, running, placement, context }: {
+  readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
+  readonly placement: ActivityPlacement; readonly context: ActivityContext
+}): ReactNode {
+  return <>{messages.map(message => <React.Fragment key={message.id}>
+    <article className="thread-message" data-role={message.role}>
+      <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
+      <MessageContent text={message.text} streaming={running && message.role === 'assistant' && message.id === messages.at(-1)?.id} />
+      <AttachmentPreviews attachments={message.attachments ?? []} />
+    </article>
+    <ActivityGroups groups={placement.after.get(message.id)} context={context} />
+  </React.Fragment>)}
+  <ActivityGroups groups={placement.trailing} context={context} />
+  </>
 })
 
 function PendingMessage({ draftId, submission, status, row, state, command, store }: {
@@ -107,6 +133,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const messages = useMemo(() => thread.messages.slice(start), [thread.messages, start])
   const hidden = thread.messages.length - messages.length
   const lastMessageId = thread.messages.at(-1)?.id
+  const placement = useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading'),
+    [thread.messages, messages, thread.activities, thread.historyStatus])
+  const liveTurn = liveTurnId(thread)
   const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
   useLayoutEffect(() => {
@@ -166,6 +195,24 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (following.current && unseen) setUnseen(false)
   }
 
+  // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
+  const onDisclosure = useCallback((control: HTMLElement): void => {
+    const element = scroller.current
+    if (element === null) return
+    const before = control.getBoundingClientRect().top
+    following.current = false
+    requestAnimationFrame(() => {
+      const current = scroller.current
+      if (current === null || !control.isConnected) return
+      current.scrollTop += control.getBoundingClientRect().top - before
+      following.current = current.scrollHeight - current.scrollTop - current.clientHeight <= FOLLOW_SLACK_PX
+    })
+  }, [])
+  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure }),
+    [liveTurn, thread.status, row.connected, row.provider, onDisclosure])
+  const showsActivity = placement.trailing.length > 0 || liveTurn !== null
+  const lastGroup = placement.trailing.at(-1) ?? (lastMessageId === undefined ? undefined : placement.after.get(lastMessageId)?.at(-1))
+
   const showEarlier = (): void => {
     const element = scroller.current
     if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
@@ -175,7 +222,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
-  const empty = !thread.messages.length && !pending.length && !recovery.length
+  const empty = !thread.messages.length && !pending.length && !recovery.length && !showsActivity
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
@@ -183,10 +230,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
+        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup?.records.at(-1)?.id} />
         {pending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
