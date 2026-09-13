@@ -57,6 +57,9 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-activity__text { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error { margin: 0; color: var(--tt-error); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error--turn { margin: 2px 0 4px; }
+.thread-activity__rows--nested { margin: 0 0 10px 30px; }
+.thread-activity__open > .thread-activity__details:last-child { margin-bottom: 12px; }
+.thread-activity__open > .thread-activity__details:not(:last-child) { margin-bottom: 6px; }
 .thread-activity__change { display: grid; gap: 6px; min-width: 0; }
 .thread-activity__agents { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .thread-activity__agents li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }

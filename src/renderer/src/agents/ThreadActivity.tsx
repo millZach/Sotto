@@ -3,9 +3,10 @@ import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Squar
 import type { AgentActivity } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
+import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityLabel, agentStatusLabel, currentAction, fenced, formatDuration, groupSummary, isTurnRecord, liveTurnId, openActivityLabel,
-  statusText, timingNote, turnHeadline, type ActivityGroup,
+  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode,
 } from './threadActivityView'
 import './activity.css'
 
@@ -15,7 +16,6 @@ export const LIVE_ROWS = 6
 const ICONS: Record<AgentActivity['kind'], LucideIcon> = {
   turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info,
 }
-const CHANGE_KINDS: Record<string, string> = { add: 'Created', delete: 'Deleted', update: 'Edited' }
 
 export interface ActivityGroupViewProps {
   readonly group: ActivityGroup
@@ -49,22 +49,32 @@ export function Elapsed({ startedAt }: { readonly startedAt: string }): ReactNod
   return <span ref={ref} className="thread-activity__clock" data-elapsed>{elapsedText(startedAt)}</span>
 }
 
-function hasDetails(record: AgentActivity): boolean {
-  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.agents?.length || record.truncated)
+/** A finished subagent whose provider sent no result says so, instead of opening to nothing. */
+function missingAgentOutput(record: AgentActivity): boolean {
+  return record.kind === 'subagent' && isTerminalActivity(record.status) && !record.output && !record.error && !record.agents?.some(agent => agent.message)
 }
 
-function ActivityDetails({ id, record, provider, connected }: { readonly id: string; readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
+function hasDetails(record: AgentActivity): boolean {
+  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.agents?.length || record.truncated)
+    || missingAgentOutput(record)
+}
+
+function ActivityDetails({ record, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
   const notes = [timingNote(record, provider), record.truncated ? 'Some details were not kept.' : ''].filter(Boolean)
-  return <div id={id} className="thread-activity__details">
+  // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
+  const parsed = activityInput(record) !== null
+  const text = parsed ? inputDetail(record) : record.text
+  const json = parsed && record.kind !== 'command'
+  return <div className="thread-activity__details">
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
     {record.cwd ? <p className="thread-activity__fact">In <code>{record.cwd}</code></p> : null}
-    {record.text ? record.kind === 'reasoning'
-      ? <MessageContent text={record.text} />
-      : <p className="thread-activity__text">{record.text}</p> : null}
-    {record.changes?.map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
-      {/* A single file is already named by its row. */}
-      {changes.length > 1 ? <p className="thread-activity__fact">{CHANGE_KINDS[change.kind] ?? change.kind} <code>{change.path}</code></p> : null}
-      {change.diff ? <MessageContent text={fenced(change.diff, 'diff')} /> : null}
+    {text ? record.kind === 'reasoning'
+      ? <MessageContent text={text} />
+      : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null}
+    {activityChanges(record).map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
+      {/* A single changed file is already named by its row; a tool's files are what it touched. */}
+      {changes.length > 1 || record.kind !== 'file-change' ? <p className="thread-activity__fact">{changeVerb(change.kind)} <code>{change.path}</code></p> : null}
+      {change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
     </div>)}
     {record.agents?.length ? <ol className="thread-activity__agents" aria-label="Agents" data-connected={connected || undefined}>
       {record.agents.map((agent, index) => <li key={agent.id} data-status={agent.status}>
@@ -75,24 +85,28 @@ function ActivityDetails({ id, record, provider, connected }: { readonly id: str
     </ol> : null}
     {record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
+    {missingAgentOutput(record) ? <p className="thread-activity__fact">{provider} did not report this agent’s result.</p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
   </div>
 }
 
-const ActivityRow = memo(function ActivityRow({ record, connected, provider, quietUnknown, onDisclosure }: {
-  readonly record: AgentActivity; readonly connected: boolean; readonly provider: string
+const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
+  readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
   /** The group heading already says the outcome is unknown; the row keeps it for assistive tech only. */
   readonly quietUnknown: boolean
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const detailId = useId()
-  const label = activityLabel(record)
-  const shown = open ? openActivityLabel(record) : label
+  const { record, children } = node
+  const steps = children.length ? `${children.length} ${children.length === 1 ? 'step' : 'steps'}` : ''
+  const base = activityLabel(record)
+  const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
+  const shown = open ? { ...openActivityLabel(record), preview: steps } : label
   const status = statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
-  const expandable = hasDetails(record)
+  const expandable = hasDetails(record) || children.length > 0
   const spoken = [`${label.lead ? `${label.lead} ` : ''}${label.subject}`, label.preview,
     record.status === 'completed' ? `completed${status ? ` in ${status}` : ''}` : status].filter(Boolean).join(', ')
   const body = <>
@@ -114,7 +128,12 @@ const ActivityRow = memo(function ActivityRow({ record, connected, provider, qui
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
-    {open ? <ActivityDetails id={detailId} record={record} provider={provider} connected={connected} /> : null}
+    {open ? <div id={detailId} className="thread-activity__open">
+      {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
+      {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={`Steps in ${label.subject}`}>
+        {children.map(child => <ActivityRow key={child.record.id} node={child} connected={connected} provider={provider} quietUnknown={quietUnknown} onDisclosure={onDisclosure} />)}
+      </ul> : null}
+    </div> : null}
   </li>
 })
 
@@ -130,7 +149,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   const failures = group.records.filter(record => record.status === 'failed')
-  const shown = expanded ? group.records : failures
+  // Expanded, work done for a subagent or tool sits under it; folded, every failure stays in view on its own.
+  const shown: readonly ActivityNode[] = expanded ? nestActivities(group.records) : failures.map(record => ({ record, children: [] }))
   const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
   const turnError = group.turn?.error
@@ -150,7 +170,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     {rows.length ? <ul id={listId} className="thread-activity__rows">
       {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
         onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}>Show {earlier} earlier</button></li> : null}
-      {rows.map(record => <ActivityRow key={record.id} record={record} connected={connected} provider={provider} quietUnknown={group.turn?.status === 'unknown'} onDisclosure={onDisclosure} />)}
+      {rows.map(node => <ActivityRow key={node.record.id} node={node} connected={connected} provider={provider} quietUnknown={group.turn?.status === 'unknown'} onDisclosure={onDisclosure} />)}
     </ul> : null}
   </section>
 })

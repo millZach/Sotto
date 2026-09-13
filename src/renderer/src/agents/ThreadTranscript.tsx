@@ -8,7 +8,7 @@ import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubm
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { ActivityGroupView, LiveActivity } from './ThreadActivity'
-import { liveTurnId, placeActivities, type ActivityGroup, type ActivityPlacement } from './threadActivityView'
+import { liveTurnId, nestActivities, placeActivities, type ActivityGroup, type ActivityPlacement } from './threadActivityView'
 
 type Command = AgentConnection['command']
 
@@ -236,7 +236,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
-        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup?.records.at(-1)?.id} />
+        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
         {pending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
