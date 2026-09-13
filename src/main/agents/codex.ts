@@ -96,6 +96,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly creating = new Set<string>()
   private child: ChildProcessWithoutNullStreams | undefined
   private watcher: CodexSessionLogWatcher | undefined
+  private readonly pendingLogMessages = new Map<string, AgentMessage[]>()
   private stopping: Promise<void> = Promise.resolve()
   private frames: Promise<void> = Promise.resolve()
   private writing: Promise<void> = Promise.resolve()
@@ -124,7 +125,15 @@ export class CodexAppServerHost implements AgentHost {
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
-      if (sessionId) { this.touch(sessionId); this.addMessage(sessionId, message); this.orderMessages(sessionId); this.emit() }
+      if (sessionId) {
+        this.touch(sessionId)
+        if (!this.live.has(sessionId)) {
+          const pending = this.pendingLogMessages.get(sessionId) ?? []
+          pending.push(message); this.pendingLogMessages.set(sessionId, pending)
+          return
+        }
+        this.addMessage(sessionId, message); this.orderMessages(sessionId); this.emit()
+      }
     } })
     for (const [id, alias] of Object.entries(aliases)) {
       this.ensureThread(id)
@@ -285,6 +294,7 @@ export class CodexAppServerHost implements AgentHost {
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
+    const generation = this.generation
     const operation = (async () => {
       await this.watcher?.pollThread(alias.codexThreadId)
       await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
@@ -301,7 +311,13 @@ export class CodexAppServerHost implements AgentHost {
         this.emit()
       }
       throw error
-    }).finally(() => { this.resuming.delete(id) })
+    }).finally(() => {
+      this.resuming.delete(id)
+      // A failed history read cannot silently discard native-authored input.
+      if (generation === this.generation && this.pendingLogMessages.has(id)) {
+        this.flushLogMessages(id); this.orderMessages(id); this.emit()
+      }
+    })
     this.resuming.set(id, operation); return operation
   }
   private addMessage(id: string, message: AgentMessage): void {
@@ -309,6 +325,10 @@ export class CodexAppServerHost implements AgentHost {
     const index = thread.messages.findIndex(m => m.id === message.id)
     if (index < 0) thread.messages.push(message)
     else thread.messages[index] = { ...message, createdAt: thread.messages[index]!.createdAt }
+  }
+  private flushLogMessages(id: string): void {
+    for (const message of this.pendingLogMessages.get(id) ?? []) this.addMessage(id, message)
+    this.pendingLogMessages.delete(id)
   }
   private identityItem(item: z.infer<typeof itemSchema>): IdentityItem | undefined {
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
@@ -362,23 +382,17 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'userMessage' && turnId) this.activity.anchor(thread, turnId, record?.id ?? item.id)
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
-  private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false, authoritative = false): void {
+  private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false): void {
     const thread = this.ensureThread(id)
     const createdAt = turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : this.aliases[id]!.createdAt
     this.turnDates.set(turn.id, createdAt)
     // A delayed start response must never resurrect a turn whose completion already arrived.
     if (turn.status === 'inProgress' && this.terminalTurns.has(turn.id)) return
     if (live && this.terminalTurns.has(turn.id) && this.aliases[id]!.messageIdentities.find(t => t.turnId === turn.id)?.sealed) return
-    let resolvedIds: Set<string> | undefined
     if (turn.items.length && turn.itemsView === 'full') {
       const alias = this.aliases[id]!
-      const resolved = reconcileMessageIdentities(alias.messageIdentities, turn.id, turn.items.flatMap(item => { const message = this.identityItem(item); return message ? [message] : [] }),
+      reconcileMessageIdentities(alias.messageIdentities, turn.id, turn.items.flatMap(item => { const message = this.identityItem(item); return message ? [message] : [] }),
         alias.origins, createdAt, this.watcher?.identities(alias.codexThreadId, turn.id), turn.status !== 'inProgress')
-      resolvedIds = new Set(resolved.map(record => record.id))
-    }
-    if (authoritative && resolvedIds) {
-      const unmatched = new Set(this.aliases[id]!.messageIdentities.find(t => t.turnId === turn.id)!.messages.filter(m => !resolvedIds.has(m.id)).map(m => m.id))
-      thread.messages = thread.messages.filter(message => !unmatched.has(message.id))
     }
     let anchor = thread.messages.at(-1)?.id
     for (const item of turn.items) {
@@ -402,9 +416,12 @@ export class CodexAppServerHost implements AgentHost {
   }
   private applyThread(id: string, thread: z.infer<typeof threadSchema>): void {
     if (thread.id !== this.aliases[id]!.codexThreadId) throw new Error('Codex returned a different provider session.')
-    for (const turn of thread.turns) this.applyTurn(id, turn, false, true)
+    for (const turn of thread.turns) this.applyTurn(id, turn)
     const order = new Map(thread.turns.map((turn, index) => [turn.id, index]))
     this.aliases[id]!.messageIdentities.sort((a, b) => (order.get(a.turnId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.turnId) ?? Number.MAX_SAFE_INTEGER))
+    // Corroborate aliases before exposing legacy rollout rows to authority
+    // observers. Unmatched rows remain visible as external input.
+    this.flushLogMessages(id)
     this.orderMessages(id)
     if (thread.status?.type === 'systemError') this.ensureThread(id).status = 'error'
     else if (thread.status?.type === 'active') this.ensureThread(id).status = 'running'
@@ -703,7 +720,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   private reset(): void {
     this.skillsRevision++; this.loadedSkillCwds.clear()
-    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear()
+    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear(); this.pendingLogMessages.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
     this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()
     for (const thread of this.threads.values()) thread.requests = []
