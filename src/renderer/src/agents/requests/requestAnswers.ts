@@ -33,35 +33,62 @@ export function textOnly(question: StructuredQuestion): boolean {
   return question.options.length === 0
 }
 
+/** A native question is required unless the provider marked it otherwise. */
+export function isRequired(question: StructuredQuestion): boolean {
+  return question.required !== false
+}
+
+/** The provider asked for something Sotto cannot submit; its reason replaces the input. */
+export function isUnavailable(question: StructuredQuestion): boolean {
+  return question.unavailableReason !== undefined
+}
+
 export function pickOption(question: StructuredQuestion, selection: QuestionSelection, optionId: string, checked: boolean): QuestionSelection {
-  if (!question.options.some(option => option.id === optionId)) return selection
+  if (isUnavailable(question) || !question.options.some(option => option.id === optionId)) return selection
   if (!question.multiSelect) return checked ? { ...selection, optionIds: [optionId], other: false } : selection
   const without = selection.optionIds.filter(id => id !== optionId)
   return { ...selection, optionIds: checked ? question.options.map(option => option.id).filter(id => id === optionId || without.includes(id)) : without }
 }
 
 export function pickOther(question: StructuredQuestion, selection: QuestionSelection, checked: boolean): QuestionSelection {
-  if (!question.allowFreeText) return selection
+  if (isUnavailable(question) || !question.allowFreeText) return selection
   return question.multiSelect ? { ...selection, other: checked } : checked ? { ...selection, optionIds: [], other: true } : { ...selection, other: false }
 }
 
-export function isAnswered(question: StructuredQuestion, selection: QuestionSelection | undefined): boolean {
-  if (!selection) return false
+/**
+ * - empty: nothing picked or typed, which an optional question may send as is.
+ * - partial: Other picked without its text; it blocks sending until finished or cleared.
+ * - complete: an answer the provider can accept.
+ */
+export type AnswerProgress = 'empty' | 'partial' | 'complete'
+
+export function answerProgress(question: StructuredQuestion, selection: QuestionSelection | undefined): AnswerProgress {
+  if (!selection || isUnavailable(question)) return 'empty'
   const text = selection.text.trim().length > 0
-  if (textOnly(question)) return question.allowFreeText && text
-  const known = selection.optionIds.some(id => question.options.some(option => option.id === id))
-  const other = question.allowFreeText && selection.other && text
+  if (textOnly(question)) return question.allowFreeText && text ? 'complete' : 'empty'
   // A picked Other with no text is incomplete even when options are also chosen.
-  if (selection.other && question.allowFreeText && !text) return false
-  return known || other
+  if (selection.other && question.allowFreeText && !text) return 'partial'
+  const known = selection.optionIds.some(id => question.options.some(option => option.id === id))
+  return known || (question.allowFreeText && selection.other && text) ? 'complete' : 'empty'
 }
 
-/** Every question answered by its own ID; null until each one is. */
+export function isAnswered(question: StructuredQuestion, selection: QuestionSelection | undefined): boolean {
+  return answerProgress(question, selection) === 'complete'
+}
+
+/** Whether this question still stands between the form and sending. */
+export function blocksSending(question: StructuredQuestion, selection: QuestionSelection | undefined): boolean {
+  const progress = answerProgress(question, selection)
+  return progress === 'partial' || (progress === 'empty' && isRequired(question))
+}
+
+/** Every required question answered by its own ID, optional ones only when answered; null until then. */
 export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): AgentQuestionAnswers | null {
   const answers: Record<string, { optionIds: string[]; text?: string }> = {}
   for (const question of questions) {
     const selection = selections[question.id]
-    if (!isAnswered(question, selection)) return null
+    if (blocksSending(question, selection)) return null
+    if (!isAnswered(question, selection)) continue
     const text = selection!.text.trim()
     const useText = question.allowFreeText && text.length > 0 && (textOnly(question) || selection!.other)
     answers[question.id] = {
@@ -79,6 +106,11 @@ export function structuredAnswer(questions: readonly StructuredQuestion[], selec
 
 export function permissionAnswer(choice: PermissionChoice): RequestAnswer {
   return { answer: choice.label, approved: choice.kind.startsWith('allow-'), permissionChoice: choice.id }
+}
+
+/** Absent choices are a legacy Allow/Deny request; an explicit empty list means none of the native choices can be sent. */
+export function hasNoSendableChoice(request: AgentRequest): boolean {
+  return request.kind === 'permission' && request.permissionChoices !== undefined && request.permissionChoices.length === 0
 }
 
 export function legacyPermissionAnswer(approved: boolean): RequestAnswer {

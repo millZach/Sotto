@@ -1,9 +1,9 @@
-import React, { useId, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentRequest } from '../../../../shared/agents'
 import { Button } from '../../components/Button'
 import {
-  EMPTY_SELECTION, isAnswered, legacyPermissionAnswer, permissionAnswer, permissionSummary, pickOption, pickOther,
-  requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
+  answerProgress, blocksSending, EMPTY_SELECTION, hasNoSendableChoice, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  permissionSummary, pickOption, pickOther, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
 import './requests.css'
@@ -51,7 +51,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
   const summary = permission ? permissionSummary(request) : null
   const questions = request.questions ?? []
   const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections) : null
-  const remaining = questions.filter(question => !isAnswered(question, entry.selections[question.id])).length
+  const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
+  const touched = questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
+  const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
 
   const status = request.delivery === 'uncertain'
     ? <div className="agent-request__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
@@ -84,7 +86,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
         onChange={selection => store.select(ownerId, request.id, question.id, selection)}
         onSubmitKey={() => { if (answer) send(null, answer) }} />)}
       <div className="agent-request__footer">
-        <span className="agent-request__count" aria-live="polite">{remaining === 0 ? 'Ready to send' : remaining === questions.length ? '' : `${remaining} left to answer`}</span>
+        <span className="agent-request__count" aria-live="polite">{needsProvider ? 'A required field can only be answered in the provider’s app.'
+          : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : ''}</span>
         <Button type="submit" disabled={disabled || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
       </div>
     </form> : <>
@@ -98,7 +101,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
       </div>
     </>}
     {status}
-    {hint && !locked ? <span className="agent-request__hint">{hint}</span> : null}
+    {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
   </section>
 }
 
@@ -107,7 +110,9 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
   readonly onChoose: (choice: string, answer: RequestAnswer) => void
 }): ReactNode {
   const choices = request.permissionChoices
-  if (choices && choices.length > 0) {
+  // Only absent choices mean a legacy Allow/Deny request. An empty list is the provider offering nothing Sotto can send.
+  if (choices && choices.length === 0) return <p className="agent-request__fallback">Sotto has no choice it can send for this request. Answer it in the provider’s app.</p>
+  if (choices) {
     const described = choices.filter(choice => choice.description)
     // The provider's order is kept; the single-use approval is the one emphasized action.
     const primary = choices.find(choice => choice.kind === 'allow-once')?.id
@@ -132,40 +137,52 @@ function QuestionField({ name, question, selection, disabled, onChange, onSubmit
 }): ReactNode {
   const type = question.multiSelect ? 'checkbox' : 'radio'
   const onlyText = textOnly(question)
+  const optional = !isRequired(question)
+  const field = useRef<HTMLFieldSetElement>(null)
+  // Radios cannot be unchecked, so an optional single choice gets its own way back to unanswered.
+  const clearable = optional && !question.multiSelect && !onlyText && !isUnavailable(question) && answerProgress(question, selection) !== 'empty'
+  const clear = (): void => {
+    field.current?.querySelector<HTMLInputElement>('input')?.focus()
+    onChange(EMPTY_SELECTION)
+  }
   const textId = `${name}-text`
   const textKey = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
     event.preventDefault()
     onSubmitKey()
   }
-  return <fieldset className="agent-request__question" disabled={disabled}>
-    <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt">{question.question}</span></legend>
-    {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
-    {onlyText ? question.allowFreeText
-      ? <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
-        placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} />
-      : <p className="agent-request__note">This question has no choices Sotto can show.</p>
-      : <div className="agent-request__options">
-        {question.options.map(option => {
-          const checked = selection.optionIds.includes(option.id)
-          return <label key={option.id} className="agent-request__option" data-checked={checked || undefined}>
-            <input type={type} name={name} value={option.id} checked={checked}
-              onChange={event => onChange(pickOption(question, selection, option.id, event.target.checked))} />
-            <span><span className="agent-request__label">{option.label}</span>
-              {option.description ? <small>{option.description}</small> : null}
-              {option.preview && checked ? <pre className="agent-request__preview">{option.preview}</pre> : null}</span>
-          </label>
-        })}
-        {question.allowFreeText ? <div className="agent-request__option agent-request__option--other" data-checked={selection.other || undefined}>
-          <input id={`${name}-other`} type={type} name={name} value="" checked={selection.other}
-            onChange={event => {
-              onChange(pickOther(question, selection, event.target.checked))
-              if (event.target.checked) requestAnimationFrame(() => document.getElementById(textId)?.focus())
-            }} />
-          <span><label className="agent-request__label" htmlFor={`${name}-other`}>Other</label>
-            {selection.other ? <textarea id={textId} className="agent-request__input" rows={1} aria-label={`Other answer to: ${question.question}`} value={selection.text}
-              placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} /> : null}</span>
-        </div> : null}
-      </div>}
+  return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
+    <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt">{question.question}</span>
+      {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
+    {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
+      {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
+      {onlyText ? question.allowFreeText
+        ? <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
+          placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} />
+        : <p className="agent-request__note">This question has no choices Sotto can show.</p>
+        : <div className="agent-request__options">
+          {question.options.map(option => {
+            const checked = selection.optionIds.includes(option.id)
+            return <label key={option.id} className="agent-request__option" data-checked={checked || undefined}>
+              <input type={type} name={name} value={option.id} checked={checked}
+                onChange={event => onChange(pickOption(question, selection, option.id, event.target.checked))} />
+              <span><span className="agent-request__label">{option.label}</span>
+                {option.description ? <small>{option.description}</small> : null}
+                {option.preview && checked ? <pre className="agent-request__preview">{option.preview}</pre> : null}</span>
+            </label>
+          })}
+          {question.allowFreeText ? <div className="agent-request__option agent-request__option--other" data-checked={selection.other || undefined}>
+            <input id={`${name}-other`} type={type} name={name} value="" checked={selection.other}
+              onChange={event => {
+                onChange(pickOther(question, selection, event.target.checked))
+                if (event.target.checked) requestAnimationFrame(() => document.getElementById(textId)?.focus())
+              }} />
+            <span><label className="agent-request__label" htmlFor={`${name}-other`}>Other</label>
+              {selection.other ? <textarea id={textId} className="agent-request__input" rows={1} aria-label={`Other answer to: ${question.question}`} value={selection.text}
+                placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} /> : null}</span>
+          </div> : null}
+        </div>}
+      {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={`Clear choice for ${question.question}`} onClick={clear}>Clear choice</button> : null}
+    </>}
   </fieldset>
 }

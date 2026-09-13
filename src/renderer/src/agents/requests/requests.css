@@ -47,3 +47,12 @@
 .agent-request__error { margin: 0; color: var(--tt-error-text); font-size: 14px; overflow-wrap: anywhere; }
 .agent-request__hold { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .agent-request__hold p { margin: 0; flex: 1 1 260px; font-size: 14px; color: var(--tt-text-2); }
+
+/* Native form fidelity: optional fields say so, and a field Sotto cannot submit says why in place of its input. */
+.agent-request__optional { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.agent-request__unavailable { margin: 0; padding: 2px 0 2px 10px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-request__unavailable[data-required] { border-left-color: var(--tt-warning); }
+.agent-request__clear { justify-self: start; min-height: 28px; margin: -2px 0 0 20px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-sm); background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.agent-request__clear:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
+.agent-request__clear:disabled { cursor: default; opacity: .72; }
+.agent-request__fallback { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
