@@ -9,7 +9,7 @@ import { insertSkill, retainSkillReferences, sameSkillReferences } from './compo
 import { ProviderMark } from './ProviderMark'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
-import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type SubmissionMode, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
@@ -26,7 +26,13 @@ export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
 export function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean, besideQueue = false): boolean {
   return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && deliveryPending(item.status)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === item.draftId)
-    && !(besideQueue && queuedRevision(state, threadId, item.draftId))) === true
+    // Beside the queue, only an unconfirmed prompt holds: one main has admitted and is still delivering can have the queue behind it.
+    && !(besideQueue && (queuedRevision(state, threadId, item.draftId) || deliveryOnItsWay(item.status)))) === true
+}
+
+/** Main admitted the prompt and is delivering it now. Nothing about it is unconfirmed yet; `uncertain` is. */
+function deliveryOnItsWay(status: SubmissionStatus): boolean {
+  return status === 'queued' || status === 'submitting'
 }
 
 /**
@@ -74,6 +80,8 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
   if (row.request?.kind === 'permission') return 'Allow or deny the request above to continue.'
   if (!row.connected) return 'Reconnect to send. Your draft stays here.'
   if (!capabilitiesForThread(state.host, row.thread).submit) return `${row.provider} cannot take prompts from Sotto.`
+  // The notice above the composer says why setup stopped and offers the one recovery; this only says when sending returns.
+  if (row.thread.worktree?.status === 'pending' || row.thread.worktree?.status === 'error') return 'Available once the working folder is ready.'
   if (!answering && inFlight) return 'Waiting for your last prompt to be confirmed.'
   return null
 }
@@ -84,7 +92,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * prompt stays in the composer until the provider (or the thread's queue) owns that exact revision.
  * While a turn runs, Enter queues; Steer now is the separate, explicit way into the running turn.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -93,6 +101,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onSend: () => void
   /** Unique per visible composer; the textarea, status and skills list IDs derive from it. */
   readonly composerId?: string
+  /** Manage or Resume is carrying this draft to Sotto; sending it meanwhile would race the handoff. Typing stays open. */
+  readonly handingOff?: boolean
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError } = useThreadComposer(store, threadId)
@@ -106,17 +116,23 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
   const capabilities = capabilitiesForThread(state.host, row.thread)
-  const localUnresolved = submissions.some(item => item.threadId === threadId && item.mode !== 'queue' && deliveryPending(submissionStatus(item, state).status))
+  const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue').map(item => submissionStatus(item, state).status)
+  const localUnresolved = direct.some(deliveryPending)
+  // Before main has published its admission, and once a delivery is uncertain, even the queue waits.
+  const localUnconfirmed = submissions.some(item => item.threadId === threadId && item.mode !== 'queue' && deliveryPending(submissionStatus(item, state).status)
+    && !deliveryOnItsWay(deliveryFor(state, threadId, item.draftId)?.status ?? 'uncertain'))
   const localAdmissions = submissions.some(item => item.threadId === threadId && queueAdmissionOpen(item, state) && !(item.resolved && item.error !== null))
   const sendInFlight = threadSendInFlight(state, threadId, localUnresolved)
-  const queueing = !answering && queuesByDefault(row, state, localAdmissions)
+  // A follow-up already on its way belongs to the queue, and a later revision can line up behind it; so can
+  // one behind a direct send main is still delivering. A direct send or steer still unconfirmed holds
+  // everything: retyped, it could reach the provider twice.
+  const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
+  // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
+  const queueing = !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
   const submission = submissions.find(item => item.threadId === threadId && item.draftId === draft.draftId)
   const delivery = submission === undefined ? deliveryFor(state, threadId, draft.draftId) : undefined
-  // A follow-up already on its way belongs to the queue, and a later revision can line up behind it.
-  // A direct send or steer still unconfirmed holds everything: retyped, it could reach the provider twice.
-  const queueBlocked = threadSendInFlight(state, threadId, localUnresolved, true)
   const admitting = submission?.mode === 'queue' && !submission.resolved
-  const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
+  const reason = (handingOff ? 'Handing this draft to Sotto…' : null) ?? blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const content = hasDraftContent(draft)
   const canSend = reason === null && content && !readingImages && !answerState.sending && !admitting
@@ -146,6 +162,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
     if (mode === 'steer' ? !canSteer : !canSend) return
+    // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
+    const field = textarea.current
+    if (field !== null && document.activeElement !== field && field.form?.contains(document.activeElement)) field.focus()
     if (question?.requestId) {
       if (draft.requestId !== question.requestId) store.edit(threadId, { requestId: question.requestId })
       const answer = store.submit(threadId, submittedAt)

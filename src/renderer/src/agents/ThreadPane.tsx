@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode } from 'react'
+import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -73,6 +73,11 @@ export interface ThreadPaneProps {
  */
 export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, crumb, actions, notice }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
+  const [handingOff, setHandingOff] = useState(false)
+  const [holdingWriteHere, setHoldingWriteHere] = useState(false)
+  const compose = useRef<HTMLDivElement>(null)
+  /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
+  const handoff = useRef<{ readonly managed: boolean; readonly focused?: true; readonly until: number } | null>(null)
   const submissions = useSubmissions(store)
   const thread = row.thread
   const closed = isThreadClosed(thread)
@@ -93,6 +98,27 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const deliveryExplains = error !== null && submissions.some(item => item.threadId === thread.id && item.error === error
     && ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
   const options = <ThreadOptions key={thread.id} thread={thread} state={state} command={command} />
+  useLayoutEffect(() => {
+    const pending = handoff.current
+    if (pending === null) return
+    if (performance.now() > pending.until) { handoff.current = null; return }
+    // The managed composer follows main's selection; until main confirms this thread, it may belong to another.
+    if (pending.managed !== managed || pending.focused && !focused || managed && state.activeThreadId !== thread.id) return
+    const fallback = compose.current?.querySelector<HTMLElement>('textarea:not(:disabled), button:not(:disabled)')
+    const target = (managed ? focused ? document.getElementById('agent-prompt') : null : document.getElementById(promptId)) ?? fallback
+    if (!target || target.matches(':disabled')) return
+    handoff.current = null
+    target.focus()
+  })
+  const writeHere = (): void => { handoff.current = { managed: true, focused: true, until: performance.now() + 5000 } }
+  /** Focus the composer once management is `managed`; a refused command leaves focus where it was. */
+  const handOff = (managedNext: boolean, request: () => Promise<AgentState | null>): void => {
+    const pending = { managed: managedNext, until: performance.now() + 5000 }
+    handoff.current = pending
+    setHandingOff(true)
+    void request().then(result => { if ((result === null || result.error !== null) && handoff.current === pending) handoff.current = null },
+      () => { if (handoff.current === pending) handoff.current = null }).finally(() => setHandingOff(false))
+  }
   return <>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
@@ -103,9 +129,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <h2>{thread.title}</h2>
       </div>
       <div className="thread-workspace__actions">
-        {assigned && !closed ? <Button variant="ghost" disabled={!canManage} onClick={() => void command({ type: assigned.paused || assigned.mode === 'manual' ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
-          : !assigned && !closed ? <Button variant="ghost" disabled={!canManage} onClick={() => void command({ type: 'assign', threadId: thread.id })}>Manage</Button> : null}
-        {assigned ? <Button variant="ghost" disabled={state.busy || !connected} onClick={() => void command({ type: 'unassign', threadId: thread.id })}>Stop managing</Button> : null}
+        {/* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */}
+        {assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume'))
+          : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
+          : !assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => handOff(true, () => store.handoffToManagement(thread.id, 'assign'))}>Manage</Button> : null}
+        {assigned ? <Button variant="ghost" disabled={state.busy || !connected || handingOff} onClick={() => handOff(false, () => command({ type: 'unassign', threadId: thread.id }))}>Stop managing</Button> : null}
         {row.settledBy === null ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
           : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
         {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
@@ -123,14 +151,18 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           if (managed && !focused) { onFocusPane?.(); window.setTimeout(target, 0) } else target()
         }} />
     </ThreadTranscript>
-    <div className="thread-workspace__compose">
+    <div className="thread-workspace__compose" ref={compose}>
       {notice}
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
         onRetryAdmission={() => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue') }} /> : null}
-      {managed && !focused ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary" onClick={() => { onFocusPane?.(); window.setTimeout(() => document.getElementById('agent-prompt')?.focus(), 0) }}>Write here</Button></div>
+      {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
+        // The pane takes the selection on pointerdown or focus, which would replace this button before its click or Enter. A
+        // pointer arms the handoff in that same capture pass; keyboard focus keeps the button until Enter or Space uses it.
+        onPointerDownCapture={writeHere} onFocus={() => setHoldingWriteHere(true)} onBlur={() => setHoldingWriteHere(false)}
+        onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} onSend={() => setFollowSignal(signal => signal + 1)} />}
+            : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
     </div>
   </>
 }

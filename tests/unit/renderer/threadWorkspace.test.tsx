@@ -88,7 +88,12 @@ describe('Threads manual composer', () => {
     expect(screen.getByLabelText('Pending message').closest('article')).toBeNull()
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Sotto will not send your last prompt twice.')
     expect(screen.getByLabelText('Pending message').querySelector('.rich-message')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    if (status === 'uncertain') expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    else {
+      // Main is still delivering it: the newer draft can only line up behind it in the queue, never go beside it.
+      expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
+    }
     fireEvent.click(check())
     expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh', provider: 'claude' })
     // A fresh page has no local submission text to use. Clearing the current

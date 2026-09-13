@@ -43,11 +43,15 @@
 /* A thread on screen in the other pane is outlined in the sidebar; the focused one keeps the filled row. */
 .threads-view .thread-nav__row[data-open] { border-color: var(--threads-selected-border); }
 
-/* A narrow pane recomposes its header like a narrow window does, and keeps the type sizes. */
-@container thread-pane (max-width: 640px) {
+/* A narrow pane recomposes its header like a narrow window does, and keeps the type sizes. Below 720px the header
+   actions no longer fit beside the title, so both panes of an even split stack the same way and start their transcripts level. */
+@container thread-pane (max-width: 720px) {
   .threads-view .thread-pane .thread-workspace__head { flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 10px 18px; }
   .threads-view .thread-pane .thread-workspace__actions { justify-content: flex-start; margin-left: -8px; }
   .threads-view .thread-pane .thread-pane__close { top: 10px; right: 10px; transform: none; }
+  /* The close button sits beside the crumb and title, so only they make room for it; the actions keep the full row. */
+  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__head { padding-right: 18px; }
+  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__title { padding-right: 30px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px; }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
