@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentThreadSchema, agentCommandSchema, agentRequestSchema } from './agents'
+import { agentThreadSchema, agentCommandSchema, agentRequestSchema, agentMessageSchema } from './agents'
 import { agentSkillReferencesSchema, type AgentSkillCatalog } from './agentSkills'
 const id = z.string().min(1).max(256)
 const revision = z.number().int().nonnegative()
@@ -10,9 +10,13 @@ export const personalAnswerInputSchema = agentAnswerSchema.omit({ type: true, th
 const personalDecisionSchema = personalAnswerInputSchema.omit({ chatId: true }).extend({ id, request: agentRequestSchema.optional(), createdAt: z.string(), status: z.enum(['submitting', 'accepted', 'uncertain', 'failed']), error: z.string().optional() })
 export const personalDraftSchema = z.object({ revision, text: z.string().max(24000), skills: agentSkillReferencesSchema }).strict()
 export const personalSubmissionSchema = personalDraftSchema.extend({ id, messageId: id, status: z.enum(['submitting', 'accepted', 'uncertain', 'failed']), createdAt: z.string(), error: z.string().optional() })
+// Native transcript text is not a bounded command input. Preserve complete
+// answers and their original identities through both storage and renderer IPC.
+const personalMessageSchema = agentMessageSchema.extend({ text: z.string() })
 export const personalChatSchema = agentThreadSchema.omit({ projectId: true, workingDirectory: true, worktree: true, workspaceSettledAt: true, providerId: true }).extend({
   kind: z.literal('personal'), providerId: z.literal('codex'), createdAt: z.string(), updatedAt: z.string(),
   nativeState: z.enum(['unstarted', 'starting', 'ready', 'uncertain', 'error']),
+  messages: z.array(personalMessageSchema),
   draft: personalDraftSchema, submissions: z.array(personalSubmissionSchema), decisions: z.array(personalDecisionSchema).optional(),
 })
 export type PersonalChat = z.infer<typeof personalChatSchema>

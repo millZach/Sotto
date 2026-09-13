@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, unlink } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { personalChatSchema, personalDraftInputSchema, personalSendInputSchema, personalAnswerInputSchema, type PersonalChat, type PersonalChatState, type PersonalChatCommand } from '../../shared/personalChats'
@@ -7,9 +7,57 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { CodexAppServerHost, type CodexPersonalConversation } from './codex'
 import type { MemoryProfile } from '../memory/profile'
+import { MAX_AGENT_ACTIVITIES } from '../../shared/agentActivity'
 
-const savedSchema = z.object({ selectedChatId: z.string().nullable(), chats: z.array(personalChatSchema) })
+const savedSchema = z.object({ selectedChatId: personalChatSchema.shape.id.nullable(), chats: z.array(personalChatSchema) })
+  .refine(saved => new Set(saved.chats.map(chat => chat.id)).size === saved.chats.length, 'Personal chat IDs must be unique.')
 type Saved = z.infer<typeof savedSchema>
+const storageWarning = 'Personal chat storage is read-only because chats.json could not be fully read. The original file is unchanged; no backup was created. Restore or repair that file and restart before editing or connecting.'
+const recoveryWarning = 'Some saved observations could not be read. This is partial cached history; the original chats.json is unchanged.'
+const recoveryCoreSchema = personalChatSchema.omit({ messages: true, activities: true, requests: true, title: true, status: true, historyStatus: true, historyError: true, lastTurn: true })
+
+/** Read-only salvage: never infer identities, drafts or delivery records, and
+ * never replace the source with this partial view. Ambiguous IDs stay on disk. */
+function recoverSaved(input: unknown): Saved {
+  const envelope = z.object({ chats: z.array(z.unknown()), selectedChatId: z.unknown().optional() }).safeParse(input)
+  if (!envelope.success) return { selectedChatId: null, chats: [] }
+  const chats: PersonalChat[] = []
+  const idCounts = new Map<string, number>()
+  for (const value of envelope.data.chats) {
+    const identity = z.object({ id: z.string() }).safeParse(value)
+    if (identity.success) idCounts.set(identity.data.id, (idCounts.get(identity.data.id) ?? 0) + 1)
+  }
+  for (const value of envelope.data.chats) {
+    const fields = z.record(z.string(), z.unknown()).safeParse(value)
+    if (!fields.success) continue
+    const full = personalChatSchema.safeParse(value)
+    if (full.success) { chats.push(full.data); continue }
+    // A decision's cached request is an observation, distinct from the exact
+    // answer and delivery IDs. Omit only an unreadable request in this view.
+    const decisions = z.array(z.record(z.string(), z.unknown())).safeParse(fields.data.decisions)
+    const decisionSchema = personalChatSchema.shape.decisions.unwrap().element
+    const recoveredFields = { ...fields.data }
+    if (decisions.success) recoveredFields.decisions = decisions.data.map(decision => {
+      if (decisionSchema.shape.request.safeParse(decision.request).success) return decision
+      const copy = { ...decision }; delete copy.request; return copy
+    })
+    const core = recoveryCoreSchema.safeParse(recoveredFields)
+    if (!core.success) continue
+    const messages = z.array(z.unknown()).safeParse(fields.data.messages)
+    const activities = z.array(z.unknown()).safeParse(fields.data.activities)
+    const title = personalChatSchema.shape.title.safeParse(fields.data.title)
+    chats.push({ ...core.data, title: title.success ? title.data : 'Personal chat', status: 'idle', requests: [],
+      messages: messages.success ? messages.data.flatMap(item => {
+        const parsed = personalChatSchema.shape.messages.element.safeParse(item); return parsed.success ? [parsed.data] : []
+      }) : [],
+      activities: activities.success ? activities.data.flatMap(item => {
+        const parsed = personalChatSchema.shape.activities.unwrap().element.safeParse(item); return parsed.success ? [parsed.data] : []
+      }).slice(-MAX_AGENT_ACTIVITIES) : [],
+      historyStatus: 'error', historyError: recoveryWarning })
+  }
+  const unique = chats.filter(chat => idCounts.get(chat.id) === 1)
+  return { chats: unique, selectedChatId: unique.find(chat => chat.id === envelope.data.selectedChatId)?.id ?? null }
+}
 function definedFields<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> }
 }
@@ -36,6 +84,8 @@ export class PersonalChatService {
   private connected = false
   private connecting = false
   private error: string | undefined
+  private storageError: string | undefined
+  private readonly unreadableNativeState = new Set<string>()
   private generation = 0
   private configurationKey = ''
   private unsubscribe: (() => void) | undefined
@@ -46,12 +96,27 @@ export class PersonalChatService {
     this.host = options.host ?? new CodexAppServerHost({ userDataPath: directory })
   }
   async start(): Promise<void> {
-    // Remove only this cache's abandoned atomic copies; never native histories.
-    for (const name of await readdir(this.directory).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return [] })) {
-      if (/^chats\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) await unlink(join(this.directory, name))
+    // AtomicJsonStore.peek intentionally treats invalid and missing alike. This
+    // cache must distinguish them without creating extra plaintext backups.
+    try {
+      const contents = await readFile(join(this.directory, 'chats.json'), 'utf8')
+      let raw: unknown
+      try { raw = JSON.parse(contents) } catch { this.storageError = storageWarning }
+      if (!this.storageError) {
+        const parsed = savedSchema.safeParse(raw)
+        if (parsed.success) this.saved = parsed.data
+        else {
+          this.saved = recoverSaved(raw)
+          this.storageError = `${storageWarning} Recovered ${this.saved.chats.length} readable chats in memory; other content remains in the original file.`
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.storageError = storageWarning
     }
-    // peek avoids making extra plaintext history backups on malformed input.
-    this.saved = await this.store.peek()
+    // Remove only this cache's abandoned atomic copies; never native histories.
+    if (!this.storageError) for (const name of await readdir(this.directory).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return [] })) {
+      if (/^chats\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) await unlink(join(this.directory, name))
+    }
     if (!this.saved.chats.some(c => c.id === this.saved.selectedChatId)) this.saved.selectedChatId = null
     for (const chat of this.saved.chats) {
       chat.requests = []; chat.status = 'idle'
@@ -59,6 +124,10 @@ export class PersonalChatService {
       for (const decision of chat.decisions ?? []) if (decision.status === 'submitting') decision.status = 'uncertain'
       for (const submission of chat.submissions) if (submission.status === 'submitting') submission.status = 'uncertain'
       if (this.options.historyEnabled?.() === false) { chat.messages = []; chat.title = 'Personal chat'; delete chat.activities }
+    }
+    if (this.storageError) {
+      if (this.options.historyEnabled?.() === false) this.storageError += ' Local history is off, but the unreadable original has not been redacted.'
+      this.emit(); return
     }
     await this.mutate(() => undefined)
     this.unsubscribe = this.host.subscribe(snapshot => {
@@ -74,7 +143,7 @@ export class PersonalChatService {
   get(): PersonalChatState {
     const provider = this.options.configuration().reasoning
     return structuredClone({ ...this.saved, connected: this.connected, connecting: this.connecting,
-      ...(this.error ? { error: this.error } : {}),
+      ...(this.storageError || this.error ? { error: this.storageError || this.error } : {}),
       availability: { provider, supported: provider === 'codex', ...(provider === 'codex' ? {} : { reason: `Personal conversations with ${provider} are not available yet. Select Codex in coordinator settings for new chats.` }) } })
   }
   subscribe(listener: (state: PersonalChatState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -86,16 +155,21 @@ export class PersonalChatService {
   }
   /** Only local atomic commits share a lane. Network waits never hold draft saves. */
   private mutate(change: (saved: Saved) => void): Promise<void> {
+    if (this.storageError) return Promise.reject(new Error(this.storageError))
     const work = this.writing.catch(() => undefined).then(async () => {
+      if (this.storageError) throw new Error(this.storageError)
       const next = structuredClone(this.saved); change(next)
-      const disk = structuredClone(next)
+      // Validate the same JSON representation consumed on restart and by IPC.
+      // A TypeScript host snapshot is not runtime validation of native content.
+      const validated = savedSchema.parse(JSON.parse(JSON.stringify(next)))
+      const disk = structuredClone(validated)
       if (this.options.historyEnabled?.() === false) for (const chat of disk.chats) {
         chat.messages = []; chat.requests = []; chat.title = 'Personal chat'; delete chat.activities
         for (const submission of chat.submissions) { submission.text = ''; submission.skills = [] }
         chat.decisions = []
       }
-      await this.store.write(disk)
-      this.saved = next; this.emit()
+      await this.store.write(savedSchema.parse(disk))
+      this.saved = validated; this.emit()
     })
     this.writing = work; return work
   }
@@ -105,14 +179,30 @@ export class PersonalChatService {
       for (const native of conversations) {
         const chat = saved.chats.find(c => c.id === native.id)
         if (!chat) continue // Never adopt arbitrary native/project conversations.
+        const invalid: string[] = []
         chat.nativeState = 'ready'
-        chat.status = snapshot.connected ? native.status : 'idle'
-        chat.requests = snapshot.connected ? native.requests : []
-        if (native.historyStatus !== 'loading' && !(native.historyStatus === 'error' && !native.messages.length)) {
-          chat.messages = native.messages; chat.activities = native.activities
+        const status = personalChatSchema.shape.status.safeParse(native.status)
+        chat.status = snapshot.connected && status.success ? status.data : 'idle'
+        if (!status.success) invalid.push('status')
+        const requests = personalChatSchema.shape.requests.safeParse(native.requests)
+        chat.requests = snapshot.connected && requests.success ? requests.data : []
+        if (!requests.success) invalid.push('requests')
+        if (!requests.success || !status.success) this.unreadableNativeState.add(chat.id)
+        else this.unreadableNativeState.delete(chat.id)
+        const messages = personalChatSchema.shape.messages.safeParse(native.messages)
+        if (!messages.success) invalid.push('messages')
+        if (native.historyStatus !== 'loading' && !(native.historyStatus === 'error' && messages.success && !messages.data.length)) {
+          const activities = personalChatSchema.shape.activities.safeParse(native.activities)
+          if (messages.success) chat.messages = messages.data
+          if (activities.success) chat.activities = activities.data
+          else invalid.push('activities')
         }
-        chat.historyStatus = native.historyStatus; chat.historyError = native.historyError
-        for (const submission of chat.submissions) if (native.messages.some(m => m.id === submission.messageId && m.commandId === submission.id)) {
+        const historyStatus = personalChatSchema.shape.historyStatus.safeParse(native.historyStatus)
+        const historyError = personalChatSchema.shape.historyError.safeParse(native.historyError)
+        if (!historyStatus.success || !historyError.success) invalid.push('history metadata')
+        chat.historyStatus = invalid.length ? 'error' : historyStatus.success ? historyStatus.data : undefined
+        chat.historyError = invalid.length ? `Native ${invalid.join(', ')} could not be read safely. Last valid cached history is retained and may be incomplete. Refresh to retry; no answer was truncated or invented.` : historyError.success ? historyError.data : undefined
+        for (const submission of chat.submissions) if (chat.messages.some(m => m.id === submission.messageId && m.commandId === submission.id)) {
           submission.status = 'accepted'; delete submission.error
           if (chat.draft.revision === submission.revision) chat.draft = { revision: chat.draft.revision, text: '', skills: [] }
         }
@@ -120,6 +210,7 @@ export class PersonalChatService {
     })
   }
   async connect(): Promise<PersonalChatState> {
+    if (this.storageError) return this.get()
     if (this.connecting || this.connected) return this.get()
     const generation = this.generation
     this.connecting = true; this.error = undefined; this.emit()
@@ -134,6 +225,7 @@ export class PersonalChatService {
   }
   async disconnect(): Promise<PersonalChatState> {
     this.generation++; this.connecting = false; this.connected = false; this.host.disconnect()
+    if (this.storageError) return this.get()
     await this.mutate(saved => { for (const chat of saved.chats) {
       chat.requests = []; chat.status = 'idle'
       if (chat.nativeState === 'starting') chat.nativeState = 'uncertain'
@@ -153,6 +245,10 @@ export class PersonalChatService {
     return this.get()
   }
   async select(id: string | null): Promise<PersonalChatState> {
+    if (this.storageError) {
+      if (id !== null) this.chat(id)
+      this.saved.selectedChatId = id; this.emit(); return this.get()
+    }
     await this.mutate(saved => { if (id !== null) this.chat(id, saved); saved.selectedChatId = id }); return this.get()
   }
   async saveDraft(input: z.infer<typeof personalDraftInputSchema>): Promise<PersonalChatState> {
@@ -175,6 +271,7 @@ export class PersonalChatService {
       const chat = this.chat(chatId, saved)
       if (chat.submissions.some(s => s.revision === revision)) return
       if (!this.connected) throw new Error('Connect Codex before sending this personal chat.')
+      if (this.unreadableNativeState.has(chatId)) throw new Error('Native requests or status could not be read safely. Refresh before sending.')
       if (this.busy.has(chatId) || chat.status === 'running' || chat.requests.length) throw new Error('Wait for this chat and answer its pending requests before sending.')
       if (chat.nativeState === 'uncertain' || chat.submissions.some(s => s.status === 'submitting' || s.status === 'uncertain')) throw new Error('Delivery is uncertain. Refresh and review the existing conversation; it will not be replayed.')
       if (chat.draft.revision !== revision || !chat.draft.text.trim()) throw new Error('Save a nonempty current draft before sending.')
