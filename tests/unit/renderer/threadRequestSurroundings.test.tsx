@@ -48,9 +48,17 @@ describe('the composer beside a pending permission', () => {
     expect(screen.queryByText(/Allow or deny/u)).not.toBeInTheDocument()
   })
 
-  it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('still asks to allow or deny with %s', (_name, choices) => {
-    mount(permissionState(choices))
-    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveAttribute('placeholder', 'Allow or deny the request above to continue.')
+  it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('still asks to allow or deny with %s, once', (_name, choices) => {
+    const { view } = mount(permissionState(choices))
+    const prompt = screen.getByRole('textbox', { name: 'Prompt', exact: true })
+    expect(prompt).toHaveAttribute('placeholder', 'Allow or deny the request above to continue.')
+    // The empty prompt already says it; the line under the model picker does not say it again.
+    const form = prompt.closest('form')!
+    expect(within(form).queryByText(/Allow or deny/u)).not.toBeInTheDocument()
+    expect(form.querySelector('.thread-prompt__status')).toBeNull()
+    // The request stays answerable in its card.
+    const card = view.container.querySelector<HTMLElement>('.agent-request')!
+    expect(within(card).getAllByRole('button').length).toBeGreaterThan(0)
   })
 })
 

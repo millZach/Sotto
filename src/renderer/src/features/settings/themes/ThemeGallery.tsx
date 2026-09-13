@@ -195,6 +195,7 @@ function ThemeCard({ theme, activeModes, onUse, onUseMode, onDuplicate, onEdit, 
   const modes = previews.map(preview => preview.mode)
   const hint = modes.length > 1 ? 'Use for both light and dark' : `Use for ${modes[0]} mode only`
   const owned = activeModes.length > 0 && modes.every(mode => activeModes.includes(mode))
+  const name = title ?? theme.label
   return (
     // The card is a plain element (buttons cannot nest in a button); the title
     // and the circles carry the accessible actions, a card click is a pointer shortcut.
@@ -207,13 +208,14 @@ function ThemeCard({ theme, activeModes, onUse, onUseMode, onDuplicate, onEdit, 
           className="theme-card__title tt-focusable"
           aria-label={`Use ${title === undefined ? `${theme.label} theme` : `${title}, ${theme.label} variant`}${owned ? ', currently active' : ''}`}
           aria-pressed={owned}
-          title={hint}
+          // A name longer than two lines is clamped; the tooltip reads it whole.
+          title={name}
           onClick={event => {
             event.stopPropagation()
             onUse()
           }}
         >
-          {title ?? theme.label}
+          <span className="theme-card__name">{name}</span>
         </button>
         <span className="theme-card__actions" onClick={event => event.stopPropagation()}>
           <Button variant="ghost" iconOnly aria-label={`Duplicate ${theme.label}`} onClick={onDuplicate}><Copy size={14} aria-hidden="true" /></Button>

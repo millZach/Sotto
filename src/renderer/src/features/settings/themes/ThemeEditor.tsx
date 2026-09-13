@@ -109,22 +109,30 @@ export function themeEditorColorFamily(role: ThemeColorRole): ColorFamily | null
   return FAMILY_BY_ROLE.get(role) ?? null
 }
 
-/** The smallest the corner grip makes the panel. */
-export interface ThemeEditorDock { readonly right: number; readonly bottom: number }
+/**
+ * Where a minimized, never-dragged editor rests. `reserve` is how far in from
+ * the footer's right edge the status line must stop to stay clear of the bar;
+ * 0 when the bar rests above the footer.
+ */
+export interface ThemeEditorDock { readonly right: number; readonly bottom: number; readonly reserve: number }
 
 type Box = Pick<DOMRect, 'top' | 'bottom' | 'right' | 'height'>
 
 /**
- * Where the minimized editor rests: centred in the footer's right end, over its
- * status line only. When the bar would reach the footer links or is taller than
- * the footer, it sits just above the footer instead.
+ * Where the minimized editor rests: centred in the footer's right end, where
+ * the status line gives way to it (ending in an ellipsis rather than under the
+ * bar). When the bar would reach the footer links or is taller than the footer,
+ * it sits just above the footer instead.
  */
 export function minimizedThemeEditorDock(bar: { width: number; height: number }, footer: Box | null, links: Pick<DOMRect, 'right'> | null, viewport: { width: number; height: number }): ThemeEditorDock {
   const right = EDGE + 4
-  if (!footer) return { right: 20, bottom: 20 }
-  const clearOfLinks = links === null || viewport.width - right - bar.width >= links.right + 16
-  if (clearOfLinks && bar.height <= footer.height) return { right, bottom: viewport.height - footer.bottom + (footer.height - bar.height) / 2 }
-  return { right, bottom: viewport.height - footer.top + EDGE }
+  if (!footer) return { right: 20, bottom: 20, reserve: 0 }
+  const barLeft = viewport.width - right - bar.width
+  const clearOfLinks = links === null || barLeft >= links.right + 16
+  if (clearOfLinks && bar.height <= footer.height) {
+    return { right, bottom: viewport.height - footer.bottom + (footer.height - bar.height) / 2, reserve: Math.ceil(footer.right - barLeft + FOOTER_STATUS_GAP) }
+  }
+  return { right, bottom: viewport.height - footer.top + EDGE, reserve: 0 }
 }
 
 /** A dragged panel's position moved just enough that the whole panel is inside the window, when it fits. */
@@ -142,6 +150,8 @@ function fitInWindow(position: { x: number; y: number } | null, panel: HTMLEleme
 export const THEME_EDITOR_MIN_SIZE = { width: 280, height: 220 } as const
 /** The gap the panel keeps from the window edge. */
 const EDGE = 8
+/** The space between the footer's status line and a bar resting beside it. */
+const FOOTER_STATUS_GAP = 12
 
 type ColorsByAppearance = Record<ThemeAppearance, ThemeColors>
 
@@ -572,16 +582,20 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       setDock(null)
       return
     }
+    const footer = document.querySelector<HTMLElement>('.app-footer')
     const place = (): void => {
       const panel = panelRef.current?.getBoundingClientRect()
       if (!panel) return
-      const footer = document.querySelector('.app-footer')
-      setDock(minimizedThemeEditorDock(
+      const next = minimizedThemeEditorDock(
         { width: panel.width, height: panel.height },
         footer?.getBoundingClientRect() ?? null,
         footer?.querySelector('nav')?.getBoundingClientRect() ?? null,
         { width: window.innerWidth, height: window.innerHeight },
-      ))
+      )
+      setDock(next)
+      // The footer's own padding moves only its status line, so this never changes what was measured.
+      if (next.reserve > 0) footer?.style.setProperty('--theme-editor-reserve', `${next.reserve}px`)
+      else footer?.style.removeProperty('--theme-editor-reserve')
     }
     place()
     // The shell lays out after the window's resize event, so measure once it has.
@@ -590,7 +604,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       if (frame !== null) cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => { frame = null; place() })
     }
-    const shell = document.querySelector('.app-footer')?.parentElement
+    const shell = footer?.parentElement
     const observer = typeof ResizeObserver === 'undefined' || !shell ? null : new ResizeObserver(later)
     if (shell) observer?.observe(shell)
     window.addEventListener('resize', later)
@@ -598,6 +612,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       window.removeEventListener('resize', later)
       observer?.disconnect()
       if (frame !== null) cancelAnimationFrame(frame)
+      footer?.style.removeProperty('--theme-editor-reserve')
     }
   }, [minimized, position])
 
@@ -625,7 +640,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       data-inspecting={inspecting || undefined}
       style={{
         ...(position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : {}),
-        ...(dock ?? {}),
+        ...(dock ? { right: dock.right, bottom: dock.bottom } : {}),
         // Minimized, the bar is as wide as its title and two buttons.
         ...(size && !minimized ? { width: size.width } : {}),
         // A chosen height applies only expanded; minimized, the panel hugs its header.

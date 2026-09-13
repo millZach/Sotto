@@ -75,6 +75,8 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   }
 }
 
+const PERMISSION_INSTRUCTION = 'Allow or deny the request above to continue.'
+
 /** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
 function permissionsOnlyInProvider(row: ThreadRow): boolean {
   const permissions = row.thread.requests.filter(request => request.kind === 'permission')
@@ -84,8 +86,9 @@ function permissionsOnlyInProvider(row: ThreadRow): boolean {
 /** Why the primary action is off, in one sentence; null when a prompt can go. */
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   if (row.thread.archivedAt) return 'This thread is archived.'
-  if ((row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')) && permissionsOnlyInProvider(row)) return `Sending returns once the request above is answered in ${row.provider}’s app.`
-  if (row.request?.kind === 'permission') return 'Allow or deny the request above to continue.'
+  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
+  if (permission && permissionsOnlyInProvider(row)) return `Sending returns once the request above is answered in ${row.provider}’s app.`
+  if (permission) return PERMISSION_INSTRUCTION
   // Choices shown in the transcript are answered there; only a plain question takes its answer from the composer.
   const inline = row.thread.requests.find(request => requestMode(request) !== 'legacy-text')
   if (inline && !answering) return inline.kind === 'permission' ? 'Answer the request above to continue.' : 'Answer the question above to continue.'
@@ -146,6 +149,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const admitting = submission?.mode === 'queue' && !submission.resolved
   const reason = (handingOff ? 'Handing this draft to Sotto…' : null) ?? blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
+  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : 'What would you like to do next?'
   const content = hasDraftContent(draft)
   const canSend = reason === null && content && !readingImages && !answerState.sending && !admitting
   const running = row.thread.status === 'running' && !answering
@@ -208,8 +212,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
       : answerState.sending ? <span className="thread-prompt__status" role="status">Sending answer…</span>
-        // A blocked composer states only why; the transcript explains an unconfirmed prompt.
-        : reason !== null ? <span className="thread-prompt__status">{reason}</span>
+        // A blocked composer states only why, and not again when its empty prompt already says it; the transcript explains an unconfirmed prompt.
+        : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span>
           : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
             : content || idleHint ? <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : queueing ? `Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
@@ -231,7 +235,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           aria-controls={picker.open && picker.options.length ? listId : undefined}
           aria-expanded={capabilities.skills === true && !answering ? picker.open : undefined}
           aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex) : undefined}
-          placeholder={row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : 'Allow or deny the request above to continue.' : answering ? 'Write your answer…' : 'What would you like to do next?'}
+          placeholder={placeholder}
           onChange={event => { editText(event.target.value); picker.track(event.target) }}
           onSelect={event => picker.track(event.currentTarget)}
           onKeyDown={event => {

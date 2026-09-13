@@ -157,12 +157,13 @@ describe('theme editor inspector and resizing', () => {
   it('rests a minimized editor in the footer beside its links, or above the footer when it cannot fit', () => {
     const viewport = { width: 820, height: 560 }
     const footer = { top: 516, bottom: 560, right: 820, height: 44 }
-    // 36px tall in a 44px footer: centred, 4px from the bottom, 12px from the right.
-    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 4 })
-    // Wide enough to reach the links, it sits 8px above the footer instead.
-    expect(minimizedThemeEditorDock({ width: 480, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52 })
-    expect(minimizedThemeEditorDock({ width: 210, height: 60 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52 })
-    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, null, null, viewport)).toEqual({ right: 20, bottom: 20 })
+    // 36px tall in a 44px footer: centred, 4px from the bottom, 12px from the right. The status line
+    // stops 12px short of the bar's left edge (820 - 12 - 210 = 598), so it never runs under it.
+    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 4, reserve: 234 })
+    // Wide enough to reach the links, it sits 8px above the footer instead, and the status keeps its width.
+    expect(minimizedThemeEditorDock({ width: 480, height: 36 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52, reserve: 0 })
+    expect(minimizedThemeEditorDock({ width: 210, height: 60 }, footer, { right: 340 }, viewport)).toEqual({ right: 12, bottom: 52, reserve: 0 })
+    expect(minimizedThemeEditorDock({ width: 210, height: 36 }, null, null, viewport)).toEqual({ right: 20, bottom: 20, reserve: 0 })
   })
 })
 

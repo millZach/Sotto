@@ -1085,7 +1085,8 @@ textarea.tt-input {
   align-items: center;
   gap: 22px;
   border-top: 1px solid var(--tt-hairline);
-  padding: 0 22px;
+  /* A minimized theme editor resting in the footer sets the reserve, so the status line ends before the bar. */
+  padding: 0 max(22px, var(--theme-editor-reserve, 0px)) 0 22px;
   color: var(--tt-text-faint);
   font-size: 13px;
   user-select: none;
