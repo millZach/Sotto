@@ -70,7 +70,7 @@
   --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 65%);
   --tt-shadow-overlay: 0 20px 70px rgb(0 0 0 / 67%);
-  --tt-shadow-color: rgb(0 0 0 / 70%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
   /* The orb draws additive light, which only reads on a dark field. */
   --tt-orb-filter: none;
 
@@ -81,6 +81,8 @@
   --tt-swatch-rose: #f08fb0;
   --tt-swatch-amber: #e3ad52;
   --tt-swatch-green: #80c77d;
+  /* Edge on colour-choice swatches whose own colour can vanish into the room. */
+  --tt-swatch-edge: transparent;
 
   /* Accent (teal). Accent blocks below override exactly these five. */
   --tt-accent: #47b8a9;
@@ -176,6 +178,7 @@
   --tt-swatch-rose: #b5345f;
   --tt-swatch-amber: #8c5600;
   --tt-swatch-green: #2f7433;
+  --tt-swatch-edge: rgb(20 24 22 / 28%);
 
   --tt-accent: #146e63;
   --tt-accent-hover: #0f5a51;

@@ -70,7 +70,7 @@ dropdowns, or an OpenRouter key. Cleanup has three tiers. Agents is only a
 pointer to its own configuration page, gated by Sotto Pro. Dictionary is its
 own page off the footer: words with a "sounds like" hint and usage counts, a
 suggestion row from hand corrections, and snippets that paste whole when you
-say "insert" and their name. Type: Bricolage Grotesque. Black only.
+say "insert" and their name. Type: Bricolage Grotesque. Black only (superseded by ADR-0009, which adds light and accent choices).
 
 ### 02 Harbor, `02-harbor.html`
 

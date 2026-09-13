@@ -1,9 +1,17 @@
 /**
- * The main window is black only ("Crossing"), so every application capture
- * carries the one theme `black`. The floating widget is untouched and still
- * follows the system scheme, so widget captures keep `light` and `dark`.
+ * The main window has a dark room (the Crossing default every existing install
+ * keeps) and a light room, each with an accent (ADR-0009). Application tuples
+ * carry the resolved mode, `dark` or `light`; the dense matrix is captured in
+ * the dark teal default and the light tuples repeat the surfaces a mode change
+ * can break. Accent and System captures name their choice in the state. The
+ * floating widget is untouched and still follows the system scheme, so widget
+ * captures keep `light` and `dark` as the emulated system scheme.
  */
-export const DESIGN_CAPTURE_THEME = 'black'
+export const DESIGN_CAPTURE_THEME = 'dark'
+export const DESIGN_CAPTURE_APP_THEMES = Object.freeze(['dark', 'light'])
+export const DESIGN_CAPTURE_ACCENTS = Object.freeze(['teal', 'blue', 'violet', 'rose', 'amber', 'green'])
+/** The narrowest main window the Phase 1 surfaces are reviewed at. */
+export const DESIGN_CAPTURE_MINIMUM_WIDTH = 760
 export const DESIGN_CAPTURE_WIDGET_THEMES = Object.freeze(['light', 'dark'])
 export const DESIGN_CAPTURE_SCALES = Object.freeze([100, 125, 150, 200])
 
@@ -68,6 +76,54 @@ for (const [id, category, state, focusTarget] of [
   ['focus-destructive', 'history', 'focus-destructive', 'destructive'],
 ]) add({ id, category, state, focusTarget })
 
+// The light room repeats every surface family, its feedback and error states,
+// the orb, native selects and provider controls.
+for (const [id, category, state] of [
+  ['onboarding-step-3-openrouter-light', 'onboarding', 'openrouter-key'],
+  ['dictate-ready-light', 'dictate', 'ready'],
+  ['dictate-listening-light', 'dictate', 'listening'],
+  ['dictate-pasted-light', 'dictate', 'success-pasted'],
+  ['dictate-error-light', 'dictate', 'error'],
+  ['agents-room-light', 'agents', 'overview'],
+  ['history-populated-light', 'history', 'populated-feedback'],
+  ['settings-feedback-light', 'settings', 'saved-feedback'],
+  ['settings-providers-light', 'settings', 'providers'],
+  ['settings-capture-light', 'settings', 'capture'],
+  ['settings-application-privacy-light', 'settings', 'application-privacy'],
+  ['settings-validation-error-light', 'settings', 'validation-error'],
+  ['settings-appearance-light', 'settings', 'appearance'],
+  ['help-light', 'help', 'overview'],
+]) add({ id, category, state, theme: 'light' })
+
+add({ id: 'settings-appearance', category: 'settings', state: 'appearance' })
+add({ id: 'dictate-reduced-motion-light', category: 'dictate', state: 'listening-reduced-motion', motion: 'reduced', theme: 'light' })
+
+for (const [id, category, state, focusTarget] of [
+  ['focus-switch-tab-light', 'dictate', 'focus-switch-tab', 'tab'],
+  ['focus-navigation-light', 'dictate', 'focus-navigation', 'navigation'],
+  ['focus-input-light', 'history', 'focus-input', 'input'],
+  ['focus-switch-light', 'settings', 'focus-switch', 'switch'],
+  ['focus-destructive-light', 'history', 'focus-destructive', 'destructive'],
+]) add({ id, category, state, focusTarget, theme: 'light' })
+
+// Accents are applied live, in both rooms, on the surface that shows the most
+// accent: the ready room's wave, primary action and current navigation.
+for (const theme of DESIGN_CAPTURE_APP_THEMES) {
+  for (const accent of DESIGN_CAPTURE_ACCENTS.filter((candidate) => candidate !== 'teal')) {
+    add({ id: `accent-${accent}-${theme}`, category: 'appearance', state: `accent-${accent}`, theme })
+  }
+  // System mode resolves to whatever Windows reports, emulated on the main window.
+  add({ id: `appearance-system-${theme}`, category: 'appearance', state: 'system-settings', theme })
+}
+
+for (const theme of DESIGN_CAPTURE_APP_THEMES) {
+  for (const [surface, state] of [
+    ['dictate', 'dictate-ready'],
+    ['agents', 'agents-overview'],
+    ['settings', 'settings-full'],
+  ]) add({ id: `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-${surface}-${theme}`, category: 'width', state: `${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}`, theme })
+}
+
 for (const scalePercent of DESIGN_CAPTURE_SCALES) {
   for (const [surface, state] of [
     ['onboarding', 'onboarding-model'],
@@ -76,6 +132,11 @@ for (const scalePercent of DESIGN_CAPTURE_SCALES) {
     ['settings', 'settings-full'],
     ['help', 'help-full'],
   ]) add({ id: `scale-${scalePercent}-${surface}`, category: 'scale', state, scalePercent })
+
+  for (const [surface, state] of [
+    ['dictate', 'dictate-ready'],
+    ['settings', 'settings-full'],
+  ]) add({ id: `scale-${scalePercent}-${surface}-light`, category: 'scale', state, scalePercent, theme: 'light' })
 
   for (const theme of DESIGN_CAPTURE_WIDGET_THEMES) {
     add({ id: `scale-${scalePercent}-widget-${theme}`, category: 'scale', state: 'widget-listening', theme, scalePercent })

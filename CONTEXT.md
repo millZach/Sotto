@@ -111,7 +111,11 @@ Answering a question or permission request and creating a project are also part 
 
 ## Main window
 
-**Crossing.** The main window's shell since redesign round 3: one black room under a thin strip, black only, set in Bricolage Grotesque. There is no light theme and no appearance setting; a persisted theme value is tolerated and ignored. The floating widget keeps its own look. Avoid: "dark mode" (there is no other mode).
+**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Bricolage Grotesque. It is dark by default and can be light; see Appearance. The floating widget keeps its own look.
+
+**Appearance.** The main window's mode setting: System, Light or Dark. Dark with the Teal accent is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is not appearance; it belongs to the floating widget. Avoid: "theme" for the main window.
+
+**Accent.** The one colour the main window uses for the dictation wave, primary actions, focus rings and selections: Teal, Blue, Violet, Rose, Amber or Green. Each accent has a dark-room and a light-room value.
 
 **Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
 
@@ -130,8 +134,8 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
 - `src/main/llm/transcriptPolishService.ts` — the cleanup pass.
 - `scripts/asr-bench/` — the transcription bench (`bench-stt.mjs`) and its results; `docs/perf/` holds the decision reports.
-- `src/renderer/src/styles/tokens.css` and `global.css` — the black token set and shared styles; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
-- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (one theme, scales, motion, focus).
+- `src/renderer/src/styles/tokens.css` and `global.css` — the dark, light and accent token sets and shared styles; `src/renderer/src/state/appearance.ts` applies the appearance to the window root; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
+- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (dark and light rooms, accents, minimum width, scales, motion, focus).
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.

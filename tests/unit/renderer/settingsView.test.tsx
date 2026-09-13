@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
+import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import {
@@ -23,6 +24,7 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal =>
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
+  appearancePreview.reset()
   vi.mocked(useOptionalAgents).mockReset()
 })
 
@@ -65,7 +67,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
 const copy = platformCopy('win32')
 
 describe('SettingsView', () => {
-  it('renders the complete field matrix in the black-only container', async () => {
+  it('renders the complete field matrix', async () => {
     render(<div><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     for (const name of [
@@ -101,7 +103,7 @@ describe('SettingsView', () => {
     expect(delay).toHaveValue('275')
   })
 
-  it('has no theme choice and still saves reduced motion', async () => {
+  it('offers no widget theme choice and still saves reduced motion', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
@@ -110,6 +112,43 @@ describe('SettingsView', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
     expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
     expect(document.documentElement.dataset.reducedMotion).toBe('on')
+  })
+
+  it('shows the persisted mode and accent and saves each choice as its own patch', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', accent: 'blue' } })} />)
+    const section = document.querySelector('#settings-appearance') as HTMLElement
+
+    expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
+    expect(within(section).getByText(/Sotto is/u)).toHaveTextContent('Sotto is light with a blue accent.')
+    expect(within(section).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    const accents = within(section).getByRole('radiogroup', { name: 'Accent' })
+    expect(within(accents).getAllByRole('radio').map(radio => radio.getAttribute('aria-label'))).toEqual(['Teal', 'Blue', 'Violet', 'Rose', 'Amber', 'Green'])
+    expect(within(accents).getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(within(section).getByRole('radio', { name: 'System' }))
+    expect(update).toHaveBeenLastCalledWith({ appearance: 'system' })
+    await user.click(within(accents).getByRole('radio', { name: 'Rose' }))
+    expect(update).toHaveBeenLastCalledWith({ accent: 'rose' })
+    expect(update).toHaveBeenCalledTimes(2)
+  })
+
+  it('moves through accents with the arrow keys as one tab stop', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    const accents = screen.getByRole('radiogroup', { name: 'Accent' })
+    const radios = within(accents).getAllByRole('radio')
+    expect(radios.map(radio => radio.tabIndex)).toEqual([0, -1, -1, -1, -1, -1])
+
+    radios[0]!.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(update).toHaveBeenLastCalledWith({ accent: 'green' })
+    expect(within(accents).getByRole('radio', { name: 'Green' })).toHaveFocus()
+    await user.keyboard('{ArrowRight}')
+    expect(update).toHaveBeenLastCalledWith({ accent: 'teal' })
+    expect(within(accents).getByRole('radio', { name: 'Teal' })).toHaveFocus()
   })
 
   it('enumerates microphones, preserves an unknown persisted choice, and refreshes on devicechange', async () => {
@@ -534,10 +573,10 @@ describe('SettingsView', () => {
     const { container } = render(<SettingsView {...baseProps()} />)
     const nav = screen.getByRole('navigation', { name: 'Settings sections' })
     expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Application',
+      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application',
     ])
     expect([...container.querySelectorAll('.settings-scroll > .settings-section')].map((section) => section.id)).toEqual([
-      'settings-capture', 'settings-transcription', 'settings-formatting', 'settings-providers', 'settings-agents', 'settings-output', 'settings-privacy',
+      'settings-capture', 'settings-transcription', 'settings-formatting', 'settings-providers', 'settings-agents', 'settings-output', 'settings-appearance', 'settings-privacy',
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
