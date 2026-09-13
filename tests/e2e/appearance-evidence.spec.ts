@@ -17,6 +17,8 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
  * artifacts/verification/phase-1-appearance.
  */
 const enabled = process.env.SOTTO_APPEARANCE_EVIDENCE === '1'
+/** Screen captures include whatever covers Sotto's window, so they need their own opt-in. */
+const screenCaptureEnabled = process.env.SOTTO_APPEARANCE_SCREEN_CAPTURE === '1'
 const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/phase-1-appearance')
 
 async function withProfile(
@@ -51,7 +53,11 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: resolve(evidenceRoot, `${name}.png`), caret: 'hide', animations: 'disabled' })
 }
 
-/** The select popup is a separate native widget, so it is captured from the screen, cropped to Sotto's window. */
+/**
+ * The select popup is a separate native widget, so it is captured from the
+ * screen, cropped to Sotto's window. Anything above the window is captured
+ * too, so inspect these images before relying on them.
+ */
 async function screenCapture(launched: LaunchedSotto, name: string): Promise<void> {
   const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }) => {
     const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
@@ -113,6 +119,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('native select popups follow the room', async () => {
+    test.skip(!screenCaptureEnabled, 'Run with SOTTO_APPEARANCE_SCREEN_CAPTURE=1 on an otherwise clear screen')
     for (const appearance of ['light', 'dark'] as const) {
       await withProfile({ appearance }, async (launched) => {
         const { page } = launched
@@ -183,20 +190,29 @@ test.describe('appearance rendered evidence', () => {
     }, { scenario: 'design-threads', threads: true })
   })
 
-  test('the minimum width at 150 percent in the light room', async () => {
+  test('the minimum width with 150 percent page zoom in the light room', async () => {
     await withProfile({ appearance: 'light', accent: 'violet' }, async (launched) => {
       const { page } = launched
+      // Page zoom shrinks the CSS viewport to about 507px, so the narrow layout
+      // rules apply; display scaling at 760 keeps a 760px CSS viewport instead,
+      // which the width tuples in the design gate already cover.
       await launched.app.evaluate(({ BrowserWindow }) => {
         const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
         window.setMinimumSize(760, 560)
         window.setContentSize(760, 720)
+        window.webContents.setZoomFactor(1.5)
       })
-      await expect.poll(() => page.evaluate('innerWidth')).toBe(760)
-      await page.evaluate(() => { document.body.style.zoom = '1.5' })
+      await expect.poll(() => page.evaluate('innerWidth')).toBeLessThan(520)
       await page.getByRole('link', { name: 'Settings' }).click()
       await page.locator('#settings-appearance').scrollIntoViewIfNeeded()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
-      await shot(page, 'width-760-zoom-150-settings-appearance-light')
+      await page.mouse.move(0, 0)
+      // Playwright crops zoomed pages to the unzoomed viewport, so Electron captures the page itself.
+      const png = await launched.app.evaluate(async ({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
+        return (await window.webContents.capturePage()).toPNG().toString('base64')
+      })
+      await writeFile(resolve(evidenceRoot, 'width-760-zoom-150-settings-appearance-light.png'), Buffer.from(png, 'base64'))
     })
   })
 })
