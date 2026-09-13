@@ -388,6 +388,12 @@ export class AgentControl {
       const submitted = this.state.deliveries?.find(item => item.threadId === draft.threadId && item.draftId === draft.draftId)
       if (submitted && submitted.status !== 'failed') throw new Error('Use a new draft revision when editing a submitted prompt.')
       const previous = this.state.threadDrafts?.find(item => item.threadId === draft.threadId)
+      const sameRevision = previous ? previous.draftId === draft.draftId && previous.text === draft.text && previous.requestId === draft.requestId
+        && this.promptDigest(previous.text, previous.attachments, previous.skills) === this.promptDigest(draft.text, draft.attachments, draft.skills)
+        : this.emptyDraftRevisions.get(draft.threadId) === draft.draftId && !draft.text.length && !draft.attachments.length
+      if (command.composer === 'manual' && !sameRevision && this.state.assignments.some(item => item.threadId === draft.threadId && item.mode === 'managed')) {
+        throw new Error('This draft now belongs to the managed composer. Your manual edit was not saved over it. Stop managing before saving that edit.')
+      }
       if (previous?.requestId && previous.requestId !== draft.requestId && (draft.text.length || draft.attachments.length)) {
         throw new Error('Clear the existing answer before starting a different draft.')
       }
@@ -1009,6 +1015,7 @@ export class AgentControl {
         this.canAct(command.threadId)
         this.observe(command.threadId)
         this.acceptSnapshot(await this.readThread(command.threadId))
+        this.checkManagedDraftHandoff(command.threadId, command.expectedDraftId)
         this.assign(command.threadId, command.instruction ?? '', selectionRevision)
         this.observe()
         return
@@ -1021,6 +1028,7 @@ export class AgentControl {
         this.canAct(command.threadId)
         if (!supportsAgentSupervision(capabilitiesForThread(this.state.host, this.thread(command.threadId)))) throw new Error('This connection cannot safely supervise threads.')
         const assignment = this.assignment(command.threadId)
+        this.checkManagedDraftHandoff(command.threadId, command.expectedDraftId)
         assignment.mode = 'managed'; assignment.paused = false; assignment.followups = 0; assignment.lastFailure = ''
         assignment.stopReason = 'none'; assignment.stoppedAt = ''
         this.restoreManagedDraft(command.threadId)
@@ -1092,6 +1100,19 @@ export class AgentControl {
     // The managed composer is another view of the same saved draft. A draft
     // belonging to a different thread keeps its explicit owner and notice.
     if (!this.hasDraft() && this.state.threadDrafts?.some(item => item.threadId === threadId)) this.startDraft(threadId)
+  }
+  private checkManagedDraftHandoff(threadId: string, expectedDraftId: string | null | undefined): void {
+    if (expectedDraftId === undefined) return // Existing voice/management commands keep their authority contract.
+    const draft = this.state.threadDrafts?.find(item => item.threadId === threadId)
+    const currentId = draft?.draftId ?? this.emptyDraftRevisions.get(threadId) ?? null
+    if (currentId !== expectedDraftId) throw new Error('The thread draft changed before management could take it. Keep your edit and retry the handoff.')
+    if (this.outbox.some(item => item.threadId === threadId)
+      || this.state.deliveries?.some(item => item.threadId === threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))) {
+      throw new Error('An earlier submission is still pending. Refresh to reconcile it before handing the draft to management.')
+    }
+    if (this.persistedDrafts.get(threadId) !== this.draftSignatures(draft ? [draft] : []).get(threadId)) {
+      throw new Error('Save the current thread draft before handing it to management.')
+    }
   }
   private guardAuthority(command: AgentHostCommand, turn?: ActiveTurn): void {
     if (command.type !== 'answer') return

@@ -138,6 +138,8 @@ export class ThreadDraftStore {
   private readonly listeners = new Set<() => void>()
   private readonly accepted = new Set<string>()
   private readonly legacyIds = new Map<string, string>()
+  private readonly pendingSaves = new Map<string, Set<Promise<void>>>()
+  private readonly handoffs = new Map<string, Promise<AgentState | null>>()
   private submissionList: readonly Submission[] = []
   constructor(private readonly command: Command, private readonly debounceMs = 250, private readonly uuid: () => string = () => crypto.randomUUID()) {}
 
@@ -249,12 +251,15 @@ export class ThreadDraftStore {
   }
 
   /** Save the thread's latest unsaved revision now (navigation, unmount, explicit retry). */
-  flush(threadId: string, retry = false): void {
+  flush(threadId: string, retry = false): void { void this.flushPending(threadId, retry) }
+
+  private flushPending(threadId: string, retry = false): Promise<void> {
     const pending = this.timers.get(threadId)
     if (pending !== undefined) { clearTimeout(pending); this.timers.delete(threadId) }
     const entry = this.entries.get(threadId)
-    if (entry === undefined || entry.saved || !entry.draft.draftId) { if (pending !== undefined) this.emit(new Set([threadId])); return }
-    if (entry.saving === entry.draft.draftId && !retry) return
+    const outstanding = (): Promise<void> => Promise.all(this.pendingSaves.get(threadId) ?? []).then(() => undefined)
+    if (entry === undefined || entry.saved || !entry.draft.draftId) { if (pending !== undefined) this.emit(new Set([threadId])); return outstanding() }
+    if (entry.saving === entry.draft.draftId && !retry) return outstanding()
     const draft = entry.draft
     entry.saving = draft.draftId
     entry.error = null
@@ -265,11 +270,52 @@ export class ThreadDraftStore {
       current.saving = null
       const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
       current.saved ||= status === 'saved'
+      if (current.saved) current.observed = true
       current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }
-    this.command({ type: 'save-thread-draft', threadId, draftId: draft.draftId, text: draft.text, attachments: [...draft.attachments], ...(draft.skills.length ? { skills: [...draft.skills] } : {}), requestId: draft.requestId })
-      .then(settle, () => settle(null))
+    let result: Promise<AgentState | null>
+    try {
+      result = this.command({ type: 'save-thread-draft', composer: 'manual', threadId, draftId: draft.draftId, text: draft.text, attachments: [...draft.attachments], ...(draft.skills.length ? { skills: [...draft.skills] } : {}), requestId: draft.requestId })
+    } catch { result = Promise.resolve(null) }
+    const task = result.then(settle, () => settle(null))
+    const saves = this.pendingSaves.get(threadId) ?? new Set<Promise<void>>()
+    this.pendingSaves.set(threadId, saves); saves.add(task)
+    void task.finally(() => { saves.delete(task); if (!saves.size) this.pendingSaves.delete(threadId) })
+    return task
+  }
+
+  /** Flush the latest revision and all earlier saves before the explicit Manage/Resume action.
+   * Callers await success before focusing the managed composer; null retains local edits and saveError.
+   * Keep competing composer/management actions disabled for this thread while this promise is pending.
+   */
+  handoffToManagement(threadId: string, action: 'assign' | 'resume'): Promise<AgentState | null> {
+    const existing = this.handoffs.get(threadId)
+    if (existing) return existing
+    const task = (async (): Promise<AgentState | null> => {
+      try {
+        for (;;) {
+          const revision = this.draft(threadId).draftId
+          await this.flushPending(threadId)
+          await Promise.all(this.pendingSaves.get(threadId) ?? [])
+          if (this.draft(threadId).draftId !== revision) continue
+          if (!this.entries.get(threadId)?.saved && revision) throw new Error(this.snapshot(threadId).saveError ?? SAVE_ERROR)
+          const result = await this.command({ type: action, threadId, expectedDraftId: revision || null })
+          if (result === null || result.error) throw new Error(result?.error ?? 'Management handoff could not be confirmed. Your draft is retained.')
+          if (!result.assignments.some(item => item.threadId === threadId && item.mode === 'managed')) throw new Error('Management did not take this thread. Your draft is retained.')
+          this.receive(result)
+          return result
+        }
+      } catch (error) {
+        const entry = this.entries.get(threadId) ?? { draft: EMPTY, observed: true, saved: true, saving: null, error: null, superseded: [] }
+        entry.error = error instanceof Error ? error.message : SAVE_ERROR
+        this.entries.set(threadId, entry); this.emit(new Set([threadId]))
+        return null
+      }
+    })()
+    this.handoffs.set(threadId, task)
+    void task.finally(() => this.handoffs.delete(threadId))
+    return task
   }
 
   flushAll(): void { for (const threadId of [...this.timers.keys()]) this.flush(threadId) }
@@ -313,6 +359,7 @@ export class ThreadDraftStore {
   }
 
   private replace(entry: Entry, draft: ComposerDraft, status: ThreadComposerSnapshot['save']): void {
+    if (entry.draft.draftId && entry.draft.draftId !== draft.draftId) entry.superseded = [...entry.superseded.slice(-15), entry.draft.draftId]
     entry.draft = draft
     entry.observed = true
     entry.saved = status === 'saved'
