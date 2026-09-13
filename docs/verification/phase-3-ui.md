@@ -19,7 +19,7 @@ Concept: a daily coding workspace whose proof is moving between a live thread an
 
 ## Results
 
-Rendered review on 2026-09-13, branch `work/phase3-ui` at 713e426, built with `npm run build`.
+Rendered review on 2026-09-13, branch `work/phase3-ui` at 713e426, built with `npm run build`. It was rechecked after merging main at 10439a8 (merge 0252b35).
 
 ### What ran, and what stood in
 
@@ -102,7 +102,11 @@ The browser page is a main-owned `WebContentsView` layered over the window, and 
 ### Known gaps for integration
 
 - **Requests spec assertion.** `tests/e2e/phase-three-requests.spec.ts:260` (requests worker) expects "Jump to latest" to be visible at scrollTop 0 in 820x560 with the approval card in view. 2e12d20 deliberately hides Jump while a request card reaches its bottom band, so that one assertion now fails. With only that line changed to `toHaveCount(0)`, the whole spec passes. I checked this with a throwaway copy that was not committed.
-- **Old toggle name in layout tests.** Layout-owned tests still query the header toggle as 'Files', but it is now named 'Tools': `tests/unit/renderer/splitWorkspace.test.tsx:294-295` and `tests/e2e/files-panel-split.spec.ts:115,132,186,198`.
-- **Stale request tests.** `tests/unit/renderer/threadsView.test.tsx` has 2 stale request tests. They fail on the baseline too (see requests-result.md), so this branch did not cause them.
-- **Terminal dependencies.** Main needs `npm install` for `@xterm/xterm` 6.0.0 and `@xterm/addon-fit` 0.11.0 (8dddec4). `scripts/generate-notices.mjs` does not know about the hand-written native terminal notices section.
+- **Stale request tests.** `tests/unit/renderer/threadsView.test.tsx` has 2 stale request tests. They fail on the baseline too (see requests-result.md), and they still fail after merging main at 10439a8. This branch did not cause them.
 - **Provider name casing.** The backend's unsupported-reasoning reason names the provider by its lower-case id ("claude"), and Chats shows it verbatim.
+
+Resolved by main at 10439a8, rechecked after merge 0252b35:
+- The layout tests use the 'Tools' toggle, and `files-panel-split.spec.ts` passes.
+- `scripts/generate-notices.mjs` keeps the native terminal section (7a16629), and `verify-notices` passes with 171 components.
+- Main's `package.json` and `node_modules` carry `@xterm/xterm` and `@xterm/addon-fit`.
+- On the merged tree, the Phase 3 UI journeys and the owned unit tests (86) pass. The requests journey still fails only at line 260.
