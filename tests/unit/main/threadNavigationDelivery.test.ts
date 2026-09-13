@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -43,7 +43,7 @@ class FixtureHost extends E2EAgentHost {
   }
   async acknowledge() { await super.execute(this.attempts.at(-1)!) }
 }
-async function fixture() {
+async function fixture(receiptIds: string[] = []) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-delivery-')); roots.push(root)
   const host = new FixtureHost()
   const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
@@ -56,6 +56,13 @@ async function fixture() {
   }
   let control = create()
   await control.start(); await control.command({ type: 'connect' })
+  if (receiptIds.length) {
+    control.dispose(); await control.privacyChanged(); controls.delete(control)
+    const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
+    saved.deliveredDrafts = receiptIds.map(draftId => ({ threadId: 'workshop', draftId }))
+    await writeFile(join(root, 'agents.json'), JSON.stringify(saved))
+    control = create(); await control.start(); await control.command({ type: 'connect' })
+  }
   return { root, host, reasoner, get control() { return control }, async restart() {
     control.dispose(); await control.privacyChanged(); controls.delete(control)
     control = create(); await control.start()
@@ -292,8 +299,12 @@ describe('manual delivery receipts', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
   it('bounds receipt history to 128 persisted identities', async () => {
-    const f = await fixture(); const ids: string[] = []
-    for (let i = 0; i < 130; i++) {
+    // Load a full durable history, then cross its retention boundary through real
+    // sends. Recreating all 128 prior conversations only measures filesystem load.
+    const ids = Array.from({ length: 128 }, () => randomUUID())
+    const f = await fixture(ids)
+    expect(f.control.get().deliveredDrafts).toHaveLength(128)
+    for (let i = 0; i < 2; i++) {
       const draftId = randomUUID(); ids.push(draftId)
       await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: `Prompt ${i}` })
       f.host.event({ type: 'ready', threadId: 'workshop', text: 'Done', status: 'idle' })
