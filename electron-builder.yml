@@ -15,7 +15,8 @@ asar: true
 # PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR.
 asarUnpack:
   - node_modules/node-pty/**
-# Rebuild against the shipped Electron runtime (also on macOS arm64).
+# Use the verified Windows Node-API prebuild; rebuild normally on other platforms.
+beforeBuild: ./scripts/prepare-native-dependencies.mjs
 npmRebuild: true
 
 # Embeds app-update.yml in the packaged resources so the Windows updater knows
