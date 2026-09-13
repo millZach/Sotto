@@ -3,25 +3,32 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentRequest, type AgentMessage } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentSkillCatalog } from '../../shared/agentSkills'
+import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { grokActivities } from './grokActivity'
+import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
+import { object } from './claudeProtocol'
+import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokUncertain, type GrokFrame } from './grokRpc'
 
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
-const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional() })
+const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), answeredRequestIds: z.array(z.string()).default([]) })
 type Alias = z.infer<typeof aliasSchema>
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional() })).optional() }).optional() })).min(1) })
-const questionSchema = z.object({ sessionId: z.string(), toolCallId: z.string(), questions: z.array(z.object({ question: z.string(), id: z.string().optional(), options: z.array(z.object({ label: z.string() })).default([]) })).min(1).max(30) })
-const permissionSchema = z.object({ sessionId: z.string(), toolCall: z.object({ toolCallId: z.string(), title: z.string().optional(), rawInput: z.unknown().optional() }), options: z.array(z.object({ optionId: z.string(), name: z.string(), kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']) })) })
-type Pending = { wireId: string | number; threadId: string; toolCallId: string; request: AgentRequest; permission?: z.infer<typeof permissionSchema>; question?: z.infer<typeof questionSchema> }
-const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.object({ type: z.string(), text: z.string().optional() }).optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
+const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
 const historySchema = z.object({ updates: z.array(z.object({ timestamp: z.union([z.number(), z.string()]), method: z.string(), params: z.unknown() })), totalCount: z.number().int().nonnegative(), hasMore: z.boolean() })
 // Grok 1.0.5 restarts its event counter on CLI resume. eventId alone is not a message identity.
 function eventKey(params: z.infer<typeof updateSchema>, fallback: string | number): string {
   return `grok-event-${digest(JSON.stringify([params._meta?.eventId, params._meta?.agentTimestampMs ?? fallback, params.update]))}`
+}
+// Native durable history coalesces message chunks, so chunk event IDs/text are not message identities.
+function assistantKey(id: string, params: z.infer<typeof updateSchema>, userId: string, lastActivityId?: string): string {
+  return `grok-assistant-${digest(JSON.stringify([id, params._meta?.promptId ?? userId, params._meta?.streamStartMs ?? lastActivityId ?? 'start']))}`
 }
 function messageOrigin(alias: Alias, key: string, text: string, timestampMs: number) {
   const hash = digest(text)
@@ -46,12 +53,14 @@ export class GrokAcpHost implements AgentHost {
   private aliases: Record<string, Alias> = {}
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
+  private readonly answeredRequests = new Set<string>()
   private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
-  private readonly streams = new Map<string, { threadId: string; message: AgentMessage }>()
+  private readonly streams = new Map<string, { threadId: string; userId: string; message: AgentMessage }>()
   private readonly authored = new Map<string, { threadId: string; message: AgentMessage }>()
   private readonly liveStatus = new Map<string, { eventKey: string; status: AgentThread['status'] }>()
   private readonly selections = new Map<string, { model: string; effort: string | undefined }>()
+  private readonly seenUpdates = new Set<string>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private rpc: GrokRpc | undefined
   private stopping = Promise.resolve()
@@ -60,7 +69,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly historyReads = new Map<string, Promise<void>>()
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private generation = 0
-  private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: false } }
+  private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'grok-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -81,7 +90,7 @@ export class GrokAcpHost implements AgentHost {
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear()
+    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
     const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', 'agent', '--leader', 'stdio'], this.userDataDirectory,
       grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame), () => {
@@ -116,6 +125,19 @@ export class GrokAcpHost implements AgentHost {
   }
   observeThreads(_ids: readonly string[]): void { void _ids /* Known aliases are loaded at connect. Foreign sessions are never discovered. */ }
   async snapshot(): Promise<AgentHostSnapshot> { if (this.state.connected) await this.pollHistory(); return this.current() }
+  async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    void _forceReload // inspect is a fresh native read for this directory on every request.
+    const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'grok' ? scope.workingDirectory : undefined)
+    if (!this.state.connected || !cwd) throw new Error('Reconnect this Grok thread before browsing skills.')
+    const generation = this.generation
+    try {
+      const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
+      if (!executable) throw new Error('Grok is unavailable.')
+      const catalog = await discoverGrokSkills(threadId, await existingWorkingDirectory(cwd), executable, this.options.args ?? [], grokEnvironment(this.options.environment))
+      if (generation !== this.generation) throw new Error('Grok connection changed while discovering skills.')
+      return catalog
+    } catch { return { threadId, providerId: 'grok', cwd, status: 'error', skills: [], errors: [], error: 'Grok native skill discovery failed. Check that the installed client supports inspect --json.' } }
+  }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session.')
     const generation = this.generation
@@ -141,6 +163,7 @@ export class GrokAcpHost implements AgentHost {
     const generation = this.generation; const rpc = this.rpc!; const alias = this.aliases[id]!
     const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false; let lastTurn: AgentThread['lastTurn']
     const persistedStatusEvents = new Set<string>()
+    const historyEvents = new Set<string>(); let activities: AgentActivity[] = []
     let assistant: AgentMessage | undefined
     while (more) {
       await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: 100 }, value => {
@@ -152,21 +175,26 @@ export class GrokAcpHost implements AgentHost {
           const ordinal = offset++
           const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
           const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
+          if (historyEvents.has(key)) continue
+          historyEvents.add(key)
           const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
-          const update = parsed.data.update
-          if (entry.method === 'session/update' && update.content?.type === 'text' && typeof update.content.text === 'string') {
+          const update = parsed.data.update; const content = object(update.content)
+          if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) assistant = undefined
+          activities = mergeAgentActivities(activities, grokActivities(update, { turnId: messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: messages.at(-1)?.id, cwd: alias.cwd }, activities))
+          if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
               persistedStatusEvents.add(eventKey(parsed.data, 0))
               assistant = undefined; status = 'running'
-              const text = update.content.text
+              const text = content.text
               const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
               lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
               messages.push({ id: origin?.messageId ?? key, role: 'user', text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
-              if (!assistant) { assistant = { id: key, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
-              assistant.text += update.content.text
+              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', activities.at(-1)?.id)
+              if (!assistant || assistant.id !== assistantId) { assistant = { id: assistantId, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
+              assistant.text += content.text
             }
           }
           if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); lastTurn = { id: lastTurn?.id ?? key, status: turnOutcome(update.stop_reason ?? update.stopReason) }; assistant = undefined }
@@ -177,6 +205,7 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (generation !== this.generation || rpc !== this.rpc || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
+    if (activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, activities)
     // A live native turn may belong to the CLI, not activePrompts. Older durable
     // status cannot supersede it until its event has entered the persisted timeline.
     const liveStatus = this.liveStatus.get(id)
@@ -190,8 +219,10 @@ export class GrokAcpHost implements AgentHost {
         if (!messages.some(message => message.id === live.id)) messages.push(live)
         else this.authored.delete(live.id)
       }
-      if (live.role === 'assistant' && live.id.startsWith('grok-stream-')) {
-        const userId = live.id.slice('grok-stream-'.length)
+      if (live.role === 'assistant') {
+        const streamKey = [...this.streams].find(([, entry]) => entry.message === live)?.[0]
+        if (!streamKey) continue
+        const userId = this.streams.get(streamKey)!.userId
         const userIndex = messages.findIndex(message => message.id === userId)
         if (userIndex < 0) continue
         const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
@@ -200,7 +231,7 @@ export class GrokAcpHost implements AgentHost {
           const partial = tail.at(-1)
           if (partial && live.text.startsWith(partial.text)) partial.text = live.text
           else messages.splice(nextUserIndex < 0 ? messages.length : nextUserIndex, 0, live)
-        } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(live.id)
+        } else if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(streamKey)
       }
     }
     if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn
@@ -219,18 +250,24 @@ export class GrokAcpHost implements AgentHost {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
         const project = this.state.projects.find(project => project.id === command.projectId); if (!project) throw new Error('Choose a Grok project first.')
-        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
+        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
         await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
           alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
         })
-        await rpc.request('session/set_model', { sessionId: alias.grokSessionId, modelId: alias.modelId, ...(alias.reasoningEffort ? { _meta: { reasoningEffort: alias.reasoningEffort } } : {}) }, async value => {
+        await rpc.request('session/set_model', { sessionId: alias.grokSessionId, modelId: alias.modelId, ...(alias.reasoningEffort ? { _meta: { reasoningEffort: alias.reasoningEffort } } : {}) }, value => {
           z.object({ _meta: z.object({ model: z.object({ Ok: z.literal(alias.modelId) }) }) }).parse(value)
-          if (alias.reasoningEffort && this.selections.get(alias.grokSessionId!)?.effort !== alias.reasoningEffort) throw new Error('Grok did not confirm the requested reasoning effort.')
-          alias.settingsConfirmed = true; alias.nativeModelId = alias.modelId; await this.persist()
-          const thread = this.thread(command.threadId); thread.modelId = alias.modelId; thread.status = 'idle'; if (alias.reasoningEffort) thread.reasoningEffort = alias.reasoningEffort
         })
+        if (alias.reasoningEffort && this.selections.get(alias.grokSessionId!)?.effort !== alias.reasoningEffort) {
+          // Grok can reply before model_changed. Read its owned session's native state; never infer success.
+          await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, value => {
+            const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
+            if (response.models.currentModelId !== alias.modelId || response.models.availableModels.find(model => model.modelId === alias.modelId)?._meta?.reasoningEffort !== alias.reasoningEffort) throw new Error('Grok did not confirm the requested reasoning effort.')
+          })
+        }
+        alias.settingsConfirmed = true; alias.nativeModelId = alias.modelId; await this.persist()
+        const thread = this.thread(command.threadId); thread.modelId = alias.modelId; thread.status = 'idle'; if (alias.reasoningEffort) thread.reasoningEffort = alias.reasoningEffort
       } else {
         const alias = this.aliases[command.threadId]; if (!alias?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session. Do not repeat its creation automatically.')
         if (command.type === 'configure-thread') throw new Error('Grok thread settings cannot be changed in Sotto yet.')
@@ -245,7 +282,8 @@ export class GrokAcpHost implements AgentHost {
           if (previous) return previous.entryKey ? { accepted: true } : { accepted: false, uncertain: true }
           if (this.activePrompts.has(command.threadId) || thread.status === 'running') throw new Error('Grok is already running a prompt in this thread.')
           if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
-          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(command.text), createdAt: new Date().toISOString() }
+          const nativeText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
+          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           const generation = this.generation
@@ -264,7 +302,7 @@ export class GrokAcpHost implements AgentHost {
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
-          void rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: command.text }] }, value => {
+          void rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
             this.activePrompts.delete(command.threadId); this.thread(command.threadId).status = 'idle'; this.deliveries.get(command.messageId)?.resolve(); this.emit()
@@ -277,22 +315,14 @@ export class GrokAcpHost implements AgentHost {
         } else if (command.type === 'answer') {
           const pending = this.pending.get(command.requestId)
           if (!pending || pending.threadId !== command.threadId) throw new Error('That Grok request is no longer pending.')
-          let result: unknown
-          if (pending.permission) {
-            const selected = pending.permission.options.find(option => option.kind === (command.approved === true ? 'allow_once' : 'reject_once'))
-            if (command.approved === true && !selected) throw new Error('Grok did not offer a one-time permission. Answer in Grok.')
-            result = selected ? { outcome: { outcome: 'selected', optionId: selected.optionId } } : { outcome: { outcome: 'cancelled' } }
-          } else {
-            const questions = pending.question!.questions
-            let answers: Record<string, string>
-            if (questions.length === 1) answers = { [questions[0]!.question]: command.answer }
-            else {
-              try { answers = z.record(z.string(), z.string()).parse(JSON.parse(command.answer)) } catch { throw new Error('Answer multiple Grok questions with a JSON object keyed by each question text.') }
-              if (questions.some(question => !answers[question.question])) throw new Error('Answer every Grok question.')
-            }
-            result = { outcome: 'accepted', answers: Object.fromEntries(questions.map(question => [question.question, question.options.some(option => option.label === answers[question.question]) ? [answers[question.question]] : ['Other']])), annotations: Object.fromEntries(questions.filter(question => !question.options.some(option => option.label === answers[question.question])).map(question => [question.question, { notes: answers[question.question] }])) }
-          }
-          this.removeRequest(pending); await rpc.reply(pending.wireId, result)
+          if (pending.answering || this.answeredRequests.has(pending.request.id)) return { accepted: false, uncertain: true }
+          const result = grokAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+          pending.answering = true; this.answeredRequests.add(pending.request.id)
+          alias.answeredRequestIds.push(pending.request.id)
+          try { await this.persist() } catch (error) { alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id); pending.answering = false; this.answeredRequests.delete(pending.request.id); throw error }
+          if (rpc !== this.rpc || !this.state.connected || !this.pending.has(pending.request.id)) return { accepted: false, uncertain: true }
+          try { await rpc.reply(pending.wireId, result); this.removeRequest(pending) }
+          catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
           this.activePrompts.delete(command.threadId)
           await this.decline(command.threadId)
@@ -310,44 +340,52 @@ export class GrokAcpHost implements AgentHost {
       if (wrapped.success) { method = wrapped.data.method; params = wrapped.data.params }
     }
     if (frame.id !== undefined && method) {
-      let pending: Pending | undefined
-      if (method === 'session/request_permission') {
-        const permission = permissionSchema.parse(params); const id = this.id(permission.sessionId)
-        const title = permission.toolCall.title ?? 'Grok requests permission to use a tool.'
-        const details = permission.toolCall.rawInput === undefined ? '' : `\n${JSON.stringify(permission.toolCall.rawInput).slice(0, 20000)}`
-        if (id) pending = { wireId: frame.id, threadId: id, toolCallId: permission.toolCall.toolCallId, permission, request: { id: `grok-request-${JSON.stringify(frame.id)}`, kind: 'permission', text: title + details, options: [] } }
-      } else if (method === 'x.ai/ask_user_question') {
-        const question = questionSchema.parse(params); const id = this.id(question.sessionId)
-        if (id) pending = { wireId: frame.id, threadId: id, toolCallId: question.toolCallId, question, request: { id: `grok-request-${JSON.stringify(frame.id)}`, kind: 'question', text: question.questions.map(question => question.question).join('\n'), options: question.questions.length === 1 ? question.questions[0]!.options.map(option => ({ id: option.label, label: option.label })) : [] } }
+      const sessionId = object(params)?.sessionId
+      const threadId = typeof sessionId === 'string' ? this.id(sessionId) : undefined
+      const pending = threadId ? grokPending(frame.id, method, params, threadId) : undefined
+      if (pending) {
+        // RPC counters restart on reconnect; the native tool request owns the durable identity.
+        pending.request.id = `grok-request-${digest(JSON.stringify([threadId, pending.toolCallId, pending.request.kind]))}`
+        if (this.answeredRequests.has(pending.request.id) || this.pending.has(pending.request.id)) return
+        if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
+        this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
       }
-      if (pending) { this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit() }
       else this.rpc?.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
       return
     }
     if (['session/update', 'x.ai/session/update', 'x.ai/session_notification'].includes(method ?? '')) {
       const parsed = updateSchema.safeParse(params); if (!parsed.success) return
       const id = this.id(parsed.data.sessionId); if (!id) return
-      const update = parsed.data.update; const thread = this.thread(id)
+      if (parsed.data._meta?.eventId && parsed.data._meta.agentTimestampMs !== undefined) {
+        const key = `${id}:${eventKey(parsed.data, 0)}`
+        if (this.seenUpdates.has(key)) return
+        this.seenUpdates.add(key)
+        if (this.seenUpdates.size > 20000) this.seenUpdates.delete(this.seenUpdates.values().next().value!)
+      }
+      const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
+      const activities = grokActivities(update, { turnId: thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: thread.messages.at(-1)?.id, cwd: this.aliases[id]!.cwd }, thread.activities)
+      if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
-      if (update.sessionUpdate === 'user_message_chunk' && update.content?.type === 'text' && update.content.text !== undefined) {
+      if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
         const key = eventKey(parsed.data, Date.now())
-        const origin = messageOrigin(this.aliases[id]!, key, update.content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
+        const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
         const messageId = origin?.messageId ?? key
         if (messageId && !thread.messages.some(message => message.id === messageId)) {
-          const message: AgentMessage = { id: messageId, role: 'user', text: update.content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
+          const message: AgentMessage = { id: messageId, role: 'user', text: content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
           this.authored.set(messageId, { threadId: id, message }); thread.messages.push(message)
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: 'running' })
         thread.status = 'running'; thread.lastTurn = { id: messageId, status: 'running' }
       }
-      if (update.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
-        const streamId = `grok-stream-${thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'unknown'}`
+      if (update.sessionUpdate === 'agent_message_chunk' && content?.type === 'text') {
+        const userId = thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history'
+        const streamId = assistantKey(id, parsed.data, userId, thread.activities?.at(-1)?.id)
         const previous = this.streams.get(streamId)?.message
-        if (previous) previous.text += update.content.text ?? ''
+        if (previous) previous.text += content.text ?? ''
         else {
-          const message: AgentMessage = { id: streamId, role: 'assistant', text: update.content.text ?? '', createdAt: new Date().toISOString() }
-          this.streams.set(streamId, { threadId: id, message }); thread.messages.push(message)
+          const message: AgentMessage = { id: streamId, role: 'assistant', text: typeof content.text === 'string' ? content.text : '', createdAt: new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString() }
+          this.streams.set(streamId, { threadId: id, userId, message }); thread.messages.push(message)
         }
       }
       if (update.sessionUpdate === 'turn_completed') {
@@ -361,10 +399,10 @@ export class GrokAcpHost implements AgentHost {
   }
   private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.emit() }
   private refusal(pending: Pending): unknown { return pending.permission ? { outcome: { outcome: 'cancelled' } } : { outcome: 'cancelled' } }
-  private async decline(id: string): Promise<void> { for (const pending of [...this.pending.values()]) if (pending.threadId === id) { this.removeRequest(pending); await this.rpc?.reply(pending.wireId, this.refusal(pending)) } }
+  private async decline(id: string): Promise<void> { for (const pending of [...this.pending.values()]) if (pending.threadId === id && !pending.answering) { this.removeRequest(pending); await this.rpc?.reply(pending.wireId, this.refusal(pending)) } }
   disconnect(): void {
     this.generation++; clearInterval(this.pollTimer)
-    for (const pending of this.pending.values()) { try { this.rpc?.write({ jsonrpc: '2.0', id: pending.wireId, result: this.refusal(pending) }) } catch { /* Closed pipes never grant permission. */ } }
+    for (const pending of this.pending.values()) { if (pending.answering) continue; try { this.rpc?.write({ jsonrpc: '2.0', id: pending.wireId, result: this.refusal(pending) }) } catch { /* Closed pipes never grant permission. */ } }
     this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))
     this.deliveries.clear(); this.rpc?.close(); this.state.connected = false; this.emit()

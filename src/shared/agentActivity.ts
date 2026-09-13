@@ -6,6 +6,8 @@ const detail = z.string().max(MAX_ACTIVITY_TEXT)
 export const agentActivitySchema = z.object({
   id: z.string(), turnId: z.string(), sequence: z.number().int().nonnegative(),
   afterMessageId: z.string().optional(),
+  /** Observational parent activity, never a routable provider/thread identity. */
+  parentId: z.string().optional(),
   kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status']),
   status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']),
   title: detail, text: detail.optional(), command: detail.optional(), cwd: detail.optional(),

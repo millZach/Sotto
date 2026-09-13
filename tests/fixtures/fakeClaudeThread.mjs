@@ -31,7 +31,7 @@ const timer = setInterval(() => {
   let action; try { action = JSON.parse(readFileSync(control, 'utf8')) } catch { return }
   if (lastAction === action.id) return
   lastAction = action.id
-  if (action.type === 'raw') { output(action.frame); return }
+  if (action.type === 'raw') { if (action.persist) persist(action.frame); output(action.frame); return }
   if (action.type === 'complete') {
     const id = randomUUID()
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
@@ -41,7 +41,7 @@ const timer = setInterval(() => {
   }
   if (action.type === 'permission' || action.type === 'question') {
     const request = { subtype: 'can_use_tool', tool_name: action.type === 'question' ? 'AskUserQuestion' : 'Bash', tool_use_id: randomUUID(), input: action.type === 'question' ? { questions: [{ question: action.text, header: 'Choice', options: [{ label: 'Blue', description: 'Blue color' }], multiSelect: false }] } : { command: 'npm run build', description: action.text } }
-    const request_id = randomUUID(); pending.set(request_id, request); output({ type: 'control_request', request_id, request }); return
+    const request_id = action.requestId ?? randomUUID(); pending.set(request_id, request); output({ type: 'control_request', request_id, request }); return
   }
 }, 10)
 const lines = createInterface({ input: process.stdin })
@@ -55,7 +55,7 @@ lines.on('line', line => {
         initialized = !script.fail
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
-          : { subtype: 'success', request_id: frame.request_id, response: { models, session_state: 'idle' } } })
+          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], session_state: 'idle' } } })
       }
       if (script.gate) {
         writeFileSync(join(root, 'initialize-waiting'), session)

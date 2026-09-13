@@ -233,7 +233,15 @@ export class WorkspaceHost implements AgentHost {
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
-    if ((command.type === 'send' || command.type === 'steer') && command.skills?.length && this.state.snapshot.threads.find(thread => thread.id === command.threadId)?.providerId !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
+    if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
+      const thread = this.thread(command.threadId)
+      const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
+      if (!capabilities.skills || !this.inner.listThreadSkills) throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
+      const catalog = await this.listThreadSkills(command.threadId, true)
+      if (catalog.status !== 'ready' || catalog.providerId !== thread.providerId || command.skills.some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
+        throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
+      }
+    }
     if (command.type === 'create-project') {
       const result = await this.inner.execute(command)
       // The existing coordinator reconciles creation; a cache failure cannot change

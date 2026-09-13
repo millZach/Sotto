@@ -7,6 +7,7 @@ import { join } from 'node:path'
 const root = process.argv[2]
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
+if (process.argv.includes('inspect')) { process.stdout.write(JSON.stringify(read('skills.json', { skills: [] }))); process.exit(0) }
 const sessions = read('native-sessions.json', {})
 // Leader work survives proxy restart, but replies for the departed proxy are not rerouted.
 for (const session of Object.values(sessions)) delete session.promptId
@@ -15,8 +16,8 @@ const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...f
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const catalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 const pending = new Map(); let serial = 5000
-function update(sessionId, update, extension = false, notify = true) {
- const entry = { timestamp: Math.floor(Date.now()/1000), method: extension ? '_x.ai/session/update' : 'session/update', params: { sessionId, update, _meta: {eventId:read('script.json',{}).reusedEventIds ? `${sessionId}-2` : randomUUID(),agentTimestampMs:Date.now()} } }
+function update(sessionId, update, extension = false, notify = true, meta = {}) {
+ const entry = { timestamp: Math.floor(Date.now()/1000), method: extension ? '_x.ai/session/update' : 'session/update', params: { sessionId, update, _meta: {eventId:read('script.json',{}).reusedEventIds ? `${sessionId}-2` : randomUUID(),agentTimestampMs:Date.now(),...meta} } }
  sessions[sessionId].updates.push(entry); save()
  if (notify) send(entry)
 }
@@ -66,7 +67,7 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === 'session/set_model') {
   if (script.rejectModel) send({id:frame.id,error:{code:-32602,message:'Rejected model'}})
   else {
-   send({method:'_x.ai/session_notification',params:{sessionId:p.sessionId,update:{sessionUpdate:'model_changed',model_id:p.modelId,reasoning_effort:p._meta?.reasoningEffort ?? 'high'}}})
+   if (!script.modelNotificationAfterResponse) send({method:'_x.ai/session_notification',params:{sessionId:p.sessionId,update:{sessionUpdate:'model_changed',model_id:p.modelId,reasoning_effort:p._meta?.reasoningEffort ?? 'high'}}})
    send({id:frame.id,result:{_meta:{model:{Ok:p.modelId}}}})
   }
  }
@@ -91,7 +92,15 @@ const control = setInterval(() => {
  const command = read('control.json', {}); if (!command.id || command.id === last) return; last = command.id
  if (command.type === 'complete') complete(command.sessionId,command.text,command.reason)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)
- if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}})
+ if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
+ if (command.type === 'coalesce') {
+  const entries = sessions[command.sessionId].updates.filter(entry => entry.params.update.sessionUpdate === 'agent_message_chunk' && entry.params._meta.streamStartMs === command.streamStartMs)
+  const text = entries.map(entry => entry.params.update.content.text).join('')
+  const last = entries.at(-1)
+  if (last) { sessions[command.sessionId].updates = sessions[command.sessionId].updates.filter(entry => !entries.includes(entry) || entry === last); last.params.update.content.text = text; save() }
+ }
+ if (command.type === 'activity') update(command.sessionId,command.update,command.extension ?? false)
+ if (command.type === 'replay') { const entry = sessions[command.sessionId].updates.at(-1); if (entry) send(entry) }
  if (command.type === 'malformed') process.stdout.write('{bad json}\n')
  if (command.type === 'inherited-exit') {spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore',process.stdout,process.stderr],windowsHide:true});process.exit(0)}
  if (command.type === 'permission' || command.type === 'question') {

@@ -5,21 +5,24 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentSkillCatalog } from '../../shared/agentSkills'
+import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, object, type ClaudeFrame } from './claudeProtocol'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { ClaudeActivity } from './claudeActivity'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ sessionId: z.string().uuid(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
-  reasoningEffort: z.string().optional(), origins: z.array(originSchema).default([]) })
+  reasoningEffort: z.string().optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) })
 type Alias = z.infer<typeof aliasSchema>
 export interface ClaudeStreamJsonHostOptions {
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
 }
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending> }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string> }
 
 /** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
@@ -40,12 +43,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly completedOrigins = new Set<string>()
   private readonly assistantBlocks = new Map<string, Map<string, string>>()
   private readonly observed = new Set<string>()
+  private readonly activity = new Map<string, ClaudeActivity>()
   private executable = ''
   private generation = 0
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private closures: Promise<void>[] = []
   private state: AgentHostSnapshot = { connected: false, name: 'Claude Code', version: '', models: [], projects: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'claude-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -59,7 +63,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: ['approval-required'], supportsImages: true }))
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
-    this.threads.clear(); this.logs.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
     for (const [id, alias] of Object.entries(aliases)) {
       this.ensureThread(id, alias)
       await this.log(id).poll()
@@ -75,6 +79,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.pollTimer.unref(); this.emit(); return this.view()
   }
   async snapshot(): Promise<AgentHostSnapshot> { await this.pollSessionLogs(); return this.view() }
+  async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    void _forceReload // Native discovery is always fresh; no account/directory cache can leak across threads.
+    const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'claude' ? scope.workingDirectory : undefined)
+    if (!this.state.connected || !cwd) throw new Error('Reconnect this Claude thread before browsing skills.')
+    const generation = this.generation
+    try {
+      const catalog = await discoverClaudeSkills(threadId, await existingWorkingDirectory(cwd), this.executable, this.options.args ?? [], this.client.environment(), this.options.requestTimeoutMs ?? 15000)
+      if (generation !== this.generation) throw new Error('Claude connection changed while discovering skills.')
+      return catalog
+    } catch { return { threadId, providerId: 'claude', cwd, status: 'error', skills: [], errors: [], error: 'Claude native skill discovery failed. Reconnect or check the installed client.' } }
+  }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')
     const generation = this.generation
@@ -106,7 +121,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const project = this.state.projects.find(candidate => candidate.id === command.projectId)
       if (!project) throw new Error('Choose an existing project.')
       const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId,
-        reasoningEffort: command.reasoningEffort, createdAt: new Date().toISOString(), origins: [] }
+        reasoningEffort: command.reasoningEffort, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
       this.ensureThread(command.threadId, alias); this.emit()
@@ -142,13 +157,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (stale) { await this.denyPending(id, stale); this.runtimes.delete(id); stale.protocol.stop(); await stale.protocol.closed }
         }
         const runtime = await this.start(id)
-        const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(command.text), createdAt: new Date().toISOString(),
+        const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
+        const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
+        const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
           ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachmentSizeBytes(attachment.dataUrl) })) } : {}) }
         alias.origins.push(origin)
         try { await this.persist() } catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); throw error }
         const content: unknown = command.attachments?.length ? [
-          { type: 'text', text: command.text }, ...command.attachments.map(image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.dataUrl.slice(image.dataUrl.indexOf(',') + 1) } })),
-        ] : command.text
+          ...command.attachments.map(image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.dataUrl.slice(image.dataUrl.indexOf(',') + 1) } })),
+          ...(typeof nativePrompt === 'string' ? [{ type: 'text', text: nativePrompt }] : nativePrompt),
+        ] : nativePrompt
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
         try {
@@ -178,9 +196,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (command.type === 'answer') {
       const pending = runtime.requests.get(command.requestId)
       if (!pending) throw new Error('That request is no longer pending.')
-      const answer = claudeAnswer(pending, command.answer, command.approved)
-      runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id); this.emit()
-      try { await this.reply(runtime, pending.id, answer); return { accepted: true } } catch { return { accepted: false, uncertain: true } }
+      if (runtime.answered.has(pending.id)) return { accepted: false, uncertain: true }
+      const answer = claudeAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+      runtime.answered.add(pending.id)
+      alias.answeredRequestIds.push(pending.id)
+      try { await this.persist() } catch (error) { alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.id); runtime.answered.delete(pending.id); throw error }
+      if (this.runtimes.get(id) !== runtime || !runtime.requests.has(pending.id)) return { accepted: false, uncertain: true }
+      try {
+        await this.reply(runtime, pending.id, answer)
+        runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id); this.emit(); return { accepted: true }
+      } catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
     }
     if (command.type === 'interrupt') {
       await this.denyPending(id, runtime)
@@ -213,7 +238,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const args = [...(this.options.args ?? []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', '--permission-mode', 'default', '--permission-prompts', 'host',
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
-    const runtime: Runtime = { requests: new Map(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, this.client.environment(), this.options.requestTimeoutMs ?? 15000,
+    const runtime: Runtime = { requests: new Map(), answered: new Set(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, this.client.environment(), this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
         this.runtimes.delete(id); this.threads.get(id)!.requests = []; this.threads.get(id)!.status = 'error'
@@ -230,8 +255,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
     if (frame.type === 'system' && frame.subtype === 'init' && typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
     if (frame.type === 'control_request') {
+      if (typeof frame.request_id === 'string' && runtime.answered.has(frame.request_id)) return
       const pending = runtime.requests.size < 256 ? claudePending(frame) : undefined
-      if (pending) { runtime.requests.set(pending.id, pending); thread.requests = [...runtime.requests.values()].map(value => value.request); this.emit() }
+      if (pending) {
+        if (alias.answeredRequestIds.includes(pending.id)) { pending.request.delivery = 'uncertain'; runtime.answered.add(pending.id) }
+        runtime.requests.set(pending.id, pending); thread.requests = [...runtime.requests.values()].map(value => value.request); this.emit()
+      }
       else if (typeof frame.request_id === 'string') {
         const requestId = frame.request_id
         const response = object(frame.request)?.subtype === 'can_use_tool'
@@ -242,7 +271,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
-    if (frame.parent_tool_use_id) return
+    this.projectActivity(id, frame)
+    if (frame.parent_tool_use_id) { this.emit(); return }
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
       this.message(id, frame, false)
       const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
@@ -262,6 +292,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
     }
     if (frame.type === 'result') {
+      thread.messages = thread.messages.filter(message => message.role === 'user' || message.text.length > 0)
       const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : alias.origins.at(-1)?.uuid
       if (origin) {
         this.completedOrigins.add(origin)
@@ -273,6 +304,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.emit()
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
+    if (frame.parent_tool_use_id || frame.isSidechain === true) return
     const message = object(frame.message); let text = claudeText(message?.content)
     if ((!text && frame.type !== 'user') || !['user', 'assistant'].includes(String(frame.type))) return
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
@@ -300,7 +332,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const alias = this.aliases[id]!
       const generation = this.generation
       log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
-        if (generation === this.generation) { this.message(id, frame, true); this.emit() }
+        if (generation === this.generation) { this.projectActivity(id, frame); this.message(id, frame, true); this.emit() }
       })
       this.logs.set(id, log)
     }
@@ -308,6 +340,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private ensureThread(id: string, alias: Alias): void {
     this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
+  }
+  private projectActivity(id: string, frame: ClaudeFrame): void {
+    const thread = this.threads.get(id)!
+    let projector = this.activity.get(id)
+    if (!projector) { projector = new ClaudeActivity(); this.activity.set(id, projector) }
+    const turnId = thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history'
+    const rows = projector.apply(thread.activities ?? [], frame, turnId, thread.messages.filter(message => message.text.length > 0).at(-1)?.id, this.aliases[id]!.cwd)
+    if (rows.length) thread.activities = rows
   }
   private addMessage(id: string, message: AgentMessage): void {
     const thread = this.threads.get(id)!; const existing = thread.messages.find(value => value.id === message.id)
@@ -318,7 +358,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return runtime.protocol.write({ type: 'control_response', response: { subtype: 'success', request_id: id, response } })
   }
   private async denyPending(id: string, runtime: Runtime): Promise<void> {
-    const pending = [...runtime.requests.keys()]; runtime.requests.clear()
+    const pending = [...runtime.requests.keys()].filter(id => !runtime.answered.has(id)); runtime.requests.clear()
     const thread = this.threads.get(id); if (thread) thread.requests = []
     await Promise.all(pending.map(requestId => this.reply(runtime, requestId, claudeDenial())))
   }

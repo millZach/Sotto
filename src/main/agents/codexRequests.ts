@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import type { AgentRequest } from '../../shared/agents'
+import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
+import { permissionValue, questionValues } from './nativeRequests'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
-const question = z.object({ id: z.string(), question: z.string(), options: z.array(option).nullish() })
-const paramsSchema = z.object({ threadId: z.string(), itemId: z.string().optional(), command: z.string().nullish(), reason: z.string().nullish(),
+const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), options: z.array(option).nullish() })
+const paramsSchema = z.object({ threadId: z.string(), itemId: z.string().optional(), command: z.string().nullish(), reason: z.string().nullish(), cwd: z.string().nullish(), permissions: z.record(z.string(), z.unknown()).optional(), networkApprovalContext: z.unknown().optional(),
   grantRoot: z.string().nullish(), availableDecisions: z.array(z.unknown()).nullish(), questions: z.array(question).optional(),
   message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional() })
 export type CodexPendingRequest = { id: string | number; method: string; sessionId: string; params: z.infer<typeof paramsSchema>; request: AgentRequest }
@@ -20,6 +21,10 @@ const formSchema = z.object({ type: z.literal('object'), properties: z.record(z.
 const fieldSchema = z.object({ type: z.string(), enum: z.array(z.string()).optional(), enumNames: z.array(z.string()).nullish(),
   oneOf: z.array(z.object({ const: z.string(), title: z.string() })).optional(), minLength: z.number().nullish(), maxLength: z.number().nullish(),
   minimum: z.number().nullish(), maximum: z.number().nullish() }).passthrough()
+const amendmentSchema = z.union([
+  z.object({ acceptWithExecpolicyAmendment: z.object({ execpolicy_amendment: z.array(z.string()) }).strict() }).strict(),
+  z.object({ applyNetworkPolicyAmendment: z.object({ network_policy_amendment: z.object({ action: z.enum(['allow', 'deny']), host: z.string() }).strict() }).strict() }).strict(),
+])
 
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {
   const mapping = requestMethods[method]
@@ -32,14 +37,41 @@ export function pendingRequest(id: string | number, method: string, value: unkno
       : params.message ?? params.description ?? 'Codex needs your input.'
   let options: AgentRequest['options'] = permission ? [{ id: 'accept', label: 'Allow' }, { id: 'decline', label: 'Deny' }]
     : questions.length === 1 ? (questions[0]!.options ?? []).map(o => ({ id: o.label, label: o.label })) : []
+  let formQuestions: AgentRequest['questions']
   if (method === 'mcpServer/elicitation/request') {
     const form = formSchema.safeParse(params.requestedSchema)
+    if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => {
+      const field = fieldSchema.safeParse(value)
+      return { id, question: field.success && typeof field.data.description === 'string' ? field.data.description : id,
+        ...(field.success && typeof field.data.title === 'string' ? { header: field.data.title } : {}),
+        options: field.success ? field.data.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.data.enum?.map((id, index) => ({ id, label: field.data.enumNames?.[index] ?? id })) ?? [] : [],
+        multiSelect: false, allowFreeText: field.success && field.data.type === 'string' && !field.data.enum && !field.data.oneOf }
+    })
     if (form.success && Object.keys(form.data.properties).length === 1) {
       const field = fieldSchema.safeParse(Object.values(form.data.properties)[0])
       if (field.success) options = field.data.oneOf?.map(o => ({ id: o.const, label: o.title })) ?? field.data.enum?.map((id, i) => ({ id, label: field.data.enumNames?.[i] ?? id })) ?? []
     }
   }
-  return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options } }
+  const decisions = params.availableDecisions ?? ['accept', 'decline']
+  const permissionChoices: NonNullable<AgentRequest['permissionChoices']> = method === 'item/permissions/requestApproval' ? [
+    ...(params.permissions ? [{ id: 'allow-turn', label: 'Allow requested permissions for this turn', kind: 'allow-once' as const }, { id: 'allow-session', label: 'Allow requested permissions for this session', kind: 'allow-session' as const }] : []),
+    { id: 'decline', label: 'Deny', kind: 'deny' },
+  ] : decisions.flatMap((value, index): NonNullable<AgentRequest['permissionChoices']> => {
+    if (value === 'accept') return [{ id: value, label: 'Allow once', kind: 'allow-once' as const }]
+    if (value === 'acceptForSession') return [{ id: value, label: 'Allow for this session', kind: 'allow-session' as const }]
+    if (value === 'decline') return [{ id: value, label: 'Deny', kind: 'deny' as const }]
+    if (value === 'cancel') return [{ id: value, label: 'Cancel turn', kind: 'cancel' as const }]
+    const amendment = amendmentSchema.safeParse(value)
+    if (amendment.success) {
+      const denying = 'applyNetworkPolicyAmendment' in amendment.data && amendment.data.applyNetworkPolicyAmendment.network_policy_amendment.action === 'deny'
+      return [{ id: `native-decision:${index}`, label: denying ? 'Deny and remember this network rule' : 'Allow and remember this rule', kind: denying ? 'deny' : 'allow-always', description: JSON.stringify(amendment.data) }]
+    }
+    return [] // Unknown native payloads cannot become guessed grants.
+  })
+  return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
+    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length })) } : formQuestions ? { questions: formQuestions } : {}),
+    ...(permission ? { permissionChoices } : {}), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
+      details: JSON.stringify({ ...(params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}), ...(fileSummary ? { files: fileSummary } : {}) }).slice(0, 100000) } } }
 }
 
 export function declineRequest(method: string): unknown {
@@ -47,8 +79,14 @@ export function declineRequest(method: string): unknown {
 }
 
 /** This is called only for a user answer. No lifecycle or timeout path can grant permission. */
-export function answerRequest(pending: CodexPendingRequest, answer: string, approved?: boolean): unknown {
+export function answerRequest(pending: CodexPendingRequest, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): unknown {
   if (requestMethods[pending.method]!.kind === 'permission') {
+    if (permissionChoice) {
+      const choice = permissionValue(pending.request, permissionChoice, approved)
+      if (pending.method === 'item/permissions/requestApproval') return choice === 'decline' ? declineRequest(pending.method) : { permissions: pending.params.permissions, scope: choice === 'allow-turn' ? 'turn' : 'session' }
+      if (choice.startsWith('native-decision:')) return { decision: pending.params.availableDecisions![Number(choice.slice('native-decision:'.length))] }
+      return { decision: choice }
+    }
     if (typeof approved !== 'boolean') throw new Error('Explicitly approve or decline this permission request.')
     if (!approved) return declineRequest(pending.method)
     if (pending.method === 'item/permissions/requestApproval') throw new Error('This permission scope cannot be granted by Sotto. Answer it in Codex.')
@@ -61,8 +99,13 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
     const form = formSchema.parse(pending.params.requestedSchema)
     const keys = Object.keys(form.properties)
     let content: Record<string, unknown>
-    try { content = z.record(z.string(), z.unknown()).parse(JSON.parse(answer)) }
-    catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
+    if (questionAnswers) {
+      questionValues(pending.request, questionAnswers)
+      content = Object.fromEntries(Object.entries(questionAnswers).map(([id, value]) => [id, value.optionIds[0] ?? value.text]))
+    } else {
+      try { content = z.record(z.string(), z.unknown()).parse(JSON.parse(answer)) }
+      catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
+    }
     for (const key of form.required ?? []) if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
     for (const [key, value] of Object.entries(content)) {
       const field = fieldSchema.parse(form.properties[key])
@@ -79,6 +122,7 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   }
   const questions = pending.params.questions ?? []
   if (!questions.length) throw new Error('Codex did not provide question identifiers. Answer this request in Codex.')
+  if (questionAnswers) return { answers: Object.fromEntries(Object.entries(questionValues(pending.request, questionAnswers)).map(([id, answers]) => [id, { answers }])) }
   let values: Record<string, string | string[]> = {}
   if (questions.length > 1) {
     try { values = z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(JSON.parse(answer)) }

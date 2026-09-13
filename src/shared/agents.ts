@@ -91,7 +91,13 @@ export const agentProjectSchema = z.object({ id: providerEntityId, providerId: p
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
   options: z.array(z.object({ id, label: text })).default([]),
+  questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean() })).max(100).optional(),
+  permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
+  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional() }).optional(),
+  delivery: z.literal('uncertain').optional(),
 })
+export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
+export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 export const agentMessageSchema = z.object({
   id, role: z.enum(['user', 'assistant']), text, createdAt: z.string(),
   commandId: z.string().optional(),
@@ -332,7 +338,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('pause'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
   z.object({ type: z.enum(['next', 'later']) }).strict(),
-  z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
   z.object({ type: z.literal('membership'), action: z.enum(['refresh', 'signin', 'checkout', 'portal']) }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>

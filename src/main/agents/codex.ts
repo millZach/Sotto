@@ -575,7 +575,7 @@ export class CodexAppServerHost implements AgentHost {
         } else if (command.type === 'answer') {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
-          const result = answerRequest(pending, command.answer, command.approved)
+          const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
           await this.respond(pending, result)
         } else if (command.type === 'interrupt') {
           await this.decline(id)

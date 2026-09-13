@@ -9,11 +9,14 @@ export const agentSkillReferencesSchema = z.array(agentSkillReferenceSchema).max
 export type AgentSkillReference = z.infer<typeof agentSkillReferenceSchema>
 export const agentSkillSchema = agentSkillReferenceSchema.extend({
   description: z.string(), scope: z.enum(['user', 'repo', 'system', 'admin']),
+  enabled: z.boolean().optional(), userInvocable: z.boolean().optional(), userInvocationOnly: z.boolean().optional(), invocation: z.string().optional(),
+  nativeSource: z.string().optional(),
 })
 export const agentSkillCatalogSchema = z.object({
-  threadId: z.string(), providerId: z.literal('codex'), cwd: z.string(),
-  status: z.enum(['ready', 'error']), skills: z.array(agentSkillSchema),
+  threadId: z.string(), providerId: z.enum(['codex', 'claude', 'grok']), cwd: z.string(),
+  status: z.enum(['ready', 'error', 'unsupported']), skills: z.array(agentSkillSchema),
   errors: z.array(z.object({ path: z.string(), message: z.string() })), error: z.string().optional(),
+  maxSkillsPerMessage: z.number().int().nonnegative().optional(), invocationNotice: z.string().optional(),
 })
 export type AgentSkillCatalog = z.infer<typeof agentSkillCatalogSchema>
 
