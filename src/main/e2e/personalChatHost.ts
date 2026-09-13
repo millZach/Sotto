@@ -5,6 +5,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import type { CodexAppServerHost, CodexPersonalConversation } from '../agents/codex'
 import type { AgentHostCommand, AgentHostResult } from '../agents/host'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import type { SottoE2EBridge } from '../../shared/e2e'
 
 const conversationSchema = agentThreadSchema.omit({ projectId: true }).extend({ kind: z.literal('personal') })
 
@@ -18,6 +19,7 @@ export class E2EPersonalChatHost {
   private connected = false
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private writing: Promise<void> = Promise.resolve()
+  private readonly rejections = new Map<string, string>()
 
   constructor(directory: string) {
     this.store = new AtomicJsonStore(join(directory, 'e2e-personal-native.json'), value => z.array(conversationSchema).parse(value), () => [])
@@ -57,6 +59,26 @@ export class E2EPersonalChatHost {
     return () => { this.listeners.delete(listener) }
   }
 
+  async event(event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]): Promise<void> {
+    if (event.type === 'reject') { this.rejections.set(event.threadId, event.text); return }
+    const conversation = this.conversation(event.threadId)
+    if (event.type === 'question' || event.type === 'permission') {
+      if (!event.request || event.request.kind !== event.type) throw new Error('E2E_PERSONAL_REQUEST_REQUIRED')
+      conversation.requests.push(structuredClone(event.request))
+    } else if (event.type !== 'ready') throw new Error('E2E_PERSONAL_EVENT_UNSUPPORTED')
+    if (event.activities) conversation.activities = structuredClone(event.activities)
+    if (event.status) conversation.status = event.status
+    await this.persist()
+    this.publish()
+  }
+
+  private rejectNext(id: string): void {
+    const reason = this.rejections.get(id)
+    if (reason === undefined) return
+    this.rejections.delete(id)
+    throw new Error(reason)
+  }
+
   async createPersonalConversation(command: Parameters<CodexAppServerHost['createPersonalConversation']>[0]): Promise<AgentHostResult> {
     if (!this.connected) throw new Error('Connect the fixture provider.')
     if (!this.conversations.some(value => value.id === command.threadId)) {
@@ -71,6 +93,7 @@ export class E2EPersonalChatHost {
 
   async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>): Promise<AgentHostResult> {
     if (!this.connected) throw new Error('Connect the fixture provider.')
+    this.rejectNext(command.threadId)
     const conversation = this.conversation(command.threadId)
     if (conversation.messages.some(message => message.commandId === command.commandId)) return { accepted: true }
     const at = new Date().toISOString()
@@ -87,6 +110,7 @@ export class E2EPersonalChatHost {
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type !== 'answer' && command.type !== 'interrupt') throw new Error('This fixture only supports personal conversation controls.')
     if (!this.connected) throw new Error('Connect the fixture provider.')
+    this.rejectNext(command.threadId)
     const conversation = this.conversation(command.threadId)
     if (command.type === 'answer') {
       if (!conversation.requests.some(request => request.id === command.requestId)) throw new Error('This request is no longer pending.')

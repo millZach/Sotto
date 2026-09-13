@@ -110,3 +110,7 @@ Resolved by main at 10439a8, rechecked after merge 0252b35:
 - `scripts/generate-notices.mjs` keeps the native terminal section (7a16629), and `verify-notices` passes with 171 components.
 - Main's `package.json` and `node_modules` carry `@xterm/xterm` and `@xterm/addon-fit`.
 - On the merged tree, the Phase 3 UI journeys and the owned unit tests (86) pass. The requests journey still fails only at line 260.
+
+## Integrator followups
+
+Main `19173a4` corrects the stale request assertions and native question fixture; all 26 ThreadsView tests and both complete-app thread request journeys pass. The full-app personal request journey now also passes (`phase-three-personal-requests.spec.ts`): real personal service/IPC/storage and rendered cards receive a structured native form and an exact permission choice, preserve a rejected answer for an explicit retry, omit an unanswered optional field, and persist one accepted answer per request with original IDs. Only provider effects use the explicit unpackaged fixture. It creates no project and no extra user message. The earlier unit-only limitation describes the worker checkpoint, not this later integrated journey. Final theme rendering and the separately tracked UI recovery fixes remain pending.

@@ -43,6 +43,7 @@ export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export const e2eAgentEventSchema = z.object({
+  scope: z.enum(['thread', 'personal']).optional(),
   type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject']),
   threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
   request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),

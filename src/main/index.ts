@@ -568,9 +568,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     }) : e2eAgentReasoner,
   })
   await agentControl.start()
+  const testPersonalChatHost = e2eConfiguration ? new E2EPersonalChatHost(userDataPath) : undefined
   const personalChats = new PersonalChatService({ userDataPath, configuration: () => agentControl.get().configuration,
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
-    ...(e2eConfiguration ? { host: new E2EPersonalChatHost(userDataPath) } : {}) })
+    ...(testPersonalChatHost ? { host: testPersonalChatHost } : {}) })
   await personalChats.start()
   const unsubscribePersonalChats = personalChats.subscribe(state => windows.sendToMain(PERSONAL_CHAT_STATE, state))
   app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
@@ -958,7 +959,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (e2eState === null) return cleanupNativeIpc
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
-        testAgentHost?.event(e2eAgentEventSchema.parse(payload))
+        const parsed = e2eAgentEventSchema.parse(payload)
+        if (parsed.scope === 'personal') return testPersonalChatHost?.event(parsed)
+        testAgentHost?.event(parsed)
       })
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
