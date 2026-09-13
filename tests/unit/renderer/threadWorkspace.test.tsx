@@ -126,6 +126,25 @@ describe('Threads manual composer', () => {
     expect(prompt()).toHaveValue('A new prompt')
   })
 
+  it('does not repeat an unconfirmed prompt that already appears in the provider history', async () => {
+    const { live, prompt } = mount(manualState())
+    fireEvent.change(prompt(), { target: { value: 'Maybe delivered' } })
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    act(() => live.deliver('grok-previews', 'uncertain'))
+    const draftId = live.sentDraftId('grok-previews')
+    act(() => {
+      live.publish({
+        deliveries: live.state.deliveries!.map(item => item.draftId === draftId ? { ...item, messageId: 'provider-copy' } : item),
+        host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === 'grok-previews' ? { ...thread, messages: [...thread.messages, { id: 'provider-copy', role: 'user' as const, text: 'Maybe delivered', createdAt: new Date(NOW).toISOString() }] } : thread) },
+      })
+    })
+    const pending = await screen.findByLabelText('Pending message')
+    expect(pending).toHaveTextContent('Unconfirmed')
+    expect(pending).not.toHaveTextContent('Maybe delivered')
+    expect(within(screen.getByLabelText('Thread transcript')).getAllByText('Maybe delivered')).toHaveLength(1)
+    expect(within(pending).getByRole('button', { name: 'Check again' })).toBeEnabled()
+  })
+
   it('keeps each thread’s draft across navigation and a new window', async () => {
     const { live, prompt, view } = mount(manualState())
     fireEvent.change(prompt(), { target: { value: 'Draft for previews' } })
@@ -318,8 +337,8 @@ describe('Thread transcript scrolling', () => {
     expect(transcript.scrollTop).toBe(1_000)
     expect(screen.getByRole('button', { name: 'New messages' })).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (22)' }))
-    expect(transcript.scrollTop).toBe(1_000 + 22 * ROW)
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (21)' }))
+    expect(transcript.scrollTop).toBe(1_000 + 21 * ROW)
     expect(screen.getByText('History 0', { exact: true })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'New messages' }))

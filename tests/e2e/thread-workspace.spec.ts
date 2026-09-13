@@ -113,7 +113,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     await speak.click()
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-    await expect(sidebar.getByRole('region', { name: 'Unsettled', exact: true }).getByRole('button')).toHaveCount(5)
+    await expect(sidebar.getByRole('region', { name: 'Projects', exact: true }).locator('.thread-nav__row')).toHaveCount(5)
     await expect(sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(0)
     await sidebar.getByRole('button', { name: /Settled 4/ }).click()
     const release = sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })

@@ -4,7 +4,7 @@ import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
-import { submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 
@@ -34,13 +34,17 @@ function PendingMessage({ submission, status, row, state, command, store }: {
   const { draft } = useThreadComposer(store, submission.threadId)
   const holdsRevision = draft.draftId === submission.draftId
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
+  // The provider's history can show the exact message before Sotto has its confirmation.
+  // Repeating the text would read as a second send, so only the delivery state stays here.
+  const messageId = deliveryFor(state, submission.threadId, submission.draftId)?.messageId
+  const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
+  if (inHistory && (status === 'queued' || status === 'submitting')) return null
   const detail = status === 'failed' ? (submission.error ?? 'The provider did not take this prompt.')
-    : status === 'uncertain' ? 'The provider has not confirmed this prompt. Sotto will not send it twice.'
+    : status === 'uncertain' ? inHistory ? 'Your prompt above is in the thread, but the provider has not confirmed it. Sotto will not send it twice.' : 'The provider has not confirmed this prompt. Sotto will not send it twice.'
       : null
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} data-in-history={inHistory || undefined} aria-label="Pending message">
     <header><span className="thread-message__who">You</span><span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span></header>
-    <MessageContent text={submission.text} />
-    <AttachmentPreviews attachments={submission.attachments} />
+    {inHistory ? null : <><MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} /></>}
     {detail !== null ? <div className="thread-message__delivery">
       <span>{detail}{status === 'failed' && !holdsRevision ? ' Your newer draft is in the composer.' : ''}</span>
       <div className="thread-message__delivery-actions">

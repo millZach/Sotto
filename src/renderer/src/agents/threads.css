@@ -47,9 +47,9 @@
 .thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 8px; }
 .thread-folder__head:hover { background: var(--threads-hover); }
 .thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 7px; min-width: 0; min-height: 36px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
-.thread-folder__toggle > svg { color: var(--tt-text-muted); }
+.thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
 .thread-folder__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.thread-folder__count { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
 .thread-folder__actions, .thread-nav__row-actions { display: flex; gap: 2px; padding-right: 4px; }
 .thread-folder__rows { margin: 0; padding: 0 0 0 14px; list-style: none; }
@@ -60,6 +60,8 @@
 .thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
 .thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
+/* With a pointer, folder actions overlay the count instead of taking width from the name. */
+@media (hover: hover) { .thread-folder__actions { position: absolute; top: 3px; right: 0; border-radius: 8px; background: var(--threads-hover); } }
 @media (hover: none) { .thread-folder__actions, .thread-nav__row-actions { opacity: 1; } }
 
 .thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 8px; }
@@ -121,6 +123,8 @@
 .thread-message__status[data-status='failed'], .thread-message__status[data-status='uncertain'] { color: var(--threads-warning-text); }
 .thread-message__delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .thread-message__delivery-actions { display: flex; gap: 6px; }
+.thread-message--pending[data-in-history] { margin-top: -16px; }
+.thread-message--pending[data-in-history] .thread-message__delivery { margin-top: 4px; padding-top: 0; border-top: 0; }
 .thread-message__delivery .tt-button { min-height: 32px; font-size: 14px; }
 .threads-view .thread-message__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .threads-view .thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--tt-hairline); border-radius: 6px; color: var(--tt-text-muted); font-size: 12px; }
@@ -135,7 +139,7 @@
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
 .thread-prompt__notice .tt-button { min-height: 32px; font-size: 14px; }
 .thread-prompt__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 10px; }
-.thread-prompt__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.thread-prompt__meta { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
 .thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; color: var(--tt-text-2); font-size: 14px; }
 .thread-prompt__model small { color: var(--tt-text-muted); font-size: 12px; }
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
