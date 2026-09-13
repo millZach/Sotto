@@ -127,6 +127,8 @@
 .changes-summary__branch { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 12px; }
 .changes-list { min-height: 0; margin: 0; overflow: auto; padding: 6px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-surface[data-diff] > .changes-list { flex: none; max-height: clamp(96px, 30%, 280px); border-bottom: 1px solid var(--tt-hairline); }
+/* In a short window the open diff is the work: the list keeps one row, the selected file, and scrolls for the rest. */
+@media (max-height: 640px) { .changes-surface[data-diff] > .changes-list { max-height: 31px; padding-block: 0; } }
 .changes-list__item { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; padding: 0 10px 0 8px; border: 1px solid transparent; border-radius: 7px; color: var(--tt-text-2); font-size: 14px; cursor: pointer; user-select: none; }
 .changes-list__item:hover { background: var(--tools-hover); color: var(--tt-text); }
 .changes-list__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
@@ -134,7 +136,7 @@
 .changes-list__name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The folder gives way first and keeps its end, where the nearest folder name is. */
 .changes-list__folder { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.changes-badge { display: grid; place-items: center; flex: none; width: 18px; height: 18px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11px; font-weight: 600; line-height: 1; }
+.changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12px; font-weight: 600; line-height: 1; }
 .changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { border-color: color-mix(in srgb, var(--tt-success) 45%, transparent); color: var(--tt-success); }
 .changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { border-color: color-mix(in srgb, var(--tt-error) 45%, transparent); color: var(--tt-error-text); }
 .changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { border-color: color-mix(in srgb, var(--tt-warning) 40%, transparent); color: var(--tt-warning); }

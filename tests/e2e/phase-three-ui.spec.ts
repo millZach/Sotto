@@ -47,7 +47,24 @@ async function expectContained(page: Page, selectors: readonly string[]): Promis
   expect(report.outside).toEqual([])
 }
 
+/** The smallest rendered text in the Phase 3 surfaces on screen, with where it is, so no new label drops below 12px. */
+async function smallestText(page: Page): Promise<{ size: number; where: string }> {
+  return page.evaluate(() => {
+    let smallest = { size: Infinity, where: '' }
+    for (const element of document.querySelectorAll<HTMLElement>('.tools-panel *, .personal-chats *, [role="menu"] *')) {
+      const text = [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent ?? '').join('').trim()
+      const box = element.getBoundingClientRect()
+      if (!text || box.width === 0 || box.height === 0 || getComputedStyle(element).visibility === 'hidden' || element.closest('[aria-hidden="true"], .xterm-accessibility, .xterm-helpers')) continue
+      const size = Number.parseFloat(getComputedStyle(element).fontSize)
+      if (size < smallest.size) smallest = { size, where: `${element.className || element.tagName}: ${text.slice(0, 30)}` }
+    }
+    return smallest
+  })
+}
+
 async function shoot(page: Page, name: string, modes: readonly Mode[] = ['dark', 'light']): Promise<void> {
+  const text = await smallestText(page)
+  expect(text.size, `${name}: ${text.where}`).toBeGreaterThanOrEqual(12)
   for (const mode of modes) {
     await theme(page, mode)
     await page.screenshot({ path: join(SHOTS, `${name}-${mode}.png`), animations: 'disabled' })
@@ -129,6 +146,14 @@ test('reviews changes, runs a terminal and browses a local page for a real worki
     await shoot(page, 'changes-diff-1600', ['dark'])
     await resize(launched, 820, 560)
     await expect(diff).toBeVisible()
+    // In the short window the diff, not the file list, takes the panel; the selected file stays in view above it.
+    const heights = await panel.evaluate(element => ({ list: element.querySelector('.changes-list')!.getBoundingClientRect().height, diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height }))
+    expect(heights.diff).toBeGreaterThan(heights.list * 2)
+    expect(await files.evaluate(list => {
+      const box = list.getBoundingClientRect()
+      const row = list.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
+      return row.top >= box.top - 1 && row.bottom <= box.bottom + 1
+    })).toBe(true)
     await expectContained(page, ['.tools-panel'])
     await shoot(page, 'changes-diff-820x560')
     await panel.getByRole('button', { name: 'Close diff' }).click()

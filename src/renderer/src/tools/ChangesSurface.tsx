@@ -98,6 +98,25 @@ function ChangeList({ files, selectedPath, onSelect }: { readonly files: readonl
     setFocused(file.path)
     list.current?.querySelector<HTMLElement>(`[data-change-path="${CSS.escape(file.path)}"]`)?.focus()
   }
+  // A short window shrinks the list to a row while a diff is open; the selected file stays the row that shows.
+  useLayoutEffect(() => {
+    const element = list.current
+    if (!element || selectedPath === null) return
+    const keepSelected = (): void => {
+      const row = element.querySelector<HTMLElement>(`[data-change-path="${CSS.escape(selectedPath)}"]`)
+      if (!row) return
+      const box = element.getBoundingClientRect()
+      const item = row.getBoundingClientRect()
+      const inset = Number.parseFloat(getComputedStyle(element).paddingTop) || 0
+      if (item.top < box.top + inset) element.scrollTop -= box.top + inset - item.top
+      else if (item.bottom > box.bottom - inset) element.scrollTop += item.bottom - (box.bottom - inset)
+    }
+    keepSelected()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(keepSelected)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [selectedPath])
   return <ul ref={list} className="changes-list" role="listbox" aria-label="Changed files" onKeyDown={move}>
     {files.map(file => {
       const { folder, name } = splitPath(file.path)
