@@ -16,11 +16,11 @@ async function claudeProbe() {
   await mkdir(skillDirectory, { recursive: true })
   await writeFile(join(skillDirectory, 'SKILL.md'), `---\nname: ${name}\ndescription: Synthetic native capability check.\ndisable-model-invocation: true\n---\nArguments: $ARGUMENTS\nIf arguments include no-tools, reply with exactly ${nonce} without tools. Otherwise call Bash once with exactly printf SOTTO_TOOL_OK, then reply with exactly ${nonce}. Do nothing else.\n`)
   let host = new ClaudeStreamJsonHost({ userDataPath: join(root, 'sotto'), requestTimeoutMs: 15000, pollIntervalMs: 100 })
-  const threadId = randomUUID(); let model = ''; let submittedTurns = 0
+  const threadId = randomUUID(); let submittedTurns = 0
   const until = async (check: () => Promise<boolean>) => { const deadline = Date.now() + 90000; while (!await check()) { if (Date.now() > deadline) throw new Error('Claude capability probe timed out'); await new Promise(resolve => setTimeout(resolve, 100)) } }
   try {
     const state = await host.connect(); if (!state.connected) throw new Error(state.error ?? 'Claude authentication unavailable')
-    model = state.models.find(model => model.id === 'haiku')?.id ?? 'default'
+    const model = state.models.find(model => model.id === 'haiku')?.id ?? 'default'
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'synthetic', title: 'Synthetic verification', path: root })
     await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: 'synthetic', modelId: model, title: 'Phase 3 native verification' })
     const catalog = await host.listThreadSkills(threadId)

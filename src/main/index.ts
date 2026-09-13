@@ -121,7 +121,6 @@ import {
 } from './e2e/e2eBoundary'
 import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E } from '../shared/agents'
-import { z } from 'zod'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
 import { CodexAppServerHost } from './agents/codex'
