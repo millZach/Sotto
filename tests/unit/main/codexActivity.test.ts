@@ -9,6 +9,19 @@ const thread = (): AgentThread => ({ id: 'sotto-thread', projectId: 'project', t
 const context = { turnId: 'turn-1', phase: 'started' as const, afterMessageId: 'original-message', startedAtMs: 1_000 }
 
 describe('Codex activity projection', () => {
+  it('ignores unsupported native item payloads without interpreting shared field names as tool output', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    for (const item of [
+      { id: 'image', type: 'imageGeneration', status: 'completed', result: 'SYNTHETIC_IMAGE_RESULT', revisedPrompt: null },
+      { id: 'future', type: 'futureNativeItem', result: ['opaque'], error: 'opaque', content: 'private', summary: 'opaque' },
+    ]) {
+      const parsed = codexItemSchema.parse(item)
+      expect(parsed).toEqual({ id: item.id, type: item.type })
+      projection.item(t, parsed, { ...context, phase: 'completed' })
+    }
+    expect(t.activities).toBeUndefined()
+    expect(t.messages).toHaveLength(1)
+  })
   it('upserts lifecycle replay in order, uses authoritative output, and never rewrites messages', () => {
     const t = thread(); const messages = structuredClone(t.messages); const projection = new CodexActivityProjection(() => 2_000)
     projection.item(t, codexItemSchema.parse(activityItems.command), context)

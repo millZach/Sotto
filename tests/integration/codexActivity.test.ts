@@ -29,6 +29,19 @@ async function fixture() {
 }
 
 describe('Codex activity through native transport and workspace persistence', () => {
+  it('keeps native image-generation completions from disconnecting other threads or poisoning reconnect', async () => {
+    const { f, workspace, thread, notify } = await fixture()
+    await workspace.execute({ type: 'create-thread', commandId: 'create-other', threadId: 'other', projectId: 'project', title: 'Other', modelId: f.modelId })
+    await notify('item/completed', { item: { id: 'native-image', type: 'imageGeneration', status: 'completed', result: 'SYNTHETIC_IMAGE_RESULT', revisedPrompt: null } }, true)
+    expect((await workspace.snapshot()).connected).toBe(true)
+    expect(workspace.workspaceSnapshot().threads).toHaveLength(2)
+    expect(JSON.stringify(thread())).not.toContain('SYNTHETIC_IMAGE_RESULT')
+    workspace.disconnect(); await f.adapter.closed()
+    await workspace.connect()
+    expect((await workspace.snapshot()).connected).toBe(true)
+    expect(workspace.workspaceSnapshot().threads).toHaveLength(2)
+    expect((await f.driver.requests()).filter(record => record.method === 'turn/start')).toHaveLength(1)
+  })
   it('restores commands, diffs, errors, summaries and child lifecycle without replay or duplicated final answers', async () => {
     const { f, workspace, thread, turnId, notify } = await fixture()
     await notify('item/started', { item: activityItems.command, startedAtMs: 1_000 }, true)

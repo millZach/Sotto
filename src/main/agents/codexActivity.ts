@@ -6,7 +6,23 @@ import type { AgentThread } from '../../shared/agents'
 // Display fields selected from installed codex-cli 0.154.0's generated schema.
 // Only displayable fields survive this
 // boundary; reasoning.content, encrypted content and raw protocol objects do not.
-export const codexItemSchema = z.object({
+const displayFields: Readonly<Record<string, readonly string[]>> = {
+  userMessage: ['clientId', 'content'], agentMessage: ['text'],
+  commandExecution: ['command', 'cwd', 'aggregatedOutput', 'exitCode'],
+  fileChange: ['changes'], mcpToolCall: ['server', 'tool', 'result', 'error'],
+  dynamicToolCall: ['tool', 'contentItems'], reasoning: ['summary'], plan: ['text'],
+  collabAgentToolCall: ['tool', 'prompt', 'receiverThreadIds', 'agentsStates'],
+  webSearch: ['query'], contextCompaction: [],
+}
+export const codexItemSchema = z.preprocess(value => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const item = value as Record<string, unknown>
+  const fields = typeof item.type === 'string' && Object.hasOwn(displayFields, item.type) ? displayFields[item.type] : undefined
+  // Native item variants reuse field names with different shapes (imageGeneration.result
+  // is a string). Unsupported presentation must not break the shared transport or retain its payload.
+  const keys = fields === undefined ? ['id', 'type'] : ['id', 'type', 'status', 'durationMs', ...fields]
+  return Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]))
+}, z.object({
   id: z.string(), type: z.string(), clientId: z.string().nullish(), text: z.string().optional(),
   content: z.unknown().optional(), status: z.string().optional(), summary: z.array(z.string()).optional(),
   command: z.string().optional(), cwd: z.string().optional(), aggregatedOutput: z.string().nullish(),
@@ -18,7 +34,7 @@ export const codexItemSchema = z.object({
   result: z.object({ content: z.array(z.unknown()).optional() }).nullish(),
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
   query: z.string().optional(),
-})
+}))
 type Item = z.infer<typeof codexItemSchema>
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
