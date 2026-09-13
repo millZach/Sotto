@@ -13,7 +13,7 @@ import { ShortcutKey } from '../../../src/renderer/src/components/ShortcutKey'
 import { ToastRegion } from '../../../src/renderer/src/components/ToastRegion'
 import { Toggle } from '../../../src/renderer/src/components/Toggle'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { ACCENTS, MODES, contrast, over, resolveColor, rootDeclarations } from './themeTokenResolver'
+import { MODES, THEME_IDS, contrast, over, resolveColor, rootDeclarations } from './themeTokenResolver'
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
@@ -144,7 +144,8 @@ describe('Sotto design-system primitives', () => {
     ]) {
       expect(tokensCss).toContain(`--tt-${token}:`)
     }
-    expect(tokensCss).toContain('--tt-canvas: #000000;')
+    // Every room colour comes from the active theme's roles (ADR-0011).
+    expect(tokensCss).toContain('--tt-canvas: var(--theme-canvas);')
     expect(tokensCss).toContain('color-scheme: dark;')
     expect(tokensCss).toContain('color-scheme: light;')
     // The resolved mode lives on the root; the stylesheet never queries the system itself.
@@ -170,16 +171,16 @@ describe('Sotto design-system primitives', () => {
     expect(onboardingSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
   })
 
-  it('keeps control borders at 3:1 and every text tier and the activity accent at 4.5:1 in every room and accent', () => {
+  it('keeps control borders at 3:1 and every text tier and the activity accent at 4.5:1 in every room and built-in theme', () => {
     for (const mode of MODES) {
-      for (const accent of ACCENTS) {
-        const declarations = rootDeclarations(mode, accent)
+      for (const themeId of THEME_IDS) {
+        const declarations = rootDeclarations(mode, themeId)
         const canvas = resolveColor('--tt-canvas', declarations)
         const color = (name: string) => over(resolveColor(`--tt-${name}`, declarations), canvas)
         for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {
-          expect(contrast(color('border'), color(surface)), `${mode}/${accent} border on ${surface}`).toBeGreaterThanOrEqual(3)
+          expect(contrast(color('border'), color(surface)), `${mode}/${themeId} border on ${surface}`).toBeGreaterThanOrEqual(3)
           for (const ink of ['text', 'text-2', 'text-muted', 'activity'] as const) {
-            expect(contrast(color(ink), color(surface)), `${mode}/${accent} ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+            expect(contrast(color(ink), color(surface)), `${mode}/${themeId} ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
           }
         }
       }

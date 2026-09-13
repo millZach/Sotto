@@ -24,6 +24,7 @@ import { PersonalChatsView } from './agents/personal/PersonalChatsView'
 import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
+import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
@@ -37,9 +38,10 @@ export interface AppProps {
 }
 
 /**
- * The main window paints the chosen appearance and accent (including edits
- * whose saves are still in flight), with `system` resolved against the current
- * operating system scheme, plus the motion preference. `theme` is the widget's
+ * The main window paints the chosen mode and the theme that owns it (including
+ * edits whose saves are still in flight, and the theme editor's unsaved draft),
+ * with `system` resolved against the current operating system scheme, plus
+ * the motion preference. `theme` is the widget's
  * and never reaches this root. Until settings load the root keeps whatever the
  * first-frame cache applied.
  */
@@ -48,7 +50,7 @@ export function applyDocumentPreferences(
   root: HTMLElement = document.documentElement,
   systemDark: boolean = systemPrefersDark(),
 ): void {
-  if (settings !== null) applyAppearance(appearancePreview.effective(settings), root, systemDark)
+  if (settings !== null) applyAppearance(appearancePreview.effective(settings), root, systemDark, appearancePreview.draft)
   if (settings?.reducedMotion === 'on') root.dataset.reducedMotion = 'on'
   else delete root.dataset.reducedMotion
 }
@@ -91,6 +93,15 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const systemDark = useSystemPrefersDark()
   const appearanceEdits = useAppearancePreviewVersion()
+  const [themeNotice, setThemeNotice] = useState<ToastMessage | null>(null)
+  const latestSettingsRef = useRef(app.settings)
+  latestSettingsRef.current = app.settings
+
+  useEffect(() => {
+    if (themeNotice === null) return
+    const timer = setTimeout(() => setThemeNotice(current => (current === themeNotice ? null : current)), 4_000)
+    return () => clearTimeout(timer)
+  }, [themeNotice])
 
   // Layout effect: a new appearance is on the root before the browser paints
   // the render that selected it, so the choice and the room never disagree.
@@ -335,10 +346,19 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           {updatePrompt}
           <MemorySurface navigation={navigation}>{view}</MemorySurface>
         </AppShell>
-        <ToastRegion messages={app.recoveryNotices.map((notice) => ({
-          id: notice.code,
-          message: recoveryMessages[notice.code],
-        }))} />
+        <ThemeEditorHost
+          settings={app.settings}
+          onSave={app.actions.updateSettings}
+          getSettings={() => latestSettingsRef.current ?? app.settings!}
+          onNotice={message => setThemeNotice(current => ({ id: `theme-${Number(current?.id.slice(6) ?? 0) + 1}`, message }))}
+        />
+        <ToastRegion messages={[
+          ...app.recoveryNotices.map((notice) => ({
+            id: notice.code,
+            message: recoveryMessages[notice.code],
+          })),
+          ...(themeNotice === null ? [] : [themeNotice]),
+        ]} />
       </>
     )
   }

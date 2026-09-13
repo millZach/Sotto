@@ -114,41 +114,47 @@ describe('SettingsView', () => {
     expect(document.documentElement.dataset.reducedMotion).toBe('on')
   })
 
-  it('shows the persisted mode and accent and saves each choice as its own patch', async () => {
+  it('shows the persisted mode and both theme halves and saves each choice as its own patch', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', accent: 'blue' } })} />)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'iris', darkTheme: 'ember' } })} />)
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
     expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
-    expect(within(section).getByText(/Sotto is/u)).toHaveTextContent('Sotto is light with a blue accent.')
-    expect(within(section).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
-    const accents = within(section).getByRole('radiogroup', { name: 'Accent' })
-    expect(within(accents).getAllByRole('radio').map(radio => radio.getAttribute('aria-label'))).toEqual(['Teal', 'Blue', 'Violet', 'Rose', 'Amber', 'Green'])
-    expect(within(accents).getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(section).getByText(/Sotto is/u)).toHaveTextContent('Sotto is light, using Iris.')
+    expect(within(section).queryByRole('radiogroup', { name: 'Accent' })).not.toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
+    for (const label of ['T3 Code', 'T3 Chat', 'Grove', 'Ocean', 'Ember', 'Iris']) {
+      expect(within(section).getByRole('button', { name: new RegExp(`^Use ${label} light mode$`, 'u') })).toBeVisible()
+    }
+    expect(within(section).getByRole('button', { name: 'Use Iris light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(section).getByRole('button', { name: 'Use Ember dark mode' })).toHaveAttribute('aria-pressed', 'true')
 
-    await user.click(within(section).getByRole('radio', { name: 'System' }))
-    expect(update).toHaveBeenLastCalledWith({ appearance: 'system' })
-    await user.click(within(accents).getByRole('radio', { name: 'Rose' }))
-    expect(update).toHaveBeenLastCalledWith({ accent: 'rose' })
+    await user.click(within(section).getByRole('button', { name: 'Follow the system appearance' }))
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'system' }))
+    await user.click(within(section).getByRole('button', { name: 'Use Grove dark mode' }))
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'grove' }))
     expect(update).toHaveBeenCalledTimes(2)
   })
 
-  it('moves through accents with the arrow keys as one tab stop', async () => {
+  it('reaches every mode and theme choice by keyboard as native buttons', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    const accents = screen.getByRole('radiogroup', { name: 'Accent' })
-    const radios = within(accents).getAllByRole('radio')
-    expect(radios.map(radio => radio.tabIndex)).toEqual([0, -1, -1, -1, -1, -1])
+    const section = document.querySelector('#settings-appearance') as HTMLElement
 
-    radios[0]!.focus()
-    await user.keyboard('{ArrowLeft}')
-    expect(update).toHaveBeenLastCalledWith({ accent: 'green' })
-    expect(within(accents).getByRole('radio', { name: 'Green' })).toHaveFocus()
-    await user.keyboard('{ArrowRight}')
-    expect(update).toHaveBeenLastCalledWith({ accent: 'teal' })
-    expect(within(accents).getByRole('radio', { name: 'Teal' })).toHaveFocus()
+    // The tiles run System, Light, Dark in reading order.
+    within(section).getByRole('button', { name: 'Follow the system appearance' }).focus()
+    await user.keyboard('{Tab}')
+    expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'light' }))
+
+    const iris = within(section).getByRole('button', { name: /^Use Iris theme/u })
+    iris.focus()
+    await user.keyboard(' ')
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ lightTheme: 'iris', darkTheme: 'iris' }))
+    expect(iris).toHaveFocus()
   })
 
   it('enumerates microphones, preserves an unknown persisted choice, and refreshes on devicechange', async () => {

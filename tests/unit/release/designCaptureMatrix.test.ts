@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  DESIGN_CAPTURE_ACCENTS,
   DESIGN_CAPTURE_APP_THEMES,
+  DESIGN_CAPTURE_BUILT_IN_THEMES,
+  DESIGN_CAPTURE_DEFAULT_THEME,
   DESIGN_CAPTURE_MINIMUM_WIDTH,
   DESIGN_CAPTURE_REQUIREMENTS,
   DESIGN_CAPTURE_THEME,
   DESIGN_CAPTURE_WIDGET_THEMES,
   designCaptureTupleKey,
 } from '../../../scripts/design-capture-matrix.mjs'
-import { ACCENTS } from '../../../src/shared/settings'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { BUILT_IN_THEMES } from '../../../src/shared/themes/library'
 
 describe('design capture matrix', () => {
   it('requires every dense surface at 100/125/150/200 in the dark default, dictate and settings in light, and the widget in both schemes', () => {
@@ -52,12 +54,13 @@ describe('design capture matrix', () => {
     }
   })
 
-  it('captures every accent the settings offer in both rooms, System in both rooms, and the minimum width in both rooms', () => {
-    expect([...DESIGN_CAPTURE_ACCENTS]).toEqual([...ACCENTS])
+  it('captures every built-in theme in both rooms, System in both rooms, and the minimum width in both rooms', () => {
+    expect([...DESIGN_CAPTURE_BUILT_IN_THEMES]).toEqual(BUILT_IN_THEMES.map(theme => theme.id))
+    expect(DESIGN_CAPTURE_DEFAULT_THEME).toBe(DEFAULT_SETTINGS.darkTheme)
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     for (const theme of ['dark', 'light']) {
-      // Teal is the default every other application tuple already shows.
-      for (const accent of ACCENTS.filter(candidate => candidate !== 'teal')) expect(keys).toContain(`appearance|accent-${accent}|${theme}|100|normal|none`)
+      // Ocean is the default every other application tuple already shows.
+      for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter(candidate => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) expect(keys).toContain(`appearance|theme-${builtIn}|${theme}|100|normal|none`)
       expect(keys).toContain(`appearance|system-settings|${theme}|100|normal|none`)
       for (const state of ['dictate-ready', 'agents-overview', 'settings-full']) expect(keys).toContain(`width|${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}|${theme}|100|normal|none`)
     }

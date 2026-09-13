@@ -1,6 +1,6 @@
 /** The main window's resolved mode; the untouched widget still follows the system scheme. */
 export type DesignCaptureAppTheme = 'dark' | 'light'
-export type DesignCaptureAccent = 'teal' | 'blue' | 'violet' | 'rose' | 'amber' | 'green'
+export type DesignCaptureBuiltInTheme = 't3-code' | 't3-chat' | 'grove' | 'ocean' | 'ember' | 'iris'
 export type DesignCaptureWidgetTheme = 'light' | 'dark'
 export type DesignCaptureTheme = DesignCaptureAppTheme | DesignCaptureWidgetTheme
 export type DesignCaptureMotion = 'normal' | 'reduced'
@@ -17,7 +17,8 @@ export interface DesignCaptureRequirement {
 }
 export const DESIGN_CAPTURE_THEME: 'dark'
 export const DESIGN_CAPTURE_APP_THEMES: readonly DesignCaptureAppTheme[]
-export const DESIGN_CAPTURE_ACCENTS: readonly DesignCaptureAccent[]
+export const DESIGN_CAPTURE_BUILT_IN_THEMES: readonly DesignCaptureBuiltInTheme[]
+export const DESIGN_CAPTURE_DEFAULT_THEME: 'ocean'
 export const DESIGN_CAPTURE_MINIMUM_WIDTH: 760
 export const DESIGN_CAPTURE_WIDGET_THEMES: readonly DesignCaptureWidgetTheme[]
 export const DESIGN_CAPTURE_SCALES: readonly (100 | 125 | 150 | 200)[]

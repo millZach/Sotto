@@ -1,15 +1,22 @@
 import { z } from 'zod'
 
 import { DEFAULT_HOTKEY } from './constants'
+import {
+  APPEARANCE_CONTRAST,
+  DEFAULT_THEME_ID,
+  GLASS_OPACITY,
+  customThemesSchema,
+  isThemeId,
+  parseCustomThemes,
+  resolveThemeHalfId,
+  type ThemeDefinition,
+} from './themes/library'
 
 /** The floating widget's scheme; it follows the system and the main window never reads it. */
 export type Theme = 'system' | 'light' | 'dark'
 /** The main window's appearance mode. `system` follows the operating system scheme live. */
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
-/** The main window's accent: the live wave, focus, selection and accent-coloured text. */
-export const ACCENTS = ['teal', 'blue', 'violet', 'rose', 'amber', 'green'] as const
-export type Accent = (typeof ACCENTS)[number]
 export type ReducedMotion = 'system' | 'on'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
@@ -27,10 +34,19 @@ type MaxRecordingSeconds = 30 | 60 | 120 | 300
 
 export interface AppSettings {
   version: typeof SETTINGS_VERSION
-  /** Feeds the widget snapshot only; the main window's look is `appearance` and `accent`. */
+  /** Feeds the widget snapshot only; the main window's look is `appearance` and its themes. */
   theme: Theme
   appearance: Appearance
-  accent: Accent
+  /** The theme that paints the main window when it resolves to light. */
+  lightTheme: string
+  /** The theme that paints the main window when it resolves to dark. */
+  darkTheme: string
+  /** Foreground and border strength, 50-200 percent of the theme's own. */
+  appearanceContrast: number
+  /** How solid dialogs, menus and floating panels are, 40-100 percent. */
+  glassOpacity: number
+  /** Themes the user created, duplicated or imported, already canonical. */
+  customThemes: ThemeDefinition[]
   webLinkDestination: 'external' | 'embedded'
   reducedMotion: ReducedMotion
   microphoneId: string | null
@@ -62,13 +78,24 @@ export interface AppSettings {
 
 export type SettingsPatch = Partial<
   Omit<AppSettings, 'hotkey' | 'launchAtStartup'>
->
+> & {
+  /**
+   * @deprecated The accent was replaced by themes (ADR-0011). A patch that
+   * still carries it is accepted and the value ignored, so an older caller
+   * cannot fail a whole save over it.
+   */
+  accent?: string
+}
 
 const fieldSchemas = {
   version: z.literal(SETTINGS_VERSION),
   theme: z.enum(['system', 'light', 'dark']),
   appearance: z.enum(APPEARANCES),
-  accent: z.enum(ACCENTS),
+  lightTheme: z.string().refine(isThemeId),
+  darkTheme: z.string().refine(isThemeId),
+  appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
+  glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
+  customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
@@ -107,11 +134,15 @@ export const settingsSchema = z.object(fieldSchemas)
 export const DEFAULT_SETTINGS: AppSettings = {
   version: SETTINGS_VERSION,
   theme: 'system',
-  // Dark and teal are the Crossing look every install had before appearance
-  // became a choice, so neither a new install nor an upgraded settings file
-  // changes colour until the user picks something else (ADR-0009).
+  // Dark is the mode every install had before appearance became a choice, so
+  // an upgraded settings file keeps its mode (ADR-0009). The palette is a theme
+  // per half; both start on Ocean and the old accent is dropped (ADR-0011).
   appearance: 'dark',
-  accent: 'teal',
+  lightTheme: DEFAULT_THEME_ID,
+  darkTheme: DEFAULT_THEME_ID,
+  appearanceContrast: APPEARANCE_CONTRAST.default,
+  glassOpacity: GLASS_OPACITY.default,
+  customThemes: [],
   webLinkDestination: 'external',
   reducedMotion: 'system',
   microphoneId: null,
@@ -166,12 +197,24 @@ function parseField<Key extends keyof AppSettings>(
 
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // The library is read leniently, one theme at a time, so a single damaged
+  // entry never costs the user the rest of their themes. A half naming a theme
+  // that is gone, or that cannot paint that half, lands on the default.
+  const customThemes = Array.isArray(persisted.customThemes)
+    ? parseCustomThemes(persisted.customThemes)
+    : [...defaults.customThemes]
+  const half = (key: 'lightTheme' | 'darkTheme'): string =>
+    resolveThemeHalfId(parseField(persisted, key, defaults), key === 'lightTheme' ? 'light' : 'dark', customThemes)
 
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
     appearance: parseField(persisted, 'appearance', defaults),
-    accent: parseField(persisted, 'accent', defaults),
+    lightTheme: half('lightTheme'),
+    darkTheme: half('darkTheme'),
+    appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
+    glassOpacity: parseField(persisted, 'glassOpacity', defaults),
+    customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),

@@ -74,7 +74,11 @@ const settingKeys = [
   'version',
   'theme',
   'appearance',
-  'accent',
+  'lightTheme',
+  'darkTheme',
+  'appearanceContrast',
+  'glassOpacity',
+  'customThemes',
   'reducedMotion',
   'microphoneId',
   'maxRecordingSeconds',
@@ -103,6 +107,9 @@ const settingKeys = [
 const looseSettingsPatchSchema = settingsSchema
   .omit({ hotkey: true, launchAtStartup: true })
   .partial()
+  // The retired accent is still accepted from older callers and never copied
+  // into the patch below (ADR-0011).
+  .extend({ accent: z.string().max(32).optional() })
   .strict()
   .superRefine((patch, context) => {
     if (Object.values(patch).some((value) => value === undefined)) {

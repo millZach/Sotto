@@ -75,18 +75,3 @@
 .segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
 .segmented-control button[aria-checked='true'] { color: var(--tt-pill-ink); background: var(--tt-pill); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
-
-/* Accent picker: one swatch per accent, painted as the current mode paints it.
-   The chosen swatch carries a check and a ring, so the choice never rests on
-   colour alone. */
-.accent-picker { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
-.accent-picker__swatch { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 50%; color: var(--tt-on-accent); cursor: pointer; }
-.accent-picker__swatch[aria-checked='true'] { box-shadow: 0 0 0 2px var(--tt-canvas), 0 0 0 4px var(--tt-text); }
-.accent-picker__swatch:focus-visible { outline-offset: 5px; }
-.accent-picker__swatch[data-accent-swatch='teal'] { background: var(--tt-swatch-teal); }
-.accent-picker__swatch[data-accent-swatch='blue'] { background: var(--tt-swatch-blue); }
-.accent-picker__swatch[data-accent-swatch='violet'] { background: var(--tt-swatch-violet); }
-.accent-picker__swatch[data-accent-swatch='rose'] { background: var(--tt-swatch-rose); }
-.accent-picker__swatch[data-accent-swatch='amber'] { background: var(--tt-swatch-amber); }
-.accent-picker__swatch[data-accent-swatch='green'] { background: var(--tt-swatch-green); }
-@media (max-width: 620px) { .accent-picker { grid-column: 1; grid-row: auto; justify-content: start; } }

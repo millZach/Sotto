@@ -84,13 +84,14 @@ test.describe('appearance rendered evidence', () => {
 
   test.beforeAll(async () => { await mkdir(evidenceRoot, { recursive: true }) })
 
-  test('a choice repaints the room within two frames, accents move by keyboard, and both survive restart', async () => {
+  test('a choice repaints the room within two frames, a theme is chosen by keyboard, and both survive restart', async () => {
     await withProfile({}, async ({ page }) => {
       await page.getByRole('link', { name: 'Settings' }).click()
       await page.locator('#settings-appearance').scrollIntoViewIfNeeded()
       // Time from activating Light to the root attribute and the painted canvas changing.
       const elapsed = await page.evaluate(() => new Promise<{ attribute: number; painted: number }>((done) => {
-        const light = [...document.querySelectorAll<HTMLButtonElement>('#settings-appearance [role="radio"]')].find(candidate => candidate.textContent === 'Light')!
+        const light = document.querySelector<HTMLButtonElement>('#settings-appearance button[aria-label="Use light mode"]')!
+        const darkCanvas = getComputedStyle(document.body).backgroundColor
         const start = performance.now()
         let attribute = -1
         const observer = new MutationObserver(() => {
@@ -100,21 +101,22 @@ test.describe('appearance rendered evidence', () => {
         light.click()
         requestAnimationFrame(() => requestAnimationFrame(() => {
           observer.disconnect()
-          done({ attribute, painted: getComputedStyle(document.body).backgroundColor === 'rgb(245, 246, 243)' ? performance.now() - start : -1 })
+          done({ attribute, painted: getComputedStyle(document.body).backgroundColor !== darkCanvas ? performance.now() - start : -1 })
         }))
       }))
       expect(elapsed.attribute).toBeGreaterThanOrEqual(0)
       expect(elapsed.attribute).toBeLessThan(50)
       expect(elapsed.painted).toBeGreaterThanOrEqual(0)
       await writeFile(resolve(evidenceRoot, 'switch-timing.json'), `${JSON.stringify(elapsed, null, 2)}\n`, 'utf8')
-      await page.getByRole('radiogroup', { name: 'Accent' }).getByRole('radio', { name: 'Teal' }).focus()
-      await page.keyboard.press('ArrowRight')
-      await expect(page.locator('html')).toHaveAttribute('data-accent', 'blue')
-      await expect(page.getByRole('radio', { name: 'Blue' })).toBeFocused()
-      await shot(page, 'keyboard-accent-focus-light')
+      const iris = page.getByRole('button', { name: /^Use Iris theme/u })
+      await iris.focus()
+      await page.keyboard.press('Enter')
+      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'iris')
+      await expect(iris).toBeFocused()
+      await shot(page, 'keyboard-theme-focus-light')
       await page.reload()
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-      await expect(page.locator('html')).toHaveAttribute('data-accent', 'blue')
+      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'iris')
     })
   })
 
@@ -143,7 +145,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('the floating widget keeps following the system scheme whatever the room is', async () => {
-    await withProfile({ appearance: 'light', accent: 'rose' }, async (launched) => {
+    await withProfile({ appearance: 'light', lightTheme: 'ember', darkTheme: 'ember' }, async (launched) => {
       await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'light')
       await expect.poll(() => launched.app.windows().some(candidate => candidate.url().endsWith('/widget.html'))).toBe(true)
       const widget = launched.app.windows().find(candidate => candidate.url().endsWith('/widget.html'))!
@@ -154,7 +156,7 @@ test.describe('appearance rendered evidence', () => {
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.screenshot({ path: resolve(evidenceRoot, `widget-listening-system-${scheme}-room-light.png`), animations: 'disabled' })
-        expect(await widget.evaluate(() => document.documentElement.dataset.accent)).toBeUndefined()
+        expect(await widget.evaluate(() => document.documentElement.dataset.themeId)).toBeUndefined()
         await widget.getByRole('button', { name: 'Cancel dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
       }
@@ -191,7 +193,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('the minimum width with 150 percent page zoom in the light room', async () => {
-    await withProfile({ appearance: 'light', accent: 'violet' }, async (launched) => {
+    await withProfile({ appearance: 'light', lightTheme: 'iris' }, async (launched) => {
       const { page } = launched
       // Page zoom shrinks the CSS viewport to about 507px, so the narrow layout
       // rules apply; display scaling at 760 keeps a 760px CSS viewport instead,

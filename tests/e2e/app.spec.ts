@@ -164,18 +164,19 @@ test('keeps the widget theme apart from the main window and applies a persisted 
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
     // The widget theme never reaches the main window, which keeps the dark default.
     await expect(html).toHaveAttribute('data-theme', 'dark')
-    await expect(html).toHaveAttribute('data-accent', 'teal')
+    await expect(html).toHaveAttribute('data-theme-id', 'ocean')
+    const darkCanvas = await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
     await launched.page.evaluate(async () => {
       const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto
-      await bridge.updateSettings({ appearance: 'light', accent: 'rose' })
+      await bridge.updateSettings({ appearance: 'light', lightTheme: 'ember' })
     })
     await expect(html).toHaveAttribute('data-theme', 'light')
     await launched.page.reload()
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
     await expect(html).toHaveAttribute('data-theme', 'light')
-    await expect(html).toHaveAttribute('data-accent', 'rose')
-    expect(await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(245, 246, 243)')
+    await expect(html).toHaveAttribute('data-theme-id', 'ember')
+    expect(await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(darkCanvas)
   } finally {
     await closeSotto(launched)
   }

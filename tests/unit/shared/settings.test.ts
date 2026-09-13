@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultHotkey } from '../../../src/shared/platform'
+import { createVividThemeColors } from '../../../src/shared/themes/engine'
+import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
-  ACCENTS,
   APPEARANCES,
   DEFAULT_SETTINGS,
   SETTINGS_VERSION,
@@ -12,11 +13,17 @@ import {
   type AppSettings,
 } from '../../../src/shared/settings'
 
+const aurora = parseThemeFile({ version: 1, name: 'Aurora', appearance: 'dark', colors: createVividThemeColors('dark', '#101820', '#e0a040') })
+
 const customSettings = {
   version: 1,
   theme: 'light',
   appearance: 'light',
-  accent: 'violet',
+  lightTheme: 'ember',
+  darkTheme: aurora.id,
+  appearanceContrast: 135,
+  glassOpacity: 60,
+  customThemes: [aurora],
   webLinkDestination: 'embedded',
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
@@ -63,31 +70,57 @@ describe('settings', () => {
     expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
   })
 
-  it('opens a settings file written before appearance existed in the dark teal Crossing look, whatever its widget theme', () => {
+  it('opens a settings file written before appearance existed in dark Ocean, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      delete legacy.appearance
-      delete legacy.accent
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
-      expect(parsed.appearance).toBe('dark')
-      expect(parsed.accent).toBe('teal')
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed.theme).toBe(theme)
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', accent: 'teal' })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean', appearanceContrast: 100, glassOpacity: 80, customThemes: [] })
     }
   })
 
-  it('keeps every valid appearance and accent choice and recovers an unusable one field by field', () => {
+  it('migrates a settings file from the accent era: the mode stays, the accent is dropped, both halves start on Ocean', () => {
+    for (const accent of ['teal', 'blue', 'violet', 'rose', 'amber', 'green', 'chartreuse']) {
+      const older = { ...customSettings, appearance: 'system', accent } as Record<string, unknown>
+      for (const key of ['lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete older[key]
+      const parsed = parseSettings(older)
+      expect(parsed).not.toHaveProperty('accent')
+      expect(parsed).toMatchObject({ appearance: 'system', lightTheme: 'ocean', darkTheme: 'ocean', appearanceContrast: 100, glassOpacity: 80, customThemes: [] })
+      expect(settingsSchema.parse({ ...parsed, accent })).toEqual(parsed)
+    }
+  })
+
+  it('keeps every valid appearance and theme choice and recovers an unusable one field by field', () => {
     for (const appearance of APPEARANCES) expect(parseSettings({ appearance }).appearance).toBe(appearance)
-    for (const accent of ACCENTS) expect(parseSettings({ accent }).accent).toBe(accent)
-    expect(ACCENTS).toEqual(['teal', 'blue', 'violet', 'rose', 'amber', 'green'])
-    const recovered = parseSettings({ appearance: 'black', accent: 'chartreuse', autoPaste: false })
-    expect(recovered.appearance).toBe('dark')
-    expect(recovered.accent).toBe('teal')
-    expect(recovered.autoPaste).toBe(false)
-    expect(parseSettings({ appearance: 'light', accent: 42 })).toMatchObject({ appearance: 'light', accent: 'teal' })
+    const recovered = parseSettings({ appearance: 'black', lightTheme: 'Not An Id', darkTheme: 42, appearanceContrast: 133, glassOpacity: 20, autoPaste: false })
+    expect(recovered).toMatchObject({ appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean', appearanceContrast: 100, glassOpacity: 80, autoPaste: false })
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, appearance: 'sepia' }).success).toBe(false)
-    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, accent: 'TEAL' }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, appearanceContrast: 201 }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, glassOpacity: 82 }).success).toBe(false)
+    for (const contrast of [50, 100, 200]) expect(parseSettings({ appearanceContrast: contrast }).appearanceContrast).toBe(contrast)
+    for (const glass of [40, 80, 100]) expect(parseSettings({ glassOpacity: glass }).glassOpacity).toBe(glass)
+  })
+
+  it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
+    const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffdf8' } })
+    expect(parseSettings({ lightTheme: 't3-chat', darkTheme: 'grove' })).toMatchObject({ lightTheme: 't3-chat', darkTheme: 'grove' })
+    expect(parseSettings({ lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] })).toMatchObject({ lightTheme: lightOnly.id, darkTheme: 'ocean' })
+    // A custom theme that was removed from the library no longer owns a half.
+    expect(parseSettings({ darkTheme: aurora.id, customThemes: [] })).toMatchObject({ darkTheme: 'ocean' })
+  })
+
+  it('keeps valid custom themes one by one and never lets a hostile colour through', () => {
+    const hostile = { ...aurora, id: 'hostile', label: 'Hostile', colors: { ...aurora.colors, canvas: 'red;background:url(https://example.com/x)' } }
+    const reserved = { ...aurora, id: 'ocean' }
+    const parsed = parseSettings({ customThemes: [aurora, hostile, reserved, 'junk', { ...aurora }], darkTheme: aurora.id })
+    // The damaged role is repaired from the theme's defaults; the reserved id, junk and duplicate are dropped.
+    expect(parsed.customThemes.map(theme => theme.id)).toEqual([aurora.id, 'hostile'])
+    expect(parsed.customThemes[1]!.colors.canvas).toMatch(/^oklch\(/u)
+    expect(parsed.darkTheme).toBe(aurora.id)
+    expect(JSON.stringify(parsed)).not.toContain('url(')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, customThemes: [hostile] }).success).toBe(false)
+    expect(parseSettings({ customThemes: 'nope' }).customThemes).toEqual([])
   })
 
   it('defines the complete versioned defaults', () => {
@@ -97,7 +130,11 @@ describe('settings', () => {
       version: 1,
       theme: 'system',
       appearance: 'dark',
-      accent: 'teal',
+      lightTheme: 'ocean',
+      darkTheme: 'ocean',
+      appearanceContrast: 100,
+      glassOpacity: 80,
+      customThemes: [],
       reducedMotion: 'system',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',

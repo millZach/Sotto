@@ -1,109 +1,285 @@
-/* Sotto management-window palette — "Crossing".
+/* Sotto management-window palette — themes.
 
-   One room under a thin strip, set in Bricolage Grotesque, in the appearance
-   the user chose: dark (the original black room, and the default), light, or
-   whatever the system says. Three text tiers on the field, a hairline for
-   every rule, one accent for anything live (the dictation wave, focus,
-   selection, accent text) and a neutral pill for the one action on a page.
+   The window paints from one theme per appearance (Settings → Appearance →
+   Themes, ADR-0011), with the 57 semantic roles T3 Code's themes carry.
+   state/appearance.ts writes the active theme's roles onto the root as
+   --theme-* custom properties, together with data-theme="light|dark" (the
+   RESOLVED mode) and data-theme-id. The --theme-* values in the first two
+   blocks are only first-paint defaults (Ocean, the default theme) for the
+   moment before that script runs.
 
-   App.tsx puts the RESOLVED mode on the root as data-theme="dark|light" and
-   the accent as data-accent. Feature CSS never branches on either attribute:
-   it reads the tokens below, and this file is the only place they change.
+   Feature CSS never reads --theme-* or branches on the theme id: it reads the
+   --tt-* tokens, and this file is the only place they are derived. Foreground
+   and border tokens pass through the Contrast setting the way T3 Code's do: at
+   or below 100% a foreground mixes toward its own background and a border
+   toward transparent; above 100% foregrounds push toward white (dark) or
+   black (light) and borders toward the text colour. The Glass opacity setting
+   decides how solid the floating surfaces in glass.css are.
 
-   Block order is the cascade: base (dark, teal) → light → dark accents →
-   light accents. Every accent block sets the same five properties, so a
-   light accent always replaces its dark counterpart.
+   Only canonical oklch() text is ever written to --theme-*, so a theme cannot
+   carry a url(), var() or another declaration into the page.
 
-   tests/unit/renderer/themeTokens.test.ts parses this file and checks every
-   mode × accent: text tiers ≥4.5:1 on canvas, surfaces, panels and fields;
-   accent text and on-accent text ≥4.5:1; the control boundary, focus ring and
-   accent graphics ≥3:1. Hairlines and faint borders draw rules only.
+   tests/unit/renderer/themeTokens.test.ts parses this file and resolves the
+   text tokens for every built-in theme in both modes against their surfaces.
 
    The floating widget does NOT read this file. It keeps its own frozen copy in
    `widget/widget-tokens.css` and follows the system scheme. */
 
 :root {
   color-scheme: dark;
-  --tt-canvas: #000000;
-  --tt-surface: #0c0e0d;
-  --tt-surface-elevated: #121514;
-  --tt-surface-sunken: #0c0e0d;
-  --tt-panel: #0b0c0b;
-  --tt-panel-border: #272c29;
-  --tt-sidebar: #050706;
-  --tt-field: #0c0e0d;
-  --tt-field-border: #2a302c;
-  --tt-text: #f3f4f3;
-  --tt-text-2: #c3c9c6;
-  --tt-text-muted: #858c88;
-  --tt-text-faint: #858c88;
-  --tt-border: #6b7370;
-  --tt-border-faint: #2a2e2c;
-  --tt-hairline: #1a1d1b;
-  --tt-hover: rgb(255 255 255 / 6%);
-  --tt-track: rgb(255 255 255 / 3%);
-  --tt-hover-strong: #171a18;
-  --tt-bubble: #0d1210;
-  --tt-kbd: #242724;
-  --tt-skeleton-a: #111713;
-  --tt-skeleton-b: #19201c;
-  --tt-scrollbar: #2a2e2c;
-  --tt-pill: #f3f4f3;
-  --tt-pill-ink: #000000;
-  --tt-success: #7fd6ca;
-  --tt-warning: #f0b45c;
-  --tt-attention: #eda340;
-  --tt-error: #f0a89c;
-  --tt-error-contrast: #2a1112;
-  --tt-error-surface: #1a0c0b;
-  --tt-error-border: #4a2a25;
-  --tt-error-text: #ffbcb0;
-  --tt-code-bg: #0a0d0b;
-  --tt-code-border: #242a26;
-  --tt-code-text: #dfe4e1;
-  --tt-provider-codex: #d7dbe1;
-  --tt-provider-claude: #e3b58e;
-  --tt-provider-grok: #c9baff;
-  --tt-provider-ink: #080b0a;
-  --tt-overlay: rgb(0 0 0 / 72%);
-  --tt-backdrop: rgb(0 0 0 / 38%);
-  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
-  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 65%);
-  --tt-shadow-overlay: 0 20px 70px rgb(0 0 0 / 67%);
-  --tt-shadow-color: rgb(0 0 0 / 73%);
-  /* The orb draws additive light, which only reads on a dark field. */
-  --tt-orb-filter: none;
+  --theme-canvas: oklch(0.242641 0.024125 250.573);
+  --theme-chrome: oklch(0.242641 0.024125 250.573);
+  --theme-toolbar: oklch(0.242641 0.024125 250.573);
+  --theme-toolbar-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-toolbar-border: oklch(0.439946 0.0561 243.479);
+  --theme-toolbar-control: oklch(0.358725 0.043145 244.911);
+  --theme-toolbar-control-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-toolbar-control-hover: oklch(0.413315 0.051874 243.855);
+  --theme-surface: oklch(0.242641 0.024125 250.573);
+  --theme-surface-raised: oklch(0.348439 0.019942 253.696);
+  --theme-surface-overlay: oklch(0.398517 0.018232 255.72);
+  --theme-text: oklch(0.990339 0.008411 325.64);
+  --theme-text-muted: oklch(0.652227 0.01149 273.31);
+  --theme-border: oklch(0.438653 0.039496 245.44);
+  --theme-input: oklch(0.500905 0.043574 244.781);
+  --theme-focus: oklch(0.758933 0.105833 241.548);
+  --theme-accent: oklch(0.758933 0.105833 241.548);
+  --theme-accent-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-secondary: oklch(0.358725 0.043145 244.911);
+  --theme-secondary-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-muted: oklch(0.319287 0.036766 246.065);
+  --theme-muted-foreground: oklch(0.691936 0.016294 261.588);
+  --theme-placeholder: oklch(0.721641 0.010192 281.271);
+  --theme-secondary-label: oklch(0.652227 0.01149 273.31);
+  --theme-icon-muted: oklch(0.652227 0.01149 273.31);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-error-surface: oklch(0.298933 0.036443 350.094);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-warning-surface: oklch(0.329449 0.028712 84.495);
+  --theme-update: oklch(0.758933 0.105833 241.548);
+  --theme-update-foreground: oklch(0.840844 0.069217 240.151);
+  --theme-update-surface: oklch(0.424017 0.053575 243.695);
+  --theme-accent-surface: oklch(0.413315 0.051874 243.855);
+  --theme-accent-surface-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-message-surface: oklch(0.445224 0.056936 243.413);
+  --theme-message-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-message-action: oklch(0.793363 0.105022 199.893);
+  --theme-message-action-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-message-action-hover: oklch(0.815308 0.096174 199.862);
+  --theme-code-background: oklch(0.29661 0.021883 251.968);
+  --theme-code-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-sidebar: oklch(0.290387 0.032043 247.274);
+  --theme-sidebar-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-sidebar-muted-foreground: oklch(0.69099 0.01395 266.424);
+  --theme-sidebar-control-surface: oklch(0.417822 0.02535 250.162);
+  --theme-sidebar-row-hover: oklch(0.353381 0.042285 245.043);
+  --theme-sidebar-row-active: oklch(0.393878 0.048778 244.179);
+  --theme-sidebar-row-selected: oklch(0.413744 0.051943 243.848);
+  --theme-sidebar-border: oklch(0.55859 0.019001 256.223);
+  --theme-terminal-background: oklch(0.242641 0.024125 250.573);
+  --theme-terminal-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-terminal-cursor: oklch(0.758933 0.105833 241.548);
+  --theme-terminal-selection: oklch(0.439946 0.0561 243.479);
+  --theme-terminal-scrollbar: oklch(0.58613 0.012959 267.22);
+  --theme-terminal-scrollbar-hover: oklch(0.681569 0.010909 276.465);
+  --theme-contrast-base: 100%;
+  --theme-contrast-boost: 0%;
+  --theme-contrast-border-boost: 0%;
+  --theme-glass-opacity: 80%;
+}
 
-  /* Accent picker swatches: each accent as this mode paints it. */
-  --tt-swatch-teal: #47b8a9;
-  --tt-swatch-blue: #6fa8f2;
-  --tt-swatch-violet: #b39cf5;
-  --tt-swatch-rose: #f08fb0;
-  --tt-swatch-amber: #e3ad52;
-  --tt-swatch-green: #80c77d;
-  /* Edge on colour-choice swatches whose own colour can vanish into the room. */
-  --tt-swatch-edge: transparent;
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.974199 0.002856 241.597);
+  --theme-chrome: oklch(0.974199 0.002856 241.597);
+  --theme-toolbar: oklch(0.974199 0.002856 241.597);
+  --theme-toolbar-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-toolbar-border: oklch(0.91295 0.018827 241.836);
+  --theme-toolbar-control: oklch(0.939254 0.01193 241.729);
+  --theme-toolbar-control-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-toolbar-control-hover: oklch(0.91295 0.018827 241.836);
+  --theme-surface: oklch(0.974199 0.002856 241.597);
+  --theme-surface-raised: oklch(0.951058 0.002962 258.339);
+  --theme-surface-overlay: oklch(0.934442 0.003181 269.1);
+  --theme-text: oklch(0.222003 0.03479 328.979);
+  --theme-text-muted: oklch(0.541555 0.017468 323.531);
+  --theme-border: oklch(0.867646 0.013482 252.362);
+  --theme-input: oklch(0.832939 0.017389 252.598);
+  --theme-focus: oklch(0.536684 0.120219 247.01);
+  --theme-accent: oklch(0.536684 0.120219 247.01);
+  --theme-accent-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-secondary: oklch(0.939254 0.01193 241.729);
+  --theme-secondary-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-muted: oklch(0.948004 0.009649 241.695);
+  --theme-muted-foreground: oklch(0.528741 0.01828 313.823);
+  --theme-placeholder: oklch(0.530733 0.01795 323.79);
+  --theme-secondary-label: oklch(0.541555 0.017468 323.531);
+  --theme-icon-muted: oklch(0.541555 0.017468 323.531);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-error-surface: oklch(0.938747 0.016377 7.186);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.546927 0.155556 45.359);
+  --theme-warning-surface: oklch(0.954846 0.016009 81.731);
+  --theme-update: oklch(0.536684 0.120219 247.01);
+  --theme-update-foreground: oklch(0.397497 0.084999 246.523);
+  --theme-update-surface: oklch(0.904165 0.021144 241.874);
+  --theme-accent-surface: oklch(0.91295 0.018827 241.836);
+  --theme-accent-surface-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-message-surface: oklch(0.895373 0.023469 241.913);
+  --theme-message-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-message-action: oklch(0.493961 0.08175 201.584);
+  --theme-message-action-foreground: oklch(0.990339 0.008411 325.64);
+  --theme-message-action-hover: oklch(0.45151 0.074407 201.516);
+  --theme-code-background: oklch(0.957684 0.002906 253.68);
+  --theme-code-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-sidebar: oklch(0.939254 0.01193 241.729);
+  --theme-sidebar-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-sidebar-muted-foreground: oklch(0.517366 0.018944 311.433);
+  --theme-sidebar-control-surface: oklch(0.888479 0.011475 251.638);
+  --theme-sidebar-row-hover: oklch(0.890798 0.024681 241.933);
+  --theme-sidebar-row-active: oklch(0.858363 0.033325 242.089);
+  --theme-sidebar-row-selected: oklch(0.842113 0.037689 242.174);
+  --theme-sidebar-border: oklch(0.862823 0.011384 256.926);
+  --theme-terminal-background: oklch(0.974199 0.002856 241.597);
+  --theme-terminal-foreground: oklch(0.222003 0.03479 328.979);
+  --theme-terminal-cursor: oklch(0.536684 0.120219 247.01);
+  --theme-terminal-selection: oklch(0.895373 0.023469 241.913);
+  --theme-terminal-scrollbar: oklch(0.826271 0.006191 305.456);
+  --theme-terminal-scrollbar-hover: oklch(0.756866 0.008685 313.721);
+}
 
-  /* Accent (teal). Accent blocks below override exactly these five. */
-  --tt-accent: #47b8a9;
-  --tt-accent-hover: #7fd6ca;
-  --tt-accent-text: #47b8a9;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #9fe3d9;
+/* Tokens every feature reads. Declared once for both modes: the theme roles
+   already differ per mode, and the few constants that do not come from a theme
+   (status green, provider marks, shadows, glass blur) are set per mode below. */
+:root {
+  --theme-contrast-target: white;
+  --tt-glass-blur: 16px;
+  --tt-glass-saturation: 1.08;
 
-  /* Derived from the accent; never overridden per accent. */
-  --tt-primary: var(--tt-accent);
-  --tt-primary-hover: var(--tt-accent-hover);
-  --tt-primary-contrast: var(--tt-on-accent);
-  --tt-activity: var(--tt-accent);
+  --tt-canvas: var(--theme-canvas);
+  --tt-chrome: var(--theme-chrome);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-panel: var(--theme-surface);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+
+  --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+
+  /* Boundaries: `border` draws rules, `input` outlines fields, and the
+     control boundary leans toward the muted text so a control stays findable. */
+  --tt-border-faint: color-mix(in srgb, color-mix(in srgb, var(--theme-border) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-hairline: var(--tt-border-faint);
+  --tt-panel-border: var(--tt-border-faint);
+  --tt-field-border: color-mix(in srgb, color-mix(in srgb, var(--theme-input) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-border: color-mix(in srgb, color-mix(in srgb, color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground)) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-hover-strong: var(--theme-accent-surface);
+  --tt-track: color-mix(in srgb, var(--theme-text) 4%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: color-mix(in oklab, color-mix(in oklab, var(--theme-message-foreground) var(--theme-contrast-base), var(--theme-message-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-kbd: var(--theme-secondary);
+  --tt-skeleton-a: var(--theme-surface);
+  --tt-skeleton-b: var(--theme-surface-raised);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-scrollbar-hover: var(--theme-terminal-scrollbar-hover);
+  /* The neutral pill carries a page's one action in the theme's own ink. */
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+
+  --tt-warning: color-mix(in oklab, color-mix(in oklab, var(--theme-warning-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-warning-text: var(--tt-warning);
+  --tt-warning-surface: var(--theme-warning-surface);
+  --tt-attention: var(--tt-warning);
+  --tt-error: color-mix(in oklab, color-mix(in oklab, var(--theme-error-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-error-text: var(--tt-error);
+  --tt-error-contrast: var(--theme-canvas);
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
+  --tt-update: var(--theme-update);
+  --tt-update-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-update-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-update-surface: var(--theme-update-surface);
+
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-border: var(--tt-border-faint);
+  --tt-code-text: color-mix(in oklab, color-mix(in oklab, var(--theme-code-foreground) var(--theme-contrast-base), var(--theme-code-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+
+  /* The accent: the live wave, focus, selection and accent-coloured text.
+     Accent text uses the theme's readable accent tone, not the raw fill. */
+  --tt-accent: var(--theme-accent);
+  --tt-accent-hover: color-mix(in oklab, var(--theme-accent) 84%, var(--theme-contrast-target));
+  --tt-accent-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+
+  /* Primary actions are the theme's message action, as in T3 Code. */
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-hover: var(--theme-message-action-hover);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-activity: var(--tt-accent-text);
   --tt-link: var(--tt-accent-text);
   --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
   --tt-activity-wash: var(--tt-accent-wash);
   --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
   --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
-  --tt-selected: color-mix(in srgb, var(--tt-accent) 9%, var(--tt-canvas));
+  --tt-selected: var(--theme-sidebar-row-selected);
   --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  /* Outline for colour swatches whose fill is not a theme colour (orb presets). */
+  --tt-swatch-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
   --tt-table-stripe: color-mix(in srgb, var(--tt-text) 3%, transparent);
+
+  /* Surfaces that own their palette: the sidebar, toolbars, accent and
+     secondary surfaces, and terminals. */
+  --tt-sidebar-text: color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-foreground) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-sidebar-control: var(--theme-sidebar-control-surface);
+  --tt-sidebar-row-hover: var(--theme-sidebar-row-hover);
+  --tt-sidebar-row-active: var(--theme-sidebar-row-active);
+  --tt-sidebar-row-selected: var(--theme-sidebar-row-selected);
+  --tt-sidebar-border: color-mix(in srgb, color-mix(in srgb, var(--theme-sidebar-border) var(--theme-contrast-base), transparent), var(--theme-sidebar-foreground) var(--theme-contrast-border-boost));
+  --tt-toolbar: var(--theme-toolbar);
+  --tt-toolbar-text: color-mix(in oklab, color-mix(in oklab, var(--theme-toolbar-foreground) var(--theme-contrast-base), var(--theme-toolbar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-toolbar-border: color-mix(in srgb, color-mix(in srgb, var(--theme-toolbar-border) var(--theme-contrast-base), transparent), var(--theme-toolbar-foreground) var(--theme-contrast-border-boost));
+  --tt-toolbar-control: var(--theme-toolbar-control);
+  --tt-toolbar-control-text: color-mix(in oklab, color-mix(in oklab, var(--theme-toolbar-control-foreground) var(--theme-contrast-base), var(--theme-toolbar-control)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-toolbar-control-hover: var(--theme-toolbar-control-hover);
+  --tt-secondary: var(--theme-secondary);
+  --tt-secondary-text: color-mix(in oklab, color-mix(in oklab, var(--theme-secondary-foreground) var(--theme-contrast-base), var(--theme-secondary)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-accent-surface: var(--theme-accent-surface);
+  --tt-accent-surface-text: color-mix(in oklab, color-mix(in oklab, var(--theme-accent-surface-foreground) var(--theme-contrast-base), var(--theme-accent-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-terminal-background: var(--theme-terminal-background);
+  --tt-terminal-foreground: color-mix(in oklab, color-mix(in oklab, var(--theme-terminal-foreground) var(--theme-contrast-base), var(--theme-terminal-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-terminal-cursor: var(--theme-terminal-cursor);
+  --tt-terminal-selection: var(--theme-terminal-selection);
+  --tt-terminal-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-terminal-scrollbar-hover: var(--theme-terminal-scrollbar-hover);
+
+  /* Glass: floating surfaces are the overlay colour at the chosen opacity. */
+  --tt-glass: color-mix(in srgb, var(--theme-surface-overlay) var(--theme-glass-opacity), transparent);
+  --tt-glass-filter: blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation));
+
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-ink: #080b0a;
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
+  --tt-backdrop: rgb(0 0 0 / 38%);
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  /* The orb draws additive light, which only reads on a dark field. */
+  --tt-orb-filter: none;
 
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
@@ -117,157 +293,27 @@
     Consolas, 'Liberation Mono', monospace;
 }
 
-/* Light: a cool paper field with near-black ink; the accent darkens so it
-   stays readable as text and carries white on its fills. */
 :root[data-theme='light'] {
-  color-scheme: light;
-  --tt-canvas: #f5f6f3;
-  --tt-surface: #eceee9;
-  --tt-surface-elevated: #ffffff;
-  --tt-surface-sunken: #eceee9;
-  --tt-panel: #ffffff;
-  --tt-panel-border: #d3d7d2;
-  --tt-sidebar: #eef0ec;
-  --tt-field: #ffffff;
-  --tt-field-border: #c9cec8;
-  --tt-text: #141816;
-  --tt-text-2: #3a423e;
-  --tt-text-muted: #59625d;
-  --tt-text-faint: #59625d;
-  --tt-border: #7b847f;
-  --tt-border-faint: #d3d7d2;
-  --tt-hairline: #e1e4df;
-  --tt-hover: rgb(20 24 22 / 6%);
-  --tt-track: rgb(20 24 22 / 4%);
-  --tt-hover-strong: #e4e7e2;
-  --tt-bubble: #eaede8;
-  --tt-kbd: #e4e7e2;
-  --tt-skeleton-a: #e6e9e4;
-  --tt-skeleton-b: #f0f2ee;
-  --tt-scrollbar: #c3c8c2;
-  --tt-pill: #141816;
-  --tt-pill-ink: #f5f6f3;
-  --tt-success: #1b7447;
-  --tt-warning: #8a5300;
-  --tt-attention: #b86e00;
-  --tt-error: #b42318;
-  --tt-error-contrast: #ffffff;
-  --tt-error-surface: #fbeceb;
-  --tt-error-border: #e8b4ae;
-  --tt-error-text: #9a1f14;
-  --tt-code-bg: #eef0ec;
-  --tt-code-border: #d3d7d2;
-  --tt-code-text: #1f2522;
+  --theme-contrast-target: black;
+  --tt-glass-blur: 12px;
+  --tt-glass-saturation: 1.14;
+  --tt-success: oklch(0.5 0.11 158);
   --tt-provider-codex: #c9ced6;
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;
   --tt-provider-ink: #0b0d0c;
-  --tt-overlay: rgb(20 24 22 / 38%);
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
   --tt-backdrop: rgb(20 24 22 / 22%);
   --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);
   --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
-  --tt-shadow-overlay: 0 20px 70px rgb(20 24 22 / 20%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
   --tt-shadow-color: rgb(20 24 22 / 18%);
   /* Inverting luminance and turning the hue back keeps the orb's colour
      while its additive glow becomes ink on paper. */
   --tt-orb-filter: invert(1) hue-rotate(180deg);
-
-  --tt-swatch-teal: #146e63;
-  --tt-swatch-blue: #2860c4;
-  --tt-swatch-violet: #6a4bc9;
-  --tt-swatch-rose: #b5345f;
-  --tt-swatch-amber: #8c5600;
-  --tt-swatch-green: #2f7433;
-  --tt-swatch-edge: rgb(20 24 22 / 28%);
-
-  --tt-accent: #146e63;
-  --tt-accent-hover: #0f5a51;
-  --tt-accent-text: #146e63;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #146e63;
 }
 
-:root[data-accent='blue'] {
-  --tt-accent: #6fa8f2;
-  --tt-accent-hover: #a4c8f7;
-  --tt-accent-text: #6fa8f2;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #b0d0fa;
-}
-
-:root[data-accent='violet'] {
-  --tt-accent: #b39cf5;
-  --tt-accent-hover: #cfc0fa;
-  --tt-accent-text: #b39cf5;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #d6cafb;
-}
-
-:root[data-accent='rose'] {
-  --tt-accent: #f08fb0;
-  --tt-accent-hover: #f6b8cd;
-  --tt-accent-text: #f08fb0;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #f8c4d6;
-}
-
-:root[data-accent='amber'] {
-  --tt-accent: #e3ad52;
-  --tt-accent-hover: #efc986;
-  --tt-accent-text: #e3ad52;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #f2d39c;
-}
-
-:root[data-accent='green'] {
-  --tt-accent: #80c77d;
-  --tt-accent-hover: #a9dca7;
-  --tt-accent-text: #80c77d;
-  --tt-on-accent: #000000;
-  --tt-focus-ring: #b7e3b5;
-}
-
-:root[data-theme='light'][data-accent='blue'] {
-  --tt-accent: #2860c4;
-  --tt-accent-hover: #1f4ea3;
-  --tt-accent-text: #2860c4;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #2860c4;
-}
-
-:root[data-theme='light'][data-accent='violet'] {
-  --tt-accent: #6a4bc9;
-  --tt-accent-hover: #563aad;
-  --tt-accent-text: #6a4bc9;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #6a4bc9;
-}
-
-:root[data-theme='light'][data-accent='rose'] {
-  --tt-accent: #b5345f;
-  --tt-accent-hover: #962a4e;
-  --tt-accent-text: #b5345f;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #b5345f;
-}
-
-:root[data-theme='light'][data-accent='amber'] {
-  --tt-accent: #8c5600;
-  --tt-accent-hover: #744700;
-  --tt-accent-text: #8c5600;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #8c5600;
-}
-
-:root[data-theme='light'][data-accent='green'] {
-  --tt-accent: #2f7433;
-  --tt-accent-hover: #255d29;
-  --tt-accent-text: #2f7433;
-  --tt-on-accent: #ffffff;
-  --tt-focus-ring: #2f7433;
-}
-
-/* A mode switch repaints at once: no colour transition runs mid-switch. */
+/* A mode or theme switch repaints at once: no colour transition runs mid-switch. */
 :root[data-theme-switching] *,
 :root[data-theme-switching] *::before,
 :root[data-theme-switching] *::after {

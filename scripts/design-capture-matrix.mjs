@@ -1,15 +1,18 @@
 /**
- * The main window has a dark room (the Crossing default every existing install
- * keeps) and a light room, each with an accent (ADR-0009). Application tuples
- * carry the resolved mode, `dark` or `light`; the dense matrix is captured in
- * the dark teal default and the light tuples repeat the surfaces a mode change
- * can break. Accent and System captures name their choice in the state. The
+ * The main window has a dark room (the default every existing install keeps)
+ * and a light room, each painted by the theme chosen for that half (ADR-0009,
+ * ADR-0011). Application tuples carry the resolved mode, `dark` or `light`;
+ * the dense matrix is captured in the dark Ocean default and the light tuples
+ * repeat the surfaces a mode change can break. Theme and System captures name
+ * their choice in the state. The
  * floating widget is untouched and still follows the system scheme, so widget
  * captures keep `light` and `dark` as the emulated system scheme.
  */
 export const DESIGN_CAPTURE_THEME = 'dark'
 export const DESIGN_CAPTURE_APP_THEMES = Object.freeze(['dark', 'light'])
-export const DESIGN_CAPTURE_ACCENTS = Object.freeze(['teal', 'blue', 'violet', 'rose', 'amber', 'green'])
+/** The built-in themes, in the order Settings shows them; Ocean is the default. */
+export const DESIGN_CAPTURE_BUILT_IN_THEMES = Object.freeze(['t3-code', 't3-chat', 'grove', 'ocean', 'ember', 'iris'])
+export const DESIGN_CAPTURE_DEFAULT_THEME = 'ocean'
 /** The narrowest main window the Phase 1 surfaces are reviewed at. */
 export const DESIGN_CAPTURE_MINIMUM_WIDTH = 760
 export const DESIGN_CAPTURE_WIDGET_THEMES = Object.freeze(['light', 'dark'])
@@ -111,11 +114,12 @@ for (const [id, category, state, focusTarget] of [
   ['focus-destructive-light', 'history', 'focus-destructive', 'destructive'],
 ]) add({ id, category, state, focusTarget, theme: 'light' })
 
-// Accents are applied live, in both rooms, on the surface that shows the most
-// accent: the ready room's wave, primary action and current navigation.
+// Each built-in theme is applied live, in both rooms, on the surface that
+// shows the most of its palette: the ready room's wave, primary action,
+// sidebar and current navigation.
 for (const theme of DESIGN_CAPTURE_APP_THEMES) {
-  for (const accent of DESIGN_CAPTURE_ACCENTS.filter((candidate) => candidate !== 'teal')) {
-    add({ id: `accent-${accent}-${theme}`, category: 'appearance', state: `accent-${accent}`, theme })
+  for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter((candidate) => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) {
+    add({ id: `theme-${builtIn}-${theme}`, category: 'appearance', state: `theme-${builtIn}`, theme })
   }
   // System mode resolves to whatever Windows reports, emulated on the main window.
   add({ id: `appearance-system-${theme}`, category: 'appearance', state: 'system-settings', theme })

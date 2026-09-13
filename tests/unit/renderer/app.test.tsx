@@ -111,7 +111,8 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.theme
-  delete document.documentElement.dataset.accent
+  delete document.documentElement.dataset.themeId
+  document.documentElement.removeAttribute('style')
   delete document.documentElement.dataset.reducedMotion
   appearancePreview.reset()
   localStorage.clear()
@@ -218,7 +219,7 @@ describe('Sotto application onboarding integration', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark' as const,
         appearance: 'light' as const,
-        accent: 'rose' as const,
+        lightTheme: 'ember',
         reducedMotion: 'on' as const,
       })),
     })
@@ -229,7 +230,7 @@ describe('Sotto application onboarding integration', () => {
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(document.documentElement).toHaveAttribute('data-accent', 'rose')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 'ember')
   })
 
   it('removes a forced motion attribute when following system motion', () => {
@@ -237,7 +238,7 @@ describe('Sotto application onboarding integration', () => {
     applyDocumentPreferences({ ...DEFAULT_SETTINGS, reducedMotion: 'system' })
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
-    expect(document.documentElement).toHaveAttribute('data-accent', 'teal')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 'ocean')
   })
 
   it.each(['light', 'dark', 'system'] as const)('paints an upgraded install dark whatever its persisted %s widget theme says', (theme) => {
@@ -252,20 +253,22 @@ describe('Sotto application onboarding integration', () => {
     const query = { matches: false, addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) }
     vi.stubGlobal('matchMedia', vi.fn((media: string) => media === '(prefers-color-scheme: dark)' ? query : { matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }))
     try {
-      renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'system' as const, accent: 'blue' as const })) }))
+      renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'system' as const, lightTheme: 't3-chat', darkTheme: 'iris' })) }))
       await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'light'))
-      expect(document.documentElement).toHaveAttribute('data-accent', 'blue')
+      expect(document.documentElement).toHaveAttribute('data-theme-id', 't3-chat')
       act(() => {
         query.matches = true
         for (const listener of listeners) listener()
       })
+      // The system change hands the window to the independently chosen dark half.
       await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
+      expect(document.documentElement).toHaveAttribute('data-theme-id', 'iris')
     } finally {
       vi.unstubAllGlobals()
     }
   })
 
-  it('previews Light and then an accent together while both saves are delayed, and never repaints an older choice', async () => {
+  it('previews Light and then a light theme together while both saves are delayed, and never repaints an older choice', async () => {
     const user = userEvent.setup()
     const saves: Array<{ patch: Partial<AppSettings>; result: ReturnType<typeof deferred<AppSettings>> }> = []
     let persisted: AppSettings = { ...DEFAULT_SETTINGS, onboardingComplete: true }
@@ -282,29 +285,29 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
 
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    await user.click(screen.getByRole('button', { name: 'Use light mode' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    await user.click(screen.getByRole('radio', { name: 'Violet' }))
+    await user.click(screen.getByRole('button', { name: 'Use Iris light mode' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-accent', 'violet')
-    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('radio', { name: 'Violet' })).toHaveAttribute('aria-checked', 'true')
+    expect(root).toHaveAttribute('data-theme-id', 'iris')
+    expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Iris light mode' })).toHaveAttribute('aria-pressed', 'true')
+    // Only the light half moved: the dark half still belongs to Ocean.
+    expect(screen.getByRole('button', { name: 'Use Ocean dark mode' })).toHaveAttribute('aria-pressed', 'true')
 
-    // The settings queue sends the accent only after the mode save answers.
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]!.patch).toEqual({ appearance: 'light' })
     persisted = { ...persisted, appearance: 'light' }
     await act(async () => { saves[0]!.result.resolve(persisted) })
-    expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-accent', 'violet')
+    expect(root).toHaveAttribute('data-theme-id', 'iris')
 
     await waitFor(() => expect(saves).toHaveLength(2))
-    expect(saves[1]!.patch).toEqual({ accent: 'violet' })
-    persisted = { ...persisted, accent: 'violet' }
+    expect(saves[1]!.patch).toEqual({ lightTheme: 'iris' })
+    persisted = { ...persisted, lightTheme: 'iris' }
     await act(async () => { saves[1]!.result.resolve(persisted) })
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-accent', 'violet')
-    expect(screen.getByText(/Sotto is/u)).toHaveTextContent('Sotto is light with a violet accent.')
+    expect(root).toHaveAttribute('data-theme-id', 'iris')
+    expect(screen.getByText(/Sotto is/u)).toHaveTextContent('Sotto is light, using Iris.')
   })
 
   it('restores the truthful persisted look when the final overlapping appearance save fails', async () => {
@@ -319,14 +322,14 @@ describe('Sotto application onboarding integration', () => {
         return result.promise
       }),
     }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-accent', 'teal'))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'ocean'))
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
 
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
-    await user.click(screen.getByRole('radio', { name: 'Amber' }))
+    await user.click(screen.getByRole('button', { name: 'Use light mode' }))
+    await user.click(screen.getByRole('button', { name: /^Use Ember theme/u }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-accent', 'amber')
+    expect(root).toHaveAttribute('data-theme-id', 'ember')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     persisted = { ...persisted, appearance: 'light' }
@@ -334,21 +337,23 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(saves).toHaveLength(2))
     await act(async () => { saves[1]!.reject(new Error('disk full')) })
 
-    await waitFor(() => expect(root).toHaveAttribute('data-accent', 'teal'))
+    await waitFor(() => expect(root).toHaveAttribute('data-theme-id', 'ocean'))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(screen.getByRole('radio', { name: 'Teal' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i)
+    expect(screen.getByRole('button', { name: 'Use Ocean theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(document.body).toHaveTextContent(/could not be saved/i)
   })
 
   it('paints the next launch from the last applied look before settings answer', async () => {
-    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, accent: 'green' as const })) }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-accent', 'green'))
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'grove', glassOpacity: 55 })) }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'grove'))
+    expect(document.documentElement.style.getPropertyValue('--theme-glass-opacity')).toBe('55%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toEqual({ appearance: 'light', accent: 'green' })
-    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","accent":"green"}')
-    expect(readCachedAppearance()).toEqual({ appearance: 'dark', accent: 'green' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 'ocean', glassOpacity: 55 })
+    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"grove","accent":"green"}')
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'grove' })
+    expect(readCachedAppearance()).not.toHaveProperty('accent')
     localStorage.setItem('sotto.appearance', 'not json')
-    expect(readCachedAppearance()).toEqual({ appearance: 'dark', accent: 'teal' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean' })
   })
 
   it('shows the complete management dashboard after onboarding is already complete', async () => {

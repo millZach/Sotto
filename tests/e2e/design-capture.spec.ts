@@ -7,7 +7,8 @@ import { _electron as electron, expect, test, type Locator, type Page } from '@p
 import sharp from 'sharp'
 
 import {
-  DESIGN_CAPTURE_ACCENTS,
+  DESIGN_CAPTURE_BUILT_IN_THEMES,
+  DESIGN_CAPTURE_DEFAULT_THEME,
   DESIGN_CAPTURE_APP_THEMES,
   DESIGN_CAPTURE_MINIMUM_WIDTH,
   DESIGN_CAPTURE_REQUIREMENTS,
@@ -18,7 +19,7 @@ import {
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
-import { DEFAULT_SETTINGS, type Accent, type Appearance } from '../../src/shared/settings'
+import { DEFAULT_SETTINGS, type Appearance } from '../../src/shared/settings'
 import {
   closeSotto,
   firstSottoWindow,
@@ -140,7 +141,8 @@ async function createProfile(
     readonly motion?: CaptureMotion
     readonly agents?: DesignAgentsProfile
     readonly appearance?: Appearance
-    readonly accent?: Accent
+    readonly lightTheme?: string
+    readonly darkTheme?: string
   },
 ): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
@@ -150,7 +152,8 @@ async function createProfile(
     onboardingComplete: options.onboardingComplete,
     successDisplayMs: 5_000,
     appearance: options.appearance ?? DEFAULT_SETTINGS.appearance,
-    accent: options.accent ?? DEFAULT_SETTINGS.accent,
+    lightTheme: options.lightTheme ?? DEFAULT_SETTINGS.lightTheme,
+    darkTheme: options.darkTheme ?? DEFAULT_SETTINGS.darkTheme,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
@@ -167,7 +170,8 @@ async function withSotto(
     readonly scalePercent?: CaptureScale
     readonly agents?: DesignAgentsProfile
     readonly appearance?: Appearance
-    readonly accent?: Accent
+    readonly lightTheme?: string
+    readonly darkTheme?: string
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -191,11 +195,14 @@ async function withSotto(
     launched = await launchSotto(options.scenario ?? 'success', profile, dependencies)
     const motion = options.motion ?? 'normal'
     await launched.page.emulateMedia({ reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' })
-    // The persisted mode and accent paint the root at launch. Only System reads
-    // the scheme, and no fixed-mode capture depends on the machine's setting.
+    // The persisted mode and the theme owning it paint the root at launch. Only
+    // System reads the scheme, and no fixed-mode capture depends on the machine's setting.
     const appearance = options.appearance ?? DEFAULT_SETTINGS.appearance
-    if (appearance !== 'system') await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
-    await expect(launched.page.locator('html')).toHaveAttribute('data-accent', options.accent ?? DEFAULT_SETTINGS.accent)
+    if (appearance !== 'system') {
+      await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
+      const owner = appearance === 'light' ? options.lightTheme ?? DEFAULT_SETTINGS.lightTheme : options.darkTheme ?? DEFAULT_SETTINGS.darkTheme
+      await expect(launched.page.locator('html')).toHaveAttribute('data-theme-id', owner)
+    }
     await expect.poll(() => launched!.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches")).toBe(motion === 'reduced')
     if (motion === 'reduced') await expect(launched.page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     else await expect(launched.page.locator('html')).not.toHaveAttribute('data-reduced-motion')
@@ -329,10 +336,11 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
 
 /** The Dictate room says its state in the one sentence and marks the section for styling. */
 /** Save an appearance choice the way Settings does and wait for the root to repaint. */
-async function setAppearance(page: Page, patch: { readonly appearance?: Appearance; readonly accent?: Accent }, resolved: AppTheme): Promise<void> {
+async function setAppearance(page: Page, patch: { readonly appearance?: Appearance; readonly lightTheme?: string; readonly darkTheme?: string }, resolved: AppTheme): Promise<void> {
   await page.evaluate(async (next) => { await window.sotto!.updateSettings(next) }, patch)
   await expect(page.locator('html')).toHaveAttribute('data-theme', resolved)
-  if (patch.accent !== undefined) await expect(page.locator('html')).toHaveAttribute('data-accent', patch.accent)
+  const owner = resolved === 'light' ? patch.lightTheme : patch.darkTheme
+  if (owner !== undefined) await expect(page.locator('html')).toHaveAttribute('data-theme-id', owner)
   await expect(page.locator('html')).not.toHaveAttribute('data-theme-switching')
 }
 
@@ -1005,22 +1013,22 @@ test.describe('authoritative design-review captures', () => {
     await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
       await assertDictateState(page, 'idle', /ready when you are/i)
       for (const theme of appThemes) {
-        for (const accent of DESIGN_CAPTURE_ACCENTS.filter(candidate => candidate !== 'teal')) {
-          await setAppearance(page, { appearance: theme, accent }, theme)
+        for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter(candidate => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) {
+          await setAppearance(page, { appearance: theme, lightTheme: builtIn, darkTheme: builtIn }, theme)
           await assertRenderedRoom(page, theme)
-          await capturePage(page, `accent-${accent}-${theme}.png`, { category: 'appearance', state: `accent-${accent}`, theme })
+          await capturePage(page, `theme-${builtIn}-${theme}.png`, { category: 'appearance', state: `theme-${builtIn}`, theme })
         }
       }
 
       // System follows the scheme Windows reports, live, without a relaunch.
       await page.getByRole('link', { name: 'Settings' }).click()
       await page.emulateMedia({ colorScheme: 'light' })
-      await setAppearance(page, { appearance: 'system', accent: 'teal' }, 'light')
+      await setAppearance(page, { appearance: 'system', lightTheme: DESIGN_CAPTURE_DEFAULT_THEME, darkTheme: DESIGN_CAPTURE_DEFAULT_THEME }, 'light')
       const section = page.locator('#settings-appearance')
       for (const theme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
-        await expect(section).toContainText(`Sotto follows Windows, ${theme} right now, with a teal accent.`)
+        await expect(section).toContainText(`Sotto follows Windows, ${theme} right now, using Ocean.`)
         await assertRenderedRoom(page, theme)
         await captureSection(page, section, `appearance-system-${theme}.png`, { category: 'appearance', state: 'system-settings', theme })
       }
@@ -1179,7 +1187,7 @@ test.describe('authoritative design-review captures', () => {
         'The idle widget renders the resting click-to-dictate sliver; idle captures are recorded after a completed session returns to idle.',
         'Established Task 12 widget baselines are referenced in place; they are not duplicated.',
         'Every tuple records explicit normal or reduced motion; normal launches emulate no-preference and reduced launches are separately asserted.',
-        "Application tuples carry the main window's resolved mode, dark (the Crossing default existing installs keep) or light; accent and System tuples name the choice in their state. The untouched widget follows the system scheme, emulated on its own window, so widget tuples keep light and dark.",
+        "Application tuples carry the main window's resolved mode, dark (the Crossing default existing installs keep) or light; theme and System tuples name the choice in their state. The untouched widget follows the system scheme, emulated on its own window, so widget tuples keep light and dark.",
         'Width tuples narrow the main window to 760 logical pixels, below the shipped 820 minimum, to review the Phase 1 minimum width.',
         'Full Settings and Help surfaces include content outside the management scrollport, including every Settings section and Reset safely help.',
         'Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.',
