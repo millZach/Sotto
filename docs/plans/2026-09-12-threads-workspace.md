@@ -1,6 +1,59 @@
 # Threads workspace implementation plan
 
-Status: product specification and final behavior defaults approved by Zach on 2026-09-12. Ticket granularity/dependency review pending under the requested to-tickets skill. No new GitHub issues have been published for this batch.
+Status: approved and published on GitHub in six dependency phases, 2026-09-12. All 31 issues and native blocking relationships have been read back and verified. [Workspace milestone](https://github.com/millZach/Sotto/milestone/1). Implementation has not begun as part of this publication task.
+
+## Published phases
+
+[All tickets and phase roadmap](https://github.com/millZach/Sotto/milestone/1). Each phase is an earliest dependency wave. Tickets within it can run in parallel, and a later-phase ticket can start immediately when its own blockers close. Do not wait for unrelated earlier-phase tickets. Native dependencies are the execution gate.
+
+### Phase 1 — 4 tickets
+
+- [#44 — Send messages immediately and restore per-thread drafts](https://github.com/millZach/Sotto/issues/44)
+- [#45 — Organize projects and settle threads or whole projects](https://github.com/millZach/Sotto/issues/45)
+- [#46 — Render readable answers and attachment previews](https://github.com/millZach/Sotto/issues/46)
+- [#73 — Choose light, dark or system appearance and an accent](https://github.com/millZach/Sotto/issues/73)
+
+### Phase 2 — 7 tickets
+
+- [#47 — Render and inspect diagrams in answers](https://github.com/millZach/Sotto/issues/47)
+- [#48 — Follow Codex tool activity and subagents](https://github.com/millZach/Sotto/issues/48)
+- [#51 — Queue follow-up messages and explicitly steer a running turn](https://github.com/millZach/Sotto/issues/51)
+- [#53 — Drag a second thread into a split workspace](https://github.com/millZach/Sotto/issues/53)
+- [#55 — Browse files in a shared, pinnable tools panel](https://github.com/millZach/Sotto/issues/55)
+- [#58 — Create independent thread worktrees](https://github.com/millZach/Sotto/issues/58)
+- [#63 — Browse and invoke Codex skills](https://github.com/millZach/Sotto/issues/63)
+
+### Phase 3 — 10 tickets
+
+- [#49 — Follow Claude tool activity and subagents](https://github.com/millZach/Sotto/issues/49)
+- [#50 — Follow Grok tool activity and subagents](https://github.com/millZach/Sotto/issues/50)
+- [#52 — Answer structured questions and approvals in the right thread](https://github.com/millZach/Sotto/issues/52)
+- [#54 — Add three- and four-thread layouts and restore the workspace](https://github.com/millZach/Sotto/issues/54)
+- [#56 — Run a persistent terminal beside a thread](https://github.com/millZach/Sotto/issues/56)
+- [#57 — Browse inside Sotto and choose where links open](https://github.com/millZach/Sotto/issues/57)
+- [#59 — Review Git changes in the selected thread](https://github.com/millZach/Sotto/issues/59)
+- [#64 — Browse and invoke Claude skills](https://github.com/millZach/Sotto/issues/64)
+- [#65 — Browse and invoke Grok skills](https://github.com/millZach/Sotto/issues/65)
+- [#68 — Start and resume a project-free Sotto chat with Codex](https://github.com/millZach/Sotto/issues/68)
+
+### Phase 4 — 6 tickets
+
+- [#60 — Stage, commit and manage the active branch](https://github.com/millZach/Sotto/issues/60)
+- [#62 — Inspect checkpoints and perform supported thread reverts](https://github.com/millZach/Sotto/issues/62)
+- [#66 — Show live tokens, context and estimated thread cost](https://github.com/millZach/Sotto/issues/66)
+- [#69 — Use Claude for persistent Sotto chats](https://github.com/millZach/Sotto/issues/69)
+- [#70 — Use Grok for persistent Sotto chats](https://github.com/millZach/Sotto/issues/70)
+- [#72 — Turn a brainstorming chat into an editable prompt](https://github.com/millZach/Sotto/issues/72)
+
+### Phase 5 — 3 tickets
+
+- [#61 — Push work and open the pull-request surface](https://github.com/millZach/Sotto/issues/61)
+- [#67 — Match T3's native compaction behavior](https://github.com/millZach/Sotto/issues/67)
+- [#71 — Talk and dictate in the active Sotto conversation](https://github.com/millZach/Sotto/issues/71)
+
+### Phase 6 — 1 tickets
+
+- [#74 — Verify the complete daily workspace and recovery journey](https://github.com/millZach/Sotto/issues/74)
 
 ## Outcome
 
@@ -27,43 +80,43 @@ The approved [discussion and decisions](../threads-product-discussion.md) are th
 
 Each issue should fit a fresh implementation context. A provider-specific mapping, a concrete user surface or one recoverable interaction is a slice. If implementation reveals that a ticket exceeds this bound, split along another complete user path before starting a broad refactor. Local prefactoring belongs at the beginning of the slice that needs it, preserving the existing working path.
 
-## Proposed tickets
+## Approved implementation slices
 
-Numbers below are draft IDs, not GitHub issue numbers. Every linked draft contains the complete behavior, checkbox acceptance criteria and blocker list.
+Draft IDs below retain the approved plan numbering. GitHub issue numbers and native blocking links are authoritative. Local ticket files mirror the published behavior and acceptance criteria.
 
-| Draft | Ticket | Blocked by draft | Demoable outcome |
-|---|---|---|---|
-| 01 | [Send messages immediately and restore per-thread drafts](threads-workspace/tickets/01.md) | None | Typing in any thread gives immediate, truthful delivery feedback and each thread keeps its own unsent draft. |
-| 02 | [Organize projects and settle threads or whole projects](threads-workspace/tickets/02.md) | None | Navigate project folders containing multiple threads, with recognizable provider icons and reversible Settled groups. |
-| 03 | [Render readable answers and attachment previews](threads-workspace/tickets/03.md) | None | Read rich, streaming answers with usable code, tables, links and attachments in the existing Threads view. |
-| 04 | [Render and inspect diagrams in answers](threads-workspace/tickets/04.md) | 03 | Agent-generated Mermaid diagrams render inside answers and can be enlarged and copied. |
-| 05 | [Follow Codex tool activity and subagents](threads-workspace/tickets/05.md) | 03 | See Codex's current work and expandable tool results alongside readable answers. |
-| 06 | [Follow Claude tool activity and subagents](threads-workspace/tickets/06.md) | 05 | Claude threads expose the same useful activity view through Claude's native event stream. |
-| 07 | [Follow Grok tool activity and subagents](threads-workspace/tickets/07.md) | 05 | Grok threads expose native ACP work through the shared activity view. |
-| 08 | [Queue follow-up messages and explicitly steer a running turn](threads-workspace/tickets/08.md) | 01 | Send another message while work is running, with a durable queue and an explicit Steer now action. |
-| 09 | [Answer structured questions and approvals in the right thread](threads-workspace/tickets/09.md) | 05 | Respond to complete native questions and approval requests while keeping their thread and tool context visible. |
-| 10 | [Drag a second thread into a split workspace](threads-workspace/tickets/10.md) | 01, 02 | Drag a thread from the sidebar beside the current thread and use both independently. |
-| 11 | [Add three- and four-thread layouts and restore the workspace](threads-workspace/tickets/11.md) | 10 | Arrange more threads with the agreed snapping rules and restore the arrangement after restart. |
-| 12 | [Browse files in a shared, pinnable tools panel](threads-workspace/tickets/12.md) | 02 | Open a Files surface beside a thread and inspect files in that thread's actual working directory. |
-| 13 | [Run a persistent terminal beside a thread](threads-workspace/tickets/13.md) | 12 | Open and use an interactive terminal in the active thread's working directory. |
-| 14 | [Browse inside Sotto and choose where links open](threads-workspace/tickets/14.md) | 12 | Use the embedded browser for local apps and URLs while ordinary agent links open externally by default. |
-| 15 | [Create independent thread worktrees](threads-workspace/tickets/15.md) | 02 | New independent coding tasks get their own working copy and branch, with an explicit shared-working-copy option. |
-| 16 | [Review Git changes in the selected thread](threads-workspace/tickets/16.md) | 12, 15 | Inspect current working changes and diffs from the thread's own branch and worktree. |
-| 17 | [Stage, commit and manage the active branch](threads-workspace/tickets/17.md) | 16 | Complete local Git work from Sotto using the selected thread's working copy. |
-| 18 | [Push work and open the pull-request surface](threads-workspace/tickets/18.md) | 17 | Push a branch, create/open its pull request and follow review/check status inside Sotto. |
-| 19 | [Inspect checkpoints and perform supported thread reverts](threads-workspace/tickets/19.md) | 05, 06, 07, 15, 16 | Review changes associated with completed work and explicitly revert when the native provider supports matching conversation rollback. |
-| 20 | [Browse and invoke Codex skills](threads-workspace/tickets/20.md) | 01 | Type / or $ to find and select Codex's available personal and project skills. |
-| 21 | [Browse and invoke Claude skills](threads-workspace/tickets/21.md) | 20 | Use the same picker for Claude's own global and project skills. |
-| 22 | [Browse and invoke Grok skills](threads-workspace/tickets/22.md) | 20 | Use the shared picker for the skills Grok actually exposes and can invoke. |
-| 23 | [Show live tokens, context and estimated thread cost](threads-workspace/tickets/23.md) | 05, 06, 07 | Read compact native usage indicators while working without opening a separate analytics dashboard. |
-| 24 | [Match T3's native compaction behavior](threads-workspace/tickets/24.md) | 23 | Use the provider's normal compaction strategy and T3's context recommendation and controls. |
-| 25 | [Start and resume a project-free Sotto chat with Codex](threads-workspace/tickets/25.md) | 01, 03, 20 | Open the Sotto area, start a saved conversation without a project and talk to the configured Codex coordinator with its normal skills. |
-| 26 | [Use Claude for persistent Sotto chats](threads-workspace/tickets/26.md) | 25, 21 | Start project-free Sotto conversations with the configured Claude coordinator and resume them later. |
-| 27 | [Use Grok for persistent Sotto chats](threads-workspace/tickets/27.md) | 25, 22 | Start and resume project-free Sotto conversations with Grok and its normal native skills. |
-| 28 | [Talk and dictate in the active Sotto conversation](threads-workspace/tickets/28.md) | 25, 26, 27 | Type, dictate or have a spoken exchange in the selected personal Sotto chat. |
-| 29 | [Turn a brainstorming chat into an editable prompt](threads-workspace/tickets/29.md) | 25 | Generate a useful prompt from a Sotto conversation for the user to copy and use themselves. |
-| 30 | [Choose light, dark or system appearance and an accent](threads-workspace/tickets/30.md) | None | Configure Sotto's appearance while retaining its typography, identity and readable native controls. |
-| 31 | [Verify the complete daily workspace and recovery journey](threads-workspace/tickets/31.md) | 04, 08, 09, 11, 13, 14, 18, 19, 24, 26, 27, 28, 29, 30; existing #24 (delivery) | Demonstrate the complete agreed daily workflow with mixed providers, working tools and recoverable state. |
+| Draft | GitHub ticket | Phase | Blocked by GitHub issues | Demoable outcome |
+|---|---|---|---|---|
+| 01 | [#44 — Send messages immediately and restore per-thread drafts](https://github.com/millZach/Sotto/issues/44) | 1 | None | Typing in any thread gives immediate, truthful delivery feedback and each thread keeps its own unsent draft. |
+| 02 | [#45 — Organize projects and settle threads or whole projects](https://github.com/millZach/Sotto/issues/45) | 1 | None | Navigate project folders containing multiple threads, with recognizable provider icons and reversible Settled groups. |
+| 03 | [#46 — Render readable answers and attachment previews](https://github.com/millZach/Sotto/issues/46) | 1 | None | Read rich, streaming answers with usable code, tables, links and attachments in the existing Threads view. |
+| 04 | [#47 — Render and inspect diagrams in answers](https://github.com/millZach/Sotto/issues/47) | 2 | #46 | Agent-generated Mermaid diagrams render inside answers and can be enlarged and copied. |
+| 05 | [#48 — Follow Codex tool activity and subagents](https://github.com/millZach/Sotto/issues/48) | 2 | #46 | See Codex's current work and expandable tool results alongside readable answers. |
+| 06 | [#49 — Follow Claude tool activity and subagents](https://github.com/millZach/Sotto/issues/49) | 3 | #48 | Claude threads expose the same useful activity view through Claude's native event stream. |
+| 07 | [#50 — Follow Grok tool activity and subagents](https://github.com/millZach/Sotto/issues/50) | 3 | #48 | Grok threads expose native ACP work through the shared activity view. |
+| 08 | [#51 — Queue follow-up messages and explicitly steer a running turn](https://github.com/millZach/Sotto/issues/51) | 2 | #44 | Send another message while work is running, with a durable queue and an explicit Steer now action. |
+| 09 | [#52 — Answer structured questions and approvals in the right thread](https://github.com/millZach/Sotto/issues/52) | 3 | #48 | Respond to complete native questions and approval requests while keeping their thread and tool context visible. |
+| 10 | [#53 — Drag a second thread into a split workspace](https://github.com/millZach/Sotto/issues/53) | 2 | #44, #45 | Drag a thread from the sidebar beside the current thread and use both independently. |
+| 11 | [#54 — Add three- and four-thread layouts and restore the workspace](https://github.com/millZach/Sotto/issues/54) | 3 | #53 | Arrange more threads with the agreed snapping rules and restore the arrangement after restart. |
+| 12 | [#55 — Browse files in a shared, pinnable tools panel](https://github.com/millZach/Sotto/issues/55) | 2 | #45 | Open a Files surface beside a thread and inspect files in that thread's actual working directory. |
+| 13 | [#56 — Run a persistent terminal beside a thread](https://github.com/millZach/Sotto/issues/56) | 3 | #55 | Open and use an interactive terminal in the active thread's working directory. |
+| 14 | [#57 — Browse inside Sotto and choose where links open](https://github.com/millZach/Sotto/issues/57) | 3 | #55 | Use the embedded browser for local apps and URLs while ordinary agent links open externally by default. |
+| 15 | [#58 — Create independent thread worktrees](https://github.com/millZach/Sotto/issues/58) | 2 | #45 | New independent coding tasks get their own working copy and branch, with an explicit shared-working-copy option. |
+| 16 | [#59 — Review Git changes in the selected thread](https://github.com/millZach/Sotto/issues/59) | 3 | #55, #58 | Inspect current working changes and diffs from the thread's own branch and worktree. |
+| 17 | [#60 — Stage, commit and manage the active branch](https://github.com/millZach/Sotto/issues/60) | 4 | #59 | Complete local Git work from Sotto using the selected thread's working copy. |
+| 18 | [#61 — Push work and open the pull-request surface](https://github.com/millZach/Sotto/issues/61) | 5 | #60 | Push a branch, create/open its pull request and follow review/check status inside Sotto. |
+| 19 | [#62 — Inspect checkpoints and perform supported thread reverts](https://github.com/millZach/Sotto/issues/62) | 4 | #48, #49, #50, #58, #59 | Review changes associated with completed work and explicitly revert when the native provider supports matching conversation rollback. |
+| 20 | [#63 — Browse and invoke Codex skills](https://github.com/millZach/Sotto/issues/63) | 2 | #44 | Type / or $ to find and select Codex's available personal and project skills. |
+| 21 | [#64 — Browse and invoke Claude skills](https://github.com/millZach/Sotto/issues/64) | 3 | #63 | Use the same picker for Claude's own global and project skills. |
+| 22 | [#65 — Browse and invoke Grok skills](https://github.com/millZach/Sotto/issues/65) | 3 | #63 | Use the shared picker for the skills Grok actually exposes and can invoke. |
+| 23 | [#66 — Show live tokens, context and estimated thread cost](https://github.com/millZach/Sotto/issues/66) | 4 | #48, #49, #50 | Read compact native usage indicators while working without opening a separate analytics dashboard. |
+| 24 | [#67 — Match T3's native compaction behavior](https://github.com/millZach/Sotto/issues/67) | 5 | #66 | Use the provider's normal compaction strategy and T3's context recommendation and controls. |
+| 25 | [#68 — Start and resume a project-free Sotto chat with Codex](https://github.com/millZach/Sotto/issues/68) | 3 | #44, #46, #63 | Open the Sotto area, start a saved conversation without a project and talk to the configured Codex coordinator with its normal skills. |
+| 26 | [#69 — Use Claude for persistent Sotto chats](https://github.com/millZach/Sotto/issues/69) | 4 | #68, #64 | Start project-free Sotto conversations with the configured Claude coordinator and resume them later. |
+| 27 | [#70 — Use Grok for persistent Sotto chats](https://github.com/millZach/Sotto/issues/70) | 4 | #68, #65 | Start and resume project-free Sotto conversations with Grok and its normal native skills. |
+| 28 | [#71 — Talk and dictate in the active Sotto conversation](https://github.com/millZach/Sotto/issues/71) | 5 | #68, #69, #70 | Type, dictate or have a spoken exchange in the selected personal Sotto chat. |
+| 29 | [#72 — Turn a brainstorming chat into an editable prompt](https://github.com/millZach/Sotto/issues/72) | 4 | #68 | Generate a useful prompt from a Sotto conversation for the user to copy and use themselves. |
+| 30 | [#73 — Choose light, dark or system appearance and an accent](https://github.com/millZach/Sotto/issues/73) | 1 | None | Configure Sotto's appearance while retaining its typography, identity and readable native controls. |
+| 31 | [#74 — Verify the complete daily workspace and recovery journey](https://github.com/millZach/Sotto/issues/74) | 6 | #47, #51, #52, #54, #56, #57, #61, #62, #67, #69, #70, #71, #72, #73, #24 | Demonstrate the complete agreed daily workflow with mixed providers, working tools and recoverable state. |
 
 ## Parallel work and merge discipline
 
@@ -89,14 +142,10 @@ Numbers below are draft IDs, not GitHub issue numbers. Every linked draft contai
 
 No cross-provider conversation transfer; no skill CRUD/install interface; no automatic personal-chat-to-project handoff; no new custom skill/compaction/orchestration engine; no dictation-model or voice-model bake-off; no detailed usage dashboard; no unrelated Dictionary, import, licensing or hybrid-retrieval expansion. Custom activity animations are optional polish after the required experience works.
 
-## Publication procedure
+## Publication verification
 
-The requested to-tickets skill requires review of the proposed breakdown and blocking edges before publication. After Zach approves or revises this list:
+The user approved the breakdown and requested parallel phases. Published 31 issues with ready-for-agent, threads-workspace and phase labels under the workspace milestone. Verified all issue bodies, titles, open state, labels, milestone membership and native blocking edges by reading GitHub back.
 
-1. Publish one GitHub issue per approved slice in dependency order, using the ready-for-agent label and the complete draft body with the agreed baseline context.
-2. Replace every draft dependency with its real issue number and attach GitHub's native blocked-by relationship using database issue IDs. Final delivery also depends on existing #24. Use text blockers only if native dependencies are unavailable.
-3. Read back all issues and native edges; validate count, labels, acyclic dependencies and acceptance coverage. Record real URLs in this plan and the batch manifest.
-4. Do not close or modify existing parent issues. Do not create a speculative new parent or begin implementation as part of ticket publication.
+The phase-one frontier is [#44](https://github.com/millZach/Sotto/issues/44), [#45](https://github.com/millZach/Sotto/issues/45), [#46](https://github.com/millZach/Sotto/issues/46), [#73](https://github.com/millZach/Sotto/issues/73). Final acceptance [#74](https://github.com/millZach/Sotto/issues/74) also has a native dependency on existing #24. Existing parent issue bodies and states were not modified.
 
-Current deliverables: this plan, 31 individual issue drafts and a machine-readable batch manifest. Publication is pending the skill's breakdown review, not GitHub access or authorization to prepare the work.
-
+The published manifest and verification report retain draft-to-issue mappings and every native blocker. Local ticket files mirror the published issue contents. This publication does not claim implementation, code push, merge or release completion.

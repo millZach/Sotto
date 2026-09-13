@@ -1,6 +1,6 @@
 # Threads workspace discussion
 
-Status: requirements and final behavior defaults approved by Zach on 2026-09-12. The interview is complete. The implementation plan and ticket breakdown are recorded in [the implementation plan](plans/2026-09-12-threads-workspace.md); publication of that breakdown awaits the requested to-tickets review step. Implementation has not begun.
+Status: requirements and final behavior defaults approved by Zach on 2026-09-12. The interview is complete. The approved [implementation plan](plans/2026-09-12-threads-workspace.md) has been published as 31 GitHub tickets in six dependency phases under the [Threads workspace milestone](https://github.com/millZach/Sotto/milestone/1). Publication and native dependencies are verified. Implementation has not begun as part of ticket publication.
 
 ## Confirmed direction
 

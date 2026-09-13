@@ -10,7 +10,13 @@
       "Show queued/submitting/accepted/failed or uncertain delivery distinctly; a lost acknowledgement is reconciled without automatic duplicate submission.",
       "Measure local send feedback separately from provider latency; target visible acknowledgement within 100 ms on the agreed Windows fixture and document actual measurements. Preserve disconnected-provider and managed-thread behavior."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 44,
+      "url": "https://github.com/millZach/Sotto/issues/44",
+      "blockers": []
+    }
   },
   {
     "id": 2,
@@ -23,7 +29,13 @@
       "Retain search and working/attention indicators. Settling or hiding a view never deletes history, working files, branches or running native work.",
       "An empty unstarted thread may choose any ready provider; a started native conversation stays with its original provider. Same-provider controls respect native capabilities. Verify the existing provider/coordinator separation."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 45,
+      "url": "https://github.com/millZach/Sotto/issues/45",
+      "blockers": []
+    }
   },
   {
     "id": 3,
@@ -36,7 +48,13 @@
       "Keep user scroll position while reading earlier messages; offer jump-to-latest without forcing scrolling. Long transcripts remain responsive.",
       "Treat message markup as content, not executable UI; inspect real Windows renders and keyboard interactions at desktop and minimum sizes."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 46,
+      "url": "https://github.com/millZach/Sotto/issues/46",
+      "blockers": []
+    }
   },
   {
     "id": 4,
@@ -51,7 +69,15 @@
       "Diagram content cannot execute arbitrary scripts or fetch arbitrary resources through the renderer.",
       "Verify representative sequence, flow and state diagrams, malformed input and light/dark presentation as themes become available."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 47,
+      "url": "https://github.com/millZach/Sotto/issues/47",
+      "blockers": [
+        46
+      ]
+    }
   },
   {
     "id": 5,
@@ -66,7 +92,15 @@
       "Persist sufficient activity for reload/reconnect to restore the work log without re-running tools or duplicating the final answer.",
       "Extract the shared activity presentation seam as part of this complete Codex path. Exercise native event fixtures and a bounded installed-client smoke journey."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 48,
+      "url": "https://github.com/millZach/Sotto/issues/48",
+      "blockers": [
+        46
+      ]
+    }
   },
   {
     "id": 6,
@@ -81,7 +115,15 @@
       "Reconnect/reload restores history and pending state without duplicate tool execution or messages.",
       "Keep the current streaming CLI unless concrete capability evidence warrants the SDK used by T3; compare that decision with the reference and verify an installed-client smoke journey."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 49,
+      "url": "https://github.com/millZach/Sotto/issues/49",
+      "blockers": [
+        48
+      ]
+    }
   },
   {
     "id": 7,
@@ -96,7 +138,15 @@
       "Recover from reconnect and replay without duplicated actions, output or answers.",
       "Verify ACP event fixtures and a bounded installed-client smoke journey against the shared adapter contract."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 50,
+      "url": "https://github.com/millZach/Sotto/issues/50",
+      "blockers": [
+        48
+      ]
+    }
   },
   {
     "id": 8,
@@ -111,7 +161,15 @@
       "Steer now uses the selected provider's supported native mechanism. If unsupported, explain that limitation without silently cancelling or pretending steering succeeded.",
       "Keep other threads usable during slow sends; test concurrent threads, interruption, failures, permissions waiting and managed-to-manual handoff."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 51,
+      "url": "https://github.com/millZach/Sotto/issues/51",
+      "blockers": [
+        44
+      ]
+    }
   },
   {
     "id": 9,
@@ -126,7 +184,15 @@
       "Route each answer to its original pending request even after pane changes or reconnect; resolve once and show failures without losing the request.",
       "Verify Codex, Claude and Grok request fixtures, simultaneous requests in different threads, and keyboard accessibility. Preserve existing policy and assignment authority."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 52,
+      "url": "https://github.com/millZach/Sotto/issues/52",
+      "blockers": [
+        48
+      ]
+    }
   },
   {
     "id": 10,
@@ -142,7 +208,16 @@
       "Closing a pane closes only its view; the agent keeps working and remains reachable in the sidebar.",
       "Provide a keyboard-accessible way to open/focus/close a split and verify minimum-width behavior. Extract a reusable thread-view boundary only as needed for this slice."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 53,
+      "url": "https://github.com/millZach/Sotto/issues/53",
+      "blockers": [
+        44,
+        45
+      ]
+    }
   },
   {
     "id": 11,
@@ -157,7 +232,15 @@
       "Offer focus/zoom for smaller windows and return to the retained layout. One-through-four arrangements are defaults, not an implicit hard cap.",
       "Handle closing, moving and adding panes without losing drafts or live state; verify cross-project layout and recovery at desktop/minimum sizes."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 54,
+      "url": "https://github.com/millZach/Sotto/issues/54",
+      "blockers": [
+        53
+      ]
+    }
   },
   {
     "id": 12,
@@ -172,7 +255,15 @@
       "Read the thread's bound working directory, including a worktree when present; missing files and unavailable folders produce recoverable states.",
       "Retain panel state across focus changes and integrate with split panes when available. Verify actual Electron file browsing without exposing unrestricted renderer filesystem access."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 55,
+      "url": "https://github.com/millZach/Sotto/issues/55",
+      "blockers": [
+        45
+      ]
+    }
   },
   {
     "id": 13,
@@ -187,7 +278,15 @@
       "On app restart show the true terminal lifecycle rather than claiming a dead process resumed; support a clear reopen action.",
       "Verify on the target Windows desktop, including a running dev server and shell interruption, and preserve platform-appropriate launch behavior."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 56,
+      "url": "https://github.com/millZach/Sotto/issues/56",
+      "blockers": [
+        55
+      ]
+    }
   },
   {
     "id": 14,
@@ -202,7 +301,15 @@
       "Keep page state across panel focus/pinning; clearly identify the browser destination and handle unavailable local servers.",
       "Use the desktop browser security boundary so visited pages do not inherit Sotto's privileged application bridge. Verify an actual local app and an external link."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 57,
+      "url": "https://github.com/millZach/Sotto/issues/57",
+      "blockers": [
+        55
+      ]
+    }
   },
   {
     "id": 15,
@@ -217,7 +324,15 @@
       "Worktree setup failure leaves a recoverable thread draft and never routes a task into the wrong directory; preserve project-level memory scope across worktrees.",
       "Verify concurrent native threads do not overwrite each other's working files. Include worktree status/open/reveal behavior and preserve user changes during cleanup."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 58,
+      "url": "https://github.com/millZach/Sotto/issues/58",
+      "blockers": [
+        45
+      ]
+    }
   },
   {
     "id": 16,
@@ -233,7 +348,16 @@
       "Support large/binary/unavailable files with explicit fallback and copy/open actions.",
       "Verify two threads with different worktrees and a shared-working-copy case; this slice must be useful before commit and PR controls land."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 59,
+      "url": "https://github.com/millZach/Sotto/issues/59",
+      "blockers": [
+        55,
+        58
+      ]
+    }
   },
   {
     "id": 17,
@@ -248,7 +372,15 @@
       "Refresh the diff and branch state after actions; a failed action remains actionable and never reports success early.",
       "Verify normal commit, empty commit prevention, dirty branch switching and separate worktree isolation using temporary repositories."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 60,
+      "url": "https://github.com/millZach/Sotto/issues/60",
+      "blockers": [
+        59
+      ]
+    }
   },
   {
     "id": 18,
@@ -263,7 +395,15 @@
       "Open relevant PR links according to browser preference and associate the surface with the correct branch/worktree.",
       "Verify against a controlled repository or faithful API fixtures plus an authorized end-to-end smoke action; do not silently merge or publish merely from viewing a thread."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 61,
+      "url": "https://github.com/millZach/Sotto/issues/61",
+      "blockers": [
+        60
+      ]
+    }
   },
   {
     "id": 19,
@@ -282,7 +422,19 @@
       "Respect provider capability differences, including Grok's lack of native rollback in the pinned reference; never present a file-only change as a complete conversation rewind.",
       "Guard active/pending work and preserve unrelated edits; verify interrupted revert recovery and unsupported-provider states."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 62,
+      "url": "https://github.com/millZach/Sotto/issues/62",
+      "blockers": [
+        48,
+        49,
+        50,
+        58,
+        59
+      ]
+    }
   },
   {
     "id": 20,
@@ -297,7 +449,15 @@
       "Refresh changed catalogs and distinguish native commands from skills; preserve normal manual native syntax and keyboard send behavior.",
       "Verify native invocation and catalog failures. Build the shared picker/capability seam within this complete Codex slice; no skill editing or installation UI."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 2,
+    "github": {
+      "number": 63,
+      "url": "https://github.com/millZach/Sotto/issues/63",
+      "blockers": [
+        44
+      ]
+    }
   },
   {
     "id": 21,
@@ -312,7 +472,15 @@
       "Show only the selected provider's relevant catalog, including skills found in the thread's worktree scope.",
       "Verify selected and manually typed invocation with native fixtures and an installed-client smoke journey; no skill management UI."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 64,
+      "url": "https://github.com/millZach/Sotto/issues/64",
+      "blockers": [
+        63
+      ]
+    }
   },
   {
     "id": 22,
@@ -327,7 +495,15 @@
       "Refresh account/directory changes and show unavailable discovery or invocation honestly.",
       "Cover catalog errors, multiple mentions and reconnect in fixtures plus an installed-client smoke journey; no new Sotto skill engine."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 65,
+      "url": "https://github.com/millZach/Sotto/issues/65",
+      "blockers": [
+        63
+      ]
+    }
   },
   {
     "id": 23,
@@ -344,7 +520,17 @@
       "Handle missing fields, caching, provider resets and model changes without inventing counts, double-counting replayed events or presenting unavailable data as zero.",
       "Verify known usage fixtures and compare installed-client observations; detailed usage reports remain outside scope."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 66,
+      "url": "https://github.com/millZach/Sotto/issues/66",
+      "blockers": [
+        48,
+        49,
+        50
+      ]
+    }
   },
   {
     "id": 24,
@@ -359,7 +545,15 @@
       "Match Keep full history dismissal per context snapshot and native Claude resume-return choices, including Don't ask again; do not claim the heuristic measures cache expiry.",
       "Preserve native auto-compaction defaults and explicit overrides; verify clock-controlled boundary cases and Codex/Claude/Grok capability differences without a custom summarizer."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 67,
+      "url": "https://github.com/millZach/Sotto/issues/67",
+      "blockers": [
+        66
+      ]
+    }
   },
   {
     "id": 25,
@@ -376,7 +570,17 @@
       "Use normal native Codex skills and conversation behavior, not the constrained command parser. Retrieve relevant existing global memory without granting new authority or leaking project-private context.",
       "Verify restart, provider disconnect, changed coordinator defaults for new chats and coexistence with explicit project-thread management. No automatic project creation or delegation."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 3,
+    "github": {
+      "number": 68,
+      "url": "https://github.com/millZach/Sotto/issues/68",
+      "blockers": [
+        44,
+        46,
+        63
+      ]
+    }
   },
   {
     "id": 26,
@@ -392,7 +596,16 @@
       "Changing the configured coordinator affects new chats and leaves existing Codex/Claude bindings intact.",
       "Verify native create/send/resume, restart, skills and errors, without introducing a separate workflow harness."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 69,
+      "url": "https://github.com/millZach/Sotto/issues/69",
+      "blockers": [
+        68,
+        64
+      ]
+    }
   },
   {
     "id": 27,
@@ -408,7 +621,16 @@
       "Preserve project-thread management and global versus project memory boundaries.",
       "Verify native create/send/resume, restart, skill invocation and connection failure without automatic project work."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 70,
+      "url": "https://github.com/millZach/Sotto/issues/70",
+      "blockers": [
+        68,
+        65
+      ]
+    }
   },
   {
     "id": 28,
@@ -425,7 +647,17 @@
       "Prevent speech from being routed to a different chat after focus changes or interpreted as an implicit authorization to create/manage project work.",
       "Verify all three coordinator providers and a physical microphone-to-response journey on Windows; report measured latency honestly and retain the existing voice-budget issue's unresolved limits."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 5,
+    "github": {
+      "number": 71,
+      "url": "https://github.com/millZach/Sotto/issues/71",
+      "blockers": [
+        68,
+        69,
+        70
+      ]
+    }
   },
   {
     "id": 29,
@@ -440,7 +672,15 @@
       "Show editable/copyable output and preserve the original chat. The action never creates a project, starts a thread or delegates work.",
       "Evaluate a representative fixture set of short/long brainstorming, changed decisions and missing details against a documented fidelity/usefulness rubric, including human review before declaring the format proven."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 4,
+    "github": {
+      "number": 72,
+      "url": "https://github.com/millZach/Sotto/issues/72",
+      "blockers": [
+        68
+      ]
+    }
   },
   {
     "id": 30,
@@ -453,11 +693,19 @@
       "Supersede the prior black-only product requirement explicitly while preserving dictation behavior and the floating widget's separate behavior unless technically required.",
       "Visually verify contrast, focus, native dropdowns, motion preferences and scale coverage; evolve the capture matrix rather than deleting quality gates."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 1,
+    "github": {
+      "number": 73,
+      "url": "https://github.com/millZach/Sotto/issues/73",
+      "blockers": []
+    }
   },
   {
     "id": 31,
-    "existingIssueBlockers": [24],
+    "existingIssueBlockers": [
+      24
+    ],
     "title": "Verify the complete daily workspace and recovery journey",
     "deps": [
       4,
@@ -482,6 +730,28 @@
       "Measure local send feedback, stream rendering and pane responsiveness separately from provider/network latency on representative long histories; fix material regressions and retain explicit unsupported-provider states.",
       "Inspect actual Windows desktop/minimum-size layouts and repeat important journeys on supported macOS before calling them cross-platform verified. Confirm final behavior against the user references; native delivery under existing #24 is a release gate."
     ],
-    "status": "draft"
+    "status": "published",
+    "phase": 6,
+    "github": {
+      "number": 74,
+      "url": "https://github.com/millZach/Sotto/issues/74",
+      "blockers": [
+        47,
+        51,
+        52,
+        54,
+        56,
+        57,
+        61,
+        62,
+        67,
+        69,
+        70,
+        71,
+        72,
+        73,
+        24
+      ]
+    }
   }
 ]
