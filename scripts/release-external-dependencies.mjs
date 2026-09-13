@@ -33,6 +33,8 @@ const reviewedInventories = Object.freeze({
       'node:url',
       'node:util',
       'node:worker_threads',
+      // Open VSX imports inflate VSIX entries with a bounded output size.
+      'node:zlib',
       'os',
       'path',
       'stream',

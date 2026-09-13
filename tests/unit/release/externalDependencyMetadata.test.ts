@@ -29,6 +29,7 @@ const mainImports = [
   'node:url',
   'node:util',
   'node:worker_threads',
+  'node:zlib',
   'os',
   'path',
   'stream',
@@ -73,5 +74,11 @@ describe('packaged external dependency metadata', () => {
   it('rejects a declared package external when its packaged module is absent', () => {
     expect(() => verifyExternalDependencyInventories(exactInventories, [], builtinModules))
       .toThrow('external package is missing from app.asar: zod')
+  })
+
+  it('requires the compression builtin used to unpack community themes', () => {
+    const withoutCompression = builtinModules.filter(name => name !== 'zlib' && name !== 'node:zlib')
+    expect(() => verifyExternalDependencyInventories(exactInventories, ['node-pty', 'zod'], withoutCompression))
+      .toThrow('external Node builtin is unavailable: node:zlib')
   })
 })
