@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftOwnerKey, requestDraftSchema, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftOwnerKey, requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -276,7 +276,7 @@ export class RequestAnswerStore {
         // A command error alone is not evidence of nondelivery. Main checks the original request/intent.
         try {
           const draft = await binding.bridge.check(binding.target)
-          this.set(ownerId, requestId, { ...current, revision: draft?.revision ?? current.revision, phase: 'failed', error: outcome.error, choice: null })
+          await this.checked(ownerId, requestId, draft, 'failed', outcome.error)
         } catch { this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: outcome.error }) }
       } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
     }
@@ -291,11 +291,22 @@ export class RequestAnswerStore {
     if (binding) {
       try {
         const draft = await binding.bridge.check(binding.target)
-        this.set(ownerId, requestId, { ...entry, revision: draft?.revision ?? entry.revision, phase: 'idle', choice: null, error: null, save: 'saved', saveError: null })
+        await this.checked(ownerId, requestId, draft, 'idle', null)
       } catch (error) { this.set(ownerId, requestId, { ...entry, saveError: draftError(error) }) }
       return
     }
     this.set(ownerId, requestId, { ...entry, phase: 'idle', choice: null })
+  }
+
+  private async checked(ownerId: string, requestId: string, draft: RequestDraft | null, phase: 'idle' | 'failed', error: string | null): Promise<void> {
+    const current = this.get(ownerId, requestId)
+    // Checking delivery is not proof that newer local content was saved. A failed preflight can leave
+    // only an older revision (or nothing) in main; retain the local edit and persist it after release.
+    const needsSave = !draft || draft.revision < current.revision || JSON.stringify(draft.selections) !== JSON.stringify(current.selections)
+    this.set(ownerId, requestId, { ...current, phase, error, choice: null,
+      revision: needsSave ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft.revision,
+      save: needsSave ? 'saving' : 'saved', saveError: null })
+    if (needsSave) await this.flush(ownerId, requestId)
   }
 
   /** Forget answers for requests the owner no longer has. */

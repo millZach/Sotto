@@ -25,7 +25,7 @@ export interface RequestDraftOwnerState {
 }
 
 /** Unsent structured answers have their own durable aggregate, independent of both composers and history.
- * It never calls a provider. Native delivery and request liveness remain main-owned evidence.
+ * It never submits an answer. Native delivery and request liveness remain main-owned evidence.
  */
 export class RequestDraftService {
   private saved: Saved = { version: 1, drafts: [] }
