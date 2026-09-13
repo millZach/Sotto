@@ -1,6 +1,6 @@
 # Phase 1 implementation and verification
 
-Local integration: `work/threads-phase-1` in `.worktrees/threads-phase-1`. Base `7e3809f` includes the required native-provider foundation `52f1f42`. Scope is #44, #45, #46 and #73. The parent checkout and its original untracked artifacts are preserved. Nothing has been pushed, merged into main, published or closed on GitHub.
+Local integration: `work/threads-phase-1` in `.worktrees/threads-phase-1`. Base `7e3809f` includes the required native-provider foundation `52f1f42`. Scope is #44, #45, #46 and #73. The parent checkout and its original untracked artifacts are preserved. At the end of implementation verification, this work was committed locally; the subsequent user-authorized push and merge are recorded in the GitHub pull request.
 
 ## Acceptance checklist
 
@@ -53,4 +53,4 @@ Parent inspection covers the combined rich transcript in dark/light, readable ta
 
 Useful integrated screenshots are in `artifacts/crossing/phase-one-*.png`; focused worker captures remain alongside their reports. The shipped window minimum remains 820 px;760 px is an additional stress fixture, not a claimed window-setting change.
 
-The tests run the real Windows main/preload/renderer with controlled provider and speech effects. macOS, physical microphone, paid live providers and installer/release packaging were not exercised. Native-provider release gate #24 remains separate. The user's running development app was not replaced. The local worktree is the delivery artifact; no remote publishing workflow is implied.
+The tests run the real Windows main/preload/renderer with controlled provider and speech effects. macOS, physical microphone, paid live providers and installer/release packaging were not exercised. Native-provider release gate #24 remains separate. The user's running development app was not replaced. This report records source implementation and Windows verification. The subsequent authorized source push and merge do not publish an installer or replace the running app.

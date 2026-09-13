@@ -8,6 +8,3 @@ contextBridge.exposeInMainWorld('voicePerf', {
   transcribe: request => ipcRenderer.invoke('perf:transcribe', request),
   cancelTranscription: id => ipcRenderer.invoke('perf:cancel', id),
 })
-
-
-

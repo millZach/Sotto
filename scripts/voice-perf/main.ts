@@ -56,4 +56,3 @@ app.whenReady().then(async () => {
   await window.loadFile(join(root, 'artifacts/voice-perf/build/renderer/scripts/voice-perf/capture.html'))
 }).catch(() => { console.error('Voice benchmark initialization failed; verify the saved OpenRouter key and fixture paths.'); app.exit(1) })
 app.on('before-quit', () => control?.dispose())
-
