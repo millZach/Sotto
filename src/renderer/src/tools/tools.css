@@ -68,6 +68,15 @@
 .tools-panel__path { display: flex; align-items: flex-start; gap: 2px; min-width: 0; margin-top: 2px; }
 .tools-panel__path-text { flex: 1; min-width: 0; margin-right: 4px; padding-top: 5px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; user-select: text; }
 .tools-panel__path-part { white-space: nowrap; }
+/* In a short window the tool gets the height: the folder keeps one row and loses its start, never the folder names
+   nearest the work. The whole path stays in its text for assistive technology, in its title, and behind Copy path. */
+@media (max-height: 640px) {
+  .tools-panel__identity { padding-block: 6px; }
+  .tools-panel__path { align-items: center; margin-top: 0; }
+  .tools-panel__path-text { padding-top: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  /* Chromium still breaks at <wbr> inside nowrap text. */
+  .tools-panel__path-text wbr { display: none; }
+}
 
 .tools-panel__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; container: tools-body / inline-size; }
 .tools-panel__status:empty { display: none; }
