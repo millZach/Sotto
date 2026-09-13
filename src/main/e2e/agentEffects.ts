@@ -53,7 +53,8 @@ export class E2EAgentHost implements AgentHost {
     return this.snapshot()
   }
   async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.state) }
-  async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+  async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    void forceReload // Synthetic catalogs have no cache or native process.
     if (!this.state.connected || !this.state.capabilities.skills) throw new Error('Connect the phase-three fixture to browse skills.')
     const thread = this.state.threads.find(value => value.id === threadId)
     const providerId = scope?.providerId ?? thread?.providerId
@@ -76,9 +77,12 @@ export class E2EAgentHost implements AgentHost {
     }
     this.commands.add(command.commandId)
     if (command.type === 'create-project') this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
-    else if (command.type === 'create-thread') this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId,
-      ...(this.state.models.find(model => model.id === command.modelId)?.providerId ? { providerId: this.state.models.find(model => model.id === command.modelId)!.providerId! } : {}),
-      runtimeMode: command.runtimeMode ?? 'approval-required', reasoningEffort: command.reasoningEffort ?? 'low', status: 'idle', messages: [], requests: [] })
+    else if (command.type === 'create-thread') {
+      const providerId = this.state.models.find(model => model.id === command.modelId)?.providerId
+      this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId,
+        ...(providerId ? { providerId } : {}),
+        runtimeMode: command.runtimeMode ?? 'approval-required', reasoningEffort: command.reasoningEffort ?? 'low', status: 'idle', messages: [], requests: [] })
+    }
     else {
       const thread = this.state.threads.find(t => t.id === command.threadId)
       if (!thread) return { accepted: false }
