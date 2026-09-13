@@ -35,7 +35,7 @@ export type { ThemeAppearance, ThemeCollection, ThemeColorRole, ThemeColors, The
 
 export const THEME_FILE_VERSION = 1 as const
 /**
- * Both halves start on Ocean, the theme selected in the T3 Code reference the
+ * Both halves start on Tide (id `ocean`, T3's Ocean), the theme selected in the T3 Code reference the
  * user chose from; it is also where a half lands when its theme is removed.
  */
 export const DEFAULT_THEME_ID = 'ocean'
@@ -57,12 +57,17 @@ function decodeThemeColors(colors: Readonly<Record<ThemeColorRole, string>>): Th
 /** The standard T3 Code look, as T3 Code wears it with no theme installed. */
 export const T3_CODE_THEME: ThemeDefinition = {
   id: 't3-code',
-  label: 'T3 Code',
+  label: 'Sotto',
   appearance: 'light',
   colors: decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS),
   variants: { dark: decodeThemeColors(T3_CODE_DARK_THEME_COLORS) },
 }
 
+/**
+ * Sotto names its built-ins itself; the palettes and ids stay T3's, so saved
+ * selections and T3 theme files keep resolving. By id: t3-code Sotto, t3-chat
+ * Rose, grove Fern, ocean Tide, ember Copper, iris Dusk.
+ */
 export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
   T3_CODE_THEME,
   T3_CHAT_THEME,

@@ -136,7 +136,7 @@ describe('diagram palette and viewer geometry', () => {
     expect(mixHex('#fff', '#000', 1)).toBe('#ffffff')
   })
 
-  it('falls back to Ocean dark or light colours when tokens cannot be read', () => {
+  it('falls back to Tide dark or light colours when tokens cannot be read', () => {
     const root = document.createElement('html')
     expect(readDiagramPalette(root)).toMatchObject({ dark: true, text: '#fffaff', accent: '#70b9ee' })
     root.dataset.theme = 'light'

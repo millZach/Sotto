@@ -108,7 +108,7 @@ test.describe('appearance rendered evidence', () => {
       expect(elapsed.attribute).toBeLessThan(50)
       expect(elapsed.painted).toBeGreaterThanOrEqual(0)
       await writeFile(resolve(evidenceRoot, 'switch-timing.json'), `${JSON.stringify(elapsed, null, 2)}\n`, 'utf8')
-      const iris = page.getByRole('button', { name: /^Use Iris theme/u })
+      const iris = page.getByRole('button', { name: /^Use Dusk theme/u })
       await iris.focus()
       await page.keyboard.press('Enter')
       await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'iris')

@@ -53,7 +53,7 @@ describe('theme library changes', () => {
     expect(() => installThemesPatch(full, [night])).toThrow(/up to 64/u)
   })
 
-  it('duplicates as a numbered copy and removes with the selected half falling back to Ocean', () => {
+  it('duplicates as a numbered copy and removes with the selected half falling back to Tide', () => {
     const night = theme('Night', 'dark')
     const state: LibraryState = { lightTheme: 'iris', darkTheme: 'night', customThemes: [night] }
     const copy = versionedCopy(night, state)
@@ -108,6 +108,11 @@ describe('theme editor saves', () => {
     expect(() => editorSavePatch(empty, { name: 'Aurora', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/removed while you were editing/u)
     expect(() => editorSavePatch(empty, { name: '  ', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/Name your theme/u)
     expect(() => editorSavePatch(empty, { name: 'Ocean', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/reserved/u)
+    // A built-in's own name is taken too, whatever its id; a custom theme that already carries one keeps it.
+    expect(() => editorSavePatch(empty, { name: 'tide', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow('“Tide” is a built-in theme. Pick another name.')
+    expect(() => editorSavePatch({ ...empty, customThemes: [aurora] }, { name: 'Dusk', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/built-in theme/u)
+    const rose = theme('Rose', 'dark')
+    expect(editorSavePatch({ ...empty, customThemes: [rose] }, { name: 'Rose', editingTheme: rose, activeAppearance: 'dark', colorsByAppearance: both, advanced: true }).theme).toMatchObject({ id: 'rose', label: 'Rose' })
   })
 })
 
@@ -223,7 +228,7 @@ describe('appearance settings', () => {
     return { save }
   }
 
-  it('asks before removing a theme, and the half it owned falls back to Ocean', async () => {
+  it('asks before removing a theme, and the half it owned falls back to Tide', async () => {
     const user = userEvent.setup()
     const night = theme('Night', 'dark')
     const { save } = renderSettings({ appearance: 'dark', darkTheme: 'night', customThemes: [night] })
@@ -242,8 +247,8 @@ describe('appearance settings', () => {
     const user = userEvent.setup()
     renderSettings({})
     render(<ThemeEditorHost settings={DEFAULT_SETTINGS} onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
-    await user.click(screen.getByRole('button', { name: 'Duplicate Grove' }))
-    expect(await screen.findByLabelText('Theme name')).toHaveValue('Grove copy')
+    await user.click(screen.getByRole('button', { name: 'Duplicate Fern' }))
+    expect(await screen.findByLabelText('Theme name')).toHaveValue('Fern copy')
   })
 
   it('previews every slider step at once and saves only where the hand settles', async () => {

@@ -66,7 +66,16 @@ describe('built-in themes', () => {
     }
   })
 
-  it('paints each half from the theme that can render it, falling back to Ocean', () => {
+  it('gives the built-ins Sotto names, once each, on the T3 ids and palettes', () => {
+    expect(BUILT_IN_THEMES.map(theme => [theme.id, theme.label])).toEqual([
+      ['t3-code', 'Sotto'], ['t3-chat', 'Rose'], ['grove', 'Fern'], ['ocean', 'Tide'], ['ember', 'Copper'], ['iris', 'Dusk'],
+    ])
+    const labels = BUILT_IN_THEMES.map(theme => theme.label.toLowerCase())
+    expect(new Set(labels).size).toBe(labels.length)
+    for (const t3Name of ['t3 code', 't3 chat', 'grove', 'ocean', 'ember', 'iris']) expect(labels).not.toContain(t3Name)
+  })
+
+  it('paints each half from the theme that can render it, falling back to Tide', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffaf0' } })
     const selection = { lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] }
     expect(resolveThemeFor(selection, 'light').theme.id).toBe(lightOnly.id)

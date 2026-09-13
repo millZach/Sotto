@@ -70,7 +70,7 @@ describe('settings', () => {
     expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
   })
 
-  it('opens a settings file written before appearance existed in dark Ocean, whatever its widget theme', () => {
+  it('opens a settings file written before appearance existed in dark Tide, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
       for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete legacy[key]
@@ -80,7 +80,7 @@ describe('settings', () => {
     }
   })
 
-  it('migrates a settings file from the accent era: the mode stays, the accent is dropped, both halves start on Ocean', () => {
+  it('migrates a settings file from the accent era: the mode stays, the accent is dropped, both halves start on Tide', () => {
     for (const accent of ['teal', 'blue', 'violet', 'rose', 'amber', 'green', 'chartreuse']) {
       const older = { ...customSettings, appearance: 'system', accent } as Record<string, unknown>
       for (const key of ['lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete older[key]
@@ -89,6 +89,13 @@ describe('settings', () => {
       expect(parsed).toMatchObject({ appearance: 'system', lightTheme: 'ocean', darkTheme: 'ocean', appearanceContrast: 100, glassOpacity: 80, customThemes: [] })
       expect(settingsSchema.parse({ ...parsed, accent })).toEqual(parsed)
     }
+  })
+
+  it('keeps a selection saved under the built-in ids from before the rename', () => {
+    const saved = parseSettings({ ...customSettings, lightTheme: 'grove', darkTheme: 'iris' })
+    expect([saved.lightTheme, saved.darkTheme]).toEqual(['grove', 'iris'])
+    expect(parseSettings({ ...customSettings, lightTheme: 't3-code', darkTheme: 't3-code' })).toMatchObject({ lightTheme: 't3-code', darkTheme: 't3-code' })
+    expect(parseSettings({ ...customSettings, lightTheme: 't3-chat', darkTheme: 'ember' })).toMatchObject({ lightTheme: 't3-chat', darkTheme: 'ember' })
   })
 
   it('keeps every valid appearance and theme choice and recovers an unusable one field by field', () => {

@@ -287,13 +287,13 @@ describe('Sotto application onboarding integration', () => {
 
     await user.click(screen.getByRole('button', { name: 'Use light mode' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    await user.click(screen.getByRole('button', { name: 'Use Iris light mode' }))
+    await user.click(screen.getByRole('button', { name: 'Use Dusk light mode' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'iris')
     expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Use Iris light mode' })).toHaveAttribute('aria-pressed', 'true')
-    // Only the light half moved: the dark half still belongs to Ocean.
-    expect(screen.getByRole('button', { name: 'Use Ocean dark mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
+    // Only the light half moved: the dark half still belongs to Tide.
+    expect(screen.getByRole('button', { name: 'Use Tide dark mode' })).toHaveAttribute('aria-pressed', 'true')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]!.patch).toEqual({ appearance: 'light' })
@@ -308,7 +308,7 @@ describe('Sotto application onboarding integration', () => {
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'iris')
     expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Use Iris light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('restores the truthful persisted look when the final overlapping appearance save fails', async () => {
@@ -328,7 +328,7 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('button', { name: 'Use light mode' }))
-    await user.click(screen.getByRole('button', { name: /^Use Ember theme/u }))
+    await user.click(screen.getByRole('button', { name: /^Use Copper theme/u }))
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'ember')
 
@@ -340,7 +340,7 @@ describe('Sotto application onboarding integration', () => {
 
     await waitFor(() => expect(root).toHaveAttribute('data-theme-id', 'ocean'))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(screen.getByRole('button', { name: 'Use Ocean theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Tide theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
     expect(document.body).toHaveTextContent(/could not be saved/i)
   })
 

@@ -137,9 +137,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Appearance.** The main window's mode setting: System, Light or Dark. Dark is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is the floating widget's mode, not a Theme. Avoid: "theme" for the mode.
 
-**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (T3 Code, T3 Chat, Grove, Ocean, Ember, Iris) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
+**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (Sotto, Rose, Fern, Tide, Copper, Dusk; T3 Code's palettes under Sotto's own names) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
 
-**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Ocean.
+**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Tide.
 
 **Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
 

@@ -136,7 +136,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   // Dark is the mode every install had before appearance became a choice, so
   // an upgraded settings file keeps its mode (ADR-0009). The palette is a theme
-  // per half; both start on Ocean and the old accent is dropped (ADR-0011).
+  // per half; both start on Tide and the old accent is dropped (ADR-0011).
   appearance: 'dark',
   lightTheme: DEFAULT_THEME_ID,
   darkTheme: DEFAULT_THEME_ID,

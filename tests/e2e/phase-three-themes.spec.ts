@@ -110,7 +110,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await page.emulateMedia({ colorScheme: 'dark' })
     await setWindowSize(launched, 1600, 1000)
 
-    // First run: Ocean for both halves, the accent picker gone.
+    // First run: Tide (id ocean) for both halves, the accent picker gone.
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
     await expect(html(page)).toHaveAttribute('data-theme-id', 'ocean')
     const section = await openAppearance(page)
@@ -118,10 +118,15 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect(section.getByText('Choose light, dark or system, then a theme for each.')).toBeVisible()
     const cards = section.locator('.theme-grid > *')
     await expect(cards).toHaveCount(6)
+    // Sotto's own names for T3's six palettes, in gallery order, Tide chosen for both halves.
+    await expect(cards.locator('.theme-card__title')).toHaveText(['Sotto', 'Rose', 'Fern', 'Tide', 'Copper', 'Dusk'])
+    await expect(section.getByRole('button', { name: 'Use Tide theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    await section.locator('.theme-grid').scrollIntoViewIfNeeded()
+    await shot(page, 'themes-default-1600-dark')
     // T3's gallery track: three columns on the wide page.
     const columns = await section.locator('.theme-grid').evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(' ').length)
     expect(columns).toBe(3)
-    const darkOcean = await canvas(page)
+    const darkTide = await canvas(page)
 
     // The chosen tile's ring sits inside the settings scroller.
     const darkTile = section.getByRole('button', { name: 'Use dark mode' })
@@ -144,14 +149,14 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
     const unchosen = await tileRing(page, darkTile)
     expect(near(unchosen.edge, unchosen.accent), JSON.stringify(unchosen)).toBe(false)
-    await section.getByRole('button', { name: 'Use Grove light mode' }).click()
+    await section.getByRole('button', { name: 'Use Fern light mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
-    await section.getByRole('button', { name: 'Use Iris dark mode' }).click()
+    await section.getByRole('button', { name: 'Use Dusk dark mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
     await expect.poll(async () => { const saved = await savedSettings(page); return [saved.appearance, saved.lightTheme, saved.darkTheme] }).toEqual(['light', 'grove', 'iris'])
     await section.getByRole('button', { name: 'Use dark mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'iris')
-    expect(await canvas(page)).not.toBe(darkOcean)
+    expect(await canvas(page)).not.toBe(darkTide)
 
     // System follows Windows live, picking the matching half.
     await section.getByRole('button', { name: 'Follow the system appearance' }).click()
@@ -299,18 +304,18 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect.poll(async () => (await savedSettings(page)).customThemes.map(theme => theme.label)).toEqual(['Aurora', 'Harbor'])
     await expect(section.getByRole('button', { name: /^Use Harbor/u }).first()).toBeVisible()
 
-    // Duplicate, then remove with the owned half falling back to Ocean.
-    await section.getByRole('button', { name: 'Duplicate Grove' }).click()
+    // Duplicate, then remove with the owned half falling back to Tide.
+    await section.getByRole('button', { name: 'Duplicate Fern' }).click()
     const copy = page.getByRole('dialog', { name: 'Create theme' })
-    await expect(copy.getByLabel('Theme name', { exact: true })).toHaveValue('Grove copy')
+    await expect(copy.getByLabel('Theme name', { exact: true })).toHaveValue('Fern copy')
     await copy.getByRole('button', { name: 'Create theme' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'grove-copy')
-    await section.getByRole('button', { name: 'Remove Grove copy' }).click()
-    const confirm = page.getByRole('dialog', { name: 'Remove “Grove copy”?' })
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'fern-copy')
+    await section.getByRole('button', { name: 'Remove Fern copy' }).click()
+    const confirm = page.getByRole('dialog', { name: 'Remove “Fern copy”?' })
     await expect(confirm).toBeVisible()
     await confirm.getByRole('button', { name: 'Cancel' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'grove-copy')
-    await section.getByRole('button', { name: 'Remove Grove copy' }).click()
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'fern-copy')
+    await section.getByRole('button', { name: 'Remove Fern copy' }).click()
     await confirm.getByRole('button', { name: 'Remove theme' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'ocean')
     await expect.poll(async () => (await savedSettings(page)).darkTheme).toBe('ocean')

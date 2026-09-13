@@ -102,7 +102,7 @@ describe('main-window theme tokens', () => {
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])
   })
 
-  it('declares Ocean as the first-frame palette for both modes, with every role present', () => {
+  it('declares Tide (ocean) as the first-frame palette for both modes, with every role present', () => {
     const blocks = parseTokenBlocks()
     const base = blocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--theme-canvas'))!
     const light = blocks.find(block => block.selectors.includes(":root[data-theme='light']") && block.declarations.has('--theme-canvas'))!

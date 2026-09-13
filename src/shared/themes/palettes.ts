@@ -5,7 +5,8 @@
  * d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3: the role list and the T3 Chat,
  * Grove, Ocean, Ember and Iris palettes from packages/shared/src/themePalettes.ts,
  * and the standard T3 Code palettes from apps/web/src/themePalette.ts.
- * The colour values are unchanged. MIT License, Copyright (c) 2026 T3 Tools Inc.;
+ * The colour values and ids are unchanged; Sotto shows them as Rose, Fern, Tide,
+ * Copper and Dusk, and the standard look as Sotto. MIT License, Copyright (c) 2026 T3 Tools Inc.;
  * the full notice is in THIRD_PARTY_NOTICES.md.
  */
 
@@ -92,7 +93,7 @@ export interface ThemeDefinition {
 
 export const T3_CHAT_THEME: ThemeDefinition = {
   id: 't3-chat',
-  label: 'T3 Chat',
+  label: 'Rose',
   appearance: 'light',
   colors: {
     canvas: 'oklch(0.982446 0.010114 325.653)',
@@ -218,7 +219,7 @@ export const T3_CHAT_THEME: ThemeDefinition = {
 
 export const GROVE_THEME: ThemeDefinition = {
   id: 'grove',
-  label: 'Grove',
+  label: 'Fern',
   appearance: 'light',
   colors: {
     canvas: 'oklch(0.972369 0.005497 157.15)',
@@ -344,7 +345,7 @@ export const GROVE_THEME: ThemeDefinition = {
 
 export const OCEAN_THEME: ThemeDefinition = {
   id: 'ocean',
-  label: 'Ocean',
+  label: 'Tide',
   appearance: 'light',
   colors: {
     canvas: 'oklch(0.974199 0.002856 241.597)',
@@ -470,7 +471,7 @@ export const OCEAN_THEME: ThemeDefinition = {
 
 export const EMBER_THEME: ThemeDefinition = {
   id: 'ember',
-  label: 'Ember',
+  label: 'Copper',
   appearance: 'light',
   colors: {
     canvas: 'oklch(0.976527 0.002685 60.725)',
@@ -596,7 +597,7 @@ export const EMBER_THEME: ThemeDefinition = {
 
 export const IRIS_THEME: ThemeDefinition = {
   id: 'iris',
-  label: 'Iris',
+  label: 'Dusk',
   appearance: 'light',
   colors: {
     canvas: 'oklch(0.976531 0.003855 303.226)',

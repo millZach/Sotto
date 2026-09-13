@@ -5,7 +5,7 @@
    state/appearance.ts writes the active theme's roles onto the root as
    --theme-* custom properties, together with data-theme="light|dark" (the
    RESOLVED mode) and data-theme-id. The --theme-* values in the first two
-   blocks are only first-paint defaults (Ocean, the default theme) for the
+   blocks are only first-paint defaults (Tide, the default theme) for the
    moment before that script runs.
 
    Feature CSS never reads --theme-* or branches on the theme id: it reads the

@@ -1,15 +1,15 @@
 # Phase 3 themes
 
-Scope: branch `work/phase3-themes`. The main window's Accent chooser is replaced with T3 Code's Themes capability, from reference pin `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3` (MIT, T3 Tools Inc.). Decision record: ADR-0011. Open VSX hardening is recorded separately in `phase-3-themes-network.md`. Target: Windows desktop Electron, pointer and keyboard. Phone layouts are out of scope.
+Scope: branch `work/phase3-themes`. The built-ins were renamed late at the user's request; any older note or capture that says T3 Code, T3 Chat, Grove, Ocean, Ember or Iris means Sotto, Rose, Fern, Tide, Copper or Dusk. The main window's Accent chooser is replaced with T3 Code's Themes capability, from reference pin `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3` (MIT, T3 Tools Inc.). Decision record: ADR-0011. Open VSX hardening is recorded separately in `phase-3-themes-network.md`. Target: Windows desktop Electron, pointer and keyboard. Phone layouts are out of scope.
 
 ## Acceptance checklist
 
 - [x] Accent chooser gone, with a safe migration. `accent` is dropped on read, and a patch carrying it is accepted and ignored. Upgraded files keep their mode. Covered by `settings.test.ts`, and on restart the saved `settings.json` has no `accent`.
 - [x] System, Light and Dark tiles, with a visible ring on the chosen one. The E2E samples a real capture: the Dark tile's edge pixel is rgb(162, 210, 244), exactly the accent ink, and differs once Light is chosen.
-- [x] Independent light and dark halves. Grove for Light and Iris for Dark saved and painted separately. System follows `prefers-color-scheme` live.
-- [x] Six exact T3 built-ins, with Ocean the default for both halves. Palettes are compared against the reference in `themes.test.ts`, with attribution in source, THIRD_PARTY_NOTICES and ADR-0011.
+- [x] Independent light and dark halves. Fern for Light and Dusk for Dark saved and painted separately. System follows `prefers-color-scheme` live.
+- [x] Six exact T3 built-in palettes under Sotto's own names (by id: t3-code Sotto, t3-chat Rose, grove Fern, ocean Tide, ember Copper, iris Dusk), with Tide the default for both halves. Saved selections under those ids still resolve, and names are unique (`themes.test.ts`, `settings.test.ts`). The editor refuses a built-in's name for a new theme. Palettes are compared against the reference in `themes.test.ts`, with attribution in source, THIRD_PARTY_NOTICES and ADR-0011.
 - [x] Dual preview circles with sun and moon badges on the active halves.
-- [x] Duplicate, edit and remove, with a confirmation. Removing the active theme falls back to Ocean.
+- [x] Duplicate, edit and remove, with a confirmation. Removing the active theme falls back to Tide.
 - [x] Editor: simple and advanced colours, live preview over the saved look, Cancel restores it, Save persists. "Pick app color" inspector, label spotlights, and corner-grip resize within the window at 820x560.
 - [x] T3 JSON and VS Code import, and export. Invalid JSON and a `url()` colour both give plain alerts, and nothing is saved.
 - [x] Open VSX search and install through main IPC. In the E2E the fixture "harbor" installs as Harbor Theme.
@@ -77,7 +77,7 @@ I inspected the rendered images myself, against the user's T3 Code Themes screen
 
 - **Gallery.** Three columns by two rows at 1280 and 1600, matching the reference's 3x2. Two columns at 820. Cards are equal height, and the circles are centred above left-aligned names.
 - **Chosen states.** The chosen mode tile has a 2px accent ring inside its edge, over the wireframe panes, and nothing clips at the scroller edge. The chosen theme card has a tinted fill plus the ringed circle and badge.
-- **Palette spread.** In Threads, light Grove and dark Iris or Aurora reach the sidebar, selection, message bubbles, composer, request card and footer. No teal accent is left in the room.
+- **Palette spread.** In Threads, light Fern and dark Dusk or Aurora reach the sidebar, selection, message bubbles, composer, request card and footer. No teal accent is left in the room.
 - **Remaining teal.** The Sotto mark in the strip is still teal. That belongs to the branding worker.
 - **Editor at 820x560.** The editor fits with Save and Cancel reachable. After resizing, it stays inside the window. The spotlight glow outlines the used elements, and a picked row is highlighted and scrolled into view.
 - **Minimized editor.** At 820x560 it is a 175x35 pill in the footer's right end. It covers only the end of the footer status sentence; Send and the links are clear.

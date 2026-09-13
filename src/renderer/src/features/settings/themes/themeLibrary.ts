@@ -247,6 +247,9 @@ export function editorSavePatch(state: LibraryState, input: EditorSaveInput): Ed
   if (!name) throw new ThemeLibraryError('Name your theme first.')
   const { editingTheme, activeAppearance, colorsByAppearance, advanced } = input
   const live = editingTheme ? state.customThemes.find(theme => theme.id === editingTheme.id) ?? null : null
+  // A built-in's name would put two cards with one name in the gallery; a theme that already has it may keep it.
+  const builtIn = BUILT_IN_THEMES.find(theme => theme.label.toLowerCase() === name.toLowerCase())
+  if (builtIn && live?.label.trim().toLowerCase() !== name.toLowerCase()) throw new ThemeLibraryError(`“${builtIn.label}” is a built-in theme. Pick another name.`)
   const mergeTarget = editorMergeTarget(state, name, live?.id ?? null)
   const managed = advanced ? {} : { managed: true }
 
