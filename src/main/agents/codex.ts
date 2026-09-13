@@ -1,11 +1,14 @@
 import { existingWorkingDirectory } from './threadWorktrees'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
+import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
@@ -90,8 +93,10 @@ export class CodexAppServerHost implements AgentHost {
   private writing: Promise<void> = Promise.resolve()
   private nextId = 0
   private generation = 0
+  private skillsRevision = 0
+  private readonly loadedSkillCwds = new Set<string>()
   private state: AgentHostSnapshot = { connected: false, name: 'Codex', version: '', projects: [], models: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
@@ -173,6 +178,34 @@ export class CodexAppServerHost implements AgentHost {
       await this.watcher.poll(); this.watcher.start()
       this.emit(); return this.snapshot()
     } catch (error) { if (this.child === child) this.disconnect(); throw error }
+  }
+  async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    if (!this.state.connected) throw new Error('Reconnect Codex before browsing skills.')
+    const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'codex' ? scope.workingDirectory : undefined)
+    if (!cwd || !isAbsolute(cwd)) throw new Error('This thread has no available Codex working folder.')
+    const generation = this.generation; const revision = this.skillsRevision
+    let catalog: AgentSkillCatalog | undefined
+    let invalid = false
+    try {
+      if (!(await stat(cwd)).isDirectory()) throw new Error('The thread working folder is unavailable.')
+      await this.rpc('skills/list', { cwds: [cwd], forceReload: forceReload || !this.loadedSkillCwds.has(cwd) }, value => {
+        // A malformed read must not tear down running coding threads.
+        try { catalog = parseCodexSkillCatalog(value, threadId, cwd) } catch { invalid = true }
+      })
+      if (invalid || !catalog) throw new Error('Codex returned an invalid skill catalog.')
+      if (generation !== this.generation || revision !== this.skillsRevision || !this.state.connected) throw new Error('Codex skills changed while loading. Refresh the catalog.')
+      this.loadedSkillCwds.add(cwd)
+      return structuredClone(catalog)
+    } catch {
+      this.loadedSkillCwds.delete(cwd)
+      return { threadId, providerId: 'codex', cwd, status: 'error', skills: [], errors: [],
+        error: 'Codex skills could not be listed. Check Codex and refresh skills.' }
+    }
+  }
+  /** Send and steer share native reference validation and input mapping. */
+  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = []) {
+    if (!skills.length) return [{ type: 'text' as const, text }]
+    return codexSkillInput(text, skills, await this.listThreadSkills(threadId, true))
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
@@ -399,6 +432,10 @@ export class CodexAppServerHost implements AgentHost {
           if (this.ensureThread(id).requests.length) throw new Error('Answer the pending Codex request before sending another prompt.')
           this.dispatching.add(id)
           const generation = this.generation
+          let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
+          try { input = await this.prepareSkillInput(id, command.text, command.skills) }
+          catch (error) { this.dispatching.delete(id); throw error }
+          const skillsRevision = this.skillsRevision
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString() }
           alias.origins.push(origin)
           try {
@@ -407,6 +444,7 @@ export class CodexAppServerHost implements AgentHost {
             // input after persistence, before registering this prompt as our own input.
             await this.watcher?.pollThread(alias.codexThreadId)
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
+            if (command.skills?.length && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before sending. Refresh skills and review the selection.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.ensureThread(id).messages.findLast(message => message.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
             if (this.ensureThread(id).status === 'running' || this.ensureThread(id).requests.length) throw new Error('The Codex thread started working or needs an answer before another prompt.')
           } catch (error) {
@@ -416,7 +454,7 @@ export class CodexAppServerHost implements AgentHost {
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
             await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-              input: [{ type: 'text', text: command.text }], approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+              input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
               ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
@@ -450,6 +488,9 @@ export class CodexAppServerHost implements AgentHost {
         else { await waiter.apply(frame.result); waiter.resolve() }
       } catch { waiter.reject(new Uncertain('Codex response could not be applied.')); this.lostChild() }
       return
+    }
+    if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
+      this.skillsRevision++; this.loadedSkillCwds.clear(); return
     }
     if (frame.method === 'thread/started') {
       const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
@@ -519,6 +560,7 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   private reset(): void {
+    this.skillsRevision++; this.loadedSkillCwds.clear()
     this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
     this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()

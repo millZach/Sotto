@@ -390,10 +390,30 @@ export class AgentControl {
     this.publish()
     return this.get()
   }
+  private readonly skillReads = new Map<string, number>()
+  private async refreshThreadSkills(threadId: string, forceReload = false): Promise<AgentState> {
+    const revision = (this.skillReads.get(threadId) ?? 0) + 1
+    this.skillReads.set(threadId, revision)
+    try {
+      const thread = this.thread(threadId)
+      if (!isThreadProviderConnected(this.state.host, thread) || !capabilitiesForThread(this.state.host, thread).skills || !this.dependencies.host.listThreadSkills) throw new Error('Reconnect a Codex thread provider to browse skills.')
+      const catalog = await this.dependencies.host.listThreadSkills(threadId, forceReload)
+      if (!this.disposed && this.skillReads.get(threadId) === revision) {
+        this.state.skillCatalogs = [...(this.state.skillCatalogs ?? []).filter(item => item.threadId !== threadId), catalog]
+      }
+    } catch (error) {
+      if (!this.disposed && this.skillReads.get(threadId) === revision) this.state.skillCatalogs = [
+        ...(this.state.skillCatalogs ?? []).filter(item => item.threadId !== threadId),
+        { threadId, providerId: 'codex', cwd: '', status: 'error', skills: [], errors: [], error: error instanceof Error ? error.message : 'Skills could not be listed.' },
+      ]
+    }
+    this.publish(); return this.get()
+  }
   command(command: AgentCommand): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
+    if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
     if (command.type === 'observe-threads') {

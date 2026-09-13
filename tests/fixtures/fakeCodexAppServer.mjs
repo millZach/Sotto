@@ -92,7 +92,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const reply = result => setTimeout(() => emit({ id, result }), delay)
+  if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
+  if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
   if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'initialize') reply({ userAgent: 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })
   else if (method === 'model/list') reply({ data: [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })

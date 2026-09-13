@@ -68,6 +68,18 @@ export class WorkspaceHost implements AgentHost {
     return this.loading
   }
 
+  async listThreadSkills(threadId: string, forceReload = false) {
+    await this.initialize()
+    const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    if (!thread || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
+    const creation = this.state.creations.find(item => item.threadId === threadId)
+    if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
+      const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
+      if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
+      return this.inner.listThreadSkills(threadId, forceReload, { providerId: thread.providerId, workingDirectory: resolveThreadWorkingDirectory(thread, project) })
+    }
+    return this.inner.listThreadSkills(threadId, forceReload)
+  }
   workspaceSnapshot(): AgentHostSnapshot {
     const snapshot = structuredClone(this.state.snapshot)
     if (this.saveError) snapshot.error = this.saveError
@@ -215,6 +227,7 @@ export class WorkspaceHost implements AgentHost {
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
+    if (command.type === 'send' && command.skills?.length && this.state.snapshot.threads.find(thread => thread.id === command.threadId)?.providerId !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
     if (command.type === 'create-project') {
       const result = await this.inner.execute(command)
       // The existing coordinator reconciles creation; a cache failure cannot change

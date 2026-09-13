@@ -79,8 +79,9 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
   })
   it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
-    const f = await fixture(false, 100); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'thread/resume', ms: 1000 } })
+    // Leave child initialization headroom while still forcing the settings acknowledgement to time out.
+    const f = await fixture(false, 500); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'thread/resume', ms: 1500 } })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     f.host.disconnect(); await f.adapter.closed()
     await f.host.connect()

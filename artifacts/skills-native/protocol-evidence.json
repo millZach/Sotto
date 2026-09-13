@@ -1,0 +1,122 @@
+{
+  "version": "codex-cli 0.154.0",
+  "command": "codex app-server generate-json-schema --experimental --out artifacts/skills-protocol",
+  "sha256": {
+    "v2/SkillsListParams.json": "1d245374e64c5acc9739dfc68a4fe5114c6c9147af04c480886f1846d2ca6239",
+    "v2/SkillsListResponse.json": "230f125d6c36ec1b1514018a0bb6d0627f7308ea82f1ef04cad85490de482bae",
+    "v2/TurnStartParams.json": "b36fb37326b1cf69f75c8b306f1f886d53a57c4b1b985e08e298e2407ea2ad02",
+    "ServerNotification.json": "eb4317b57ce7cad32d6ab8a5b7d39eb765c8fb8f67acbc808dd6e55959411c93"
+  },
+  "skillsListParams": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+      "cwds": {
+        "description": "When empty, defaults to the current session working directory.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "forceReload": {
+        "description": "When true, bypass the skills cache and re-scan skills from disk.",
+        "type": "boolean"
+      }
+    },
+    "title": "SkillsListParams",
+    "type": "object"
+  },
+  "skillMetadata": {
+    "properties": {
+      "dependencies": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SkillDependencies"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "description": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "interface": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SkillInterface"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "path": {
+        "$ref": "#/definitions/AbsolutePathBuf"
+      },
+      "pluginId": {
+        "description": "Owning plugin ID, matching `PluginSummary.id`, when known.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "scope": {
+        "$ref": "#/definitions/SkillScope"
+      },
+      "shortDescription": {
+        "description": "Legacy short_description from SKILL.md. Prefer SKILL.json interface.short_description.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "description",
+      "enabled",
+      "name",
+      "path",
+      "scope"
+    ],
+    "type": "object"
+  },
+  "skillScope": {
+    "enum": [
+      "user",
+      "repo",
+      "system",
+      "admin"
+    ],
+    "type": "string"
+  },
+  "skillUserInput": {
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "type": {
+        "enum": [
+          "skill"
+        ],
+        "title": "SkillUserInputType",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "path",
+      "type"
+    ],
+    "title": "SkillUserInput",
+    "type": "object"
+  }
+}

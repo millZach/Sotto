@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -124,7 +125,7 @@ export const agentCapabilitiesSchema = z.object({
   projects: z.boolean(), threads: z.boolean(), submit: z.boolean(),
   observe: z.boolean(), questions: z.boolean(), permissions: z.boolean(),
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
-  configureThread: z.boolean().optional(),
+  configureThread: z.boolean().optional(), skills: z.boolean().optional(),
 })
 export const agentProviderStatusSchema = z.object({
   id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
@@ -223,7 +224,7 @@ export const agentQueueItemSchema = z.object({
 export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
-  threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema,
+  threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
@@ -239,6 +240,7 @@ export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draf
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
+  skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
@@ -274,6 +276,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
+  z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('preview-voice') }).strict(),
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
@@ -281,10 +284,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentsSchema.optional(), requestId: id.nullable().optional() }).strict(),
+    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), requestId: id.nullable().optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
-  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, skills: agentSkillReferencesSchema.optional(), attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),

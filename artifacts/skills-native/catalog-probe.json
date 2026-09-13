@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-09-13T03:04:03.656Z",
+  "version": "sotto/0.154.0 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)",
+  "cwd": "D:\\Talk to Text Application\\.worktrees\\phase2-skills",
+  "initialCount": 58,
+  "refreshedCount": 58,
+  "scopes": [
+    "user",
+    "system"
+  ],
+  "nativeErrorCount": 0,
+  "nativeTurnsStarted": 0,
+  "methods": [
+    "initialize",
+    "model/list",
+    "skills/list"
+  ],
+  "limitation": "Catalog only. No paid turn, model behavior, or separate user-invocable flag verified."
+}

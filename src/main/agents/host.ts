@@ -1,18 +1,22 @@
+import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentAttachment, AgentHostSnapshot, AgentProject, AgentThreadOptions, ProviderId } from '../../shared/agents'
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
   | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly workingDirectory?: string } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string } & AgentThreadOptions)
-  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly skills?: AgentSkillReference[]; readonly attachments?: AgentAttachment[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
+export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /**
  * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  /** Scope is constructed only by WorkspaceHost for an unstarted local thread. */
+  listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean
   initialize?(): Promise<void>
   /** Local organization/history; available without a provider connection. */
