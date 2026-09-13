@@ -146,6 +146,11 @@ describe('queue arrival', () => {
       await waitFor(() => expect(within(queue).getByRole('button', { name: /Queued 4/ })).toHaveTextContent('Added'))
       expect(within(queue).getByRole('button', { name: /Queued 4/ })).toHaveTextContent('Also update the changelog')
       expect(within(queue).getByText('Queued: Also update the changelog')).toBeInTheDocument()
-    } finally { vi.unstubAllGlobals() }
+      // Opening the list brings the message queued while it was closed into view.
+      const scrolled: Element[] = []
+      Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this) }
+      await act(async () => { fireEvent.click(within(queue).getByRole('button', { name: /Queued 4/ })) })
+      expect(scrolled.at(-1)).toHaveTextContent('Also update the changelog')
+    } finally { vi.unstubAllGlobals(); delete (Element.prototype as Partial<Element>).scrollIntoView }
   })
 })

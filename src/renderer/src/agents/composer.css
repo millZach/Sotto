@@ -62,7 +62,7 @@
 .skill-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .skill-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .skill-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
-.skill-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; padding: 0 0 0 8px; color: var(--tt-text-muted); font-size: 12px; }
+.skill-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: 2px; padding: 2px 0 0 8px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
 .skill-picker__notes { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
 .skill-picker__notes [data-tone='warning'] { color: var(--threads-warning-text); }
 .skill-picker__foot[data-message] { min-height: 40px; }
@@ -84,7 +84,7 @@
   .thread-followups { margin-inline: 8px; }
   .skill-picker__name { max-width: 22ch; }
 }
-/* Short windows and large display scaling: the prompt and its send button stay in view; the queue rests as one line until opened. */
+/* Short windows and large display scaling: the prompt and its send button stay in view. Below 680px the queue also rests as one line until opened. */
 @media (max-height: 760px) {
   .thread-followups { min-height: calc(var(--followups-top, 36px) + 4px); max-height: max(196px, calc(var(--followups-top, 36px) + 90px)); padding-bottom: 3px; }
   .thread-followups__head { min-height: 36px; padding-top: 2px; }

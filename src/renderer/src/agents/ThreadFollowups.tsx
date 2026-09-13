@@ -25,8 +25,8 @@ const STATUS_LABELS: Record<AgentFollowup['status'], string> = {
   queued: 'Queued', dispatching: 'Sending', uncertain: 'Unconfirmed', failed: 'Not sent', paused: 'Paused',
 }
 
-/** Short windows and large display scaling, where the composer and transcript need the height first. */
-const SHORT_WINDOW = '(max-height: 760px)'
+/** Below the default 720px window: minimum-size windows and large display scaling, where the composer and transcript need the height first. */
+const SHORT_WINDOW = '(max-height: 680px)'
 function subscribeShortWindow(listener: () => void): () => void {
   if (typeof window.matchMedia !== 'function') return () => undefined
   const query = window.matchMedia(SHORT_WINDOW)
@@ -163,7 +163,15 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const shown = useRef<Set<string> | null>(null)
   /** The message the user just queued, named for a moment so a new row is never confirmed by a count alone. */
   const [arrival, setArrival] = useState<{ readonly id: string; readonly text: string } | null>(null)
+  /** A message queued while the list was closed; opening the list brings it into view once. */
+  const unseen = useRef<string | null>(null)
   useLayoutEffect(() => {
+    const reveal = (id: string): boolean => {
+      const element = section.current?.querySelector<HTMLElement>(`[data-followup="${CSS.escape(id)}"]`)
+      element?.scrollIntoView?.({ block: 'nearest' })
+      return element != null
+    }
+    if (unseen.current !== null && reveal(unseen.current)) unseen.current = null
     const current = followupsFor(state, threadId)
     if (shown.current === null) { shown.current = new Set(current.map(item => item.id)); return }
     const fresh = current.filter(item => !shown.current!.has(item.id))
@@ -171,7 +179,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     for (const item of fresh) shown.current.add(item.id)
     const newest = fresh.at(-1)!
     setArrival({ id: newest.id, text: newest.text || newest.attachments.map(image => image.name).join(', ') })
-    section.current?.querySelector<HTMLElement>(`[data-followup="${CSS.escape(newest.id)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+    unseen.current = reveal(newest.id) ? null : newest.id
   })
   useEffect(() => {
     if (arrival === null) return

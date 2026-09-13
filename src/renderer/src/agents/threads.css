@@ -101,6 +101,9 @@
 
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+/* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
+.threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
+.threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 .thread-workspace__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; min-height: 72px; padding: 12px 24px; border-bottom: 1px solid var(--tt-hairline); }
 .thread-workspace__title { min-width: 0; }
 .thread-workspace__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 13px; }

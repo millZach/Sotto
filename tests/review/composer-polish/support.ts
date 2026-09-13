@@ -84,7 +84,8 @@ export async function paneMetrics(page: Page, scope = 'section.thread-pane[data-
     const visibleTop = Math.max(0, paneRect.top)
     const visibleBottom = Math.min(window.innerHeight, paneRect.bottom)
     const controls = [...root.querySelectorAll('button, textarea, .thread-followup__text')]
-      .filter(element => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 })
+      // Transcript content scrolls inside its own log; only the pane's fixed controls count.
+      .filter(element => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 && !element.closest('[aria-label="Thread transcript"]') })
     const label = (element: Element) => (element.getAttribute('aria-label') || element.textContent || element.tagName).trim().slice(0, 50)
     const outsideControls = controls.filter(element => { const rect = element.getBoundingClientRect(); return rect.bottom > visibleBottom + 1 || rect.top < visibleTop - 1 }).map(label)
     const scrollers = [root, ...root.querySelectorAll('*')].filter(element => /(auto|scroll)/u.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 1)
