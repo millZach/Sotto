@@ -66,10 +66,17 @@ function visibleSubmissions(chat: PersonalChat): readonly Submission[] {
 
 const SUBMISSION_LABEL: Record<Submission['status'], string> = { submitting: 'Sending', accepted: 'Sent', uncertain: 'Unconfirmed', failed: 'Not sent' }
 
-function PendingSubmission({ submission, connected, refreshing, onRefresh }: {
+function PendingSubmission({ bridge, chat, store, submission, connected, refreshing, onRefresh }: {
+  readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly store: PersonalDraftStore
   readonly submission: Submission; readonly connected: boolean; readonly refreshing: boolean; readonly onRefresh: () => void
 }): ReactNode {
-  const detail = submission.status === 'failed' ? `${submission.error ?? `${PROVIDER} did not take this message.`} Edit it in the composer to send it again.`
+  usePersonalDraft(store, chat)
+  const failed = submission.status === 'failed'
+  const recover = (): void => {
+    store.recover(bridge, chat, submission)
+    document.getElementById(PERSONAL_PROMPT_ID)?.focus()
+  }
+  const detail = failed ? submission.error ?? `${PROVIDER} did not take this message.`
     : submission.status === 'uncertain' ? `Sotto could not confirm ${PROVIDER} received this, and will not send it twice.${connected ? '' : ` Connect ${PROVIDER} to check.`}`
       : null
   return <article className="thread-message thread-message--pending" data-role="user" data-status={submission.status} aria-label="Pending message">
@@ -79,6 +86,9 @@ function PendingSubmission({ submission, connected, refreshing, onRefresh }: {
     {detail ? <div className="thread-message__delivery"><span>{detail}</span>
       {submission.status === 'uncertain' && connected ? <div className="thread-message__delivery-actions">
         <Button variant="secondary" disabled={refreshing} onClick={onRefresh}>{refreshing ? 'Checking…' : 'Check again'}</Button></div> : null}
+      {failed ? <div className="thread-message__delivery-actions">
+        {store.holds(chat, submission) ? <span role="status">It is in the composer.</span>
+          : <Button variant="secondary" onClick={recover}>Edit in composer</Button>}</div> : null}
     </div> : null}
   </article>
 }
@@ -102,8 +112,8 @@ function PersonalRequests({ bridge, chat, connected, onWriteAnswer }: {
   })}</>
 }
 
-function PersonalTranscript({ bridge, chat, state, followSignal, refreshing, onRefresh, onWriteAnswer }: {
-  readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly state: PersonalChatState; readonly followSignal: number
+function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshing, onRefresh, onWriteAnswer }: {
+  readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly store: PersonalDraftStore; readonly state: PersonalChatState; readonly followSignal: number
   readonly refreshing: boolean; readonly onRefresh: () => void; readonly onWriteAnswer: () => void
 }): ReactNode {
   const scroller = useRef<HTMLDivElement>(null)
@@ -190,7 +200,7 @@ function PersonalTranscript({ bridge, chat, state, followSignal, refreshing, onR
             <h3>What’s on your mind?</h3><p>This chat has no project. {PROVIDER} brings its usual skills, and the conversation is saved here.</p></div>
           : <MessageList messages={messages} provider={PROVIDER} running={chat.status === 'running'} placement={placement} context={activity} />}
         <LiveActivity thread={chat} connected={state.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
-        {submissions.map(item => <PendingSubmission key={item.id} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} />)}
+        {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} />)}
         <PersonalRequests bridge={bridge} chat={chat} connected={state.connected} onWriteAnswer={onWriteAnswer} />
       </div>
     </div>
@@ -432,7 +442,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
           </div>
         </header>
         {actionError || state.error ? <p className="agent-error thread-workspace__error" role="alert">{actionError ?? state.error}</p> : null}
-        <PersonalTranscript bridge={bridge} chat={selected} state={state} followSignal={followSignal} refreshing={pending === 'refresh'} onRefresh={refresh}
+        <PersonalTranscript bridge={bridge} chat={selected} store={store} state={state} followSignal={followSignal} refreshing={pending === 'refresh'} onRefresh={refresh}
           onWriteAnswer={() => document.getElementById(PERSONAL_PROMPT_ID)?.focus()} />
         <div className="thread-workspace__compose">
           <PersonalComposer key={selected.id} bridge={bridge} state={state} chat={selected} store={store} onSent={() => setFollowSignal(value => value + 1)} />

@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react'
 import type { AgentSkillReference } from '../../../../shared/agentSkills'
 import type { PersonalChat, PersonalChatBridge } from '../../../../shared/personalChats'
 
+type Submission = PersonalChat['submissions'][number]
+
 /** Typing settles for this long before the draft is written; sending writes it at once. */
 export const PERSONAL_DRAFT_SAVE_MS = 400
 
@@ -102,6 +104,26 @@ export class PersonalDraftStore {
     } catch (error) {
       return personalError(error, 'Sotto could not send this message.')
     }
+  }
+
+  /** Whether the composer already holds this submission's text. */
+  holds(chat: PersonalChat, submission: Submission): boolean {
+    return this.draft(chat).text.includes(submission.text)
+  }
+
+  /**
+   * Puts a submission that did not go through back in the composer as a newer revision, after anything typed
+   * since, with its skills. It is only ever edited here; sending it again is the reader's choice.
+   */
+  recover(bridge: PersonalChatBridge, chat: PersonalChat, submission: Submission): void {
+    if (this.holds(chat, submission)) return
+    const current = this.draft(chat)
+    const typed = current.text.trimEnd()
+    const skills = [...current.skills, ...submission.skills.filter(skill => !current.skills.some(item => item.name === skill.name && item.path === skill.path))]
+    this.edit(bridge, chat, { text: typed ? `${typed}
+
+${submission.text}` : submission.text, skills })
+    void this.flush(bridge, chat.id)
   }
 
   private settle(chatId: string, revision: number, error: string | null): void {

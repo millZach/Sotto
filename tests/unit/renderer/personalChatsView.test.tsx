@@ -120,6 +120,67 @@ describe('Chats', () => {
     expect(state().chats[0]!.submissions).toHaveLength(1)
   })
 
+  describe('a message Codex did not take after Sotto accepted the send', () => {
+    const BRAINSTORM = { name: 'brainstorm', path: '/skills/brainstorm/SKILL.md' }
+    const refuse = (update: ReturnType<typeof fakeBridge>['update']) => act(() => {
+      update('trip', item => { const last = item.submissions.at(-1)!; last.status = 'failed'; last.error = 'Codex could not start this turn.' })
+    })
+
+    it('puts its text and skills back in the composer as a newer revision, only when asked, and never sends it again', async () => {
+      const { bridge, calls, update } = mount(snapshot({ chats: [chat({ draft: { revision: 1, text: '$brainstorm a quiet October', skills: [BRAINSTORM] } })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      fireEvent.keyDown(composer, { key: 'Enter' })
+      // Main returns once the intent is saved as submitting; the composer empties then.
+      await waitFor(() => expect(calls).toContain('draft:2:'))
+      expect(composer).toHaveValue('')
+      refuse(update)
+
+      const pending = await screen.findByRole('article', { name: 'Pending message' })
+      expect(pending.querySelector('.thread-message__status')).toHaveTextContent('Not sent')
+      expect(within(pending).getByText('Codex could not start this turn.')).toBeVisible()
+      expect(within(pending).queryByText(/Edit it in the composer/u)).not.toBeInTheDocument()
+      expect(composer).toHaveValue('')
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+      expect(bridge.send).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(within(pending).getByRole('button', { name: 'Edit in composer' }))
+      expect(composer).toHaveValue('$brainstorm a quiet October')
+      expect(composer).toHaveFocus()
+      await waitFor(() => expect(calls).toContain('draft:3:$brainstorm a quiet October'))
+      expect(bridge.saveDraft.mock.calls.at(-1)![0].skills).toEqual([BRAINSTORM])
+      expect(within(pending).queryByRole('button', { name: 'Edit in composer' })).not.toBeInTheDocument()
+      expect(within(pending).getByText('It is in the composer.')).toBeVisible()
+      expect(bridge.send).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    })
+
+    it('keeps a draft typed while it was sending, and adds the message after it', async () => {
+      const { bridge, calls, update } = mount(snapshot({ chats: [chat({ draft: { revision: 1, text: '$brainstorm a quiet October', skills: [BRAINSTORM] } })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      fireEvent.keyDown(composer, { key: 'Enter' })
+      await waitFor(() => expect(calls).toContain('draft:2:'))
+      fireEvent.change(composer, { target: { value: 'Somewhere cheap too' } })
+      refuse(update)
+      expect(composer).toHaveValue('Somewhere cheap too')
+
+      fireEvent.click(within(await screen.findByRole('article', { name: 'Pending message' })).getByRole('button', { name: 'Edit in composer' }))
+      expect(composer).toHaveValue('Somewhere cheap too\n\n$brainstorm a quiet October')
+      await waitFor(() => expect(bridge.saveDraft.mock.calls.at(-1)![0]).toEqual({ chatId: 'trip', revision: 4, text: 'Somewhere cheap too\n\n$brainstorm a quiet October', skills: [BRAINSTORM] }))
+      expect(bridge.send).toHaveBeenCalledTimes(1)
+    })
+
+    it('offers the same recovery for a refusal saved before a restart', async () => {
+      const { bridge } = mount(snapshot({ chats: [chat({ draft: { revision: 5, text: '', skills: [] },
+        submissions: [{ id: 's4', messageId: 'm4', revision: 4, text: 'Book the cabin', skills: [], status: 'failed', error: 'Codex could not start this turn.', createdAt: AT }] })] }))
+      const composer = await screen.findByRole('textbox', { name: 'Message' })
+      expect(composer).toHaveValue('')
+      fireEvent.click(within(screen.getByRole('article', { name: 'Pending message' })).getByRole('button', { name: 'Edit in composer' }))
+      expect(composer).toHaveValue('Book the cabin')
+      await waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledWith({ chatId: 'trip', revision: 6, text: 'Book the cabin', skills: [] }))
+      expect(bridge.send).not.toHaveBeenCalled()
+    })
+  })
+
   it('restores an unsent draft, and starts empty when the saved draft was already sent', async () => {
     const unsent = mount(snapshot({ chats: [chat({ draft: { revision: 3, text: 'Half a thought', skills: [] } })] }))
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('Half a thought')
