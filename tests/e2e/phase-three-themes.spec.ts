@@ -493,6 +493,23 @@ test('themes: a minimized editor is one row that leaves Send and the footer link
     await expect(editor.getByRole('button', { name: 'Inspect app colors' })).toBeVisible()
     // Expanding lands on the form's first field.
     await expect(editor.getByLabel('Theme name', { exact: true })).toBeFocused()
+
+    // Dragged as low as it goes while minimized, then expanded, the whole panel comes back into the window.
+    await setWindowSize(launched, 820, 560)
+    await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
+    const low = (await editor.boundingBox())!
+    await page.mouse.move(low.x + 30, low.y + low.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(40, 2000, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await editor.boundingBox())!.y).toBeGreaterThan(480)
+    await editor.getByRole('button', { name: 'Expand the theme editor' }).click()
+    await expect(editor.getByRole('button', { name: 'Save changes' }).or(editor.getByRole('button', { name: 'Create theme' }))).toBeInViewport()
+    const expanded = (await editor.boundingBox())!
+    expect(expanded.y).toBeGreaterThanOrEqual(0)
+    expect(expanded.y + expanded.height).toBeLessThanOrEqual(560)
+    expect(expanded.height).toBeGreaterThan(300)
+    await shot(page, 'editor-expanded-after-low-drag-820x560-dark')
     await page.keyboard.press('Escape')
     await expect(editor).toHaveCount(0)
   } finally {

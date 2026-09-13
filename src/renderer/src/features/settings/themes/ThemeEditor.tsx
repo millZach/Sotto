@@ -127,6 +127,18 @@ export function minimizedThemeEditorDock(bar: { width: number; height: number },
   return { right, bottom: viewport.height - footer.top + EDGE }
 }
 
+/** A dragged panel's position moved just enough that the whole panel is inside the window, when it fits. */
+function fitInWindow(position: { x: number; y: number } | null, panel: HTMLElement | null): { x: number; y: number } | null {
+  if (position === null) return position
+  const width = Math.min(panel?.offsetWidth ?? 0, window.innerWidth - EDGE * 2)
+  const height = Math.min(panel?.offsetHeight ?? 0, window.innerHeight - EDGE * 2)
+  const next = {
+    x: Math.min(Math.max(position.x, EDGE), Math.max(EDGE, window.innerWidth - width - EDGE)),
+    y: Math.min(Math.max(position.y, EDGE), Math.max(EDGE, window.innerHeight - height - EDGE)),
+  }
+  return next.x === position.x && next.y === position.y ? position : next
+}
+
 export const THEME_EDITOR_MIN_SIZE = { width: 280, height: 220 } as const
 /** The gap the panel keeps from the window edge. */
 const EDGE = 8
@@ -502,19 +514,15 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
             height: Math.max(THEME_EDITOR_MIN_SIZE.height, Math.min(current.height, window.innerHeight - EDGE * 2)),
           })
       // A smaller window pulls the whole panel back into view when it fits, so the grip stays reachable.
-      setPosition(current => {
-        if (current === null) return current
-        const width = Math.min(panel?.offsetWidth ?? 0, window.innerWidth - EDGE * 2)
-        const height = Math.min(panel?.offsetHeight ?? 0, window.innerHeight - EDGE * 2)
-        return {
-          x: Math.min(Math.max(current.x, EDGE), Math.max(EDGE, window.innerWidth - width - EDGE)),
-          y: Math.min(Math.max(current.y, EDGE), Math.max(EDGE, window.innerHeight - height - EDGE)),
-        }
-      })
+      setPosition(current => fitInWindow(current, panel))
     }
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
   }, [])
+  // A bar dragged low and then expanded grows past the window; pull the whole panel back in before it paints.
+  useLayoutEffect(() => {
+    if (!minimized) setPosition(current => fitInWindow(current, panelRef.current))
+  }, [minimized])
 
   const dragHandlers = {
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
