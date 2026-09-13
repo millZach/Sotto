@@ -22,6 +22,20 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-request
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 const disk = async (): Promise<{ drafts: RequestDraft[] }> => JSON.parse(await readFile(join(directory, 'request-drafts.json'), 'utf8'))
 
+it('retains the first queued edit when the provider closes the question before its first save', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start()
+  expect(await service.get(target)).toBeNull()
+  state = { ...state, requests: [] }
+  await service.save(draft())
+  const restarted = new RequestDraftService(directory, () => state, async () => {})
+  await restarted.start()
+  expect(await restarted.list(owner)).toEqual([draft()])
+  await expect(restarted.save(draft({ revision: 2, held: true }))).rejects.toThrow('Reconnect and check')
+  expect((await disk()).drafts).toEqual([draft()])
+})
+
 describe('request-owned atomic drafts', () => {
   it('keeps threaded and personal answers, multiple requests and separate providers across restart, independently of composer/history', async () => {
     const state = { connected: true, ready: true, requests: [request, { ...request, id: 'second' }] }

@@ -159,10 +159,9 @@ export class RequestDraftService {
     return this.serial(async () => {
       const previous = this.current(draft.target), state = this.lookup(draft.target)
       if (draft.decisionId !== previous?.decisionId) throw new Error('Delivery identity is owned by main. Reload this answer before saving.')
-      const request = state?.requests.find(item => item.id === draft.target.requestId)
       if (!state) throw new Error('This answer belongs to a request that is no longer available.')
-      const matches = request && sameRequestQuestions(request.questions ?? [], draft.target.questions)
-      if (!matches && !previous) throw new Error('This question changed or is no longer pending. Your local answer has been kept.')
+      // Native liveness gates a held submission below, not local text retention. Even the first
+      // keystroke's queued save can arrive after a question closes; keep it for explicit recovery.
       if (previous && sameRequestQuestions(previous.target.questions, draft.target.questions)) {
         if (draft.revision < previous.revision || draft.revision === previous.revision && JSON.stringify(draft) !== JSON.stringify(previous)) {
           throw new Error('A newer answer draft is already saved. Your local answer has been kept.')
