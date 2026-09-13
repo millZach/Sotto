@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { WebContentsView } from 'electron'
+import { EventEmitter } from 'node:events'
+import { WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService } from '../../../src/main/tools/browser'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -30,6 +31,33 @@ const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Err
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose(); vi.clearAllMocks() })
 describe('browser service lifecycle', () => {
+  it.each(['hide', 'close'] as const)('does not cancel a pending page mount when the previous page finishes %s', async action => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-unit-'))
+    cleanup.push(() => rm(directory, { recursive: true, force: true }))
+    const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
+    const attached = new Set<WebContentsView>()
+    const window = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false, getContentSize: () => [1200, 800],
+      webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1 }),
+      contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) },
+    }) as unknown as BrowserWindow
+    const service = new BrowserService({ files, getWindow: () => window, emit: vi.fn(), openExternal: vi.fn(), destination: async () => 'external' })
+    cleanup.push(async () => service.dispose())
+    const owner = unwrap(await service.list({ threadId: 'a' })).workspace
+    const target = { threadId: 'a', workspaceId: owner.workspaceId }
+    const first = unwrap(await service.create({ ...target, url: 'http://localhost/first' }))
+    const second = unwrap(await service.create({ ...target, url: 'http://localhost/second' }))
+    const bounds = { x: 400, y: 100, width: 600, height: 500 }
+    unwrap(await service.mount({ ...target, pageId: first.id, bounds }))
+    let finishValidation!: (value: Awaited<ReturnType<FilesService['resolveWorkspace']>>) => void
+    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(() => new Promise(resolve => { finishValidation = resolve }))
+    const mounting = service.mount({ ...target, pageId: second.id, bounds })
+    if (action === 'hide') unwrap(await service.mount({ ...target, pageId: first.id, bounds: null }))
+    else unwrap(await service.close({ ...target, pageId: first.id }))
+    finishValidation({ ok: true, value: owner })
+    unwrap(await mounting)
+    expect(attached).toEqual(new Set([vi.mocked(WebContentsView).mock.results[1]!.value]))
+  })
   it('keeps failed navigation unavailable when Chromium finishes an error document, then supports explicit reload', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-unit-'))
     cleanup.push(() => rm(directory, { recursive: true, force: true }))

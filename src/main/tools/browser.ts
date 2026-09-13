@@ -178,11 +178,11 @@ export class BrowserService extends ToolOperations {
     if (request.bounds !== null) this.desiredPageId = request.pageId
     else if (this.desiredPageId === request.pageId) { this.desiredPageId = null; this.mountVersion++ }
     const record = await this.owned(request, request.bounds !== null)
-    if (request.bounds === null) { if (this.mounted?.record === record) this.detach(); return }
+    if (request.bounds === null) { if (this.mounted?.record === record) this.removeMountedView(); return }
     if (version !== this.mountVersion) return
     const window = this.dependencies.getWindow()
     if (!window || window.isDestroyed()) return fail('unavailable', 'The main window is unavailable.')
-    this.detach()
+    this.removeMountedView()
     this.desiredPageId = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
@@ -210,6 +210,9 @@ export class BrowserService extends ToolOperations {
   detach(): void {
     this.mountVersion++
     this.desiredPageId = null
+    this.removeMountedView()
+  }
+  private removeMountedView(): void {
     const mounted = this.mounted; this.mounted = null
     if (!mounted) return
     mounted.cleanup()
@@ -222,7 +225,8 @@ export class BrowserService extends ToolOperations {
     this.dependencies.emit({ type: 'closed', ...request })
   }) }
   private destroy(record: PageRecord): Promise<void> {
-    if (this.mounted?.record === record) this.detach()
+    if (this.desiredPageId === record.page.id) { this.desiredPageId = null; this.mountVersion++ }
+    if (this.mounted?.record === record) this.removeMountedView()
     this.pages.delete(record.page.id); record.generation++
     const contents = record.view.webContents
     if (contents.isDestroyed()) return Promise.resolve()
