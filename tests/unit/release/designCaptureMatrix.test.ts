@@ -43,6 +43,7 @@ describe('design capture matrix', () => {
       ['onboarding', 'openrouter-key'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'], ['agents', 'overview'],
       ['history', 'populated-feedback'], ['settings', 'providers'], ['settings', 'capture'], ['settings', 'validation-error'],
       ['settings', 'appearance'], ['help', 'overview'],
+      ['threads', 'populated'], ['threads', 'open-running'], ['threads', 'stopped-open'], ['threads', 'search'], ['threads', 'empty'],
     ]) expect(keys, `${category} ${state}`).toContain(`${category}|${state}|light|100|normal|none`)
     expect(keys).toContain('settings|appearance|dark|100|normal|none')
     expect(keys).toContain('dictate|listening-reduced-motion|light|100|reduced|none')

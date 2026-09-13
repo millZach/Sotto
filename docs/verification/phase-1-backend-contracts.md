@@ -28,7 +28,13 @@ Existing command unchanged: `{ type: 'manual-send', threadId, draftId, text, att
 - uncertain = dispatch may have committed; draft retained, no automatic resend. Existing refresh/reconnect or repeating manual-send only reconciles the original action. Same draftId cannot be dispatched twice after acceptance.
 - terminal delivery metadata is bounded; unresolved delivery metadata survives restart. No prompt/image content in delivery records. localFeedbackMs measures command receipt to first backend state publication; providerLatencyMs measures host execution separately. Windows renderer paint measurement remains UI/integrator responsibility.
 
-Read a thread's composer from `threadDrafts.find(d => d.threadId === thread.id)`; read relevant delivery by threadId + draftId, or latest record for the thread. On acceptance, clear only the submitted revision, never newer text/images. Existing `deliveredDrafts` exact receipts remain compatible. Do not clear on submitting/uncertain or on a generic command resolution. Show unsaved/storage failures from state.error.
+Read a thread's composer from `threadDrafts.find(d => d.threadId === thread.id)`; read relevant delivery by threadId + draftId, or latest record for the thread. On acceptance, clear only the submitted revision, never newer text/images. Existing `deliveredDrafts` exact receipts remain compatible. Do not clear on submitting/uncertain or on a generic command resolution. Use `threadDraftPersistence` for save status; a state echo or global `state.error` alone is not durability evidence.
+
+## Renderer integration addition: exact draft durability
+
+`state.threadDraftPersistence` contains `{threadId, draftId, status: 'saved' | 'saving' | 'unsaved'}` for exact current revisions, including empty clears. This is ephemeral main-process evidence, rebuilt from the actual disk read and completed AtomicJsonStore writes. It is never serialized as evidence or inferred from an IPC response resolving. Missing evidence does not mean saved.
+
+A fresh renderer adopts this evidence along with the draft. A pending or failed disk write retains its state and retry across renderer reload; a later successful full-state write can confirm it. Older completions cannot certify newer text/images. Renderer command admission sends both `manual-send` and `save-thread-draft` immediately in user order, while main continues to enforce dispatch serialization, busy checks and authority.
 
 ## Change log
 - v1: initial contract published before implementation. Any implementation changes will be recorded here.

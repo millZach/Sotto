@@ -134,3 +134,7 @@ Real provider latency is not measured here; no paid provider calls were made.
 - **Light theme.** Contrast is verified with injected light token values; the parent's integrated light captures are the real theme review.
 - **Add project picker.** The native folder picker is not driven in E2E. The E2E test calls `create-project`, and the picker flow is unit-tested.
 - **Doubled composer note.** A disconnected thread that is still running shows both "Available after this turn finishes." (options) and the disconnected reason.
+
+## Parent integration closure
+
+The integration branch includes the rich-message wiring, stable transcript range, exact draft persistence evidence and connection-owned recovery. These supersede the lane-era notes above about queued renderer sends and standalone store ownership. Parent verification covers real light themes, narrower 760px stress renders, keyboard focus, image containment and a shortened composer. The shipped window minimum remains 820px. Final combined measurements, test results and remaining platform boundaries are recorded in [Phase 1 implementation](phase-1-implementation.md).

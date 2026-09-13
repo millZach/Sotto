@@ -184,7 +184,7 @@ test.describe('appearance rendered evidence', () => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: 'Footer links' }).click()
+      await page.getByRole('button', { name: 'Footer links', exact: true }).click()
       await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
       await shot(page, 'threads-open-running-light')
     }, { scenario: 'design-threads', threads: true })

@@ -169,8 +169,12 @@ Target: Windows Electron desktop, pointer and keyboard. Review widths are 1080 a
 
 ## Material gaps
 
-- **Threads page in light.** `threads.css`, `ThreadsView`, `AgentView` and `rich-messages.css` belong to the workspace and rich lanes and still hardcode Crossing dark colours on this branch. See `artifacts/verification/phase-1-appearance/threads-open-running-light.png`: the sidebar, composer and user bubbles stay dark in a light room. The workspace contract says its rewritten `threads.css` uses the tokens with dark fallbacks, and the rich lane uses `--rich-*` properties built from `--tt-*`. The Threads page in light needs checking after integration. No Threads light tuple was added to the gate, so dark remnants are not baked in as a baseline.
+- **Threads page in light (resolved in integration).** The shared Threads styles and rich-message components now honor the main appearance tokens. `artifacts/verification/phase-1-appearance/threads-open-running-light.png` was regenerated against the integrated app; the parent also verifies five light Threads states in the permanent matrix and the model picker/new-thread dialog in actual Electron.
 - **Minimum width.** The shipped main window minimum is still 820 (`windowManager.ts`, outside this lane's files). The 760 tuples narrow the window in the test only.
 - **Native window background.** `BrowserWindow.backgroundColor` stays `#000000`. The renderer paints the correct room before the window is shown, but enlarging a light window can briefly expose a dark edge before Chromium repaints.
 - **Dark select popup highlight.** In the dark room, Chromium's popup highlights the hovered option in light blue with grey text, which is low contrast. This was already true under Crossing; the popup's hover colours come from Chromium, not from page CSS.
 - **ADR number.** ADR-0009 may collide with an ADR another lane adds. Renumber on integration if needed.
+
+## Parent integration closure
+
+The lane-era Threads light gap above is resolved in the integration branch: project folders, composer and rich messages use the shared tokens. Current `artifacts/crossing/phase-one-*-light.png` and the five new light Threads matrix states supersede the old dark-remnant screenshot. Parent inspection also verifies the light model picker/new-thread dialog and integrated keyboard focus. The window still ships at 820px minimum; 760px captures are additional stress tests with an explicit test-only minimum override. The corrected 150% zoom capture asserts its actual viewport.

@@ -93,6 +93,11 @@ for (const [id, category, state] of [
   ['settings-validation-error-light', 'settings', 'validation-error'],
   ['settings-appearance-light', 'settings', 'appearance'],
   ['help-light', 'help', 'overview'],
+  ['threads-populated-light', 'threads', 'populated'],
+  ['threads-open-running-light', 'threads', 'open-running'],
+  ['threads-stopped-light', 'threads', 'stopped-open'],
+  ['threads-search-light', 'threads', 'search'],
+  ['threads-empty-light', 'threads', 'empty'],
 ]) add({ id, category, state, theme: 'light' })
 
 add({ id: 'settings-appearance', category: 'settings', state: 'appearance' })

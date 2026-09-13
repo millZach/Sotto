@@ -836,8 +836,9 @@ test.describe('authoritative design-review captures', () => {
     })
   })
 
-  test('threads page states', async () => {
-    await withSotto({ onboardingComplete: true, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
+  for (const appearance of ['dark', 'light'] as const) test(`threads page states in ${appearance}`, async () => {
+    const suffix = appearance === 'light' ? '-light' : ''
+    await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
@@ -846,38 +847,38 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
       await expect(page.getByText('Waiting on you')).toBeVisible()
       const open = async (title: string): Promise<void> => {
-        const toggle = page.getByRole('button', { name: title })
+        const toggle = page.getByRole('button', { name: title, exact: true })
         await toggle.click()
         await expect(toggle).toHaveAttribute('aria-current', 'page')
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
       await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
-      await capturePage(page, 'threads-populated.png', { category: 'threads', state: 'populated' })
+      await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 
       await open('Footer links')
       await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
-      await capturePage(page, 'threads-open-running.png', { category: 'threads', state: 'open-running' })
+      await capturePage(page, `threads-open-running${suffix}.png`, { theme: appearance, category: 'threads', state: 'open-running' })
 
       await open('Streaming WAV stall')
       await expect(page.getByLabel('Thread transcript')).toContainText('The length marker fix still fails')
       await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
-      await capturePage(page, 'threads-stopped.png', { category: 'threads', state: 'stopped-open' })
+      await capturePage(page, `threads-stopped${suffix}.png`, { theme: appearance, category: 'threads', state: 'stopped-open' })
 
       await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
       await expect(page.getByRole('button', { name: /Settled/ })).toHaveAttribute('aria-expanded', 'true')
       // The attention queue stays listed whatever the query; a Codex-only result set follows it.
-      await expect(page.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Release notes 1.4' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Weekly note' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Weekly note', exact: true })).toHaveCount(0)
       await page.evaluate("document.querySelector('.app-room')?.scrollTo(0, 0)")
-      await capturePage(page, 'threads-search.png', { category: 'threads', state: 'search' })
+      await capturePage(page, `threads-search${suffix}.png`, { theme: appearance, category: 'threads', state: 'search' })
     })
 
-    await withSotto({ onboardingComplete: true, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
+    await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
       await page.getByRole('link', { name: 'Threads' }).click()
       await expect(page.getByRole('heading', { name: /No threads yet|Nothing here yet/i })).toBeVisible()
-      await capturePage(page, 'threads-empty.png', { category: 'threads', state: 'empty' })
+      await capturePage(page, `threads-empty${suffix}.png`, { theme: appearance, category: 'threads', state: 'empty' })
     })
   })
 
