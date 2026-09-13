@@ -14,6 +14,8 @@ export interface ThreadBrowser {
   readonly busy: boolean
   /** The last action that failed, in words. */
   readonly notice: string | null
+  /** A page main would not show, and why. It stays off the window until the reader tries again. */
+  readonly placementProblem: { readonly pageId: string; readonly message: string } | null
 }
 
 const unavailable: ToolsError = { code: 'unavailable', message: 'Browser is not available in this window.' }
@@ -55,8 +57,9 @@ export class BrowserStore {
   private readonly listTokens = new Map<string, number>()
   private subscribed: BrowserBridge | null = null
   private unsubscribe: (() => void) | null = null
-  /** The page main was last told to show, and where. */
-  private mounted: { pageId: string; bounds: BrowserBounds } | null = null
+  /** The page main was last told to show, where, and which request told it. */
+  private mounted: { pageId: string; bounds: BrowserBounds; request: number } | null = null
+  private placements = 0
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -67,7 +70,7 @@ export class BrowserStore {
   mountedPageId(): string | null { return this.mounted?.pageId ?? null }
 
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
-    if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null })
+    if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null })
     if (!bridge) { this.patch(threadId, { status: 'error', error: unavailable }); return }
     this.listen(bridge)
     const token = (this.listTokens.get(threadId) ?? 0) + 1
@@ -97,7 +100,7 @@ export class BrowserStore {
     const threadId = page.workspace.threadId
     const thread = this.threads.get(threadId)
     if (!thread) {
-      this.setThread({ threadId, workspace: page.workspace, status: 'ready', error: null, pages: [page], activePageId: page.id, busy: false, notice: null })
+      this.setThread({ threadId, workspace: page.workspace, status: 'ready', error: null, pages: [page], activePageId: page.id, busy: false, notice: null, placementProblem: null })
       return
     }
     this.upsert(page)
@@ -136,19 +139,38 @@ export class BrowserStore {
 
   /**
    * Places the page's native view at `bounds`, or takes it off the window with null. Unchanged bounds send
-   * nothing, and hiding a page only ever hides that page, so a stale hide cannot remove a newer one.
+   * nothing, and hiding a page only ever hides that page, so a stale hide cannot remove a newer one. A page main
+   * refused is not asked again until `retryPlacement`, and only the latest request's answer counts.
    */
   mount(bridge: BrowserBridge | undefined, threadId: string, pageId: string, bounds: BrowserBounds | null): void {
-    const workspace = this.threads.get(threadId)?.workspace
+    const thread = this.threads.get(threadId)
+    const workspace = thread?.workspace
     if (!bridge || !workspace) return
+    const target = { threadId, workspaceId: workspace.workspaceId, pageId }
     if (bounds === null) {
       if (this.mounted?.pageId !== pageId) return
       this.mounted = null
-    } else {
-      if (this.mounted?.pageId === pageId && sameBounds(this.mounted.bounds, bounds)) return
-      this.mounted = { pageId, bounds }
+      void settle(bridge.mount({ ...target, bounds }))
+      return
     }
-    void settle(bridge.mount({ threadId, workspaceId: workspace.workspaceId, pageId, bounds }))
+    if (this.mounted?.pageId === pageId && sameBounds(this.mounted.bounds, bounds)) return
+    if (thread.placementProblem?.pageId === pageId) return
+    const request = ++this.placements
+    this.mounted = { pageId, bounds, request }
+    void settle(bridge.mount({ ...target, bounds })).then(result => {
+      if (result.ok || this.mounted?.request !== request) return
+      // Main may still draw the page where an earlier request put it, over the explanation.
+      this.mounted = null
+      void settle(bridge.mount({ ...target, bounds: null }))
+      const message = result.error.code === 'busy' ? 'The browser is busy.' : result.error.message
+      this.patch(threadId, { placementProblem: { pageId, message: `This page could not be shown. ${message}`.trim() } })
+      if (result.error.code === 'workspace-changed' || result.error.code === 'page-unavailable') void this.activate(bridge, threadId)
+    })
+  }
+
+  /** Lets a refused page ask main again; the surface sends its rectangle on the next frame. */
+  retryPlacement(threadId: string, pageId: string): void {
+    if (this.threads.get(threadId)?.placementProblem?.pageId === pageId) this.patch(threadId, { placementProblem: null })
   }
 
   private async pageAction(bridge: BrowserBridge | undefined, threadId: string, pageId: string, run: (target: { threadId: string; workspaceId: string }) => Promise<ToolsResult<BrowserPage>>, words: string): Promise<boolean> {
@@ -197,7 +219,8 @@ export class BrowserStore {
     const index = thread.pages.findIndex(page => page.id === pageId)
     const pages = thread.pages.filter(page => page.id !== pageId)
     const active = thread.activePageId === pageId ? pages[Math.min(Math.max(index, 0), pages.length - 1)]?.id ?? null : thread.activePageId
-    this.setThread({ ...thread, pages, activePageId: active })
+    const placementProblem = thread.placementProblem?.pageId === pageId ? null : thread.placementProblem
+    this.setThread({ ...thread, pages, activePageId: active, placementProblem })
   }
 
   private fail(bridge: BrowserBridge, threadId: string, error: ToolsError, words: string): void {

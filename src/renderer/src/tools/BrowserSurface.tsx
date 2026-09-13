@@ -144,13 +144,14 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
     {newPage ? <div className="files-problem browser-empty" role="status">
       <strong>{pages.length === 0 ? 'No page is open for this thread.' : 'Open another page.'}</strong>
       <p>Pages open in a separate browser session inside Sotto, and keep their place while you work elsewhere. A development server on this computer opens over HTTP.</p>
-    </div> : active ? <PageViewport key={active.id} page={active} threadId={threadId} store={store} bridge={bridge} surface={surface} onOpenExternally={() => openExternally(active.url)} /> : null}
+    </div> : active ? <PageViewport key={active.id} page={active} threadId={threadId} store={store} bridge={bridge} surface={surface}
+      refused={browser.placementProblem?.pageId === active.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(active.url)} /> : null}
   </div>
 }
 
-function PageViewport({ page, threadId, store, bridge, surface, onOpenExternally }: {
+function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally }: {
   readonly page: BrowserPage; readonly threadId: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined
-  readonly surface: React.RefObject<HTMLDivElement | null>; readonly onOpenExternally: () => void
+  readonly surface: React.RefObject<HTMLDivElement | null>; readonly refused: string | null; readonly onOpenExternally: () => void
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(surface)
@@ -187,8 +188,14 @@ function PageViewport({ page, threadId, store, bridge, surface, onOpenExternally
         <button type="button" className="files-link tt-focusable" onClick={() => void store.history(bridge, threadId, pageId, 'reload')}>Try again</button>
         <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>Open in system browser</button>
       </div>
-    </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined}>
-      {covered ? <p className="browser-viewport__covered">The page steps aside while a menu or dialog is open.</p> : null}
+    </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
+      {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
+        <strong>{refused}</strong>
+        <div className="browser-unavailable__actions">
+          <button type="button" className="files-link tt-focusable" onClick={() => store.retryPlacement(threadId, pageId)}>Try again</button>
+          <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>Open in system browser</button>
+        </div>
+      </div> : covered ? <p className="browser-viewport__covered">The page steps aside while a menu or dialog is open.</p> : null}
     </div>}
   </div>
 }

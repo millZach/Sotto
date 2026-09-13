@@ -144,6 +144,89 @@ describe('Browser surface', () => {
   })
 })
 
+describe('Browser page placement', () => {
+  const frames = (count = 3) => act(async () => { for (let index = 0; index < count; index++) await new Promise(resolve => requestAnimationFrame(resolve)) })
+  const viewport = () => panel().querySelector('.browser-page')!
+
+  it('explains a page main refused to show, stops asking every frame and shows it again on Try again', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-unavailable', message: 'The working folder is not available.' } })
+    setup(browser)
+    const problem = await within(panel()).findByRole('alert')
+    expect(problem).toHaveTextContent('This page could not be shown. The working folder is not available.')
+    expect(viewport()).toContainElement(problem)
+    const sent = vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds !== null).length
+    await frames()
+    // The same rectangle on a refused page is not sent again every frame.
+    expect(vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds !== null)).toHaveLength(sent)
+
+    await userEvent.click(within(viewport() as HTMLElement).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(within(panel()).queryByText(/could not be shown/u)).not.toBeInTheDocument())
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt })
+    expect(vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds !== null)).toHaveLength(sent + 1)
+  })
+
+  it('treats a mount that never answers like a refusal', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    vi.mocked(browser.bridge.mount).mockRejectedValueOnce(new Error('ipc gone'))
+    setup(browser)
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent('This page could not be shown. Sotto did not answer.')
+  })
+
+  it('lists the workspace again after it changed, and Try again places the page in the new workspace', async () => {
+    const TOKEN_B = TOKEN_A.replace(/^./u, 'b')
+    const moved = { ...workspace, workspaceId: TOKEN_B }
+    const browser = fakeBrowser([page(PAGE_1)])
+    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-changed', message: 'The working folder changed.' } })
+    setup(browser)
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace: moved, pages: [page(PAGE_1, { workspace: moved })] }))
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent('This page could not be shown. The working folder changed.')
+    await waitFor(() => expect(browser.bridge.list).toHaveBeenCalledTimes(2))
+    await frames()
+    expect(browser.bridge.mount).not.toHaveBeenCalledWith(expect.objectContaining({ workspaceId: TOKEN_B, bounds: shownAt }))
+    await userEvent.click(within(viewport() as HTMLElement).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_B, pageId: PAGE_1, bounds: shownAt }))
+    expect(within(panel()).queryByText(/could not be shown/u)).not.toBeInTheDocument()
+  })
+
+  it('ignores a late answer for a page that is no longer the one shown', async () => {
+    const browser = fakeBrowser([page(PAGE_1), page(PAGE_2, { title: 'Docs' })])
+    let refuse!: (result: ToolsResult<void>) => void
+    vi.mocked(browser.bridge.mount).mockImplementation(async ({ pageId, bounds }) => pageId === PAGE_2 && bounds !== null
+      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+    setup(browser)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt }))
+    await userEvent.click(within(panel()).getByRole('tab', { name: 'Vite App' }))
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+    const sent = vi.mocked(browser.bridge.mount).mock.calls.length
+    await act(async () => { refuse({ ok: false, error: { code: 'busy', message: 'Busy.' } }) })
+    await frames()
+    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
+    // Nothing about the shown page changes: no hide, no second placement.
+    expect(vi.mocked(browser.bridge.mount).mock.calls).toHaveLength(sent)
+    await userEvent.click(within(panel()).getByRole('tab', { name: 'Docs' }))
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt }))
+    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('ignores a late refusal for a rectangle the page has since moved from', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    let refuse!: (result: ToolsResult<void>) => void
+    let calls = 0
+    vi.mocked(browser.bridge.mount).mockImplementation(async ({ bounds }) => bounds !== null && ++calls === 1
+      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+    setup(browser)
+    await waitFor(() => expect(calls).toBe(1))
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('browser-viewport') ? DOMRect.fromRect({ x: 900, y: 180, width: 700, height: 520 }) : DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 })
+    })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: { x: 900, y: 180, width: 700, height: 520 } }))
+    await act(async () => { refuse({ ok: false, error: { code: 'busy', message: 'Busy.' } }) })
+    await frames()
+    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
 describe('web links in a thread', () => {
   function transcript(browser: ReturnType<typeof fakeBrowser>, store: ToolsPanelStore) {
     render(<ThreadWebLinks threadId="visual-gate" threadTitle="Visual gate flake" bridge={browser.bridge} store={store}>
