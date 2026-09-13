@@ -162,7 +162,8 @@ describe('Browser page placement', () => {
 
     await userEvent.click(within(viewport() as HTMLElement).getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(within(panel()).queryByText(/could not be shown/u)).not.toBeInTheDocument())
-    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt })
+    // The notice goes at once; the placement follows on the next frame.
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
     expect(vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds !== null)).toHaveLength(sent + 1)
   })
 
