@@ -44,7 +44,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // checks busy state, provider locks and authority before dispatch.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'observe-threads' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation

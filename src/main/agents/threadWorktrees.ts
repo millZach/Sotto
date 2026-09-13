@@ -46,7 +46,7 @@ export class ThreadWorktrees {
     }
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() }
-    catch { throw new Error('This Git repository has no commit to branch from. Make its first commit or explicitly create a shared-working-copy thread.') }
+    catch { throw new Error('This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.') }
     const projectRelativePath = relative(await realpath(repositoryRoot), cwd).split(sep).join('/')
     if (projectRelativePath) {
       try {

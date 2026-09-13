@@ -19,7 +19,7 @@ import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider, useAgents } from './agents/AgentContext'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
-import { ThreadsView } from './agents/ThreadsView'
+import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
@@ -251,7 +251,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
         break
       case 'threads':
-        view = <ThreadsView
+        view = <ThreadWorkspace
           onOpenAgents={() => { setAgentSheet('session'); app.actions.navigate('agents') }}
           now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
         />
