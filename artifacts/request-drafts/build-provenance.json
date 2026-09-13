@@ -1,0 +1,25 @@
+{
+    "sourceCommit":  "55d905312b5ad630bd02919b979c1c5a76b7e733",
+    "baseline":  "0bde0441bc75bef64dc203af6f16c0382ec88cd2",
+    "worktree":  "D:\\Talk to Text Application\\.worktrees\\phase3-answer-drafts",
+    "builtLocally":  true,
+    "sourceDirtyAtBuild":  false,
+    "files":  [
+                  {
+                      "path":  "out/main/index.js",
+                      "sha256":  "3195101d9d9ebc05a33923d2ad2173cd2affd35ae49339690c20f1d8db6c1b20"
+                  },
+                  {
+                      "path":  "out/preload/index.js",
+                      "sha256":  "9876c6037797b74ae19ca0e35b90d9e5e1a26202f4836c38132770fc50cacb54"
+                  },
+                  {
+                      "path":  "out/renderer/index.html",
+                      "sha256":  "a3b45218424e0c5a4d0ae04e83841afc346ce75ef8e77daf03edccc343357c9b"
+                  },
+                  {
+                      "path":  "out/renderer/assets/main-BjG6IcTy.js",
+                      "sha256":  "b0d819a52f97c9aea7164b058a70b87d5a3de4ed2091f07609d45fad5a7a4384"
+                  }
+              ]
+}
