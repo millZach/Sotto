@@ -1,5 +1,5 @@
 import type { AgentSkillReference } from '../../shared/agentSkills'
-import { FollowupStore } from './followups'
+import { FollowupStore, followupDigest } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -38,6 +38,7 @@ const savedSchema = z.object({
   draftAttachments: agentAttachmentsSchema.default([]),
   manualDraftId: z.uuid().nullable().default(null),
   deliveredDrafts: agentDeliveryReceiptsSchema.default([]),
+  deliveredPromptDigests: z.array(z.object({ threadId: z.string(), draftId: z.uuid(), digest: z.string() })).default([]),
   threadDrafts: z.array(agentThreadDraftSchema).default([]),
   deliveries: z.array(agentDeliverySchema).default([]),
   pendingRequest: z.string().max(20_000).default(''),
@@ -90,7 +91,8 @@ export class AgentControl {
   private speechPreferenceRevision = 0
   private selectionRevision = 0
   private manualDraftId: string | null = null
-  private readonly manualSends = new Map<string, Promise<AgentState>>()
+  private readonly promptAdmissions = new Map<string, { digest: string; task: Promise<AgentState> }>()
+  private deliveredPromptDigests: Saved['deliveredPromptDigests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
   private viewedThreadIds: readonly string[] = []
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
@@ -133,7 +135,8 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(saved.threadDrafts)
     await this.attachmentPreviews.load()
     this.contextActivityAt = saved.contextSavedAt
-    const { outbox, contextSavedAt, manualDraftId, ...restored } = saved
+    const { outbox, contextSavedAt, manualDraftId, deliveredPromptDigests, ...restored } = saved
+    this.deliveredPromptDigests = deliveredPromptDigests
     this.manualDraftId = manualDraftId
     Object.assign(this.state, restored)
     // Upgrade the native singleton in place, never from the currently selected thread.
@@ -234,6 +237,7 @@ export class AgentControl {
       queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open the provider to review this pending item.' })),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
       contextSavedAt: this.contextActivityAt, outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
+      deliveredPromptDigests: this.deliveredPromptDigests,
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
   }
   async privacyChanged(): Promise<void> {
@@ -418,6 +422,38 @@ export class AgentControl {
     this.publish(); return this.get()
   }
   command(command: AgentCommand): Promise<AgentState> {
+    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command)
+    const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
+    const { threadId, draftId } = prompt
+    const key = JSON.stringify([threadId, draftId])
+    const digest = this.promptDigest(prompt.text, prompt.attachments, prompt.skills)
+    const pending = this.promptAdmissions.get(key)
+    const queue = this.followupStore.get()
+    const matches = (item: { threadId?: string | undefined; draftId?: string | undefined }): boolean => item.threadId === threadId && item.draftId === draftId
+    const queued = queue.items.find(matches)
+    const receipt = queue.receipts.find(matches)
+    const delivered = this.state.deliveredDrafts?.some(matches)
+    const outbox = this.outbox.find(matches)
+    const ownedDigest = pending?.digest ?? receipt?.digest ?? (queued ? followupDigest(queued) : undefined)
+      ?? this.deliveredPromptDigests.find(matches)?.digest ?? outbox?.draftDigest
+    if (pending || queued || receipt || delivered || outbox) {
+      if (ownedDigest !== digest) {
+        this.state.error = 'This revision already belongs to a submitted prompt. Use a new draft revision for different content.'
+        this.publish(); return Promise.resolve(this.get())
+      }
+      if (pending) return pending.task
+      if (queued || receipt || delivered || prompt.type === 'queue-followup') return Promise.resolve(this.get())
+      // An explicit retry of an uncertain manual send/steer only reconciles the outbox.
+    }
+    let resolve!: (state: AgentState) => void; let reject!: (error: unknown) => void
+    const task = new Promise<AgentState>((done, fail) => { resolve = done; reject = fail })
+    // Reserve before publishing feedback or starting any asynchronous persistence.
+    this.promptAdmissions.set(key, { digest, task })
+    try { this.commandUnreserved(prompt).then(resolve, reject) } catch (error) { reject(error) }
+    void task.finally(() => this.promptAdmissions.delete(key)).catch(() => undefined)
+    return task
+  }
+  private commandUnreserved(command: AgentCommand): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -432,12 +468,6 @@ export class AgentControl {
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
     const actionThreadId = 'threadId' in command ? command.threadId : ''
-    if (command.type === 'manual-send' && command.draftId) {
-      const existing = this.manualSends.get(JSON.stringify([command.threadId, command.draftId]))
-      if (existing) return existing
-      const { threadId, draftId } = command
-      if (this.state.deliveredDrafts?.some(r => r.threadId === threadId && r.draftId === draftId) || this.state.followupReceipts?.some(r => r.threadId === threadId && r.draftId === draftId)) return Promise.resolve(this.get())
-    }
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
     if (command.type === 'manual-send' && !reconcilingDraft && (this.threadActions.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
@@ -448,11 +478,7 @@ export class AgentControl {
     let admission: Promise<Error | undefined> | undefined
     if ((command.type === 'manual-send' || command.type === 'steer')) {
       command = { ...command, draftId: command.draftId ?? randomUUID() }
-      const { threadId, draftId } = command
-      const key = JSON.stringify([command.threadId, command.draftId])
-      const existing = this.manualSends.get(key)
-      if (existing) return existing
-      if (this.state.deliveredDrafts?.some(item => item.threadId === threadId && item.draftId === draftId)) return Promise.resolve(this.get())
+      const { threadId } = command
       if (!this.outbox.some(item => item.threadId === threadId)) {
         const current = this.state.threadDrafts?.find(item => item.threadId === threadId)
         // An explicit answer retains its owner and request; manual prompt validation will reject it.
@@ -541,16 +567,11 @@ export class AgentControl {
       this.threadActions.set(actionThreadId, task)
       void task.finally(() => { if (this.threadActions.get(actionThreadId) === task) this.threadActions.delete(actionThreadId); this.pumpFollowups() }).catch(() => undefined)
     } else this.serial = task.catch(() => undefined)
-    if ((command.type === 'manual-send' || command.type === 'steer')) {
-      const key = JSON.stringify([command.threadId, command.draftId])
-      this.manualSends.set(key, task)
-      void task.finally(() => this.manualSends.delete(key)).catch(() => undefined)
-    }
     return task
   }
   private syncFollowups(): void {
     const { items, receipts } = this.followupStore.get()
-    this.state.followups = items; this.state.followupReceipts = receipts
+    this.state.followups = items; this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
@@ -665,11 +686,15 @@ export class AgentControl {
     }
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {
+    const turn = this.beginTurn({ source: 'command', commandType: 'interrupt', text: '', threadId: command.threadId,
+      projectId: this.state.host.threads.find(thread => thread.id === command.threadId)?.projectId ?? null })
+    let failure: string | undefined
     try {
+      this.state.error = null
       await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume queued follow-ups when ready.')
-      this.syncFollowups(); await this.execute(command); await this.persist()
-    } catch (error) { this.state.error = error instanceof Error ? error.message : 'Could not interrupt this thread.' }
-    this.publish(); return this.get()
+      this.syncFollowups(); await this.execute(command, turn); await this.persist()
+    } catch (error) { failure = error instanceof Error ? error.message : 'Could not interrupt this thread.'; this.state.error = failure }
+    this.publish(); await this.finishTurn(turn, failure); return this.get()
   }
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
@@ -1282,7 +1307,7 @@ export class AgentControl {
   }
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
   private promptDigest(text: string, attachments: AgentAttachment[] = [], skills: AgentSkillReference[] = []): string {
-    return createHash('sha256').update(JSON.stringify(skills.length ? [text.trim(), attachments, skills] : [text.trim(), attachments])).digest('hex')
+    return followupDigest({ text, attachments, skills })
   }
   private readPreferences(query: string, projectId: string | null, threadId: string | null, turn?: ActiveTurn): AgentPreference[] {
     if (!this.dependencies.preferences) return []
@@ -1421,17 +1446,21 @@ export class AgentControl {
       if (!confirmed) continue
       const turn = this.dispatchTurns.get(item.id)
       if (turn) this.feedbackReady.add(turn)
+      // Match both representations while the selected skills and revision owner still exist.
+      const clearsLegacyDraft = message && (!item.draftId || item.draftId === this.manualDraftId) && this.state.draftThreadId === thread?.id && (item.draftDigest
+        ? item.draftDigest === this.promptDigest(this.state.draft, this.state.draftAttachments, this.state.threadDrafts?.find(d => d.threadId === this.state.draftThreadId && d.draftId === this.manualDraftId)?.skills)
+        : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
       if (message && item.draftId && item.threadId) {
         this.setDelivery(item.threadId, item.draftId, 'accepted', { commandId: item.id, messageId: item.messageId })
         this.state.deliveredDrafts = [...(this.state.deliveredDrafts ?? []).filter(receipt => receipt.threadId !== item.threadId || receipt.draftId !== item.draftId),
           { threadId: item.threadId, draftId: item.draftId }].slice(-MAX_DELIVERED_DRAFTS)
+        if (item.draftDigest) this.deliveredPromptDigests = [...this.deliveredPromptDigests.filter(r => r.threadId !== item.threadId || r.draftId !== item.draftId),
+          { threadId: item.threadId, draftId: item.draftId, digest: item.draftDigest }].slice(-MAX_DELIVERED_DRAFTS)
         this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== item.threadId || draft.draftId !== item.draftId
           || item.draftDigest !== this.promptDigest(draft.text, draft.attachments, draft.skills))
       }
-      if (message && (!item.draftId || item.draftId === this.manualDraftId) && this.state.draftThreadId === thread?.id && (item.draftDigest
-        ? item.draftDigest === this.promptDigest(this.state.draft, this.state.draftAttachments, this.state.threadDrafts?.find(d => d.threadId === this.state.draftThreadId && d.draftId === this.manualDraftId)?.skills)
-        : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)) {
+      if (clearsLegacyDraft) {
         this.clearDraft()
       }
     }

@@ -95,6 +95,28 @@ afterEach(async () => {
 })
 
 describe('coordinator turn records', () => {
+  it.each(['completed', 'failed'] as const)('records an immediate interrupt as %s while reasoning still owns the command lane', async outcome => {
+    const f = await fixture(); await f.account()
+    f.host.event({ type: 'manual', threadId: 'docs', text: 'Independent work', status: 'running' })
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+    const pendingIntent = gate()
+    const intent = vi.spyOn(f.reasoner, 'intent').mockImplementation(async () => {
+      await pendingIntent.promise; return { type: 'clarify', text: 'Choose the next action' }
+    })
+    if (outcome === 'failed') vi.spyOn(f.host, 'execute').mockRejectedValueOnce(new Error('Synthetic interrupt failure'))
+    const reasoning = f.control.command({ type: 'utterance', text: 'Think about the next action' })
+    try {
+      await vi.waitFor(() => expect(intent).toHaveBeenCalled())
+      const result = await f.control.command({ type: 'interrupt', threadId: 'docs' })
+      expect(result.busy).toBe(true)
+      expect(await lastRawRecord(f.root)).toMatchObject({ commandType: 'interrupt', source: 'command', outcome,
+        threadId: 'docs', projectId: 'project', providerSessionId: 'session-docs',
+        error: outcome === 'failed' ? 'Synthetic interrupt failure' : '' })
+      expect((await f.recorder.recent(100)).filter(record => record.commandType === 'interrupt')).toHaveLength(1)
+      if (outcome === 'completed') expect(result.host.threads.find(thread => thread.id === 'docs')?.status).toBe('idle')
+    } finally { pendingIntent.resolve(); await reasoning }
+  })
+
   it('timestamps the first confirmed-message publication before a delayed command completes', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })

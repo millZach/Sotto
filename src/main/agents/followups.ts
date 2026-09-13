@@ -1,10 +1,14 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { agentFollowupSchema, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, type AgentFollowup } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
-const schema = z.object({ items: z.array(agentFollowupSchema), receipts: agentDeliveryReceiptsSchema })
+export function followupDigest(input: Pick<AgentFollowup, 'text' | 'attachments' | 'skills'>): string {
+  return createHash('sha256').update(JSON.stringify(input.skills?.length
+    ? [input.text.trim(), input.attachments, input.skills] : [input.text.trim(), input.attachments])).digest('hex')
+}
+const schema = z.object({ items: z.array(agentFollowupSchema), receipts: z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS) })
 type State = z.infer<typeof schema>
 
 /** Only durable snapshots become visible. No provider work runs under this store's mutation lane. */
@@ -34,12 +38,17 @@ export class FollowupStore {
   }
   enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'resumeAfterTurnId'>): Promise<void> {
     return this.change(state => {
-      if (state.receipts.some(r => r.threadId === input.threadId && r.draftId === input.draftId)
-        || state.items.some(r => r.threadId === input.threadId && r.draftId === input.draftId)) return
+      const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
+      const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
+      const digest = followupDigest(input)
+      if (receipt || item) {
+        if ((receipt?.digest ?? (item ? followupDigest(item) : undefined)) !== digest) throw new Error('This revision already belongs to a submitted prompt. Use a new draft revision for different content.')
+        return
+      }
       if (state.items.filter(item => item.threadId === input.threadId).length >= 100) throw new Error('This thread already has 100 follow-ups. Remove or send some first.')
       const now = new Date().toISOString()
       state.items.push(agentFollowupSchema.parse({ ...input, id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now }))
-      state.receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId }].slice(-MAX_DELIVERED_DRAFTS)
+      state.receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }].slice(-MAX_DELIVERED_DRAFTS)
     })
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills'>): Promise<void> {

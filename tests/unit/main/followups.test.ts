@@ -224,3 +224,150 @@ it('does not dispatch a stale queue head after an edit operation has reordered i
   await expect(store.claim(first!.id)).rejects.toThrow(/no longer ready/)
   expect(store.get().items.map(i => i.status)).toEqual(['queued', 'queued'])
 })
+
+it('clears an accepted selected-skill revision from both draft representations and disk', async () => {
+  const f = await fixture()
+  const command = { ...queued('$build run'), type: 'manual-send' as const, skills: [{ name: 'build', path: 'C:/synthetic/SKILL.md' }] }
+  const state = await f.control.command(command)
+  expect(state.deliveredDrafts).toContainEqual({ threadId: command.threadId, draftId: command.draftId })
+  expect(state.draft).toBe('')
+  expect(state.threadDrafts).toEqual([])
+  expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))).toMatchObject({ draft: '', threadDrafts: [], composing: false })
+})
+
+it('does not queue a revision whose manual acknowledgement is still pending', async () => {
+  const f = await fixture(); let release!: () => void
+  f.host.gate = new Promise<void>(done => { release = done })
+  const command = { ...queued('dispatch once'), type: 'manual-send' as const }
+  const first = f.control.command(command)
+  try {
+    await expect.poll(() => f.host.attempts.length).toBe(1)
+    const duplicate = f.control.command({ ...command, type: 'queue-followup' })
+    release(); await first; await duplicate
+    expect(f.control.get().followups).toEqual([])
+    complete(f.host)
+    await f.control.command({ type: 'refresh' })
+    expect(f.host.attempts).toHaveLength(1)
+  } finally { release(); await first }
+})
+
+it.each(['manual-send', 'steer', 'queue-followup'] as const)('reserves queue ownership against %s while its durable write is pending', async type => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  const command = queued('owned once')
+  let release!: () => void; let entered!: () => void
+  const gate = new Promise<void>(done => { release = done }); const ready = new Promise<void>(done => { entered = done })
+  const original = AtomicJsonStore.prototype.write
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
+    if ((value as { items?: unknown[] }).items?.length) { entered(); await gate }
+    await original.call(this, value)
+  })
+  const first = f.control.command(command)
+  try {
+    await ready
+    const duplicate = f.control.command({ ...command, type })
+    release(); await first
+    expect((await duplicate).error).toBeNull()
+    expect(f.host.attempts).toEqual([])
+    expect(f.control.get().followups).toHaveLength(1)
+    expect(f.control.get().threadDrafts).toEqual([])
+  } finally { release(); await first }
+})
+
+it.each(['manual-send', 'steer', 'queue-followup'] as const)('rejects different content with a queued revision ID through %s', async type => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  const command = queued('original'); await f.control.command(command)
+  const state = await f.control.command({ ...command, type, text: 'must not disappear' })
+  expect(state.error).toMatch(/new draft revision/)
+  expect(state.followups?.map(i => i.text)).toEqual(['original'])
+  expect(f.host.attempts).toEqual([])
+})
+
+it.each(['manual-send', 'steer', 'queue-followup'] as const)('keeps an accepted manual revision owned across restart when retried through %s', async type => {
+  const f = await fixture(); const command = queued('accepted once')
+  await f.control.command({ ...command, type: 'manual-send' })
+  f.control.dispose(); await f.control.privacyChanged()
+  const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+  expect((await restored.command({ ...command, type })).error).toBeNull()
+  expect(restored.get().followups).toEqual([])
+  const conflict = await restored.command({ ...command, type, skills: [{ name: 'build', path: 'C:/different/SKILL.md' }] })
+  expect(conflict.error).toMatch(/new draft revision/)
+  complete(f.host); await restored.command({ type: 'refresh' })
+  expect(f.host.attempts).toHaveLength(1)
+})
+
+it.each(['manual-send', 'steer', 'queue-followup'] as const)('keeps queue admission identity after an edit/removal and restart through %s', async type => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  const command = queued('original'); await f.control.command(command)
+  const item = f.control.get().followups![0]!
+  await f.control.command({ type: 'edit-followup', threadId: item.threadId, itemId: item.id, text: 'edited in queue' })
+  await f.control.command({ type: 'remove-followup', threadId: item.threadId, itemId: item.id })
+  f.control.dispose(); await f.control.privacyChanged()
+  const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+  expect((await restored.command({ ...command, type })).error).toBeNull()
+  expect((await restored.command({ ...command, type, text: 'new content needs its own revision' })).error).toMatch(/new draft revision/)
+  expect(restored.get().followups).toEqual([])
+  expect(f.host.attempts).toEqual([])
+})
+
+it('never queues uncertain manual intent, while retaining newer revisions and the same ID on another thread', async () => {
+  const f = await fixture(); f.host.result = { accepted: false, uncertain: true }
+  const command = queued('uncertain once')
+  await f.control.command({ ...command, type: 'manual-send' })
+  f.control.dispose(); await f.control.privacyChanged()
+  const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+  await restored.command(command)
+  expect(restored.get().followups).toEqual([])
+  expect(restored.get().deliveries).toContainEqual(expect.objectContaining({ draftId: command.draftId, status: 'uncertain' }))
+  expect((await restored.command({ ...command, text: 'changed content' })).error).toMatch(/new draft revision/)
+  const newer = { ...command, draftId: randomUUID(), text: 'legitimate next revision' }
+  await restored.command({ ...newer, type: 'save-thread-draft' }); await restored.command(newer)
+  f.host.update('docs', { status: 'running' })
+  await restored.command({ ...command, threadId: 'docs' })
+  expect(restored.get().followups).toEqual(expect.arrayContaining([
+    expect.objectContaining({ threadId: 'workshop', draftId: newer.draftId, text: newer.text }),
+    expect.objectContaining({ threadId: 'docs', draftId: command.draftId }),
+  ]))
+  expect(f.host.attempts.filter(c => 'threadId' in c && c.threadId === 'workshop')).toHaveLength(1)
+})
+
+it('rejects conflicting content during manual admission before any outbox write', async () => {
+  const f = await fixture(); let release!: () => void; let entered!: () => void
+  const gate = new Promise<void>(done => { release = done }); const ready = new Promise<void>(done => { entered = done })
+  const original = AtomicJsonStore.prototype.write
+  let blocked = false
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
+    if (!blocked && (value as { deliveries?: unknown[] }).deliveries?.length) { blocked = true; entered(); await gate }
+    await original.call(this, value)
+  })
+  const command = queued('reserved before persistence')
+  const sending = f.control.command({ ...command, type: 'manual-send' })
+  try {
+    await ready
+    expect(f.host.attempts).toEqual([])
+    for (const type of ['manual-send', 'steer', 'queue-followup'] as const) {
+      expect(f.control.command({ ...command, type })).toBe(sending)
+      expect((await f.control.command({ ...command, type, text: 'conflict' })).error).toMatch(/new draft revision/)
+    }
+  } finally { release(); await sending }
+  expect(f.control.get().followups).toEqual([])
+  expect(f.host.attempts).toHaveLength(1)
+})
+
+it('releases a failed queue admission so the retained revision can be retried', async () => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  const command = queued('retry when durable')
+  await f.control.command({ ...command, type: 'save-thread-draft' })
+  const original = AtomicJsonStore.prototype.write
+  const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
+    if ((value as { items?: unknown[] }).items?.length) throw new Error('Synthetic queue write failure')
+    await original.call(this, value)
+  })
+  expect((await f.control.command(command)).error).toMatch(/Synthetic queue write failure/)
+  expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: command.draftId }))
+  expect(f.control.get().followupReceipts).toEqual([])
+  spy.mockRestore()
+  expect((await f.control.command(command)).error).toBeNull()
+  expect(f.control.get().followups).toHaveLength(1)
+  expect(f.control.get().threadDrafts).toEqual([])
+  expect(f.host.attempts).toEqual([])
+})
