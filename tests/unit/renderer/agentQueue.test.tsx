@@ -14,6 +14,18 @@ import { AgentComposer, AgentQueue } from '../../../src/renderer/src/agents/Agen
 
 const directories: string[] = []
 const controls: AgentControl[] = []
+const pendingCommands = new Set<Promise<unknown>>()
+
+function trackCommand<T>(command: Promise<T>): Promise<T> {
+  pendingCommands.add(command)
+  void command.then(() => pendingCommands.delete(command), () => pendingCommands.delete(command))
+  return command
+}
+
+async function finishCommands(): Promise<void> {
+  // A published state (or busy=false) is not the command's persistence acknowledgement.
+  while (pendingCommands.size) await Promise.allSettled([...pendingCommands])
+}
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-answer-ui-'))
@@ -45,8 +57,8 @@ async function fixture() {
   return {
     host,
     get control() { return control },
-    get bridge(): AgentBridge { return { get: async () => control.get(), command: request => control.command(request), onState: listener => control.subscribe(listener) } },
-    async restart() { control.dispose(); await start() },
+    get bridge(): AgentBridge { return { get: async () => control.get(), command: request => trackCommand(control.command(request)), onState: listener => control.subscribe(listener) } },
+    async restart() { await finishCommands(); control.dispose(); await start() },
   }
 }
 
@@ -58,6 +70,7 @@ function Surface({ bridge, compact = false }: { readonly bridge: AgentBridge; re
 
 afterEach(async () => {
   cleanup()
+  await finishCommands()
   for (const control of controls.splice(0)) control.dispose()
   for (const directory of directories.splice(0)) {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-answer-ui-')) throw new Error('Unexpected answer test directory')
