@@ -101,7 +101,7 @@ export class CodexAppServerHost implements AgentHost {
   private skillsRevision = 0
   private readonly loadedSkillCwds = new Set<string>()
   private state: AgentHostSnapshot = { connected: false, name: 'Codex', version: '', projects: [], models: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
@@ -428,6 +428,44 @@ export class CodexAppServerHost implements AgentHost {
             ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: false }, value => this.applySettings(id, value), async () => {
             delete alias.pendingSettings; await this.persist()
           })
+        } else if (command.type === 'steer') {
+          const thread = this.ensureThread(id)
+          const expectedTurnId = this.runningTurns.get(id)
+          const validate = (): void => {
+            if (!expectedTurnId || this.runningTurns.get(id) !== expectedTurnId || thread.status !== 'running') throw new Error('The active Codex turn changed. Queue this follow-up instead.')
+            if (thread.requests.length) throw new Error('Answer the pending Codex request explicitly before steering.')
+            if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) throw new Error('The thread changed in Codex. Review it before steering.')
+          }
+          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          if (alias.origins.some(o => o.messageId === command.messageId)) return thread.messages.some(m => m.id === command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
+          validate()
+          // The skills lane supplies this catalog-validated input builder. A standalone
+          // queue checkout must fail explicitly if that capability has not landed.
+          const skillHost = this as typeof this & { prepareSkillInput?: (id: string, text: string, skills?: readonly AgentSkillReference[]) => Promise<unknown[]> }
+          if (command.skills?.length && !skillHost.prepareSkillInput) throw new Error('Native skill invocation is unavailable. Keep this prompt until skills support is connected.')
+          const input = skillHost.prepareSkillInput ? await skillHost.prepareSkillInput(id, command.text, command.skills) : [{ type: 'text', text: command.text }]
+          validate()
+          if (this.dispatching.has(id)) throw new Error('A Codex prompt is already being submitted.')
+          this.dispatching.add(id)
+          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId! }
+          alias.origins.push(origin)
+          try {
+            try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
+            catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
+            this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+            await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, input }, async value => {
+              const response = z.object({ turnId: z.string() }).parse(value)
+              if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
+              if (!thread.messages.some(m => m.id === origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt })
+              this.unconfirmedDispatchSessionIds.delete(id); this.emit(); await this.persist()
+            }, async () => {
+              alias.origins = alias.origins.filter(o => o !== origin)
+              this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); await this.persist()
+            })
+          } catch (error) {
+            if (error instanceof Uncertain) this.unconfirmedDispatchSessionIds.add(id)
+            throw error
+          } finally { this.dispatching.delete(id) }
         } else if (command.type === 'answer') {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')

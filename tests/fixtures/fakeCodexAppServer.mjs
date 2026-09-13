@@ -143,6 +143,16 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (script.question) raise(thread, 'question', script.question)
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
+  } else if (method === 'turn/steer') {
+    const thread = state.threads[params.threadId]
+    const turn = thread?.turns.at(-1)
+    if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {
+      emit({ id, error: { code: -32600, message: 'Expected active turn does not match' } }); return
+    }
+    const item = { type: 'userMessage', id: randomUUID(), content: params.input }
+    turn.items.push(item); save()
+    if (!script.suppressNotifications) notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+    reply({ turnId: turn.id })
   } else if (method === 'turn/interrupt') {
     const thread = state.threads[params.threadId]
     const turn = thread.turns.find(turn => turn.id === params.turnId)

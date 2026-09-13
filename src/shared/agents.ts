@@ -130,6 +130,7 @@ export const agentCapabilitiesSchema = z.object({
   observe: z.boolean(), questions: z.boolean(), permissions: z.boolean(),
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
   configureThread: z.boolean().optional(), skills: z.boolean().optional(),
+  steer: z.boolean().optional(),
 })
 export const agentProviderStatusSchema = z.object({
   id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
@@ -232,6 +233,14 @@ export const agentThreadDraftSchema = z.object({
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
+/** User-authored follow-ups; independent of attention and dispatched outbox intent. */
+export const agentFollowupSchema = z.object({
+  id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
+  error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
+})
+export type AgentFollowup = z.infer<typeof agentFollowupSchema>
 export const agentDeliverySchema = z.object({
   threadId: id, draftId: z.uuid(),
   status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
@@ -260,6 +269,8 @@ export const agentStateSchema = z.object({
     threadId: id, draftId: z.uuid(), status: z.enum(['saved', 'saving', 'unsaved']),
   })).optional(),
   deliveries: z.array(agentDeliverySchema).optional(),
+  followups: z.array(agentFollowupSchema).optional(),
+  followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
@@ -291,7 +302,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), requestId: id.nullable().optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
-  z.object({ type: z.literal('manual-send'), threadId: id, text, skills: agentSkillReferencesSchema.optional(), attachments: agentAttachmentsSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
+  z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
+  z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
+  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),

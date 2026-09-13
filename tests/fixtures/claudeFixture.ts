@@ -27,7 +27,7 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 150): Prom
       completeTurn: (id, text) => action(id, { type: 'complete', text }),
       raiseQuestion: (id, text) => action(id, { type: 'question', text }),
       raisePermission: (id, text) => action(id, { type: 'permission', text }),
-      delayNextAck: async () => { await writeFile(join(root, 'script.json'), JSON.stringify({ delay: 400 })) },
+      delayNextAck: async () => { await writeFile(join(root, 'script.json'), JSON.stringify({ delay: Math.max(400, requestTimeoutMs * 2) })) },
       requests: async () => { await check(); return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as RecordedRpc) },
       restart: async () => { adapter.disconnect(); await adapter.closed(); return claudeFixture(root, requestTimeoutMs) },
     },

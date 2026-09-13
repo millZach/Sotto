@@ -5,7 +5,8 @@ export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
   | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly workingDirectory?: string } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string } & AgentThreadOptions)
-  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly skills?: AgentSkillReference[]; readonly attachments?: AgentAttachment[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }

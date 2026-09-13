@@ -231,11 +231,10 @@ describe('truthful durable draft delivery', () => {
     expect(f.control.get().threadDrafts![0]!.draftId).toBe(newer.draftId)
   })
 
-  it.each(['disconnected', 'managed', 'running', 'rejected'] as const)('reports %s as failed, keeps the complete draft and never silently queues a running turn', async condition => {
+  it.each(['disconnected', 'managed', 'rejected'] as const)('reports %s as failed, keeps the complete draft before dispatch', async condition => {
     const f = await fixture()
     if (condition === 'disconnected') await f.control.command({ type: 'disconnect' })
     if (condition === 'managed') await f.control.command({ type: 'assign', threadId: 'workshop' })
-    if (condition === 'running') await f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: 'workshop', text: 'Earlier turn' })
     if (condition === 'rejected') f.host.result = { accepted: false }
     const count = f.host.attempts.length; const draft = save('workshop', 'Keep me', [image])
     const result = await f.control.command(send(draft))
