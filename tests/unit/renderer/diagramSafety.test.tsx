@@ -136,14 +136,14 @@ describe('diagram palette and viewer geometry', () => {
     expect(mixHex('#fff', '#000', 1)).toBe('#ffffff')
   })
 
-  it('falls back to Sotto dark or light colours when tokens cannot be read', () => {
+  it('falls back to Ocean dark or light colours when tokens cannot be read', () => {
     const root = document.createElement('html')
-    expect(readDiagramPalette(root)).toMatchObject({ dark: true, text: '#f3f4f3', accent: '#47b8a9' })
+    expect(readDiagramPalette(root)).toMatchObject({ dark: true, text: '#fffaff', accent: '#70b9ee' })
     root.dataset.theme = 'light'
     root.style.setProperty('--tt-accent', '#AA3355')
     root.style.setProperty('--tt-text', 'color-mix(in srgb, red, blue)')
     document.body.appendChild(root)
-    expect(readDiagramPalette(root)).toMatchObject({ dark: false, text: '#141816', accent: '#aa3355' })
+    expect(readDiagramPalette(root)).toMatchObject({ dark: false, text: '#241523', accent: '#aa3355' })
     root.remove()
   })
 

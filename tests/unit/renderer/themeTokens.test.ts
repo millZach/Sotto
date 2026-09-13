@@ -86,6 +86,15 @@ describe('main-window theme tokens', () => {
       const declarations = rootDeclarations('dark', 'ocean', { glass })
       expect(resolveColor('--tt-glass', declarations).a).toBeCloseTo(glass / 100, 5)
     }
+    // Text stays readable on the most transparent glass, painted over the room.
+    for (const mode of MODES) {
+      const declarations = rootDeclarations(mode, 'ocean', { glass: 40 })
+      const canvas = resolveColor('--tt-canvas', declarations)
+      const text = over(resolveColor('--tt-text', declarations), canvas)
+      for (const surface of ['--tt-glass', '--tt-glass-field']) {
+        expect(contrast(text, over(resolveColor(surface, declarations), canvas)), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
     const dark = rootDeclarations('dark', 'ocean')
     const light = rootDeclarations('light', 'ocean')
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
@@ -124,6 +133,7 @@ describe('main-window theme tokens', () => {
     const owned = [
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',
+      'src/renderer/src/styles/glass.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/newThread.css',

@@ -1,0 +1,49 @@
+/* Glass (ADR-0011): the surfaces that float over the room take the theme's
+   overlay colour at the Glass opacity setting and blur what lies beneath, as
+   T3 Code's menus, dialogs and composer do. At 100 they are solid.
+
+   The selectors name other features' floating surfaces without editing their
+   stylesheets. The :root prefix outranks each surface's own background, which
+   loads later in the bundle. Colours come from tokens.css only. */
+
+:root .tt-dialog,
+:root .tt-toast,
+:root .model-picker__dialog,
+:root .new-thread-dialog,
+:root .followup-editor,
+:root .side-sheet,
+:root .working-copy__panel {
+  background: var(--tt-glass);
+  -webkit-backdrop-filter: var(--tt-glass-filter);
+  backdrop-filter: var(--tt-glass-filter);
+}
+
+/* The composer and the skill list that opens from it keep the field colour, so
+   the prompt still reads as the place to type. */
+:root .thread-workspace__compose .agent-composer,
+:root .thread-prompt > .skill-picker {
+  background: var(--tt-glass-field);
+  -webkit-backdrop-filter: var(--tt-glass-filter);
+  backdrop-filter: var(--tt-glass-filter);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root .tt-dialog,
+  :root .tt-toast,
+  :root .model-picker__dialog,
+  :root .new-thread-dialog,
+  :root .followup-editor,
+  :root .side-sheet,
+  :root .working-copy__panel {
+    background: var(--tt-surface-overlay);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  :root .thread-workspace__compose .agent-composer,
+  :root .thread-prompt > .skill-picker {
+    background: var(--tt-field);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

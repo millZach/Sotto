@@ -266,6 +266,7 @@
   /* Glass: floating surfaces are the overlay colour at the chosen opacity. */
   --tt-glass: color-mix(in srgb, var(--theme-surface-overlay) var(--theme-glass-opacity), transparent);
   --tt-glass-filter: blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation));
+  --tt-glass-field: color-mix(in srgb, var(--tt-field) var(--theme-glass-opacity), transparent);
 
   --tt-success: oklch(0.79 0.13 165);
   --tt-provider-codex: #d7dbe1;
