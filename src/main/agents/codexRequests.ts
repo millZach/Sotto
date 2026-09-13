@@ -21,6 +21,9 @@ const formSchema = z.object({ type: z.literal('object'), properties: z.record(z.
 const fieldSchema = z.object({ type: z.string(), enum: z.array(z.string()).optional(), enumNames: z.array(z.string()).nullish(),
   oneOf: z.array(z.object({ const: z.string(), title: z.string() })).optional(), minLength: z.number().nullish(), maxLength: z.number().nullish(),
   minimum: z.number().nullish(), maximum: z.number().nullish() }).passthrough()
+function supportedFormField(field: z.infer<typeof fieldSchema>): boolean {
+  return field.type === 'string' && Object.keys(field).every(key => ['type', 'enum', 'enumNames', 'oneOf', 'title', 'description', 'default', 'minLength', 'maxLength', 'minimum', 'maximum'].includes(key))
+}
 const amendmentSchema = z.union([
   z.object({ acceptWithExecpolicyAmendment: z.object({ execpolicy_amendment: z.array(z.string()) }).strict() }).strict(),
   z.object({ applyNetworkPolicyAmendment: z.object({ network_policy_amendment: z.object({ action: z.enum(['allow', 'deny']), host: z.string() }).strict() }).strict() }).strict(),
@@ -42,10 +45,13 @@ export function pendingRequest(id: string | number, method: string, value: unkno
     const form = formSchema.safeParse(params.requestedSchema)
     if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => {
       const field = fieldSchema.safeParse(value)
+      const supported = field.success && supportedFormField(field.data)
       return { id, question: field.success && typeof field.data.description === 'string' ? field.data.description : id,
         ...(field.success && typeof field.data.title === 'string' ? { header: field.data.title } : {}),
-        options: field.success ? field.data.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.data.enum?.map((id, index) => ({ id, label: field.data.enumNames?.[index] ?? id })) ?? [] : [],
-        multiSelect: false, allowFreeText: field.success && field.data.type === 'string' && !field.data.enum && !field.data.oneOf }
+        options: supported ? field.data.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.data.enum?.map((id, index) => ({ id, label: field.data.enumNames?.[index] ?? id })) ?? [] : [],
+        multiSelect: false, allowFreeText: supported && !field.data.enum && !field.data.oneOf,
+        required: form.data.required?.includes(id) ?? false,
+        ...(!supported ? { unavailableReason: 'This field needs the native Codex client; Sotto cannot submit this field type or its validation rules.' } : {}) }
     })
     if (form.success && Object.keys(form.data.properties).length === 1) {
       const field = fieldSchema.safeParse(Object.values(form.data.properties)[0])
@@ -100,8 +106,8 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
     const keys = Object.keys(form.properties)
     let content: Record<string, unknown>
     if (questionAnswers) {
-      questionValues(pending.request, questionAnswers)
-      content = Object.fromEntries(Object.entries(questionAnswers).map(([id, value]) => [id, value.optionIds[0] ?? value.text]))
+      const answered = questionValues(pending.request, questionAnswers)
+      content = Object.fromEntries(Object.keys(answered).map(id => [id, questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]))
     } else {
       try { content = z.record(z.string(), z.unknown()).parse(JSON.parse(answer)) }
       catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
@@ -109,7 +115,7 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
     for (const key of form.required ?? []) if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
     for (const [key, value] of Object.entries(content)) {
       const field = fieldSchema.parse(form.properties[key])
-      if (field.type !== 'string' || Object.keys(field).some(k => !['type', 'enum', 'enumNames', 'oneOf', 'title', 'description', 'default', 'minLength', 'maxLength', 'minimum', 'maximum'].includes(k))) {
+      if (!supportedFormField(field)) {
         throw new Error('Answer this structured field directly in Codex.')
       }
       let schema = z.string()
