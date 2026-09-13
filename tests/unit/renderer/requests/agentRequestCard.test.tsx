@@ -226,7 +226,7 @@ describe('optional and unavailable native fields', () => {
     expect(code.textContent).toContain(nativeOnly)
     expect(code.querySelectorAll('input, textarea')).toHaveLength(0)
     expect(screen.queryByText('This question has no choices Sotto can show.')).toBeNull()
-    expect(screen.getByText('A required field can only be answered in the provider’s app.')).toBeTruthy()
+    expect(screen.getByText('Finish this form in the provider’s app.')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(true)
     await blocked.user.type(screen.getByRole('textbox', { name: /Anything else\?/u }), 'hi{Enter}')
     expect(blocked.onSubmit).not.toHaveBeenCalled()

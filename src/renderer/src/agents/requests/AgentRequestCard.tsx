@@ -86,7 +86,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, request, blocked, onSubm
         onChange={selection => store.select(ownerId, request.id, question.id, selection)}
         onSubmitKey={() => { if (answer) send(null, answer) }} />)}
       <div className="agent-request__footer">
-        <span className="agent-request__count" aria-live="polite">{needsProvider ? 'A required field can only be answered in the provider’s app.'
+        <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
           : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : ''}</span>
         <Button type="submit" disabled={disabled || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
       </div>
