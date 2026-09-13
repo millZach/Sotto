@@ -203,7 +203,10 @@ describe('Threads project folders', () => {
     ])
     mount(threadsStateFixture())
     const projects = screen.getByRole('region', { name: 'Projects' })
+    // The heading counts project folders; thread counts are labelled as threads.
+    expect(within(projects).getByRole('heading', { name: 'Projects 3 projects' })).toBeVisible()
     expect(within(projects).getByRole('button', { name: /^workshop/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /^Settled 4 threads/ })).toBeVisible()
     expect(within(projects).getByRole('button', { name: 'Visual gate flake' }).querySelector('[data-provider]')).not.toBeNull()
     fireEvent.click(within(projects).getByRole('button', { name: /^workshop/ }))
     expect(within(projects).queryByRole('button', { name: 'Visual gate flake' })).not.toBeInTheDocument()

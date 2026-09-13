@@ -70,9 +70,16 @@
 .thread-nav__row-actions { position: absolute; top: 5px; right: 0; }
 .thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
-.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, var(--tt-text-2)); }
-.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #d97757); }
-.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, var(--tt-text-2)); }
+/* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
+   fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
+   against the sidebar and selected row) while keeping the provider hue. */
+.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, #d7dbe1); }
+.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
+.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
+:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
 .thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
 .thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }

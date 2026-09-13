@@ -11,6 +11,8 @@ type Command = AgentConnection['command']
 type Section = 'open' | 'settled'
 
 /** Open a folder from disk as a Sotto project, or open the project that already has it. */
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
+
 export function useAddProject(state: AgentState, command: Command): { readonly add: () => Promise<void>; readonly adding: boolean; readonly error: string | null; readonly clearError: () => void } {
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -119,7 +121,6 @@ export function ThreadSidebar({ state, command, organization, query, onQuery, on
       expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewThread={onNewThread} command={command} busy={state.busy} />
   }
   const { open, settled } = organization
-  const openThreads = open.reduce((count, folder) => count + folder.rows.length, 0)
   const settledThreads = settled.reduce((count, folder) => count + folder.rows.length, 0)
   const settledWorking = settled.reduce((count, folder) => count + folder.working, 0)
   const settledNeeds = settled.reduce((count, folder) => count + folder.needs, 0)
@@ -139,17 +140,17 @@ export function ThreadSidebar({ state, command, organization, query, onQuery, on
     </label>
     <div className="thread-nav__scroll">
       <section aria-label="Projects">
-        <h2 className="thread-nav__label">Projects <span>{openThreads}</span></h2>
+        <h2 className="thread-nav__label">Projects <span title={plural(open.length, 'project')}>{open.length} <span className="tt-visually-hidden">{open.length === 1 ? 'project' : 'projects'}</span></span></h2>
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open threads.' : state.host.projects.length ? 'All caught up.' : 'Add a project folder to start.'}</p> : null}
       </section>
       <section aria-label="Settled" className="thread-nav__shelf">
         <button className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}
-          aria-label={[`Settled ${settledThreads}`, settledNeeds ? `${settledNeeds} waiting on you` : '', settledWorking ? `${settledWorking} working` : ''].filter(Boolean).join(', ')}>
+          aria-label={[`Settled ${plural(settledThreads, 'thread')}`, settledNeeds ? `${settledNeeds} waiting on you` : '', settledWorking ? `${settledWorking} working` : ''].filter(Boolean).join(', ')}>
           <ChevronRight size={14} aria-hidden="true" className="thread-folder__chevron" />
           <span>Settled</span>
           {!settledShown ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
-          <small>{settledThreads}</small>
+          <small title={plural(settledThreads, 'thread')}>{settledThreads}</small>
         </button>
         {settledShown ? <div>{settled.map(folderView('settled'))}{!settled.length ? <p className="thread-nav__empty">No settled threads.</p> : null}</div> : null}
       </section>

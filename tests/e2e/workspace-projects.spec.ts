@@ -271,14 +271,61 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
   } finally { await closeSotto(launched) }
 })
 
+async function designProfile(prefix: string, settings: Record<string, unknown> = {}): Promise<string> {
+  const profile = await mkdtemp(join(tmpdir(), prefix))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({
+    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
+    activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+  }))
+  return profile
+}
+
+/** WCAG contrast of every provider glyph against the painted sidebar and selected-row backgrounds. */
+async function providerMarkContrast(page: Page): Promise<{ provider: string; background: string; ratio: number }[]> {
+  return page.evaluate(() => {
+    const probe = document.createElement('canvas').getContext('2d')!
+    const rgb = (color: string): number[] => { probe.clearRect(0, 0, 1, 1); probe.fillStyle = '#000'; probe.fillStyle = color; probe.fillRect(0, 0, 1, 1); return [...probe.getImageData(0, 0, 1, 1).data.slice(0, 3)] }
+    const luminance = (color: number[]): number => { const [r, g, b] = color.map(value => { const channel = value / 255; return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r! + 0.7152 * g! + 0.0722 * b! }
+    const painted = (element: Element | null): string => {
+      for (let node = element; node; node = node.parentElement) { const background = getComputedStyle(node).backgroundColor; if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') return background }
+      return getComputedStyle(document.body).backgroundColor
+    }
+    return [...document.querySelectorAll<HTMLElement>('.thread-nav__mark[data-provider]')].filter(mark => ['codex', 'claude', 'grok'].includes(mark.dataset.provider!)).map(mark => {
+      const [light, dark] = [luminance(rgb(getComputedStyle(mark).color)), luminance(rgb(painted(mark.closest('.thread-nav__row'))))].sort((first, second) => second - first)
+      return { provider: mark.dataset.provider!, background: mark.closest('.thread-nav__row')?.hasAttribute('data-current') ? 'selected' : 'sidebar', ratio: Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100 }
+    })
+  })
+}
+
+test('provider marks stay recognizable at 3:1 or more on the dark and light sidebars', async () => {
+  const profile = await designProfile('sotto-e2e-workspace-marks-')
+  const launched = await launchSotto('design-threads', profile)
+  try {
+    const { page } = launched
+    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
+    const dark = await providerMarkContrast(page)
+    // Light values from the appearance lane's tokens (Revision 1); this tree does not ship the light theme yet.
+    await page.addStyleTag({ content: `:root[data-theme='light'] { --tt-sidebar: #eef0ec; --tt-canvas: #f5f6f3; --tt-text: #141816; --tt-text-2: #3a423e; --tt-accent: #146e63;
+      --tt-provider-codex: #c9ced6; --tt-provider-claude: #e2ad80; --tt-provider-grok: #bfaefc; --tt-selected: color-mix(in srgb, var(--tt-accent) 9%, var(--tt-canvas)); }` })
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+    const light = await providerMarkContrast(page)
+    await mkdir(ARTIFACTS, { recursive: true })
+    await writeFile(join(ARTIFACTS, 'provider-mark-contrast.json'), `${JSON.stringify({ dark, light }, null, 2)}
+`)
+    expect(new Set(dark.map(item => item.provider))).toEqual(new Set(['codex', 'claude', 'grok']))
+    for (const item of [...dark, ...light]) expect(item.ratio, `${item.provider} on ${item.background}`).toBeGreaterThanOrEqual(3)
+    await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'provider-marks-light-probe.png') })
+  } finally {
+    await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})
+
 for (const scale of [125, 150]) {
   test(`the design fixture reads at ${scale}% display scaling with reduced motion at the 760 px minimum`, async () => {
-    const profile = await ownedProfile(`sotto-e2e-workspace-scale-${scale}-`)
-    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, reducedMotion: 'on' }))
-    await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
-      activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
-    }))
+    const profile = await designProfile(`sotto-e2e-workspace-scale-${scale}-`, { reducedMotion: 'on' })
     const launched = await launchSotto('design-threads', profile, {
       createProfile: async () => { throw new Error('This capture supplies an owned profile') },
       launch: options => electron.launch({ ...options, args: ['--disable-gpu', `--force-device-scale-factor=${scale / 100}`, ...(options?.args ?? [])] }),
