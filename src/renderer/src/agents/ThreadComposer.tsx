@@ -61,13 +61,15 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * every edit is a new revision, Enter sends, Shift+Enter adds a line, and an unsent or unconfirmed
  * prompt stays in the composer until the provider accepts that exact revision.
  */
-export function ThreadComposer({ row, state, command, store, onSend }: {
+export function ThreadComposer({ row, state, command, store, onSend, promptId = THREAD_PROMPT_ID }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
   readonly store: ThreadDraftStore
   /** The user sent from this composer; the transcript follows to the newest message. */
   readonly onSend: () => void
+  /** The textarea's element ID. Each pane of a split workspace passes its own. */
+  readonly promptId?: string
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError } = useThreadComposer(store, threadId)
@@ -117,14 +119,14 @@ export function ThreadComposer({ row, state, command, store, onSend }: {
           : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
             : <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : 'Draft saved') : answering ? 'Enter to send your answer' : 'Enter to send · Shift+Enter for a new line'}</span>
 
-  return <form className="thread-prompt" data-answering={answering || undefined} onSubmit={event => { event.preventDefault(); send(performance.now()) }}>
+  return <form className="thread-prompt" data-thread-id={threadId} data-answering={answering || undefined} onSubmit={event => { event.preventDefault(); send(performance.now()) }}>
     {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
       <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], requestId: null })}>Discard answer</Button></div> : null}
-    <label className="tt-visually-hidden" htmlFor={THREAD_PROMPT_ID}>{answering ? 'Your answer' : 'Prompt'}</label>
+    <label className="tt-visually-hidden" htmlFor={promptId}>{answering ? 'Your answer' : 'Prompt'}</label>
     <ScreenshotInput key={threadId} attachments={[...draft.attachments]} disabled={!editable} supported={row.model?.supportsImages === true && !answering && !permission}
       onReadingChange={setReadingImages} onChange={attachments => edit({ attachments })}>
-      <textarea id={THREAD_PROMPT_ID} rows={3} value={draft.text} disabled={!editable} spellCheck
-        aria-describedby={`${THREAD_PROMPT_ID}-status`}
+      <textarea id={promptId} rows={3} value={draft.text} disabled={!editable} spellCheck
+        aria-describedby={`${promptId}-status`}
         placeholder={row.thread.archivedAt ? 'This thread is archived.' : permission ? 'Allow or deny the request above to continue.' : answering ? 'Write your answer…' : 'What would you like to do next?'}
         onChange={event => edit({ text: event.target.value })}
         onKeyDown={event => {
@@ -136,7 +138,7 @@ export function ThreadComposer({ row, state, command, store, onSend }: {
         }} />
     </ScreenshotInput>
     <div className="thread-prompt__footer">
-      <div className="thread-prompt__meta" id={`${THREAD_PROMPT_ID}-status`}>
+      <div className="thread-prompt__meta" id={`${promptId}-status`}>
         {row.thread.nativeSessionStarted === false || capabilitiesForThread(state.host, row.thread).configureThread
           ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} />
           : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
