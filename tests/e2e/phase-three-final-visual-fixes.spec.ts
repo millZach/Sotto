@@ -269,7 +269,7 @@ test('the footer status ends before a minimized editor docked in the footer, bes
         const words = range.getBoundingClientRect()
         const own = element.getBoundingClientRect()
         const padding = parseFloat(getComputedStyle(element.parentElement!).paddingRight)
-        return { right: Math.min(words.right, own.right), ownRight: own.right, ellipsized: element.scrollWidth > element.clientWidth, title: element.title, full: element.textContent!, padding }
+        return { right: Math.min(words.right, own.right), ownRight: own.right, ellipsized: element.scrollWidth > element.clientWidth, title: element.getAttribute('title'), full: element.textContent!, padding }
       })]
       const where = `${label}: ${JSON.stringify({ bar, box, links, text })}`
       expect(bar.top >= box.top - 0.5 && bar.bottom <= box.bottom + 0.5, where).toBe(true)
