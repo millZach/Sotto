@@ -208,7 +208,7 @@ test('repaints one running terminal through the theme gallery and live editor, a
 
     // The gallery: another built-in theme for both halves.
     await settings()
-    await page.getByRole('button', { name: 'Use Ember theme', exact: true }).click()
+    await page.getByRole('button', { name: 'Use Copper theme', exact: true }).click()
     await expect(page.locator('html')).not.toHaveAttribute('data-theme-id', 'ocean')
     await threads()
     const emberField = await expectField()
