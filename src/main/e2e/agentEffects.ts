@@ -87,8 +87,13 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'disconnect') { this.state.connected = false; this.emit(); return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
-    if (event.type === 'question' || event.type === 'permission') thread.requests.push({ id: event.requestId ?? randomUUID(), kind: event.type, text: event.text, options: [] })
+    if (event.type === 'question' || event.type === 'permission') {
+      const request = event.request ?? { id: event.requestId ?? randomUUID(), kind: event.type, text: event.text, options: [] }
+      if (request.kind !== event.type) throw new Error('E2E_REQUEST_KIND_MISMATCH')
+      thread.requests.push(structuredClone(request))
+    }
     else thread.messages.push({ id: randomUUID(), role: event.type === 'manual' ? 'user' : 'assistant', text: event.text, createdAt: new Date().toISOString() })
+    if (event.activities) thread.activities = structuredClone(event.activities)
     thread.status = event.status ?? (event.type === 'manual' ? 'running' : event.type === 'failure' ? 'error' : 'idle')
     this.emit()
   }

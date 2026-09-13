@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 import type { AgentAssignment, AgentModel, AgentProject, AgentThread } from './agents'
+import { agentRequestSchema } from './agents'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 
 export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 /**
@@ -39,8 +41,14 @@ export const e2eSnapshotSchema = z.object({
 export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
+export const e2eAgentEventSchema = z.object({
+  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject']),
+  threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
+  request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+}).strict()
+
 export interface SottoE2EBridge {
-  agentEvent?(event: { type: 'ready' | 'manual' | 'question' | 'permission' | 'disconnect' | 'failure' | 'reasoner-release' | 'uncertain' | 'reject' | 'connect-reject'; threadId: string; text: string; requestId?: string | undefined; status?: 'idle' | 'running' | 'error' | undefined }): Promise<void>
+  agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario
   snapshot(): Promise<E2ESnapshot>
   triggerShortcut(): Promise<void>
