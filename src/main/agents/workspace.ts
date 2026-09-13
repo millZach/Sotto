@@ -72,11 +72,12 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
     if (!thread || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
+    const workingDirectory = await this.threadWorkingDirectory(threadId)
     const creation = this.state.creations.find(item => item.threadId === threadId)
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
-      return this.inner.listThreadSkills(threadId, forceReload, { providerId: thread.providerId, workingDirectory: resolveThreadWorkingDirectory(thread, project) })
+      return this.inner.listThreadSkills(threadId, forceReload, { providerId: thread.providerId, workingDirectory })
     }
     return this.inner.listThreadSkills(threadId, forceReload)
   }
