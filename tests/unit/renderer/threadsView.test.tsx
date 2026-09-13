@@ -10,6 +10,7 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState } from './liveAgentState'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
+import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -53,7 +54,10 @@ function renderThreads(state: AgentState | null, command = vi.fn(async () => sta
   return { ...view, command, onOpenAgents }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap() })
+beforeEach(() => {
+  vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap()
+  for (const thread of stateFixture().host.threads) requestAnswerStore.prune(thread.id, [])
+})
 afterEach(cleanup)
 
 describe('thread grouping and states from Sotto state', () => {
@@ -365,13 +369,19 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
   })
 
-  it('keeps permission decisions explicit and disables them while busy', () => {
+  it.each([
+    ['Allow', 'Approved', true],
+    ['Deny', 'Denied', false],
+  ] as const)('sends %s once and keeps permission decisions disabled while busy', async (choice, answer, approved) => {
     const state = stateFixture()
     const { command, rerender } = renderThreads(state)
-    fireEvent.click(screen.getByRole('button', { name: 'Allow', exact: true }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Approved', approved: true })
+    fireEvent.click(screen.getByRole('button', { name: choice, exact: true }))
+    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer, approved })
+    expect(screen.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Deny', exact: true })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Deny', exact: true }))
-    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'visual-gate-permission', answer: 'Denied', approved: false })
+    expect(command).toHaveBeenCalledTimes(1)
+    await act(async () => { await Promise.resolve() })
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, busy: true }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
@@ -382,6 +392,7 @@ describe('ThreadsView workspace', () => {
     const state = stateFixture()
     state.assignments = []
     state.queue[0] = { ...state.queue[0]!, kind: 'question', text: 'Which direction?' }
+    state.host.threads.find(thread => thread.id === state.activeThreadId)!.requests = [{ id: 'visual-gate-permission', kind: 'question', text: 'Which direction?', options: [] }]
     const { command, onOpenAgents } = renderThreads(state)
     fireEvent.click(screen.getByRole('button', { name: 'Write an answer', exact: true }))
     expect(screen.getByRole('textbox', { name: 'Your answer', exact: true })).toHaveFocus()

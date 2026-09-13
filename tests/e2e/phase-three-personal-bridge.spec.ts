@@ -1,8 +1,40 @@
-import { mkdtemp } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+
+test('an unreadable personal cache leaves the app usable and its original bytes unchanged', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-personal-recovery-'))
+  const directory = join(profile, 'personal-chat')
+  const cache = join(directory, 'chats.json')
+  const damaged = '{"chats":[{"id":"keep-this-native-identity"}, damaged'
+  await mkdir(directory)
+  await writeFile(cache, damaged)
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launchSotto('success', profile)
+    await launched.page.getByRole('link', { name: 'Chats', exact: true }).click()
+    await expect(launched.page.getByText(/Personal chat storage is read-only/)).toBeVisible()
+    const result = await launched.page.evaluate(async () => {
+      const bridge = window.sotto!.personalChats!
+      const connected = await bridge.connect()
+      let rejected = false
+      try { await bridge.create() } catch { rejected = true }
+      await window.sotto!.updateSettings({ reducedMotion: 'on' })
+      return { connected: connected.connected, rejected }
+    })
+    expect(result).toEqual({ connected: false, rejected: true })
+    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await expect(launched.page.getByRole('link', { name: 'Chats', exact: true })).toBeVisible()
+    expect(await readFile(cache, 'utf8')).toBe(damaged)
+    await closeSotto(launched)
+    launched = undefined
+    expect(await readFile(cache, 'utf8')).toBe(damaged)
+  } finally { if (launched) await closeSotto(launched) }
+})
 
 test('personal chats retain separate identity and drafts across full app restart without creating project work', async () => {
   test.setTimeout(60_000)

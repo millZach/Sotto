@@ -257,7 +257,8 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     // In the shortest window, keyboard focus from an older reading position brings each choice into view, uncovered.
     await resize(launched, 820, 560)
     await transcript(page).evaluate(element => { element.scrollTop = 0 })
-    await expect(page.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
+    // The jump control steps aside while request choices occupy its bottom band.
+    await expect(page.getByRole('button', { name: 'Jump to latest' })).toHaveCount(0)
     await approval.getByRole('button', { name: 'Allow once' }).focus()
     for (const name of ['Allow once', 'Allow for this session', 'Always allow npm run test', 'Deny']) {
       const choice = approval.getByRole('button', { name, exact: true })
@@ -277,7 +278,7 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     await expect(approval.getByRole('alert')).toContainText('Claude could not accept that decision right now.')
     await expect(approval.getByRole('button', { name: 'Allow for this session' })).toBeEnabled()
     expect(await pending(page, 'workshop')).toEqual(['run-tests'])
-    // ThreadPane also shows the command error above the transcript, which costs the short window about 40px.
+    // The refusal appears once in its request card, without a duplicate workspace banner.
     await capture(launched, 'permission-refused', approval, 160)
 
     // A slow bridge: the card holds on Sending…, a second press does nothing, and switching threads keeps it held.

@@ -32,7 +32,7 @@ Inspected the scoped provider/request/activity/skill changes, complete new perso
 
 ## Integration disposition
 
-- P1 personal-chat cache loss: confirmed by the independent reproduction; isolated backend correction and regression verification in progress.
+- P1 personal-chat cache loss: fixed in main `82234c3` after 22 focused recovery regressions. Native answers retain complete text and stable IDs; invalid originals enter read-only recovery without replacement or extra plaintext backups. Root reran 38 personal service/IPC tests successfully, and the full Electron app starts with malformed chat data, shows the recovery error, keeps other routes/settings usable, blocks chat creation/connection and preserves the original bytes through shutdown. See `phase-3-chat-recovery.md`.
 - P2 Grok stream identity: root reproduced both identical-text suppression and prefix overwrite with the actual adapter fixture, then changed reconciliation to match stable assistant IDs within the owning turn. Four native activity integration tests pass, including the two new regressions. A later chunk extends only its own matching partial stream; history catch-up, replay and process restart retain both IDs/texts, and only one native prompt is recorded. Typecheck and focused lint passed.
 
 This is an interim backend audit. The final Standards and Spec reviews will assess the completed integrated change separately.
