@@ -161,6 +161,12 @@ for (const theme of DESIGN_CAPTURE_WIDGET_THEMES) {
   })
 }
 
+for (const theme of DESIGN_CAPTURE_APP_THEMES) {
+  for (const state of ['split-workspace', 'split-focus-820', 'files-unavailable', 'working-copy-choice']) {
+    add({ id: `threads-${state}-${theme}`, category: 'threads', state, theme })
+  }
+}
+
 export const DESIGN_CAPTURE_REQUIREMENTS = Object.freeze(requirements)
 
 export function designCaptureTupleKey(requirement) {
