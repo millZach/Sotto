@@ -49,6 +49,7 @@ const savedSchema = z.object({
 })
 type Saved = z.infer<typeof savedSchema>
 class SupersededSupervision extends Error {}
+const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
 export interface AgentMembership {
   status(): Promise<AgentState['membership']>
   action(action: 'refresh' | 'signin' | 'checkout' | 'portal'): Promise<AgentState['membership']>
@@ -72,6 +73,8 @@ export class AgentControl {
   private retirementFailure: string | null = null
   private disposed = false
   private membershipTimer: ReturnType<typeof setInterval> | null = null
+  private privacyCleanupPending = false
+  private privacyRevision = 0
   private presentedQueueId: string | null = null
   private readonly narratedAttention = new Set<string>()
   private attentionNarration: string | null = null
@@ -165,8 +168,9 @@ export class AgentControl {
     await this.persist()
     this.state.membership = await this.dependencies.membership.status()
     this.membershipTimer = setInterval(() => {
-      void this.attachmentPreviews.maintain().catch(() => {
-        this.state.error = 'Could not apply attachment preview retention. Check access to local storage.'
+      const pendingPrivacy = this.privacyCleanupPending
+      void (pendingPrivacy ? this.privacyChanged() : this.attachmentPreviews.maintain()).catch(() => {
+        this.state.error = pendingPrivacy ? PRIVACY_CLEANUP_ERROR : 'Could not apply attachment preview retention. Check access to local storage.'
         this.publish()
       })
       void this.dependencies.membership.status().then(status => {
@@ -210,11 +214,25 @@ export class AgentControl {
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
   }
   async privacyChanged(): Promise<void> {
-    await this.attachmentPreviews.maintain()
-    await maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false)
-    await this.dependencies.host.privacyChanged?.()
-    await this.persist()
+    const revision = ++this.privacyRevision
+    this.privacyCleanupPending = true
+    // A failed store must not prevent the remaining stores from honoring the
+    // privacy change. Preserve the failure for the caller after every cleanup runs.
+    const cleanup = [
+      () => this.attachmentPreviews.maintain(),
+      () => maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false),
+      () => this.dependencies.host.privacyChanged?.(),
+      () => this.persist(),
+    ]
+    const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
+    const failure = results.find(result => result.status === 'rejected')
+    if (revision === this.privacyRevision) {
+      this.privacyCleanupPending = failure !== undefined
+      if (failure) this.state.error = PRIVACY_CLEANUP_ERROR
+      else if (this.state.error === PRIVACY_CLEANUP_ERROR) this.state.error = null
+    }
     this.publish()
+    if (failure?.status === 'rejected') throw failure.reason
   }
   private async persist(): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)

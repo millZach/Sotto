@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread, type ProviderId } from '../../shared/agents'
@@ -27,7 +28,7 @@ export class WorkspaceHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly lanes = new Map<string, Promise<unknown>>()
 
-  constructor(private readonly inner: AgentHost, directory: string, private readonly historyEnabled: () => boolean = () => true) {
+  constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
     inner.subscribe(snapshot => {
@@ -40,7 +41,16 @@ export class WorkspaceHost implements AgentHost {
 
   initialize(): Promise<void> {
     this.loading ??= (async () => {
-      this.state = await this.store.read()
+      // Native history is recoverable from the providers. Never create independent
+      // private transcript backups, and remove this cache's abandoned write copies.
+      const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return []
+        throw error
+      })
+      for (const name of names) if (/^workspace\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
+        await unlink(join(this.directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+      }
+      this.state = await this.store.peek()
       const snapshot = this.state.snapshot
       snapshot.connected = false
       snapshot.models.forEach(model => { model.ready = false })

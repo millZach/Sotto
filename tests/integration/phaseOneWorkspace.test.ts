@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +20,7 @@ const image: AgentAttachment = { id: 'draft-image', name: 'reference.png', mimeT
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-phase-one-'))
+  let historyEnabled = true
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
   for (const adapter of Object.values(adapters)) {
     adapter.state.capabilities.configureThread = true
@@ -35,8 +36,8 @@ async function fixture() {
         claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry) },
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
-    const host = new WorkspaceHost(native, directory)
-    const control = new AgentControl({ directory, host, credentials,
+    const host = new WorkspaceHost(native, directory, () => historyEnabled)
+    const control = new AgentControl({ directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
@@ -55,12 +56,60 @@ async function fixture() {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-phase-one-')) throw new Error('Unexpected fixture directory')
     await rm(directory, { recursive: true, force: true })
   })
-  return { adapters, get control() { return current.control },
+  return { adapters, directory, setHistory: (enabled: boolean) => { historyEnabled = enabled }, get control() { return current.control },
     async command(command: AgentCommand) { const state = await current.control.command(command); expect(state.error).toBeNull(); return state },
     async restart() { await close(); current = await create() } }
 }
 
 describe('integrated Phase 1 workspace persistence', () => {
+  it('does not retain private transcript copies during corrupt workspace recovery', async () => {
+    const f = await fixture()
+    f.control.dispose()
+    await f.control.privacyChanged()
+    f.setHistory(false)
+    const marker = 'PRIVATE WORKSPACE TRANSCRIPT'
+    await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ invalidSnapshot: marker }))
+    await writeFile(join(f.directory, `workspace.json.tmp-123-${randomUUID()}`), marker)
+    await writeFile(join(f.directory, `workspace.json.corrupt-123-${randomUUID()}`), marker)
+    await writeFile(join(f.directory, 'workspace.json.tmp-user-note'), 'Preserve unrelated files')
+    const recovered = new WorkspaceHost(new FakeProviderHost(), f.directory, () => false)
+    await recovered.initialize()
+    const names = (await readdir(f.directory)).filter(name => name.startsWith('workspace.json'))
+    expect(names.sort()).toEqual(['workspace.json', 'workspace.json.tmp-user-note'])
+    expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain(marker)
+  })
+
+  it.each(['preview', 'workspace'])('redacts other stores and retries a failed %s privacy cleanup', async failedStore => {
+    const intervals = vi.spyOn(globalThis, 'setInterval')
+    const f = await fixture()
+    const connected = await f.command({ type: 'connect' })
+    const thread = connected.host.threads.find(thread => thread.providerId === 'claude')!
+    await f.command({ type: 'assign', threadId: thread.id, instruction: 'PRIVATE ASSIGNMENT CONTEXT' })
+    await f.command({ type: 'compose', text: 'PRIVATE SENT TRANSCRIPT', attachments: [image] })
+    await f.command({ type: 'send' })
+    expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
+    expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
+    f.setHistory(false)
+    const write = AtomicJsonStore.prototype.write
+    const failure = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (value && typeof value === 'object' && (failedStore === 'preview'
+        ? 'version' in value && 'entries' in value : 'snapshot' in value && 'creations' in value)) throw new Error('Private storage unavailable')
+      return write.call(this, value)
+    })
+    await expect(f.control.privacyChanged()).rejects.toThrow('Private storage unavailable')
+    if (failedStore === 'preview') expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
+    else expect(await readFile(join(f.directory, 'attachment-previews.json'), 'utf8')).not.toContain(image.dataUrl)
+    expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
+    failure.mockRestore()
+    const maintenance = intervals.mock.calls.find(([, milliseconds]) => milliseconds === 30_000)?.[0]
+    expect(maintenance).toBeTypeOf('function')
+    if (typeof maintenance === 'function') maintenance()
+    await vi.waitFor(async () => {
+      expect(await readFile(join(f.directory, 'attachment-previews.json'), 'utf8')).not.toContain(image.dataUrl)
+      expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
+    })
+  })
+
   it('measures provider latency separately from submitted-image persistence', async () => {
     const f = await fixture()
     const initial = await f.command({ type: 'connect' })
