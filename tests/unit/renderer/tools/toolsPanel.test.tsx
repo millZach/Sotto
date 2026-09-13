@@ -61,7 +61,7 @@ describe('shared tools panel', () => {
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
     const tabs = within(panel()).getAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
-    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['files', 'changes'])
+    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['files', 'changes', 'terminal'])
     expect(tabs[0]).toHaveFocus()
     expect(within(panel()).getByRole('tabpanel')).toBeInTheDocument()
     expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()

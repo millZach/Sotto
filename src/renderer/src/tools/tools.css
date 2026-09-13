@@ -166,6 +166,42 @@
   .changes-surface[data-diff] > .changes-diff { grid-area: diff; }
 }
 
+/* Terminal: the thread's shells as tabs, one screen at a time. The screen takes the panel field so the
+   xterm canvas and its padding read as one surface. */
+.terminal-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.terminal-bar { display: flex; flex: none; align-items: center; gap: 4px; min-height: 40px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--tt-hairline); }
+.terminal-tabs { display: flex; flex: 1; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.terminal-tabs__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; max-width: 180px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.terminal-tabs__tab:hover { background: var(--tools-hover); color: var(--tt-text-2); }
+.terminal-tabs__tab[aria-selected='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
+.terminal-tabs__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
+.terminal-tabs__tab:not([data-status='running']) .terminal-tabs__dot { border: 1px solid var(--tt-text-muted); background: transparent; }
+.terminal-tabs__tab[data-status='unavailable'] .terminal-tabs__dot { border-color: var(--tt-error); }
+.terminal-bar__actions { display: flex; flex: none; align-items: center; gap: 2px; }
+.tools-panel .files-icon:disabled { color: var(--tt-text-faint); opacity: .5; cursor: default; }
+.tools-panel .files-icon:disabled:hover { background: transparent; }
+.terminal-confirm { display: grid; flex: none; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px solid var(--tt-error-border); border-radius: 10px; background: var(--tt-error-surface); color: var(--tt-text-2); font-size: 13px; }
+.terminal-confirm p { margin: 0; line-height: 1.5; }
+.terminal-confirm strong { color: var(--tt-text); font-weight: 500; }
+.terminal-confirm__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.terminal-notice { flex: none; margin: 8px 8px 0; padding: 8px 12px; border-left: 2px solid var(--tt-error); color: var(--tt-error-text); font-size: 13px; line-height: 1.45; }
+.terminal-empty .terminal-notice { margin: 4px 0 0; }
+.terminal-screen { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.terminal-view { flex: 1; min-height: 0; padding: 8px 4px 4px 12px; background: var(--tools-bg); }
+.terminal-view__screen { width: 100%; height: 100%; }
+.terminal-view .xterm { height: 100%; }
+.terminal-view .xterm .xterm-viewport { scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.terminal-view:focus-within { box-shadow: inset 2px 0 0 var(--tt-activity); }
+.terminal-view[data-replaying] { opacity: .6; }
+.terminal-ended { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+.terminal-ended p { flex: 1 1 200px; margin: 0; line-height: 1.45; }
+.terminal-ended strong { color: var(--tt-text); font-weight: 500; }
+.terminal-ended .files-link { display: inline-flex; align-items: center; gap: 6px; }
+.terminal-restoring { position: absolute; top: 50%; left: 50%; margin: 0; padding: 6px 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); color: var(--tt-text-2); font-size: 13px; transform: translate(-50%, -50%); }
+.terminal-hint { flex: none; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-height: 640px) { .terminal-hint { display: none; } }
+
 /* The panel draws its own edge, so a workspace slot around it adds none, and an empty slot takes no room. */
 .threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }
 .threads-view .thread-workspace__tools:empty { display: none; }

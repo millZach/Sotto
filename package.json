@@ -46,6 +46,8 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitest/coverage-v8": "4.1.10",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "electron": "43.1.0",
     "electron-builder": "26.15.3",
     "electron-updater": "6.8.9",

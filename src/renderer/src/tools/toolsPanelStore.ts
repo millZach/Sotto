@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
+import { TerminalStore } from './terminalStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }] as const
+export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'terminal', label: 'Terminal' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 export const TOOLS_PANEL_DEFAULT_WIDTH = 380
@@ -31,6 +32,7 @@ export const TOGGLE_FOCUS_RETURN_MS = 1_500
 export class ToolsPanelStore {
   readonly files = new FilesBrowserStore()
   readonly changes = new ChangesStore()
+  readonly terminals = new TerminalStore()
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0

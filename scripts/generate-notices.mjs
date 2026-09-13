@@ -357,6 +357,11 @@ const licenseSections = [
   ['React, React DOM, and Scheduler MIT license', await read('node_modules/react/LICENSE')],
   ['Lucide ISC and Feather MIT licenses', await read('node_modules/lucide-react/LICENSE')],
   ['Zod MIT license', await read('node_modules/zod/LICENSE')],
+  ['xterm.js MIT licenses', `@xterm/xterm
+${await read('node_modules/@xterm/xterm/LICENSE')}
+
+@xterm/addon-fit
+${await read('node_modules/@xterm/addon-fit/LICENSE')}`],
   ['Windows updater dependency MIT licenses', updaterMit],
   ['Windows updater dependency ISC licenses', updaterIsc],
   ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
