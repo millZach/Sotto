@@ -133,11 +133,17 @@ Answering a question or permission request and creating a project are also part 
 
 ## Main window
 
-**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Bricolage Grotesque. It is dark by default and can be light; see Appearance. The floating widget keeps its own look.
+**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Bricolage Grotesque. It is dark by default and can be light; see Appearance and Theme. The floating widget keeps its own look.
 
-**Appearance.** The main window's mode setting: System, Light or Dark. Dark with the Teal accent is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is not appearance; it belongs to the floating widget. Avoid: "theme" for the main window.
+**Appearance.** The main window's mode setting: System, Light or Dark. Dark is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is the floating widget's mode, not a Theme. Avoid: "theme" for the mode.
 
-**Accent.** The one colour the main window uses for the dictation wave, primary actions, focus rings and selections: Teal, Blue, Violet, Rose, Amber or Green. Each accent has a dark-room and a light-room value.
+**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (T3 Code, T3 Chat, Grove, Ocean, Ember, Iris) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
+
+**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Ocean.
+
+**Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
+
+**Theme editor.** The floating panel that creates or edits a custom theme and paints it live over the saved look until Save or Cancel. Pick app color (the inspector) chooses a colour role by pointing at the page; a role's label spotlights everywhere it is used.
 
 **Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
 
@@ -156,8 +162,9 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
 - `src/main/llm/transcriptPolishService.ts` — the cleanup pass.
 - `scripts/asr-bench/` — the transcription bench (`bench-stt.mjs`) and its results; `docs/perf/` holds the decision reports.
-- `src/renderer/src/styles/tokens.css` and `global.css` — the dark, light and accent token sets and shared styles; `src/renderer/src/state/appearance.ts` applies the appearance to the window root; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
-- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (dark and light rooms, accents, minimum width, scales, motion, focus).
+- `src/renderer/src/styles/tokens.css` and `global.css` — every `--tt-*` token derived from the theme roles, and shared styles; `glass.css` paints floating surfaces; `src/renderer/src/state/appearance.ts` applies the mode, theme, contrast and glass to the window root; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
+- `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (dark and light rooms, built-in themes, minimum width, scales, motion, focus).
+- `src/shared/themes/` — the theme model: T3 palettes, colour parsing, token engine, library and file format, VS Code import; `src/renderer/src/features/settings/themes/` — gallery, editor, inspector and import dialog; `src/main/themes/` — export and the Open VSX client behind IPC.
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.

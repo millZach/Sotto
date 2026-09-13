@@ -289,7 +289,8 @@ const dompurifyNotice = `${/@license (DOMPurify[^*\n]*)/u.exec(await read('node_
 Used under the Apache License 2.0, reproduced in full in the "Apache License 2.0" section.`
 
 // Provider icon paths in src/renderer/src/agents/ProviderMark.tsx are adapted from T3 Code
-// apps/web/src/components/Icons.tsx at d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3.
+// apps/web/src/components/Icons.tsx at d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3, and the themes
+// (palettes, file format, editor, inspector, Open VSX client) from the same commit (ADR-0011).
 const t3CodeMit = microsoftMit.replace('Copyright (c) Microsoft Corporation. All rights reserved.', 'Copyright (c) 2026 T3 Tools Inc.')
 
 // Preserve the updater dependency notices when regenerating the bundled inventory.

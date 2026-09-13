@@ -177,6 +177,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `Spline Sans Mono` (font, latin woff2 subset) | `v13 (Google Fonts static serving)` | OFL-1.1 | The Spline Sans Mono Project Authors |
 | `Bricolage Grotesque` (font, latin + latin-ext woff2 subsets) | `v9 (Google Fonts static serving)` | OFL-1.1 | The Bricolage Grotesque Project Authors |
 | `T3 Code` (provider icon paths adapted in ProviderMark.tsx) | `d1d15c67 (apps/web/src/components/Icons.tsx)` | MIT | T3 Tools Inc. |
+| `T3 Code` (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes) | `d1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)` | MIT | T3 Tools Inc. |
 
 `electron-updater` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from `node_modules` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
 
