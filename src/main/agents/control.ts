@@ -18,6 +18,7 @@ import { isThreadClosed } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { AttachmentPreviews } from './attachmentPreviews'
 
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
@@ -58,6 +59,7 @@ export class AgentControl {
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private readonly store: AtomicJsonStore<Saved>
+  private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
   private readonly considered = new Map<string, string>()
@@ -100,6 +102,7 @@ export class AgentControl {
       membership: { status: 'free', label: 'Free dictation', expiresAt: null },
     }
     this.store = new AtomicJsonStore(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
+    this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, () => dependencies.historyEnabled?.() !== false)
   }
   async start(): Promise<void> {
     try {
@@ -112,6 +115,7 @@ export class AgentControl {
       throw error
     }
     const saved = await this.store.read()
+    await this.attachmentPreviews.load()
     this.contextActivityAt = saved.contextSavedAt
     const { outbox, contextSavedAt, manualDraftId, ...restored } = saved
     this.manualDraftId = manualDraftId
@@ -161,6 +165,10 @@ export class AgentControl {
     await this.persist()
     this.state.membership = await this.dependencies.membership.status()
     this.membershipTimer = setInterval(() => {
+      void this.attachmentPreviews.maintain().catch(() => {
+        this.state.error = 'Could not apply attachment preview retention. Check access to local storage.'
+        this.publish()
+      })
       void this.dependencies.membership.status().then(status => {
         this.state.membership = status
         if (!['active', 'beta'].includes(status.status)) this.state.assignments.forEach(a => { a.paused = true })
@@ -181,7 +189,11 @@ export class AgentControl {
       else void connection
     }
   }
-  get(): AgentState { return structuredClone(this.state) }
+  get(): AgentState {
+    const state = structuredClone(this.state)
+    this.attachmentPreviews.decorate(state.host)
+    return state
+  }
   subscribe(listener: (state: AgentState) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -198,9 +210,11 @@ export class AgentControl {
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
   }
   async privacyChanged(): Promise<void> {
+    await this.attachmentPreviews.maintain()
     await maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false)
     await this.dependencies.host.privacyChanged?.()
     await this.persist()
+    this.publish()
   }
   private async persist(): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
@@ -839,11 +853,16 @@ export class AgentControl {
     const delegatedAt = Date.now()
     try {
       this.canAct(); this.guardAuthority(command, turn); validate?.()
+      if (command.type === 'send' && command.attachments?.length) {
+        const attachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
+        await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
+      }
       result = await this.dependencies.host.execute(command)
     } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if (command.type === 'send' && draftId) this.setDelivery(command.threadId, draftId, 'failed')
       await this.persist()
+      if (command.type === 'send' && command.attachments?.length) await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
       throw error
     } finally {
       if (turn) turn.delegationMs += Date.now() - delegatedAt
@@ -872,6 +891,9 @@ export class AgentControl {
         ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
         : 'The provider has not confirmed these thread settings in its state. Refresh to reconcile the existing save; it will not be replayed.')
       return
+    }
+    if (command.type === 'send' && !result.accepted && !result.uncertain && command.attachments?.length) {
+      await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()

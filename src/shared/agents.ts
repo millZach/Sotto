@@ -59,7 +59,25 @@ export const agentAttachmentsSchema = z.array(agentAttachmentSchema).max(AGENT_M
   .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
   .refine(items => items.reduce((size, item) => size + attachmentSizeBytes(item.dataUrl), 0) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
 export type AgentAttachment = z.infer<typeof agentAttachmentSchema>
-export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative() })
+/** Signature check shared by native submission and preview validation; never accepts SVG/HTML. */
+export function hasRasterImageSignature(attachment: Pick<AgentAttachment, 'mimeType' | 'dataUrl'>): boolean {
+  let header: string
+  try { header = atob(attachment.dataUrl.slice(attachment.dataUrl.indexOf(',') + 1, attachment.dataUrl.indexOf(',') + 25)) }
+  catch { return false }
+  return attachment.mimeType === 'image/png' ? header.startsWith('\x89PNG\r\n\x1a\n')
+    : attachment.mimeType === 'image/jpeg' ? header.startsWith('\xff\xd8\xff')
+      : attachment.mimeType === 'image/gif' ? /^(GIF87a|GIF89a)/u.test(header)
+        : attachment.mimeType === 'image/webp' && header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP'
+}
+export const agentAttachmentPreviewSchema = z.object({ dataUrl: z.string().max(14_000_000) }).strict().refine(preview => {
+  const parsed = agentAttachmentSchema.safeParse({ id: 'preview', name: 'preview',
+    mimeType: preview.dataUrl.slice(5, preview.dataUrl.indexOf(';')), dataUrl: preview.dataUrl })
+  return parsed.success && hasRasterImageSignature(parsed.data)
+}, 'Choose a valid raster image preview.')
+export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
+  /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
+  preview: agentAttachmentPreviewSchema.optional(),
+})
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
