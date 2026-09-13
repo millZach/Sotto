@@ -279,7 +279,8 @@ class MemoryStorage {
 }
 
 const TALL = 900
-const regions = () => within(screen.getByRole('group', { name: 'Thread panes' })).queryAllByRole('region').map(item => item.getAttribute('aria-label'))
+const regions = () => within(screen.getByRole('group', { name: 'Thread panes' })).queryAllByRole('region')
+  .filter(item => item.matches('section.thread-pane')).map(item => item.getAttribute('aria-label'))
 
 /** Opens beside from the sidebar, in order. */
 async function openAll(...titles: string[]): Promise<void> {

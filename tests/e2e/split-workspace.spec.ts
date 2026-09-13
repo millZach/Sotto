@@ -62,7 +62,7 @@ test('two threads split the workspace and stay independent through resize, narro
 
     const footer = panes.locator('section.thread-pane[data-thread-id="footer-links"]')
     await expect(panes.getByRole('region', { name: 'Footer links', exact: true })).toBeVisible()
-    await expect(panes.getByRole('region')).toHaveCount(2)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(2)
     await expect(footer).toHaveAttribute('data-focused')
     await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe('footer-links')
     const divider = page.getByRole('separator', { name: 'Resize panes' })
@@ -125,14 +125,14 @@ test('two threads split the workspace and stay independent through resize, narro
 
     // Closing a pane closes the view only: the agent keeps running and the thread stays in the sidebar.
     await footer.getByRole('button', { name: 'Close Footer links pane' }).click()
-    await expect(panes.getByRole('region')).toHaveCount(1)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(1)
     await expect(divider).toHaveCount(0)
     expect(await threadStatus(page, 'footer-links')).toBe('running')
     await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe('grok-previews')
     await expect(sidebar.getByRole('button', { name: 'Footer links', exact: true })).toBeVisible()
     await sidebar.getByRole('button', { name: 'Footer links', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
-    await expect(panes.getByRole('region')).toHaveCount(2)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(2)
     await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
 
     // Larger text scaling at a typical laptop width.

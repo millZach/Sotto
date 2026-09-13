@@ -112,7 +112,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await expect(left).toHaveAttribute('data-focused')
 
     // 1600: docked beside a two-pane split, reading the worktree's actual folder.
-    await left.getByRole('button', { name: 'Files', exact: true }).click()
+    await left.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panes).not.toHaveAttribute('data-narrow')
@@ -129,7 +129,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await panel.getByRole('button', { name: 'Pin to Worktree checkout' }).click()
     await right.getByRole('textbox', { name: 'Prompt', exact: true }).click()
     await expect(right).toHaveAttribute('data-focused')
-    const rightToggle = right.getByRole('button', { name: 'Files', exact: true })
+    const rightToggle = right.getByRole('button', { name: 'Tools', exact: true })
     await expect(rightToggle).toHaveAttribute('data-pinned-elsewhere', 'true')
     await expect(rightToggle).toHaveAttribute('aria-description', 'Showing Worktree checkout, pinned')
     await expect(panel.locator('.tools-panel__thread')).toHaveText('Worktree checkoutPinned')
@@ -183,7 +183,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     // The overlay covers the pane tabs, so the other thread takes focus from the sidebar.
     await sidebar.getByRole('button', { name: 'Field notes', exact: true }).click()
     await expect(right).toHaveAttribute('data-focused')
-    await expect(right.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('data-pinned-elsewhere', 'true')
+    await expect(right.getByRole('button', { name: 'Tools', exact: true })).toHaveAttribute('data-pinned-elsewhere', 'true')
     await capture(page, 'overlay-820x560-pinned-other-tab')
     expect(await closeWithKey(page, panel, 'Enter')).toBe(notesThread)
     await page.keyboard.press('Enter')
@@ -195,7 +195,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await page.getByRole('button', { name: 'Close Field notes pane' }).click()
     await expect(panes).not.toHaveAttribute('data-split')
     await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
-    await left.getByRole('button', { name: 'Files', exact: true }).click()
+    await left.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panel.getByRole('tree').getByRole('treeitem', { name: 'README.md' })).toHaveAttribute('aria-selected', 'true')
     await capture(page, 'single-1280-worktree-docked')

@@ -84,9 +84,9 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
 
     // Two side by side, then a third from another project spans the row below.
     await openBeside(page, 'Footer links')
-    await expect(panes.getByRole('region')).toHaveCount(2)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(2)
     await openBeside(page, 'Weekly note')
-    await expect(panes.getByRole('region')).toHaveCount(3)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(3)
     await expect(pane('weekly-note')).toHaveAttribute('data-focused')
     let placed = await boxes(page)
     expect(placed.map(box => box.id)).toEqual(['grok-previews', 'footer-links', 'weekly-note'])
@@ -113,7 +113,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
 
     // A fourth pane makes a 2-by-2 grid.
     await openBeside(page, 'Visual gate flake')
-    await expect(panes.getByRole('region')).toHaveCount(4)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(4)
     placed = await boxes(page)
     expect(placed.map(box => box.id)).toEqual(['grok-previews', 'footer-links', 'weekly-note', 'visual-gate'])
     expect(placed[0]!.y).toBe(placed[1]!.y)
@@ -156,7 +156,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect(page.getByText('Add here', { exact: true })).toBeVisible()
     await page.screenshot({ path: `${SHOTS}/five-drop-preview-dark.png`, animations: 'disabled' })
     await page.mouse.up()
-    await expect(panes.getByRole('region')).toHaveCount(5)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(5)
     placed = await boxes(page)
     expect(placed.map(box => box.id)).toEqual(['grok-previews', 'footer-links', 'weekly-note', 'visual-gate', 'wav-stall'])
     expect(new Set(placed.slice(0, 3).map(box => box.y)).size).toBe(1)
@@ -189,7 +189,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await pane('weekly-note').click({ position: { x: 200, y: 200 } })
     await pane('weekly-note').getByRole('button', { name: 'Single row' }).click()
     await openBeside(page, 'Visual gate flake')
-    await expect(panes.getByRole('region')).toHaveCount(4)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(4)
     // The grid kept its sizes through the row arrangement and back.
     await expect(rowsDivider).toHaveAttribute('aria-valuenow', '60')
     await expect(pane('visual-gate')).toContainText('npm test -- --run tests/unit/agents')
@@ -263,11 +263,11 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await tabs.getByRole('tab', { name: 'Visual gate flake' }).click()
     await pane('visual-gate').getByRole('button', { name: 'Close Visual gate flake pane' }).click()
     await expect(tabs).toHaveCount(0)
-    await expect(panes.getByRole('region')).toHaveCount(2)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(2)
     await capture(page, 'two-1600x560')
     await openBeside(page, 'Weekly note')
     await openBeside(page, 'Visual gate flake')
-    await expect(panes.getByRole('region')).toHaveCount(0)
+    await expect(panes.locator('section.thread-pane:not([data-hidden])')).toHaveCount(0)
     await expect(tabs.getByRole('tab')).toHaveCount(4)
 
     // Reduced motion removes the divider and drop transitions.
@@ -306,7 +306,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await size(launched, 1600, 1000)
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     const restored = page.getByRole('group', { name: 'Thread panes' })
-    await expect(restored.getByRole('region')).toHaveCount(4)
+    await expect(restored.locator('section.thread-pane:not([data-hidden])')).toHaveCount(4)
     expect((await boxes(page)).map(box => box.id)).toEqual(order)
     await expect(restored.locator('section.thread-pane[data-thread-id="grok-previews"]')).toHaveAttribute('data-focused')
     await expect.poll(() => dividers(page)).toEqual(sizes)
