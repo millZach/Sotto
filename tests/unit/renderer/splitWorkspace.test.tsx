@@ -393,6 +393,37 @@ describe('multi-pane workspace', () => {
     expect(screen.getAllByRole('separator')).toHaveLength(3)
   })
 
+  it('keeps the arrangement switch when a single row goes compact, and returns to the same grid from it by keyboard', async () => {
+    // Four panes fit a 2-by-2 grid here; a single row of four needs 4 × 400px plus dividers.
+    const view = mount({ width: 1200, height: 700 })
+    await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
+    const rows = screen.getByRole('separator', { name: 'Resize rows 1 and 2' })
+    fireEvent.keyDown(rows, { key: 'ArrowUp' })
+    fireEvent.change(view.prompt('Footer links'), { target: { value: 'Footer draft through compact' } })
+    await act(async () => { fireEvent.click(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })) })
+    const tabs = screen.getByRole('tablist', { name: 'Open panes' })
+    expect(within(tabs).getByRole('tab', { name: 'Weekly note' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryAllByRole('separator')).toHaveLength(0)
+    // The shown pane keeps the switch, pressed for the retained row; hidden panes stay out of reach.
+    const weekly = document.getElementById('thread-pane-weekly-note')!
+    const toggle = within(weekly).getByRole('button', { name: 'Single row' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes will be arranged in a single row when there is room')
+    expect(within(weekly.querySelector<HTMLElement>('.thread-pane__controls')!).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Single row', 'Close Weekly note pane'])
+    expect(within(document.getElementById('thread-pane-footer-links')!).queryByRole('button', { name: 'Single row' })).toBeNull()
+    toggle.focus()
+    await act(async () => { fireEvent.click(toggle) })
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(view.store.get().arrangement).toBe('grid')
+    expect(screen.getByRole('separator', { name: 'Resize rows 1 and 2' })).toHaveAttribute('aria-valuenow', '45')
+    expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links', 'Weekly note'])
+    expect(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })).toHaveAttribute('aria-pressed', 'false')
+    expect(document.activeElement).toBe(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' }))
+    expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes arranged in a grid')
+    expect(view.prompt('Footer links')).toHaveValue('Footer draft through compact')
+    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([])
+  })
+
   it('moves a pane from its handle with the arrow keys, keeping focus, drafts and the selection where they were', async () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')

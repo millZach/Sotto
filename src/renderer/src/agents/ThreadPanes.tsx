@@ -244,6 +244,11 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
     onLayoutChange(next)
     if (message) setAnnouncement(message)
   }
+  const toggleArrangement = (): void => {
+    const next = setArrangement(layout, layout.arrangement === 'row' ? 'grid' : 'row')
+    const name = next.arrangement === 'row' ? 'a single row' : 'a grid'
+    change(next, fitsArea(next, width, height) ? `Panes arranged in ${name}` : `Panes will be arranged in ${name} when there is room`)
+  }
   const toggleZoom = (threadId: string): void => {
     if (!layout.zoomed) onFocusPane(threadId)
     change(setZoomed(layout, !layout.zoomed), layout.zoomed ? 'Showing all panes' : `${title(threadId)} zoomed`)
@@ -336,7 +341,10 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
       {paneIds.map((id, index) => {
         const focused = id === focusedId
         const hidden = single && id !== shownId
-        const showsGrid = placed !== null && paneIds.length > 2
+        // The arrangement switch sits on the focused pane, and stays on the shown pane when the window alone makes the view
+        // compact: the arrangement chosen there may be the one that does not fit, and the other may.
+        const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
+        const zooms = !narrow || layout.zoomed
         return <React.Fragment key={id}><section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} aria-label={title(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
@@ -344,11 +352,11 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
           {/* The layout controls come first, like the header they sit in, so tabbing leaves a pane from its composer. */}
-          {split ? <div className="thread-pane__controls" data-count={(showsGrid && focused ? 1 : 0) + (placed ? 1 : 0) + 2}>
-            {showsGrid && focused
+          {split ? <div className="thread-pane__controls" data-count={(arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1}>
+            {arranges
               ? <button type="button" className="thread-pane__control tt-focusable" data-pane-chrome aria-pressed={layout.arrangement === 'row'}
                 aria-label="Single row" title={layout.arrangement === 'row' ? 'Arrange in a grid' : 'Arrange in a single row'}
-                onClick={() => change(setArrangement(layout, layout.arrangement === 'row' ? 'grid' : 'row'), layout.arrangement === 'row' ? 'Panes arranged in a grid' : 'Panes arranged in a single row')}>
+                onClick={toggleArrangement}>
                 {layout.arrangement === 'row' ? <LayoutGrid size={16} aria-hidden="true" /> : <Columns3 size={16} aria-hidden="true" />}
               </button>
               : null}
@@ -363,7 +371,7 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
               onDragEnd={() => { window.clearTimeout(moveStart.current); setMoving(null) }}>
               <GripVertical size={16} aria-hidden="true" />
             </button> : null}
-            {!narrow || layout.zoomed ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts="Control+Shift+M"
+            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts="Control+Shift+M"
               aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={layout.zoomed ? 'Show all panes (Ctrl+Shift+M)' : 'Zoom pane (Ctrl+Shift+M)'}
               onClick={() => toggleZoom(id)}>
               {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
