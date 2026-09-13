@@ -40,3 +40,4 @@ scripts/memeval/results/*.json
 
 # Isolated voice measurement bundles, audio and temporary reports
 artifacts/voice-perf/
+artifacts/phase3-tools/

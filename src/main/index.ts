@@ -140,6 +140,13 @@ import { registerAgentIpc } from './agents/ipc'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { resolveFilesBinding } from './files/binding'
+import { registerToolsIpc } from './tools/ipc'
+import { TerminalService } from './tools/terminal'
+import { BrowserService } from './tools/browser'
+import { GitChangesService } from './tools/gitChanges'
+import { TERMINAL_EVENT } from '../shared/terminal'
+import { BROWSER_EVENT } from '../shared/browser'
+import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
@@ -850,11 +857,22 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }),
     registerIpc: () => {
       const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
-      const cleanupFiles = registerFilesIpc(ipcMain, new FilesService({
+      const files = new FilesService({
         resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
         copyPath: path => clipboard.writeText(path),
         reveal: path => shell.showItemInFolder(path),
-      }), () => windows.getTrustedRenderers())
+      })
+      const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers())
+      const cleanupTools = registerToolsIpc(ipcMain, {
+        terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
+        browser: new BrowserService({ files,
+          getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
+          emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
+          destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
+          openExternal: url => shell.openExternal(url),
+        }),
+        gitChanges: new GitChangesService({ files, copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } }),
+      }, () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
@@ -929,6 +947,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupAgents()
         cleanupPersonalChats()
         cleanupFiles()
+        cleanupTools()
         cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so abandon in-flight uploads.

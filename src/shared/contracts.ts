@@ -337,6 +337,9 @@ export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
   readonly personalChats?: import('./personalChats').PersonalChatBridge
+  readonly terminal?: import('./terminal').TerminalBridge
+  readonly browser?: import('./browser').BrowserBridge
+  readonly gitChanges?: import('./gitChanges').GitChangesBridge
   readonly files?: import('./files').FilesBridge
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentBridge

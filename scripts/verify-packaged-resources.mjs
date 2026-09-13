@@ -100,6 +100,26 @@ export async function verifyPackagedMemoryStore(target) {
     const child = application.process()
     child.stdout.on('data', chunk => { stdout = (stdout + String(chunk)).slice(-64 * 1024) })
     child.stderr.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-4000) })
+    // Resolve from the packaged app, not this verifier's node_modules. Loading the
+    // addon and launching a child also verifies unpacked native/helper paths and ABI.
+    const terminal = await application.evaluate(async ({ app }, cwd) => {
+      const { createRequire } = await import('node:module')
+      const { join } = await import('node:path')
+      const pty = createRequire(join(app.getAppPath(), 'package.json'))('node-pty')
+      return new Promise((resolveProbe, rejectProbe) => {
+        let output = ''
+        const child = pty.spawn(process.platform === 'win32' ? process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe' : '/bin/sh',
+          process.platform === 'win32' ? ['/d', '/c', 'echo SOTTO_PTY_PACKAGE_OK'] : ['-c', 'printf SOTTO_PTY_PACKAGE_OK'],
+          { cwd, cols: 80, rows: 24, name: 'xterm-256color', env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NODE_OPTIONS: undefined } })
+        const timeout = globalThis.setTimeout(() => { child.kill(); rejectProbe(new Error('packaged PTY timed out')) }, 10000)
+        child.onData(data => { output = (output + data).slice(-4096) })
+        child.onExit(({ exitCode }) => {
+          globalThis.clearTimeout(timeout)
+          if (exitCode !== 0 || !output.includes('SOTTO_PTY_PACKAGE_OK')) rejectProbe(new Error('packaged PTY output/exit mismatch'))
+          else resolveProbe({ modules: process.versions.modules, napi: process.versions.napi, exitCode, output: 'SOTTO_PTY_PACKAGE_OK' })
+        })
+      })
+    }, probeRoot)
     const exited = new Promise((resolveExit, rejectExit) => {
       child.once('close', (code, signal) => {
         if (code === 0 && signal === null) resolveExit()
@@ -121,7 +141,7 @@ export async function verifyPackagedMemoryStore(target) {
         result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
-    return result
+    return { ...result, terminal }
   } catch (error) {
     fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
   } finally {
@@ -257,12 +277,12 @@ export async function verifyPackagedResources(input, options = {}) {
     fail(error instanceof Error ? error.message : String(error))
   }
   const roots = productionModuleRoots(entries)
-  if (JSON.stringify(roots) !== JSON.stringify(['zod'])) {
+  if (JSON.stringify(roots) !== JSON.stringify(['node-addon-api', 'node-pty', 'zod'])) {
     fail(`unexpected production modules: ${roots.join(', ') || '(none)'}`)
   }
 
   const packagedJson = JSON.parse(readAsarText(asarPath, 'package.json'))
-  if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['zod'])) {
+  if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['node-pty', 'zod'])) {
     fail('packaged dependency manifest is not minimal')
   }
   const externalInventories = {

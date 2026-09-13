@@ -17,6 +17,8 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
+  packageComponent('node-pty', '1.1.0', 'MIT', 'Christopher Jeffrey; Daniel Imms; Microsoft Corporation'),
+  packageComponent('node-addon-api', '7.1.1', 'MIT', 'Node.js API collaborators'),
   // Compiled into the main-process bundle, so their code ships inside app.asar
   // even though npm records them as development dependencies.
   packageComponent('electron-updater', '6.8.9', 'MIT', 'Loopline Systems and electron-builder contributors'),

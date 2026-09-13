@@ -31,6 +31,7 @@ export interface AppSettings {
   theme: Theme
   appearance: Appearance
   accent: Accent
+  webLinkDestination: 'external' | 'embedded'
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -68,6 +69,7 @@ const fieldSchemas = {
   theme: z.enum(['system', 'light', 'dark']),
   appearance: z.enum(APPEARANCES),
   accent: z.enum(ACCENTS),
+  webLinkDestination: z.enum(['external', 'embedded']),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -110,6 +112,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // changes colour until the user picks something else (ADR-0009).
   appearance: 'dark',
   accent: 'teal',
+  webLinkDestination: 'external',
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -169,6 +172,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     theme: parseField(persisted, 'theme', defaults),
     appearance: parseField(persisted, 'appearance', defaults),
     accent: parseField(persisted, 'accent', defaults),
+    webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

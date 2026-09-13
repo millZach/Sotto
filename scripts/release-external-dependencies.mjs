@@ -28,6 +28,8 @@ const reviewedInventories = Object.freeze({
       'node:sqlite',
       'node:stream',
       'node:stream/promises',
+      'node:string_decoder',
+      'node:timers/promises',
       'node:url',
       'node:util',
       'node:worker_threads',
@@ -40,7 +42,7 @@ const reviewedInventories = Object.freeze({
       'zlib',
       'zod',
     ]),
-    dynamicImports: Object.freeze([]),
+    dynamicImports: Object.freeze(['node-pty']),
   }),
   preload: Object.freeze({
     version: 1,

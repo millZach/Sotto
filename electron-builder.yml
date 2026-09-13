@@ -12,6 +12,12 @@ files:
 
 asar: true
 
+# PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR.
+asarUnpack:
+  - node_modules/node-pty/**
+# Rebuild against the shipped Electron runtime (also on macOS arm64).
+npmRebuild: true
+
 # Embeds app-update.yml in the packaged resources so the Windows updater knows
 # which repository to read. Publishing is never automatic: every package script
 # passes --publish never, and releases are uploaded by hand.

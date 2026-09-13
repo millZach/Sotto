@@ -17,6 +17,7 @@ const customSettings = {
   theme: 'light',
   appearance: 'light',
   accent: 'violet',
+  webLinkDestination: 'embedded',
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -92,6 +93,7 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
+      webLinkDestination: 'external',
       version: 1,
       theme: 'system',
       appearance: 'dark',

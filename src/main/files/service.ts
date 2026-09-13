@@ -31,6 +31,11 @@ export class FilesService {
   private active = 0
   constructor(private readonly dependencies: FilesDependencies) {}
 
+  /** Shared main-owned identity boundary for terminal, browser and Git tools. */
+  resolveWorkspace(threadId: string, expected?: string): Promise<FilesResult<FileWorkspace>> {
+    return this.run(async () => (await this.workspace(threadId, expected)).value)
+  }
+
   private async run<T>(operation: () => Promise<T>): Promise<FilesResult<T>> {
     if (this.active >= 4) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
     this.active++
