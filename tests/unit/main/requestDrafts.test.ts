@@ -12,6 +12,7 @@ const questions = [
   { id: 'notes', question: 'Notes?', multiSelect: false, allowFreeText: true, options: [] },
 ]
 const target: RequestDraftTarget = { kind: 'thread', ownerId: 'owner', providerId: 'codex', requestId: 'request', questions }
+const submittedAnswers = { choice: { optionIds: ['coast'], text: 'A quiet beach' }, notes: { optionIds: [], text: 'Keep this unsent' } }
 const owner = { kind: target.kind, ownerId: target.ownerId, providerId: target.providerId }
 const request: AgentRequest = { id: target.requestId, kind: 'question', text: 'Native context', options: [], questions }
 const draft = (patch: Partial<RequestDraft> = {}): RequestDraft => requestDraftSchema.parse({ target, revision: 1, held: false,
@@ -59,7 +60,7 @@ describe('request-owned atomic drafts', () => {
     let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
     const service = new RequestDraftService(directory, () => state, async () => {})
     await service.start(); await service.save(draft({ held: true }))
-    await service.bindDecision(target, 'attempt-1')
+    await service.bindDecision(target, 'attempt-1', submittedAnswers)
     const accepted = { requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions), decisionId: 'attempt-1' }
     state = { connected: false, ready: false, requests: [], completed: [accepted] }
     const restarted = new RequestDraftService(directory, () => state, async () => {})
@@ -82,7 +83,7 @@ describe('request-owned atomic drafts', () => {
     state = { ...state, requests: [{ ...request, id: 'second' }] }; await service.reconcile()
     expect((await service.get(target))?.held).toBe(true)
     expect(await service.get({ ...target, requestId: 'second' })).not.toBeNull()
-    await expect(service.save(draft({ held: true, revision: 2 }))).rejects.toThrow('no longer pending')
+    await expect(service.save(draft({ held: true, revision: 2 }))).rejects.toThrow('Reconnect and check')
     const changed = { ...target, questions: [{ ...questions[1]!, question: 'An entirely new question' }] }
     state = { ...state, requests: [{ ...request, questions: changed.questions }] }
     expect(await service.get(changed)).toBeNull()
@@ -114,6 +115,8 @@ describe('request-owned atomic drafts', () => {
     const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), async () => {})
     await service.start()
     await expect(service.get(target)).rejects.toThrow('original request-drafts.json is unchanged')
+    await expect(service.list(owner)).rejects.toThrow('original request-drafts.json is unchanged')
+    await expect(service.discard({ target, revision: 1 })).rejects.toThrow('original request-drafts.json is unchanged')
     await expect(service.save(draft())).rejects.toThrow('original request-drafts.json is unchanged')
     expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(contents)
     expect(await readdir(directory)).toEqual(['request-drafts.json'])
@@ -201,15 +204,60 @@ it('binds acceptance to the exact same-definition attempt, retaining newer holds
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
   const service = new RequestDraftService(directory, () => state, async () => {})
   await service.start(); await service.save(draft({ held: true }))
-  await service.bindDecision(target, 'first')
+  await service.bindDecision(target, 'first', submittedAnswers)
   await service.check(target)
   await service.save(draft({ revision: 3, held: true }))
-  await service.bindDecision(target, 'second')
+  await service.bindDecision(target, 'second', submittedAnswers)
   const receipt = { requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions) }
   state = { ...state, completed: [receipt, { ...receipt, decisionId: 'first' }] }
   await service.reconcile()
   expect((await disk()).drafts[0]).toMatchObject({ revision: 3, held: true, decisionId: 'second' })
   state = { ...state, completed: [...state.completed!, { ...receipt, decisionId: 'second' }] }
   await service.reconcile()
+  expect((await disk()).drafts).toEqual([])
+})
+
+
+it('does not attach a delayed old answer to newer held text, or accept renderer-invented delivery identity', async () => {
+  const state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'delayed-old-command', { ...submittedAnswers, notes: { optionIds: [], text: 'Old text' } })
+  expect((await disk()).drafts[0]).not.toHaveProperty('decisionId')
+  await expect(service.save(draft({ held: true, revision: 2, decisionId: 'forged-receipt' }))).rejects.toThrow('owned by main')
+  await service.bindDecision(target, 'actual-command', submittedAnswers)
+  expect((await disk()).drafts[0]?.decisionId).toBe('actual-command')
+})
+
+
+it('preserves a final queued edit to a redefined form and rejects stale discard without mutating either form', async () => {
+  let state: RequestDraftOwnerState | undefined = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(draft())
+  const snapshot = (await service.list(owner))[0]!
+  state = { connected: true, ready: true, requests: [{ ...request, questions: [{ ...questions[1]!, question: 'Changed' }] }] }
+  const latest = draft({ revision: 2, selections: { notes: { optionIds: [], other: false, text: 'Final queued edit' } } })
+  await service.save(latest); await service.reconcile()
+  await expect(service.discard({ target, revision: snapshot.revision })).rejects.toThrow('newer')
+  expect((await disk()).drafts).toEqual([latest])
+  state = undefined
+  expect(await service.list(owner)).toEqual([])
+  expect(await service.get(target)).toBeNull()
+  await expect(service.discard({ target, revision: 2 })).rejects.toThrow('owner is unavailable')
+  expect((await disk()).drafts).toEqual([latest])
+})
+
+it('retains held content when explicit discard cannot commit and only reports success after the retry', async () => {
+  const state = { connected: true, ready: true, requests: [request] }
+  const real = new RequestDraftService(directory, () => state, async () => {})
+  await real.start(); await real.save(draft({ held: true }))
+  const write = vi.fn().mockRejectedValueOnce(new Error('disk denied')).mockImplementation(async value => { await writeFile(join(directory, 'request-drafts.json'), JSON.stringify(value)) })
+  const service = new RequestDraftService(directory, () => state, async () => {}, { write })
+  await service.start()
+  await expect(service.discard({ target, revision: 1 })).rejects.toThrow('Could not save')
+  expect((await service.list(owner))[0]?.held).toBe(true)
+  expect((await disk()).drafts).toHaveLength(1)
+  expect(await service.discard({ target, revision: 1 })).toBe(true)
+  expect(await service.discard({ target, revision: 1 })).toBe(false)
   expect((await disk()).drafts).toEqual([])
 })

@@ -1220,7 +1220,7 @@ export class AgentControl {
         await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
       }
       if (command.type === 'answer' && answerRequest?.questions?.length && provider) {
-        await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerRequest.questions }, command.commandId)
+        await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerRequest.questions }, command.commandId, command.questionAnswers)
         this.canAct(); this.guardAuthority(command, turn); validate?.()
       }
       const providerStartedAt = Date.now()

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
 import { draftHandoffFixture } from '../fixtures/draftHandoffFixture'
-import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import { RequestDraftService, requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import type { RequestDraftOwner } from '../../src/shared/requestDrafts'
 import type { AgentRequest } from '../../src/shared/agents'
 const request: AgentRequest = { id: 'structured', kind: 'question', text: 'Private request context', options: [], questions: [
   { id: 'q', question: 'Private question', options: [], multiSelect: false, allowFreeText: true },
@@ -57,4 +58,40 @@ it('does not complete an answer when another provider is connected but its own p
   vi.spyOn(f.host, 'snapshot').mockResolvedValueOnce(snapshot)
   await f.control.refreshRequestDraft('workshop')
   expect(f.control.requestAnswerRecovery('workshop', 'claude')).toEqual({ uncertainRequestIds: ['structured'], completed: [] })
+})
+
+it.each([true, false])('binds threaded disk recovery to positive acceptance (%s), never request disappearance alone', async accepted => {
+  const f = await draftHandoffFixture((target, id, answers) => drafts!.bindDecision(target, id, answers)); fixtures.push(f)
+  f.setHistory(false)
+  const owner = { kind: 'thread' as const, ownerId: 'workshop', providerId: 'claude' as const }
+  const target = { ...owner, requestId: request.id, questions: request.questions! }
+  const lookup = (input: RequestDraftOwner) => {
+    if (input.kind !== owner.kind || input.ownerId !== owner.ownerId || input.providerId !== owner.providerId) return undefined
+    const state = f.control.get(), thread = state.host.threads.find(t => t.id === owner.ownerId)
+    return { connected: state.host.connected, ready: true, requests: thread?.requests ?? [], ...f.control.requestAnswerRecovery(owner.ownerId, owner.providerId) }
+  }
+  const drafts: RequestDraftService = new RequestDraftService(f.root, lookup, () => f.control.refreshRequestDraft(owner.ownerId))
+  await drafts.start()
+  f.host.event({ type: 'question', threadId: owner.ownerId, text: '', request })
+  await drafts.save({ target, revision: 1, held: true, selections: { q: { optionIds: [], other: false, text: 'Private held answer' } } })
+  const original = f.host.execute.bind(f.host)
+  const execute = vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+    expect((await drafts!.list(owner))[0]?.decisionId).toBe(command.commandId)
+    // A real host event clears the pending request BEFORE its acknowledgement resolves.
+    const result = await original(command)
+    return accepted ? result : { accepted: false, uncertain: true }
+  })
+  await f.command({ type: 'answer', threadId: owner.ownerId, requestId: request.id, answer: '', questionAnswers: { q: { optionIds: [], text: 'Private held answer' } } })
+  await drafts.reconcile()
+  expect(f.control.get().host.threads[0]!.requests).toEqual([])
+  expect(await drafts.list(owner)).toHaveLength(accepted ? 0 : 1)
+  const receipts = f.control.requestAnswerRecovery(owner.ownerId, owner.providerId).completed
+  expect(receipts).toHaveLength(accepted ? 1 : 0)
+  execute.mockRestore()
+  await f.restart()
+  const recovered = new RequestDraftService(f.root, lookup, () => f.control.refreshRequestDraft(owner.ownerId))
+  await recovered.start(); await recovered.reconcile()
+  expect(await recovered.list(owner)).toHaveLength(accepted ? 0 : 1)
+  expect(f.attempts.filter(command => command.type === 'answer')).toHaveLength(1)
+  expect(JSON.stringify((await f.disk()).answeredRequests)).not.toContain('Private')
 })

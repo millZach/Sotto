@@ -571,7 +571,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(authority === undefined ? {} : { authority }),
     ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
     historyEnabled: () => agentHistoryEnabled,
-    bindRequestDraftDecision: (target, decisionId) => requestDrafts.bindDecision(target, decisionId),
+    bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
       claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
@@ -581,7 +581,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   await agentControl.start()
   const testPersonalChatHost = e2eConfiguration ? new E2EPersonalChatHost(userDataPath) : undefined
-  const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId) => requestDrafts.bindDecision(target, decisionId), configuration: () => agentControl.get().configuration,
+  const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.get().configuration,
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
     ...(testPersonalChatHost ? { host: testPersonalChatHost } : {}) })
   await personalChats.start()

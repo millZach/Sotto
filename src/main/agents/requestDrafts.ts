@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { PersonalChatState } from '../../shared/personalChats'
-import type { AgentRequest } from '../../shared/agents'
+import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
   requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
   type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard,
@@ -17,7 +17,7 @@ const unreadable = 'Answer draft storage could not be read. The original request
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
-export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string) => Promise<void>
+export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string, answers: AgentQuestionAnswers | undefined) => Promise<void>
 
 export interface RequestDraftOwnerState {
   readonly connected: boolean
@@ -125,10 +125,22 @@ export class RequestDraftService {
   }
 
   /** Main only: bind the persisted held form before the native write. No answer content enters receipts. */
-  bindDecision(target: RequestDraftTarget, decisionId: string): Promise<void> {
+  bindDecision(target: RequestDraftTarget, decisionId: string, answers?: AgentQuestionAnswers): Promise<void> {
     return this.serial(async () => {
       const previous = this.current(target)
-      if (!previous?.held || !this.lookup(target)) return
+      if (!previous?.held || !this.lookup(target) || !answers) return
+      // A delayed older answer IPC must not bind whichever newer held text is now saved.
+      // Compare in memory only; receipts still contain no answer text or answer digests.
+      const submitted: AgentQuestionAnswers = {}
+      for (const question of previous.target.questions) {
+        const selection = previous.selections[question.id]
+        if (!selection) continue
+        const text = question.allowFreeText && (question.options.length === 0 || selection.other) ? selection.text.trim() : ''
+        if (selection.optionIds.length || text) submitted[question.id] = { optionIds: selection.optionIds, ...(text ? { text } : {}) }
+      }
+      const canonical = (value: AgentQuestionAnswers): string => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, answer]) => [id, [...answer.optionIds].sort(), answer.text ?? '']))
+      if (canonical(submitted) !== canonical(answers)) return
       if (previous.decisionId && previous.decisionId !== decisionId) throw new Error('This answer already belongs to another delivery attempt. Check it before retrying.')
       await this.commit(this.saved.drafts.map(draft => draft === previous ? { ...previous, decisionId } : draft))
     })
@@ -150,8 +162,7 @@ export class RequestDraftService {
       const request = state?.requests.find(item => item.id === draft.target.requestId)
       if (!state) throw new Error('This answer belongs to a request that is no longer available.')
       const matches = request && sameRequestQuestions(request.questions ?? [], draft.target.questions)
-      if (!matches && (!previous || !sameRequestQuestions(previous.target.questions, draft.target.questions)
-        || state.connected && state.ready)) throw new Error('This question changed or is no longer pending. Your local answer has been kept.')
+      if (!matches && !previous) throw new Error('This question changed or is no longer pending. Your local answer has been kept.')
       if (previous && sameRequestQuestions(previous.target.questions, draft.target.questions)) {
         if (draft.revision < previous.revision || draft.revision === previous.revision && JSON.stringify(draft) !== JSON.stringify(previous)) {
           throw new Error('A newer answer draft is already saved. Your local answer has been kept.')

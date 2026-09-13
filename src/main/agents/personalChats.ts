@@ -358,7 +358,7 @@ export class PersonalChatService {
     let failure: unknown
     try {
       const request = this.chat(chatId).decisions!.find(d => d.id === decisionId)!.request!
-      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: 'codex', requestId: request.id, questions: request.questions }, decisionId)
+      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: 'codex', requestId: request.id, questions: request.questions }, decisionId, answer.questionAnswers)
       const result = await this.host.execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
       status = result.accepted && !result.uncertain ? 'accepted' : 'uncertain'
       if (!result.accepted) this.error = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'

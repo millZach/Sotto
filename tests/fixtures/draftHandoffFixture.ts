@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import type { BindRequestDraftDecision } from '../../src/main/agents/requestDrafts'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
@@ -10,7 +11,7 @@ import type { AgentHostCommand } from '../../src/main/agents/host'
 import { agentCommandSchema, type AgentCommand, type AgentState } from '../../src/shared/agents'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 
-export async function draftHandoffFixture() {
+export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequestDraftDecision) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-draft-handoff-'))
   const host = new E2EAgentHost()
   const attempts: AgentHostCommand[] = []
@@ -19,7 +20,7 @@ export async function draftHandoffFixture() {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
   await credentials.load()
   let history = true
-  const create = () => new AgentControl({ directory: root, host, credentials, historyEnabled: () => history,
+  const create = () => new AgentControl({ directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), historyEnabled: () => history,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   let control = create(); await control.start(); await control.command({ type: 'connect' })

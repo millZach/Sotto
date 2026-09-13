@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { codexFixture } from '../fixtures/codexFixture'
-import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import { RequestDraftService, personalRequestDraftState, requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
 import { PersonalChatService } from '../../src/main/agents/personalChats'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { personalChatStateSchema, type PersonalChat } from '../../src/shared/personalChats'
@@ -174,4 +174,97 @@ it('redacts existing decision content and diagnostics for every delivery status 
   const restarted = makeService(fixture, () => false); await restarted.start()
   expect(restarted.get().chats[0]!.decisions).toEqual(disk.decisions)
   expect(restarted.get().chats[0]!.draft.text).toBe('Preserve unsent draft')
+})
+
+it.each([false, true])('recovers original structured content after actual Codex shutdown with native requests absent (held %s)', async held => {
+  const { fixture, service, chat } = await setup()
+  await fixture.action(chat.id, { type: 'question', text: 'PRIVATE context', params: {
+    questions: [{ id: 'choice', question: 'PRIVATE destination?', isOther: true, options: [{ label: 'PRIVATE coast', description: 'PRIVATE detail' }] }],
+  } })
+  await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
+  const request = service.get().chats[0]!.requests[0]!
+  const owner = { kind: 'personal' as const, ownerId: chat.id, providerId: 'codex' as const }
+  const target = { ...owner, requestId: request.id, questions: request.questions! }
+  const drafts = new RequestDraftService(fixture.root, owner => personalRequestDraftState(service.get(), owner), async () => { await service.refresh(chat.id) })
+  await drafts.start()
+  const retained = { target, revision: 1, held, selections: { choice: { optionIds: [request.questions![0]!.options[0]!.id], other: false, text: 'PRIVATE local notes' } } }
+  await drafts.save(retained)
+  await stop(service)
+  // Exercise the real adapter shutdown/reset; do not re-emit native questions.
+  expect(fixture.adapter.personalSnapshot().flatMap(c => c.requests)).toEqual([])
+  const nextFixture = await codexFixture(fixture.root); fixtures.push(nextFixture)
+  const restored = makeService(nextFixture)
+  await restored.start()
+  const recovered = new RequestDraftService(fixture.root, owner => personalRequestDraftState(restored.get(), owner), async () => { await restored.refresh(chat.id) })
+  await recovered.start(); await recovered.reconcile()
+  expect(await recovered.list(owner)).toEqual([retained])
+  const dispatch = vi.spyOn(nextFixture.adapter, 'execute')
+  await restored.connect(); await restored.refresh(chat.id); await restored.settled(); await recovered.reconcile()
+  expect(restored.get().chats[0]!.requests).toEqual([])
+  expect(await recovered.list(owner)).toEqual([retained])
+  expect(await recovered.list({ ...owner, ownerId: 'not-this-chat' })).toEqual([])
+  expect(await recovered.list({ ...owner, providerId: 'claude' })).toEqual([])
+  await expect(recovered.check(target)).rejects.toThrow('still unconfirmed')
+  expect(dispatch).not.toHaveBeenCalled()
+  const records = await nextFixture.driver.requests()
+  expect(JSON.stringify(records.filter(r => r.result?.answers))).not.toContain('PRIVATE local notes')
+  expect(JSON.parse(await readFile(join(fixture.root, 'request-drafts.json'), 'utf8')).drafts).toEqual([retained])
+})
+
+it.each(['different', 'same'] as const)('keeps the newer %s-definition hold through old accepted/new submitting receipts and a request-free restart', async definition => {
+  const fixture = await codexFixture(); fixtures.push(fixture)
+  const service = new PersonalChatService({ userDataPath: fixture.root, host: fixture.adapter, configuration: () => configuration, historyEnabled: () => false,
+    bindRequestDraftDecision: (target, id, answers) => drafts!.bindDecision(target, id, answers) })
+  services.push(service)
+  await service.start(); await service.connect()
+  const chat = (await service.create()).chats[0]!
+  await service.saveDraft({ chatId: chat.id, revision: 1, text: 'PRIVATE prompt', skills: [] })
+  await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
+  await fixture.action(chat.id, { type: 'question', text: 'PRIVATE context', params: {
+    questions: [{ id: 'notes', question: 'PRIVATE original question', isOther: true, options: [] }],
+  } })
+  await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
+  const original = service.get().chats[0]!.requests[0]!
+  const owner = { kind: 'personal' as const, ownerId: chat.id, providerId: 'codex' as const }
+  const drafts: RequestDraftService = new RequestDraftService(fixture.root, owner => personalRequestDraftState(service.get(), owner), async () => { await service.refresh(chat.id) })
+  await drafts.start()
+  const target = { ...owner, requestId: original.id, questions: original.questions! }
+  const makeDraft = (text: string) => ({ target, revision: 1, held: true, selections: { notes: { optionIds: [], other: false, text } } })
+  await drafts.save(makeDraft('PRIVATE first answer'))
+  await service.answer({ chatId: chat.id, requestId: original.id, answer: '', questionAnswers: { notes: { optionIds: [], text: 'PRIVATE first answer' } } })
+  await service.settled(); await drafts.reconcile()
+  expect(await drafts.list(owner)).toEqual([])
+  const oldId = service.get().chats[0]!.decisions![0]!.id
+  // Provider request-ID reuse at the native observation seam; the old decision remains real.
+  const native = fixture.adapter.personalSnapshot().find(c => c.id === chat.id)!
+  if (definition === 'different') target.questions = [{ ...target.questions[0]!, question: 'PRIVATE redefined question' }]
+  const snapshot = vi.spyOn(fixture.adapter, 'personalSnapshot').mockReturnValue([{ ...native, requests: [{ ...original, questions: target.questions }] }])
+  await service.refresh(chat.id); await service.settled()
+  await drafts.save(makeDraft('PRIVATE newer answer'))
+  const path = join(fixture.root, 'personal-chat', 'chats.json')
+  const execute = vi.spyOn(fixture.adapter, 'execute').mockImplementation(async command => {
+    expect(command.type).toBe('answer')
+    await drafts!.reconcile()
+    const held = await drafts!.list(owner)
+    expect(held).toHaveLength(1)
+    expect(held[0]).toMatchObject({ held: true, decisionId: command.commandId, selections: { notes: { text: 'PRIVATE newer answer' } } })
+    expect(command.commandId).not.toBe(oldId)
+    const disk = await diskChat(path)
+    expect(disk.decisions!.map(d => d.status)).toEqual(['accepted', 'submitting'])
+    expect(disk.decisions![1]!.questionsDigest).toBe(requestQuestionsDigest(target.questions))
+    return { accepted: false, uncertain: true }
+  })
+  await service.answer({ chatId: chat.id, requestId: original.id, answer: '', questionAnswers: { notes: { optionIds: [], text: 'PRIVATE newer answer' } } })
+  expect(execute).toHaveBeenCalledTimes(1)
+  snapshot.mockRestore(); execute.mockRestore()
+  await stop(service)
+  const nextFixture = await codexFixture(fixture.root); fixtures.push(nextFixture)
+  const restored = makeService(nextFixture)
+  await restored.start(); await restored.connect(); await restored.refresh(chat.id); await restored.settled()
+  const recovered = new RequestDraftService(fixture.root, owner => personalRequestDraftState(restored.get(), owner), async () => { await restored.refresh(chat.id) })
+  await recovered.start(); await recovered.reconcile()
+  expect(restored.get().chats[0]!.requests).toEqual([])
+  expect((await recovered.list(owner))[0]).toMatchObject({ held: true, selections: { notes: { text: 'PRIVATE newer answer' } } })
+  expect((await nextFixture.driver.requests()).filter(r => r.result?.answers)).toHaveLength(1)
+  expect((await diskChat(path)).decisions!.map(d => d.status)).toEqual(['accepted', 'uncertain'])
 })
