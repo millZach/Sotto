@@ -29,7 +29,7 @@ const extension: OpenVsxThemeExtension = {
 }
 
 function manifest(themes: unknown[]): string {
-  return JSON.stringify({ name: 'x', contributes: { themes } })
+  return JSON.stringify({ publisher: 'sotto-fixtures', name: 'harbor-theme', version: '1.2.0', license: 'MIT', contributes: { themes } })
 }
 
 async function failure(promise: Promise<unknown>): Promise<OpenVsxFailure> {
@@ -118,7 +118,7 @@ describe('Open VSX client', () => {
 
   it('reads extension details only with allowed download hosts and a Themes category', () => {
     const detail = {
-      namespace: 'a', name: 'b', categories: ['Themes'], license: 'MIT', repository: 'https://github.com/a/b',
+      namespace: 'a', name: 'b', version: '1.0.0', categories: ['Themes'], license: 'MIT', repository: 'https://github.com/a/b',
       files: { download: 'https://open-vsx.org/api/a/b/1/file/b.vsix', sha256: 'https://open-vsx.org/api/a/b/1/file/b.sha256' },
     }
     expect(parseExtensionDetail(detail)?.extension.sourceUrl).toBe('https://github.com/a/b')
@@ -154,30 +154,32 @@ describe('VSIX theme extraction', () => {
     expect(() => extractVsixThemes(bomb, extension)).toThrow(/compressed suspiciously well/u)
   })
 
-  it('never reads an include outside the extension folder, and skips only the offending theme', () => {
-    const archive = createZip([
-      { name: 'extension/package.json', data: manifest([
-        { label: 'Escape Dark', uiTheme: 'vs-dark', path: './themes/escape.json' },
-        { label: 'Loop Dark', uiTheme: 'vs-dark', path: './themes/loop.json' },
-        { label: 'Absolute Dark', uiTheme: 'vs-dark', path: '/extension/themes/ok.json' },
-        { label: 'Fine', uiTheme: 'vs-dark', path: './themes/ok.json' },
-      ]) },
+  it('refuses the whole extension when any theme reaches outside it, loops, or cannot be read', () => {
+    const ok = { name: 'extension/themes/ok.json', data: '{"colors":{"editor.background":"#202020","focusBorder":"#4080ff"}}', stored: true }
+    const fine = { label: 'Fine', uiTheme: 'vs-dark', path: './themes/ok.json' }
+    const withTheme = (contribution: Record<string, unknown>, ...files: Array<{ name: string; data: string }>) => createZip([
+      { name: 'extension/package.json', data: manifest([contribution, fine]) },
       { name: 'secret.json', data: '{"colors":{"editor.background":"#ff0000"}}' },
-      { name: 'extension/themes/escape.json', data: '{"include":"../../secret.json","colors":{"editor.background":"#111111"}}' },
-      { name: 'extension/themes/loop.json', data: '{"include":"./loop.json","colors":{"editor.background":"#111111"}}' },
-      { name: 'extension/themes/ok.json', data: '{"colors":{"editor.background":"#202020","focusBorder":"#4080ff"}}', stored: true },
+      ok,
+      ...files,
     ])
-    const themes = extractVsixThemes(archive, extension)
-    expect(themes.map(theme => theme.label)).toEqual(['Fine'])
+    expect(extractVsixThemes(createZip([{ name: 'extension/package.json', data: manifest([fine]) }, ok]), extension).map(theme => theme.label)).toEqual(['Fine'])
+    const hostile = [
+      withTheme({ label: 'Escape Dark', uiTheme: 'vs-dark', path: './themes/escape.json' }, { name: 'extension/themes/escape.json', data: '{"include":"../../secret.json","colors":{"editor.background":"#111111"}}' }),
+      withTheme({ label: 'Loop Dark', uiTheme: 'vs-dark', path: './themes/loop.json' }, { name: 'extension/themes/loop.json', data: '{"include":"./loop.json","colors":{"editor.background":"#111111"}}' }),
+      withTheme({ label: 'Absolute Dark', uiTheme: 'vs-dark', path: '/extension/themes/ok.json' }),
+      withTheme({ label: 'Parent Dark', uiTheme: 'vs-dark', path: '../secret.json' }),
+      withTheme({ label: 'Broken', uiTheme: 'vs-dark', path: './broken.json' }, { name: 'extension/broken.json', data: '{ nope' }),
+    ]
+    for (const archive of hostile) {
+      const error = (() => { try { extractVsixThemes(archive, extension); return null } catch (cause) { return cause } })()
+      expect(error).toBeInstanceOf(OpenVsxFailure)
+      expect((error as OpenVsxFailure).code).toBe('rejected')
+    }
   })
 
-  it('rejects an extension that contributes no readable themes', () => {
+  it('rejects an extension that contributes no color themes', () => {
     expect(() => extractVsixThemes(createZip([{ name: 'extension/package.json', data: manifest([]) }]), extension)).toThrow(/contributes no color themes/u)
-    const unreadable = createZip([
-      { name: 'extension/package.json', data: manifest([{ label: 'Broken', path: './broken.json' }]) },
-      { name: 'extension/broken.json', data: '{ nope' },
-    ])
-    expect(() => extractVsixThemes(unreadable, extension)).toThrow(/could be read/u)
   })
 
   it('gives each variant a stable id derived from the collection', () => {
