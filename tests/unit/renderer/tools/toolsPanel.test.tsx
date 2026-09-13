@@ -54,14 +54,14 @@ const getPath = (path: string): HTMLElement => {
 const findPath = (path: string): Promise<HTMLElement> => waitFor(() => getPath(path))
 
 describe('shared tools panel', () => {
-  it('opens from the toggle with only the implemented Files surface and focuses its tab', async () => {
+  it('opens from the toggle with the implemented surfaces and focuses the open one', async () => {
     const { store } = setup()
     expect(screen.queryByRole('complementary', { name: 'Tools' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Files' }))
-    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
     const tabs = within(panel()).getAllByRole('tab')
-    expect(tabs.map(tab => tab.textContent)).toEqual(['Files'])
-    expect(TOOL_SURFACES).toHaveLength(1)
+    expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
+    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['files', 'changes'])
     expect(tabs[0]).toHaveFocus()
     expect(within(panel()).getByRole('tabpanel')).toBeInTheDocument()
     expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()
@@ -229,7 +229,7 @@ describe('shared tools panel', () => {
 
   it('returns focus straight to the toggle when Close is activated, docked, pinned or overlaid', async () => {
     const { store, rerender } = setup({ inPane: true })
-    const toggle = () => screen.getByRole('button', { name: 'Files', exact: true })
+    const toggle = () => screen.getByRole('button', { name: 'Tools', exact: true })
     const closeFromKeyboard = (): void => {
       const button = within(panel()).getByRole('button', { name: 'Close tools panel' })
       button.focus()
@@ -265,7 +265,7 @@ describe('shared tools panel', () => {
     fireEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
     // The panes re-lay out after closing and the header holding the toggle is replaced.
     rerender('grok-previews')
-    expect(screen.getByRole('button', { name: 'Files', exact: true })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Tools', exact: true })).toHaveFocus()
 
     act(() => store.setOpen(true))
     within(panel()).getByRole('button', { name: 'Close tools panel' }).focus()
@@ -301,7 +301,7 @@ describe('shared tools panel', () => {
 
   it('shows the pane\u2019s toggle as not its own while the panel is pinned to another thread', async () => {
     const { store, rerender } = setup({ inPane: true })
-    const toggle = () => screen.getByRole('button', { name: 'Files', exact: true })
+    const toggle = () => screen.getByRole('button', { name: 'Tools', exact: true })
     act(() => store.setOpen(true))
     await findPath('D:\\work\\workshop')
     await userEvent.click(within(panel()).getByRole('button', { name: 'Pin to Visual gate flake' }))
@@ -310,7 +310,7 @@ describe('shared tools panel', () => {
     await waitFor(() => expect(toggle()).toHaveAttribute('data-pinned-elsewhere'))
     expect(toggle()).toHaveAttribute('aria-pressed', 'true')
     expect(toggle()).toHaveAttribute('aria-description', 'Showing Visual gate flake, pinned')
-    expect(toggle()).toHaveAttribute('title', 'Files is pinned to Visual gate flake')
+    expect(toggle()).toHaveAttribute('title', 'Tools are pinned to Visual gate flake')
     await userEvent.click(within(panel()).getByRole('button', { name: 'Unpin from Visual gate flake' }))
     expect(toggle()).not.toHaveAttribute('data-pinned-elsewhere')
     expect(toggle()).not.toHaveAttribute('aria-description')

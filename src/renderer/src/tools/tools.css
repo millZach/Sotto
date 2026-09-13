@@ -8,6 +8,7 @@
 }
 .tools-panel[data-mode='overlay'] { width: 0; }
 .tools-panel__sheet {
+  container: tools-sheet / inline-size;
   position: absolute; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: var(--tools-width, 380px); min-width: 0;
   border-left: 1px solid var(--tt-hairline); background: var(--tools-bg); color: var(--tt-text-2);
 }
@@ -35,6 +36,12 @@
 .tools-surfaces__tab:hover { color: var(--tt-text-2); }
 .tools-surfaces__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
 .tools-panel__actions { display: flex; align-items: center; gap: 2px; padding-bottom: 5px; }
+/* Four tabs share a 320px panel: below 440px they drop their icons and tighten, and never scroll out of view. */
+@container tools-sheet (max-width: 439px) {
+  .tools-panel__bar { gap: 4px; padding-left: 6px; }
+  .tools-surfaces__tab { padding: 0 7px; }
+  .tools-surfaces__icon { display: none; }
+}
 
 .tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
@@ -46,7 +53,9 @@
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
 .tools-panel__identity { display: grid; gap: 3px; padding: 10px 8px 10px 16px; }
-.tools-panel__thread { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 8px; }
+.tools-panel__thread { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 0; }
+.tools-panel__thread-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.tools-panel__thread { min-height: 28px; }
 .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .tools-panel__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 999px; color: var(--tt-accent-text); font-size: 12px; }
 /* The working copy in the pane chip's words: project, then branch or folder. The branch loses its end, never the project. */
@@ -108,6 +117,54 @@
 .tools-panel .files-problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; }
 .tools-panel .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 .tools-panel .files-problem--root { padding-top: 28px; }
+
+/* Changes: the changed files, and the selected file's diff beneath them (beside them once the panel is wide). */
+.changes-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.changes-surface > * { flex: none; }
+.changes-surface > .changes-list { flex: 1; }
+.changes-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+.changes-summary__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-summary__branch { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 12px; }
+.changes-list { min-height: 0; margin: 0; overflow: auto; padding: 6px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-surface[data-diff] > .changes-list { flex: none; max-height: clamp(96px, 30%, 280px); border-bottom: 1px solid var(--tt-hairline); }
+.changes-list__item { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; padding: 0 10px 0 8px; border: 1px solid transparent; border-radius: 7px; color: var(--tt-text-2); font-size: 14px; cursor: pointer; user-select: none; }
+.changes-list__item:hover { background: var(--tools-hover); color: var(--tt-text); }
+.changes-list__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.changes-list__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
+.changes-list__name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The folder gives way first and keeps its end, where the nearest folder name is. */
+.changes-list__folder { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.changes-badge { display: grid; place-items: center; flex: none; width: 18px; height: 18px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11px; font-weight: 600; line-height: 1; }
+.changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { border-color: color-mix(in srgb, var(--tt-success) 45%, transparent); color: var(--tt-success); }
+.changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { border-color: color-mix(in srgb, var(--tt-error) 45%, transparent); color: var(--tt-error-text); }
+.changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { border-color: color-mix(in srgb, var(--tt-warning) 40%, transparent); color: var(--tt-warning); }
+.changes-note { margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.changes-note code { font-family: var(--tt-font-mono); overflow-wrap: anywhere; }
+.changes-surface > .changes-diff { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.changes-diff .files-preview__title { align-items: center; }
+.changes-diff__body { flex: 1; min-height: 0; overflow: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-diff__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.changes-diff__rows { min-width: max-content; padding: 6px 0 20px; font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.55; }
+.changes-line { display: grid; grid-template-columns: 4ch 4ch 2ch auto; column-gap: 8px; padding-right: 16px; color: var(--tt-code-text); }
+.changes-line__number { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
+.changes-line__number:first-child { padding-left: 8px; box-sizing: content-box; }
+.changes-line__sign { color: var(--tt-text-muted); user-select: none; }
+.changes-line__text { white-space: pre; tab-size: 4; }
+.changes-line[data-kind='add'] { background: color-mix(in srgb, var(--tt-success) 12%, transparent); }
+.changes-line[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
+.changes-line[data-kind='remove'] { background: color-mix(in srgb, var(--tt-error) 12%, transparent); }
+.changes-line[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
+.changes-line[data-kind='hunk'] { margin-top: 6px; background: var(--tt-accent-wash); color: var(--tt-text-2); }
+.changes-line[data-kind='hunk']:first-child { margin-top: 0; }
+.changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
+.changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 10px 16px 20px; color: var(--tt-text-muted); font-size: 13px; }
+@container tools-body (min-width: 600px) {
+  .changes-surface[data-diff] { display: grid; grid-template: 'summary summary' auto 'list note' auto 'list diff' minmax(0, 1fr) / 240px minmax(0, 1fr); }
+  .changes-surface[data-diff] > .changes-summary { grid-area: summary; }
+  .changes-surface[data-diff] > .changes-list { grid-area: list; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
+  .changes-surface[data-diff] > .changes-note { grid-area: note; }
+  .changes-surface[data-diff] > .changes-diff { grid-area: diff; }
+}
 
 /* The panel draws its own edge, so a workspace slot around it adds none, and an empty slot takes no room. */
 .threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }

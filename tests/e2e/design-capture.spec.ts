@@ -901,7 +901,7 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('tablist', { name: 'Open panes' })).toBeVisible()
       await expect(page.locator('#thread-pane-grok-previews')).toHaveAttribute('inert')
       await capturePage(page, `threads-split-focus-820-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-focus-820' })
-      await page.getByRole('button', { name: 'Files', exact: true }).click()
+      await page.getByRole('button', { name: 'Tools', exact: true }).click()
       const tools = page.getByRole('complementary', { name: 'Tools', exact: true })
       await expect(tools.getByText('The working folder is not available.', { exact: true })).toBeVisible()
       await capturePage(page, `threads-files-unavailable-${appearance}.png`, { theme: appearance, category: 'threads', state: 'files-unavailable' })

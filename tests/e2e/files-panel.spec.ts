@@ -103,7 +103,7 @@ test('browses real working folders in the shared tools panel, following focus or
     await page.getByRole('button', { name: 'Workshop files', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Workshop files', exact: true })).toBeVisible()
 
-    const toggle = page.getByRole('button', { name: 'Files', exact: true })
+    const toggle = page.getByRole('button', { name: 'Tools', exact: true })
     await toggle.click()
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')

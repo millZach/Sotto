@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
+import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }] as const
+export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 export const TOOLS_PANEL_DEFAULT_WIDTH = 380
@@ -26,9 +27,10 @@ export function clampPanelWidth(width: number): number {
 /** How long a closed panel keeps asking for its toggle to take focus, for a toggle re-mounted by the layout change. */
 export const TOGGLE_FOCUS_RETURN_MS = 1_500
 
-/** The shared tools panel for this session: its chrome plus each thread's retained Files browsing. */
+/** The shared tools panel for this session: its chrome plus each thread's retained browsing and review. */
 export class ToolsPanelStore {
   readonly files = new FilesBrowserStore()
+  readonly changes = new ChangesStore()
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0

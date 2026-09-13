@@ -1,9 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, Pin, PinOff, RotateCw, X } from 'lucide-react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, PanelRight, Pin, PinOff, RotateCw, X, type LucideIcon } from 'lucide-react'
 import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
 import type { FilesBridge } from '../../../shared/files'
+import type { GitChangesBridge } from '../../../shared/gitChanges'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
+import { ChangesSurface } from './ChangesSurface'
+import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
 import type { PathAction } from './filesBrowser'
@@ -24,11 +27,16 @@ export interface ToolsPanelProps {
   /** Accepted for the shared tools slot; Files never sends agent commands or changes selection. */
   readonly command?: AgentConnection['command']
   readonly files?: FilesBridge | undefined
+  readonly gitChanges?: GitChangesBridge | undefined
   readonly store?: ToolsPanelStore
 }
 
 function bridgeFiles(): FilesBridge | undefined {
   return (window.sotto as { files?: FilesBridge } | undefined)?.files
+}
+
+function bridgeChanges(): GitChangesBridge | undefined {
+  return (window.sotto as { gitChanges?: GitChangesBridge } | undefined)?.gitChanges
 }
 
 function bridgePlatform(): string | undefined {
@@ -71,9 +79,9 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   return <button ref={button} type="button" className="tt-button tt-focusable tt-button--ghost tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
     data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={pinnedTitle === null ? undefined : `Showing ${pinnedTitle}, pinned`}
-    title={pinnedTitle === null ? undefined : `Files is pinned to ${pinnedTitle}`}
+    title={pinnedTitle === null ? undefined : `Tools are pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
-    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <FolderTree size={16} aria-hidden="true" />}Files
+    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}Tools
   </button>
 }
 
@@ -100,6 +108,13 @@ function WorkingCopyLine({ thread, project }: { readonly thread: AgentThread; re
   </div>
 }
 
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare }
+
+/** What the panel says when there is no thread to show, in the words of the surface that is open. */
+const NO_THREAD: Record<ToolSurfaceId, string> = {
+  files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.',
+}
+
 /** The panel's surface tabs. Only implemented surfaces are listed. */
 export function ToolSurfaceSelector({ value, onChange }: { readonly value: ToolSurfaceId; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   return <div className="tools-surfaces" role="tablist" aria-label="Tools">
@@ -113,7 +128,7 @@ export function ToolSurfaceSelector({ value, onChange }: { readonly value: ToolS
         onChange(next.id)
         document.getElementById(`tools-tab-${next.id}`)?.focus()
       }}>
-      <FolderTree size={16} aria-hidden="true" />{surface.label}
+      {React.createElement(SURFACE_ICONS[surface.id], { size: 16, 'aria-hidden': true, className: 'tools-surfaces__icon' })}{surface.label}
     </button>)}
   </div>
 }
@@ -134,13 +149,15 @@ function useTransientStatus(): [string, (message: string) => void] {
  * thread's browsing for the session, and docks only while the panes keep a readable width; otherwise it
  * overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const bridge = filesBridge ?? bridgeFiles()
+  const changesBridge = gitChanges ?? bridgeChanges()
   const platform = bridgePlatform()
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
   const threadFiles = useThreadFiles(store.files, thread ? target : null)
+  const threadChanges = useThreadChanges(store.changes, thread ? target : null)
   const aside = useRef<HTMLElement>(null)
   const [available, setAvailable] = useState<number | null>(null)
   const [status, showStatus] = useTransientStatus()
@@ -157,9 +174,18 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
   }, [open])
 
   const threadId = thread?.id
+  // Files lists the working folder on every surface, since the panel's path line and its actions read it,
+  // and refreshes when its own tab comes back.
+  const onFiles = chrome.surface === 'files'
   useEffect(() => {
-    if (open && threadId !== undefined && chrome.surface === 'files') store.files.activate(bridge, threadId)
-  }, [open, threadId, chrome.surface, bridge, store])
+    if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(bridge, threadId)
+  }, [open, threadId, onFiles, bridge, store])
+  // Changes watches the working copy only while it is the visible surface.
+  useEffect(() => {
+    if (!open || threadId === undefined || chrome.surface !== 'changes') return
+    store.changes.activate(changesBridge, threadId)
+    return () => store.changes.deactivate(changesBridge)
+  }, [open, threadId, chrome.surface, changesBridge, store])
 
   // Opening moves keyboard focus to the panel's tabs, so keyboard users land where the toggle pointed.
   const wasOpen = useRef(open)
@@ -172,7 +198,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
   const overlay = available !== null && available - chrome.width < TOOLS_PANEL_MIN_PANE_WIDTH
   const width = overlay && available !== null ? Math.max(Math.min(chrome.width, available - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, available)) : chrome.width
   const pinned = chrome.pinnedThreadId !== null
-  const workspace = threadFiles?.workspace ?? null
+  const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
 
   // Focus moves before the panel unmounts, so closing never leaves keyboard focus on the page.
   const close = (): void => {
@@ -212,9 +238,10 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
   }
 
   let body: ReactNode
-  if (target === null) body = <div className="files-problem files-problem--root" role="status"><strong>Open a thread to browse its files.</strong></div>
+  if (target === null) body = <div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div>
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
+  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 
   return <aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'}
@@ -227,11 +254,6 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
         <div className="tools-panel__bar">
           <ToolSurfaceSelector value={chrome.surface} onChange={surface => store.setSurface(surface)} />
           <div className="tools-panel__actions">
-            {thread ? <button type="button" className="files-icon tt-focusable" aria-label="Refresh files" title="Refresh files" data-busy={threadFiles?.refreshing || undefined}
-              onClick={() => void store.files.refresh(bridge, thread.id)}><RotateCw size={16} aria-hidden="true" /></button> : null}
-            {target !== null && thread ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned}
-              aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? 'Unpin' : 'Pin to this thread'}
-              onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
             <button type="button" className="files-icon tt-focusable" aria-label="Close tools panel" title="Close" onClick={close}><X size={16} aria-hidden="true" /></button>
           </div>
         </div>
@@ -239,6 +261,13 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, store =
           <div className="tools-panel__thread">
             <span className="tools-panel__thread-title" title={thread.title}>{thread.title}</span>
             {pinned ? <span className="tools-panel__tag">Pinned</span> : null}
+            <span className="tools-panel__thread-actions">
+              {chrome.surface === 'files' ? <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Refresh files" title="Refresh files" data-busy={threadFiles?.refreshing || undefined}
+                onClick={() => void store.files.refresh(bridge, thread.id)}><RotateCw size={14} aria-hidden="true" /></button> : null}
+              <button type="button" className="files-icon files-icon--small tt-focusable" aria-pressed={pinned}
+                aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? 'Unpin' : 'Pin to this thread'}
+                onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</button>
+            </span>
           </div>
           <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} />
           {workspace ? <div className="tools-panel__path">
