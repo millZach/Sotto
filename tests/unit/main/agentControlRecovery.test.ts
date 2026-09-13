@@ -104,7 +104,12 @@ async function fixture(host = new E2EAgentHost()) {
 }
 
 afterEach(async () => {
-  for (const control of controls.splice(0)) control.dispose()
+  for (const control of controls.splice(0)) {
+    control.dispose()
+    // Disposal stops new work; drain the serialized stores before deleting the
+    // fixture directory while a final supervision snapshot may still be writing.
+    await Promise.allSettled([control.privacyChanged()]) // Some cases deliberately make agents.json unwritable.
+  }
   vi.unstubAllGlobals()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-control-recovery-')) throw new Error('Unexpected temporary test directory')
