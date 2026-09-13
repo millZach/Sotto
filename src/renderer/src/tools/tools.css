@@ -62,10 +62,11 @@
 .files-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .files-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 8px 0; padding: 4px 4px 4px 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-2); font-size: 13px; line-height: 1.4; }
 .files-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px 6px 18px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.files-surface[data-preview] > .files-tree { flex: 0 0 auto; height: clamp(120px, 36%, 340px); border-bottom: 1px solid var(--tt-hairline); padding-bottom: 6px; }
+/* A short folder takes only its rows; a long one stops at about a third so the open file keeps the room. */
+.files-surface[data-preview] > .files-tree { flex: none; max-height: clamp(120px, 36%, 340px); border-bottom: 1px solid var(--tt-hairline); padding-bottom: 6px; }
 @container tools-body (min-width: 600px) {
   .files-surface[data-preview] { flex-direction: row; }
-  .files-surface[data-preview] > .files-tree { width: 240px; height: auto; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
+  .files-surface[data-preview] > .files-tree { width: 240px; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
 }
 .files-tree__list { display: flex; flex-direction: column; min-width: max-content; }
 .files-tree__item, .files-tree__status { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px 0 calc(6px + var(--files-depth, 0) * 16px); border-radius: 7px; font-size: 14px; }
@@ -101,6 +102,10 @@
 .tools-panel .files-problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; }
 .tools-panel .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 .tools-panel .files-problem--root { padding-top: 28px; }
+
+/* The panel draws its own edge, so a workspace slot around it adds none, and an empty slot takes no room. */
+.threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }
+.threads-view .thread-workspace__tools:empty { display: none; }
 
 /* Header toggle placed in a pane header by the workspace. */
 .tools-toggle[aria-pressed='true'] { color: var(--tt-text); border-color: var(--tt-border-faint); }
