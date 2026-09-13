@@ -151,6 +151,40 @@ describe('saved answers without a live request', () => {
     expect(bridge.check).not.toHaveBeenCalled()
   })
 
+  it('refreshes a remounted owner when its queued newer answer finishes saving after the question closed', async () => {
+    const deliverOutput = vi.fn(async () => 'copied' as const)
+    Object.defineProperty(window, 'sotto', { configurable: true, value: { deliverOutput } })
+    const bridge = fakeBridge([])
+    const answers = new RequestAnswerStore(() => bridge as unknown as RequestDraftBridge)
+    bridge.get.mockResolvedValue(null)
+    let acknowledge: () => void = () => undefined
+    bridge.save.mockImplementation(async (next: RequestDraft) => { bridge.replace([next]); return next })
+    bridge.save.mockImplementationOnce((next: RequestDraft) => {
+      bridge.replace([next])
+      return new Promise(resolve => { acknowledge = () => resolve(next) })
+    })
+    const request = live()
+    const key = requestAnswerOwnerKey(owner.ownerId, request, owner)
+    const element = (requests: AgentRequest[]) => <RequestDraftRecovery owner={owner} live={requests} observation="ready" observed="same"
+      provider="Codex" bridge={bridge as unknown as RequestDraftBridge} answers={answers} />
+    const first = render(element([request]))
+    await act(async () => answers.connect(key, request.id, { ...owner, requestId: request.id, questions }))
+    act(() => answers.select(key, request.id, 'notes', { optionIds: [], other: false, text: 'Older edit' }))
+    await waitFor(() => expect(bridge.save).toHaveBeenCalledTimes(1))
+    act(() => answers.select(key, request.id, 'notes', { optionIds: [], other: false, text: 'Newest edit' }))
+    first.unmount()
+    render(element([]))
+    expect(within(await saved()).getByText('Older edit')).toBeTruthy()
+    await act(async () => acknowledge())
+    expect(await screen.findByText('Newest edit')).toBeTruthy()
+    expect(screen.queryByText('Older edit')).toBeNull()
+    await userEvent.setup().click(within(await saved()).getByRole('button', { name: 'Copy answer' }))
+    expect(JSON.stringify(deliverOutput.mock.calls)).toContain('Newest edit')
+    expect(JSON.stringify(deliverOutput.mock.calls)).not.toContain('Older edit')
+    expect(answers.get(key, request.id).save).toBe('saved')
+    expect(bridge.check).not.toHaveBeenCalled()
+  })
+
   it('reads again when an answer acknowledged after its request closed lets main drop the held form', async () => {
     const bridge = fakeBridge([])
     const answers = new RequestAnswerStore(() => bridge as unknown as RequestDraftBridge)

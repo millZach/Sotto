@@ -6,7 +6,7 @@ import {
 } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { useTransientFlag, writeClipboard } from '../richActions'
-import { answerProgress, requestAnswerOwnerKey, requestAnswerStore, requestMode, textOnly, type RequestAnswerStore, type StructuredQuestion } from './requestAnswers'
+import { answerProgress, requestAnswerStore, requestMode, textOnly, type RequestAnswerStore, type StructuredQuestion } from './requestAnswers'
 import './requests.css'
 import './requestDraftRecovery.css'
 
@@ -69,20 +69,7 @@ export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly
   const [result, setResult] = useState<{ readonly ownerKey: string; readonly drafts: readonly RequestDraft[]; readonly error: string | null } | null>(null)
   const [attempt, setAttempt] = useState(0)
   const latest = useRef(0)
-  /** Structured requests this view saw live that are no longer live, for the owner they belonged to. */
-  const departed = useRef<{ ownerKey: string; seen: AgentRequest[]; gone: AgentRequest[] }>({ ownerKey, seen: [], gone: [] })
-  const liveSignature = JSON.stringify(live.filter(request => requestMode(request) === 'structured').map(request => [request.id, request.questions]))
-  useEffect(() => {
-    const structured = live.filter(request => requestMode(request) === 'structured')
-    const tracked = departed.current.ownerKey === ownerKey ? departed.current : { ownerKey, seen: [], gone: [] }
-    const same = (a: AgentRequest, b: AgentRequest): boolean => a.id === b.id && sameRequestQuestions(a.questions ?? [], b.questions ?? [])
-    const gone = tracked.seen.filter(request => !structured.some(item => same(item, request)))
-    departed.current = { ownerKey, seen: structured, gone: [...tracked.gone.filter(request => !structured.some(item => same(item, request)) && !gone.some(item => same(item, request))), ...gone] }
-  }, [ownerKey, liveSignature])
-  const settled = useSyncExternalStore(answers.subscribe, () => departed.current.gone.map(request => {
-    const entry = answers.get(requestAnswerOwnerKey(owner.ownerId, request, owner), request.id)
-    return entry.save === 'saving' || entry.save === 'loading' ? `pending:${entry.phase}` : `${entry.revision}:${entry.save}:${entry.phase}`
-  }).join())
+  const settled = useSyncExternalStore(answers.subscribe, () => answers.recoverySnapshot(owner, live))
   useEffect(() => {
     if (!bridge?.list) return
     const call = ++latest.current

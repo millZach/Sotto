@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftOwnerKey, requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -184,6 +184,17 @@ export class RequestAnswerStore {
 
   get(ownerId: string, requestId: string): RequestEntry {
     return this.entries.get(RequestAnswerStore.key(ownerId, requestId)) ?? EMPTY_ENTRY
+  }
+
+  /** Stable recovery status for this owner's bindings, including ones a remounted view never saw live. */
+  recoverySnapshot(owner: RequestDraftOwner, live: readonly AgentRequest[]): string {
+    const ownerKey = requestDraftOwnerKey(owner)
+    return JSON.stringify([...this.bindings].flatMap(([key, binding]) => {
+      if (requestDraftOwnerKey(binding.target) !== ownerKey || live.some(request => requestMode(request) === 'structured'
+        && request.id === binding.target.requestId && sameRequestQuestions(request.questions ?? [], binding.target.questions))) return []
+      const entry = this.entries.get(key) ?? EMPTY_ENTRY
+      return [[key, entry.save === 'saving' || entry.save === 'loading' ? 'pending' : entry.revision, entry.save, entry.phase]]
+    }))
   }
 
   connect(ownerId: string, requestId: string, target: RequestDraftTarget): Promise<void> {
