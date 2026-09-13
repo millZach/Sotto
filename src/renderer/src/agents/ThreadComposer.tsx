@@ -7,7 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
 import { ProviderMark } from './ProviderMark'
 import { ScreenshotInput } from './ScreenshotInput'
-import { deliveryFor, hasDraftContent, useSubmissions, useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, deliveryPending, hasDraftContent, submissionStatus, useSubmissions, useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { ThreadOptions } from './ThreadOptions'
 
@@ -17,7 +17,8 @@ export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
 
 /** A thread with a prompt still on its way cannot take another: a new send would only reconcile the earlier one. */
 export function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean): boolean {
-  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'submitting' || item.status === 'uncertain')) === true
+  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && deliveryPending(item.status)
+    && !state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === item.draftId)) === true
 }
 
 /** Send one revision of a thread's manual prompt. The pending message renders before the command leaves the renderer. */
@@ -25,15 +26,21 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   const threadId = row.thread.id
   const draft = store.submit(threadId, submittedAt)
   if (draft === null) return
+  let attempted = false
   try {
     if (row.assignment?.mode === 'managed' && isThreadClosed(row.thread)) {
       const released = await command({ type: 'unassign', threadId })
-      if (released === null || released.error !== null) { store.resolve(threadId, draft.draftId, released?.error ?? 'Could not release this thread from management.'); return }
+      if (released === null || released.error !== null) { store.resolve(threadId, draft.draftId, released?.error ?? 'Could not release this thread from management.', true); return }
+      if (store.draft(threadId).draftId !== draft.draftId) {
+        store.resolve(threadId, draft.draftId, 'Your draft changed while stopping management. Send the newer draft when ready.', true)
+        return
+      }
     }
+    attempted = true
     const result = await command({ type: 'manual-send', threadId, draftId: draft.draftId, text: draft.text, ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}) })
     store.resolve(threadId, draft.draftId, result === null ? 'Sotto could not confirm this send.' : result.error)
   } catch {
-    store.resolve(threadId, draft.draftId, 'Sotto could not confirm this send.')
+    store.resolve(threadId, draft.draftId, attempted ? 'Sotto could not confirm this send.' : 'Could not release this thread from management.', !attempted)
   }
 }
 
@@ -71,7 +78,7 @@ export function ThreadComposer({ row, state, command, store, onSend }: {
   const permission = row.request?.kind === 'permission'
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
-  const localUnresolved = submissions.some(item => item.threadId === threadId && !item.resolved)
+  const localUnresolved = submissions.some(item => item.threadId === threadId && deliveryPending(submissionStatus(item, state).status))
   const inFlight = threadSendInFlight(state, threadId, localUnresolved)
   const reason = blockedReason(row, state, answering, inFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission

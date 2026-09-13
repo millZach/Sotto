@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type { AgentBridge, AgentCommand, AgentState } from '../../../shared/agents'
 import type { AppSettings } from '../../../shared/settings'
@@ -8,58 +8,78 @@ import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
 import { createConfiguredSpeech } from './naturalSpeech'
 import { playWakeCue } from './voiceCue'
 import { useAttentionReview, type AttentionReview } from './attentionReview'
+import { ThreadDraftStore } from './threadDraftStore'
 
 export interface AgentConnection {
   readonly state: AgentState | null
   readonly error: string | null
   readonly command: (command: AgentCommand) => Promise<AgentState | null>
+  readonly threadDrafts: ThreadDraftStore
 }
 
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {
-  const [state, setState] = useState<AgentState | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const current = useRef(false)
-  const observed = useRef(0)
-  const tail = useRef<Promise<unknown>>(Promise.resolve())
-  useEffect(() => {
-    current.current = true
-    if (bridge === undefined) return () => { current.current = false }
-    const version = observed.current
-    const unsubscribe = bridge.onState((next) => {
-      ++observed.current
-      if (current.current) setState(next)
-    })
-    void bridge.get().then((next) => {
-      if (current.current && version === observed.current) setState(next)
-    }).catch(() => { if (current.current) setError('Agent controls are unavailable. Reopen Sotto to reconnect.') })
-    return () => { current.current = false; unsubscribe() }
-  }, [bridge])
+  // A connection owns its command lane and draft durability knowledge. Neither page
+  // navigation nor outstanding writes create a new store; a different bridge does.
+  const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown> }), [bridge])
+  const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
+  const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     const run = async (): Promise<AgentState | null> => {
-      if (bridge === undefined || !current.current) return null
-      const version = observed.current
+      if (bridge === undefined || !session.current) return null
+      const version = session.observed
       try {
         const next = await bridge.command(request)
-        if (current.current) {
-          setError(null)
-          if (version === observed.current) setState(next)
+        if (session.current) {
+          setFailure(null)
+          if (version === session.observed) setSnapshot({ session, state: next })
         }
         return next
       } catch {
-        if (current.current) setError('The action could not be confirmed. Your draft is retained; check the connection before retrying.')
+        if (session.current) setFailure({ session, error: 'The action could not be confirmed. Your draft is retained; check the connection before retrying.' })
         return null
       }
     }
-    // Local draft persistence and audio controls must not wait for a provider
-    // operation or model response. The controller gives them immediate lanes too.
+    // Send admission and draft saves must reach main in user order, without
+    // waiting for an earlier IPC reply. Main still serializes execution and
+    // checks busy state, provider locks and authority before dispatch.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    if (request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
-    const operation = tail.current.then(run)
-    tail.current = operation
+    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    const operation = session.tail.then(run)
+    session.tail = operation
     return operation
-  }, [bridge])
-  return { state, error, command }
+  }, [bridge, session])
+  const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
+  const state = snapshot?.session === session ? snapshot.state : null
+  const error = failure?.session === session ? failure.error : null
+  useEffect(() => {
+    session.current = true
+    let active = true
+    const receive = (next: AgentState): void => {
+      setSnapshot({ session, state: next })
+    }
+    const version = session.observed
+    const unsubscribe = bridge?.onState(next => {
+      ++session.observed
+      if (active) receive(next)
+    })
+    void bridge?.get().then(next => {
+      if (active && version === session.observed) receive(next)
+    }).catch(() => { if (active) setFailure({ session, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' }) })
+    const flush = (): void => threadDrafts.flushAll()
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      flush()
+      active = false; session.current = false; unsubscribe?.()
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+    }
+  }, [bridge, session, threadDrafts])
+  // Both published and command-returned snapshots reach the store before paint,
+  // including while the Threads page is absent.
+  useLayoutEffect(() => { if (state !== null) threadDrafts.receive(state) }, [state, threadDrafts])
+  return { state, error, command, threadDrafts }
 }
 
 interface AgentContextValue extends AgentConnection {

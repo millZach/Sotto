@@ -187,7 +187,10 @@ describe('ThreadDraftStore sending', () => {
     const at = new Date().toISOString()
     const delivery = (status: 'queued' | 'submitting' | 'failed' | 'uncertain' | 'accepted', messageId?: string) => [{ threadId: 'thread', draftId: submission.draftId, status, createdAt: at, updatedAt: at, ...(messageId ? { messageId } : {}) }]
     expect(submissionStatus(submission, baseState())).toEqual({ status: 'queued', visible: true })
-    expect(submissionStatus({ ...submission, resolved: true }, baseState())).toEqual({ status: 'failed', visible: true })
+    expect(submissionStatus({ ...submission, resolved: true }, baseState())).toEqual({ status: 'uncertain', visible: true })
+    expect(submissionStatus({ ...submission, resolved: true, error: 'Sotto could not confirm this send.' }, baseState())).toEqual({ status: 'uncertain', visible: true })
+    expect(submissionStatus({ ...submission, resolved: true, notSent: true }, baseState())).toEqual({ status: 'failed', visible: true })
+    expect(submissionStatus(submission, baseState({ deliveries: delivery('failed') }))).toEqual({ status: 'failed', visible: true })
     expect(submissionStatus({ ...submission, resolved: true }, baseState({ deliveries: delivery('uncertain') }))).toEqual({ status: 'uncertain', visible: true })
     expect(submissionStatus(submission, baseState({ deliveries: delivery('submitting') }))).toEqual({ status: 'submitting', visible: true })
     expect(submissionStatus(submission, baseState({ deliveries: delivery('accepted', 'message-1') }))).toEqual({ status: 'accepted', visible: true })

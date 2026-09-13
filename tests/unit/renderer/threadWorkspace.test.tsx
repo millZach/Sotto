@@ -6,6 +6,8 @@ import type { AgentCapabilities, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { composerEnterIntent } from '../../../src/renderer/src/agents/composerKeys'
+import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadComposer'
+import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
@@ -50,6 +52,88 @@ describe('composer Enter intent', () => {
 })
 
 describe('Threads manual composer', () => {
+  it.each(['edited', 'rejected'] as const)('does not admit the captured prompt when stopping old management is %s', async outcome => {
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(item => item.id === 'footer-links')!
+    thread.settledAt = SETTLED_AT
+    const row = describeThreads(state, NOW).find(item => item.thread.id === thread.id)!
+    expect(row.assignment?.mode).toBe('managed')
+    let release!: (state: AgentState | null) => void
+    const command = vi.fn(async request => request.type === 'unassign' ? new Promise<AgentState | null>(done => { release = done }) : state)
+    const store = new ThreadDraftStore(command)
+    store.edit(thread.id, { text: 'Captured before management stops' })
+    const sending = sendThreadRevision(store, row, command, 1)
+    if (outcome === 'edited') store.edit(thread.id, { text: 'Newer text while stopping management' })
+    release(outcome === 'rejected' ? null : state)
+    await sending
+    expect(command.mock.calls.some(([request]) => request.type === 'manual-send')).toBe(false)
+    expect(submissionStatus(store.submissions()[0]!, state).status).toBe('failed')
+    expect(store.draft(thread.id).text).toBe(outcome === 'edited' ? 'Newer text while stopping management' : 'Captured before management stops')
+    store.flushAll()
+  })
+
+  it.each(['queued', 'submitting', 'uncertain'] as const)('recovers durable %s delivery after remount independently of a newer or empty draft', status => {
+    const state = manualState()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.providerId = 'claude'
+    state.host.providers = [{ id: 'claude', name: 'Claude', version: 'fixture', connection: 'connected', capabilities: ALL },
+      { id: 'codex', name: 'Codex', version: 'fixture', connection: 'connected', capabilities: ALL }]
+    const draftId = crypto.randomUUID()
+    state.deliveries = [{ threadId: thread.id, draftId, status, createdAt: SETTLED_AT, updatedAt: SETTLED_AT }]
+    state.threadDrafts = [{ threadId: thread.id, draftId: crypto.randomUUID(), text: 'My newer draft', attachments: [], requestId: null, updatedAt: SETTLED_AT }]
+    const { live, view, prompt } = mount(state)
+    const check = () => within(screen.getByLabelText('Pending message')).getByRole('button', { name: 'Check again' })
+    expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('My newer draft')
+    expect(screen.getByLabelText('Pending message').querySelector('.rich-message')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    fireEvent.click(check())
+    expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh', provider: 'claude' })
+    // A fresh page has no local submission text to use. Clearing the current
+    // draft must not remove the independent durable recovery action either.
+    fireEvent.change(prompt(), { target: { value: '' } })
+    view.unmount()
+    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(prompt()).toHaveValue('')
+    expect(check()).toBeEnabled()
+    act(() => live.publish({ host: { ...live.state.host, providers: live.state.host.providers!.map(provider => provider.id === 'claude' ? { ...provider, connection: 'disconnected' } : provider) } }))
+    fireEvent.click(within(screen.getByLabelText('Pending message')).getByRole('button', { name: 'Reconnect' }))
+    expect(live.command).toHaveBeenLastCalledWith({ type: 'connect', provider: 'claude' })
+    expect(live.manualSends()).toBe(0)
+    act(() => live.publish({ deliveredDrafts: [{ threadId: thread.id, draftId }] }))
+    expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
+  })
+
+  it.each(['null', 'throw'] as const)('keeps a %s IPC outcome unconfirmed and blocks replay until authoritative reconciliation', async failure => {
+    const { live, prompt, view } = mount(manualState())
+    const original = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => {
+      if (request.type === 'manual-send') {
+        if (failure === 'throw') throw new Error('IPC reply unavailable')
+        return null
+      }
+      return original(request)
+    })
+    fireEvent.change(prompt(), { target: { value: 'Possibly delivered' } })
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed')
+    expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Not sent')
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    fireEvent.change(prompt(), { target: { value: 'Keep newer text' } })
+    view.unmount()
+    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh' })
+    expect(live.manualSends()).toBe(1)
+    const draftId = live.sentDraftId('grok-previews')
+    act(() => live.publish({ deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }))
+    expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
+    expect(prompt()).toHaveValue('Keep newer text')
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
+  })
+
   it('sends with Enter, shows the pending message at once and ignores IME and open-menu Enter', () => {
     const { live, prompt } = mount(manualState())
     fireEvent.change(prompt(), { target: { value: 'Ship the preview' } })

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MessageSquare } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -11,7 +11,7 @@ import { ThreadOptions } from './ThreadOptions'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 import { ProviderMark } from './ProviderMark'
 import { THREAD_PROMPT_ID, ThreadComposer } from './ThreadComposer'
-import { ThreadDraftStore, hasDraftContent } from './threadDraftStore'
+import { hasDraftContent } from './threadDraftStore'
 import { ThreadSidebar } from './ThreadSidebar'
 import { ThreadTranscript } from './ThreadTranscript'
 
@@ -64,23 +64,15 @@ export function ThreadsView({ onOpenAgents, now: fixedNow }: ThreadsViewProps): 
   const [query, setQuery] = useState('')
   const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined } | null>(null)
   const [followSignal, setFollowSignal] = useState(0)
-  const [store] = useState(() => new ThreadDraftStore(agents.command))
-  store.setCommand(agents.command)
+  const store = agents.threadDrafts
   const state = agents.state
-  // Published drafts and receipts reach the store before the composer reads it.
-  useLayoutEffect(() => { if (state !== null) store.receive(state) }, [state, store])
   const rows = useMemo(() => state === null ? [] : describeThreads(state, now), [state, now])
   const organization = useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query])
   const selected = rows.find(row => row.thread.id === state?.activeThreadId)
   const selectedId = selected?.thread.id
   // Leaving a thread (or the page) saves its latest revision now instead of after the debounce.
   useEffect(() => () => { if (selectedId !== undefined) store.flush(selectedId) }, [selectedId, store])
-  useEffect(() => {
-    const flush = (): void => store.flushAll()
-    window.addEventListener('pagehide', flush)
-    window.addEventListener('beforeunload', flush)
-    return () => { window.removeEventListener('pagehide', flush); window.removeEventListener('beforeunload', flush); flush() }
-  }, [store])
+  useEffect(() => () => store.flushAll(), [store])
   if (state === null) return <div className="threads-view"><p role="status">{agents.error ?? 'Preparing agent controls...'}</p></div>
   const openThread = (threadId: string): void => { void agents.command({ type: 'select-thread', threadId }) }
   const foreignDraft = (state.draft.trim() || state.draftAttachments?.length) && state.draftThreadId && state.draftThreadId !== selected?.thread.id ? state.host.threads.find(thread => thread.id === state.draftThreadId) : undefined

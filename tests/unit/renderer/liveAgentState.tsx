@@ -3,6 +3,7 @@ import { vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentDelivery, type AgentState } from '../../../src/shared/agents'
 import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import type { useAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 
 type Connection = ReturnType<typeof useAgents>
 
@@ -43,6 +44,7 @@ export function liveAgentState(initial: AgentState, options: { readonly holdSave
   const sends = new Map<string, (state: AgentState) => void>()
   const publish = (patch: Partial<AgentState> = {}): AgentState => {
     current = { ...current, ...patch }
+    threadDrafts.receive(current)
     listeners.forEach(listener => listener())
     return current
   }
@@ -77,9 +79,11 @@ export function liveAgentState(initial: AgentState, options: { readonly holdSave
     }
     return current
   })
+  const threadDrafts = new ThreadDraftStore(command)
+  threadDrafts.receive(current)
   const useLive = (): Connection => {
     const state = useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => current)
-    return { state, command, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state.queue, show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } } as Connection
+    return { state, command, threadDrafts, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state.queue, show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } } as Connection
   }
   const sentDraftId = (threadId: string): string => {
     const call = command.mock.calls.map(([request]) => request).findLast(request => request.type === 'manual-send' && request.threadId === threadId)

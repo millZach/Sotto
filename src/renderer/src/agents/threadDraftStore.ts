@@ -29,6 +29,8 @@ export interface Submission {
   /** The manual-send command promise settled; delivery truth still comes from state.deliveries. */
   readonly resolved: boolean
   readonly error: string | null
+  /** A local prerequisite failed before manual-send was invoked. */
+  readonly notSent?: boolean
 }
 
 export type SubmissionStatus = AgentDelivery['status']
@@ -63,7 +65,7 @@ export function deliveryFor(state: AgentState, threadId: string, draftId: string
 
 /**
  * What the pending message says. Only an exact accepted delivery (or receipt) counts as sent;
- * a settled command promise without a delivery record means nothing was queued for it.
+ * a settled command promise without delivery evidence leaves the outcome uncertain.
  */
 export function submissionStatus(submission: Submission, state: AgentState): { readonly status: SubmissionStatus; readonly visible: boolean } {
   const delivery = deliveryFor(state, submission.threadId, submission.draftId)
@@ -74,7 +76,11 @@ export function submissionStatus(submission: Submission, state: AgentState): { r
     return { status: 'accepted', visible: !shown }
   }
   if (delivery) return { status: delivery.status, visible: true }
-  return { status: submission.resolved ? 'failed' : 'queued', visible: true }
+  return { status: submission.notSent ? 'failed' : submission.resolved ? 'uncertain' : 'queued', visible: true }
+}
+
+export function deliveryPending(status: SubmissionStatus): boolean {
+  return status === 'queued' || status === 'submitting' || status === 'uncertain'
 }
 
 /**
@@ -93,13 +99,7 @@ export class ThreadDraftStore {
   private readonly accepted = new Set<string>()
   private readonly legacyIds = new Map<string, string>()
   private submissionList: readonly Submission[] = []
-  private command: Command
-
-  constructor(command: Command, private readonly debounceMs = 250, private readonly uuid: () => string = () => crypto.randomUUID()) {
-    this.command = command
-  }
-
-  setCommand(command: Command): void { this.command = command }
+  constructor(private readonly command: Command, private readonly debounceMs = 250, private readonly uuid: () => string = () => crypto.randomUUID()) {}
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -230,12 +230,12 @@ export class ThreadDraftStore {
     return draft
   }
 
-  resolve(threadId: string, draftId: string, error: string | null): void {
+  resolve(threadId: string, draftId: string, error: string | null, notSent = false): void {
     let found = false
     this.submissionList = this.submissionList.map(item => {
       if (item.threadId !== threadId || item.draftId !== draftId) return item
       found = true
-      return { ...item, resolved: true, error }
+      return { ...item, resolved: true, error, notSent }
     })
     if (found) this.emit(new Set())
   }

@@ -9,6 +9,7 @@ import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState } from './liveAgentState'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -37,8 +38,12 @@ function stateFixture(): AgentState {
   }
 }
 
+let connectionStores = new WeakMap<ReturnType<typeof useAgents>['command'], ThreadDraftStore>()
 function connection(state: AgentState | null, command = vi.fn(async () => state)): ReturnType<typeof useAgents> {
-  return { state, command, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } }
+  let threadDrafts = connectionStores.get(command)
+  if (!threadDrafts) { threadDrafts = new ThreadDraftStore(command); connectionStores.set(command, threadDrafts) }
+  if (state) threadDrafts.receive(state)
+  return { state, command, threadDrafts, error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(), attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) } }
 }
 
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
@@ -48,7 +53,7 @@ function renderThreads(state: AgentState | null, command = vi.fn(async () => sta
   return { ...view, command, onOpenAgents }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap() })
 afterEach(cleanup)
 
 describe('thread grouping and states from Sotto state', () => {
@@ -201,7 +206,8 @@ describe('ThreadsView workspace', () => {
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
     await screen.findByRole('img', { name: 'same-name.png' })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     if (edited) {
       fireEvent.click(screen.getByRole('button', { name: 'Remove same-name.png' }))
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
@@ -226,7 +232,8 @@ describe('ThreadsView workspace', () => {
     const { rerender } = renderThreads(state, command)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Deliver this only once' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     state.activeThreadId = 'footer-links'
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
@@ -316,7 +323,8 @@ describe('ThreadsView workspace', () => {
     const { command } = renderThreads(state)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'An edited unsent prompt' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt', exact: true }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled())
+    await screen.findByRole('button', { name: 'Check again' })
+    expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
     expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'An edited unsent prompt' })
     expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('An edited unsent prompt')
   })

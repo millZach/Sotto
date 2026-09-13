@@ -4,7 +4,7 @@ import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
-import { deliveryFor, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
+import { deliveryFor, deliveryPending, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 
@@ -27,32 +27,32 @@ const MessageList = memo(function MessageList({ messages, provider, running }: {
   </article>)}</>
 })
 
-function PendingMessage({ submission, status, row, state, command, store }: {
-  readonly submission: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
+function PendingMessage({ draftId, submission, status, row, state, command, store }: {
+  readonly draftId: string; readonly submission?: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
-  const { draft } = useThreadComposer(store, submission.threadId)
-  const holdsRevision = draft.draftId === submission.draftId
+  const { draft } = useThreadComposer(store, row.thread.id)
+  const holdsRevision = draft.draftId === draftId
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // The provider's history can show the exact message before Sotto has its confirmation.
   // Repeating the text would read as a second send, so only the delivery state stays here.
-  const messageId = deliveryFor(state, submission.threadId, submission.draftId)?.messageId
+  const messageId = deliveryFor(state, row.thread.id, draftId)?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
-  if (inHistory && (status === 'queued' || status === 'submitting')) return null
-  const detail = status === 'failed' ? (submission.error ?? 'The provider did not take this prompt.')
+  if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
+  const detail = status === 'failed' ? (submission?.error ?? 'The provider did not take this prompt.')
     : status === 'uncertain' ? inHistory ? 'Your prompt above is in the thread, but the provider has not confirmed it. Sotto will not send it twice.' : 'The provider has not confirmed this prompt. Sotto will not send it twice.'
-      : null
+      : submission === undefined && deliveryPending(status) ? 'Sotto is waiting for confirmation of your last prompt.' : null
   return <article className="thread-message thread-message--pending" data-role="user" data-status={status} data-in-history={inHistory || undefined} aria-label="Pending message">
     <header><span className="thread-message__who">You</span><span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span></header>
-    {inHistory ? null : <><MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} /></>}
+    {inHistory || submission === undefined ? null : <><MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} /></>}
     {detail !== null ? <div className="thread-message__delivery">
       <span>{detail}{status === 'failed' && !holdsRevision ? ' Your newer draft is in the composer.' : ''}</span>
       <div className="thread-message__delivery-actions">
         {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || state.busy} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
-        {status === 'uncertain' ? row.connected
+        {status === 'uncertain' || submission === undefined && deliveryPending(status) ? row.connected
           ? <Button variant="secondary" disabled={state.busy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button>
           : <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...provider })}>Reconnect</Button> : null}
-        {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(submission.threadId, submission.draftId)}>Dismiss</Button> : null}
+        {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
       </div>
     </div> : null}
   </article>
@@ -87,6 +87,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const submissions = useSubmissions(store)
   const pending = submissions.filter(item => item.threadId === thread.id)
     .map(item => ({ item, ...submissionStatus(item, state) })).filter(item => item.visible)
+  // Durable metadata survives a renderer restart; it carries no prompt content.
+  // Recover it independently of the current draft and without inventing a message.
+  const recovery = (state.deliveries ?? []).filter(item => item.threadId === thread.id && deliveryPending(item.status)
+    && !pending.some(local => local.item.draftId === item.draftId)
+    && !state.deliveredDrafts?.some(receipt => receipt.threadId === thread.id && receipt.draftId === item.draftId))
   const sameThread = firstRendered.current?.threadId === thread.id
   const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
   // While reading earlier history, retain the first rendered message. A sliding
@@ -95,7 +100,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const messages = useMemo(() => thread.messages.slice(start), [thread.messages, start])
   const hidden = thread.messages.length - messages.length
   const lastMessageId = thread.messages.at(-1)?.id
-  const pendingKey = pending.map(item => `${item.item.draftId}:${item.status}`).join(',')
+  const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
@@ -163,7 +168,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
-  const empty = !thread.messages.length && !pending.length
+  const empty = !thread.messages.length && !pending.length && !recovery.length
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
@@ -175,7 +180,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
-        {pending.map(({ item, status }) => <PendingMessage key={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
+        {pending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
+        {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </div>
     </div>
