@@ -20,3 +20,4 @@
 .working-copy-notice strong { font-weight: 500; }
 .working-copy-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
 .working-copy-notice > .working-copy-notice__result { flex-basis: 100%; font-size: 12px; }
+.working-copy .tt-button[aria-disabled='true'], .working-copy-notice .tt-button[aria-disabled='true'] { cursor: progress; opacity: .6; }

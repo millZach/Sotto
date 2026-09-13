@@ -1,25 +1,14 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw } from 'lucide-react'
 import type { AgentProject, AgentThread } from '../../../shared/agents'
+import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { folderKey } from './NewThreadDialog'
 import './workingCopy.css'
 
-/** The working-copy metadata a thread may carry; older threads have none and keep their folder. */
-interface WorkingCopyMetadata {
-  readonly mode: 'independent' | 'shared'
-  readonly status: 'pending' | 'ready' | 'error'
-  readonly path?: string | undefined
-  readonly repositoryRoot?: string | undefined
-  readonly branch?: string | undefined
-  readonly dirty?: boolean | undefined
-  readonly error?: string | undefined
-}
-export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted'> & {
-  readonly workingDirectory?: string | undefined
-  readonly worktree?: WorkingCopyMetadata | undefined
-}
+/** Older threads carry no working-copy metadata and keep the folder they already use. */
+export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted' | 'workingDirectory' | 'worktree'>
 export interface ThreadWorkingCopyProps {
   readonly thread: WorkingCopyThread
   /** The thread's original Sotto project, never a provider's project alias. */
@@ -47,20 +36,23 @@ function folderLabel(path: string, project: Pick<AgentProject, 'path'> | undefin
 /** Where a thread's files live. Pending or failed setup never borrows the project folder as its answer. */
 export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): WorkingCopyFacts {
   const worktree = thread.worktree
+  // The same resolver main uses: the actual folder (a project subfolder inside a checkout), never the checkout root by accident.
+  const resolve = (): string | undefined => { try { return resolveThreadWorkingDirectory(thread, project) } catch { return undefined } }
   if (!worktree) {
-    const directory = thread.workingDirectory ?? project?.path
+    const directory = resolve()
     return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : 'Working folder' }
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: 'Preparing worktree...' }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
-  const directory = thread.workingDirectory ?? worktree.path
+  const directory = resolve()
   const label = worktree.mode === 'independent' && worktree.branch ? worktree.branch : directory ? folderLabel(directory, project) : 'Working folder'
   return { ...common, status: 'ready', directory, label }
 }
 
 type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder'
 function useWorkingCopyAction(threadId: string, command: AgentConnection['command']) {
+  // Busy buttons use aria-disabled, not disabled: a disabled button would drop keyboard focus to the page.
   const [running, setRunning] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inFlight = useRef(false)
@@ -117,8 +109,8 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
       </dl>
       <div className="working-copy__actions">
-        {facts.directory ? <Button variant="secondary" disabled={running !== null} onClick={() => void run('open-thread-folder')}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
-        {thread.worktree ? <Button variant="ghost" disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? 'Checking...' : 'Refresh'}</Button> : null}
+        {facts.directory ? <Button variant="secondary" aria-disabled={running !== null} onClick={() => void run('open-thread-folder')}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
+        {thread.worktree ? <Button variant="ghost" aria-disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? 'Checking...' : 'Refresh'}</Button> : null}
       </div>
       {error ? <p className="agent-error" role="alert">{error}</p> : null}
     </div> : null}
@@ -145,7 +137,7 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
   const action: Action = retry ? 'retry-thread-worktree' : 'refresh-thread-worktree'
   return <div className="working-copy-notice" role="alert">
     <p><strong>{retry ? 'Worktree not ready.' : 'Working folder unavailable.'}</strong> {facts.error ?? 'Setup did not finish.'}</p>
-    <Button variant="secondary" disabled={running !== null} onClick={() => { recovering.current = true; void run(action).then(done => { if (!done) recovering.current = false }) }}>
+    <Button variant="secondary" aria-disabled={running !== null} onClick={() => { if (running) return; recovering.current = true; void run(action).then(done => { if (!done) recovering.current = false }) }}>
       <RefreshCw size={15} aria-hidden="true" />{running ? (retry ? 'Retrying...' : 'Checking...') : retry ? 'Retry setup' : 'Check again'}
     </Button>
     {error && error !== facts.error ? <p className="working-copy-notice__result">{error}</p> : null}

@@ -26,6 +26,13 @@ describe('describeWorkingCopy', () => {
       .toMatchObject({ label: 'notes' })
   })
 
+  it('reports a subfolder project inside its checkout rather than the checkout root', () => {
+    const checkout = { mode: 'independent' as const, status: 'ready' as const, path: 'C:/data/thread-worktrees/7f1c', repositoryRoot: 'C:/repo', branch, projectRelativePath: 'packages/app' }
+    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: false, worktree: checkout }, project).directory).toBe('C:/data/thread-worktrees/7f1c/packages/app')
+    const actual = 'C:\\data\\thread-worktrees\\7f1c\\packages\\app'
+    expect(describeWorkingCopy({ id: 't', nativeSessionStarted: false, workingDirectory: actual, worktree: checkout }, project)).toMatchObject({ directory: actual, label: branch })
+  })
+
   it('keeps an existing thread in its own folder before the project folder', () => {
     expect(describeWorkingCopy({ id: 't', nativeSessionStarted: true, workingDirectory: 'D:/work/legacy/' }, project)).toMatchObject({ status: 'legacy', directory: 'D:/work/legacy/', label: 'legacy' })
     expect(describeWorkingCopy({ id: 't', nativeSessionStarted: true }, project)).toMatchObject({ status: 'legacy', directory: project.path, label: 'Project folder' })
@@ -39,7 +46,7 @@ describe('describeWorkingCopy', () => {
 
 describe('ThreadWorkingCopy', () => {
   it('shows the branch, opens details by keyboard, and closes on Escape back to the chip', async () => {
-    const command = vi.fn(async (_request: AgentCommand) => snapshot())
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => snapshot())
     render(<ThreadWorkingCopy thread={{ ...ready, worktree: { ...ready.worktree!, dirty: true } }} project={project} command={command} />)
     const chip = screen.getByRole('button', { name: `Working copy: ${branch}` })
     chip.focus()
@@ -50,10 +57,10 @@ describe('ThreadWorkingCopy', () => {
     expect(details).toHaveTextContent(project.path)
     fireEvent.click(screen.getByRole('button', { name: 'Open folder' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'open-thread-folder', threadId: 'thread-1' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).not.toHaveAttribute('aria-disabled', 'true'))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'refresh-thread-worktree', threadId: 'thread-1' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).not.toHaveAttribute('aria-disabled', 'true'))
     fireEvent.keyDown(screen.getByRole('button', { name: 'Refresh' }), { key: 'Escape' })
     expect(screen.queryByRole('group', { name: 'Working copy details' })).not.toBeInTheDocument()
     expect(chip).toHaveFocus()
@@ -81,13 +88,13 @@ describe('ThreadWorkingCopyNotice', () => {
   })
 
   it('retries setup for an unstarted thread and reports recovery only once the thread is ready', async () => {
-    const command = vi.fn(async (_request: AgentCommand) => snapshot())
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => snapshot())
     const onRecovered = vi.fn()
     const view = render(<ThreadWorkingCopyNotice thread={failed} project={project} command={command} onRecovered={onRecovered} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Worktree not ready. This Git repository has no commit to branch from.')
     fireEvent.click(screen.getByRole('button', { name: 'Retry setup' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'retry-thread-worktree', threadId: 'thread-1' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry setup' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry setup' })).not.toHaveAttribute('aria-disabled', 'true'))
     // Accepted, but the host still reports failure: no recovery claimed, the action stays available.
     expect(onRecovered).not.toHaveBeenCalled()
     act(() => { view.rerender(<ThreadWorkingCopyNotice thread={ready} project={project} command={command} onRecovered={onRecovered} />) })
