@@ -1,0 +1,21 @@
+.working-copy { position: relative; display: inline-flex; min-width: 0; }
+.working-copy__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 280px; min-height: 26px; padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.working-copy__trigger > svg { flex: none; }
+.working-copy__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.working-copy__trigger:hover, .working-copy__trigger[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.working-copy[data-status='error'] .working-copy__trigger { border-color: var(--tt-error-border); color: var(--tt-error); }
+.working-copy__panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; display: grid; gap: 14px; width: min(420px, calc(100vw - 64px)); padding: 14px 16px; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-lg); background: var(--tt-panel); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); text-align: left; }
+.working-copy__panel dl { display: grid; gap: 10px; margin: 0; }
+.working-copy__panel dl > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.working-copy__panel dt { color: var(--tt-text-muted); font-size: 12px; }
+.working-copy__panel dd { margin: 0; color: var(--tt-text-2); font-size: 13px; overflow-wrap: anywhere; }
+.working-copy__path { font-family: var(--tt-font-mono); font-size: 12.5px !important; user-select: text; }
+.working-copy__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.working-copy__actions .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.working-copy__panel .agent-error { margin: 0; }
+
+.working-copy-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-error-border); border-radius: var(--tt-radius-md); background: var(--tt-error-surface); color: var(--tt-error-text); }
+.working-copy-notice > p { flex: 1 1 260px; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.working-copy-notice strong { font-weight: 500; }
+.working-copy-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.working-copy-notice > .working-copy-notice__result { flex-basis: 100%; font-size: 12px; }

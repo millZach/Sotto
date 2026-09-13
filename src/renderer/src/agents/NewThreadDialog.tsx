@@ -1,10 +1,16 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, ChevronRight, Folder, FolderPlus, Search, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Folder, FolderGit2, FolderPlus, Search, X } from 'lucide-react'
 import type { AgentProject, AgentRuntimeMode, AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './newThread.css'
 import { ThreadOptionFields } from './ThreadOptions'
+
+type WorkingCopyChoice = 'independent' | 'shared'
+const WORKING_COPY_CHOICES: ReadonlyArray<{ readonly value: WorkingCopyChoice; readonly label: string; readonly hint: string; readonly Icon: typeof Folder }> = [
+  { value: 'independent', label: 'New worktree', hint: 'Its own Git branch and folder. Folders without Git are used as they are.', Icon: FolderGit2 },
+  { value: 'shared', label: 'Project folder', hint: 'Works in the project folder alongside its other threads.', Icon: Folder },
+]
 
 /** One key per folder on disk, so a project is never added twice under different spellings. */
 export function folderKey(path: string): string {
@@ -34,6 +40,9 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
   const [modelId, setModelId] = useState(() => state.host.models.find(model => model.id === state.configuration.defaultModelId && model.ready)?.id ?? state.host.models.find(model => model.ready)?.id ?? '')
   const [reasoningEffort, setReasoningEffort] = useState<string | undefined>()
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>()
+  // Chosen on purpose for every new thread; existing threads keep the folder they already use.
+  const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('independent')
+  const workingCopyHint = useId()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const latestState = useRef(state)
@@ -110,7 +119,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
         setProject(selectedProject)
       }
       if (!selectedProject) return
-      const result = await command({ type: 'create-thread', projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, managed,
+      const result = await command({ type: 'create-thread', projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, managed, workingCopy,
         ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) })
       if (!result || result.error) { setError(result?.error ?? 'Could not confirm thread creation. Your choices are retained.'); return }
       completed.current = true
@@ -135,6 +144,16 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
     {selectedFolder ? <form className="new-thread-dialog__form" onSubmit={event => { event.preventDefault(); void create() }}>
       <div className="new-thread-dialog__folder"><Folder size={22} /><div><strong>{project?.title ?? selectedFolder.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1)}</strong><span>{selectedFolder}</span></div><Button variant="ghost" disabled={submitting} onClick={() => { setProject(null); setFolder(null) }}>Change</Button></div>
       <label>Thread name<input className="tt-input" placeholder="New thread" value={title} disabled={submitting} onChange={event => setTitle(event.target.value)} /></label>
+      <fieldset className="new-thread-working-copy" disabled={submitting} aria-describedby={workingCopyHint}>
+        <legend>Working copy</legend>
+        <div className="new-thread-working-copy__choices">
+          {WORKING_COPY_CHOICES.map(choice => <label key={choice.value} className="new-thread-working-copy__choice">
+            <input type="radio" name="working-copy" value={choice.value} checked={workingCopy === choice.value} onChange={() => setWorkingCopy(choice.value)} />
+            <choice.Icon size={16} aria-hidden="true" /><span>{choice.label}</span>
+          </label>)}
+        </div>
+        <p id={workingCopyHint}>{WORKING_COPY_CHOICES.find(choice => choice.value === workingCopy)!.hint}</p>
+      </fieldset>
       <ThreadOptionFields models={state.host.models} modelId={modelId} reasoningEffort={reasoningEffort} runtimeMode={runtimeMode}
         disabled={submitting} onModel={id => { setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
       {error && <p className="agent-error" role="alert">{error}</p>}
