@@ -35,6 +35,30 @@ export interface ThemeDraft {
 /** The root's theme id while an editor draft is painted. */
 export const THEME_PREVIEW_ID = '__preview'
 
+/**
+ * Marks work that reads theme colours without changing them: on the root while
+ * the theme inspector swaps roles for sentinels and back, and on the hidden
+ * elements colour readers add and remove. Page observers skip these, so two
+ * readers never keep waking each other.
+ */
+export const THEME_TOKEN_PROBE_ATTRIBUTE = 'data-theme-token-probe'
+
+/** True when a root mutation batch left the style attribute exactly as it was, as a probe does. */
+export function rootStyleUnchanged(records: readonly MutationRecord[], root: Element): boolean {
+  if (records.length === 0 || records.some(record => record.attributeName !== 'style')) return false
+  if (!(root instanceof HTMLElement)) return false
+  // Compare declarations, not text: writing through CSSOM reserializes an attribute that was set by hand.
+  const before = root.ownerDocument.createElement('div')
+  before.setAttribute('style', records[0]!.oldValue ?? '')
+  return before.style.cssText === root.style.cssText
+}
+
+/** True when a childList record only added or removed probe elements and inspector overlays. */
+export function isTransientPaintMutation(record: MutationRecord): boolean {
+  const nodes = [...record.addedNodes, ...record.removedNodes]
+  return record.type === 'childList' && nodes.length > 0 && nodes.every(node => node instanceof Element && (node.hasAttribute(THEME_TOKEN_PROBE_ATTRIBUTE) || node.id === 'theme-inspector-spotlight' || node.id === 'theme-inspector-hover'))
+}
+
 const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
 
 /**

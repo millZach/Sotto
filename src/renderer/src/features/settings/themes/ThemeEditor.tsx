@@ -33,7 +33,7 @@ import {
   type ThemeDefinition,
 } from '../../../../../shared/themes/library'
 import { Button } from '../../../components/Button'
-import { appearancePreview, useAppearancePreviewVersion } from '../../../state/appearance'
+import { appearancePreview, isTransientPaintMutation, useAppearancePreviewVersion } from '../../../state/appearance'
 import { isEditorColor, ThemeColorField, themeRoleLabel } from './ThemeColorField'
 import { closeThemeEditor, useThemeEditorSession, type ThemeEditorSession } from './themeEditorSession'
 import { editorMergeTarget, editorSavePatch, ThemeLibraryWriter } from './themeLibrary'
@@ -345,7 +345,9 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       refresh()
     }
     const observer = new MutationObserver(mutations => {
-      if (mutations.every(mutation => mutation.target instanceof Element && mutation.target.closest('#theme-inspector-spotlight, [data-theme-editor-panel]'))) return
+      // The spotlight redrawing itself, colour probes and the editor's own count are not page changes;
+      // refreshing on them would wake another refresh every interval, forever.
+      if (mutations.every(mutation => isTransientPaintMutation(mutation) || (mutation.target instanceof Element && mutation.target.closest('#theme-inspector-spotlight, [data-theme-editor-panel]')))) return
       if (frame !== null || timer !== null) return
       const wait = Math.max(0, interval - (performance.now() - last))
       if (wait === 0) frame = requestAnimationFrame(run)

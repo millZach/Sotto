@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { THEME_TOKEN_PROBE_ATTRIBUTE, rootStyleUnchanged } from '../../state/appearance'
+
 /** The Sotto colours a drawing uses, read from the theme tokens of the window that shows it. */
 export interface DiagramPalette {
   readonly dark: boolean
@@ -48,6 +50,8 @@ function createTokenPainter(root: HTMLElement): { paint: (name: string) => strin
   if (!context) return null
   const probe = document.createElement('span')
   probe.hidden = true
+  // Page observers (the theme inspector's among them) skip probe elements coming and going.
+  probe.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
   ;(document.body ?? root).appendChild(probe)
   const computed = (name: string): string | null => {
     probe.style.color = `var(${name})`
@@ -119,8 +123,11 @@ export function useDiagramPalette(): DiagramPalette {
       return samePalette(current, next) ? current : next
     })
     update()
-    const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'style'] })
+    const observer = new MutationObserver(records => {
+      // The theme inspector swaps roles for sentinels and puts them back within a task; nothing changed.
+      if (!rootStyleUnchanged(records, root)) update()
+    })
+    observer.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['data-theme', 'data-theme-id', 'style'] })
     return () => observer.disconnect()
   }, [])
   return palette

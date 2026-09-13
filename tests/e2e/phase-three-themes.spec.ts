@@ -339,3 +339,71 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }
 })
+
+interface QuietCounts { probes: number, spotlights: number, rootStyles: number }
+
+/** What the page did on its own for `ms`: colour-probe spans added, spotlights drawn, root style writes. */
+function quietCounts(page: Page, ms: number): Promise<QuietCounts> {
+  return page.evaluate(duration => new Promise<QuietCounts>(done => {
+    const counts = { probes: 0, spotlights: 0, rootStyles: 0 }
+    const body = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof HTMLElement && node.tagName === 'SPAN' && node.hidden) counts.probes += 1
+          if (node instanceof Element && node.id === 'theme-inspector-spotlight') counts.spotlights += 1
+        }
+      }
+    })
+    body.observe(document.body, { childList: true, subtree: true })
+    const root = new MutationObserver(records => { counts.rootStyles += records.length })
+    root.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+    setTimeout(() => { body.disconnect(); root.disconnect(); done(counts) }, duration)
+  }), ms)
+}
+
+test('themes: a spotlight over a drawn diagram goes quiet, and still follows new replies', async () => {
+  test.setTimeout(120_000)
+  const profile = await createProfile()
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launchSotto('phase3-workspace', profile)
+    const { page } = launched
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await setWindowSize(launched, 1280, 860)
+    const reply = (text: string) => page.evaluate(async body => {
+      const state = await window.sotto!.agents!.command({ type: 'connect' })
+      const threadId = state.host.threads[0]!.id
+      await window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: body })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId })
+    }, text)
+    await reply('```mermaid\nflowchart LR\n  A[Theme] --> B[Diagram]\n```')
+
+    // The journey root used to reproduce the loop: editor open, back to Threads, spotlight Background.
+    await openAppearance(page)
+    await page.locator('#settings-appearance').getByRole('button', { name: 'Create theme' }).click()
+    const editor = page.getByRole('dialog', { name: 'Create theme' })
+    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await expect(page.locator('.rich-diagram').last()).toHaveAttribute('data-state', 'drawn')
+    await editor.getByRole('button', { name: 'Show where Background is used', exact: true }).click()
+    await expect(page.locator('#theme-inspector-spotlight')).toHaveCount(1)
+    await page.mouse.move(1, 1)
+
+    // Allow the first refresh and the diagram's own read to settle, then nothing may repeat.
+    await quietCounts(page, 800)
+    const idle = await quietCounts(page, 2600)
+    expect(idle).toEqual({ probes: 0, spotlights: 0, rootStyles: 0 })
+    await shot(page, 'inspector-diagram-1280-dark')
+
+    // A new reply is a real page change: the spotlight refreshes to include it, then goes quiet again.
+    const refreshed = quietCounts(page, 1500)
+    await reply('```mermaid\nflowchart TD\n  C[Reply] --> D[Refresh]\n```')
+    expect((await refreshed).rootStyles).toBeGreaterThan(0)
+    await expect(page.locator('.rich-diagram[data-state="drawn"]')).toHaveCount(2)
+    await quietCounts(page, 800)
+    expect(await quietCounts(page, 2600)).toEqual({ probes: 0, spotlights: 0, rootStyles: 0 })
+    await writeFile(resolve(artifacts, 'inspector-diagram-notes.txt'), `Idle for 2600 ms with Background spotlit over a drawn diagram: ${JSON.stringify(idle)}.\nA second reply refreshed the spotlight, then the page went quiet again.\n`, 'utf8')
+  } finally {
+    if (launched !== undefined) await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})

@@ -12,7 +12,7 @@
  */
 
 import { THEME_COLOR_ROLES, type ThemeColorRole } from '../../../../../shared/themes/library'
-import { themeColorVariable } from '../../../state/appearance'
+import { THEME_TOKEN_PROBE_ATTRIBUTE, themeColorVariable } from '../../../state/appearance'
 
 export type ThemePaintKind = 'background' | 'border' | 'foreground'
 export type ThemePaintSnapshot = Readonly<Record<ThemePaintKind, string>>
@@ -20,7 +20,6 @@ export interface ThemeElementInspection { readonly element: Element; readonly ro
 
 const PAINT_KINDS: readonly ThemePaintKind[] = ['background', 'border', 'foreground']
 const MATCH_ATTRIBUTE = 'data-theme-inspector-match'
-const PROBE_ATTRIBUTE = 'data-theme-token-probe'
 const PROBE_COLOR = '#01fea7'
 const ALTERNATE_PROBE_COLOR = '#fe01a7'
 const SPOTLIGHT_ID = 'theme-inspector-spotlight'
@@ -192,14 +191,14 @@ export function creditedRole(roles: readonly ThemeColorRole[]): ThemeColorRole |
 /** Runs probes with transitions off, so a sentinel colour never starts an animation. */
 function withProbeSession<Result>(run: () => Result): Result {
   const root = document.documentElement
-  const nested = root.hasAttribute(PROBE_ATTRIBUTE)
-  if (!nested) root.setAttribute(PROBE_ATTRIBUTE, '')
+  const nested = root.hasAttribute(THEME_TOKEN_PROBE_ATTRIBUTE)
+  if (!nested) root.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
   try {
     return run()
   } finally {
     // Flush the restored values while transitions are still off; no frame paints in between.
     void getComputedStyle(root).color
-    if (!nested) root.removeAttribute(PROBE_ATTRIBUTE)
+    if (!nested) root.removeAttribute(THEME_TOKEN_PROBE_ATTRIBUTE)
   }
 }
 
