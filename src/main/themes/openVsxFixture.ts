@@ -134,6 +134,8 @@ export function createOpenVsxFixtureFetch(vsix: Buffer = createThemeVsix()): Fet
   })
   return async url => {
     const parsed = new URL(url)
+    // Blob storage first: its path also ends in the file name the API redirects from.
+    if (parsed.hostname === 'openvsxorg.blob.core.windows.net') return new Response(new Uint8Array(vsix), { headers: { 'content-length': String(vsix.length) } })
     if (parsed.pathname === '/api/-/search') {
       return json({ offset: 0, totalSize: 2, extensions: [{ namespace: 'sotto-fixtures', name: 'harbor-theme' }, { namespace: 'sotto-fixtures', name: 'copyleft-theme' }] })
     }
@@ -144,7 +146,6 @@ export function createOpenVsxFixtureFetch(vsix: Buffer = createThemeVsix()): Fet
       contributes: { themes: [{ path: './themes/harbor-light.json' }, { path: './themes/harbor-dark.json' }] },
     })
     if (parsed.pathname.endsWith('/harbor-theme.sha256')) return new Response(`${checksum}  harbor-theme.vsix`)
-    if (parsed.hostname === 'openvsxorg.blob.core.windows.net') return new Response(new Uint8Array(vsix), { headers: { 'content-length': String(vsix.length) } })
     if (parsed.pathname.endsWith('/harbor-theme.vsix')) return new Response(null, { status: 302, headers: { location: `${blob}/harbor-theme.vsix` } })
     return json({ error: 'not found' }, 404)
   }
