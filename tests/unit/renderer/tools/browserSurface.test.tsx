@@ -226,6 +226,56 @@ describe('Browser page placement', () => {
     await frames()
     expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('keeps the page beside a minimized theme editor, and steps aside once the bar overlaps it or the editor expands', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    setup(browser)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+    const hides = () => vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds === null).length
+    const covered = () => within(panel()).queryByText('The page steps aside while a menu or dialog is open.')
+
+    // The editor as ThemeEditor marks it, minimized to its bar left of the viewport (which spans x 1200.4–1600, y 180–700).
+    const editor = document.body.appendChild(document.createElement('section'))
+    for (const [name, value] of [['role', 'dialog'], ['data-theme-editor-panel', ''], ['data-covers-native-view', ''], ['data-minimized', 'true']]) editor.setAttribute(name, value!)
+    let bar = DOMRect.fromRect({ x: 840, y: 632, width: 360, height: 68 })
+    const layout = vi.mocked(HTMLElement.prototype.getBoundingClientRect).getMockImplementation()!
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) { return this === editor ? bar : layout.call(this) })
+    vi.spyOn(editor, 'getClientRects').mockImplementation(() => [bar] as unknown as DOMRectList)
+    await frames()
+    expect(hides()).toBe(0)
+    expect(covered()).not.toBeInTheDocument()
+    const sent = vi.mocked(browser.bridge.mount).mock.calls.length
+    await frames(4)
+    // A still bar costs nothing: no placement is sent again.
+    expect(vi.mocked(browser.bridge.mount).mock.calls).toHaveLength(sent)
+
+    // Dragged so its edge reaches a pixel into the page, with no DOM change: the page steps aside on a following frame.
+    bar = DOMRect.fromRect({ x: 840.8, y: 632, width: 360, height: 68 })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null }))
+    expect(covered()).toBeInTheDocument()
+    bar = DOMRect.fromRect({ x: 600, y: 700, width: 360, height: 68 })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+    expect(covered()).not.toBeInTheDocument()
+
+    // Expanded, the editor covers the page wherever it sits.
+    act(() => editor.removeAttribute('data-minimized'))
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null }))
+    act(() => editor.setAttribute('data-minimized', 'true'))
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+
+    // Any other dialog still sends the page aside while the bar is clear of it.
+    const dialog = document.body.appendChild(document.createElement('div'))
+    dialog.setAttribute('role', 'dialog')
+    vi.spyOn(dialog, 'getClientRects').mockReturnValue([DOMRect.fromRect({ width: 10, height: 10 })] as unknown as DOMRectList)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null }))
+    act(() => dialog.remove())
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+
+    act(() => editor.remove())
+    await frames()
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt })
+    expect(browser.bridge.close).not.toHaveBeenCalled()
+  })
 })
 
 describe('web links in a thread', () => {
