@@ -103,8 +103,9 @@ export async function verifyPackagedMemoryStore(target) {
     // Resolve from the packaged app, not this verifier's node_modules. Loading the
     // addon and launching a child also verifies unpacked native/helper paths and ABI.
     const terminal = await application.evaluate(async ({ app }, cwd) => {
-      const { createRequire } = await import('node:module')
-      const { join } = await import('node:path')
+      // Playwright's Electron evaluation realm has no dynamic-import callback.
+      const { createRequire } = process.getBuiltinModule('node:module')
+      const { join } = process.getBuiltinModule('node:path')
       const pty = createRequire(join(app.getAppPath(), 'package.json'))('node-pty')
       return new Promise((resolveProbe, rejectProbe) => {
         let output = ''

@@ -237,6 +237,31 @@ describe('authority at dispatch', () => {
     expect(authorizes).toHaveBeenCalledTimes(approved === true ? 1 : 0)
   })
 
+  it.each(['allow', 'deny'] as const)('routes voice %s through the exact offered native choice', async text => {
+    const f = await fixture()
+    f.host.event({ type: 'permission', threadId: 'workshop', requestId: 'permission', text: 'Run command?',
+      request: { id: 'permission', kind: 'permission', text: 'Run command?', options: [], permissionChoices: [
+        { id: 'once:42', label: 'Allow once', kind: 'allow-once' },
+        { id: 'session:42', label: 'Allow for session', kind: 'allow-session' },
+        { id: 'reject:42', label: 'Deny', kind: 'deny' },
+      ] } })
+    await f.control.command({ type: 'utterance', text })
+    expect(f.host.executed).toContainEqual(expect.objectContaining({ type: 'answer',
+      permissionChoice: text === 'allow' ? 'once:42' : 'reject:42', approved: text === 'allow' }))
+  })
+
+  it.each(['empty', 'persistent-only', 'ambiguous'] as const)('keeps %s native grants pending when voice cannot identify a one-time choice', async scenario => {
+    const f = await fixture()
+    f.host.event({ type: 'permission', threadId: 'workshop', requestId: 'permission', text: 'Run command?',
+      request: { id: 'permission', kind: 'permission', text: 'Run command?', options: [], permissionChoices:
+        scenario === 'empty' ? [] : scenario === 'persistent-only'
+          ? [{ id: 'always', label: 'Always allow', kind: 'allow-always' }]
+          : [{ id: 'first', label: 'Allow first', kind: 'allow-once' }, { id: 'second', label: 'Allow second', kind: 'allow-once' }] } })
+    await f.control.command({ type: 'utterance', text: 'allow' })
+    expect(f.host.executed.filter(command => command.type === 'answer')).toHaveLength(0)
+    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission' }))
+  })
+
   it.each([
     ['spend', '*', 'May I buy more credits?'],
     ['destroy', 'repository', 'May I git push -f?'],

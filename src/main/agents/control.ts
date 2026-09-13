@@ -1398,7 +1398,15 @@ export class AgentControl {
     if (activeQuestion?.requestId) {
       if (activeQuestion.kind === 'permission') {
         if (![...approvalWords, ...denialWords].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }
-        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved: approvalWords.includes(normalized) }, turn, undefined, selectionRevision)
+        const approved = approvalWords.includes(normalized)
+        const choices = this.thread(activeQuestion.threadId).requests.find(request => request.id === activeQuestion.requestId)?.permissionChoices
+        const matches = choices?.filter(choice => choice.kind === (approved ? 'allow-once' : 'deny'))
+        if (matches && matches.length !== 1) {
+          this.say(choices?.length ? 'Choose the permission scope using the request controls.' : 'Answer this permission request in the provider’s app.')
+          return
+        }
+        await this.execute({ type: 'answer', threadId: activeQuestion.threadId, requestId: activeQuestion.requestId, answer: text, approved,
+          ...(matches?.[0] ? { permissionChoice: matches[0].id } : {}) }, turn, undefined, selectionRevision)
       } else {
         this.startDraft()
         this.state.draft = text
