@@ -190,7 +190,8 @@ function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenE
       </div>
     </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
       {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
-        <strong>{refused}</strong>
+        <strong>This page could not be shown.</strong>{' '}
+        <p>{refused}</p>
         <div className="browser-unavailable__actions">
           <button type="button" className="files-link tt-focusable" onClick={() => store.retryPlacement(threadId, pageId)}>Try again</button>
           <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>Open in system browser</button>

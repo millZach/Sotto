@@ -150,7 +150,7 @@ describe('Browser page placement', () => {
 
   it('explains a page main refused to show, stops asking every frame and shows it again on Try again', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
-    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-unavailable', message: 'The working folder is not available.' } })
+    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-unavailable', message: 'The thread working directory is unavailable. Restore the folder and refresh Files.' } })
     setup(browser)
     const problem = await within(panel()).findByRole('alert')
     expect(problem).toHaveTextContent('This page could not be shown. The working folder is not available.')
@@ -177,7 +177,7 @@ describe('Browser page placement', () => {
     const TOKEN_B = TOKEN_A.replace(/^./u, 'b')
     const moved = { ...workspace, workspaceId: TOKEN_B }
     const browser = fakeBrowser([page(PAGE_1)])
-    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-changed', message: 'The working folder changed.' } })
+    vi.mocked(browser.bridge.mount).mockResolvedValueOnce({ ok: false, error: { code: 'workspace-changed', message: 'The thread working directory changed. Refresh Files.' } })
     setup(browser)
     vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace: moved, pages: [page(PAGE_1, { workspace: moved })] }))
     expect(await within(panel()).findByRole('alert')).toHaveTextContent('This page could not be shown. The working folder changed.')

@@ -162,8 +162,7 @@ export class BrowserStore {
       // Main may still draw the page where an earlier request put it, over the explanation.
       this.mounted = null
       void settle(bridge.mount({ ...target, bounds: null }))
-      const message = result.error.code === 'busy' ? 'The browser is busy.' : result.error.message
-      this.patch(threadId, { placementProblem: { pageId, message: `This page could not be shown. ${message}`.trim() } })
+      this.patch(threadId, { placementProblem: { pageId, message: placementReason(result.error) } })
       if (result.error.code === 'workspace-changed' || result.error.code === 'page-unavailable') void this.activate(bridge, threadId)
     })
   }
@@ -237,6 +236,16 @@ export class BrowserStore {
   private setThread(next: ThreadBrowser): void {
     this.threads.set(next.threadId, next)
     for (const listener of [...this.listeners]) listener()
+  }
+}
+
+/** Why main would not show a page, in the browser's words; main's folder messages are written for Files. */
+function placementReason(error: ToolsError): string {
+  switch (error.code) {
+    case 'workspace-unavailable': return 'The working folder is not available.'
+    case 'workspace-changed': return 'The working folder changed.'
+    case 'busy': return 'The browser is busy.'
+    default: return error.message
   }
 }
 
