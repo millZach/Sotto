@@ -25,6 +25,9 @@ interface BuilderResource {
 }
 
 interface BuilderConfig {
+  npmRebuild: boolean
+  beforeBuild?: string
+  asarUnpack: string[]
   extraResources: BuilderResource[]
   win: { target: BuilderTarget[] }
   mac: {
@@ -78,6 +81,16 @@ describe.each(releaseContracts)(
 )
 
 describe('release contract', () => {
+  it('ships the Windows PTY prebuild and rebuilds native dependencies on macOS', () => {
+    expect(builderConfig.npmRebuild).toBe(false)
+    // Returning false from beforeBuild also disables dependency collection.
+    expect(builderConfig.beforeBuild).toBeUndefined()
+    expect(builderConfig.asarUnpack).toContain('node_modules/node-pty/**')
+    for (const script of ['package:dir:mac', 'package:mac']) {
+      expect(packageManifest.scripts[script]).toContain('--config.npmRebuild=true')
+    }
+  })
+
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
     expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', zod: '4.4.3' })
     expect(builderConfig.extraResources).toContainEqual({ from: 'resources/runtime', to: 'runtime' })
