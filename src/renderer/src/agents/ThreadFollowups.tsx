@@ -5,7 +5,7 @@ import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
-import { retainSkillReferences } from './composerSkills'
+import { retainSkillReferences, skillSigils } from './composerSkills'
 import { queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 
@@ -317,7 +317,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     </ol> : null}
     {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)}
       saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={closeEditor}
-      onSave={text => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: retainSkillReferences(text, editing.skills ?? []) },
+      onSave={text => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: retainSkillReferences(text, editing.skills ?? [], skillSigils(row.providerId)) },
         next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), 'Sotto could not confirm this edit. Check the queue before editing again.', closeEditor)} />
       : null}
   </section>

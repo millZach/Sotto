@@ -59,6 +59,9 @@
 .skill-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .skill-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
 .skill-picker__option[data-active] { background: var(--tt-accent-wash); }
+.skill-picker__option[aria-disabled='true'] { cursor: default; }
+.skill-picker__option[aria-disabled='true'] > span { opacity: .55; }
+.skill-picker__notes .skill-picker__limit { color: var(--tt-text-2); font-size: 13px; }
 .skill-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .skill-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .skill-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }

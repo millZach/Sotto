@@ -5,7 +5,7 @@ import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey, skillMenuKeyAction } from './composerKeys'
-import { insertSkill, retainSkillReferences, sameSkillReferences } from './composerSkills'
+import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
 import { ScreenshotInput } from './ScreenshotInput'
@@ -145,6 +145,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
   const picker = useSkillPicker({ threadId, state, command, enabled: editable && !answering && capabilities.skills === true, text: draft.text })
+  const sigils = skillSigils(picker.catalog?.providerId ?? row.providerId)
   const listId = `${composerId}-skills`
   const statusId = `${composerId}-status`
 
@@ -162,7 +163,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
   const editText = (text: string): void => {
     // A deleted `$name` takes its selected skill with it before the revision is saved or sent.
-    const skills = retainSkillReferences(text, draft.skills)
+    const skills = retainSkillReferences(text, draft.skills, sigils)
     edit(sameSkillReferences(skills, draft.skills) ? { text } : { text, skills })
   }
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
@@ -187,8 +188,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
   const selectSkill = (index: number): void => {
     const skill = picker.options[index]
-    if (skill === undefined || picker.trigger === null) return
-    const next = insertSkill(draft.text, picker.trigger, skill, draft.skills)
+    if (skill === undefined || picker.trigger === null || skillLimitReached(draft.skills, skill, picker.catalog?.maxSkillsPerMessage)) return
+    const next = insertSkill(draft.text, picker.trigger, skill, draft.skills, sigils)
     caretAfterInsert.current = next.caret
     edit({ text: next.text, skills: next.skills })
     textarea.current?.focus()
@@ -213,7 +214,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) picker.leave() }}>
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], requestId: null })}>Discard answer</Button></div> : null}
-      <SkillPicker model={picker} listId={listId} provider={row.provider} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
+      <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
       <label className="tt-visually-hidden" htmlFor={composerId}>{answering ? 'Your answer' : 'Prompt'}</label>
       <ScreenshotInput key={threadId} attachments={[...draft.attachments]} disabled={!editable} supported={row.model?.supportsImages === true && !answering && !permission}
         onReadingChange={setReadingImages} onChange={attachments => edit({ attachments })}>

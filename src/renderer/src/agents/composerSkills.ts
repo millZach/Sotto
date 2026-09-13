@@ -1,4 +1,4 @@
-import { hasSkillInvocation, type AgentSkillCatalog, type AgentSkillReference } from '../../../shared/agentSkills'
+import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 
 export type CatalogSkill = AgentSkillCatalog['skills'][number]
 
@@ -15,6 +15,23 @@ const SCOPE_LABELS: Record<CatalogSkill['scope'], string> = { user: 'Personal', 
 export const MAX_SELECTED_SKILLS = 32
 
 export function skillScopeLabel(scope: CatalogSkill['scope']): string { return SCOPE_LABELS[scope] }
+
+/** How a written skill mention starts. Codex reads only `$name`; Claude and Grok also take their native `/name`. */
+export type SkillSigil = '$' | '/'
+export function skillSigils(providerId: string | undefined): readonly SkillSigil[] {
+  return providerId === 'claude' || providerId === 'grok' ? ['$', '/'] : ['$']
+}
+
+/** The token the provider's own interface writes for a skill: its native invocation when the catalog gives one. */
+export function skillToken(skill: { readonly name: string; readonly invocation?: string | undefined }): string {
+  const invocation = skill.invocation?.trim()
+  return invocation && /^[$/]\S+$/u.test(invocation) ? invocation : `$${skill.name}`
+}
+
+/** Skills the user may pick: the catalog as listed, less those the provider reports disabled or not user-invocable. */
+export function pickableSkills(skills: readonly CatalogSkill[]): CatalogSkill[] {
+  return skills.filter(skill => skill.enabled !== false && skill.userInvocable !== false)
+}
 
 /**
  * What the text before the caret is asking for. A slash counts only when it opens its line, where
@@ -53,23 +70,46 @@ export function searchSkills(skills: readonly CatalogSkill[], query: string): Ca
     .map(item => item.skill)
 }
 
-/** Selected references whose `$name` is still written in the text; a deleted token takes its reference with it. */
-export function retainSkillReferences(text: string, skills: readonly AgentSkillReference[]): AgentSkillReference[] {
-  return skills.filter(skill => hasSkillInvocation(text, skill.name))
+/** A literal mention at token boundaries, the same check main makes before dispatch. */
+export function hasSkillMention(text: string, name: string, sigils: readonly SkillSigil[] = ['$']): boolean {
+  return sigils.some(sigil => {
+    const token = `${sigil}${name}`
+    let offset = text.indexOf(token)
+    while (offset !== -1) {
+      const before = text[offset - 1]
+      const after = text[offset + token.length]
+      if ((!before || /\s/u.test(before)) && (!after || /\s|[.,;!?()[\]{}]/u.test(after))) return true
+      offset = text.indexOf(token, offset + token.length)
+    }
+    return false
+  })
+}
+
+/** Selected references whose mention is still written in the text; a deleted token takes its reference with it. */
+export function retainSkillReferences(text: string, skills: readonly AgentSkillReference[], sigils: readonly SkillSigil[] = ['$']): AgentSkillReference[] {
+  return skills.filter(skill => hasSkillMention(text, skill.name, sigils))
 }
 
 const sameSkill = (a: AgentSkillReference, b: AgentSkillReference): boolean => a.name === b.name && a.path === b.path
 
+/** A provider with a per-message limit takes no other selection once it is reached; picking a selected skill again is fine. */
+export function skillLimitReached(selected: readonly AgentSkillReference[], skill: AgentSkillReference, max: number | undefined): boolean {
+  return max !== undefined && selected.length >= max && !selected.some(item => sameSkill(item, skill))
+}
+
 /**
- * Replace the trigger token with the skill's native `$name` invocation for the user to review.
+ * Replace the trigger token with the skill's native invocation (`$name`, or the catalog's `/name`) for the user to review.
  * Returns the new text, the caret after the inserted token, and the references this text keeps.
  */
-export function insertSkill(text: string, trigger: SkillTrigger, skill: AgentSkillReference, selected: readonly AgentSkillReference[]): { text: string; caret: number; skills: AgentSkillReference[] } {
+export function insertSkill(text: string, trigger: SkillTrigger, skill: AgentSkillReference & { readonly invocation?: string | undefined }, selected: readonly AgentSkillReference[],
+  sigils: readonly SkillSigil[] = ['$']): { text: string; caret: number; skills: AgentSkillReference[] } {
   const after = text.slice(trigger.end)
   const spacer = after.startsWith(' ') || after.startsWith('\n') ? '' : ' '
-  const token = `$${skill.name}${spacer}`
+  const written = skillToken(skill)
+  // A provider that reads only `$name` gets `$name`, whatever the catalog wrote.
+  const token = `${sigils.includes(written.charAt(0) as SkillSigil) ? written : `$${skill.name}`}${spacer}`
   const next = `${text.slice(0, trigger.start)}${token}${after}`
-  const kept = retainSkillReferences(next, selected)
+  const kept = retainSkillReferences(next, selected, sigils)
   const reference = { name: skill.name, path: skill.path }
   const skills = kept.some(item => sameSkill(item, reference)) ? kept : [...kept, reference].slice(-MAX_SELECTED_SKILLS)
   return { text: next, caret: trigger.start + token.length, skills }
