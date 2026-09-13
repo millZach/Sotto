@@ -845,12 +845,16 @@ export class AgentControl {
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider)); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
       case 'utterance': await this.utterance(command.text.trim(), turn, selectionRevision); return
-      case 'compose':
-        this.manualDraftId = null
+      case 'compose': {
         if (!this.state.composing) this.startDraft()
+        const previous = this.state.threadDrafts?.find(item => item.threadId === this.state.draftThreadId && item.requestId === this.state.draftRequestId)
         if (command.attachments !== undefined) this.state.draftAttachments = agentAttachmentsSchema.parse(command.attachments)
         this.state.draft = command.text
+        this.manualDraftId = randomUUID()
+        if (this.state.draftThreadId) this.putThreadDraft({ threadId: this.state.draftThreadId, draftId: this.manualDraftId, text: this.state.draft,
+          attachments: this.state.draftAttachments ?? [], skills: previous?.skills, requestId: this.state.draftRequestId, updatedAt: new Date().toISOString() })
         return
+      }
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
       case 'recover-draft': {
         this.canAct()
@@ -1019,6 +1023,7 @@ export class AgentControl {
         const assignment = this.assignment(command.threadId)
         assignment.mode = 'managed'; assignment.paused = false; assignment.followups = 0; assignment.lastFailure = ''
         assignment.stopReason = 'none'; assignment.stoppedAt = ''
+        this.restoreManagedDraft(command.threadId)
         this.considered.delete(command.threadId)
         this.recoveredQueueIds.delete(command.threadId)
         this.state.queue = this.state.queue.filter(q => q.threadId !== command.threadId || q.kind !== 'blocked')
@@ -1080,7 +1085,13 @@ export class AgentControl {
       seenMessageIds: thread.messages.map(m => m.id), ownMessageIds: [], handledRequestIds: [], lastFailure: '' })
     if (selectionRevision === this.selectionRevision) {
       this.state.activeThreadId = threadId; this.state.activeProjectId = thread.projectId
+      this.restoreManagedDraft(threadId)
     }
+  }
+  private restoreManagedDraft(threadId: string): void {
+    // The managed composer is another view of the same saved draft. A draft
+    // belonging to a different thread keeps its explicit owner and notice.
+    if (!this.hasDraft() && this.state.threadDrafts?.some(item => item.threadId === threadId)) this.startDraft(threadId)
   }
   private guardAuthority(command: AgentHostCommand, turn?: ActiveTurn): void {
     if (command.type !== 'answer') return
