@@ -7,15 +7,16 @@
  * mode edits the background and accent and derives every other role, Advanced
  * edits colour families, a name matching a saved theme adds the other
  * appearance to it, and closing without saving puts the saved look back.
- * Not ported: T3's element inspector and corner-grip resizing.
+ * Inspect picks a colour from the window itself, a colour's label spotlights
+ * everywhere it is used (themeInspector.ts), and the corner grip resizes.
  *
  * The panel is non-modal so the window can be browsed while it is open. It is
  * still a role="dialog", which the tools browser treats as covering its native
  * view, so a native page never paints over the editor.
  */
 
-import React, { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, Paintbrush, Plus, X } from 'lucide-react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronUp, MousePointer2, Paintbrush, Plus, X } from 'lucide-react'
 
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
 import { toCanonicalThemeColor } from '../../../../../shared/themes/color'
@@ -36,6 +37,15 @@ import { appearancePreview, useAppearancePreviewVersion } from '../../../state/a
 import { isEditorColor, ThemeColorField, themeRoleLabel } from './ThemeColorField'
 import { closeThemeEditor, useThemeEditorSession, type ThemeEditorSession } from './themeEditorSession'
 import { editorMergeTarget, editorSavePatch, ThemeLibraryWriter } from './themeLibrary'
+import {
+  clearThemeInspectorHighlights,
+  clearThemeInspectorHover,
+  highlightThemeRoleUsage,
+  inspectThemeRoleAtElement,
+  refreshThemeInspectorSpotlight,
+  showThemeInspectorHover,
+  type ThemeElementInspection,
+} from './themeInspector'
 import './themes.css'
 
 const SIMPLE_ROLES: readonly ThemeColorRole[] = ['canvas', 'accent']
@@ -88,6 +98,21 @@ export const THEME_EDITOR_ROLE_GROUPS: ReadonlyArray<{ readonly id: string; read
     ],
   },
 ]
+
+const FAMILY_BY_ROLE = new Map<ThemeColorRole, ColorFamily>()
+for (const family of THEME_EDITOR_ROLE_GROUPS.flatMap(group => group.families)) {
+  for (const role of family.roles) if (!FAMILY_BY_ROLE.has(role)) FAMILY_BY_ROLE.set(role, family)
+}
+
+/** The Advanced colour row that edits `role`. */
+export function themeEditorColorFamily(role: ThemeColorRole): ColorFamily | null {
+  return FAMILY_BY_ROLE.get(role) ?? null
+}
+
+/** The smallest the corner grip makes the panel. */
+export const THEME_EDITOR_MIN_SIZE = { width: 280, height: 220 } as const
+/** The gap the panel keeps from the window edge. */
+const EDGE = 8
 
 type ColorsByAppearance = Record<ThemeAppearance, ThemeColors>
 
@@ -160,8 +185,14 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const [minimized, setMinimized] = useState(false)
   const [roleQuery, setRoleQuery] = useState('')
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  // Null keeps the stylesheet's size; a value is a corner-grip resize.
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null)
+  const [inspecting, setInspecting] = useState(false)
+  const [selectedRole, setSelectedRole] = useState<ThemeColorRole | null>(null)
+  const [usageCount, setUsageCount] = useState<number | null>(null)
   const panelRef = useRef<HTMLElement>(null)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
+  const resizeStart = useRef<{ pointerX: number; pointerY: number; left: number; top: number; width: number; height: number } | null>(null)
   const titleId = useId()
   const nameId = useId()
   const errorId = useId()
@@ -215,6 +246,8 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
 
   const changeAdvanced = (checked: boolean): void => {
     setAdvanced(checked)
+    // Simple mode has no row for a family colour, so its spotlight would point at nothing.
+    if (!checked) setSelectedRole(current => (current !== null && !SIMPLE_ROLES.includes(current) ? null : current))
     if (checked || !regenerateOnSimple) return
     // Leaving Advanced regenerates every palette the theme will save, so what
     // shows after the switch is what gets saved.
@@ -258,15 +291,207 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     }
   }
 
+  const palette = colorsByAppearance[activeAppearance]
+
+  /** Selects the row that edits `role`, opening Advanced when only Advanced has that row. */
+  const selectRole = useCallback((role: ThemeColorRole, reveal = false): void => {
+    const visible = themeEditorColorFamily(role)?.role ?? role
+    setSelectedRole(visible)
+    if (!SIMPLE_ROLES.includes(visible)) {
+      setAdvanced(true)
+      setRoleQuery('')
+    }
+    if (reveal) requestAnimationFrame(() => panelRef.current?.querySelector(`[data-theme-color-role="${visible}"]`)?.scrollIntoView({ block: 'nearest' }))
+  }, [])
+  const toggleRole = useCallback((role: ThemeColorRole): void => setSelectedRole(current => (current === role ? null : role)), [])
+  const clearInspector = useCallback((): void => {
+    setSelectedRole(null)
+    setUsageCount(null)
+    setInspecting(false)
+  }, [])
+  const roleName = useCallback((role: ThemeColorRole): string => themeEditorColorFamily(role)?.label ?? themeRoleLabel(role), [])
+
+  // Advanced spotlights a whole family; Simple spotlights every role its guided colour set.
+  const highlightRoles = selectedRole === null
+    ? []
+    : advanced
+      ? themeEditorColorFamily(selectedRole)?.roles ?? [selectedRole]
+      : SIMPLE_ROLES.includes(selectedRole)
+        ? THEME_COLOR_ROLES.filter(role => palette[role].trim().toLowerCase() === palette[selectedRole].trim().toLowerCase())
+        : [selectedRole]
+  const highlightKey = highlightRoles.join(',')
+
+  useEffect(() => {
+    clearThemeInspectorHighlights()
+    if (selectedRole === null) {
+      setUsageCount(null)
+      return
+    }
+    // Picking needs the window unobscured, so the spotlight waits while Inspect is armed.
+    if (inspecting) return
+    const roles = highlightKey.split(',') as ThemeColorRole[]
+    const refresh = (): void => setUsageCount(highlightThemeRoleUsage(roles))
+    refresh()
+    // A refresh reads every element's style twice, so page changes (a streaming
+    // reply, a growing list) refresh it at most twice a second.
+    const interval = 500
+    let frame: number | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let last = performance.now()
+    const run = (): void => {
+      frame = null
+      timer = null
+      last = performance.now()
+      refresh()
+    }
+    const observer = new MutationObserver(mutations => {
+      if (mutations.every(mutation => mutation.target instanceof Element && mutation.target.closest('#theme-inspector-spotlight, [data-theme-editor-panel]'))) return
+      if (frame !== null || timer !== null) return
+      const wait = Math.max(0, interval - (performance.now() - last))
+      if (wait === 0) frame = requestAnimationFrame(run)
+      else timer = setTimeout(run, wait)
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    let spotlightFrame: number | null = null
+    const redraw = (): void => {
+      spotlightFrame ??= requestAnimationFrame(() => {
+        spotlightFrame = null
+        refreshThemeInspectorSpotlight()
+      })
+    }
+    window.addEventListener('resize', redraw)
+    window.addEventListener('scroll', redraw, true)
+    return () => {
+      observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+      if (timer !== null) clearTimeout(timer)
+      if (spotlightFrame !== null) cancelAnimationFrame(spotlightFrame)
+      window.removeEventListener('resize', redraw)
+      window.removeEventListener('scroll', redraw, true)
+      clearThemeInspectorHighlights()
+    }
+  }, [inspecting, selectedRole, highlightKey])
+
+  useEffect(() => {
+    if (!inspecting) {
+      clearThemeInspectorHover()
+      return
+    }
+    let disarmAfterClick = false
+    let hoverTarget: Element | null = null
+    let hoverInspection: ThemeElementInspection | null = null
+    let hoverTimer: ReturnType<typeof setTimeout> | null = null
+    let hoverFrame: number | null = null
+    const inEditor = (target: Element): boolean => target.closest('[data-theme-editor-panel]') !== null
+    const clearHover = (): void => {
+      if (hoverTimer !== null) clearTimeout(hoverTimer)
+      hoverTimer = null
+      hoverTarget = null
+      hoverInspection = null
+      clearThemeInspectorHover()
+    }
+    const show = (inspection: ThemeElementInspection): void => {
+      hoverInspection = inspection
+      showThemeInspectorHover(inspection, roleName(inspection.role))
+    }
+    const onPointerOver = (event: PointerEvent): void => {
+      const target = event.target
+      clearHover()
+      if (!(target instanceof Element) || inEditor(target)) return
+      hoverTarget = target
+      // Probing every role costs a few dozen style passes, so wait for the pointer to settle.
+      hoverTimer = setTimeout(() => {
+        hoverTimer = null
+        if (hoverTarget !== target || !target.isConnected) return
+        const inspection = inspectThemeRoleAtElement(target)
+        if (inspection) show(inspection)
+      }, 140)
+    }
+    const onPointerOut = (event: PointerEvent): void => {
+      if (event.relatedTarget === null) clearHover()
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element) || inEditor(target)) return
+      // The pick is the whole gesture: the page under the pointer is not pressed.
+      event.preventDefault()
+      event.stopPropagation()
+      const inspection = hoverTarget === target && hoverInspection ? hoverInspection : inspectThemeRoleAtElement(target)
+      if (!inspection) return
+      clearHover()
+      selectRole(inspection.role, true)
+      disarmAfterClick = true
+    }
+    const onClick = (event: MouseEvent): void => {
+      if (!(event.target instanceof Element) || inEditor(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (disarmAfterClick) setInspecting(false)
+      disarmAfterClick = false
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      clearHover()
+      clearInspector()
+    }
+    const onResize = (): void => {
+      if (!hoverInspection) return
+      hoverFrame ??= requestAnimationFrame(() => {
+        hoverFrame = null
+        if (hoverInspection) show(hoverInspection)
+      })
+    }
+    document.addEventListener('pointerover', onPointerOver, true)
+    document.addEventListener('pointerout', onPointerOut, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('click', onClick, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('resize', onResize)
+    window.addEventListener('scroll', clearHover, true)
+    return () => {
+      document.removeEventListener('pointerover', onPointerOver, true)
+      document.removeEventListener('pointerout', onPointerOut, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('scroll', clearHover, true)
+      if (hoverTimer !== null) clearTimeout(hoverTimer)
+      if (hoverFrame !== null) cancelAnimationFrame(hoverFrame)
+      clearThemeInspectorHover()
+    }
+  }, [clearInspector, inspecting, roleName, selectRole])
+
   const clampPosition = (x: number, y: number): { x: number; y: number } => {
     const width = panelRef.current?.offsetWidth ?? 0
     return {
-      x: Math.min(Math.max(x, 8), Math.max(8, window.innerWidth - width - 8)),
-      y: Math.min(Math.max(y, 8), Math.max(8, window.innerHeight - 48)),
+      x: Math.min(Math.max(x, EDGE), Math.max(EDGE, window.innerWidth - width - EDGE)),
+      // The header stays reachable even when the panel is dragged far down.
+      y: Math.min(Math.max(y, EDGE), Math.max(EDGE, window.innerHeight - 48)),
     }
   }
   useEffect(() => {
-    const clamp = (): void => setPosition(current => (current === null ? current : clampPosition(current.x, current.y)))
+    const clamp = (): void => {
+      const panel = panelRef.current
+      setSize(current => current === null
+        ? current
+        : {
+            width: Math.max(THEME_EDITOR_MIN_SIZE.width, Math.min(current.width, window.innerWidth - EDGE * 2)),
+            height: Math.max(THEME_EDITOR_MIN_SIZE.height, Math.min(current.height, window.innerHeight - EDGE * 2)),
+          })
+      // A smaller window pulls the whole panel back into view when it fits, so the grip stays reachable.
+      setPosition(current => {
+        if (current === null) return current
+        const width = Math.min(panel?.offsetWidth ?? 0, window.innerWidth - EDGE * 2)
+        const height = Math.min(panel?.offsetHeight ?? 0, window.innerHeight - EDGE * 2)
+        return {
+          x: Math.min(Math.max(current.x, EDGE), Math.max(EDGE, window.innerWidth - width - EDGE)),
+          y: Math.min(Math.max(current.y, EDGE), Math.max(EDGE, window.innerHeight - height - EDGE)),
+        }
+      })
+    }
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
   }, [])
@@ -287,12 +512,42 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     onPointerCancel: () => { dragOffset.current = null },
   }
 
+  const resizeHandlers = {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const rect = panelRef.current?.getBoundingClientRect()
+      if (!rect) return
+      event.preventDefault()
+      // The grip moves the bottom-right corner, so the top-left holds still:
+      // the default bottom-right parking spot becomes an explicit position.
+      if (position === null) setPosition(clampPosition(rect.x, rect.y))
+      resizeStart.current = { pointerX: event.clientX, pointerY: event.clientY, left: rect.x, top: rect.y, width: rect.width, height: rect.height }
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = resizeStart.current
+      if (!start) return
+      // Grow only into the room right of and below the panel, so the grip never leaves the window.
+      const maxWidth = Math.max(THEME_EDITOR_MIN_SIZE.width, window.innerWidth - EDGE - start.left)
+      const maxHeight = Math.max(THEME_EDITOR_MIN_SIZE.height, window.innerHeight - EDGE - start.top)
+      setSize({
+        width: Math.min(Math.max(start.width + event.clientX - start.pointerX, THEME_EDITOR_MIN_SIZE.width), maxWidth),
+        height: Math.min(Math.max(start.height + event.clientY - start.pointerY, THEME_EDITOR_MIN_SIZE.height), maxHeight),
+      })
+    },
+    onPointerUp: () => { resizeStart.current = null },
+    onPointerCancel: () => { resizeStart.current = null },
+  }
+
   const query = roleQuery.trim().toLowerCase()
   const groups = THEME_EDITOR_ROLE_GROUPS
     .map(group => ({ ...group, families: group.families.filter(family => !query || [family.label, ...family.roles.map(themeRoleLabel)].join(' ').toLowerCase().includes(query)) }))
     .filter(group => group.families.length > 0)
-  const palette = colorsByAppearance[activeAppearance]
   const title = isEditing ? 'Edit theme' : 'Create theme'
+  const status = inspecting
+    ? 'Select an element · Esc to cancel'
+    : selectedRole !== null
+      ? `${advanced ? roleName(selectedRole) : themeRoleLabel(selectedRole)} · ${usageCount ?? 0} ${usageCount === 1 ? 'use' : 'uses'}`
+      : advanced ? 'Colors by family' : 'Two colors, rest derived'
 
   return (
     <section
@@ -304,17 +559,38 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       data-theme-editor-panel=""
       data-covers-native-view=""
       data-minimized={minimized || undefined}
-      style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined}
+      data-inspecting={inspecting || undefined}
+      style={{
+        ...(position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : {}),
+        ...(size ? { width: size.width } : {}),
+        // A chosen height applies only expanded; minimized, the panel hugs its header.
+        ...(size && !minimized ? { height: size.height, maxHeight: `calc(100vh - ${EDGE * 2}px)` } : {}),
+      }}
       onKeyDown={event => {
-        if (event.key === 'Escape' && !event.defaultPrevented) {
-          event.preventDefault()
-          close()
-        }
+        if (event.key !== 'Escape' || event.defaultPrevented) return
+        event.preventDefault()
+        // Escape first puts a spotlight away, then closes.
+        if (selectedRole !== null) clearInspector()
+        else close()
       }}
     >
       <div className="theme-editor__header" {...dragHandlers}>
         <h2 id={titleId}>{title}</h2>
-        {minimized ? null : <p>{advanced ? 'Colors by family' : 'Two colors, rest derived'}</p>}
+        {minimized ? null : <p aria-live="polite">{status}</p>}
+        <Button
+          variant={inspecting ? 'secondary' : 'ghost'}
+          className="theme-editor__inspect"
+          aria-pressed={inspecting}
+          aria-label={inspecting ? 'Cancel inspecting app colors' : 'Inspect app colors'}
+          title={inspecting ? 'Cancel and clear the selection' : 'Pick a color from the app'}
+          onClick={() => {
+            if (inspecting) clearInspector()
+            else setInspecting(true)
+          }}
+        >
+          <MousePointer2 size={14} aria-hidden="true" />
+          {inspecting ? 'Cancel' : 'Inspect'}
+        </Button>
         <Button variant="ghost" iconOnly aria-label={minimized ? 'Expand the theme editor' : 'Minimize the theme editor'} onClick={() => setMinimized(current => !current)}>
           {minimized ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
         </Button>
@@ -393,13 +669,13 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                         {groups.map(group => (
                           <section key={group.id} aria-label={group.title}>
                             <h4>{group.title}</h4>
-                            {group.families.map(family => <ThemeColorField key={family.id} role={family.role} label={family.label} value={palette[family.role]} onChange={updateColor} />)}
+                            {group.families.map(family => <ThemeColorField key={family.id} role={family.role} label={family.label} value={palette[family.role]} onChange={updateColor} selected={selectedRole === family.role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
                           </section>
                         ))}
                         {groups.length === 0 ? <p className="theme-editor__empty">No matches.</p> : null}
                       </div>
                     )
-                  : SIMPLE_ROLES.map(role => <ThemeColorField key={role} role={role} label={role === 'canvas' ? 'Background' : 'Accent'} value={palette[role]} onChange={updateColor} />)}
+                  : SIMPLE_ROLES.map(role => <ThemeColorField key={role} role={role} label={role === 'canvas' ? 'Background' : 'Accent'} value={palette[role]} onChange={updateColor} selected={selectedRole === role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
               </div>
               <div className="theme-editor__footer">
                 <Button variant="ghost" onClick={close}>Cancel</Button>
@@ -410,6 +686,9 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                       ? <><Plus size={15} aria-hidden="true" />{`Add ${activeAppearance} palette`}</>
                       : <><Paintbrush size={15} aria-hidden="true" />Create theme</>}
                 </Button>
+              </div>
+              <div className="theme-editor__grip" aria-hidden="true" {...resizeHandlers}>
+                <svg viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2"><path d="M7 1 1 7M7 4.5 4.5 7" /></svg>
               </div>
             </>
           )}

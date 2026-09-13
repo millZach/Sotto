@@ -5,8 +5,8 @@
  * Ported from T3 Code's apps/web/src/components/settings/ThemeColorPicker.tsx
  * at commit d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3. MIT License, Copyright
  * (c) 2026 T3 Tools Inc.; see THIRD_PARTY_NOTICES.md. The picker opens inline
- * under its row instead of in a popover, and T3's "show where this colour is
- * used" inspector is not ported.
+ * under its row instead of in a popover. Pressing a row's label shows where
+ * that colour is used (see themeInspector.ts).
  */
 
 import React, { memo, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
@@ -260,11 +260,15 @@ function ColorPickerPanel({ label, value, onChange }: { readonly label: string; 
   )
 }
 
-export const ThemeColorField = memo(function ThemeColorField({ role, label, value, onChange }: {
+export const ThemeColorField = memo(function ThemeColorField({ role, label, value, onChange, selected = false, onSelect, onToggleSelected }: {
   readonly role: ThemeColorRole
   readonly label?: string
   readonly value: string
   readonly onChange: (role: ThemeColorRole, value: string) => void
+  /** Whether the window is spotlighting where this colour is used. */
+  readonly selected?: boolean
+  readonly onSelect?: (role: ThemeColorRole) => void
+  readonly onToggleSelected?: (role: ThemeColorRole) => void
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -274,9 +278,22 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
   // OKLCH values show as hex; whatever the user is typing shows as typed.
   const text = value.trim().toLowerCase().startsWith('oklch(') ? themeColorToHex(value) ?? value : value
   return (
-    <div className="theme-color-field" data-theme-color-role={role} data-open={open || undefined}>
+    <div className="theme-color-field" data-theme-color-role={role} data-open={open || undefined} data-selected={selected || undefined}>
       <div className="theme-color-field__row">
-        <span className="theme-color-field__label">{name}</span>
+        {onToggleSelected
+          ? (
+              <button
+                type="button"
+                className="theme-color-field__label theme-color-field__usage tt-focusable"
+                aria-label={`${selected ? 'Hide' : 'Show'} where ${name} is used`}
+                aria-pressed={selected}
+                title={`${selected ? 'Hide' : 'Show'} where ${name} is used`}
+                onClick={() => onToggleSelected(role)}
+              >
+                {name}
+              </button>
+            )
+          : <span className="theme-color-field__label">{name}</span>}
         <button
           type="button"
           className="theme-color-field__swatch tt-focusable"
@@ -284,7 +301,10 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
           aria-expanded={open}
           aria-controls={panelId}
           title={`Choose ${name} color`}
-          onClick={() => setOpen(current => !current)}
+          onClick={() => {
+            onSelect?.(role)
+            setOpen(current => !current)
+          }}
         >
           <span style={{ backgroundColor: swatch }} />
         </button>
@@ -295,6 +315,7 @@ export const ThemeColorField = memo(function ThemeColorField({ role, label, valu
           spellCheck={false}
           maxLength={96}
           value={text}
+          onFocus={() => onSelect?.(role)}
           onChange={event => onChange(role, event.currentTarget.value)}
         />
       </div>
