@@ -1,9 +1,12 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
-import { AgentRequestCard } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
+import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
+import { claudePending } from '../../../../src/main/agents/claudeRequests'
+import { pendingRequest } from '../../../../src/main/agents/codexRequests'
+import { grokPending } from '../../../../src/main/agents/grokRequests'
 import {
   answerProgress, buildQuestionAnswers, EMPTY_SELECTION, isAnswered, isRequired, permissionAnswer, permissionSummary, pickOption, pickOther,
   RequestAnswerStore, type RequestAnswer, type StructuredQuestion, type SubmitOutcome,
@@ -319,5 +322,74 @@ describe('simultaneous requests', () => {
     expect(store.get('thread-a', 'req').phase).toBe('idle')
     expect(store.get('thread-ab', 'req').selections.q?.optionIds).toEqual(['y'])
     expect(RequestAnswerStore.key('thread-a', 'req')).toBe(['thread-a', 'req'].join(String.fromCharCode(0)))
+  })
+})
+
+describe('native request explanation and tool context', () => {
+  // The provider mappers are the real ones, so the duplicate check is held to what each provider actually puts in `text`.
+  const codexForm = (message: string) => pendingRequest('elicit-1', 'mcpServer/elicitation/request', {
+    threadId: 'native-thread', itemId: 'mcp-call-7', mode: 'form', message,
+    requestedSchema: { type: 'object', required: ['channel'], properties: {
+      channel: { type: 'string', title: 'Channel', description: 'Where should the notes go?', oneOf: [{ const: 'blog', title: 'Blog post' }, { const: 'email', title: 'Email digest' }] },
+      note: { type: 'string', description: 'Anything reviewers should know' },
+    } },
+  }, 'native-thread')!.request
+  const nativeMessage = 'The release-notes server needs a publishing target before it drafts v0.9.\n\nNothing is published until you confirm in the next step.'
+
+  it('shows the native form message once, exactly, above fields that do not contain it, with its tool context', async () => {
+    const request = codexForm(nativeMessage)
+    expect(request.questions!.map(question => [question.header ?? '', question.question].join(' '))).not.toContain(nativeMessage)
+    expect(JSON.stringify(request.context)).not.toContain('release-notes server')
+    const { user, onSubmit } = setup(request)
+    const card = screen.getByRole('region', { name: '2 questions' })
+    const explanation = card.querySelector('.agent-request__text')!
+    expect(explanation.textContent).toBe(nativeMessage)
+    expect(card.textContent!.split('publishing target').length - 1).toBe(1)
+    expect(within(card.querySelector<HTMLElement>('.agent-request__head')!).getByText('mcpServer/elicitation/request')).toBeTruthy()
+    // An empty native context object adds nothing to read.
+    expect(card.querySelector('.agent-request__details')).toBeNull()
+    const [first] = screen.getAllByRole('group')
+    expect(explanation.compareDocumentPosition(first!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Every field, choice and optional marker is still there, and the form still sends once.
+    expect(screen.getAllByRole('radio').map(input => (input as HTMLInputElement).value)).toEqual(['blog', 'email'])
+    expect(screen.getByRole('group', { name: /Anything reviewers should know.*Optional/u })).toBeTruthy()
+    await user.click(screen.getByRole('radio', { name: 'Email digest' }))
+    await user.click(screen.getByRole('button', { name: 'Send answers' }))
+    await user.click(screen.getByRole('button', { name: 'Send answers' }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith({ answer: '', questionAnswers: { channel: { optionIds: ['email'] } } })
+  })
+
+  it('does not repeat text a provider built from its own question prompts and choices', () => {
+    const questions = [{ question: 'Which database?', header: 'Database', options: [{ label: 'Postgres' }, { label: 'SQLite' }] }, { question: 'Name the service', options: [] }]
+    const claude = claudePending({ type: 'control_request', request_id: 'c-1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', tool_use_id: 'toolu_1', input: { questions } } })!.request
+    const claudeOne = claudePending({ type: 'control_request', request_id: 'c-2', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: questions.slice(0, 1) } } })!.request
+    const codex = pendingRequest('u-1', 'item/tool/requestUserInput', { threadId: 't', itemId: 'i', questions: [
+      { id: 'db', question: 'Which database?', header: 'Database', options: [{ label: 'Postgres' }, { label: 'SQLite' }] }, { id: 'name', question: 'Name the service', options: null },
+    ] }, 't')!.request
+    const grok = grokPending(3, 'x.ai/ask_user_question', { sessionId: 's', toolCallId: 'g-1', questions }, 't')!.request
+    const codexCopied = codexForm('Where should the notes go?')
+    for (const request of [claude, claudeOne, codex, grok, codexCopied]) {
+      expect(requestExplanation(request)).toBeNull()
+      const { view } = setup(request)
+      expect(view.container.querySelector('.agent-request__text')).toBeNull()
+      const prompt = request.questions![0]!.question
+      expect(view.container.textContent!.split(prompt).length - 1).toBe(1)
+      view.unmount()
+    }
+    // The tool that asked stays visible beside the count.
+    setup(claude)
+    expect(screen.getByRole('region', { name: '2 questions' }).querySelector('.agent-request__head')!.textContent).toBe('2 questionsAskUserQuestion')
+  })
+
+  it('keeps an explanation that adds to a prompt it quotes, and shows command, folder and details the native request carried', () => {
+    const request: AgentRequest = { id: 'req-ctx', kind: 'question', text: 'Which database? The migration runs against it right after you answer.', options: [],
+      questions: [single], context: { toolName: 'db_migrate', command: 'npm run migrate', cwd: 'D:\repo', details: '{"reason":"schema v3"}' } }
+    expect(requestExplanation(request)).toBe(request.text)
+    const { view } = setup(request)
+    expect(view.container.querySelector('.agent-request__text')!.textContent).toBe(request.text)
+    expect(view.container.querySelector('.agent-request__command')!.textContent).toBe('npm run migrate')
+    expect(view.container.querySelector('.agent-request__cwd')!.textContent).toBe('in D:\repo')
+    expect(view.container.querySelector('.agent-request__details')!.textContent).toBe('{"reason":"schema v3"}')
   })
 })

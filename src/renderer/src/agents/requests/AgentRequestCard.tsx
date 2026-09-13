@@ -84,7 +84,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       event.preventDefault()
       if (answer) send(null, answer)
     }}>
-      <div className="agent-request__head"><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong></div>
+      <div className="agent-request__head"><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
+        {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
+      <FormContext request={request} />
       {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question}
         selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
         onChange={selection => store.select(entryOwner, request.id, question.id, selection)}
@@ -193,4 +195,35 @@ function QuestionField({ name, question, selection, disabled, onChange, onSubmit
       {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={`Clear choice for ${question.question}`} onClick={clear}>Clear choice</button> : null}
     </>}
   </fieldset>
+}
+
+/** What a form carries beyond its fields: the provider's own explanation, then the command, folder and details it acts on. */
+function FormContext({ request }: { readonly request: AgentRequest }): ReactNode {
+  const explanation = requestExplanation(request)
+  const context = request.context
+  // A native context that serialized to an empty object has nothing to read.
+  const details = context?.details?.trim() && !/^\{\s*\}$/u.test(context.details.trim()) ? context.details : null
+  return <>
+    {explanation ? <p className="agent-request__text">{explanation}</p> : null}
+    {context?.command ? <pre className="agent-request__command"><code>{context.command}</code></pre> : null}
+    {context?.cwd ? <p className="agent-request__cwd">in <code>{context.cwd}</code></p> : null}
+    {details ? <pre className="agent-request__details">{details}</pre> : null}
+  </>
+}
+
+const collapse = (value: string): string => value.replace(/\s+/gu, ' ').trim()
+
+/**
+ * A structured request's own explanation, exactly as the provider sent it, or null when its text only restates the
+ * questions. Providers without a request-level message fill the text from the question prompts, numbered when there are
+ * several and sometimes followed by the choice labels; a Codex form keeps its message there, apart from the fields.
+ */
+export function requestExplanation(request: AgentRequest): string | null {
+  if (!request.text.trim()) return null
+  let rest = collapse(request.text)
+  const questions = request.questions ?? []
+  // Prompts first, longest first, so a prompt containing a shorter one or a choice label is removed whole.
+  const pieces = [...questions.map(question => question.question), ...questions.flatMap(question => [question.header ?? '', ...question.options.map(option => option.label)])]
+  for (const piece of pieces.map(collapse).filter(Boolean).sort((a, b) => b.length - a.length)) rest = rest.split(piece).join(' ')
+  return /^(?:\s|\d+\.|[()/;,])*$/u.test(rest) ? null : request.text
 }
