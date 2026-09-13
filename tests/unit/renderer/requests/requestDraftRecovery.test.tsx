@@ -151,25 +151,29 @@ describe('saved answers without a live request', () => {
     expect(bridge.check).not.toHaveBeenCalled()
   })
 
-  it('does not offer an attempt main accepted in this session as unconfirmed while its cleanup is pending', async () => {
+  it('reads again when an answer acknowledged after its request closed lets main drop the held form', async () => {
     const bridge = fakeBridge([])
     const answers = new RequestAnswerStore(() => bridge as unknown as RequestDraftBridge)
     bridge.get.mockResolvedValue(null)
     bridge.save.mockImplementation(async (next: RequestDraft) => { bridge.replace([next]); return next })
     const request = live()
     const key = requestAnswerOwnerKey(owner.ownerId, request, owner)
-    const element = (requests: AgentRequest[]) => <RequestDraftRecovery owner={owner} live={requests} observation="ready" observed={String(requests.length)}
+    const element = (requests: AgentRequest[]) => <RequestDraftRecovery owner={owner} live={requests} observation="ready" observed="unchanged"
       provider="Codex" bridge={bridge as unknown as RequestDraftBridge} answers={answers} />
     const rendered = render(element([request]))
     await act(async () => answers.connect(key, request.id, { ...owner, requestId: request.id, questions }))
-    act(() => answers.select(key, request.id, 'notes', { optionIds: [], other: false, text: 'Accepted answer' }))
-    await act(async () => answers.submit(key, request.id, null, async () => ({ error: null })))
-    expect(answers.get(key, request.id).phase).toBe('sent')
+    act(() => answers.select(key, request.id, 'notes', { optionIds: [], other: false, text: 'Answered as it closed' }))
+    let acknowledge: () => void = () => undefined
+    let submitted: Promise<void> = Promise.resolve()
+    act(() => { submitted = answers.submit(key, request.id, null, () => new Promise(resolve => { acknowledge = () => { bridge.replace([]); resolve({ error: null }) } })) })
+    await waitFor(() => expect(bridge.save).toHaveBeenCalledWith(expect.objectContaining({ held: true })))
+    // The native question closes before the answer command is acknowledged: main still holds the attempt.
     rendered.rerender(element([]))
-    await waitFor(() => expect(bridge.list.mock.calls.length).toBeGreaterThanOrEqual(2))
-    await act(async () => undefined)
-    expect((await bridge.list.mock.results.at(-1)!.value as RequestDraft[]).map(item => item.held)).toEqual([true])
-    expect(screen.queryByRole('region')).toBeNull()
+    expect(await screen.findByRole('region', { name: 'Unconfirmed answer' })).toBeTruthy()
+    // Main records the accepted receipt and drops the form. No provider snapshot changes; the acknowledgement re-lists.
+    await act(async () => { acknowledge(); await submitted })
+    await waitFor(() => expect(screen.queryByRole('region')).toBeNull())
+    expect(bridge.check).not.toHaveBeenCalled(); expect(bridge.discard).not.toHaveBeenCalled()
   })
 
   it('reports an unreadable store readably, keeps what was shown, and can try again', async () => {

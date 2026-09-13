@@ -60,7 +60,8 @@ export interface RequestDraftRecoveryModel {
  * The owner's durable answers that no live request card shows. Listing never refreshes, checks or sends, and a
  * response for an owner the view has since left is ignored. A change of `observed` lists again: main reconciles
  * before it publishes a snapshot, so the next list no longer includes answers it accepted or retired.
- * An edit made just before its request closed may still be saving; when that save settles, the list is read again.
+ * A request can close before its last save or answer acknowledgement settles. When the answer store reports either
+ * for a request that left the live set, the list is read again; main alone decides what it still keeps.
  */
 export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentRequest[], observed: string,
   bridge: RequestDraftBridge | undefined = window.sotto?.requestDrafts, answers: RequestAnswerStore = requestAnswerStore): RequestDraftRecoveryModel {
@@ -101,13 +102,7 @@ export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly
     } catch (error) { return readable(error, DISCARD_ERROR) } finally { reload() }
   }, [bridge, reload])
   const current = result?.ownerKey === ownerKey ? result : null
-  // Main accepted this exact attempt in this session; its cleanup follows the provider's receipt, so it is not offered as unconfirmed.
-  // The answer store is keyed by the live request exactly as its card received it, so look that request up.
-  const accepted = (draft: RequestDraft): boolean => {
-    const request = draft.held ? departed.current.gone.find(item => item.id === draft.target.requestId && sameRequestQuestions(item.questions ?? [], draft.target.questions)) : undefined
-    return request !== undefined && answers.get(requestAnswerOwnerKey(owner.ownerId, request, owner), request.id).phase === 'sent'
-  }
-  return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live) && !accepted(draft)), error: current?.error ?? null, reload, discard }
+  return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live)), error: current?.error ?? null, reload, discard }
 }
 
 export interface RequestDraftRecoveryProps {
