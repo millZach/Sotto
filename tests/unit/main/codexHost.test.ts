@@ -358,7 +358,7 @@ describe('Codex App Server provider adapter', () => {
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     const path = join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
     await writeFile(path, rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
-      rolloutLine(2, { type: 'item_completed', item: { type: 'UserMessage', id: 'own-rollout', content: [{ type: 'text', text: 'Own prompt' }] } }) +
+      rolloutLine(2, { type: 'user_message', client_id: control.get().host.threads.find(t => t.id === threadId)!.messages.find(m => m.role === 'user')!.id, message: 'Own prompt' }) +
       rolloutLine(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
     await f.adapter.pollSessionLogs(); expect(control.get().assignments[0]!.mode).toBe('managed')
     await f.driver.raisePermission(threadId, 'Allow build?')

@@ -121,7 +121,12 @@ createInterface({ input: process.stdin }).on('line', line => {
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
         save()
       }
-      reply({ thread, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
+      const history = JSON.parse(JSON.stringify(thread))
+      if (script.historyItemIds) for (const turn of history.turns) {
+        turn.items = turn.items.map((item, index) => ['userMessage', 'agentMessage'].includes(item.type)
+          ? { ...item, id: `item-${index}` } : item)
+      }
+      reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
         reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
@@ -149,7 +154,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {
       emit({ id, error: { code: -32600, message: 'Expected active turn does not match' } }); return
     }
-    const item = { type: 'userMessage', id: randomUUID(), content: params.input }
+    const item = { type: 'userMessage', id: randomUUID(), clientId: script.legacySteer ? undefined : params.clientUserMessageId, content: params.input }
     turn.items.push(item); save()
     if (!script.suppressNotifications) notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
     reply({ turnId: turn.id })

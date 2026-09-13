@@ -27,8 +27,13 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
   type Frame = { direction: string; method?: string; accepted?: boolean; turn?: string; expectedTurn?: string; inputs?: Array<{ type: string; name?: string; path?: string }> }
   const wire = async (): Promise<Frame[]> => (await readFile(join(root, 'wire.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
   const starts = (frames: Frame[]) => frames.filter(value => value.direction === 'request' && value.method === 'turn/start')
+  const mutations = (frames: Frame[]) => frames.filter(value => value.direction === 'request' && ['thread/start', 'turn/start', 'turn/steer', 'turn/interrupt'].includes(value.method ?? ''))
   const before = await wire()
   const resume = process.env.SOTTO_NATIVE_PHASE2_RESUME_QUEUED === '1'
+  const identityRepair = process.env.SOTTO_NATIVE_IDENTITY_REPAIR === '1'
+  if (identityRepair && resume) throw new Error('Identity repair verification is read-only; queued dispatch is forbidden.')
+  const expectation = identityRepair ? JSON.parse(await readFile(join(root, 'identity-expectation.json'), 'utf8')) : undefined
+  if (expectation) expect(expectation.syntheticOnly).toBe(true)
   const evidence: Record<string, unknown> = { syntheticOnly: true, passed: false, reviewedResumeRequested: resume, startedAt: new Date().toISOString() }
   let app: ElectronApplication | undefined
   let page: Page
@@ -50,7 +55,7 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
   const state = () => page.evaluate(() => window.sotto!.agents!.get())
   const current = async () => (await state()).host.threads.find(value => value.id === threadId)!
   const identities = (value: typeof cached[0]) => ({ messages: value.messages.map((m: { id: string }) => hash(m.id)).sort(),
-    activities: value.activities.map((a: { id: string }) => hash(a.id)).sort(), cwd: value.workingDirectory,
+    activities: value.activities.map((a: { id: string; afterMessageId?: string }) => [hash(a.id), a.afterMessageId ? hash(a.afterMessageId) : null]).sort(), cwd: value.workingDirectory,
     lastTurn: { id: hash(value.lastTurn.id), status: value.lastTurn.status } })
   try {
     await launch()
@@ -59,11 +64,14 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
     // The first failed live run also retains hashes from before its shutdown.
     const originalMessages = original.failureState?.messages?.map((value: { id: string }) => value.id).sort() ?? baseline.messages
     expect.soft(restored.messages, 'Historical message identities must survive native resume').toEqual(expect.arrayContaining(originalMessages))
-    expect.soft(restored.messages, 'Cached message identities must survive native resume').toEqual(baseline.messages)
+    const messageEvidence = async () => (await current()).messages.map(m => ({ id: hash(m.id), role: m.role, textDigest: hash(m.text), ...(m.commandId ? { commandId: hash(m.commandId) } : {}) }))
+    if (expectation) expect(await messageEvidence(), 'Restore the original live identities and exact command origins, including steer').toEqual(expectation.messages)
+    else expect.soft(restored.messages, 'Cached message identities must survive native resume').toEqual(baseline.messages)
     expect({ ...restored, messages: [] }).toEqual({ ...baseline, messages: [] })
-    expect(starts(await wire())).toEqual(starts(before))
+    expect(mutations(await wire())).toEqual(mutations(before))
     evidence.initialReconnect = { sameMessageIds: originalMessages.every((id: string) => restored.messages.includes(id)) &&
-      JSON.stringify(restored.messages) === JSON.stringify(baseline.messages), sameActivitiesCwdAndTurn: true, noReplay: true }
+      (expectation !== undefined || JSON.stringify(restored.messages) === JSON.stringify(baseline.messages)), sameActivitiesCwdAndTurn: true, noReplay: true,
+      ...(expectation ? { originalLiveIdsAndCommandOrigins: true } : {}) }
     const live = await current()
     expect(live.activities?.some(value => value.kind === 'command' && value.status === 'completed' && value.exitCode === 0 && value.output?.includes('SYNTHETIC_WAIT_FINISHED'))).toBe(true)
     evidence.actualToolRestored = true
@@ -111,7 +119,9 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
     const previous = identities(completed)
     expect.soft(final.messages, 'Queued-turn message identities must survive native resume').toEqual(previous.messages)
     expect({ ...final, messages: [] }).toEqual({ ...previous, messages: [] })
-    expect(starts(await wire())).toEqual(starts(beforeRestart))
+    if (expectation) expect(await messageEvidence()).toEqual(expectation.messages)
+    expect((await current()).messages).toEqual(completed.messages)
+    expect(mutations(await wire())).toEqual(mutations(beforeRestart))
     expect((await wire()).filter(value => value.direction === 'request' && value.method === 'thread/start')).toHaveLength(1)
     await page!.getByRole('link', { name: 'Threads', exact: true }).click()
     await page!.screenshot({ path: join(root, 'recovery-after.png') })
@@ -126,8 +136,10 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
     evidence.totalNativeTurnRequests = starts(frames).length
     evidence.totalNativeTurnAcceptances = frames.filter(value => value.direction === 'response' && value.method === 'turn/start' && value.accepted).length
     evidence.totalSteers = frames.filter(value => value.direction === 'request' && value.method === 'turn/steer').length
+    evidence.stageNewTurnRequests = starts(frames).length - starts(before).length
+    evidence.stageNewSteers = frames.filter(value => value.direction === 'request' && value.method === 'turn/steer').length - before.filter(value => value.direction === 'request' && value.method === 'turn/steer').length
     evidence.finishedAt = new Date().toISOString()
-    await writeFile(join(root, 'recovery-evidence.json'), JSON.stringify(evidence, null, 2))
+    await writeFile(join(root, identityRepair ? 'identity-recovery-evidence.json' : 'recovery-evidence.json'), JSON.stringify(evidence, null, 2))
     console.log(`Native Phase 2 recovery artifacts retained: ${root}`)
   }
 })

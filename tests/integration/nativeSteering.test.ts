@@ -32,7 +32,7 @@ it('uses installed turn/steer shape on the same active native turn and reconcile
   const requests = await f.driver.requests()
   const start = requests.findLast(r => r.method === 'turn/start')!
   const steer = requests.findLast(r => r.method === 'turn/steer')!
-  expect(steer.params).toEqual({ threadId: start.params!.threadId, expectedTurnId: expect.any(String), input: [{ type: 'text', text: command.text }] })
+  expect(steer.params).toEqual({ threadId: start.params!.threadId, expectedTurnId: expect.any(String), clientUserMessageId: command.messageId, input: [{ type: 'text', text: command.text }] })
   expect(requests.filter(r => r.method === 'turn/start')).toHaveLength(1)
   expect(requests.filter(r => r.method === 'turn/interrupt')).toHaveLength(0)
   const thread = (await f.host.snapshot()).threads.find(t => t.id === threadId)!
