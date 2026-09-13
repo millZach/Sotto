@@ -24,9 +24,6 @@
 .agent-room__attention .agent-queue { padding: 0; border: 0; background: none; }
 .agent-room__attention .agent-queue__question { margin-bottom: 0; }
 .agent-appearance { display: flex; align-items: center; gap: 18px; }
-.orb-swatches { display: inline-flex; gap: 8px; padding: 4px; }
-.orb-swatches button { width: 14px; height: 14px; min-height: 0; border: 0; border-radius: 50%; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px var(--tt-swatch-edge); }
-.orb-swatches button[aria-pressed='true'] { outline: 2px solid var(--tt-text-muted); outline-offset: 3px; }
 .agent-voice-chip { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: var(--tt-text-2); font: inherit; cursor: pointer; }
 .side-sheet { white-space: normal; position: fixed; inset: 0 0 0 auto; margin: 0; width: min(500px, 100%); height: 100%; max-height: 100%; max-width: 100%; padding: 0; border: 0; border-left: 1px solid var(--tt-panel-border); color: var(--tt-text); background: var(--tt-panel); box-shadow: -15px 0 70px color-mix(in srgb, var(--tt-shadow-color) 73%, transparent); }
 .side-sheet[open] { display: flex; flex-direction: column; animation: sheet-in .2s ease-out; }

@@ -9,6 +9,7 @@ import type {
   SottoBridge,
 } from '../../src/shared/contracts'
 import type { DictationState, WidgetSnapshot } from '../../src/shared/dictation'
+import { DEFAULT_WIDGET_PALETTE } from '../../src/shared/themeBranding'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import {
@@ -181,7 +182,7 @@ describe('AppProvider dictation integration', () => {
     }
     const copied: WidgetSnapshot = {
       status: 'success', sessionId: 'one', output: 'copied', theme: 'dark',
-      reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
+      palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
     }
     controller.setState({ status: 'success', sessionId: 'one', text: 'private words', output: 'copied' })
     await act(async () => bindings.publishWidgetState(copied))

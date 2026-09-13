@@ -7,6 +7,7 @@ import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
 import type { SottoPlatform } from './platform'
+import { widgetPaletteSchema } from './themeBranding'
 
 export type Unsubscribe = () => void
 
@@ -72,6 +73,7 @@ export const dictationStateSchema = z.discriminatedUnion('status', [
 
 const widgetMetadataSchema = {
   theme: z.enum(['system', 'light', 'dark']),
+  palette: widgetPaletteSchema,
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),

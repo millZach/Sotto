@@ -1,4 +1,5 @@
 import type { ReducedMotion, Theme } from './settings'
+import type { WidgetPalette } from './themeBranding'
 
 export type DictationState =
   | { status: 'idle' }
@@ -48,6 +49,8 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
 
 interface WidgetSnapshotMetadata {
   readonly theme: Theme
+  /** The selected themes' widget roles for both halves; the widget paints the half its scheme resolves to. */
+  readonly palette: WidgetPalette
   readonly reducedMotion: ReducedMotion
   readonly shortcut: string
   readonly cancellable: boolean

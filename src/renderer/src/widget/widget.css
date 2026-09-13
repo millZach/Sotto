@@ -1,43 +1,31 @@
-/* The widget owns a frozen copy of the design tokens (widget-tokens.css) so
-   the management window can be rethemed without moving a single widget pixel.
-   Fonts stay shared: the widget uses Manrope and nothing else. */
+/* The widget paints from the selected theme's roles (widget-tokens.css), so
+   it wears the same palette as the management window. Fonts stay its own: the
+   widget uses Manrope and nothing else. */
 @import './widget-tokens.css';
 @import '../styles/fonts.css';
 
-/* Widget-local presentation tokens. The capsule surface and shadows adapt to
-   theme; --widget-activity is the recording tint shared by the visualizer bars
-   and the live rim. */
+/* Widget-local presentation tokens. The capsule surface runs top-lit across
+   the theme's surfaces; --widget-activity is the recording tint shared by the
+   visualizer bars and the live rim. */
 :root,
 :root[data-theme='light'] {
-  --widget-surface-top: var(--tt-surface-elevated);
-  --widget-surface-bottom: var(--tt-surface);
+  --widget-surface-top: var(--tt-surface);
+  --widget-surface-bottom: var(--tt-surface-sunken);
   --widget-rim: rgb(255 255 255 / 75%);
-  --widget-edge: rgb(38 34 32 / 22%);
-  --widget-shadow: 0 4px 11px rgb(38 34 32 / 28%);
-  --widget-shadow-soft: 0 2px 6px rgb(38 34 32 / 24%);
-  --widget-activity: #2c7a72;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --widget-surface-top: var(--tt-surface-elevated);
-    --widget-surface-bottom: var(--tt-surface-sunken);
-    --widget-rim: rgb(255 255 255 / 28%);
-    --widget-edge: rgb(0 0 0 / 55%);
-    --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
-    --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
-    --widget-activity: #5fbdb2;
-  }
+  --widget-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
+  --widget-shadow: 0 4px 11px color-mix(in srgb, var(--theme-text) 28%, transparent);
+  --widget-shadow-soft: 0 2px 6px color-mix(in srgb, var(--theme-text) 24%, transparent);
+  --widget-activity: var(--tt-activity);
 }
 
 :root[data-theme='dark'] {
-  --widget-surface-top: var(--tt-surface-elevated);
+  --widget-surface-top: color-mix(in oklab, var(--tt-surface-elevated) 55%, var(--tt-surface));
   --widget-surface-bottom: var(--tt-surface-sunken);
   --widget-rim: rgb(255 255 255 / 28%);
   --widget-edge: rgb(0 0 0 / 55%);
   --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
   --widget-shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
-  --widget-activity: #5fbdb2;
+  --widget-activity: var(--tt-activity);
 }
 
 *,
@@ -133,7 +121,7 @@ button {
   box-shadow:
     0 0 0 1px var(--widget-rim),
     var(--widget-shadow-soft),
-    0 0 0 2px color-mix(in srgb, var(--tt-primary) 35%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--tt-accent) 35%, transparent);
 }
 
 .widget-sliver[data-expanded],
@@ -338,8 +326,8 @@ button {
   border-radius: 1px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--tt-primary) 70%, var(--widget-surface-bottom)),
-    var(--tt-primary)
+    color-mix(in srgb, var(--tt-accent) 70%, var(--widget-surface-bottom)),
+    var(--tt-accent)
   );
   transition: width 0.2s ease, height 0.2s ease;
 }
@@ -360,8 +348,8 @@ button {
   height: var(--widget-progress, 0%);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--tt-primary) 70%, var(--widget-surface-bottom)),
-    var(--tt-primary)
+    color-mix(in srgb, var(--tt-accent) 70%, var(--widget-surface-bottom)),
+    var(--tt-accent)
   );
 }
 
@@ -369,8 +357,8 @@ button {
   width: 12px;
   height: 12px;
   flex: none;
-  border: 2px solid color-mix(in srgb, var(--tt-primary) 22%, transparent);
-  border-top-color: var(--tt-primary);
+  border: 2px solid color-mix(in srgb, var(--tt-accent) 22%, transparent);
+  border-top-color: var(--tt-accent);
   border-radius: 50%;
   animation: widget-orbit 0.9s linear infinite;
 }
@@ -528,7 +516,7 @@ button {
 
   .widget-spinner {
     animation: none;
-    border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+    border-top-color: color-mix(in srgb, var(--tt-accent) 60%, var(--tt-text));
   }
 
   .widget-bars__bar,
@@ -556,7 +544,7 @@ button {
 
 :root[data-reduced-motion='on'] .widget-spinner {
   animation: none;
-  border-top-color: color-mix(in srgb, var(--tt-primary) 60%, var(--tt-text));
+  border-top-color: color-mix(in srgb, var(--tt-accent) 60%, var(--tt-text));
 }
 
 :root[data-reduced-motion='on'] .widget-bars__bar,

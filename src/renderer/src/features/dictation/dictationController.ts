@@ -16,6 +16,7 @@ import type {
 } from '../../../../shared/contracts'
 import { defaultHotkey, type SottoPlatform } from '../../../../shared/platform'
 import { defaultSettings, type AppSettings } from '../../../../shared/settings'
+import { widgetPresentationFor } from '../../../../shared/themeBranding'
 import { formatTranscript } from '../../../../shared/transcript'
 import { collapseRepeatedPhrases, countWords } from '../../../../shared/textRepair'
 import {
@@ -124,6 +125,19 @@ const defaultClearTimer = (handle: unknown): void =>
 
 function snapshotSettings(settings: AppSettings): Readonly<AppSettings> {
   return Object.freeze({ ...settings })
+}
+
+type WidgetPresentation = ReturnType<typeof widgetPresentationFor>
+const widgetPresentations = new WeakMap<object, WidgetPresentation>()
+
+/** Level updates publish many times a second; resolve a settings object's palette once. */
+function cachedWidgetPresentation(settings: Readonly<AppSettings>): WidgetPresentation {
+  let presentation = widgetPresentations.get(settings)
+  if (presentation === undefined) {
+    presentation = widgetPresentationFor(settings)
+    widgetPresentations.set(settings, presentation)
+  }
+  return presentation
 }
 
 function boundedProgress(progress: number): number {
@@ -595,9 +609,17 @@ export class DictationController {
   }
 
   private toWidgetSnapshot(session: ActiveSession): WidgetSnapshot {
+    // Presentation follows the settings in force now, not those the session
+    // started with, so a theme chosen mid-session is not reverted by the next
+    // publication. The shortcut stays the session's own.
+    let presented: Readonly<AppSettings> = session.settings
+    try {
+      presented = this.dependencies.getSettings()
+    } catch {
+      // Unreadable settings keep the session's snapshot.
+    }
     const metadata = {
-      theme: session.settings.theme,
-      reducedMotion: session.settings.reducedMotion,
+      ...cachedWidgetPresentation(presented),
       shortcut: session.settings.hotkey,
       cancellable: session.cancellable && this.isCancellableState(),
     } as const

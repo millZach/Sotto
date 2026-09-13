@@ -15,6 +15,7 @@ import {
 } from '../../src/main/windows/windowManager'
 import { WIDGET_STATE } from '../../src/shared/channels'
 import type { WidgetSnapshot } from '../../src/shared/dictation'
+import { DEFAULT_WIDGET_PALETTE } from '../../src/shared/themeBranding'
 
 type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed'
 
@@ -94,6 +95,7 @@ function activeSnapshot(
 ): WidgetSnapshot {
   const metadata = {
     theme: 'dark' as const,
+    palette: DEFAULT_WIDGET_PALETTE,
     reducedMotion: 'on' as const,
     shortcut: 'Control+Shift+Space',
     cancellable: true,
@@ -189,6 +191,7 @@ describe('native recovery after the main renderer is lost', () => {
           {
             status: 'idle',
             theme: 'dark',
+            palette: DEFAULT_WIDGET_PALETTE,
             reducedMotion: 'on',
             shortcut: 'Control+Shift+Space',
             cancellable: false,
@@ -211,6 +214,7 @@ describe('native recovery after the main renderer is lost', () => {
         startedAt: 200,
         level: 0.2,
         theme: 'dark',
+        palette: DEFAULT_WIDGET_PALETTE,
         reducedMotion: 'on',
         shortcut: 'Control+Shift+Space',
         cancellable: true,

@@ -6,6 +6,7 @@ import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '.
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentComposer, AgentLatestResponse, AgentQueue, AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { WidgetApp } from '../../../src/renderer/src/widget/WidgetApp'
+import { DEFAULT_WIDGET_PALETTE } from '../../../src/shared/themeBranding'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -43,7 +44,7 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(cleanup)
 
 describe('one pill with agent controls', () => {
-  const idle = { status: 'idle', theme: 'dark', reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false } as const
+  const idle = { status: 'idle', theme: 'dark', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false } as const
   it('keeps the idle pill and expands threads only on request, across attention and voice changes', () => {
     let state = stateFixture()
     state.configuration.enabled = true

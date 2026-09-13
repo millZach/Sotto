@@ -15,6 +15,7 @@ import {
 import {
   default as React,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,6 +38,9 @@ import {
   type WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
+import { DEFAULT_WIDGET_PALETTE, WIDGET_THEME_ROLES, type WidgetThemeRole } from '../../../shared/themeBranding'
+import { isCanonicalThemeColor } from '../../../shared/themes/color'
+import type { ThemeAppearance } from '../../../shared/themes/palettes'
 import { ListeningBars } from '../components/ListeningBars'
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
@@ -548,16 +552,62 @@ export function WidgetApp({
   )
 }
 
-function applyRootPresentation(snapshot: WidgetSnapshot): () => void {
-  const root = document.documentElement
-  if (snapshot.theme === 'system') root.removeAttribute('data-theme')
-  else root.setAttribute('data-theme', snapshot.theme)
-  if (snapshot.reducedMotion === 'on') root.setAttribute('data-reduced-motion', 'on')
+const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
+
+function systemPrefersDark(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(SYSTEM_DARK_QUERY).matches
+}
+
+/** The widget keeps its own scheme: `system` follows the operating system, live. */
+function useWidgetSystemDark(): boolean {
+  const [dark, setDark] = useState(systemPrefersDark)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined
+    const query = window.matchMedia(SYSTEM_DARK_QUERY)
+    const update = (): void => setDark(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return dark
+}
+
+export function resolveWidgetScheme(theme: WidgetSnapshot['theme'], systemDark: boolean): ThemeAppearance {
+  if (theme === 'system') return systemDark ? 'dark' : 'light'
+  return theme
+}
+
+/** `surfaceRaised` → `--theme-surface-raised`, the property name the main window paints too. */
+function themeRoleVariable(role: WidgetThemeRole): string {
+  return `--theme-${role.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`
+}
+
+/**
+ * Put the resolved scheme, the theme half that paints it and the motion
+ * preference on the widget root. Only canonical colours reach the style, and
+ * an unchanged role is not rewritten, so frequent level snapshots cause no
+ * style churn.
+ */
+export function applyRootPresentation(
+  presentation: Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion'>,
+  systemDark: boolean,
+  root: HTMLElement = document.documentElement,
+): () => void {
+  const scheme = resolveWidgetScheme(presentation.theme, systemDark)
+  root.setAttribute('data-theme', scheme)
+  const colors = presentation.palette[scheme]
+  for (const role of WIDGET_THEME_ROLES) {
+    const value = colors[role]
+    const variable = themeRoleVariable(role)
+    if (isCanonicalThemeColor(value) && root.style.getPropertyValue(variable) !== value) root.style.setProperty(variable, value)
+  }
+  if (presentation.reducedMotion === 'on') root.setAttribute('data-reduced-motion', 'on')
   else root.removeAttribute('data-reduced-motion')
 
   return () => {
     root.removeAttribute('data-theme')
     root.removeAttribute('data-reduced-motion')
+    for (const role of WIDGET_THEME_ROLES) root.style.removeProperty(themeRoleVariable(role))
   }
 }
 
@@ -588,10 +638,19 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
     })
   }, [bridge, preview])
 
-  useEffect(() => {
-    if (snapshot === null) return undefined
-    return applyRootPresentation(snapshot)
-  }, [snapshot])
+  const systemDark = useWidgetSystemDark()
+  const scheme = snapshot === null ? null : resolveWidgetScheme(snapshot.theme, systemDark)
+  // Level snapshots arrive many times a second with an equal palette, so the
+  // root is repainted only when the painted half's colours actually change.
+  const paintedColors = snapshot === null || scheme === null ? null : JSON.stringify(snapshot.palette[scheme])
+  const presentationRef = useRef(snapshot)
+  presentationRef.current = snapshot
+  // Before paint, so a new snapshot never shows a frame of the previous palette.
+  useLayoutEffect(() => {
+    const current = presentationRef.current
+    if (current === null) return undefined
+    return applyRootPresentation(current, systemDark)
+  }, [snapshot === null, snapshot?.theme, snapshot?.reducedMotion, paintedColors, systemDark])
 
   useEffect(() => {
     if (preview !== null || snapshot?.status !== 'listening') return undefined
@@ -660,8 +719,10 @@ export function parseVisualPreview(
   const theme = parameters.get('theme')
   if (!isPreviewName(name) || (theme !== 'light' && theme !== 'dark')) return null
 
+  // A preview has no settings to read, so it wears the default themes.
   const common = {
     theme,
+    palette: DEFAULT_WIDGET_PALETTE,
     reducedMotion: 'on' as const,
     shortcut: 'Ctrl+Shift+Space',
     sessionId: 'visual-preview',
@@ -671,6 +732,7 @@ export function parseVisualPreview(
       return {
         status: 'idle',
         theme,
+        palette: DEFAULT_WIDGET_PALETTE,
         reducedMotion: 'on',
         shortcut: 'Ctrl+Shift+Space',
         cancellable: false,

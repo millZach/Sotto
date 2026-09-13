@@ -1,7 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { Mic, MicOff, Settings2, Volume2, VolumeX } from 'lucide-react'
 import { isThreadClosed } from '../../../shared/threadActivity'
-import { ORB_COLORS, capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, type AgentThread } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { SideSheet } from '../components/SideSheet'
 import { useAgents } from './AgentContext'
@@ -11,7 +11,7 @@ import { AgentSetupFields } from './AgentAccountSettings'
 import { VoiceSettings } from './VoiceSettings'
 import { providerGlyph } from './threadFacts'
 import { AgentOrb } from './orb/AgentOrb'
-import { ORB_PRESETS, type OrbState } from './orb/orb'
+import type { OrbState } from './orb/orb'
 
 export function AgentAppearance(): ReactNode {
   const { state, command } = useAgents()
@@ -20,7 +20,6 @@ export function AgentAppearance(): ReactNode {
   const configuration = state.configuration
   const voice = configuration.speechProvider === 'natural' ? `${configuration.speechVoice}, natural voice` : configuration.speechProvider === 'grok' ? `${configuration.grokSpeechVoice}, Grok voice` : configuration.speechProvider === 'kokoro' ? 'Heart, Kokoro voice' : 'System voice'
   return <div className="agent-appearance">
-    <div className="orb-swatches" role="group" aria-label="Orb color">{ORB_COLORS.map(color => <button key={color} type="button" aria-label={`${color} orb`} title={`${color} orb`} aria-pressed={configuration.orbColor === color} style={{ background: `linear-gradient(${ORB_PRESETS[color].join(',')})` }} onClick={() => void command({ type: 'configure', patch: { orbColor: color } })} />)}</div>
     <button type="button" className="agent-voice-chip tt-focusable" onClick={() => setVoiceOpen(true)}><Volume2 size={15} />{voice}</button>
     {voiceOpen ? <SideSheet title="Voice" onClose={() => setVoiceOpen(false)}><VoiceSettings configuration={configuration} command={command} change={(key, value) => { void command({ type: 'configure', patch: { [key]: value } }) }} grokKeySaved={state.credentials.grokSpeech} voiceError={state.voice.error} /></SideSheet> : null}
   </div>
@@ -57,7 +56,7 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
       <Button variant="secondary" iconOnly aria-label={status === 'muted' ? 'Unmute listening' : 'Mute listening'} disabled={!state.configuration.enabled} onClick={agents.muteVoice}>{status === 'muted' ? <MicOff size={17} /> : <Mic size={17} />}</Button>
       <Button variant="secondary" iconOnly aria-label={state.configuration.speak ? 'Mute spoken replies' : 'Enable spoken replies'} aria-pressed={!state.configuration.speak} onClick={() => { agents.stopSpeech(); void command({ type: 'configure', patch: { speak: !state.configuration.speak } }) }}>{state.configuration.speak ? <Volume2 size={17} /> : <VolumeX size={17} />}</Button>
     </div>
-    <div className="agent-room__stage"><AgentOrb state={orbState} color={state.configuration.orbColor} />
+    <div className="agent-room__stage"><AgentOrb state={orbState} />
       {showAttention ? <div className="agent-room__attention"><AgentQueue approvalLabel="Allow" state={attentionState} command={command} onLater={dismissAttention} onNext={() => void nextAttention()} />{attention.items.find(item => item.threadId === state.activeThreadId)?.kind === 'permission' ? <small className="agent-muted">Say “allow” or “deny”, or choose here.</small> : null}{attention.items.find(item => item.threadId === state.activeThreadId)?.kind === 'question' ? <Button variant="secondary" onClick={() => setSheet('session')}>Write an answer</Button> : null}</div> : null}
     </div>
     <div className="agent-room__caption"><h1>{caption}</h1>

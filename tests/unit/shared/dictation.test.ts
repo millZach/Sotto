@@ -10,6 +10,7 @@ import {
   outputDeliveryRequestSchema,
   widgetSnapshotSchema,
 } from '../../../src/shared/contracts'
+import { DEFAULT_WIDGET_PALETTE } from '../../../src/shared/themeBranding'
 
 function requestSession(sessionId = 'current'): DictationState {
   return reduceDictation(initialDictationState, { type: 'REQUESTED', sessionId })
@@ -302,6 +303,7 @@ describe('dictation reducer', () => {
 describe('widget snapshot contract', () => {
   const metadata = {
     theme: 'dark',
+    palette: DEFAULT_WIDGET_PALETTE,
     reducedMotion: 'on',
     shortcut: 'Control+Shift+Space',
     cancellable: false,

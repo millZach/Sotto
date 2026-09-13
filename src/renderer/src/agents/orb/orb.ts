@@ -35,6 +35,60 @@ export const ORB_PRESETS: Readonly<Record<OrbPreset, readonly [string, string]>>
   mono: ['#ffffff', '#8a9099'],
 }
 
+/**
+ * The light room shows the orb through `invert(1) hue-rotate(180deg)`, which
+ * turns its additive glow into ink. That filter is its own inverse up to the
+ * white point (hue-rotate by 180 degrees squares to identity and keeps white),
+ * so drawing `hueRotate180(1 - c)` makes colour `c` the one that is seen.
+ * Channels a saturated colour pushes out of range are clipped.
+ */
+export const ORB_INK_FILTER = 'invert(1) hue-rotate(180deg)'
+
+/** The Filter Effects hue-rotate matrix at 180 degrees (cos -1, sin 0), unclamped. */
+function hueRotate180([r, g, b]: readonly [number, number, number]): [number, number, number] {
+  return [
+    -0.574 * r + 1.43 * g + 0.144 * b,
+    0.426 * r + 0.43 * g + 0.144 * b,
+    0.426 * r + 1.43 * g - 0.856 * b,
+  ]
+}
+
+const inRange = (channels: readonly number[]): boolean => channels.every(channel => channel >= -1e-6 && channel <= 1 + 1e-6)
+const toHex = (channels: readonly number[]): string =>
+  `#${channels.map(channel => Math.round(Math.min(1, Math.max(0, channel)) * 255).toString(16).padStart(2, '0')).join('')}`
+
+/**
+ * The most saturated version of `visible` the ink filter can show. A colour
+ * whose rotation leaves the unit cube would clip into a different hue, so it
+ * is pulled toward the grey of equal luminance (which the rotation keeps)
+ * until it fits; hue and lightness hold, only chroma gives.
+ */
+export function inkableColor(visible: string): string {
+  const color = hex(visible).map(channel => channel / 255) as [number, number, number]
+  if (inRange(hueRotate180(color))) return visible
+  const grey = 0.213 * color[0] + 0.715 * color[1] + 0.072 * color[2]
+  const toward = (amount: number): [number, number, number] => color.map(channel => grey + (channel - grey) * amount) as [number, number, number]
+  let low = 0
+  let high = 1
+  for (let step = 0; step < 16; step += 1) {
+    const middle = (low + high) / 2
+    if (inRange(hueRotate180(toward(middle)))) low = middle
+    else high = middle
+  }
+  return toHex(toward(low))
+}
+
+export function colorBeneathInkFilter(visible: string): string {
+  const seen = hex(inkableColor(visible)).map(channel => channel / 255) as [number, number, number]
+  return toHex(hueRotate180(seen.map(channel => 1 - channel) as [number, number, number]))
+}
+
+/** The colours to draw so the pair is what appears through the canvas's CSS filter. */
+export function orbColorsBeneath(filter: string, visible: readonly [string, string]): readonly [string, string] {
+  if (filter.trim() !== ORB_INK_FILTER) return visible
+  return [colorBeneathInkFilter(visible[0]), colorBeneathInkFilter(visible[1])]
+}
+
 interface Motion { amp: number; flow: number; spin: number; pulse: number; glow: number }
 
 /** Motion per state: amp scales the lumps, flow evolves the noise field, spin rotates, pulse breathes, glow multiplies bloom. */

@@ -11,8 +11,16 @@ export interface NativeDictationLifecycleDependencies {
   readonly updateTray: (state: TrayState) => void
   readonly syncEscape: (state: Pick<WidgetSnapshot, 'status' | 'cancellable'>) => void
   readonly showWidgetWhenIdle: () => boolean
+  /**
+   * The widget's presentation from main's current settings. When given it
+   * replaces the presentation a renderer publication carries, so a theme saved
+   * mid-session cannot be undone by a publication built from older settings.
+   */
+  readonly presentation?: () => WidgetPresentationFields
   readonly log: (code: NativeDictationLifecycleDiagnostic) => void
 }
+
+export type WidgetPresentationFields = Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion'>
 
 export type NativeDictationLifecycleDiagnostic =
   | 'native-widget-state-delivery-failed'
@@ -27,9 +35,21 @@ export class NativeDictationLifecycle {
   constructor(private readonly dependencies: NativeDictationLifecycleDependencies) {}
 
   publish(state: WidgetSnapshot): Promise<boolean> {
-    this.lastSnapshot = state
-    this.updateNativeState(state)
-    return this.deliver(state)
+    const presented = this.present(state)
+    this.lastSnapshot = presented
+    this.updateNativeState(presented)
+    return this.deliver(presented)
+  }
+
+  /**
+   * Re-deliver the current active snapshot with fresh presentation after a
+   * settings change. Idle is re-seeded by its own publication; with no active
+   * session there is nothing to repaint, so this returns false.
+   */
+  repaint(): Promise<boolean> {
+    const previous = this.lastSnapshot
+    if (previous === null || previous.status === 'idle') return Promise.resolve(false)
+    return this.publish(previous)
   }
 
   /** Whether the last published dictation snapshot left the session idle. */
@@ -46,16 +66,22 @@ export class NativeDictationLifecycle {
       return
     }
 
-    const idle: WidgetSnapshot = {
+    const idle: WidgetSnapshot = this.present({
       status: 'idle',
       theme: previous.theme,
+      palette: previous.palette,
       reducedMotion: previous.reducedMotion,
       shortcut: previous.shortcut,
       cancellable: false,
-    }
+    })
     this.lastSnapshot = idle
     this.updateNativeState(idle)
     void this.deliver(idle)
+  }
+
+  private present(state: WidgetSnapshot): WidgetSnapshot {
+    const presentation = this.dependencies.presentation?.()
+    return presentation === undefined ? state : { ...state, ...presentation }
   }
 
   private updateNativeState(

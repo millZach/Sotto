@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { NativeDictationLifecycle } from '../../../src/main/app/nativeDictationLifecycle'
 import { WIDGET_STATE } from '../../../src/shared/channels'
 import type { WidgetSnapshot } from '../../../src/shared/dictation'
+import { DEFAULT_WIDGET_PALETTE, widgetPaletteFor } from '../../../src/shared/themeBranding'
 
 function snapshot(overrides: Partial<WidgetSnapshot> = {}): WidgetSnapshot {
   return {
     status: 'idle',
     theme: 'system',
+    palette: DEFAULT_WIDGET_PALETTE,
     reducedMotion: 'system',
     shortcut: 'Ctrl+Shift+Space',
     cancellable: false,
@@ -148,5 +150,64 @@ describe('NativeDictationLifecycle idle reporting', () => {
     await lifecycle.publish(listening())
     lifecycle.rendererProcessGone('main')
     expect(lifecycle.isIdle()).toBe(true)
+  })
+})
+
+describe('NativeDictationLifecycle theme presentation', () => {
+  const ember = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'ember', customThemes: [] })
+  const iris = widgetPaletteFor({ lightTheme: 'iris', darkTheme: 'iris', customThemes: [] })
+
+  function presentedHarness() {
+    let presentation = { theme: 'system' as const, palette: ember, reducedMotion: 'system' as const }
+    const sendToWidget = vi.fn(async () => true)
+    const lifecycle = new NativeDictationLifecycle({
+      delivery: { sendToWidget },
+      getTrayState: () => ({ dictating: false, autoPaste: true }),
+      updateTray: vi.fn(),
+      syncEscape: vi.fn(),
+      showWidgetWhenIdle: () => true,
+      presentation: () => presentation,
+      log: vi.fn(),
+    })
+    return {
+      lifecycle,
+      sendToWidget,
+      choose(palette: typeof ember) { presentation = { ...presentation, palette } },
+      delivered: () => sendToWidget.mock.calls.map(call => (call as unknown[])[1] as WidgetSnapshot),
+    }
+  }
+
+  it('stamps main’s current palette over a renderer publication built from older settings', async () => {
+    const harness = presentedHarness()
+    await harness.lifecycle.publish(listening())
+    expect(harness.delivered().at(-1)?.palette).toEqual(ember)
+    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', level: 0.5 })
+  })
+
+  it('repaints an active session live when the theme changes, without a new renderer publication', async () => {
+    const harness = presentedHarness()
+    await harness.lifecycle.publish(listening())
+    harness.choose(iris)
+
+    await expect(harness.lifecycle.repaint()).resolves.toBe(true)
+
+    expect(harness.sendToWidget).toHaveBeenCalledTimes(2)
+    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', sessionId: 's', palette: iris })
+  })
+
+  it('leaves idle repainting to the idle publication', async () => {
+    const harness = presentedHarness()
+    await expect(harness.lifecycle.repaint()).resolves.toBe(false)
+    await harness.lifecycle.publish(snapshot({ status: 'idle' }))
+    await expect(harness.lifecycle.repaint()).resolves.toBe(false)
+    expect(harness.sendToWidget).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the current palette on the idle snapshot after the main renderer disappears', async () => {
+    const harness = presentedHarness()
+    await harness.lifecycle.publish(listening())
+    harness.choose(iris)
+    harness.lifecycle.rendererProcessGone('main')
+    await vi.waitFor(() => expect(harness.delivered().at(-1)).toMatchObject({ status: 'idle', palette: iris }))
   })
 })

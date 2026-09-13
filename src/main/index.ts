@@ -102,6 +102,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
+import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
@@ -479,6 +480,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   )
   let widgetPlacement: StoredWidgetPlacement | null = await widgetPlacementStore.get()
   let showWidgetWhenIdle = (await settings.get()).showWidgetWhenIdle
+  // Main owns the widget's presentation: every snapshot is stamped with the
+  // current theme halves, so a theme change repaints the widget mid-session.
+  let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const nativeDock = app.dock
   const dock: DockAdapter | null =
@@ -764,11 +768,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       await agentControl.privacyChanged()
       await personalChats.privacyChanged()
       showWidgetWhenIdle = settings.showWidgetWhenIdle
-      if (settings.onboardingComplete && dictationLifecycle.isIdle()) {
+      widgetPresentation = widgetPresentationFor(settings)
+      if (!dictationLifecycle.isIdle()) {
+        await dictationLifecycle.repaint()
+      } else if (settings.onboardingComplete) {
         // Re-seed the resting sliver so theme/shortcut changes repaint it and
         // the idle-visibility reveal/conceal decision is re-evaluated.
         await publishIdleWidgetState(settings)
-      } else if (!settings.showWidgetWhenIdle && dictationLifecycle.isIdle()) {
+      } else if (!settings.showWidgetWhenIdle) {
         windows.hideWidget()
       }
       const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
@@ -809,6 +816,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     syncEscape: (state) => syncEscapeForWidgetSnapshot(hotkeys, state),
     showWidgetWhenIdle: () => showWidgetWhenIdle,
+    presentation: () => widgetPresentation,
     log: logOperational,
   })
   handleRendererProcessGone = (kind) => dictationLifecycle.rendererProcessGone(kind)
@@ -818,8 +826,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const publishIdleWidgetState = async (current: AppSettings): Promise<void> => {
     await dictationLifecycle.publish({
       status: 'idle',
-      theme: current.theme,
-      reducedMotion: current.reducedMotion,
+      ...widgetPresentationFor(current),
       shortcut: current.hotkey,
       cancellable: false,
     })

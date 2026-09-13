@@ -75,6 +75,7 @@ import {
   type SottoBridge,
 } from '../../src/shared/contracts'
 import type { WidgetSnapshot } from '../../src/shared/dictation'
+import { DEFAULT_WIDGET_PALETTE } from '../../src/shared/themeBranding'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -308,6 +309,7 @@ function createIpcHarness() {
 const idleWidgetSnapshot = {
   status: 'idle',
   theme: 'system',
+  palette: DEFAULT_WIDGET_PALETTE,
   reducedMotion: 'system',
   shortcut: 'Control+Shift+Space',
   cancellable: false,
@@ -725,7 +727,7 @@ describe('typed preload bridge', () => {
     )?.[1]
     const listening = {
       status: 'listening', sessionId: 's', startedAt: 1, level: 0.2,
-      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: true,
+      theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: true,
     } as const
     widgetEvent?.({}, listening)
     widgetEvent?.({}, idleWidgetSnapshot)
@@ -1413,11 +1415,11 @@ describe('IPC validation and lifecycle', () => {
     await expect(harness.ipc.invoke(WIDGET_PUBLISH, {
       status: 'error', sessionId: 'session', code: 'NO_SPEECH',
       message: 'arbitrary transcript-like detail',
-      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
+      theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
     })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     await expect(harness.ipc.invoke(WIDGET_PUBLISH, {
       status: 'error', sessionId: 'session', code: 'ARBITRARY_DETAIL',
-      theme: 'system', reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
+      theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: false,
     })).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     expect(publishWidgetState).toHaveBeenCalledTimes(1)
   })

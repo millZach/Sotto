@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import React, { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,9 +10,11 @@ import type {
 } from '../../../src/shared/contracts'
 import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
+import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
 import {
   WidgetApp,
   WidgetEntry,
+  applyRootPresentation,
   formatElapsedTime,
   isVisualPreviewEnabled,
   parseVisualPreview,
@@ -22,6 +24,7 @@ const win32Copy = platformCopy('win32')
 
 const metadata = {
   theme: 'dark',
+  palette: DEFAULT_WIDGET_PALETTE,
   reducedMotion: 'system',
   shortcut: 'Ctrl+Shift+Space',
   cancellable: false,
@@ -371,6 +374,8 @@ describe('WidgetApp', () => {
     ['cancelled', snapshot({ status: 'cancelled', sessionId: 'mark' })],
     ['error', snapshot({ status: 'error', sessionId: 'mark', code: 'NO_SPEECH' })],
   ] as const)('leads the %s capsule with the decorative app mark', (_name, activeSnapshot) => {
+    const ember = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'ember', customThemes: [] })
+    const release = applyRootPresentation({ theme: 'dark', palette: ember, reducedMotion: 'system' }, true)
     const { container } = render(
       <WidgetApp snapshot={activeSnapshot} platform="win32" now={1_000} />,
     )
@@ -379,9 +384,13 @@ describe('WidgetApp', () => {
     // Purely decorative: the live regions already carry the spoken status.
     expect(glyph).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
-    // The mark must stay the packaged icon's burnt amber, never the retired purple.
+    // The mark wears the painted theme half: its accent tile and a readable glyph.
+    const brand = themeBrand(ember.dark, 'dark')
     expect([...glyph.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
-      .toEqual(['#47b8a9', '#47b8a9'])
+      .toEqual([brand.tile, brand.tile])
+    expect(glyph.querySelector('rect[x="26"]')).toHaveAttribute('fill', brand.glyph)
+    expect(glyph.querySelector('path')).toHaveAttribute('stroke', brand.glyph)
+    release()
   })
 
   it('leaves the resting sliver free of the app mark', () => {
@@ -739,6 +748,79 @@ describe('WidgetApp', () => {
 })
 
 describe('WidgetEntry', () => {
+  function liveBridge() {
+    let listener: ((state: WidgetSnapshot) => void) | null = null
+    const bridge: SottoWidgetBridge = {
+      platform: 'win32',
+      onWidgetState: (next) => {
+        listener = next
+        return () => { listener = null }
+      },
+      onWidgetVisibilityChange: () => () => undefined,
+      requestToggle: vi.fn(async () => ({ ok: true })),
+      requestStop: vi.fn(async () => ({ ok: true })),
+      requestCancel: vi.fn(async () => ({ ok: true })),
+      setPresentation: vi.fn(async () => ({ ok: true })),
+      reportDrag: vi.fn(async () => ({ ok: true })),
+    }
+    return { bridge, emit: (next: WidgetSnapshot) => act(() => listener?.(next)) }
+  }
+
+  it('repaints the mark, voice bars and surfaces live when a new palette arrives, without a new session', async () => {
+    const { bridge, emit } = liveBridge()
+    render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
+    const ocean = widgetPaletteFor({ lightTheme: 'ocean', darkTheme: 'ocean', customThemes: [] })
+    const iris = widgetPaletteFor({ lightTheme: 'ocean', darkTheme: 'iris', customThemes: [] })
+    const listening = { status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true } as const
+    const root = document.documentElement
+
+    emit(snapshot({ ...listening, theme: 'dark', palette: ocean }))
+    expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(ocean.dark.accent)
+    expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(ocean.dark, 'dark').tile)
+
+    // Same session, next level update carries the newly selected dark half.
+    emit(snapshot({ ...listening, level: 0.5, theme: 'dark', palette: iris }))
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(iris.dark.accent)
+    expect(root.style.getPropertyValue('--theme-surface-raised')).toBe(iris.dark.surfaceRaised)
+    expect(root.style.getPropertyValue('--theme-error-foreground')).toBe(iris.dark.errorForeground)
+    await waitFor(() => expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(iris.dark, 'dark').tile))
+    expect(themeBrand(iris.dark, 'dark').tile).not.toBe(themeBrand(ocean.dark, 'dark').tile)
+
+    // Back to idle keeps the theme; the resting sliver paints from the same roles.
+    emit(snapshot({ status: 'idle', theme: 'dark', palette: iris }))
+    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(iris.dark.accent)
+  })
+
+  it('follows the system scheme live by painting the matching theme half', async () => {
+    let dark = false
+    const listeners = new Set<() => void>()
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      get matches() { return dark },
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    })))
+    try {
+      const { bridge, emit } = liveBridge()
+      render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
+      const palette = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'iris', customThemes: [] })
+      emit(snapshot({ status: 'requesting-permission', sessionId: 'scheme', theme: 'system', palette, cancellable: true }))
+      const root = document.documentElement
+      expect(root).toHaveAttribute('data-theme', 'light')
+      expect(root.style.getPropertyValue('--theme-accent')).toBe(palette.light.accent)
+      const lightTile = screen.getByTestId('widget-glyph').querySelector('svg')!.getAttribute('data-tile')
+
+      dark = true
+      act(() => { for (const listener of listeners) listener() })
+      expect(root).toHaveAttribute('data-theme', 'dark')
+      expect(root.style.getPropertyValue('--theme-accent')).toBe(palette.dark.accent)
+      await waitFor(() => expect(screen.getByTestId('widget-glyph').querySelector('svg')!.getAttribute('data-tile')).not.toBe(lightTile))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('subscribes once per StrictMode mount lifecycle, routes commands, and cleans up', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const unsubscribe = vi.fn()
@@ -1022,12 +1104,15 @@ describe('WidgetEntry', () => {
     rerender(<WidgetEntry bridge={undefined} platform="win32" preview={snapshot({ status: 'idle', theme: 'light', reducedMotion: 'on' })} />)
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
     expect(document.documentElement).toHaveAttribute('data-reduced-motion', 'on')
+    expect(document.documentElement.style.getPropertyValue('--theme-accent')).toBe(DEFAULT_WIDGET_PALETTE.light.accent)
+    // System resolves to a concrete half so the painted palette and the CSS scheme always agree.
     rerender(<WidgetEntry bridge={undefined} platform="win32" preview={snapshot({ status: 'idle', theme: 'system', reducedMotion: 'system' })} />)
-    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
     unmount()
     expect(document.documentElement).not.toHaveAttribute('data-theme')
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
+    expect(document.documentElement.style.getPropertyValue('--theme-accent')).toBe('')
   })
 
   it('keeps persistent announcement channels across null, idle, normal, success, and error states', () => {
