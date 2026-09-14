@@ -249,9 +249,6 @@
 .tools-panel__accessible { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip-path: inset(50%); white-space: nowrap!important; border: 0!important; }
 .tools-panel[data-expanded] .tools-panel__resize { display: none; }
 .tools-panel__status { max-width: calc(100% - 24px); white-space: normal; text-align: center; }
-.tools-launcher { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 66px; padding: 12px 4px; border-left: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
-.tools-launcher button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 58px; width: 100%; padding: 6px 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
-.tools-launcher button:hover { color: var(--tt-accent-text); background: var(--tt-hover); }
 @container tools-sheet (max-width: 519px) {
   .tools-panel__bar { padding-inline: 7px; gap: 3px; }
   .tools-surfaces { gap: 0; }

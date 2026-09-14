@@ -223,7 +223,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     wasOpen.current = open
   }, [open, chrome.surface])
 
-  if (!open) return <nav className="tools-launcher" aria-label="Collapsed tools">{TOOL_SURFACES.map(surface => <button key={surface.id} type="button" className="tt-focusable" aria-label={`Open ${surface.label}`} onClick={() => { store.setSurface(surface.id); store.setOpen(true) }}>{React.createElement(SURFACE_ICONS[surface.id], { size: 18, 'aria-hidden': true })}<span>{surface.label}</span></button>)}</nav>
+  if (!open) return null
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
