@@ -27,7 +27,7 @@ import { requestDraftProvider } from '../../shared/requestDrafts'
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
-  'cancel-draft', 'cancel-request', 'configure-thread', 'compact-thread',
+  'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread', 'compact-thread',
 ])
 
 const savedSchema = z.object({
@@ -46,6 +46,7 @@ const savedSchema = z.object({
   deliveries: z.array(agentDeliverySchema).default([]),
   pendingRequest: z.string().max(20_000).default(''),
   contextSavedAt: z.number().default(0),
+  coordinatorConversation: z.boolean().default(false),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),
@@ -92,6 +93,7 @@ export class AgentControl {
   private readonly narratedAttention = new Set<string>()
   private attentionNarration: string | null = null
   private queueSelectionPinned = false
+  private coordinatorConversation = false
   private speechPreferenceRevision = 0
   private selectionRevision = 0
   private manualDraftId: string | null = null
@@ -141,7 +143,9 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(saved.threadDrafts)
     await this.attachmentPreviews.load()
     this.contextActivityAt = saved.contextSavedAt
-    const { outbox, contextSavedAt, manualDraftId, deliveredPromptDigests, answeredRequests, ...restored } = saved
+    const { outbox, contextSavedAt, coordinatorConversation, manualDraftId, deliveredPromptDigests, answeredRequests, ...restored } = saved
+    this.coordinatorConversation = coordinatorConversation
+    this.queueSelectionPinned = coordinatorConversation
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
     this.manualDraftId = manualDraftId
@@ -250,6 +254,7 @@ export class AgentControl {
       queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open the provider to review this pending item.' })),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
       contextSavedAt: this.contextActivityAt, outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
+      coordinatorConversation: this.coordinatorConversation,
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
@@ -806,6 +811,7 @@ export class AgentControl {
   private selectThread(threadId: string, revision: number): void {
     if (revision !== this.selectionRevision) return
     const thread = this.thread(threadId)
+    this.coordinatorConversation = false
     this.state.activeThreadId = thread.id; this.state.activeProjectId = thread.projectId
     const waiting = this.state.queue.find(q => q.threadId === thread.id)
     this.presentedQueueId = waiting?.id ?? null
@@ -900,6 +906,26 @@ export class AgentControl {
         return
       }
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
+      case 'pause-draft':
+        if (!this.state.composing) return
+        if (this.hasDraft() && !this.state.draftThreadId) throw new Error('Choose a thread for this recovered draft before pausing it.')
+        this.syncLegacyDraft()
+        this.manualDraftId = null
+        this.state.draft = ''; this.state.draftAttachments = []
+        this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
+        this.state.activeThreadId = null; this.state.pendingRequest = ''
+        this.coordinatorConversation = true
+        this.queueSelectionPinned = true; this.presentedQueueId = null
+        this.attentionNarration = null
+        this.say('Draft saved. What would you like to do?')
+        return
+      case 'resume-draft':
+        if (this.state.composing && this.state.draftThreadId === command.threadId) return
+        if (this.hasDraft() && this.state.draftThreadId !== command.threadId) throw new Error('Pause or clear your current draft before resuming another.')
+        if (!this.state.threadDrafts?.some(draft => draft.threadId === command.threadId)) throw new Error('This saved draft is no longer available.')
+        this.selectThread(command.threadId, selectionRevision)
+        this.startDraft(command.threadId)
+        return
       case 'recover-draft': {
         this.canAct()
         if (!this.state.providerUpgrade || this.state.draftThreadId !== null || !this.hasDraft()) throw new Error('There is no unbound recovered draft to use.')
@@ -1103,6 +1129,7 @@ export class AgentControl {
       }
       case 'later': case 'next': {
         if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before moving to another queued thread.')
+        this.coordinatorConversation = false
         if (this.state.composing) this.clearDraft()
         const current = this.state.queue.find(q => q.threadId === this.state.activeThreadId)
         if (current) { this.state.queue = this.state.queue.filter(q => q.id !== current.id); current.deferred = true; this.state.queue.push(current) }
@@ -1387,6 +1414,7 @@ export class AgentControl {
   }
   private startDraft(threadId = this.state.activeThreadId): void {
     const thread = this.thread(threadId)
+    this.coordinatorConversation = false
     this.manualDraftId = null
     const question = this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question' && item.requestId)
     const saved = !this.hasDraft() ? this.state.threadDrafts?.find(item => item.threadId === thread.id) : undefined
@@ -1427,6 +1455,14 @@ export class AgentControl {
   private async utterance(text: string, turn?: ActiveTurn, selectionRevision = this.selectionRevision): Promise<void> {
     addTurnContext(turn, text)
     const normalized = text.toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim()
+    if (this.state.composing && normalized === 'talk to sotto') { await this.execute({ type: 'pause-draft' }, turn, undefined, selectionRevision); return }
+    if (!this.state.composing && normalized === 'what needs my attention') {
+      const items = this.state.queue
+      const summary = items.slice(0, 3).map(item => `${this.state.host.threads.find(thread => thread.id === item.threadId)?.title ?? 'Thread'}: ${item.text.slice(0, 180)}`).join(' ')
+      this.state.pendingRequest = ''
+      this.say(items.length ? `${items.length} ${items.length === 1 ? 'item' : 'items'} in your attention queue. ${summary}${items.length > 3 ? ` And ${items.length - 3} more.` : ''}` : 'Nothing is queued for your attention.')
+      return
+    }
     if (normalized === 'send it') { await this.sendDraft(turn, undefined, selectionRevision); return }
     if (normalized === 'cancel draft' || normalized === 'clear draft') { await this.execute({ type: 'cancel-draft' }, turn, undefined, selectionRevision); return }
     if (normalized === 'next' || normalized === 'later') { await this.execute({ type: normalized }, turn, undefined, selectionRevision); return }
@@ -1455,7 +1491,7 @@ export class AgentControl {
       return
     }
     if (this.state.composing) { this.manualDraftId = null; this.state.draft = `${this.state.draft}${this.state.draft ? ' ' : ''}${text}`; return }
-    const activeQuestion = this.state.queue.find(q => q.threadId === this.state.activeThreadId && (q.kind === 'question' || q.kind === 'permission'))
+    const activeQuestion = this.coordinatorConversation ? undefined : this.state.queue.find(q => q.threadId === this.state.activeThreadId && (q.kind === 'question' || q.kind === 'permission'))
     if (activeQuestion?.requestId) {
       if (activeQuestion.kind === 'permission') {
         if (![...approvalWords, ...denialWords].includes(normalized)) { this.say('Say allow or deny for this permission request.'); return }

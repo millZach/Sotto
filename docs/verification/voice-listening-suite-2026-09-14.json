@@ -1,0 +1,14 @@
+{
+    "command":  "npx vitest run --maxWorkers=2",
+    "success":  true,
+    "testFiles":  250,
+    "totalTests":  3376,
+    "passedTests":  3354,
+    "failedTests":  0,
+    "skippedTests":  22,
+    "physicalCheck":  "Zach: It wakes and replies",
+    "build":  "passed",
+    "typecheck":  "passed",
+    "lint":  "passed",
+    "electronJourney":  "passed"
+}

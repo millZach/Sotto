@@ -325,6 +325,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
   z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
+  z.object({ type: z.literal('pause-draft') }).strict(),
+  z.object({ type: z.literal('resume-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),

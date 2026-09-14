@@ -99,16 +99,24 @@ describe('agent microphone PCM boundary', () => {
     expect(peak(capture.utterances[0]!)).toBeCloseTo(0.01, 3)
   })
 
-  it('preserves the original activated-speech gate instead of changing command segmentation', async () => {
-    const capture = await microphone(48_000)
+  it.each([16_000, 48_000])('keeps quiet speech after waking at %i Hz without requiring the user to get louder', async sampleRate => {
+    const capture = await microphone(sampleRate)
+    capture.feed(0.45, time => 0.01 * Math.sin(2 * Math.PI * 240 * time))
+    capture.feed(0.7, () => 0)
+    expect(capture.utterances).toHaveLength(1)
     capture.setWakeMode(false)
     capture.feed(0.45, time => 0.01 * Math.sin(2 * Math.PI * 240 * time))
     capture.feed(0.7, () => 0)
-    expect(capture.utterances).toHaveLength(0)
-    capture.feed(0.45, time => 0.03 * Math.sin(2 * Math.PI * 240 * time))
+    expect(capture.utterances).toHaveLength(2)
+    expect(peak(capture.utterances[1]!)).toBeCloseTo(0.01, 3)
+  })
+
+  it.each([true, false])('keeps sub-threshold noise out of captured speech with wake mode %s', async wake => {
+    const capture = await microphone(48_000)
+    capture.setWakeMode(wake)
+    capture.feed(0.45, time => 0.004 * Math.sin(2 * Math.PI * 240 * time))
     capture.feed(0.7, () => 0)
-    expect(capture.utterances).toHaveLength(1)
-    expect(peak(capture.utterances[0]!)).toBeCloseTo(0.03, 3)
+    expect(capture.utterances).toHaveLength(0)
   })
 
   it.each([16_000, 44_100, 48_000])('keeps a clipped microphone waveform normalized after resampling from %i Hz', async (sampleRate) => {

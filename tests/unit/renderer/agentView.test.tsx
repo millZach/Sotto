@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentComposer, AgentLatestResponse, AgentQueue, AgentView } from '../../../src/renderer/src/agents/AgentView'
+import { AgentRoom } from '../../../src/renderer/src/agents/AgentRoom'
 import { WidgetApp } from '../../../src/renderer/src/widget/WidgetApp'
 import { DEFAULT_WIDGET_PALETTE } from '../../../src/shared/themeBranding'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../../src/renderer/src/agents/orb/AgentOrb', () => ({ AgentOrb: () => null }))
 
 function stateFixture(): AgentState {
   return {
@@ -42,6 +44,24 @@ function connection(state: AgentState, command = vi.fn(async () => state)): Retu
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(cleanup)
+
+it.each(['listening', 'wake', 'muted'] as const)('reveals prompt dictation and the required activation on the home screen while %s', status => {
+  const state = stateFixture()
+  state.configuration.enabled = true
+  state.composing = true
+  state.draftThreadId = 'thread'
+  state.draft = 'How are you doing today? What needs my attention?'
+  state.notice = 'Moved to Settled.'
+  const command = vi.fn(async () => state)
+  vi.mocked(useAgents).mockReturnValue({ ...connection(state, command), voice: { status },
+    attention: { items: [], show: false, dismiss: vi.fn(), next: vi.fn(), reopen: vi.fn() } } as unknown as ReturnType<typeof useAgents>)
+  render(<AgentRoom onOpenThreads={vi.fn()} />)
+  expect(screen.getByRole('heading', { name: status === 'listening' ? 'Drafting for Build game' : status === 'wake' ? 'Say “Hey Sotto”' : 'Microphone muted' })).toBeInTheDocument()
+  expect(screen.queryByText('Try “what needs my attention?”')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Review draft' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Talk to Sotto' }))
+  expect(command).toHaveBeenCalledWith({ type: 'pause-draft' })
+})
 
 describe('one pill with agent controls', () => {
   const idle = { status: 'idle', theme: 'dark', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false } as const

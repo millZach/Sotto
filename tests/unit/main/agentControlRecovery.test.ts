@@ -285,6 +285,92 @@ describe('composition navigation and explicit spoken controls', () => {
     expect(f.requests).toEqual([])
   })
 
+  it.each(['button', 'spoken', 'pending question'] as const)('returns from hidden prompt dictation to conversation through the %s without losing the draft', async source => {
+    const f = await fixture()
+    await f.account()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    if (source === 'pending question') {
+      f.host.event({ type: 'question', threadId: 'workshop', text: 'Which colors?', requestId: 'color-question' })
+      await f.control.command({ type: 'refresh' })
+    }
+    await f.control.command({ type: 'compose', text: 'Keep the existing colors.' })
+    const paused = await f.control.command(source === 'button' ? { type: 'pause-draft' } : { type: 'utterance', text: 'Talk to Sotto.' })
+    expect(paused).toMatchObject({ error: null, composing: false, draft: '', draftThreadId: null, activeThreadId: null })
+    expect(paused.threadDrafts).toMatchObject([{ threadId: 'workshop', text: 'Keep the existing colors.' }])
+    await f.restart()
+    f.service.intent = { type: 'clarify', text: 'What would you like to review?' }
+    const answered = await f.control.command({ type: 'utterance', text: 'How are you doing today?' })
+    expect(f.requests.at(-1)?.utterance).toBe('How are you doing today?')
+    expect(answered.speech.text).toBe('What would you like to review?')
+    expect(answered.threadDrafts).toMatchObject([{ threadId: 'workshop', text: 'Keep the existing colors.' }])
+    expect(answered.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
+    const resumed = await f.control.command({ type: 'resume-draft', threadId: 'workshop' })
+    expect(resumed).toMatchObject({ error: null, composing: true, draft: 'Keep the existing colors.', draftThreadId: 'workshop',
+      draftRequestId: source === 'pending question' ? 'color-question' : null })
+  })
+
+  it('keeps the saved revision and skills when a resume command is repeated', async () => {
+    const f = await fixture()
+    const draftId = '643812b8-aed2-4eaf-8cc5-cd5174103c1a'
+    const skills = [{ name: 'review', path: 'D:\\Workshop\\SKILL.md' }]
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Please review this.', skills })
+    await f.control.command({ type: 'resume-draft', threadId: 'workshop' })
+    const resumed = await f.control.command({ type: 'resume-draft', threadId: 'workshop' })
+    expect(resumed.threadDrafts?.find(draft => draft.threadId === 'workshop')).toMatchObject({ draftId, skills })
+    expect(resumed.assignments).toEqual([])
+  })
+
+  it.each(['empty', 'permission'] as const)('answers the home attention suggestion directly and repeatedly with an %s queue', async kind => {
+    const f = await fixture()
+    if (kind === 'permission') {
+      await f.control.command({ type: 'assign', threadId: 'workshop' })
+      f.host.event({ type: 'permission', threadId: 'workshop', text: 'Publish the project?', requestId: 'publish' })
+      await f.control.command({ type: 'refresh' })
+    }
+    const before = f.control.get()
+    for (const text of ['What needs my attention?', 'What needs my attention?']) {
+      const result = await f.control.command({ type: 'utterance', text })
+      expect(result.error).toBeNull()
+      expect(result.speech.text).toBe(kind === 'empty' ? 'Nothing is queued for your attention.' : '1 item in your attention queue. Workshop: Publish the project?')
+      expect(result.speech.id).toBeGreaterThan(before.speech.id)
+      expect(result.host.threads).toEqual(before.host.threads)
+      expect(result.queue).toEqual(before.queue)
+      expect(result.composing).toBe(false)
+    }
+    expect(f.requests).toEqual([])
+  })
+
+  it('returns to the selected question after explicitly moving next from coordinator conversation', async () => {
+    const f = await fixture()
+    await f.account()
+    await f.control.command({ type: 'assign', threadId: 'docs' })
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'Keep the colors.' })
+    await f.control.command({ type: 'pause-draft' })
+    f.host.event({ type: 'question', threadId: 'docs', text: 'Choose colors.', requestId: 'colors' })
+    await f.control.command({ type: 'refresh' })
+    await f.control.command({ type: 'next' })
+    const answered = await f.control.command({ type: 'utterance', text: 'Blue please.' })
+    expect(answered).toMatchObject({ composing: true, draftThreadId: 'docs', draftRequestId: 'colors', draft: 'Blue please.' })
+    expect(answered.threadDrafts?.find(draft => draft.threadId === 'workshop')?.text).toBe('Keep the colors.')
+    expect(f.requests).toEqual([])
+  })
+
+  it('does not replace a saved thread draft with unbound recovered text when resuming', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: '643812b8-aed2-4eaf-8cc5-cd5174103c1a', text: 'Saved Workshop prompt.' })
+    f.control.dispose()
+    const file = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    // Provider retirement retains text without binding it or enabling composition.
+    await writeFile(file, JSON.stringify({ ...saved, draft: 'Recovered provider prompt.', draftThreadId: null, composing: false }))
+    await f.restart()
+    const resumed = await f.control.command({ type: 'resume-draft', threadId: 'workshop' })
+    expect(resumed.error).not.toBeNull()
+    expect(resumed).toMatchObject({ draft: 'Recovered provider prompt.', draftThreadId: null, composing: false })
+    expect(resumed.threadDrafts?.find(draft => draft.threadId === 'workshop')?.text).toBe('Saved Workshop prompt.')
+  })
+
   it('dictates and sends the first prompt immediately after creating a managed thread without reasoning', async () => {
     const f = await fixture()
     const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'New voice thread', modelId: 'claude:test' })

@@ -27,26 +27,31 @@ export function AgentComposer({ state, command, compact = false, footerControls,
   /** The Threads workspace sends on Enter (Shift+Enter for a new line); dictation surfaces keep Enter as a newline. */
   readonly enterToSend?: boolean
 }): ReactNode {
-  const [draft, setDraft] = useState(state.draft)
-  const [attachments, setAttachments] = useState<AgentAttachment[]>(state.draftAttachments ?? [])
+  const hasLegacyDraft = state.composing || state.draftThreadId !== null || state.draft.length > 0 || Boolean(state.draftAttachments?.length)
+  const pausedDraft = !hasLegacyDraft ? state.threadDrafts?.find(entry => entry.threadId === state.activeThreadId) : undefined
+  const sourceDraft = pausedDraft?.text ?? state.draft
+  const sourceAttachments = pausedDraft?.attachments ?? state.draftAttachments
+  const [draft, setDraft] = useState(sourceDraft)
+  const [attachments, setAttachments] = useState<AgentAttachment[]>(sourceAttachments ?? [])
   const [readingImages, setReadingImages] = useState(false)
   const writes = useRef(0)
   const version = useRef(0)
-  const sourceKey = JSON.stringify([state.draft, state.draftThreadId, state.draftRequestId, (state.draftAttachments ?? []).map(image => image.id)])
+  const sourceKey = JSON.stringify([sourceDraft, state.draftThreadId, state.draftRequestId, pausedDraft?.draftId, (sourceAttachments ?? []).map(image => image.id)])
   const lastSource = useRef(sourceKey)
   const target = state.host.threads.find((entry) => entry.id === (state.draftThreadId ?? state.activeThreadId))
   const project = state.host.projects.find((entry) => entry.id === target?.projectId)
-  const questionId = state.draftRequestId ?? (!state.composing ? state.queue.find((entry) => entry.threadId === target?.id && entry.kind === 'question')?.requestId : undefined)
+  const questionId = pausedDraft ? pausedDraft.requestId : state.draftRequestId ?? (!state.composing ? state.queue.find((entry) => entry.threadId === target?.id && entry.kind === 'question')?.requestId : undefined)
   const answering = questionId !== undefined && questionId !== null
   const assigned = state.assignments.some((entry) => entry.threadId === target?.id)
   const hasDraft = state.composing || state.draftThreadId !== null || draft.length > 0 || attachments.length > 0
   useEffect(() => {
     if (writes.current === 0 && lastSource.current !== sourceKey) {
       lastSource.current = sourceKey
-      setDraft(state.draft); setAttachments(state.draftAttachments ?? [])
+      setDraft(sourceDraft); setAttachments(sourceAttachments ?? [])
     }
-  }, [sourceKey, state.draft, state.draftAttachments])
+  }, [sourceKey, sourceDraft, sourceAttachments])
   const update = (value: string): void => {
+    if (pausedDraft) return
     setDraft(value)
     ++writes.current
     const writeVersion = ++version.current
@@ -56,6 +61,7 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     })
   }
   const updateImages = (value: AgentAttachment[]): void => {
+    if (pausedDraft) return
     setAttachments(value)
     ++writes.current
     const writeVersion = ++version.current
@@ -65,36 +71,38 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     })
   }
   const send = async (): Promise<void> => {
-    if (readingImages) return
+    if (readingImages || pausedDraft) return
     const composed = await command({ type: 'compose', text: draft, attachments })
     if (composed === null || composed.error !== null) return
     const result = await command({ type: 'send' })
     if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
   }
-  const sendDisabled = state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
-  if ((target === undefined || !assigned) && !hasDraft) return null
+  const sendDisabled = Boolean(pausedDraft) || state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
+  if ((target === undefined || !assigned) && !hasDraft && !pausedDraft) return null
   return <section className="agent-composer">
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
     {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}
-    {!assigned ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || !isThreadProviderConnected(state.host, target) || !supportsAgentSupervision(capabilitiesForThread(state.host, target))} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
+    {!assigned && !pausedDraft ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || !isThreadProviderConnected(state.host, target) || !supportsAgentSupervision(capabilitiesForThread(state.host, target))} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
     <ScreenshotInput key={target?.id ?? 'no-thread'} attachments={attachments} onChange={updateImages} onReadingChange={setReadingImages}
-      disabled={state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
+      disabled={Boolean(pausedDraft) || state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
       rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : answering ? 'Dictate or type your answer. It stays saved until you send or clear it.' : 'Dictate or type your prompt. Pauses won’t send it.'}
-      disabled={target === undefined || !assigned} spellCheck
+      disabled={target === undefined || (!assigned && !pausedDraft)} readOnly={Boolean(pausedDraft)} spellCheck
       onKeyDown={enterToSend ? event => {
         if (composerEnterIntent(readComposerKey(event)) !== 'send') return
         event.preventDefault()
         if (!sendDisabled) void send()
       } : undefined} />
     </ScreenshotInput>
-    <div className="agent-composer__footer">{footerControls ?? <span>Say “send it” when you’re ready.</span>}
+    <div className="agent-composer__footer">{pausedDraft ? <span>Saved draft</span> : footerControls ?? <span>Say “send it” when you’re ready.</span>}
       <div className="agent-actions">
+        {pausedDraft ? <Button disabled={state.busy || target === undefined} onClick={() => void command({ type: 'resume-draft', threadId: pausedDraft.threadId })}>Resume draft</Button> : <>
         {hasDraft ? <Button variant="ghost" disabled={readingImages || state.busy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
         <Button disabled={sendDisabled} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
+        </>}
       </div>
     </div>
   </section>
