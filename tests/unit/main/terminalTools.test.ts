@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
-import { TerminalService } from '../../../src/main/tools/terminal'
+import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture() {
+async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminal-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const other = join(directory, 'other'); await mkdir(other)
@@ -27,7 +27,7 @@ async function fixture() {
     return pty
   })
   const createService = () => {
-    const service = new TerminalService({ files, directory, spawn, platform: 'win32', env: { SystemRoot: 'C:\\Windows', ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--inspect' }, emit: event => events.push(event) })
+    const service = new TerminalService({ files, directory, spawn, platform: 'win32', env: { SystemRoot: 'C:\\Windows', ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--inspect' }, ...options, emit: event => events.push(event) })
     cleanup.push(async () => service.dispose())
     return service
   }
@@ -37,11 +37,35 @@ async function fixture() {
   return { service, createService, target, processes, spawn, events, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it.each(['win32', 'darwin', 'linux'] as const)('starts a color-capable interactive shell independently of launcher color overrides on %s', async platform => {
+    const env = Object.freeze({
+      SystemRoot: 'C:\\Windows', SHELL: '/bin/zsh', PATH: '/custom/bin', USER_THEME: 'custom',
+      NO_COLOR: '1', FORCE_COLOR: '0', CLICOLOR: '0', CLICOLOR_FORCE: '0',
+      TERM: 'dumb', COLORTERM: '', TERM_PROGRAM: 'launcher',
+      ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--inspect'
+    })
+    const original = { ...env }
+    const f = await fixture({ platform, env })
+    unwrap(await f.service.create(f.target))
+    expect(f.spawn).toHaveBeenCalledWith(expect.any(String), platform === 'win32' ? ['-NoLogo'] : ['-l'], expect.objectContaining({ env: {
+      SystemRoot: 'C:\\Windows', SHELL: '/bin/zsh', PATH: '/custom/bin', USER_THEME: 'custom',
+      TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Sotto'
+    } }))
+    expect(env).toEqual(original)
+  })
+  it.each(['win32', 'linux'] as const)('respects %s environment key casing when replacing terminal capabilities', async platform => {
+    const inherited = { No_Color: '1', Force_Color: '0', CliColor: '0', CliColor_Force: '0', Term: 'dumb', ColorTerm: '', Term_Program: 'launcher' }
+    const f = await fixture({ platform, env: inherited })
+    unwrap(await f.service.create(f.target))
+    expect(f.spawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ env: {
+      ...(platform === 'win32' ? {} : inherited), TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Sotto'
+    } }))
+  })
   it('owns multiple real-PTY adapters across focus with input, resize, interrupt, bounded ordered output and exit', async () => {
     const f = await fixture()
     const first = unwrap(await f.service.create(f.target)), second = unwrap(await f.service.create(f.target))
     const request = { ...f.target, sessionId: first.session.id }
-    expect(f.spawn).toHaveBeenCalledWith('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoLogo'], expect.objectContaining({ cwd: first.session.workspace.workingDirectory, env: { SystemRoot: 'C:\\Windows', TERM: 'xterm-256color' } }))
+    expect(f.spawn).toHaveBeenCalledWith('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoLogo'], expect.objectContaining({ cwd: first.session.workspace.workingDirectory, env: { SystemRoot: 'C:\\Windows', TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Sotto' } }))
     unwrap(await f.service.write({ ...request, data: 'echo hello\r' })); unwrap(await f.service.resize({ ...request, cols: 110, rows: 35 })); unwrap(await f.service.interrupt(request))
     expect(f.processes[0]!.pty.write).toHaveBeenLastCalledWith('\x03')
     expect(f.processes[0]!.pty.resize).toHaveBeenCalledWith(110, 35)

@@ -7,6 +7,7 @@ import sharp from 'sharp'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { forceDomTerminalRenderer } from './support/terminal'
 
 // The Tools panel's working-folder row in a short window, and a running terminal under the real theme controls, in the
 // complete app. AppShell, renderer, preload, IPC, the settings store, the theme engine and the production tools services
@@ -168,11 +169,12 @@ async function fieldColor(locator: Locator): Promise<string> {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0]
 }
 
-test('repaints one running terminal through the theme gallery and live editor, and stills its cursor under reduced motion', async () => {
+test('repaints one running terminal with the DOM fallback through the theme gallery and live editor, and stills its cursor under reduced motion', async () => {
   test.setTimeout(240_000)
   const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-terminal-controls-'))
   const { page } = launched
   try {
+    await forceDomTerminalRenderer(page)
     const { panel } = await workshop(launched)
     await panel.getByRole('tab', { name: 'Terminal' }).click()
     await panel.getByRole('button', { name: 'Start terminal' }).click()
@@ -249,6 +251,7 @@ test('repaints one running terminal through the theme gallery and live editor, a
     await panel.locator('.xterm').click()
     await expect(cursor).toHaveClass(/xterm-cursor-blink/u)
     await settings()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
     const motion = page.getByLabel('Reduced motion')
     await motion.selectOption('on')
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
@@ -271,6 +274,7 @@ test('repaints one running terminal through the theme gallery and live editor, a
     expect(fills).toHaveLength(1)
     expect(fills[0]).not.toBe('rgba(0, 0, 0, 0)')
     await settings()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
     await motion.selectOption('system')
     await expect(page.locator('html')).not.toHaveAttribute('data-reduced-motion', 'on')
     await threads()

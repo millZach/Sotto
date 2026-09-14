@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const xterm = vi.hoisted(() => ({ instances: [] as { options: Record<string, unknown>; themes: unknown[] }[] }))
+const gpu = vi.hoisted(() => ({ fail: false, instances: [] as { dispose: ReturnType<typeof vi.fn>; lose(): void }[] }))
+vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class {
+  readonly dispose = vi.fn()
+  lose = (): void => {}
+  constructor() { gpu.instances.push(this) }
+  onContextLoss(listener: () => void): void { this.lose = listener }
+} }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     readonly themes: unknown[] = []
@@ -12,7 +19,7 @@ vi.mock('@xterm/xterm', () => ({
       Object.defineProperty(this.options, 'theme', { get: () => theme, set: value => { theme = value; themes.push(value) }, enumerable: true, configurable: true })
       xterm.instances.push(this)
     }
-    loadAddon(): void {}
+    loadAddon(addon: unknown): void { if (gpu.fail && addon && typeof addon === 'object' && 'onContextLoss' in addon) throw new Error('WebGL unavailable') }
     onData(): void {}
     attachCustomKeyEventHandler(): void {}
     open(): void {}
@@ -64,6 +71,8 @@ afterEach(() => {
   document.documentElement.removeAttribute('style')
   for (const name of Object.keys(document.documentElement.dataset)) delete document.documentElement.dataset[name]
   xterm.instances.length = 0
+  gpu.instances.length = 0
+  gpu.fail = false
 })
 
 describe('terminal colours', () => {
@@ -108,6 +117,36 @@ describe('terminal colours', () => {
 })
 
 describe('a live terminal', () => {
+  it('releases hidden GPU renderers and recreates them without replacing the terminal buffer', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+    const view = createXtermView({ onInput() {}, onInterrupt() {} }, { resolveColor: resolve })
+    const host = document.createElement('div')
+    view.mount(host)
+    expect(gpu.instances).toHaveLength(1)
+    view.unmount()
+    expect(gpu.instances[0]!.dispose).toHaveBeenCalledOnce()
+    view.mount(host)
+    expect(gpu.instances).toHaveLength(2)
+    expect(xterm.instances).toHaveLength(1)
+    gpu.instances[1]!.lose()
+    expect(gpu.instances[1]!.dispose).toHaveBeenCalledOnce()
+    view.dispose()
+    expect(gpu.instances[1]!.dispose).toHaveBeenCalledOnce()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a usable DOM terminal when GPU initialization fails', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+    gpu.fail = true
+    const view = createXtermView({ onInput() {}, onInterrupt() {} }, { resolveColor: resolve })
+    expect(() => view.mount(document.createElement('div'))).not.toThrow()
+    expect(gpu.instances[0]!.dispose).toHaveBeenCalledOnce()
+    view.setInputEnabled(true)
+    expect(xterm.instances[0]!.options.disableStdin).toBe(false)
+    view.dispose()
+    vi.unstubAllGlobals()
+  })
+
   it('repaints the same xterm when the theme, its mode or its colours change on the root, and only then', async () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'

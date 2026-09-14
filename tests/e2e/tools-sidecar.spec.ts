@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { terminalOutput } from './support/terminal'
 
 // Real Electron shell, native browser, PTY, files and Git. Only coding providers use E2E fixtures.
 // Every file and shell command below belongs to the launch helper's disposable profile.
@@ -133,11 +134,12 @@ test('Sidecar preserves native tools while giving the browser, terminal, files a
     await expect(panel.getByRole('region', { name: 'Changes in src/app.ts' })).toContainText('return `Hello, ${name}!`')
     await select('Terminal')
     await panel.getByRole('button', { name: 'Start terminal' }).click()
-    await expect(panel.locator('.xterm-rows')).toBeVisible()
+    await expect(panel.locator('.xterm-screen')).toBeVisible()
+    await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTO_SIDECAR_NATIVE_OK')
     await page.keyboard.press('Enter')
-    await expect.poll(async () => ((await panel.locator('.xterm-rows').innerText()).match(/SOTTO_SIDECAR_NATIVE_OK/gu) ?? []).length).toBeGreaterThanOrEqual(2)
+    await expect.poll(async () => ((await terminalOutput(page)).match(/SOTTO_SIDECAR_NATIVE_OK/gu) ?? []).length).toBeGreaterThanOrEqual(2)
     await page.keyboard.type('echo Sidecar > sidecar-proof.txt')
     await page.keyboard.press('Enter')
     await expect.poll(() => readFile(join(folder, 'sidecar-proof.txt'), 'utf16le').catch(() => '')).toContain('Sidecar')
@@ -174,7 +176,10 @@ test('Sidecar preserves native tools while giving the browser, terminal, files a
           const native = tool === 'Browser'
           const nativeBounds = native ? await browserBounds(launched, url) : null
           if (!native) await expect.poll(async () => (await nativeViews(launched)).length).toBe(0)
-          if (tool === 'Terminal') await expect(panel.locator('.xterm-rows')).toContainText('SOTTO_SIDECAR_NATIVE_OK')
+          if (tool === 'Terminal') {
+            await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
+            await expect.poll(() => terminalOutput(page)).toContain('SOTTO_SIDECAR_NATIVE_OK')
+          }
           if (tool === 'Files') await expect(panel.locator('.files-preview__text')).toContainText('export const version = 2')
           await screenshot(launched, key, native)
           report[key] = { panel: box, nativeBounds }
@@ -214,7 +219,11 @@ test('Sidecar preserves native tools while giving the browser, terminal, files a
     await expect.poll(async () => (await browserBounds(launched, url)).width).toBe(compact.width)
     await panel.getByRole('button', { name: 'Close tools panel', exact: true }).click()
     await expect(page.locator('.threads-view > .thread-nav')).toBeVisible()
-    await page.getByRole('navigation', { name: 'Collapsed tools' }).getByRole('button', { name: 'Open Browser', exact: true }).click()
+    await expect(page.getByRole('navigation', { name: 'Collapsed tools' })).toHaveCount(0)
+    await expect(page.locator('.thread-workspace__tools')).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Tools', exact: true })).toBeFocused()
+    await screenshot(launched, 'tools-collapsed-820-dark', false)
+    await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(page.locator('.threads-view > .thread-nav')).toBeHidden()
     await browserBounds(launched, url)
     await resize(launched, 1280, 800)
@@ -222,14 +231,17 @@ test('Sidecar preserves native tools while giving the browser, terminal, files a
     await expect(panel).toBeHidden()
     await expect.poll(async () => (await nativeViews(launched)).length).toBe(0)
     await screenshot(launched, 'tools-collapsed-1280-dark', false)
-    await page.getByRole('navigation', { name: 'Collapsed tools' }).getByRole('button', { name: 'Open Browser', exact: true }).click()
+    await expect(page.getByRole('navigation', { name: 'Collapsed tools' })).toHaveCount(0)
+    await expect(page.locator('.thread-workspace__tools')).toBeHidden()
+    await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await browserBounds(launched, url)
     await select('Terminal')
-    await expect(panel.locator('.xterm-rows')).toContainText('SOTTO_SIDECAR_NATIVE_OK')
+    await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
+    await expect.poll(() => terminalOutput(page)).toContain('SOTTO_SIDECAR_NATIVE_OK')
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await panel.getByRole('button', { name: 'Close tools panel', exact: true }).click()
-    await page.getByRole('navigation', { name: 'Collapsed tools' }).getByRole('button', { name: 'Open Terminal', exact: true }).click()
+    await page.getByRole('button', { name: 'Tools', exact: true }).click()
     expect(await sheet.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
     expect(await sheet.evaluate(element => element.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0)
     expect(errors).toEqual([])

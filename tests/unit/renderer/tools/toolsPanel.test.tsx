@@ -57,6 +57,8 @@ describe('shared tools panel', () => {
   it('opens from the toggle with the implemented surfaces and focuses the open one', async () => {
     const { store } = setup()
     expect(screen.queryByRole('complementary', { name: 'Tools' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Collapsed tools' })).toBeNull()
+    expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools', exact: true })])
     await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
     const tabs = within(panel()).getAllByRole('tab')
@@ -67,6 +69,8 @@ describe('shared tools panel', () => {
     expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
     expect(store.getSnapshot().open).toBe(false)
+    expect(screen.queryByRole('navigation', { name: 'Collapsed tools' })).toBeNull()
+    expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools', exact: true })])
   })
 
   it('follows the focused thread, keeps each thread’s browsing, and never sends agent commands', async () => {
@@ -333,11 +337,11 @@ describe('shared tools panel', () => {
     fireEvent.keyDown(handle, { key: 'Home' })
     expect(store.getSnapshot().width).toBe(380)
   })
-  it('expands the tool without losing the selected file, restores width and reopens from the collapsed rail', async () => {
+  it('expands the tool without losing the selected file, restores width and reopens from the header toggle', async () => {
     const { store } = setup({ inPane: true })
     const area = document.querySelector('.thread-workspace__body') as HTMLElement
     Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1200 })
-    await userEvent.click(screen.getByRole('button', { name: 'Open Files', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tools', exact: true }))
     await userEvent.click(await within(tree()).findByRole('treeitem', { name: 'README.md' }))
     const previous = panel().style.getPropertyValue('--tools-width')
     expect(previous).toBe('672px')
@@ -354,7 +358,7 @@ describe('shared tools panel', () => {
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
     expect(screen.getByRole('button', { name: 'Tools', exact: true })).toHaveFocus()
     expect(store.getSnapshot().expanded).toBe(false)
-    await userEvent.click(screen.getByRole('button', { name: 'Open Files', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tools', exact: true }))
     expect(within(panel()).getByRole('region', { name: 'Preview of README.md' })).toBeInTheDocument()
   })
 
