@@ -34,7 +34,7 @@ export interface FilesSurfaceProps {
   readonly onPathAction: (action: PathAction, path: string) => void
 }
 
-/** Files for one thread: the working-folder tree with the open file stacked beneath it. */
+/** Files for one thread: the working-folder tree beside its preview, stacking in a narrow panel. */
 export function FilesSurface({ threadId, store, bridge, platform, onPathAction }: FilesSurfaceProps): ReactNode {
   const files = useThreadFiles(store, threadId)
   if (!files) return <p className="files-preview__loading" role="status">Loading…</p>
@@ -42,7 +42,7 @@ export function FilesSurface({ threadId, store, bridge, platform, onPathAction }
   const rootError = root?.status === 'error' ? root.error : null
   const label = files.workspace ? `Files in ${folderName(files.workspace.workingDirectory)}` : 'Files'
   const preview = files.preview
-  return <div className="files-surface" data-preview={preview ? '' : undefined}>
+  return <div className="files-surface" data-preview={preview && !rootError ? '' : undefined}>
     {files.workspaceChanged ? <div className="files-notice" role="status">
       <span>The working folder changed, so Files started over.</span>
       <button type="button" className="files-icon tt-focusable" aria-label="Dismiss" title="Dismiss" onClick={() => store.dismissWorkspaceChanged(threadId)}><X size={14} aria-hidden="true" /></button>

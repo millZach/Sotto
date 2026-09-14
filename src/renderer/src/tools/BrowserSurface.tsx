@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
 import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
@@ -129,6 +129,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
               store.select(threadId, next.id)
               focusTab(next.id)
             }}>
+            <Globe size={14} aria-hidden="true" />
             <span className="terminal-tabs__name">{pageLabel(page)}</span>
             {page.status === 'unavailable' ? <span className="tt-visually-hidden">, could not load</span> : page.status === 'loading' ? <span className="tt-visually-hidden">, loading</span> : null}
           </button>
@@ -165,8 +166,8 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
     {browser.notice ? <p className="terminal-notice" role="alert">{browser.notice}</p> : null}
 
     {newPage ? <div className="files-problem browser-empty" role="status">
-      <strong>{pages.length === 0 ? 'No page is open for this thread.' : 'Open another page.'}</strong>
-      <p>Pages open in a separate browser session inside Sotto, and keep their place while you work elsewhere. A development server on this computer opens over HTTP.</p>
+      <strong>{pages.length === 0 ? 'Open a page' : 'Open another page'}</strong>
+      <p>Enter a website or local server address above. Pages keep their place while you work elsewhere.</p>
     </div> : active ? <PageViewport key={active.id} page={active} threadId={threadId} store={store} bridge={bridge} surface={surface}
       refused={browser.placementProblem?.pageId === active.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(active.url)} /> : null}
   </div>

@@ -6,14 +6,14 @@ import { FilesBrowserStore } from './filesBrowser'
 import { TerminalStore } from './terminalStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'terminal', label: 'Terminal' }, { id: 'browser', label: 'Browser' }] as const
+export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
-export const TOOLS_PANEL_DEFAULT_WIDTH = 380
-export const TOOLS_PANEL_MIN_WIDTH = 320
-export const TOOLS_PANEL_MAX_WIDTH = 640
+export const TOOLS_PANEL_DEFAULT_WIDTH = 600
+export const TOOLS_PANEL_MIN_WIDTH = 380
+export const TOOLS_PANEL_MAX_WIDTH = 1200
 /** The panel docks beside the panes only while they keep at least this much width; otherwise it overlays them. */
-export const TOOLS_PANEL_MIN_PANE_WIDTH = 480
+export const TOOLS_PANEL_MIN_PANE_WIDTH = 320
 
 export interface ToolsPanelChrome {
   readonly open: boolean
@@ -21,6 +21,8 @@ export interface ToolsPanelChrome {
   /** Sotto thread ID the panel is held on; null follows the focused thread. */
   readonly pinnedThreadId: string | null
   readonly width: number
+  readonly resized: boolean
+  readonly expanded: boolean
 }
 
 export function clampPanelWidth(width: number): number {
@@ -36,7 +38,7 @@ export class ToolsPanelStore {
   readonly changes = new ChangesStore()
   readonly terminals = new TerminalStore()
   readonly browser = new BrowserStore()
-  private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH }
+  private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH, resized: false, expanded: false }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0
 
@@ -46,12 +48,13 @@ export class ToolsPanelStore {
   }
   getSnapshot = (): ToolsPanelChrome => this.chrome
 
-  setOpen(open: boolean): void { this.update({ open }) }
-  toggle(): void { this.update({ open: !this.chrome.open }) }
+  setOpen(open: boolean): void { this.update({ open, ...(!open ? { expanded: false } : {}) }) }
+  toggle(): void { this.setOpen(!this.chrome.open) }
   setSurface(surface: ToolSurfaceId): void { this.update({ surface }) }
+  setExpanded(expanded: boolean): void { this.update({ expanded, open: true }) }
   pin(threadId: string): void { this.update({ pinnedThreadId: threadId }) }
   unpin(): void { this.update({ pinnedThreadId: null }) }
-  setWidth(width: number): void { this.update({ width: clampPanelWidth(width) }) }
+  setWidth(width: number): void { this.update({ width: clampPanelWidth(width), resized: true }) }
 
   /**
    * Shows a page main just opened for a thread. The panel opens on Browser; a panel pinned to another thread

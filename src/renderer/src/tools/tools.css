@@ -52,10 +52,6 @@
 .tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
-.tools-panel__identity { display: grid; gap: 3px; padding: 10px 8px 10px 16px; }
-.tools-panel__thread { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 0; }
-.tools-panel__thread-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
-.tools-panel__thread { min-height: 28px; }
 .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .tools-panel__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 999px; color: var(--tt-accent-text); font-size: 12px; }
 /* The working copy in the pane chip's words: project, then branch or folder. The branch loses its end, never the project. */
@@ -64,20 +60,6 @@
 .tools-panel__project { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
 .tools-panel__sep { flex: none; color: var(--tt-text-muted); }
 .tools-panel__label { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
-/* The actual folder is shown whole, wrapping between folder names, with its copy and reveal actions beside it. */
-.tools-panel__path { display: flex; align-items: flex-start; gap: 2px; min-width: 0; margin-top: 2px; }
-.tools-panel__path-text { flex: 1; min-width: 0; margin-right: 4px; padding-top: 5px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; user-select: text; }
-.tools-panel__path-part { white-space: nowrap; }
-/* In a short window the tool gets the height: the folder keeps one row and loses its start, never the folder names
-   nearest the work. The whole path stays in its text for assistive technology, in its title, and behind Copy path. */
-@media (max-height: 640px) {
-  .tools-panel__identity { padding-block: 6px; }
-  .tools-panel__path { align-items: center; margin-top: 0; }
-  .tools-panel__path-text { padding-top: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-  /* Chromium still breaks at <wbr> inside nowrap text. */
-  .tools-panel__path-text wbr { display: none; }
-}
-
 .tools-panel__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; container: tools-body / inline-size; }
 .tools-panel__status:empty { display: none; }
 .tools-panel__status { position: absolute; bottom: 14px; left: 50%; z-index: 2; margin: 0; padding: 7px 14px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); font-size: 13px; white-space: nowrap; transform: translateX(-50%); }
@@ -248,3 +230,39 @@
 .tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 
 @media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg, .browser-toolbar[data-loading]::after { animation: none; } }
+
+/* Sidecar: the working copy is one quiet row; direct tool navigation sits immediately above the work. */
+.tools-panel { --tools-bg: var(--tt-surface, var(--tt-sidebar)); }
+.tools-panel__context { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 5px 10px 5px 16px; }
+.tools-panel__owner { flex: 1; min-width: 0; }
+.tools-panel__copy { padding: 0; font-size: 12px; }
+.tools-panel__context .tools-panel__actions { flex: none; padding: 0; }
+.tools-panel__bar { align-items: center; padding: 0 9px 0 14px; gap: 8px; }
+.tools-surfaces { flex: 1; gap: 4px; }
+.tools-surfaces__tab { min-height: 42px; gap: 7px; padding-inline: 10px; }
+.tools-surfaces__tab[aria-selected='true'] { color: var(--tt-text); border-color: var(--tt-activity); }
+.tools-panel__folder-actions { display: flex; flex: none; align-items: center; gap: 0; }
+.tools-panel__folder-actions .files-icon { width: 28px; height: 30px; }
+.tools-panel__pinned-owner { display: flex; align-items: center; gap: 7px; padding-top: 3px; }
+.tools-panel__pinned-owner .tools-panel__thread-title { font-size: 12px; color: var(--tt-text-muted); }
+.tools-panel__empty-title { flex: 1; font-size: 14px; }
+.tools-panel__accessible { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip-path: inset(50%); white-space: nowrap!important; border: 0!important; }
+.tools-panel[data-expanded] .tools-panel__resize { display: none; }
+.tools-panel__status { max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+.tools-launcher { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 66px; padding: 12px 4px; border-left: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
+.tools-launcher button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 58px; width: 100%; padding: 6px 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.tools-launcher button:hover { color: var(--tt-accent-text); background: var(--tt-hover); }
+@container tools-sheet (max-width: 519px) {
+  .tools-panel__bar { padding-inline: 7px; gap: 3px; }
+  .tools-surfaces { gap: 0; }
+  .tools-surfaces__tab { padding-inline: 7px; }
+  .tools-surfaces__icon { display: none; }
+  .tools-panel__folder-actions .files-icon { width: 27px; }
+}
+
+/* At the minimum desktop window, Sidecar and the conversation take the field together.
+   Closing Tools restores project navigation; the selected thread and sidebar state stay mounted. */
+@media (max-width: 950px) {
+  .threads-view:has(.tools-panel) { grid-template-columns: minmax(0, 1fr); }
+  .threads-view:has(.tools-panel) > .thread-nav { display: none; }
+}
