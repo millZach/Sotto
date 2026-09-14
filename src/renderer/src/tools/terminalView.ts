@@ -1,5 +1,6 @@
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalViewHandlers, TerminalViewLike } from './terminalStore'
 
@@ -119,7 +120,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   let painted = JSON.stringify(theme)
   const terminal = new Terminal({
     fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
-    theme, disableStdin: true, convertEol: false, screenReaderMode: false,
+    theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
   const fit = new FitAddon()
@@ -128,6 +129,23 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   element.className = 'terminal-view__screen'
   let opened = false
   let inputEnabled = false
+  let renderer: WebglAddon | undefined
+  const releaseRenderer = (): void => {
+    const current = renderer
+    renderer = undefined
+    current?.dispose()
+  }
+  const paintGrid = (): void => {
+    if (renderer) return
+    try {
+      renderer = new WebglAddon()
+      renderer.onContextLoss(releaseRenderer)
+      terminal.loadAddon(renderer)
+    } catch {
+      // A remote desktop or unavailable GPU must still leave a usable DOM terminal.
+      releaseRenderer()
+    }
+  }
 
   terminal.onData(data => { if (inputEnabled) handlers.onInput(data) })
   terminal.attachCustomKeyEventHandler(event => {
@@ -154,8 +172,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     return true
   })
 
-  // xterm's DOM renderer blinks the cursor with a CSS animation it adds only while cursorBlink is on, and redraws
-  // the cursor row when the option changes, so reduced motion is applied to this same terminal as it changes.
+  // Both xterm renderers observe cursorBlink, so reduced motion updates the existing terminal.
   const followMotion = (): void => {
     const blink = blinks()
     if (terminal.options.cursorBlink !== blink) terminal.options.cursorBlink = blink
@@ -179,8 +196,10 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     mount(container) {
       if (element.parentElement !== container) container.replaceChildren(element)
       if (!opened) { terminal.open(element); opened = true }
+      // The GPU renderer draws box/block glyphs to cell edges, independent of font and line spacing.
+      paintGrid()
     },
-    unmount() { element.remove() },
+    unmount() { releaseRenderer(); element.remove() },
     write(data, done) { terminal.write(data, done) },
     reset() { terminal.reset() },
     setInputEnabled(enabled) {
@@ -196,7 +215,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       return { cols: terminal.cols, rows: terminal.rows }
     },
     focus() { terminal.focus() },
-    dispose() { retheme.disconnect(); systemMotion.removeEventListener('change', followMotion); terminal.dispose(); element.remove() },
+    dispose() { retheme.disconnect(); systemMotion.removeEventListener('change', followMotion); releaseRenderer(); terminal.dispose(); element.remove() },
   }
   return view
 }

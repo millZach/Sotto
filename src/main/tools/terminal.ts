@@ -69,7 +69,15 @@ export class TerminalService extends ToolOperations {
     const env = { ...(this.dependencies.env ?? process.env) }
     // Electron-run-as-Node/debug flags must not contaminate programs launched by a user shell.
     for (const key of Object.keys(env)) if (/^(ELECTRON_RUN_AS_NODE|NODE_OPTIONS|NODE_INSPECT_RESUME_ON_START)$/i.test(key)) delete env[key]
+    // A launcher's plain-text output policy does not describe this interactive terminal.
+    // Clear inherited overrides before the shell profile runs so users can still customize it.
+    for (const key of Object.keys(env)) {
+      const name = platform === 'win32' ? key.toUpperCase() : key
+      if (/^(NO_COLOR|FORCE_COLOR|CLICOLOR|CLICOLOR_FORCE|TERM|COLORTERM|TERM_PROGRAM)$/.test(name)) delete env[key]
+    }
     env.TERM = 'xterm-256color'
+    env.COLORTERM = 'truecolor'
+    env.TERM_PROGRAM = 'Sotto'
     const shell = platform === 'win32' ? join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
     const record: LiveTerminal = { session: { id: randomUUID(), workspace: owner, title: basename(shell), shell, status: 'running', cols, rows, exitCode: null, createdAt: Date.now() }, output: '', sequence: 0, subscriptions: [] }
     this.sessions.set(record.session.id, record)

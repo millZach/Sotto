@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { forceDomTerminalRenderer } from './support/terminal'
 
 // Phase 3 UI in the complete app: AppShell, renderer, preload, IPC and the production tools and personal chat services
 // are real. Coding providers and the personal Codex connection come from the explicit unpackaged E2E provider fixtures;
@@ -79,7 +80,7 @@ async function hostViews(app: ElectronApplication): Promise<{ url: string; bound
   })
 }
 
-test('reviews changes, runs a terminal and browses a local page for a real working copy, by pointer and keyboard', async () => {
+test('reviews changes, runs a terminal with the DOM fallback and browses a local page for a real working copy, by pointer and keyboard', async () => {
   test.setTimeout(240_000)
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html' })
@@ -93,6 +94,7 @@ test('reviews changes, runs a terminal and browses a local page for a real worki
   const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-tools-'))
   const { app, page } = launched
   try {
+    await forceDomTerminalRenderer(page)
     // The fixture's Workshop thread works in a real folder inside the owned profile; it becomes a Git working copy here.
     const folder = await page.evaluate(async () => {
       const agents = window.sotto!.agents!
@@ -125,7 +127,7 @@ test('reviews changes, runs a terminal and browses a local page for a real worki
     await toggle.focus()
     await page.keyboard.press('Enter')
     const panel = page.getByRole('complementary', { name: 'Tools' })
-    await expect(panel.getByRole('tab')).toHaveText(['Files', 'Changes', 'Terminal', 'Browser'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes'])
     await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
     await page.keyboard.press('ArrowRight')
     await expect(panel.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true')
