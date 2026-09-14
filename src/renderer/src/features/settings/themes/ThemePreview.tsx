@@ -69,8 +69,8 @@ export function ThemePreviewCircle({ colors, mode, small = false }: {
 }
 
 /**
- * A card's light and dark circles. Clicking one assigns the theme to that half;
- * an assigned circle carries a ring and a sun or moon badge.
+ * A card's light and dark swatches. Clicking one assigns the theme to that half;
+ * the sun and moon identify each choice, and an assigned half carries a ring.
  */
 export function ThemePreviewCircles({ label, previews, activeModes, onSelectMode }: {
   readonly label: string
@@ -79,33 +79,28 @@ export function ThemePreviewCircles({ label, previews, activeModes, onSelectMode
   readonly onSelectMode: (mode: ThemeAppearance) => void
 }): ReactNode {
   return (
-    <div className="theme-card__circles">
+    <div className="theme-card__swatches">
       {previews.map(preview => {
         const picked = activeModes.includes(preview.mode)
         return (
           <button
             key={preview.mode}
             type="button"
-            className="theme-circle tt-focusable"
+            className="theme-palette-swatch tt-focusable"
             aria-label={`Use ${label} ${preview.mode} mode`}
             aria-pressed={picked}
             title={preview.mode === 'light' ? 'Use for light mode only' : 'Use for dark mode only'}
+            style={{ backgroundColor: preview.colors.canvas, '--swatch-accent': preview.colors.accent } as CSSProperties}
             onClick={event => {
               event.stopPropagation()
               onSelectMode(preview.mode)
             }}
           >
-            <ThemePreviewCircle colors={preview.colors} mode={preview.mode} />
-            {picked
-              ? (
-                  <>
-                    <span className="theme-circle__ring" aria-hidden="true" />
-                    <span className="theme-circle__badge" aria-hidden="true">
-                      {preview.mode === 'light' ? <Sun size={12} strokeWidth={2.25} /> : <Moon size={12} strokeWidth={2.25} />}
-                    </span>
-                  </>
-                )
-              : null}
+            <span className="theme-palette-swatch__sidebar" style={{ backgroundColor: preview.colors.sidebar }} />
+            <span className="theme-palette-swatch__accent" style={{ backgroundColor: preview.colors.accent }} />
+            <span className="theme-palette-swatch__mode" aria-hidden="true">
+              {preview.mode === 'light' ? <Sun size={13} /> : <Moon size={13} />}
+            </span>
           </button>
         )
       })}

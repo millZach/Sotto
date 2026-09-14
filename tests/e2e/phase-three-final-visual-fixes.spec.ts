@@ -124,6 +124,7 @@ test('custom names read in full beside their actions, and each preview circle ke
     const { page } = launched
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
     const section = page.locator('#settings-appearance')
     const grid = section.locator('.theme-grid')
     const card = (label: string) => grid.locator('.theme-card').filter({ has: page.locator('.theme-card__name', { hasText: new RegExp(`^${label}$`, 'u') }) })
@@ -263,6 +264,7 @@ test('the footer status ends before a minimized editor docked in the footer, bes
 
     const openMinimized = async (): Promise<void> => {
       await page.getByRole('link', { name: 'Settings', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       await page.getByRole('button', { name: 'Create theme', exact: true }).click()
       await expect(editor).toBeVisible()
       await page.getByRole('link', { name: 'Threads', exact: true }).click()

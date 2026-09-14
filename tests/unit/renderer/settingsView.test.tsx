@@ -66,26 +66,142 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
 
 const copy = platformCopy('win32')
 
+async function selectCategory(name: string): Promise<void> {
+  await userEvent.click(screen.getByRole('tab', { name, exact: true }))
+}
+
 describe('SettingsView', () => {
-  it('renders the complete field matrix', async () => {
+  it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps()} />)
+    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application']
+    for (const name of categories) {
+      await selectCategory(name)
+      expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
+      const panel = screen.getByRole('tabpanel', { name, exact: true })
+      expect(panel).toBeVisible()
+      expect(screen.getByRole('tab', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(8)
+    }
+    screen.getByRole('tab', { name: 'Application', exact: true }).focus()
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('tab', { name: 'Dictation', exact: true })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('tab', { name: 'Transcription', exact: true })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('tabpanel', { name: 'Transcription', exact: true })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveFocus()
+    expect(screen.queryByRole('textbox', { name: 'Global shortcut' })).not.toBeInTheDocument()
+    screen.getByRole('tab', { name: 'Transcription', exact: true }).focus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'Application', exact: true })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('tab', { name: 'Appearance', exact: true })).toHaveFocus()
+  })
+
+  it('preserves invalid numeric drafts and their validation when returning to a category', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Output')
+    await user.clear(screen.getByRole('textbox', { name: 'Paste delay' }))
+    await user.type(screen.getByRole('textbox', { name: 'Paste delay' }), '49')
+    await selectCategory('Dictation')
+    expect(screen.queryByRole('textbox', { name: 'Paste delay' })).not.toBeInTheDocument()
+    await selectCategory('Output')
+    expect(screen.getByRole('textbox', { name: 'Paste delay' })).toHaveValue('49')
+    expect(screen.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('reports a pending save failure after navigation and restores the authoritative value on return', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<boolean>()
+    const props = baseProps({ onUpdateSettings: vi.fn(() => pending.promise) })
+    render(<SettingsView {...props} />)
+    await selectCategory('Output')
+    await user.clear(screen.getByRole('textbox', { name: 'Paste delay' }))
+    await user.type(screen.getByRole('textbox', { name: 'Paste delay' }), '300')
+    await selectCategory('Dictation')
+    expect(props.onUpdateSettings).toHaveBeenCalledWith({ pasteDelayMs: 300 })
+    pending.resolve(false)
+    expect(await screen.findByRole('alert')).toHaveTextContent('That setting could not be saved. Your previous setting is still active.')
+    expect(screen.getByRole('alert')).toBeVisible()
+    expect(screen.getByRole('tabpanel', { name: 'Dictation' })).toBeVisible()
+    await selectCategory('Output')
+    expect(screen.getByRole('textbox', { name: 'Paste delay' })).toHaveValue(String(props.settings.pasteDelayMs))
+  })
+
+  it('retains the credential draft and in-flight verification across category navigation', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<boolean>()
+    const check = vi.fn(async () => ({ ok: true as const }))
+    const update = vi.fn(() => pending.promise)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckTranscriptionKey: check })} />)
+    await selectCategory('Transcription')
+    const draft = crypto.randomUUID()
+    await user.type(screen.getByLabelText('OpenRouter API key'), draft)
+    await user.click(screen.getByRole('button', { name: 'Verify key' }))
+    await selectCategory('Output')
+    await selectCategory('Transcription')
+    expect(screen.getByLabelText('OpenRouter API key')).toHaveValue(draft)
+    expect(screen.getByRole('button', { name: 'Verifying...' })).toBeDisabled()
+    expect(update).toHaveBeenCalledOnce()
+    expect(check).not.toHaveBeenCalled()
+    await selectCategory('Output')
+    pending.resolve(true)
+    await waitFor(() => expect(check).toHaveBeenCalledOnce())
+    await selectCategory('Transcription')
+    expect(screen.getByText('Key verified.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Verify key' })).toBeEnabled()
+  })
+
+  it('keeps update actions busy through category navigation until the pending check settles', async () => {
+    const pending = deferred<null>()
+    const check = vi.fn(() => pending.promise)
+    render(<SettingsView {...baseProps({ onCheckForUpdates: check })} />)
+    await selectCategory('Application')
+    await userEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    await selectCategory('Dictation')
+    await selectCategory('Application')
+    expect(screen.getByRole('button', { name: 'Working...' })).toBeDisabled()
+    expect(check).toHaveBeenCalledOnce()
+    pending.resolve(null)
+    expect(await screen.findByRole('button', { name: 'Check now' })).toBeEnabled()
+  })
+
+  it('makes the complete field matrix available through its categories', async () => {
     render(<div><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
-    for (const name of [
-      'Reduced motion', 'Show floating widget when idle', 'Microphone', 'Global shortcut',
-      'Sound cues', 'Language', 'Whitespace formatting',
-      'Automatic clipboard copy', 'Automatic paste', 'Paste delay', 'Success message duration',
-      copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history', 'History retention',
-    ]) expect(screen.getByRole(name === 'Show floating widget when idle' || name === 'Sound cues' || name === 'Whitespace formatting' || name === 'Automatic clipboard copy' || name === 'Automatic paste' || name === copy.settingsLaunchAtStartupLabel || name === 'Start minimized' || name === 'Keep local history' ? 'switch' : name === 'Global shortcut' || name === 'Paste delay' || name === 'Success message duration' ? 'textbox' : 'combobox', { name })).toBeVisible()
-    expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: 'Microphone' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Global shortcut' })).toBeVisible()
+    expect(screen.getByRole('switch', { name: 'Sound cues' })).toBeVisible()
     expect(screen.getByRole('radiogroup', { name: 'Maximum recording time' })).toBeVisible()
+    await selectCategory('Transcription')
+    expect(screen.getByRole('combobox', { name: 'Language' })).toBeVisible()
+    expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toBeVisible()
+    await selectCategory('Output')
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeDisabled()
+    expect(screen.getByRole('switch', { name: 'Automatic paste' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Paste delay' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Success message duration' })).toBeVisible()
+    await selectCategory('Application')
+    expect(screen.getByRole('combobox', { name: 'Reduced motion' })).toBeVisible()
+    expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
+    for (const name of [copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history']) {
+      expect(screen.getByRole('switch', { name })).toBeVisible()
+    }
+    expect(screen.getByRole('combobox', { name: 'History retention' })).toBeVisible()
   })
 
   it('saves the widget idle-visibility preference through the ordinary patch flow', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
 
     await user.click(screen.getByRole('switch', { name: 'Show floating widget when idle' }))
 
@@ -96,6 +212,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const props = baseProps()
     const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Output')
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '999')
@@ -107,6 +224,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
 
     expect(screen.queryByRole('combobox', { name: 'Theme' })).not.toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
@@ -118,11 +236,12 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'iris', darkTheme: 'ember' } })} />)
+    await selectCategory('Appearance')
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
     expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
-    // One short line explains the choice; the pressed tiles and cards say what is chosen.
-    expect(within(section).getByText(/^Choose light, dark or system/u)).toHaveTextContent('Choose light, dark or system, then a theme for each. The floating widget always follows the Windows light or dark setting.')
+    // The scope stays short; pressed choices communicate the persisted selections.
+    expect(within(section).getByText('Themes & interface')).toBeVisible()
     expect(section).not.toHaveTextContent(/using Dusk/u)
     expect(within(section).queryByRole('radiogroup', { name: 'Accent' })).not.toBeInTheDocument()
     expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
@@ -143,11 +262,16 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Appearance')
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
-    // The tiles run System, Light, Dark in reading order.
-    within(section).getByRole('button', { name: 'Follow the system appearance' }).focus()
+    // The scheme buttons run Light, Dark, System in reading order.
+    within(section).getByRole('button', { name: 'Use light mode' }).focus()
     await user.keyboard('{Tab}')
+    expect(within(section).getByRole('button', { name: 'Use dark mode' })).toHaveFocus()
+    await user.keyboard('{Tab}')
+    expect(within(section).getByRole('button', { name: 'Follow the system appearance' })).toHaveFocus()
+    await user.keyboard('{Shift>}{Tab}{Tab}{/Shift}')
     expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveFocus()
     await user.keyboard('{Enter}')
     await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'light' }))
@@ -275,6 +399,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Output')
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '49')
@@ -294,6 +419,7 @@ describe('SettingsView', () => {
     const update = vi.fn(() => pending.promise)
     const props = baseProps({ onUpdateSettings: update })
     const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Output')
     const delay = screen.getByRole('textbox', { name: 'Paste delay' })
     await user.clear(delay)
     await user.type(delay, '300')
@@ -314,6 +440,7 @@ describe('SettingsView', () => {
     const update = vi.fn(() => pending.promise)
     const props = baseProps({ onUpdateSettings: update })
     const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Output')
     const duration = screen.getByRole('textbox', { name: 'Success message duration' })
     await user.clear(duration)
     await user.type(duration, '1500')
@@ -328,8 +455,9 @@ describe('SettingsView', () => {
     expect(duration).toHaveValue('3100')
   })
 
-  it('preserves an unknown persisted language and labels auto honestly', () => {
+  it('preserves an unknown persisted language and labels auto honestly', async () => {
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, language: 'cy' } })} />)
+    await selectCategory('Transcription')
     expect(screen.getByRole('option', { name: 'Saved language (cy)' })).toBeVisible()
     expect(screen.getByRole('option', { name: 'Automatic (detect language)' })).toBeVisible()
     expect(screen.queryByText(/auto-detect/i)).not.toBeInTheDocument()
@@ -344,6 +472,7 @@ describe('SettingsView', () => {
       onClearHistory: vi.fn(async () => false),
       onResetSettings: vi.fn(async () => false),
     })} />)
+    await selectCategory('Application')
     if (operation === 'clear') {
       await user.click(screen.getByRole('button', { name: /clear history/i }))
       await user.click(screen.getByRole('button', { name: /clear all transcripts/i }))
@@ -361,7 +490,9 @@ describe('SettingsView', () => {
     const reset = vi.fn(async () => true)
     const clear = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update, onSetStartup: startup, onResetSettings: reset, onClearHistory: clear })} />)
+    await selectCategory('Output')
     await user.click(screen.getByRole('switch', { name: 'Automatic paste' }))
+    await selectCategory('Application')
     await user.selectOptions(screen.getByRole('combobox', { name: 'History retention' }), '500')
     await user.click(screen.getByRole('switch', { name: copy.settingsLaunchAtStartupLabel }))
     expect(update).toHaveBeenCalledWith({ autoPaste: false })
@@ -380,10 +511,14 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reduced motion' }), 'on')
+    await selectCategory('Dictation')
     await user.click(screen.getByRole('radio', { name: '2 min' }))
     await user.click(screen.getByRole('switch', { name: 'Sound cues' }))
+    await selectCategory('Transcription')
     await user.click(screen.getByRole('switch', { name: 'Whitespace formatting' }))
+    await selectCategory('Application')
     await user.click(screen.getByRole('switch', { name: 'Start minimized' }))
     await user.click(screen.getByRole('switch', { name: 'Keep local history' }))
     expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
@@ -394,12 +529,13 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ historyEnabled: false })
   })
 
-  it('shows only MAI and puts its shared key and verification in Transcription', () => {
+  it('shows only MAI and puts its shared key and verification in Transcription', async () => {
     const { container } = render(<SettingsView {...baseProps()} />)
+    await selectCategory('Transcription')
     const section = container.querySelector('#settings-transcription') as HTMLElement
     expect(within(section).getByLabelText('OpenRouter API key')).toHaveAttribute('type', 'password')
     expect(within(section).getByRole('button', { name: 'Verify key' })).toBeVisible()
-    expect(within(section).getByText(/cannot transcribe until you add your OpenRouter API key/i)).toBeVisible()
+    expect(within(section).getByText('Language & speech to text')).toBeVisible()
     expect(container.querySelectorAll('.settings-model-statement')).toHaveLength(1)
     expect(container.querySelectorAll('.settings-model-card')).toHaveLength(0)
     expect(within(section).getByRole('heading', { name: 'MAI-Transcribe-2' })).toBeVisible()
@@ -420,6 +556,7 @@ describe('SettingsView', () => {
   ] as const)('shows the verification result %j', async (result, message) => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps({ onCheckTranscriptionKey: vi.fn(async (): Promise<TranscriptionKeyCheck> => result) })} />)
+    await selectCategory('Transcription')
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
     expect(await screen.findByText(message)).toBeVisible()
   })
@@ -430,6 +567,7 @@ describe('SettingsView', () => {
     const update = vi.fn(() => pending.promise)
     const check = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({ onUpdateSettings: update, onCheckTranscriptionKey: check })} />)
+    await selectCategory('Transcription')
     // A generated inert value exercises credential plumbing without storing any key in a fixture.
     await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
@@ -445,6 +583,7 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const stored = 'Saved in your operating system credential store'
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, llmApiKey: stored }, onUpdateSettings: update })} />)
+    await selectCategory('Transcription')
     // The saved key shows as a state, never as the placeholder sentence itself.
     expect(screen.getByLabelText('OpenRouter API key')).toHaveValue('')
     expect(screen.getByLabelText('OpenRouter API key')).toHaveAttribute('placeholder', 'Key saved')
@@ -464,6 +603,7 @@ describe('SettingsView', () => {
     const check = vi.fn(async () => ({ ok: true as const }))
     const props = baseProps({ onUpdateSettings: vi.fn(() => pending.promise), onCheckTranscriptionKey: check })
     const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Transcription')
     const input = screen.getByLabelText('OpenRouter API key')
     await user.type(input, crypto.randomUUID())
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
@@ -481,6 +621,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const check = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({ onUpdateSettings: vi.fn(async () => false), onCheckTranscriptionKey: check })} />)
+    await selectCategory('Transcription')
     await user.type(screen.getByLabelText('OpenRouter API key'), crypto.randomUUID())
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
     expect(await screen.findByText('The API key could not be saved.')).toBeVisible()
@@ -491,6 +632,7 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
 
     const toggle = screen.getByRole('switch', { name: 'Check for updates automatically' })
     expect(toggle).toBeChecked()
@@ -510,6 +652,7 @@ describe('SettingsView', () => {
     const install = vi.fn(async () => true)
 
     const { unmount } = render(<SettingsView {...baseProps({ onCheckForUpdates: check })} />)
+    await selectCategory('Application')
     await user.click(screen.getByRole('button', { name: 'Check now' }))
     expect(check).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument()
@@ -519,6 +662,7 @@ describe('SettingsView', () => {
       updateStatus: { currentVersion: '3.4.0', phase: { phase: 'available', version: '3.5.0' } },
       onDownloadUpdate: download,
     })} />)
+    await selectCategory('Application')
     expect(screen.getByText('Sotto 3.5.0 is available.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Download' }))
     expect(download).toHaveBeenCalledOnce()
@@ -528,14 +672,16 @@ describe('SettingsView', () => {
       updateStatus: { currentVersion: '3.4.0', phase: { phase: 'downloaded', version: '3.5.0' } },
       onInstallUpdate: install,
     })} />)
+    await selectCategory('Application')
     await user.click(screen.getByRole('button', { name: 'Restart to update' }))
     expect(install).toHaveBeenCalledOnce()
   })
 
-  it('says plainly when this build has no update feed at all', () => {
+  it('says plainly when this build has no update feed at all', async () => {
     render(<SettingsView {...baseProps({
       updateStatus: { currentVersion: '3.4.0', phase: { phase: 'unsupported' } },
     })} />)
+    await selectCategory('Application')
 
     expect(screen.getByText('Update checks run only in the installed Windows app.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled()
@@ -546,13 +692,16 @@ describe('SettingsView', () => {
     const macCopy = platformCopy('darwin')
     const replace = vi.fn(async () => ({ ok: true as const }))
     render(<SettingsView {...baseProps({ platform: 'darwin', onReplaceHotkey: replace })} />)
+    await selectCategory('Application')
 
     expect(screen.getByRole('switch', { name: macCopy.settingsLaunchAtStartupLabel })).toBeVisible()
-    expect(screen.getByRole('option', { name: macCopy.settingsMicrophoneDefaultOption })).toBeVisible()
-    expect(screen.getByText(macCopy.settingsGlobalShortcutDescription)).toBeVisible()
-    expect(screen.getByText(macCopy.settingsAutoPasteDescription)).toBeVisible()
     expect(screen.getByText(macCopy.settingsReducedMotionDescription)).toBeVisible()
     expect(screen.queryByRole('switch', { name: copy.settingsLaunchAtStartupLabel })).not.toBeInTheDocument()
+    await selectCategory('Output')
+    expect(screen.getByText(macCopy.settingsAutoPasteDescription)).toBeVisible()
+    await selectCategory('Dictation')
+    expect(screen.getByRole('option', { name: macCopy.settingsMicrophoneDefaultOption })).toBeVisible()
+    expect(screen.getByText(macCopy.settingsGlobalShortcutDescription)).toBeVisible()
 
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })
     expect(input).toHaveValue('Command+Shift+Space')
@@ -563,7 +712,7 @@ describe('SettingsView', () => {
     expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
   })
 
-  it('places Agents immediately after Providers and exposes Reasoning account inline', () => {
+  it('places Agents immediately after Providers and exposes Reasoning account inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
@@ -579,12 +728,10 @@ describe('SettingsView', () => {
       attention: { items: [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) },
     })
     const { container } = render(<SettingsView {...baseProps()} />)
-    const nav = screen.getByRole('navigation', { name: 'Settings sections' })
-    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    await selectCategory('Agents')
+    const nav = screen.getByRole('tablist', { name: 'Settings sections' })
+    expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application',
-    ])
-    expect([...container.querySelectorAll('.settings-scroll > .settings-section')].map((section) => section.id)).toEqual([
-      'settings-capture', 'settings-transcription', 'settings-formatting', 'settings-providers', 'settings-agents', 'settings-output', 'settings-appearance', 'settings-privacy',
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()

@@ -2,6 +2,7 @@ import React, { useEffect, useState, type ReactNode } from 'react'
 import { NATURAL_VOICES, type AgentConfiguration, type AgentVoiceModelStatus } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
+import { Toggle } from '../components/Toggle'
 import voiceLicense from '../../../../docs/notices/supertonic-LICENSE.txt?raw'
 
 function speechError(error: unknown): string {
@@ -105,7 +106,7 @@ export function VoiceSettings({ configuration, command, change, grokKeySaved = f
   const displayedError = error || voiceError
   const savedVoiceOutsideCatalog = configuration.grokSpeechVoice && !voices.some(voice => voice.id === configuration.grokSpeechVoice)
   return <div className="agent-field-wide agent-voice-settings">
-    <label className="agent-checkbox"><input type="checkbox" checked={configuration.speak} onChange={event => change('speak', event.target.checked)} />Spoken replies</label>
+    <Toggle label="Spoken replies" checked={configuration.speak} onCheckedChange={checked => change('speak', checked)} />
     <div className="agent-fields">
       <label>Speech voice<select aria-label="Speech voice" value={configuration.speechProvider} onChange={event => { change('speechProvider', event.target.value as AgentConfiguration['speechProvider']); setError(''); setNotice('') }}>
         <option value="grok">Grok voice · default</option>
