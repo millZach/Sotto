@@ -20,6 +20,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
   packageComponent('@xterm/addon-fit', '0.11.0', 'MIT', 'The xterm.js authors'),
+  packageComponent('@xterm/addon-webgl', '0.19.0', 'MIT', 'The xterm.js authors'),
   packageComponent('node-pty', '1.1.0', 'MIT', 'Christopher Jeffrey; Daniel Imms; Microsoft Corporation'),
   packageComponent('node-addon-api', '7.1.1', 'MIT', 'Node.js API collaborators'),
   // Compiled into the main-process bundle, so their code ships inside app.asar

@@ -27,7 +27,7 @@ The storage tests use the production persistence modules and real temporary file
 
 ## Specification
 
-Source: the [accepted specification](../superpowers/specs/2026-09-09-sotto-agent-control-center-spec.md). The independent reviewer reported four findings, then verified their fixes through the production Electron main/preload/renderer composition with controlled external host and reasoning effects.
+Source: the [historical accepted specification](https://github.com/millZach/Sotto/blob/0e12b1ce0c616265121f74c3a8d692ae4760d3d6/docs/superpowers/specs/2026-09-09-sotto-agent-control-center-spec.md). That intermediary-host specification was superseded and removed in #24; current operation is described in [Sotto agent control](../agent-control.md). The independent reviewer reported four findings, then verified their fixes through the production Electron main/preload/renderer composition with controlled external host and reasoning effects.
 
 | Finding | Specification requirement | Resolution and regression evidence |
 | --- | --- | --- |

@@ -363,7 +363,10 @@ const licenseSections = [
 ${await read('node_modules/@xterm/xterm/LICENSE')}
 
 @xterm/addon-fit
-${await read('node_modules/@xterm/addon-fit/LICENSE')}`],
+${await read('node_modules/@xterm/addon-fit/LICENSE')}
+
+@xterm/addon-webgl
+${await read('node_modules/@xterm/addon-webgl/LICENSE')}`],
   ['Native terminal MIT licenses', `node-pty
 ${await read('node_modules/node-pty/LICENSE')}
 

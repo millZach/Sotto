@@ -44,13 +44,26 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
     const configure = async (target: Page, chosen: ProviderId) => target.evaluate(async provider => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const result = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider, enabled: true, speak: false, reasoning: 'none', followupLimit: 0,
+        provider, enabled: true, enabledProviders: [provider], speak: false, reasoning: 'none', followupLimit: 0,
       } })
       if (result.error) throw new Error(result.error)
-      const connected = await window.sotto!.agents!.command({ type: 'connect' })
+      const connected = await window.sotto!.agents!.command({ type: 'connect', provider })
       if (connected.error) throw new Error(connected.error)
-      return { version: connected.host.version, models: connected.host.models.map(model => ({ id: model.id, ready: model.ready })), connection: connected.connection }
+      const ready = connected.host.models.filter(model => model.providerId === provider && model.ready)
+      const model = ready.find(model => /luna|mini|haiku/i.test(model.name)) ?? ready[0]
+      if (!model) throw new Error(`No ready ${provider} model; no native turn initiated.`)
+      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { defaultModelId: model.id } })
+      if (configured.error) throw new Error(configured.error)
+      return { version: connected.host.providers?.find(value => value.id === provider)?.version ?? connected.host.version,
+        model: { id: model.id, name: model.name, reasoningEffort: ['minimal', 'low', 'none'].find(value => model.reasoningEfforts?.includes(value)) },
+        connection: connected.connection }
     }, chosen)
+    const waitForIdle = async (target: Page): Promise<void> => {
+      await expect.poll(() => target.evaluate(async () => {
+        const state = await window.sotto!.agents!.get()
+        return state.host.threads.find(thread => thread.id === state.activeThreadId)?.status
+      }), { timeout: 30_000 }).toBe('idle')
+    }
     try {
       const restoreBinding = restoreRoot ? JSON.parse(await readFile(join(profile, 'threads.json'), 'utf8')) : undefined
       page = await launch()
@@ -59,6 +72,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
         await page.getByRole('link', { name: 'Threads', exact: true }).click()
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
+        await waitForIdle(page)
         const state = await page.evaluate(async () => window.sotto!.agents!.get())
         expect(state.configuration.provider).toBe(provider)
         expect(state.activeThreadId).toBe(restoreBinding.bindings[0].threadId)
@@ -72,7 +86,8 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
         evidence.passed = true
         return
       }
-      evidence.connection = await configure(page, provider)
+      const connection = await configure(page, provider)
+      evidence.connection = connection
       await page.reload()
       await page.getByRole('link', { name: 'Threads', exact: true }).click()
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
@@ -80,6 +95,8 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       await dialog.getByRole('button', { name: /Local folder/ }).click()
       await expect(dialog).toContainText(project)
       await dialog.getByRole('textbox', { name: 'Thread name' }).fill(title)
+      await expect(dialog.getByRole('combobox', { name: 'Thread model', exact: true })).toHaveText(connection.model.name)
+      if (connection.model.reasoningEffort) await dialog.getByRole('combobox', { name: 'Thread reasoning' }).selectOption(connection.model.reasoningEffort)
       await dialog.getByRole('combobox', { name: 'Thread permissions' }).selectOption(provider === 'codex' ? 'full-access' : 'approval-required')
       await page.screenshot({ path: join(artifacts, 'create.png') })
       await dialog.getByRole('button', { name: 'Create thread' }).click()
@@ -109,6 +126,8 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 90_000 })
       await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('', { timeout: 15_000 })
       await expect(page.getByLabel('Pending message')).toHaveCount(0)
+      // A streamed reply can precede the native turn's final result event.
+      await waitForIdle(page)
       const completed = await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
         return { thread: state.host.threads.find(thread => thread.id === state.activeThreadId), assignments: state.assignments,
@@ -134,6 +153,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       await page.getByRole('link', { name: 'Threads', exact: true }).click()
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
+      await waitForIdle(page)
       const restored = await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
         return state.host.threads.find(thread => thread.id === state.activeThreadId)

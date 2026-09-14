@@ -16,6 +16,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `@anthropic-ai/claude-agent-sdk` | `0.3.270` | SEE LICENSE IN README.md | Anthropic PBC |
 | `@xterm/xterm` | `6.0.0` | MIT | The xterm.js authors; SourceLair Private Company; Christopher Jeffrey |
 | `@xterm/addon-fit` | `0.11.0` | MIT | The xterm.js authors |
+| `@xterm/addon-webgl` | `0.19.0` | MIT | The xterm.js authors |
 | `node-pty` | `1.1.0` | MIT | Christopher Jeffrey; Daniel Imms; Microsoft Corporation |
 | `node-addon-api` | `7.1.1` | MIT | Node.js API collaborators |
 | `electron-updater` | `6.8.9` | MIT | Loopline Systems and electron-builder contributors |
@@ -421,6 +422,28 @@ THE SOFTWARE.
 
 @xterm/addon-fit
 Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+@xterm/addon-webgl
+Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
