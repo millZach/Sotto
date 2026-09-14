@@ -72,6 +72,47 @@ describe('unified diff rows', () => {
 })
 
 describe('Changes surface', () => {
+  it('aligns unequal edits in split view without losing context, hunk numbers or no-newline notes', async () => {
+    const patch = 'diff --git a/src/old.ts b/src/app.ts\nold mode 100644\nnew mode 100755\nsimilarity index 75%\nrename from src/old.ts\nrename to src/app.ts\nindex abc123..def456 100755\n--- a/src/old.ts\n+++ b/src/app.ts\n@@ -10,4 +20,5 @@\n keep\n-old one\n-old two\n+new one\n+new two\n+new three\n tail\n@@ -30 +40 @@\n-old end\n\\ No newline at end of file\n+new end\n'
+    setup(fakeGit({ diffs: { 'src/app.ts': { kind: 'text', patch } } }))
+    await userEvent.click(await within(panel()).findByRole('option', { name: /^app\.ts/u }))
+    const diff = await within(panel()).findByRole('region', { name: 'Changes in src/app.ts' })
+    await within(diff).findByText('new three')
+    const visibleMetadata = () => [...diff.querySelectorAll('.changes-line[data-kind="meta"]')].map(row => row.textContent)
+    const usefulMetadata = ['old mode 100644', 'new mode 100755', 'similarity index 75%', 'rename from src/old.ts', 'rename to src/app.ts']
+    expect(visibleMetadata()).toEqual(usefulMetadata)
+    const toggle = within(diff).getByRole('button', { name: 'Split view' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(within(diff).getByText('Before')).toBeInTheDocument()
+    expect(within(diff).getByText('Working copy')).toBeInTheDocument()
+    expect(visibleMetadata()).toEqual(usefulMetadata)
+    const rows = [...diff.querySelectorAll('.changes-split__row')].map(row => [...row.children].map(cell => [
+      cell.querySelector('.changes-line__number')!.textContent,
+      cell.querySelector('.changes-line__text')!.textContent?.trim(),
+    ]))
+    expect(rows).toEqual([
+      [['10', 'keep'], ['20', 'keep']],
+      [['11', 'Removed: old one'], ['21', 'Added: new one']],
+      [['12', 'Removed: old two'], ['22', 'Added: new two']],
+      [['', ''], ['23', 'Added: new three']],
+      [['13', 'tail'], ['24', 'tail']],
+      [['30', 'Removed: old end'], ['', '']],
+      [['', ''], ['40', 'Added: new end']],
+    ])
+    const blocks = [...diff.querySelector('.changes-diff__rows')!.children]
+    expect(blocks.filter(row => row.getAttribute('data-kind') === 'hunk').map(row => row.textContent)).toEqual(['@@ -10,4 +20,5 @@', '@@ -30 +40 @@'])
+    const note = blocks.findIndex(row => row.getAttribute('data-kind') === 'note')
+    expect(blocks[note - 1]).toHaveTextContent('old end')
+    expect(blocks[note]).toHaveTextContent('No newline at end of file')
+    expect(blocks[note + 1]).toHaveTextContent('new end')
+    await userEvent.click(toggle)
+    expect(diff.querySelector('.changes-split__row')).toBeNull()
+    expect(diff.querySelectorAll('.changes-line[data-kind="remove"]')).toHaveLength(3)
+    expect(diff.querySelectorAll('.changes-line[data-kind="add"]')).toHaveLength(4)
+  })
+
   it('keeps watching the active working copy when an earlier activation finishes late', async () => {
     const git = fakeGit()
     const store = new ChangesStore()
@@ -114,7 +155,7 @@ describe('Changes surface', () => {
     within(list).getAllByRole('option')[0]!.focus()
     await userEvent.keyboard('{ArrowDown}{ArrowUp}{Enter}')
     const diff = await within(panel()).findByRole('region', { name: 'Changes in src/app.ts' })
-    await waitFor(() => expect(diff.querySelectorAll('.changes-line')).toHaveLength(8))
+    await waitFor(() => expect(diff.querySelectorAll('.changes-line')).toHaveLength(5))
     expect([...diff.querySelectorAll('.changes-line[data-kind="remove"], .changes-line[data-kind="add"]')].map(row => row.querySelector('.changes-line__text')!.textContent))
       .toEqual(['Removed: export const ready = false', 'Added: export const ready = true'])
     expect(git.bridge.diff).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, path: 'src/app.ts' })

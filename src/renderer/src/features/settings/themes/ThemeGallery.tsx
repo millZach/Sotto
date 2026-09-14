@@ -1,6 +1,6 @@
 /*
- * The Themes part of Settings → Appearance: the colour-scheme tiles, the theme
- * cards with their light and dark circles, and removal.
+ * The Themes part of Settings → Appearance: the scheme selector, compact
+ * palette cards with independent light and dark choices, and removal.
  *
  * Follows T3 Code's apps/web/src/components/settings/ThemeSettings.tsx at
  * commit d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3 (MIT, Copyright (c) 2026
@@ -28,13 +28,12 @@ import {
   assignHalfPatch,
   collectionVariantLabels,
   groupCustomThemes,
-  previewColorsFor,
   themeCardPreviews,
   useThemePatch,
   type LibraryPatch,
   type ThemeMode,
 } from './themeLibrary'
-import { MODE_LABELS, ThemePreviewCircle, ThemePreviewCircles, ThemeWireframe } from './ThemePreview'
+import { MODE_LABELS, ThemePreviewCircle, ThemePreviewCircles } from './ThemePreview'
 
 export interface ThemeGalleryProps {
   readonly shown: AppearanceChoice
@@ -62,46 +61,38 @@ export function ThemeGallery({ shown, resolved, onChooseMode, onSelect, onRemove
   const duplicate = (theme: ThemeDefinition): void => openEditor({ seedThemeId: theme.id, seedName: `${theme.label} copy`.slice(0, 48) })
   const assign = (id: string) => (mode: ThemeAppearance): void => onSelect(assignHalfPatch(mode, id))
 
-  const wireframe = (mode: ThemeMode): ReactNode => {
-    const colors = (appearance: ThemeAppearance) => previewColorsFor(appearance === 'light' ? shown.lightTheme : shown.darkTheme, appearance, shown.customThemes)
-    return (
-      <ThemeWireframe panes={mode === 'system'
-        ? [{ clip: 'left', colors: colors('light') }, { clip: 'right', colors: colors('dark') }]
-        : [{ colors: colors(mode) }]}
-      />
-    )
-  }
-
   return (
     <>
-      <h3 className="theme-settings__subheading" id={schemeId}>Color scheme</h3>
-      <div className="theme-mode-tiles" role="group" aria-labelledby={schemeId}>
-        {(['system', 'light', 'dark'] as const).map(mode => (
-          <button
-            key={mode}
-            type="button"
-            className="theme-mode-tile tt-focusable"
-            aria-label={mode === 'system' ? 'Follow the system appearance' : `Use ${mode} mode`}
-            aria-pressed={shown.appearance === mode}
-            onClick={() => onChooseMode(mode)}
-          >
-            {wireframe(mode)}
-            <span className="theme-mode-tile__label">{MODE_LABELS[mode]}</span>
-          </button>
-        ))}
+      <div className="theme-settings__scheme">
+        <h3 className="theme-settings__subheading" id={schemeId}>Color scheme</h3>
+        <div className="theme-mode-segments" role="group" aria-labelledby={schemeId}>
+          {(['light', 'dark', 'system'] as const).map(mode => (
+            <button
+              key={mode}
+              type="button"
+              className="theme-mode-segment tt-focusable"
+              aria-label={mode === 'system' ? 'Follow the system appearance' : `Use ${mode} mode`}
+              aria-pressed={shown.appearance === mode}
+              onClick={() => onChooseMode(mode)}
+            >
+              {MODE_LABELS[mode]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="theme-settings__bar">
         <h3 className="theme-settings__subheading" id={headingId}>Themes</h3>
         <div className="theme-settings__actions">
-          <Button variant="secondary" onClick={() => openEditor({ seedThemeId: resolved === 'light' ? shown.lightTheme : shown.darkTheme })}>
+          <Button variant="ghost" onClick={() => openEditor({ seedThemeId: resolved === 'light' ? shown.lightTheme : shown.darkTheme })}>
             <Paintbrush size={15} aria-hidden="true" />Create theme
           </Button>
-          <Button variant="secondary" onClick={onAddTheme}>
+          <Button variant="ghost" onClick={onAddTheme}>
             <Plus size={15} aria-hidden="true" />Add theme
           </Button>
         </div>
       </div>
+      <p className="theme-settings__assignment-hint">Choose a theme for both modes, or use its sun and moon to set each separately.</p>
 
       <div className="theme-grid" role="list" aria-labelledby={headingId}>
         {BUILT_IN_THEMES.map(theme => (

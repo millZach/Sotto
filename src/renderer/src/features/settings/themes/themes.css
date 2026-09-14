@@ -136,27 +136,27 @@
 
 .theme-grid {
   display: grid;
-  /* T3 Code's auto-fit gallery track, sized for Sotto's 720px settings column: three columns there, then two, then one. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 14px;
+  max-height: none;
+  overflow: visible;
 }
 
 .theme-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
   min-width: 0;
-  padding: 16px 12px 10px;
-  border: 1px solid var(--tt-border);
-  border-radius: 14px;
-  background: var(--tt-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease;
 }
 
-.theme-card:hover { border-color: var(--tt-text-faint); }
-.theme-card[data-active] { border-color: var(--tt-accent-border); background: var(--tt-accent-wash); }
+.theme-card[data-active] .theme-card__title { font-weight: 600; }
 
 /* T3's pair: two 68px buttons 10px apart, so each ring and badge belongs to one circle. */
 .theme-card__circles {
@@ -236,7 +236,7 @@
   color: var(--tt-text-muted);
   background: none;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -383,6 +383,59 @@
 }
 
 /* Editor ---------------------------------------------------------------------- */
+
+/* Index appearance: compact palette choices beside a live, passive sample. */
+.theme-settings__layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr); align-items: start; gap: 28px; }
+.theme-settings__controls { min-width: 0; }
+.theme-settings__scheme { padding-bottom: 16px; border-bottom: 1px solid var(--tt-hairline); }
+.theme-settings__scheme .theme-settings__subheading { margin: 0 0 10px; }
+.theme-mode-segments { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--tt-border); border-radius: 999px; }
+.theme-mode-segment { min-height: 30px; padding: 4px 13px; border: 0; border-radius: 999px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.theme-mode-segment[aria-pressed='true'] { color: var(--tt-on-accent); background: var(--tt-accent); }
+.theme-mode-segment:hover:not([aria-pressed='true']) { color: var(--tt-text); background: var(--tt-hover); }
+.theme-settings__bar { margin: 20px 0 8px; gap: 4px 8px; }
+.theme-settings__actions { gap: 0; }
+.theme-settings__actions .tt-button { min-height: 32px; padding: 4px 7px; font-size: 14px; }
+.theme-settings__assignment-hint { margin: 0 0 14px; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.theme-settings__status:empty { display: none; }
+.theme-card__swatches { display: flex; gap: 3px; }
+.theme-palette-swatch { position: relative; flex: 1; min-width: 0; height: 58px; padding: 0; border: 1px solid var(--tt-border); border-radius: 7px; overflow: hidden; cursor: pointer; }
+.theme-palette-swatch[aria-pressed='true'] { outline: 2px solid var(--tt-accent-text); outline-offset: 2px; }
+.theme-palette-swatch__sidebar { position: absolute; inset: 7px auto 7px 6px; width: 25%; border-radius: 2px; }
+.theme-palette-swatch__accent { position: absolute; left: 40%; right: 10%; top: 12px; height: 5px; border-radius: 2px; }
+.theme-palette-swatch__mode { position: absolute; right: 5px; bottom: 5px; display: grid; place-items: center; width: 21px; height: 21px; color: var(--tt-text-muted); background: var(--tt-surface); border-radius: 50%; }
+.theme-palette-swatch[aria-pressed='true'] .theme-palette-swatch__mode { color: var(--tt-on-accent); background: var(--tt-accent); }
+.theme-settings__controls .settings-rows { margin-top: 16px; }
+.settings-view .theme-settings__controls .settings-rows .theme-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label value' 'description description' 'range range'; gap: 8px; padding: 18px 0; }
+.settings-view .theme-settings__controls .theme-slider .tt-field__label { grid-area: label; }
+.settings-view .theme-settings__controls .theme-slider .tt-field__description { grid-area: description; max-width: none; font-size: 12px; }
+.settings-view .theme-settings__controls .theme-slider__value { grid-area: value; }
+.settings-view .theme-settings__controls .theme-slider__input { grid-area: range; }
+.theme-slider__value { font-size: 14px; }
+.theme-live-preview { min-width: 0; padding: 17px; border: 1px solid var(--tt-border); border-radius: 16px; }
+.theme-live-preview h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; }
+.theme-live-preview__window { overflow: hidden; border: 1px solid var(--tt-border); border-radius: 11px; background: var(--tt-canvas); }
+.theme-live-preview__titlebar { display: flex; align-items: center; gap: 7px; padding: 10px; border-bottom: 1px solid var(--tt-hairline); font-size: 12px; }
+.theme-live-preview__titlebar svg { width: 20px; height: 20px; }
+.theme-live-preview__titlebar > span { margin-left: auto; color: var(--tt-text-muted); }
+.theme-live-preview__body { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 25px 12px; }
+.theme-live-preview__body > strong { font-size: 16px; font-weight: 600; text-align: center; }
+.theme-live-preview__orb { width: 76px; height: 76px; border-radius: 50%; background: radial-gradient(circle at 30% 24%, color-mix(in srgb, var(--preview-orb-light), white 25%), var(--preview-orb-light) 12%, var(--preview-orb-dark) 55%, color-mix(in srgb, var(--preview-orb-dark), black 60%) 90%); box-shadow: inset -5px -7px 13px rgb(0 0 0 / 15%), 0 9px 25px color-mix(in srgb, var(--preview-orb-dark) 22%, transparent); }
+.theme-live-preview__composer { display: flex; align-items: center; gap: 7px; width: 72%; padding: 10px 14px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-glass); backdrop-filter: var(--tt-glass-filter); color: var(--tt-accent-text); }
+.theme-live-preview__composer > span { flex: 1; height: 3px; border-radius: 2px; background: var(--tt-hairline); }
+.theme-live-preview__parts { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-top: 20px; }
+.theme-live-preview__parts > div { display: grid; justify-items: center; gap: 9px; }
+.theme-live-preview__parts > div > span { color: var(--tt-text-muted); font-size: 12px; }
+.theme-live-preview__app-icon { width: 44px; height: 44px; }
+.theme-live-preview__widget { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 136px; padding: 10px 17px; border: 1px solid; border-radius: 15px; font-size: 14px; }
+.theme-live-preview > p { margin: 17px 0 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 1050px) {
+  .theme-settings__layout { grid-template-columns: minmax(0, 1fr); }
+  .theme-live-preview { width: min(100%, 340px); }
+}
+@media (prefers-reduced-motion: reduce) { .theme-card, .theme-card__actions { transition: none; } }
+:root[data-reduced-motion='on'] .theme-card,
+:root[data-reduced-motion='on'] .theme-card__actions { transition: none; }
 
 .theme-editor {
   position: fixed;
@@ -595,7 +648,7 @@
   border-radius: 4px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -667,7 +720,7 @@
 
 .theme-picker__hue-thumb { top: 50%; width: 16px; height: 16px; }
 .theme-picker__inputs { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; }
-.theme-picker__inputs label { display: grid; gap: 3px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.theme-picker__inputs label { display: grid; gap: 3px; color: var(--tt-text-muted); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
 .theme-picker__inputs .tt-input { min-height: 28px; padding: 3px 8px; font-family: var(--tt-font-mono); font-size: 14px; }
 
 /* Add a theme ----------------------------------------------------------------- */
@@ -733,7 +786,7 @@
 
 .theme-import__drop[data-drop-target] { border-color: var(--tt-accent-text); background: var(--tt-accent-wash); }
 .theme-import__file { display: none; }
-.theme-import__json { width: 100%; min-height: 150px; resize: vertical; border-radius: 12px; font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.5; }
+.theme-import__json { width: 100%; min-height: 150px; resize: vertical; border-radius: 12px; font-family: var(--tt-font-mono); font-size: 14px; line-height: 1.5; }
 .theme-import__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .theme-import__actions--end { justify-content: flex-end; }
 

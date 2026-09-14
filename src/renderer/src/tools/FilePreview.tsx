@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
+import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Copy, FolderOutput, X } from 'lucide-react'
 import type { FilePreview as FilePreviewValue, FilesError } from '../../../shared/files'
 import { MessageContent, formatAttachmentSize } from '../agents/MessageContent'
@@ -56,6 +56,7 @@ function PreviewProblem({ error, onRetry, onRefreshFolder }: { error: FilesError
 /** The open file: text as text, Markdown through the transcript's safe renderer, rasters from main's data URL. */
 export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, onReveal, onClose, onRetry, onRefreshFolder, onMarkdownView, platform }: FilePreviewProps): ReactNode {
   const body = useRef<HTMLDivElement>(null)
+  const [wrap, setWrap] = useState(true)
   const ready = preview.status === 'ready' ? preview.preview : null
   const markdown = ready?.content.kind === 'markdown'
   const renderable = markdown && ready.content.kind === 'markdown' && ready.content.text.length <= MAX_RENDERED_MARKDOWN_LENGTH
@@ -79,7 +80,7 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
   } else if (rendered) content = <div className="files-preview__markdown"><MessageContent text={ready!.content.text} /></div>
   else content = <>
     {markdown && !renderable ? <p className="files-preview__note">Long Markdown is shown as source.</p> : null}
-    <pre className="files-preview__text" tabIndex={0} aria-label={`${name} contents`}>{ready!.content.text}</pre>
+    <pre className="files-preview__text" data-wrap={wrap} tabIndex={0} aria-label={`${name} contents`}>{ready!.content.text}</pre>
   </>
 
   return <section className="files-preview" aria-label={`Preview of ${name}`}>
@@ -96,5 +97,9 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
       </div>
     </header>
     <div ref={body} className="files-preview__body" data-kind={ready?.content.kind} onScroll={event => onScroll(event.currentTarget.scrollTop)}>{content}</div>
+    <div className="files-preview__status">
+      <span>Read only</span>
+      {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-toggle tt-focusable" aria-pressed={wrap} onClick={() => setWrap(value => !value)}>Wrap lines</button> : null}
+    </div>
   </section>
 }

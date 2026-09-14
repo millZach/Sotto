@@ -130,6 +130,7 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     const viewportLocator = panel.locator('.browser-viewport')
     const openMinimizedEditor = async (): Promise<void> => {
       await page.getByRole('link', { name: 'Settings', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       await page.getByRole('button', { name: 'Create theme', exact: true }).click()
       await expect(editor).toBeVisible()
       await page.getByRole('link', { name: 'Threads', exact: true }).click()

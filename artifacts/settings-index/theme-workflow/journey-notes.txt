@@ -1,0 +1,6 @@
+The selected Dark scheme is painted with oklch(0.758933 0.105833 241.548).
+Hovering the Appearance heading labels it "Text".
+A pick took 387 ms end to end.
+Picking the History footer link selects "Text · 250 uses".
+Invalid JSON import says: "That is not valid JSON. Check for a missing comma or quote."
+A CSS URL colour import says: "The color for "canvas" must be a literal CSS color such as oklch(0.62 0.2 280)."

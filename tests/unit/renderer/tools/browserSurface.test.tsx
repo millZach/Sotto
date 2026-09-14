@@ -140,7 +140,7 @@ describe('Browser surface', () => {
 
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close page: Vite App' }))
     expect(browser.bridge.close).toHaveBeenCalledWith({ ...target, pageId: PAGE_1 })
-    expect(await within(panel()).findByText('No page is open for this thread.')).toBeInTheDocument()
+    expect(await within(panel()).findByText('Open a page')).toBeInTheDocument()
   })
 })
 

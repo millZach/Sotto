@@ -30,23 +30,10 @@ function connections(snapshot: AgentState) {
 const allConnected = providers.map(id => ({ id, connection: 'connected' }))
 
 async function settleProviders(page: Page): Promise<void> {
-  const navigation = page.getByRole('link', { name: 'Providers', exact: true })
+  const navigation = page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Providers', exact: true })
   await navigation.click()
-  let previous: number | undefined
-  let unchanged = 0
-  await expect.poll(async () => {
-    const top = await page.locator('.settings-scroll').evaluate(element => element.scrollTop)
-    unchanged = top === previous ? unchanged + 1 : 0
-    previous = top
-    return unchanged >= 3
-  }, { intervals: [100], timeout: 10_000 }).toBe(true)
-  await expect(navigation).toHaveAttribute('aria-current', 'true')
-  await expect.poll(() => page.locator('#settings-providers').evaluate(section => {
-    const scroller = section.closest('.settings-scroll')!
-    const offset = (Number.parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0)
-      + (Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0)
-    return Math.abs(section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - offset)
-  })).toBeLessThanOrEqual(2)
+  await expect(navigation).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tabpanel', { name: 'Providers', exact: true })).toBeVisible()
 }
 
 
@@ -230,7 +217,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
 
 
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.getByRole('link', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     const configuration = page.locator('#settings-agents')
     for (const coordinator of ['codex', 'claude'] as const) {
       await configuration.getByRole('combobox', { name: 'Reasoning account', exact: true }).selectOption(coordinator)
@@ -243,7 +230,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     }
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
 
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Mode', exact: true }).getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     const agentControl = page.getByRole('dialog', { name: 'Agent configuration', exact: true })

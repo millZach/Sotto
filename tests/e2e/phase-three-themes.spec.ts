@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import sharp from 'sharp'
 
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
@@ -12,7 +11,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 
 /**
  * The T3-style themes journey on the real Windows Electron app: colour scheme
- * tiles, independent light and dark halves, system changes, contrast and
+ * controls, independent light and dark halves, system changes, contrast and
  * glass, the editor (cancel, save, inspector, resize), import errors, the
  * Open VSX fixture, duplicate and remove, keyboard, reduced motion, and a
  * restart. Run after `npm run build` with SOTTO_THEMES_E2E=1; images land in
@@ -62,34 +61,13 @@ async function shot(page: Page, name: string, target?: Locator): Promise<void> {
   else await page.screenshot({ path, caret: 'hide', animations: 'disabled' })
 }
 
-type Rgb = readonly [number, number, number]
-
-/** The painted pixel just inside a mode tile's left edge, and the accent ink its chosen ring should use. */
-async function tileRing(page: Page, tile: Locator): Promise<{ edge: Rgb, accent: Rgb }> {
-  await page.mouse.move(1, 1)
-  await settled(page)
-  const frame = tile.locator('.theme-wireframe')
-  const accent = await frame.evaluate(element => {
-    const context = document.createElement('canvas').getContext('2d')!
-    context.fillStyle = getComputedStyle(element).getPropertyValue('--tt-accent-text').trim() || 'transparent'
-    context.fillRect(0, 0, 1, 1)
-    const [r = 0, g = 0, b = 0] = context.getImageData(0, 0, 1, 1).data
-    return [r, g, b] as const
-  })
-  const scale = await page.evaluate(() => window.devicePixelRatio)
-  const { data, info } = await sharp(await frame.screenshot({ animations: 'disabled', caret: 'hide' })).removeAlpha().raw().toBuffer({ resolveWithObject: true })
-  const offset = (Math.floor(info.height / 2) * info.width + Math.floor(scale)) * info.channels
-  return { edge: [data[offset]!, data[offset + 1]!, data[offset + 2]!], accent }
-}
-
-const near = (a: Rgb, b: Rgb, tolerance = 28): boolean => a.every((channel, index) => Math.abs(channel - b[index]!) <= tolerance)
-
 const savedSettings = (page: Page): Promise<AppSettings> => page.evaluate(async () => (await window.sotto!.getSettings()) as AppSettings)
 const html = (page: Page): Locator => page.locator('html')
 const canvas = (page: Page): Promise<string> => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
 async function openAppearance(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
   const section = page.locator('#settings-appearance')
   await section.scrollIntoViewIfNeeded()
   return section
@@ -115,7 +93,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect(html(page)).toHaveAttribute('data-theme-id', 'ocean')
     const section = await openAppearance(page)
     await expect(section.getByRole('radiogroup', { name: 'Accent' })).toHaveCount(0)
-    await expect(section.getByText('Choose light, dark or system, then a theme for each.')).toBeVisible()
+    await expect(section.getByRole('group', { name: 'Color scheme', exact: true })).toBeVisible()
     const cards = section.locator('.theme-grid > *')
     await expect(cards).toHaveCount(6)
     // Sotto's own names for T3's six palettes, in gallery order, Tide chosen for both halves.
@@ -123,12 +101,12 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect(section.getByRole('button', { name: 'Use Tide theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
     await section.locator('.theme-grid').scrollIntoViewIfNeeded()
     await shot(page, 'themes-default-1600-dark')
-    // T3's gallery track: three columns on the wide page.
+    // The compact gallery keeps its six built-in themes in two rows on the wide page.
     const columns = await section.locator('.theme-grid').evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(' ').length)
     expect(columns).toBe(3)
     const darkTide = await canvas(page)
 
-    // The chosen tile's ring sits inside the settings scroller.
+    // The compact scheme selector fits inside the settings scroller.
     const darkTile = section.getByRole('button', { name: 'Use dark mode' })
     await expect(darkTile).toHaveAttribute('aria-pressed', 'true')
     const clipped = await darkTile.evaluate(tile => {
@@ -139,16 +117,17 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
       return bounds.right > frame.right - 1 || bounds.left < frame.left
     })
     expect(clipped).toBe(false)
-    // The ring is really painted above the tile's panes, not hidden behind them.
-    const chosen = await tileRing(page, darkTile)
-    expect(near(chosen.edge, chosen.accent), JSON.stringify(chosen)).toBe(true)
-    notes.push(`The chosen Dark tile's edge pixel is rgb(${chosen.edge.join(', ')}), its accent ink rgb(${chosen.accent.join(', ')}).`)
+    const chosenBackground = await darkTile.evaluate(element => getComputedStyle(element).backgroundColor)
+    expect(chosenBackground).not.toBe('rgba(0, 0, 0, 0)')
+    notes.push(`The selected Dark scheme is painted with ${chosenBackground}.`)
 
     // Light and dark halves are chosen independently.
-    await section.getByRole('button', { name: 'Use light mode' }).click()
+    const lightMode = section.getByRole('button', { name: 'Use light mode' })
+    await lightMode.click()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    const unchosen = await tileRing(page, darkTile)
-    expect(near(unchosen.edge, unchosen.accent), JSON.stringify(unchosen)).toBe(false)
+    await expect(lightMode).toHaveAttribute('aria-pressed', 'true')
+    await expect(darkTile).toHaveAttribute('aria-pressed', 'false')
+    expect(await darkTile.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(chosenBackground)
     await section.getByRole('button', { name: 'Use Fern light mode' }).click()
     await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
     await section.getByRole('button', { name: 'Use Dusk dark mode' }).click()
@@ -331,7 +310,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
 
     // Reduced motion: no theme transitions run.
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
-    const duration = await section.locator('.theme-mode-tile .theme-wireframe').first().evaluate(element => getComputedStyle(element, '::after').transitionDuration)
+    const duration = await section.getByRole('button', { name: 'Use dark mode' }).evaluate(element => getComputedStyle(element).transitionDuration)
     expect(duration.split(',').every(value => Number.parseFloat(value) <= 0.01)).toBe(true)
 
     // Rendered matrix: widths by scheme, settings and the Threads workspace, once notices have gone.

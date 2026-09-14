@@ -1,5 +1,5 @@
 import React, { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Copy, FolderOutput, RotateCw, X } from 'lucide-react'
+import { Columns2, Copy, FolderOutput, RotateCw, X } from 'lucide-react'
 import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { revealLabel } from './FilePreview'
@@ -32,9 +32,10 @@ export interface ChangesSurfaceProps {
   readonly onStatus: (message: string) => void
 }
 
-/** The working copy's changes against HEAD: the file list, and the selected file's diff beneath it. Review only. */
+/** The working copy's changes against HEAD: the file list beside its selected diff. Review only. */
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
+  const [split, setSplit] = useState(false)
   if (!changes) return <p className="files-preview__loading" role="status">Loading…</p>
   const { list, selectedPath, diff } = changes
   if (list.status === 'loading') return <p className="files-preview__loading" role="status">Reading changes…</p>
@@ -66,6 +67,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
           <span className="files-preview__name" title={selectedPath}>{splitPath(selectedPath).name}</span>
         </div>
         <div className="files-preview__actions">
+          <button type="button" className="files-icon tt-focusable" aria-label="Split view" aria-pressed={split} title={split ? 'Show unified diff' : 'Show split diff'} onClick={() => setSplit(value => !value)}><Columns2 size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`Copy path: ${selectedPath}`} title="Copy path" onClick={() => copy(selectedPath)}><Copy size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${selectedPath}`} title={revealLabel(platform)} onClick={() => reveal(selectedPath)}><FolderOutput size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label="Close diff" title="Close diff" onClick={() => {
@@ -79,7 +81,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
         : diff.status === 'error' ? <div className="files-problem" role="status"><strong>{diff.error.code === 'path-unavailable' ? 'This file is no longer changed.' : 'The diff could not load.'}</strong>
           <button type="button" className="files-link tt-focusable" onClick={() => store.select(bridge, threadId, selectedPath)}>Try again</button></div>
           : <DiffBody key={`${threadId}\n${selectedPath}`} diff={diff.status === 'ready' ? diff.diff : diff.previous!} scrollTop={store.scrollOf(threadId, selectedPath)}
-            onScroll={top => store.setScroll(threadId, selectedPath, top)} onReveal={() => reveal(selectedPath)} platform={platform} />}
+            split={split} onScroll={top => store.setScroll(threadId, selectedPath, top)} onReveal={() => reveal(selectedPath)} platform={platform} />}
     </section> : null}
   </div>
 }
@@ -143,13 +145,49 @@ const DiffRows = memo(function DiffRows({ lines }: { readonly lines: readonly Di
   </div>)}</>
 })
 
-function DiffBody({ diff, scrollTop, onScroll, onReveal, platform }: {
+/** Align each contiguous edit block while leaving hunk boundaries and no-newline notes in their original order. */
+const SplitDiffRows = memo(function SplitDiffRows({ lines }: { readonly lines: readonly DiffLine[] }): ReactNode {
+  const rows: ReactNode[] = []
+  const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => <div className="changes-split__cell" data-kind={line?.kind}>
+    <span className="changes-line__number" aria-hidden="true">{(side === 'old' ? line?.oldLine : line?.newLine) ?? ''}</span>
+    <span className="changes-line__sign" aria-hidden="true">{line?.kind === 'add' ? '+' : line?.kind === 'remove' ? '−' : ''}</span>
+    <span className="changes-line__text">{line?.kind === 'add' ? <span className="tt-visually-hidden">Added: </span> : line?.kind === 'remove' ? <span className="tt-visually-hidden">Removed: </span> : null}{line?.text || ' '}</span>
+  </div>
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index]!
+    if (line.kind === 'remove' || line.kind === 'add') {
+      const start = index
+      const before: DiffLine[] = []
+      const after: DiffLine[] = []
+      while (index < lines.length && (lines[index]!.kind === 'remove' || lines[index]!.kind === 'add')) {
+        const edit = lines[index++]!
+        if (edit.kind === 'remove') before.push(edit)
+        else after.push(edit)
+      }
+      for (let offset = 0; offset < Math.max(before.length, after.length); offset++) {
+        rows.push(<div key={`${start}-${offset}`} className="changes-split__row">{cell(before[offset], 'old')}{cell(after[offset], 'new')}</div>)
+      }
+    } else {
+      rows.push(line.kind === 'context'
+        ? <div key={index} className="changes-split__row">{cell(line, 'old')}{cell(line, 'new')}</div>
+        : <DiffRows key={index} lines={[line]} />)
+      index++
+    }
+  }
+  return <>{rows}</>
+})
+
+function DiffBody({ diff, scrollTop, split, onScroll, onReveal, platform }: {
   readonly diff: GitFileDiff; readonly scrollTop: number; readonly onScroll: (top: number) => void; readonly onReveal: () => void; readonly platform?: string | undefined
+  readonly split: boolean
 }): ReactNode {
   const body = useRef<HTMLDivElement>(null)
   const [all, setAll] = useState(false)
   const patch = diff.content.kind === 'text' ? diff.content.patch : ''
-  const lines = useMemo(() => parseUnifiedDiff(patch), [patch])
+  // The file is already named by the selected row and preview tab. Keep substantive Git metadata
+  // (mode, rename, similarity), but let the first hunk lead instead of repeating raw patch paths.
+  const lines = useMemo(() => parseUnifiedDiff(patch).filter(line => line.kind !== 'meta'
+    || !/^(?:diff --git |index [\da-f]+\.\.[\da-f]+(?: \d+)?$|--- |\+\+\+ )/u.test(line.text)), [patch])
   // The saved position is restored once; refreshed content then keeps whatever the reader has scrolled to.
   const initialTop = useRef(scrollTop)
   useLayoutEffect(() => { if (body.current) body.current.scrollTop = initialTop.current }, [])
@@ -161,7 +199,8 @@ function DiffBody({ diff, scrollTop, onScroll, onReveal, platform }: {
   if (lines.length === 0) return <div className="files-problem" role="status"><strong>No line changes.</strong><p>Only the file’s mode or name changed.</p></div>
   const shown = all ? lines : lines.slice(0, DIFF_ROW_LIMIT)
   return <div ref={body} className="changes-diff__body" tabIndex={0} aria-label="Diff" onScroll={event => onScroll(event.currentTarget.scrollTop)}>
-    <div className="changes-diff__rows"><DiffRows lines={shown} /></div>
+    {split ? <div className="changes-split__head"><span>Before</span><span>Working copy</span></div> : null}
+    <div className="changes-diff__rows" data-layout={split ? 'split' : 'unified'}>{split ? <SplitDiffRows lines={shown} /> : <DiffRows lines={shown} />}</div>
     {shown.length < lines.length ? <div className="changes-diff__more"><span>Showing {shown.length.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
       <button type="button" className="files-link tt-focusable" onClick={() => setAll(true)}>Show all</button></div> : null}
   </div>

@@ -9,6 +9,7 @@ import { Card } from '../../components/Card'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
+import { ThemeLivePreview } from './themes/ThemeLivePreview'
 import { removeThemesPatch, ThemeLibraryWriter, type LibraryPatch, type ThemeMode } from './themes/themeLibrary'
 import './themes/themes.css'
 
@@ -76,38 +77,42 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
         <h2>Appearance</h2>
-        <p>Choose light, dark or system, then a theme for each. The floating widget always follows the {system} light or dark setting.</p>
+        <p>Themes &amp; interface</p>
       </div>
 
-      <ThemeGallery
-        shown={shown}
-        resolved={resolved}
-        onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, 'Color scheme saved.')}
-        onSelect={select}
-        onRemove={remove}
-        onExport={theme => void exportTheme(theme)}
-        onAddTheme={() => setImporting(true)}
-      />
-      <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
+      <div className="theme-settings__layout">
+        <div className="theme-settings__controls">
+          <ThemeGallery
+            shown={shown}
+            resolved={resolved}
+            onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, 'Color scheme saved.')}
+            onSelect={select}
+            onRemove={remove}
+            onExport={theme => void exportTheme(theme)}
+            onAddTheme={() => setImporting(true)}
+          />
+          <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
 
-      <h3 className="theme-settings__subheading">Interface</h3>
-      <div className="settings-rows">
-        <AppearanceSlider
-          label="Contrast"
-          description="Adjust the contrast of colors and borders across the interface."
-          bounds={APPEARANCE_CONTRAST}
-          value={shown.appearanceContrast}
-          onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
-          onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, 'Contrast saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
-        />
-        <AppearanceSlider
-          label="Glass opacity"
-          description="Higher values make menus, dialogs, and the composer more solid."
-          bounds={GLASS_OPACITY}
-          value={shown.glassOpacity}
-          onPreview={value => appearancePreview.choose({ glassOpacity: value })}
-          onCommit={(value, sequence) => void onSave({ glassOpacity: value }, 'Glass opacity saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
-        />
+          <div className="settings-rows">
+            <AppearanceSlider
+              label="Contrast"
+              description="Color and border intensity."
+              bounds={APPEARANCE_CONTRAST}
+              value={shown.appearanceContrast}
+              onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
+              onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, 'Contrast saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+            />
+            <AppearanceSlider
+              label="Glass opacity"
+              description="Higher values make menus, dialogs and the composer more solid."
+              bounds={GLASS_OPACITY}
+              value={shown.glassOpacity}
+              onPreview={value => appearancePreview.choose({ glassOpacity: value })}
+              onCommit={(value, sequence) => void onSave({ glassOpacity: value }, 'Glass opacity saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+            />
+          </div>
+        </div>
+        <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} />
       </div>
 
       {importing

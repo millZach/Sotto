@@ -1,0 +1,158 @@
+[
+  {
+    "name": "ocean-dark-app-mark",
+    "expected": "#70b9ee",
+    "measured": "#70b9ee",
+    "distance": 0
+  },
+  {
+    "name": "ocean-dark-agents-orb",
+    "accentHue": -118,
+    "measuredHue": 240,
+    "distance": 1
+  },
+  {
+    "name": "ocean-dark-widget-mark",
+    "expected": "#70b9ee",
+    "measured": "#70b9ee",
+    "distance": 0
+  },
+  {
+    "name": "ocean-dark-widget-voice-bars",
+    "accentHue": -118,
+    "measuredHue": 242,
+    "distance": 0
+  },
+  {
+    "name": "iris-dark-live-app-mark",
+    "expected": "#9d7df2",
+    "measured": "#9d7df2",
+    "distance": 0
+  },
+  {
+    "name": "iris-dark-live-agents-orb",
+    "accentHue": -66,
+    "measuredHue": 296,
+    "distance": 2
+  },
+  {
+    "name": "iris-dark-live-widget-mark",
+    "expected": "#9d7df2",
+    "measured": "#9d7df2",
+    "distance": 0
+  },
+  {
+    "name": "iris-dark-live-widget-voice-bars",
+    "accentHue": -66,
+    "measuredHue": 294,
+    "distance": 0
+  },
+  {
+    "name": "ember-light-live-app-mark",
+    "expected": "#ae552a",
+    "measured": "#ae552a",
+    "distance": 0
+  },
+  {
+    "name": "ember-light-live-agents-orb",
+    "accentHue": 44,
+    "measuredHue": 49,
+    "distance": 4
+  },
+  {
+    "name": "ember-light-widget-mark",
+    "expected": "#ae552a",
+    "measured": "#ae552a",
+    "distance": 0
+  },
+  {
+    "name": "ember-light-widget-voice-bars",
+    "accentHue": 44,
+    "measuredHue": 45,
+    "distance": 0
+  },
+  {
+    "name": "system-dark-iris-widget-mark",
+    "expected": "#9d7df2",
+    "measured": "#9d7df2",
+    "distance": 0
+  },
+  {
+    "name": "system-dark-iris-widget-voice-bars",
+    "accentHue": -66,
+    "measuredHue": 294,
+    "distance": 0
+  },
+  {
+    "name": "custom-light-live-app-mark",
+    "expected": "#c0392b",
+    "measured": "#c0392b",
+    "distance": 0
+  },
+  {
+    "name": "custom-light-live-agents-orb",
+    "accentHue": 30,
+    "measuredHue": 31,
+    "distance": 1
+  },
+  {
+    "name": "custom-light-widget-mark",
+    "expected": "#c0392b",
+    "measured": "#c0392b",
+    "distance": 0
+  },
+  {
+    "name": "custom-light-widget-voice-bars",
+    "accentHue": 30,
+    "measuredHue": 29,
+    "distance": 1
+  },
+  {
+    "name": "restart-custom-light-app-mark",
+    "expected": "#c0392b",
+    "measured": "#c0392b",
+    "distance": 0
+  },
+  {
+    "name": "restart-custom-light-agents-orb",
+    "accentHue": 30,
+    "measuredHue": 31,
+    "distance": 1
+  },
+  {
+    "name": "restart-iris-dark-widget-mark",
+    "expected": "#9d7df2",
+    "measured": "#9d7df2",
+    "distance": 0
+  },
+  {
+    "name": "restart-iris-dark-widget-voice-bars",
+    "accentHue": -66,
+    "measuredHue": 294,
+    "distance": 0
+  },
+  {
+    "name": "restart-custom-light-widget-mark",
+    "expected": "#c0392b",
+    "measured": "#c0392b",
+    "distance": 0
+  },
+  {
+    "name": "restart-custom-light-widget-voice-bars",
+    "accentHue": 30,
+    "measuredHue": 29,
+    "distance": 1
+  },
+  {
+    "name": "restart-iris-dark-app-mark",
+    "expected": "#9d7df2",
+    "measured": "#9d7df2",
+    "distance": 0
+  },
+  {
+    "name": "restart-iris-dark-agents-orb",
+    "accentHue": -66,
+    "measuredHue": 296,
+    "distance": 2
+  }
+]

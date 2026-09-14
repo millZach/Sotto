@@ -194,7 +194,7 @@ test('repaints one running terminal through the theme gallery and live editor, a
     }
     const settings = async (): Promise<void> => {
       await page.getByRole('link', { name: 'Settings', exact: true }).click()
-      await page.locator('#settings-appearance').evaluate(element => element.scrollIntoView({ block: 'start' }))
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
     }
     /** The field xterm draws matches what the page paints for the terminal role now, and reports it. */
     const expectField = async (): Promise<string> => {

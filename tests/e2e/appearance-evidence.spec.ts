@@ -87,7 +87,7 @@ test.describe('appearance rendered evidence', () => {
   test('a choice repaints the room within two frames, a theme is chosen by keyboard, and both survive restart', async () => {
     await withProfile({}, async ({ page }) => {
       await page.getByRole('link', { name: 'Settings' }).click()
-      await page.locator('#settings-appearance').scrollIntoViewIfNeeded()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       // Time from activating Light to the root attribute and the painted canvas changing.
       const elapsed = await page.evaluate(() => new Promise<{ attribute: number; painted: number }>((done) => {
         const light = document.querySelector<HTMLButtonElement>('#settings-appearance button[aria-label="Use light mode"]')!
@@ -132,6 +132,7 @@ test.describe('appearance rendered evidence', () => {
           window.focus()
         })
         await page.getByRole('link', { name: 'Settings' }).click()
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
         const select = page.getByRole('combobox', { name: 'Reduced motion' })
         await select.scrollIntoViewIfNeeded()
         expect(await select.evaluate(element => getComputedStyle(element).colorScheme)).toBe(appearance)
@@ -206,7 +207,7 @@ test.describe('appearance rendered evidence', () => {
       })
       await expect.poll(() => page.evaluate('innerWidth')).toBeLessThan(520)
       await page.getByRole('link', { name: 'Settings' }).click()
-      await page.locator('#settings-appearance').scrollIntoViewIfNeeded()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
       await page.mouse.move(0, 0)
       // Playwright crops zoomed pages to the unzoomed viewport, so Electron captures the page itself.

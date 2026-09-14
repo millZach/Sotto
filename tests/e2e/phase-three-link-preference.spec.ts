@@ -49,6 +49,7 @@ test('the thread link destination saves through Settings and controls ordinary c
     expect(listing.ok && listing.value.pages).toEqual([])
 
     await launched.page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
     const links = launched.page.getByRole('radiogroup', { name: 'Web links in threads', exact: true })
     await links.getByRole('radio', { name: 'Sotto browser', exact: true }).click()
     await expect.poll(() => launched!.page.evaluate(async () => (await window.sotto!.getSettings()).webLinkDestination)).toBe('embedded')

@@ -50,7 +50,6 @@ export function ProvidersSettings(): ReactNode {
     if (!result || result.error) setErrors(previous => ({ ...previous, [selected]: result?.error ?? 'Could not save the default model.' }))
   }
   return <div className="providers-settings">
-    <p className="providers-settings__intro">Choose the providers available to your threads. Each thread keeps its own model.</p>
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.map(provider => {
         const current = statusFor(provider)

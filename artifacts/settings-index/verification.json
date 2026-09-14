@@ -1,0 +1,442 @@
+{
+  "layout": [
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Dictation",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Transcription",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Cleanup",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Agents",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Output",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Appearance",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Application",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    }
+  ],
+  "errors": [],
+  "persisted": {
+    "pasteDelayMs": 325,
+    "dictionary": true,
+    "darkTheme": "grove"
+  }
+}

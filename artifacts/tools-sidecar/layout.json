@@ -1,0 +1,265 @@
+{
+  "errors": [],
+  "sizes": [
+    [
+      1280,
+      800
+    ],
+    [
+      1600,
+      1000
+    ],
+    [
+      820,
+      560
+    ]
+  ],
+  "captures": {
+    "browser-1280x800-dark": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": {
+        "x": 721,
+        "y": 230,
+        "width": 549,
+        "height": 526
+      }
+    },
+    "terminal-1280x800-dark": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "files-1280x800-dark": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "changes-1280x800-dark": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "browser-1280x800-light": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": {
+        "x": 721,
+        "y": 230,
+        "width": 549,
+        "height": 526
+      }
+    },
+    "terminal-1280x800-light": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "files-1280x800-light": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "changes-1280x800-light": {
+      "panel": {
+        "x": 720,
+        "y": 60,
+        "width": 550,
+        "height": 696
+      },
+      "nativeBounds": null
+    },
+    "browser-1600x1000-dark": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": {
+        "x": 862,
+        "y": 230,
+        "width": 728,
+        "height": 726
+      }
+    },
+    "terminal-1600x1000-dark": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "files-1600x1000-dark": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "changes-1600x1000-dark": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "browser-1600x1000-light": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": {
+        "x": 862,
+        "y": 230,
+        "width": 728,
+        "height": 726
+      }
+    },
+    "terminal-1600x1000-light": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "files-1600x1000-light": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "changes-1600x1000-light": {
+      "panel": {
+        "x": 861,
+        "y": 60,
+        "width": 729,
+        "height": 896
+      },
+      "nativeBounds": null
+    },
+    "browser-820x560-dark": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": {
+        "x": 357,
+        "y": 230,
+        "width": 453,
+        "height": 286
+      }
+    },
+    "terminal-820x560-dark": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    },
+    "files-820x560-dark": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    },
+    "changes-820x560-dark": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    },
+    "browser-820x560-light": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": {
+        "x": 357,
+        "y": 230,
+        "width": 453,
+        "height": 286
+      }
+    },
+    "terminal-820x560-light": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    },
+    "files-820x560-light": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    },
+    "changes-820x560-light": {
+      "panel": {
+        "x": 356,
+        "y": 60,
+        "width": 454,
+        "height": 456
+      },
+      "nativeBounds": null
+    }
+  }
+}

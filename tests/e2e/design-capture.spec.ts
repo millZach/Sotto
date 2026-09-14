@@ -797,10 +797,12 @@ test.describe('authoritative design-review captures', () => {
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
       const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
       await pasteSwitch.scrollIntoViewIfNeeded()
       await assertFocusPresentation(pasteSwitch)
       await capturePage(page, 'focus-switch.png', { focusTarget: 'switch', focus: true })
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByRole('switch', { name: 'Sound cues' }).click()
       await expect(page.getByRole('status')).toHaveText('Setting saved.')
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
@@ -816,23 +818,24 @@ test.describe('authoritative design-review captures', () => {
         ['Application', 'application-privacy'],
       ] as const
       for (const [heading, state] of settingsSections) {
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
         await expect(section).toHaveCount(1)
         if (state === 'agents') {
-          await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true }).click()
+          await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
           await expect(section.getByLabel('Reasoning account', { exact: true })).toBeVisible()
-          // The navigation sets aria-current before native smooth scrolling ends.
-          await page.waitForTimeout(700)
-          await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Agents', exact: true })).toHaveAttribute('aria-current', 'true')
+          await expect(page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue
         }
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Transcription', exact: true }).click()
       await page.getByRole('button', { name: 'Verify key', exact: true }).click()
       await expect(page.getByText('Key verified.')).toBeVisible()
       await capturePage(page, 'settings-key-verified.png')
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
       await page.getByLabel('Paste delay').fill('10')
       await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
@@ -985,10 +988,12 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
       await assertRenderedRoom(page, 'light')
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
       const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
       await pasteSwitch.scrollIntoViewIfNeeded()
       await assertFocusPresentation(pasteSwitch)
       await capturePage(page, 'focus-switch-light.png', { focusTarget: 'switch', focus: true, theme: 'light' })
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByRole('switch', { name: 'Sound cues' }).click()
       await expect(page.getByRole('status')).toHaveText('Setting saved.')
       await capturePage(page, 'settings-feedback-light.png', { theme: 'light' })
@@ -998,9 +1003,11 @@ test.describe('authoritative design-review captures', () => {
         ['Appearance', 'appearance'],
         ['Application', 'application-privacy'],
       ] as const) {
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
         await captureSection(page, section, `settings-${state}-light.png`, { category: 'settings', state, theme: 'light' })
       }
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
       await page.getByLabel('Paste delay').fill('10')
       await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
@@ -1024,6 +1031,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('link', { name: 'Settings' }).click()
       await page.emulateMedia({ colorScheme: 'light' })
       await setAppearance(page, { appearance: 'system', lightTheme: DESIGN_CAPTURE_DEFAULT_THEME, darkTheme: DESIGN_CAPTURE_DEFAULT_THEME }, 'light')
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       const section = page.locator('#settings-appearance')
       for (const theme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: theme })
