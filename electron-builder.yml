@@ -28,6 +28,15 @@ publish:
     repo: Sotto-releases
 
 extraResources:
+  # Only the official SDK's self-contained history helpers are used. The native
+  # Claude CLI remains user-installed; no bundled CLI or SDK peer trees ship.
+  - from: node_modules/@anthropic-ai/claude-agent-sdk
+    to: claude-sdk
+    filter:
+      - sdk.mjs
+      - LICENSE.md
+      - README.md
+      - package.json
   - from: resources/runtime
     to: runtime
   - from: LICENSE.md

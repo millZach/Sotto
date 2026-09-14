@@ -1,0 +1,10 @@
+﻿{
+    "command":  "npm test -- --maxWorkers=2",
+    "success":  true,
+    "totalTests":  3330,
+    "passedTests":  3310,
+    "failedTests":  0,
+    "skippedTests":  20,
+    "testFiles":  244,
+    "completedAtUtc":  "2026-09-14T02:48:06.3803943Z"
+}

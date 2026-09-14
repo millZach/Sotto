@@ -15,6 +15,7 @@ export type ChangesDiffState =
 
 /** One thread's working-copy review, retained for the session while focus moves. */
 export interface ThreadChanges {
+  readonly diffScope?: 'working' | 'staged' | 'unstaged'
   readonly threadId: string
   readonly workspace: FileWorkspace | null
   readonly list: ChangesListState
@@ -95,8 +96,8 @@ export class ChangesStore {
     }
     const { workspace, branch, revision, files, truncated } = result.value
     const replaced = latest.workspace !== null && latest.workspace.workspaceId !== workspace.workspaceId
-    const selectedPath = replaced ? null : latest.selectedPath
-    this.set({ ...latest, workspace, list: { status: 'ready', branch, revision, files, truncated }, selectedPath, diff: replaced ? null : latest.diff, refreshing: false })
+    const selectedPath = replaced || !files.some(file => file.path === latest.selectedPath) ? null : latest.selectedPath
+    this.set({ ...latest, workspace, list: { status: 'ready', branch, revision, files, truncated }, selectedPath, diff: selectedPath === null ? null : latest.diff, refreshing: false })
     // Only the displayed working copy owns the watcher, including after its folder is replaced.
     void this.watch(bridge, threadId)
     if (selectedPath !== null) void this.loadDiff(bridge, threadId, selectedPath, true)
@@ -112,6 +113,12 @@ export class ChangesStore {
 
   async copyPath(bridge: GitChangesBridge | undefined, threadId: string, path: string): Promise<ToolsResult<unknown>> {
     return this.pathAction(bridge, threadId, path, 'copyPath')
+  }
+  setDiffScope(bridge: GitChangesBridge | undefined, threadId: string, diffScope: 'working' | 'staged' | 'unstaged'): void {
+    const current = this.threads.get(threadId)
+    if (!current) return
+    this.set({ ...current, diffScope })
+    if (current.selectedPath !== null) void this.loadDiff(bridge, threadId, current.selectedPath, false)
   }
 
   async reveal(bridge: GitChangesBridge | undefined, threadId: string, path: string): Promise<ToolsResult<unknown>> {
@@ -133,7 +140,7 @@ export class ChangesStore {
     const token = this.bump(threadId, 'diff')
     const shown = current.diff?.status === 'ready' && current.diff.path === path ? current.diff.diff : undefined
     if (!keepShown || !shown) this.set({ ...current, diff: { status: 'loading', path, ...(shown ? { previous: shown } : {}) } })
-    const result = await settle(bridge.diff({ threadId, workspaceId: current.workspace.workspaceId, path }))
+    const result = await settle(bridge.diff({ threadId, workspaceId: current.workspace.workspaceId, path, ...(current.diffScope ? { scope: current.diffScope } : {}) }))
     const latest = this.threads.get(threadId)
     if (!latest || this.token(threadId, 'diff') !== token || latest.selectedPath !== path) return
     this.set({ ...latest, diff: result.ok ? { status: 'ready', path, diff: result.value } : { status: 'error', path, error: result.error } })

@@ -97,7 +97,8 @@ export class ConfiguredProviderHost implements AgentHost {
         id: providerEntityId(provider, 'model', model.id), ready: model.ready && slot.status.connection === 'connected' })))
       result.projects.push(...slot.snapshot.projects.map(project => ({ ...project, providerId: provider, id: this.projectId(provider, project.id) })))
       result.threads.push(...slot.snapshot.threads.map(thread => ({ ...thread, providerId: provider,
-        projectId: this.projectId(provider, thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '' })))
+        projectId: this.projectId(provider, thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '',
+        ...(thread.usage ? { usage: { ...thread.usage, modelId: thread.usage.modelId ? providerEntityId(provider, 'model', thread.usage.modelId) : undefined } } : {}) })))
     }
     if (!result.connected) {
       const error = providers.find(provider => provider.error)?.error
@@ -172,6 +173,17 @@ export class ConfiguredProviderHost implements AgentHost {
     const snapshot = await (host.refreshThread?.(threadId) ?? host.snapshot())
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
     this.accept(id, snapshot); this.publish(); return this.aggregate()
+  }
+  rollbackCapability(threadId: string) {
+    const provider = this.providerForThread(threadId)
+    return provider ? this.options.hosts[provider].rollbackCapability?.(threadId) ?? { supported: false, reason: `${PROVIDER_LABELS[provider]} does not expose verified conversation rewind.` }
+      : { supported: false, reason: 'The original provider binding is unavailable.' }
+  }
+  async rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    const provider = this.owner(threadId); this.requireConnected(provider)
+    const host = this.options.hosts[provider]
+    if (!host.rollbackThread) throw new Error('This provider does not support conversation rewind.')
+    return host.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
   }
   providerForThread(threadId: string): ProviderId | undefined {
     try { return this.owner(threadId) } catch { return undefined }

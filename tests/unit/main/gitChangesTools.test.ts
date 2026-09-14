@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm, rename, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FilesService } from '../../../src/main/files/service'
@@ -30,6 +30,70 @@ async function fixture() {
   return { root, repo, other, service, target: { threadId: 'a', workspaceId: owner.workspaceId }, emit, copyPath, reveal }
 }
 describe('Git review in exact thread working directories', () => {
+  it('reports detached HEAD and requires an explicit branch before committing', async () => {
+    const f = await fixture(); git(f.repo, 'switch', '-q', '--detach')
+    await writeFile(join(f.repo, 'changed.txt'), 'detached work\n')
+    let listing = unwrap(await f.service.list(f.target)); expect(listing.branch).toBeNull()
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    expect(await f.service.act({ ...f.target, revision: listing.revision, action: 'commit', message: 'Preserve detached work' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('detached HEAD') } })
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'create-branch', branch: 'saved-detached-work' }))
+    expect(listing.branch).toBe('saved-detached-work')
+    expect(await readFile(join(f.repo, 'changed.txt'), 'utf8')).toBe('detached work\n')
+  }, 20000)
+  it('creates and switches local branches with dirty files, reports checkout conflicts, and rejects stale actions', async () => {
+    const f = await fixture()
+    const original = git(f.repo, 'branch', '--show-current').trim()
+    git(f.repo, 'switch', '-q', '-c', 'conflicting')
+    await writeFile(join(f.repo, 'changed.txt'), 'branch edit\n'); git(f.repo, 'commit', '-qam', 'Branch edit')
+    git(f.repo, 'switch', '-q', original)
+    await writeFile(join(f.repo, 'changed.txt'), 'my dirty work\n')
+    let listing = unwrap(await f.service.list(f.target))
+    expect(await f.service.act({ ...f.target, revision: listing.revision, action: 'checkout', branch: 'conflicting' })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('overwritten') } })
+    expect(await readFile(join(f.repo, 'changed.txt'), 'utf8')).toBe('my dirty work\n')
+    expect(git(f.repo, 'branch', '--show-current').trim()).toBe(original)
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'create-branch', branch: 'my-work' }))
+    expect(listing.branch).toBe('my-work')
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'checkout', branch: original }))
+    expect(await readFile(join(f.repo, 'changed.txt'), 'utf8')).toBe('my dirty work\n')
+    await writeFile(join(f.repo, 'changed.txt'), 'newer dirty work\n')
+    expect(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' })).toMatchObject({ ok: false, error: { code: 'workspace-changed' } })
+    expect(unwrap(await f.service.branches(f.target)).branches).toEqual(expect.arrayContaining([original, 'conflicting', 'my-work', 'other']))
+  }, 20000)
+  it('can unstage an unborn file after further edits without discarding the working content', async () => {
+    const f = await fixture()
+    const unborn = join(f.root, 'new-repository'); await mkdir(unborn); git(unborn, 'init', '-q')
+    const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: unborn }), copyPath: vi.fn(), reveal: vi.fn() })
+    const service = new GitChangesService({ files, emit: vi.fn(), copyPath: vi.fn(), reveal: vi.fn() })
+    cleanup.push(async () => service.dispose())
+    await writeFile(join(unborn, 'first.txt'), 'staged first\n'); git(unborn, 'add', 'first.txt')
+    await writeFile(join(unborn, 'first.txt'), 'newer working text\n')
+    const listing = unwrap(await service.list({ threadId: 'new' }))
+    expect(unwrap(await service.diff({ threadId: 'new', workspaceId: listing.workspace.workspaceId, path: 'first.txt', scope: 'staged' })).content).toMatchObject({ kind: 'text', patch: expect.stringContaining('+staged first') })
+    const result = unwrap(await service.act({ threadId: 'new', workspaceId: listing.workspace.workspaceId, revision: listing.revision, action: 'unstage', path: 'first.txt' }))
+    expect(result.files[0]).toMatchObject({ staged: false, status: 'untracked' })
+    expect(await readFile(join(unborn, 'first.txt'), 'utf8')).toBe('newer working text\n')
+  }, 20000)
+  it('stages deliberately, compares the index, unstages, and commits only staged files in the selected worktree', async () => {
+    const f = await fixture()
+    await writeFile(join(f.repo, 'changed.txt'), 'staged content\n')
+    let listing = unwrap(await f.service.list(f.target))
+    unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    await writeFile(join(f.repo, 'changed.txt'), 'later unstaged content\n')
+    expect(unwrap(await f.service.diff({ ...f.target, path: 'changed.txt', scope: 'staged' })).content).toMatchObject({ kind: 'text', patch: expect.stringContaining('+staged content') })
+    expect(unwrap(await f.service.diff({ ...f.target, path: 'changed.txt', scope: 'unstaged' })).content).toMatchObject({ kind: 'text', patch: expect.stringContaining('+later unstaged content') })
+    listing = unwrap(await f.service.list(f.target))
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'unstage', path: 'changed.txt' }))
+    expect(listing.files[0]?.staged).toBe(false)
+    unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    await writeFile(join(f.repo, 'unrelated.txt'), 'keep me\n')
+    listing = unwrap(await f.service.list(f.target))
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'commit', message: 'Save the selected change' }))
+    expect(git(f.repo, 'log', '-1', '--pretty=%s').trim()).toBe('Save the selected change')
+    expect(listing.files.map(file => file.path)).toEqual(['unrelated.txt'])
+    expect(await readFile(join(f.other, 'changed.txt'), 'utf8')).toMatch(/^before\r?\n$/)
+    expect(unwrap(await f.service.list({ threadId: 'b' })).files).toEqual([])
+    expect(await f.service.act({ ...f.target, revision: listing.revision, action: 'commit', message: 'Empty' })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+  }, 20000)
   it('reads changed/new/deleted/binary/large paths and staged plus unstaged changes with two worktrees and deliberate sharing', async () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'changed.txt'), 'staged\n'); git(f.repo, 'add', 'changed.txt')

@@ -1,4 +1,7 @@
 import { PersonalChatService } from './agents/personalChats'
+import { ChatPromptService } from './agents/chatPrompts'
+import { registerChatPromptIpc } from './agents/chatPromptIpc'
+import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService, personalRequestDraftState } from './agents/requestDrafts'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
 import { isThreadProviderConnected } from '../shared/agents'
@@ -204,6 +207,7 @@ type NativeDiagnostic =
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
+  | 'checkpoint-unavailable'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -580,11 +584,30 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     }) : e2eAgentReasoner,
   })
   await agentControl.start()
-  const testPersonalChatHost = e2eConfiguration ? new E2EPersonalChatHost(userDataPath) : undefined
+  const testPersonalChatHosts = e2eConfiguration ? {
+    codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
+  } : undefined
   const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.get().configuration,
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
-    ...(testPersonalChatHost ? { host: testPersonalChatHost } : {}) })
+    ...(testPersonalChatHosts ? { hosts: testPersonalChatHosts } : {}) })
   await personalChats.start()
+  const promptSubscriptions = {
+    claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude-prompts')),
+    codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex-prompts')),
+    grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok-prompts')),
+  }
+  // Transform text through the chat's original provider. Defaults cannot move
+  // an existing discussion to another account, and this path has no host tools.
+  const chatPrompts = new ChatPromptService(personalChats, async (system, input, chat) => {
+    if (e2eConfiguration) {
+      const source = input.messages.filter(message => message.role === 'user').at(-1)!
+      return { objective: [{ text: source.text, evidence: [{ messageId: source.id, quote: source.text }] }],
+        context: [], decisions: [], constraints: [], deliverables: [], acceptanceChecks: [], unresolvedQuestions: [], suggestions: [] }
+    }
+    return new ConfiguredAgentReasoner(() => ({ ...agentControl.get().configuration,
+      reasoning: chat.providerId, reasoningModel: chat.modelId.replace(/^(?:codex|claude|grok):/u, ''), reasoningEffort: chat.reasoningEffort ?? '',
+    }), credentials, promptSubscriptions).transformText(system, input)
+  })
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
     if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
     const state = agentControl.get(), thread = state.host.threads.find(item => item.id === owner.ownerId
@@ -888,6 +911,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }),
     registerIpc: () => {
       const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
+      const cleanupChatPrompts = registerChatPromptIpc(ipcMain, chatPrompts, () => windows.getTrustedRenderers(), text => clipboard.writeText(text))
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
         resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
@@ -895,6 +919,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         reveal: path => shell.showItemInFolder(path),
       })
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers())
+      const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
+        git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
+      const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
+        copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTools = registerToolsIpc(ipcMain, {
         terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
         browser: new BrowserService({ files,
@@ -903,7 +931,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
           openExternal: url => shell.openExternal(url),
         }),
-        gitChanges: new GitChangesService({ files, copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } }),
+        gitChanges,
       }, () => windows.getTrustedRenderers())
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {
@@ -989,6 +1017,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupNativeIpc = (): void => {
         cleanupAgents()
         cleanupPersonalChats()
+        cleanupChatPrompts()
+        checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
         cleanupTools()
@@ -1004,7 +1034,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
         const parsed = e2eAgentEventSchema.parse(payload)
-        if (parsed.scope === 'personal') return testPersonalChatHost?.event(parsed)
+        if (parsed.scope === 'personal') {
+          const chat = personalChats.get().chats.find(chat => chat.id === parsed.threadId)
+          if (!chat || !testPersonalChatHosts) throw new Error('E2E_PERSONAL_CHAT_UNAVAILABLE')
+          return testPersonalChatHosts[chat.providerId].event(parsed)
+        }
         testAgentHost?.event(parsed)
       })
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {

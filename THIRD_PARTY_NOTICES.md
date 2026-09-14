@@ -13,6 +13,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `scheduler` | `0.27.0` | MIT | Meta Platforms, Inc. and affiliates |
 | `lucide-react` | `1.24.0` | ISC and MIT | Lucide Icons and Contributors; Cole Bemis |
 | `zod` | `4.4.3` | MIT | Colin McDonnell |
+| `@anthropic-ai/claude-agent-sdk` | `0.3.270` | SEE LICENSE IN README.md | Anthropic PBC |
 | `@xterm/xterm` | `6.0.0` | MIT | The xterm.js authors; SourceLair Private Company; Christopher Jeffrey |
 | `@xterm/addon-fit` | `0.11.0` | MIT | The xterm.js authors |
 | `node-pty` | `1.1.0` | MIT | Christopher Jeffrey; Daniel Imms; Microsoft Corporation |
@@ -192,6 +193,78 @@ Final generation prompt:
 Every platform derivative descends from that same original artwork: the macOS `.icns` is derived by electron-builder from `build/icon.png` at package time and is not committed, and the macOS menu-bar template images `resources/tray/sottoTemplate.png` and `sottoTemplate@2x.png` are rendered from `build/tray-template.svg`.
 
 Source and legibility proof are retained in `artifacts/design/brand/` in the source repository. Packaged users receive only the final application artwork.
+
+## Claude Agent SDK terms
+
+```text
+© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements outlined here: https://code.claude.com/docs/en/legal-and-compliance.
+
+
+# Claude Agent SDK
+
+![](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square) [![npm]](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
+
+[npm]: https://img.shields.io/npm/v/@anthropic-ai/claude-agent-sdk.svg?style=flat-square
+
+The Claude Agent SDK enables you to programmatically build AI agents with Claude Code's capabilities. Create autonomous agents that can understand codebases, edit files, run commands, and execute complex workflows.
+
+**Learn more in the [official documentation](https://platform.claude.com/docs/en/agent-sdk/overview)**.
+
+## Get started
+
+Install the Claude Agent SDK:
+
+```sh
+npm install @anthropic-ai/claude-agent-sdk
+```
+
+## Compiled binaries (`bun build --compile`)
+
+When bundling your application into a single executable with `bun build --compile`, the SDK cannot resolve the native CLI binary at runtime — `require.resolve` doesn't work from inside the compiled `$bunfs` (or `B:\~BUN\...` on Windows) virtual filesystem.
+
+Embed the platform-specific binary as a file asset, extract it to a real path, and pass it explicitly:
+
+```js
+import binPath from '@anthropic-ai/claude-agent-sdk-darwin-arm64/claude' with { type: 'file' }
+import { extractFromBunfs } from '@anthropic-ai/claude-agent-sdk/extract'
+import { query } from '@anthropic-ai/claude-agent-sdk'
+
+const cliPath = extractFromBunfs(binPath)
+
+for await (const message of query({
+  prompt: '…',
+  options: { pathToClaudeCodeExecutable: cliPath },
+})) { /* … */ }
+```
+
+Each compiled executable embeds one platform's binary, matching your `--target`. Cross-compiling requires installing the non-matching platform package (e.g. `npm install @anthropic-ai/claude-agent-sdk-linux-x64 --force`). On Windows the binary subpath is `/claude.exe` (e.g. `@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe`).
+
+## Migrating from the Claude Code SDK
+
+The Claude Code SDK is now the Claude Agent SDK. Please check out the [migration guide](https://platform.claude.com/docs/en/agent-sdk/migration-guide) for details on breaking changes.
+
+## Reporting Bugs
+
+We welcome your feedback. File a [GitHub issue](https://github.com/anthropics/claude-agent-sdk-typescript/issues) to report bugs or request features.
+
+## Connect on Discord
+
+Join the [Claude Developers Discord](https://anthropic.com/discord) to connect with other developers building with the Claude Agent SDK. Get help, share feedback, and discuss your projects with the community.
+
+## Data collection, usage, and retention
+
+When you use the Claude Agent SDK, we collect feedback, which includes usage data (such as code acceptance or rejections), associated conversation data, and user feedback submitted via the /bug command.
+
+### How we use your data
+
+See our [data usage policies](https://code.claude.com/docs/en/data-usage).
+
+### Privacy safeguards
+
+We have implemented several safeguards to protect your data, including limited retention periods for sensitive information and restricted access to user session data.
+
+For full details, please review our [Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms) and [Privacy Policy](https://www.anthropic.com/legal/privacy).
+```
 
 ## Electron MIT license
 

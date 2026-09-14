@@ -1,4 +1,6 @@
 import { existingWorkingDirectory } from './threadWorktrees'
+import { randomUUID } from 'node:crypto'
+import { NativeUsage } from './nativeUsage'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -29,6 +31,9 @@ const configArguments = Object.entries({ model_provider: 'openai', approval_poli
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
+  historyMode: z.enum(['legacy', 'paginated']).optional(), historyEpoch: z.string().optional(),
+  rewoundMessageIds: z.array(z.string()).default([]), rewoundTurnIds: z.array(z.string()).default([]),
+  pendingRollback: z.object({ removedTurnIds: z.array(z.string()), removedMessageIds: z.array(z.string()), retainedUsers: z.array(z.string()) }).optional(),
   pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]),
   messageIdentities: z.array(codexTurnIdentitySchema).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A project thread requires its project; a personal chat cannot have one.')
@@ -46,7 +51,7 @@ const itemSchema = codexItemSchema
 const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
   itemsView: z.enum(['notLoaded', 'summary', 'full']).default('full'),
   completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
-const threadSchema = z.object({ id: z.string(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
+const threadSchema = z.object({ id: z.string(), historyMode: z.enum(['legacy', 'paginated']).optional(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
@@ -77,6 +82,7 @@ export interface CodexAppServerHostOptions {
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
 export class CodexAppServerHost implements AgentHost {
+  private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
@@ -114,12 +120,14 @@ export class CodexAppServerHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
+    this.usage = new NativeUsage(options.userDataPath, 'codex')
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
   }
   async connect(): Promise<AgentHostSnapshot> {
     this.shutdown(false); await this.closed()
     const generation = this.generation
+    await this.usage.load()
     const [aliases, projects, executable] = await Promise.all([this.aliasStore.read(), this.projectStore.read(), this.options.executable ?? findExecutable()])
     if (generation !== this.generation) throw new Error('Codex connection was cancelled.')
     if (!executable) throw new Error('Install Codex and sign in before connecting this provider.')
@@ -235,7 +243,10 @@ export class CodexAppServerHost implements AgentHost {
     const alias = this.aliases[id]!
     if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', ...(alias.kind === 'personal' ? { historyStatus: 'loading' as const } : {}), messages: [], requests: [] })
-    return this.threads.get(id)!
+    const thread = this.threads.get(id)!
+    thread.usage = this.usage.get(id)
+    if (alias.historyEpoch) thread.historyEpoch = alias.historyEpoch
+    return thread
   }
   private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
   private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()].filter((thread): thread is AgentThread => 'projectId' in thread) }) }
@@ -293,7 +304,7 @@ export class CodexAppServerHost implements AgentHost {
           const apply = async (value: unknown): Promise<void> => {
             // A late read must not overwrite streamed text, a completion, or a permission.
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
-            this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); applied = true
+            this.applyThread(id, threadResponse.parse(value).thread, z.object({ thread: z.object({ turns: z.array(z.unknown()) }) }).safeParse(value).success); await this.persist(); applied = true
           }
           try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
           catch (error) {
@@ -369,9 +380,11 @@ export class CodexAppServerHost implements AgentHost {
   }
   private orderMessages(id: string): void {
     const thread = this.ensureThread(id)
+    const rewound = new Set(this.aliases[id]!.rewoundMessageIds)
     const records = this.aliases[id]!.messageIdentities.flatMap(turn => turn.messages)
     const order = new Map(records.map((m, index) => [m.id, index]))
     thread.messages = thread.messages.filter(message => {
+      if (rewound.has(message.id)) return false
       if (order.has(message.id)) return true
       const aliases = records.filter(record => record.nativeIds.includes(message.id) && record.role === message.role && record.digest === promptDigest(message.text))
       // Exact native/rollout aliases corroborated by a complete ordered snapshot;
@@ -382,6 +395,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string,
     lifecycle: { phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; afterMessageId?: string | undefined; terminal?: boolean | undefined } = { phase: 'history' }): void {
+    if (turnId && this.aliases[id]!.rewoundTurnIds.includes(turnId)) return
     const thread = this.ensureThread(id)
     if (turnId) this.activity.item(thread, item, { ...lifecycle, turnId, afterMessageId: lifecycle.afterMessageId ?? thread.messages.at(-1)?.id })
     if (item.type === 'fileChange') {
@@ -414,6 +428,7 @@ export class CodexAppServerHost implements AgentHost {
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
   private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false): void {
+    if (this.aliases[id]!.rewoundTurnIds.includes(turn.id)) return
     const thread = this.ensureThread(id)
     const createdAt = turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : this.aliases[id]!.createdAt
     this.turnDates.set(turn.id, createdAt)
@@ -445,8 +460,22 @@ export class CodexAppServerHost implements AgentHost {
       }
     }
   }
-  private applyThread(id: string, thread: z.infer<typeof threadSchema>): void {
+  private applyThread(id: string, thread: z.infer<typeof threadSchema>, completeHistory = false): void {
     if (thread.id !== this.aliases[id]!.codexThreadId) throw new Error('Codex returned a different provider session.')
+    const alias = this.aliases[id]!
+    if (thread.historyMode) alias.historyMode = thread.historyMode
+    const rewind = alias.pendingRollback
+    const nativeUsers = thread.turns.flatMap(turn => turn.items.filter(item => item.type === 'userMessage').map(item => this.stableMessageId(id, turn.id, item.id)))
+    const confirmsRewind = rewind && completeHistory && thread.turns.every(turn => turn.itemsView === 'full')
+      && !thread.turns.some(turn => rewind.removedTurnIds.includes(turn.id)) && JSON.stringify(nativeUsers) === JSON.stringify(rewind.retainedUsers)
+    if (confirmsRewind) {
+      alias.rewoundMessageIds = [...new Set([...alias.rewoundMessageIds, ...rewind.removedMessageIds])]
+      alias.rewoundTurnIds = [...new Set([...alias.rewoundTurnIds, ...rewind.removedTurnIds])]
+      const current = this.ensureThread(id)
+      current.messages = current.messages.filter(message => !alias.rewoundMessageIds.includes(message.id))
+      current.activities = current.activities?.filter(activity => !alias.rewoundTurnIds.includes(activity.turnId ?? ''))
+      delete current.lastTurn
+    }
     for (const turn of thread.turns) this.applyTurn(id, turn)
     const order = new Map(thread.turns.map((turn, index) => [turn.id, index]))
     this.aliases[id]!.messageIdentities.sort((a, b) => (order.get(a.turnId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.turnId) ?? Number.MAX_SAFE_INTEGER))
@@ -454,6 +483,10 @@ export class CodexAppServerHost implements AgentHost {
     // observers. Unmatched rows remain visible as external input.
     this.flushLogMessages(id)
     this.orderMessages(id)
+    if (confirmsRewind && JSON.stringify(this.ensureThread(id).messages.filter(message => message.role === 'user').map(message => message.id)) === JSON.stringify(rewind.retainedUsers)) {
+      alias.historyEpoch = randomUUID(); this.ensureThread(id).historyEpoch = alias.historyEpoch
+      delete alias.pendingRollback
+    }
     if (thread.status?.type === 'systemError') this.ensureThread(id).status = 'error'
     else if (thread.status?.type === 'active') this.ensureThread(id).status = 'running'
     else if (thread.status?.type === 'idle') {
@@ -477,6 +510,51 @@ export class CodexAppServerHost implements AgentHost {
     this.applyThread(id, response.thread); this.live.add(id); await this.persist(); this.emit()
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
+  rollbackCapability(id: string): { supported: boolean; reason?: string } {
+    const alias = this.aliases[id]
+    if (!alias) return { supported: false, reason: 'This thread has no native Codex conversation yet.' }
+    if (alias.historyMode === 'paginated') return { supported: false, reason: 'This Codex history format cannot be fully read by the installed integration; rewind is unavailable.' }
+    return { supported: true }
+  }
+  async rollbackThread(id: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    if (!Number.isInteger(removedUserMessages) || removedUserMessages < 1 || removedUserMessages > expectedUserMessageIds.length) throw new Error('Choose a complete native turn to rewind.')
+    await this.refreshThread(id)
+    const alias = this.aliases[id]!, thread = this.ensureThread(id)
+    if (!this.rollbackCapability(id).supported || alias.pendingRollback || alias.pendingSettings || this.unconfirmedDispatchSessionIds.has(id)
+      || this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Resolve pending Codex work before reverting.')
+    const actualUsers = thread.messages.filter(message => message.role === 'user').map(message => message.id)
+    if (JSON.stringify(actualUsers) !== JSON.stringify(expectedUserMessageIds)) throw new Error('Codex history changed after this checkpoint was inspected.')
+    this.dispatching.add(id)
+    let sent = false
+    try {
+      let native: z.infer<typeof threadSchema> | undefined
+      await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, value => { native = threadResponse.parse(value).thread })
+      if (!native || native.id !== alias.codexThreadId || native.historyMode === 'paginated' || native.turns.some(turn => turn.status === 'inProgress' || turn.itemsView !== 'full')) throw new Error('Codex did not report a complete idle history for rewind.')
+      this.applyThread(id, native)
+      if (this.ensureThread(id).status === 'running' || thread.requests.length || JSON.stringify(thread.messages.filter(message => message.role === 'user').map(message => message.id)) !== JSON.stringify(expectedUserMessageIds)) throw new Error('Codex changed before rewind could begin.')
+      const retainedUsers = expectedUserMessageIds.slice(0, expectedUserMessageIds.length - removedUserMessages)
+      const firstRemovedId = expectedUserMessageIds[retainedUsers.length]!
+      const cut = native.turns.findIndex(turn => alias.messageIdentities.find(identity => identity.turnId === turn.id)?.messages.some(message => message.id === firstRemovedId))
+      if (cut < 0) throw new Error('The checkpoint could not be matched to a native Codex turn.')
+      const removedTurns = native.turns.slice(cut)
+      const removedUserIds = removedTurns.flatMap(turn => alias.messageIdentities.find(identity => identity.turnId === turn.id)?.messages.filter(message => message.role === 'user').map(message => message.id) ?? [])
+      if (JSON.stringify(removedUserIds) !== JSON.stringify(expectedUserMessageIds.slice(retainedUsers.length))) throw new Error('This checkpoint would split a native turn. Choose a complete turn boundary.')
+      const removedTurnIds = removedTurns.map(turn => turn.id)
+      const removedMessageIds = alias.messageIdentities.filter(identity => removedTurnIds.includes(identity.turnId)).flatMap(identity => identity.messages.flatMap(message => [message.id, ...message.nativeIds]))
+      alias.pendingRollback = { removedTurnIds, removedMessageIds, retainedUsers: [...retainedUsers] }
+      await this.persist()
+      sent = true
+      await this.rpc('thread/rollback', { threadId: alias.codexThreadId, numTurns: removedTurns.length }, async value => {
+        const response = z.object({ thread: threadSchema.extend({ turns: z.array(turnSchema) }) }).parse(value)
+        this.touch(id); this.applyThread(id, response.thread, true); await this.persist(); this.emit()
+      }, async () => { delete alias.pendingRollback; await this.persist() })
+      return alias.pendingRollback ? { accepted: false, uncertain: true } : { accepted: true }
+    } catch (error) {
+      if (sent && !(error instanceof Rejected)) return { accepted: false, uncertain: true }
+      if (!sent) { delete alias.pendingRollback; await this.persist() }
+      throw error
+    } finally { this.dispatching.delete(id) }
+  }
   private async executeNative(command: AgentHostCommand | PersonalCreateCommand): Promise<AgentHostResult> {
     if (!this.state.connected) throw new Error('Connect to Codex before sending a command.')
     if (command.type === 'create-project') {
@@ -506,7 +584,7 @@ export class CodexAppServerHost implements AgentHost {
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: command.projectId }), cwd,
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
-            createdAt: new Date().toISOString(), origins: [], messageIdentities: [] }
+            createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
@@ -514,6 +592,7 @@ export class CodexAppServerHost implements AgentHost {
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
+        if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer') return { accepted: false, uncertain: true }
         if (command.type === 'configure-thread') {
           const thread = this.ensureThread(id)
@@ -672,6 +751,12 @@ export class CodexAppServerHost implements AgentHost {
       if (!parsed) { this.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }); return }
       this.touch(id!); this.requests.set(parsed.request.id, parsed); this.ensureThread(id!).requests.push(parsed.request); this.emit(); return
     }
+    if (frame.method === 'thread/tokenUsage/updated') {
+      const params = frame.params as { threadId?: string } | undefined
+      const id = params?.threadId ? this.sessionId(params.threadId) : undefined
+      if (id) { this.usage.codex(id, this.ensureThread(id).modelId, frame.params); this.ensureThread(id); this.emit() }
+      return
+    }
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',
       'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress',
       'turn/plan/updated', 'thread/status/changed'].includes(frame.method ?? '')) return
@@ -683,6 +768,7 @@ export class CodexAppServerHost implements AgentHost {
     }
     this.touch(id)
     if (params.turn) this.applyTurn(id, params.turn, true)
+    if (params.turn?.durationMs !== undefined) { this.usage.elapsed(id, params.turn.durationMs); this.ensureThread(id) }
     if (params.item) this.applyItem(id, params.item, params.turnId, undefined, { phase: frame.method === 'item/started' ? 'started' : 'completed', startedAtMs: params.startedAtMs, completedAtMs: params.completedAtMs })
     if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined
       && !this.completedMessages.has(JSON.stringify([id, params.turnId, params.itemId])) && !this.terminalTurns.has(params.turnId ?? '')) {
@@ -783,5 +869,5 @@ export class CodexAppServerHost implements AgentHost {
     if (publish) this.emit()
   }
   /** Shutdown barrier for callers removing user data or replacing a host. */
-  async closed(): Promise<void> { await this.stopping; await this.frames; await this.writing }
+  async closed(): Promise<void> { await this.stopping; await this.frames; await this.writing; await this.usage.flushed() }
 }

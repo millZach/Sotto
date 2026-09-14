@@ -29,7 +29,7 @@ it('persists personal identity without project rows and resumes native history w
   expect((await f.adapter.snapshot()).projects).toEqual([])
   const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
   expect(aliases[chat.id]).toMatchObject({ kind: 'personal' }); expect(aliases[chat.id]).not.toHaveProperty('projectId')
-  configuration.reasoning = 'claude'; configuration.reasoningModel = 'another'
+  configuration.reasoning = 'unsupported'; configuration.reasoningModel = 'another'
   expect(service.get().availability.supported).toBe(false)
   await expect(service.create()).rejects.toThrow('not available')
   await service.disconnect(); await service.connect(); await service.settled()

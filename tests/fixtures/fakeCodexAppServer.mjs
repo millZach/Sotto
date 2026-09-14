@@ -130,6 +130,14 @@ createInterface({ input: process.stdin }).on('line', line => {
         reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
+  } else if (method === 'thread/rollback') {
+    const thread = state.threads[params.threadId]
+    if (!thread || thread.status.type !== 'idle' || !Number.isInteger(params.numTurns) || params.numTurns < 1 || params.numTurns > thread.turns.length) {
+      emit({ id, error: { code: -32600, message: 'Cannot rewind this native turn boundary' } }); return
+    }
+    thread.turns = thread.turns.slice(0, -params.numTurns); thread.rewound = true; save()
+    if (script.dropRollbackReply) return
+    reply({ thread: script.omitRollbackTurns ? { ...thread, turns: undefined } : thread })
   } else if (method === 'turn/start') {
     const thread = state.threads[params.threadId]
     // Explicit opt-in fixture writes prove the adapter's actual execution cwd.

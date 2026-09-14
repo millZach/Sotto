@@ -19,7 +19,7 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
   }
   for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
   for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
-  for (const method of ['list', 'diff', 'copyPath', 'reveal', 'watch'] as const) register(GIT_CHANGES_CHANNEL + method, payload => services.gitChanges[method](payload))
+  for (const method of ['list', 'diff', 'copyPath', 'reveal', 'watch', 'act', 'branches', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint'] as const) register(GIT_CHANGES_CHANNEL + method, payload => services.gitChanges[method](payload))
   return () => {
     for (const channel of channels) ipc.removeHandler(channel)
     services.browser.dispose(); services.terminal.dispose(); services.gitChanges.dispose()

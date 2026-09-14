@@ -4,6 +4,7 @@ import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
+import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 
 import {
   RUNTIME_FILE_ALLOWLIST,
@@ -33,5 +34,6 @@ export async function verifyPreparedAssets(options = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const result = await verifyPreparedAssets()
-  process.stdout.write(`Verified ${result.runtimeFiles} runtime files.\n`)
+  const claude = await verifyClaudeSdkAssets()
+  process.stdout.write(`Verified ${result.runtimeFiles} runtime files and Claude SDK ${claude.version} history helper assets.\n`)
 }

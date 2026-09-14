@@ -1,6 +1,7 @@
 import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONAL_CHAT_STATE, personalChatStateSchema, personalChatCommandSchema, personalSkillsInputSchema, type PersonalChatBridge, type PersonalChatCommand } from '../shared/personalChats'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
+import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatPromptCopySchema, chatPromptResultSchema, type ChatPromptBridge } from '../shared/chatPrompts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { createToolsBridges } from './tools'
 import { createThemesBridge } from './themes'
@@ -264,6 +265,8 @@ export function createSottoBridge(
     }),
     agents: createAgentBridge(renderer, 'main'),
     personalChats: createPersonalChatBridge(renderer),
+    chatPrompts: Object.freeze<ChatPromptBridge>({ generate: input => invokeParsed(renderer, CHAT_PROMPT_GENERATE, chatPromptResultSchema, chatPromptInputSchema.parse(input)),
+      copy: text => invokeParsed(renderer, CHAT_PROMPT_COPY, z.void(), chatPromptCopySchema.parse(text)) }),
     requestDrafts: Object.freeze<RequestDraftBridge>({
       list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftSchema.array(), requestDraftOwnerSchema.parse(owner)),
       discard: input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, z.boolean(), requestDraftDiscardSchema.parse(input)),

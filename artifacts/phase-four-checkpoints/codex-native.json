@@ -1,0 +1,68 @@
+{
+  "directory": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-codex-rewind-native-bKtnKb",
+  "checkedAt": "2026-09-14T02:27:30.875Z",
+  "syntheticTurns": 2,
+  "version": "sotto/0.154.0 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)",
+  "before": [
+    {
+      "id": "first",
+      "role": "user",
+      "text": "Synthetic native rewind check first. Reply exactly SOTTO_REWIND_FIRST. Do not call tools, read files, browse, delegate, or change anything.",
+      "createdAt": "2026-09-14T02:27:31.534Z",
+      "commandId": "first"
+    },
+    {
+      "id": "msg_0920fee7400676f6016aa75ba0609087d0b5749a2f3fe9f1cc",
+      "role": "assistant",
+      "text": "SOTTO_REWIND_FIRST",
+      "createdAt": "2026-09-14T02:27:31.000Z"
+    },
+    {
+      "id": "second",
+      "role": "user",
+      "text": "Synthetic native rewind check second. Reply exactly SOTTO_REWIND_SECOND. Do not call tools, read files, browse, delegate, or change anything.",
+      "createdAt": "2026-09-14T02:27:43.805Z",
+      "commandId": "second"
+    },
+    {
+      "id": "msg_0920fee7400676f6016aa75ba9034887d09b1219ab8839324f",
+      "role": "assistant",
+      "text": "SOTTO_REWIND_SECOND",
+      "createdAt": "2026-09-14T02:27:43.000Z"
+    }
+  ],
+  "rollback": {
+    "accepted": true
+  },
+  "after": [
+    {
+      "id": "first",
+      "role": "user",
+      "text": "Synthetic native rewind check first. Reply exactly SOTTO_REWIND_FIRST. Do not call tools, read files, browse, delegate, or change anything.",
+      "createdAt": "2026-09-14T02:27:31.534Z",
+      "commandId": "first"
+    },
+    {
+      "id": "msg_0920fee7400676f6016aa75ba0609087d0b5749a2f3fe9f1cc",
+      "role": "assistant",
+      "text": "SOTTO_REWIND_FIRST",
+      "createdAt": "2026-09-14T02:27:31.000Z"
+    }
+  ],
+  "restored": [
+    {
+      "id": "first",
+      "role": "user",
+      "text": "Synthetic native rewind check first. Reply exactly SOTTO_REWIND_FIRST. Do not call tools, read files, browse, delegate, or change anything.",
+      "createdAt": "2026-09-14T02:27:31.534Z",
+      "commandId": "first"
+    },
+    {
+      "id": "msg_0920fee7400676f6016aa75ba0609087d0b5749a2f3fe9f1cc",
+      "role": "assistant",
+      "text": "SOTTO_REWIND_FIRST",
+      "createdAt": "2026-09-14T02:27:31.000Z"
+    }
+  ],
+  "sameNativeId": true
+}

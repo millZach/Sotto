@@ -16,6 +16,7 @@ import { submissionStatus, useSubmissions, type ThreadDraftStore } from './threa
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
+import { ThreadUsage } from './ThreadUsage'
 
 type Command = AgentConnection['command']
 
@@ -177,6 +178,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
             : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
+      <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
     </div>
   </>
 }

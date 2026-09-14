@@ -40,7 +40,10 @@ export class ConfiguredAgentReasoner implements AgentReasoner {
     if (!client) return { provider, label: provider, installed: false, ready: false, models: [], detail: 'This subscription client is unavailable in this build.' }
     return client.status()
   }
-  private async json(system: string, input: unknown): Promise<unknown> {
+  async transformText(system: string, input: unknown): Promise<unknown> {
+    return this.json(system, input, 8000)
+  }
+  private async json(system: string, input: unknown, maxTokens = 1500): Promise<unknown> {
     system = `${system} ${preferenceGuidance}`
     const config = this.configuration()
     if (isSubscriptionReasoning(config.reasoning)) {
@@ -63,7 +66,7 @@ export class ConfiguredAgentReasoner implements AgentReasoner {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.reasoningModel, messages: [
         { role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) },
-      ], response_format: { type: 'json_object' }, max_completion_tokens: 1500 }),
+      ], response_format: { type: 'json_object' }, max_completion_tokens: maxTokens }),
     })
     if (!response.ok) throw new Error(`Sotto reasoning account returned HTTP ${response.status}. Check its credentials, model and usage limit.`)
     const payload = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })) }).parse(await response.json())

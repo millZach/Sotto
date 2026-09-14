@@ -1,4 +1,6 @@
+import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -15,9 +17,15 @@ import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokUncertain, type GrokFrame } from './grokRpc'
 
+// Only strip our suffix after durable origin/digest matching; foreign native
+// messages remain untouched and no extra plaintext prompt is stored in aliases.
+function personalAuthoredText(text: string): string {
+  const boundary = text.lastIndexOf('\n\n<SottoPersonalContext>\n')
+  return boundary >= 0 && text.endsWith('\n</SottoPersonalContext>') ? text.slice(0, boundary) : text
+}
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
-const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), answeredRequestIds: z.array(z.string()).default([]) })
+const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional() })).optional() }).optional() })).min(1) })
 const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
@@ -48,10 +56,12 @@ export interface GrokAcpOptions { executable?: string; args?: string[]; environm
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
 export class GrokAcpHost implements AgentHost {
+  private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
-  private readonly threads = new Map<string, AgentThread>()
+  private readonly threads = new Map<string, NativeConversation>()
+  private readonly personalContexts = new Map<string, string>()
   private readonly pending = new Map<string, Pending>()
   private readonly answeredRequests = new Set<string>()
   private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
@@ -71,22 +81,24 @@ export class GrokAcpHost implements AgentHost {
   private generation = 0
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
+    this.usage = new NativeUsage(userDataDirectory, 'grok')
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'grok-projects.json'), z.array(agentProjectSchema).parse, () => [])
   }
-  private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()] }) }
+  private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()].filter((thread): thread is AgentThread => 'projectId' in thread) }) }
   private emit(): void { for (const listener of this.listeners) listener(this.current()) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
-  private thread(id: string): AgentThread {
+  private thread(id: string): NativeConversation {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
-    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
-    return this.threads.get(id)!
+    if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
+    const thread = this.threads.get(id)!; thread.usage = this.usage.get(id); return thread
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
     this.disconnect(); await this.closed()
     const generation = this.generation
+    await this.usage.load()
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
@@ -179,6 +191,7 @@ export class GrokAcpHost implements AgentHost {
           historyEvents.add(key)
           const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
           const update = parsed.data.update; const content = object(update.content)
+          this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) assistant = undefined
           activities = mergeAgentActivities(activities, grokActivities(update, { turnId: messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: messages.at(-1)?.id, cwd: alias.cwd }, activities))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
@@ -189,7 +202,7 @@ export class GrokAcpHost implements AgentHost {
               const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
               lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-              messages.push({ id: origin?.messageId ?? key, role: 'user', text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
               const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', activities.at(-1)?.id)
@@ -240,7 +253,20 @@ export class GrokAcpHost implements AgentHost {
     thread.messages = messages; thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
     this.emit()
   }
-  async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+  personalSnapshot(): PersonalConversation[] {
+    return structuredClone([...this.threads.values()].filter((thread): thread is PersonalConversation => 'kind' in thread && thread.kind === 'personal'))
+  }
+  async createPersonalConversation(command: PersonalCreateCommand, memories: readonly PersonalMemory[] = []): Promise<AgentHostResult> {
+    this.personalContexts.set(command.threadId, personalContext(memories))
+    return this.executeNative({ ...command, type: 'create-personal' })
+  }
+  async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>, memories: readonly PersonalMemory[]): Promise<AgentHostResult> {
+    if (this.aliases[command.threadId]?.kind !== 'personal') throw new Error('This is not an owned personal conversation.')
+    this.personalContexts.set(command.threadId, personalContext(memories))
+    return this.execute(command)
+  }
+  async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
+  private async executeNative(command: AgentHostCommand | (PersonalCreateCommand & { type: 'create-personal' })): Promise<AgentHostResult> {
     if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected || !this.rpc) throw new Error('Connect Grok before managing threads.')
     const rpc = this.rpc
@@ -248,11 +274,11 @@ export class GrokAcpHost implements AgentHost {
       if (command.type === 'create-project') {
         if (!isAbsolute(command.path)) throw new Error('Grok projects require an absolute working directory.')
         if (!this.state.projects.some(project => project.id === command.projectId)) { this.state.projects.push({ id: command.projectId, title: command.title, path: command.path }); await this.projectStore.write(this.state.projects) }
-      } else if (command.type === 'create-thread') {
+      } else if (command.type === 'create-thread' || command.type === 'create-personal') {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
-        const project = this.state.projects.find(project => project.id === command.projectId); if (!project) throw new Error('Choose a Grok project first.')
-        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
+        const project = command.type === 'create-thread' ? this.state.projects.find(project => project.id === command.projectId) : undefined; if (command.type === 'create-thread' && !project) throw new Error('Choose a Grok project first.')
+        const alias: Alias = { ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
         await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
@@ -284,7 +310,10 @@ export class GrokAcpHost implements AgentHost {
           if (previous) return previous.entryKey ? { accepted: true } : { accepted: false, uncertain: true }
           if (this.activePrompts.has(command.threadId) || thread.status === 'running') throw new Error('Grok is already running a prompt in this thread.')
           if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
-          const nativeText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
+          const skillText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
+          // ACP has no per-turn developer-instruction field. Append context after the
+          // leading native slash command so skills still expand; preserve authored text by origin.
+          const nativeText = alias.kind === 'personal' ? `${skillText}\n\n<SottoPersonalContext>\n${this.personalContexts.get(command.threadId) ?? personalContext()}\n</SottoPersonalContext>` : skillText
           const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
@@ -365,6 +394,7 @@ export class GrokAcpHost implements AgentHost {
         if (this.seenUpdates.size > 20000) this.seenUpdates.delete(this.seenUpdates.values().next().value!)
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
+      this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
       const activities = grokActivities(update, { turnId: thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: thread.messages.at(-1)?.id, cwd: this.aliases[id]!.cwd }, thread.activities)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
@@ -373,7 +403,7 @@ export class GrokAcpHost implements AgentHost {
         const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
         const messageId = origin?.messageId ?? key
         if (messageId && !thread.messages.some(message => message.id === messageId)) {
-          const message: AgentMessage = { id: messageId, role: 'user', text: content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
+          const message: AgentMessage = { id: messageId, role: 'user', text: origin && this.aliases[id]!.kind === 'personal' ? personalAuthoredText(content.text) : content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
           this.authored.set(messageId, { threadId: id, message }); thread.messages.push(message)
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
@@ -409,5 +439,5 @@ export class GrokAcpHost implements AgentHost {
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))
     this.deliveries.clear(); this.rpc?.close(); this.state.connected = false; this.emit()
   }
-  async closed(): Promise<void> { await this.stopping; await this.polling?.catch(() => undefined); await Promise.allSettled(this.historyReads.values()); await this.writing }
+  async closed(): Promise<void> { await this.stopping; await this.polling?.catch(() => undefined); await Promise.allSettled(this.historyReads.values()); await this.writing; await this.usage.flushed() }
 }

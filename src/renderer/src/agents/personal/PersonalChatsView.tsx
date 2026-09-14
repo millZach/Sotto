@@ -18,9 +18,11 @@ import { MessageList, reachesJumpBand, TRANSCRIPT_PAGE, type ActivityContext } f
 import { personalDraftStore, personalError, usePersonalDraft, type PersonalDraftStore } from './personalDrafts'
 import '../composer.css'
 import './personalChats.css'
+import { ChatPromptEditor } from './ChatPromptEditor'
+import { ThreadUsage } from '../ThreadUsage'
 
 export const PERSONAL_PROMPT_ID = 'personal-chat-prompt'
-const PROVIDER = 'Codex'
+const providerLabel = (provider: string): string => ({ codex: 'Codex', claude: 'Claude', grok: 'Grok' })[provider] ?? provider
 const FOLLOW_SLACK_PX = 48
 
 type Pending = 'create' | 'connect' | 'disconnect' | 'refresh' | 'interrupt' | 'select'
@@ -30,7 +32,7 @@ function bridgePersonalChats(): PersonalChatBridge | undefined {
   return window.sotto?.personalChats
 }
 
-const modelLabel = (modelId: string): string => modelId.replace(/^codex:/u, '')
+const modelLabel = (modelId: string): string => modelId.replace(/^(?:codex|claude|grok):/u, '')
 
 /** A plain question with no choices takes its answer from the composer, as in a project thread. */
 function composerQuestion(chat: PersonalChat): PersonalChat['requests'][number] | undefined {
@@ -39,6 +41,7 @@ function composerQuestion(chat: PersonalChat): PersonalChat['requests'][number] 
 
 /** Why this chat cannot take a message now, in one sentence; null when it can. */
 export function personalBlockedReason(state: PersonalChatState, chat: PersonalChat, answering: boolean): string | null {
+  const PROVIDER = providerLabel(chat.providerId)
   if (!state.connected) return state.connecting ? `Connecting to ${PROVIDER}…` : `Connect ${PROVIDER} to send. Your draft stays here.`
   if (answering) return null
   if (chat.requests.length) return 'Answer the request above to continue.'
@@ -72,6 +75,7 @@ function PendingSubmission({ bridge, chat, store, submission, connected, refresh
   readonly submission: Submission; readonly connected: boolean; readonly refreshing: boolean; readonly onRefresh: () => void
   readonly onDisclosure: (control: HTMLElement) => void
 }): ReactNode {
+  const PROVIDER = providerLabel(chat.providerId)
   usePersonalDraft(store, chat)
   const failed = submission.status === 'failed'
   const recover = (): void => {
@@ -103,6 +107,7 @@ function PendingSubmission({ bridge, chat, store, submission, connected, refresh
 function PersonalRequests({ bridge, chat, connected, onWriteAnswer }: {
   readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly connected: boolean; readonly onWriteAnswer: () => void
 }): ReactNode {
+  const PROVIDER = providerLabel(chat.providerId)
   return <>{chat.requests.map(request => {
     const unconfirmed = (state: PersonalChatState): boolean => state.chats.find(item => item.id === chat.id)?.decisions
       ?.some(decision => decision.requestId === request.id && (decision.status === 'submitting' || decision.status === 'uncertain')) === true
@@ -122,6 +127,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
   readonly bridge: PersonalChatBridge; readonly chat: PersonalChat; readonly store: PersonalDraftStore; readonly state: PersonalChatState; readonly followSignal: number
   readonly refreshing: boolean; readonly onRefresh: () => void; readonly onWriteAnswer: () => void
 }): ReactNode {
+  const PROVIDER = providerLabel(chat.providerId)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -145,7 +151,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
     })
   }, [])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: chat.status === 'running', connected: state.connected, provider: PROVIDER, onDisclosure }),
-    [liveTurn, chat.status, state.connected, onDisclosure])
+    [liveTurn, chat.status, state.connected, PROVIDER, onDisclosure])
   const lastGroup = placement.trailing.at(-1) ?? (chat.messages.at(-1) ? placement.after.get(chat.messages.at(-1)!.id)?.at(-1) : undefined)
   const last = chat.messages.at(-1)
   const contentKey = `${last?.id}:${last?.text.length}:${submissions.map(item => `${item.id}:${item.status}`).join()}:${chat.requests.length}:${chat.activities?.length ?? 0}`
@@ -208,7 +214,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
         <LiveActivity thread={chat} connected={state.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
         {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} onDisclosure={onDisclosure} />)}
         <PersonalRequests bridge={bridge} chat={chat} connected={state.connected} onWriteAnswer={onWriteAnswer} />
-        {/* Answers saved for questions no live card shows, such as ones Codex closed while Sotto was shut. */}
+        {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
         <RequestDraftRecovery owner={{ kind: 'personal', ownerId: chat.id, providerId: chat.providerId }} live={chat.requests} provider={PROVIDER}
           observation={state.connecting ? 'loading' : !state.connected ? 'disconnected' : chat.historyStatus === 'loading' ? 'loading' : chat.historyStatus === 'error' ? 'unavailable' : 'ready'}
           observed={JSON.stringify([state.connected, state.connecting, chat.historyStatus, chat.status,
@@ -225,6 +231,7 @@ function PersonalComposer({ bridge, state, chat, store, onSent }: {
   readonly bridge: PersonalChatBridge; readonly state: PersonalChatState; readonly chat: PersonalChat
   readonly store: PersonalDraftStore; readonly onSent: () => void
 }): ReactNode {
+  const PROVIDER = providerLabel(chat.providerId)
   const draft = usePersonalDraft(store, chat)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -235,7 +242,7 @@ function PersonalComposer({ bridge, state, chat, store, onSent }: {
   const answering = question !== undefined
   const reason = personalBlockedReason(state, chat, answering)
   const canSend = reason === null && !sending && draft.text.trim() !== ''
-  const sigils = skillSigils(catalog?.providerId ?? 'codex')
+  const sigils = skillSigils(catalog?.providerId ?? chat.providerId)
   const load = useCallback(async (forceReload: boolean): Promise<boolean> => {
     try { setCatalog(await bridge.skills(chat.id, forceReload)); return true } catch { return false }
   }, [bridge, chat.id])
@@ -297,7 +304,7 @@ function PersonalComposer({ bridge, state, chat, store, onSent }: {
       aria-controls={picker.open && picker.options.length ? listId : undefined}
       aria-expanded={!answering ? picker.open : undefined}
       aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex) : undefined}
-      placeholder={answering ? 'Write your answer…' : chat.messages.length ? 'Reply to Codex' : 'Start the conversation'}
+      placeholder={answering ? 'Write your answer…' : chat.messages.length ? `Reply to ${PROVIDER}` : 'Start the conversation'}
       onChange={event => { editText(event.target.value); picker.track(event.target) }}
       onSelect={event => picker.track(event.currentTarget)}
       onKeyDown={event => {
@@ -319,7 +326,7 @@ function PersonalComposer({ bridge, state, chat, store, onSent }: {
       }} />
     <div className="thread-prompt__footer">
       <div className="thread-prompt__meta" id={statusId}>
-        <span className="thread-prompt__model"><ProviderMark provider="codex" name={PROVIDER} />{modelLabel(chat.modelId)}<small>{answering ? 'Answer this question' : 'Personal chat'}</small></span>
+        <span className="thread-prompt__model"><ProviderMark provider={chat.providerId} name={PROVIDER} />{modelLabel(chat.modelId)}<small>{answering ? 'Answer this question' : 'Personal chat'}</small></span>
         {status}
       </div>
       <div className="thread-prompt__actions">
@@ -339,7 +346,7 @@ export interface PersonalChatsViewProps {
 }
 
 /**
- * Saved conversations with the Codex coordinator, outside any project. The main process owns the chats,
+ * Saved conversations with the configured native coordinator, outside any project. The main process owns the chats,
  * their drafts and every delivery; this view shows its snapshots and asks it to act.
  * Leaving the view only unsubscribes: the connection, drafts and running replies carry on.
  */
@@ -391,6 +398,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
     </div>
   }
 
+  const PROVIDER = providerLabel(selected?.providerId ?? state.availability.provider)
   const clock = now ?? Date.now()
   const { availability } = state
   const create = async (): Promise<void> => {
@@ -421,10 +429,10 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
         {state.chats.length ? <ul className="personal-chats__list">
           {state.chats.map(chat => {
             const current = chat.id === state.selectedChatId
-            const status = rowStatus(chat, state.connected, clock)
+            const status = rowStatus(chat, chat.connected ?? state.connected, clock)
             return <li key={chat.id} className="thread-nav__row" data-current={current || undefined}>
               <button type="button" className="thread-nav__item tt-focusable" aria-current={current ? 'page' : undefined} onClick={() => select(chat.id)}>
-                <span className="thread-nav__mark" data-provider="codex" title={PROVIDER}><ProviderMark provider="codex" name={PROVIDER} /></span>
+                <span className="thread-nav__mark" data-provider={chat.providerId} title={providerLabel(chat.providerId)}><ProviderMark provider={chat.providerId} name={providerLabel(chat.providerId)} /></span>
                 <span className="thread-nav__title">{chat.title}</span>
                 <span className="thread-nav__status" data-state={status.state}><i aria-hidden="true" />{status.text}</span>
               </button>
@@ -437,18 +445,19 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
       {selected ? <>
         <header className="thread-workspace__head">
           <div className="thread-workspace__title">
-            <span className="thread-workspace__crumb"><ProviderMark provider="codex" name={PROVIDER} size={16} /><span>{PROVIDER} · {modelLabel(selected.modelId)}</span>
+            <span className="thread-workspace__crumb"><ProviderMark provider={selected.providerId} name={PROVIDER} size={16} /><span>{PROVIDER} · {modelLabel(selected.modelId)}</span>
               <span className="thread-workspace__tag">No project</span>
               {!state.connected ? <span className="thread-workspace__tag" data-tone="warning">{state.connecting ? 'Connecting' : `${PROVIDER} disconnected`}</span> : null}
             </span>
             <h2>{selected.title}</h2>
           </div>
           <div className="thread-workspace__actions">
+            <ChatPromptEditor chat={selected} />
             {!state.connected ? <Button variant="secondary" disabled={state.connecting || pending === 'connect'} onClick={() => void run('connect', () => bridge.connect(), `${PROVIDER} could not connect.`)}>
               {state.connecting ? 'Connecting…' : `Connect ${PROVIDER}`}</Button> : null}
             {state.connected && selected.nativeState !== 'unstarted' ? <Button variant="ghost" disabled={pending === 'refresh'} onClick={refresh}>{pending === 'refresh' ? 'Refreshing…' : 'Refresh'}</Button> : null}
             {selected.status === 'running' ? <Button variant="secondary" disabled={!state.connected || pending === 'interrupt'} onClick={() => void run('interrupt', () => bridge.interrupt(selected.id), `Sotto could not stop ${PROVIDER}.`)}>Stop</Button> : null}
-            {state.connected ? <Button variant="ghost" disabled={pending === 'disconnect'} title={selected.requests.length ? 'Disconnecting declines the pending request.' : `End this ${PROVIDER} connection. Chats and drafts stay.`}
+            {state.connected ? <Button variant="ghost" disabled={pending === 'disconnect'} title={selected.requests.length ? 'Disconnecting declines the pending request.' : 'End personal chat connections. Chats and drafts stay.'}
               onClick={() => void run('disconnect', () => bridge.disconnect(), `Sotto could not disconnect ${PROVIDER}.`)}>Disconnect</Button> : null}
           </div>
         </header>
@@ -457,6 +466,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
           onWriteAnswer={() => document.getElementById(PERSONAL_PROMPT_ID)?.focus()} />
         <div className="thread-workspace__compose">
           <PersonalComposer key={selected.id} bridge={bridge} state={state} chat={selected} store={store} onSent={() => setFollowSignal(value => value + 1)} />
+          <ThreadUsage usage={selected.usage} modelId={selected.modelId} />
         </div>
       </> : <>
         {actionError || state.error ? <p className="agent-error thread-workspace__error" role="alert">{actionError ?? state.error}</p> : null}

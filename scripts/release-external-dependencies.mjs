@@ -44,7 +44,8 @@ const reviewedInventories = Object.freeze({
       'zlib',
       'zod',
     ]),
-    dynamicImports: Object.freeze(['node-pty']),
+    // Claude's isolated history helper checks packaged resources only in Electron.
+    dynamicImports: Object.freeze(['electron', 'node-pty']),
   }),
   preload: Object.freeze({
     version: 1,

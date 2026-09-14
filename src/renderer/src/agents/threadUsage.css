@@ -1,0 +1,6 @@
+.thread-usage { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 6px 2px 2px; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.thread-usage > span { white-space: nowrap; }
+.thread-usage__estimate { min-width: 0; }
+.thread-usage__estimate summary { cursor: pointer; border-radius: 4px; padding: 2px 0; }
+.thread-usage__estimate p { max-width: 65ch; margin: 6px 0 4px; overflow-wrap: anywhere; }
+.thread-usage__estimate[open] { flex-basis: 100%; }

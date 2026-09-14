@@ -85,8 +85,9 @@ test('personal chats retain separate identity and drafts across full app restart
       try { await bridge.create() } catch { creationRejected = true }
       return { state: await bridge.get(), agents: await window.sotto!.agents!.get(), creationRejected }
     }, initial)
-    expect(after.creationRejected).toBe(true)
-    expect(after.state.availability.supported).toBe(false)
+    expect(after.creationRejected).toBe(false)
+    expect(after.state.availability.supported).toBe(true)
+    expect(after.state.chats[0]).toMatchObject({ providerId: 'claude', modelId: 'changed-default', nativeState: 'unstarted' })
     const first = after.state.chats.find(chat => chat.id === initial.first)!
     expect(first.providerId).toBe('codex')
     expect(first.modelId).toBe('codex:test')

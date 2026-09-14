@@ -218,6 +218,12 @@ export class AgentControl {
       else void connection
     }
   }
+  hasPendingThreadWork(threadId: string): boolean {
+    return this.outbox.some(item => item.threadId === threadId)
+      || this.followupStore.get().items.some(item => item.threadId === threadId)
+      || this.state.assignments.some(item => item.threadId === threadId && item.mode === 'managed' && !item.paused)
+      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))
+  }
   get(): AgentState {
     const state = structuredClone(this.state)
     const current = this.draftSignatures(state.threadDrafts ?? [])

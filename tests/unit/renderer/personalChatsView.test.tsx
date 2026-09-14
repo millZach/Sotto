@@ -329,9 +329,9 @@ describe('Chats', () => {
 
   it('keeps saved chats readable when new chats are unavailable, and points to the coordinator setting', async () => {
     const onOpenCoordinatorSettings = vi.fn()
-    const reason = 'Personal conversations with Claude are not available yet. Select Codex in coordinator settings for new chats.'
+    const reason = 'Personal conversations with this coordinator are unavailable. Choose a native coordinator.'
     const second = chat({ id: 'garden', title: 'Garden plan', messages: [] })
-    const { bridge } = mount(snapshot({ availability: { provider: 'claude', supported: false, reason }, chats: [chat(), second] }), { onOpenCoordinatorSettings })
+    const { bridge } = mount(snapshot({ availability: { provider: 'unsupported', supported: false, reason }, chats: [chat(), second] }), { onOpenCoordinatorSettings })
     expect(await screen.findByText(reason)).toBeVisible()
     expect(screen.getByRole('button', { name: 'New chat' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Coordinator settings' }))
@@ -343,4 +343,14 @@ describe('Chats', () => {
     await waitFor(() => expect(bridge.select).toHaveBeenCalledWith('garden'))
     expect(await screen.findByRole('heading', { name: 'Garden plan' })).toBeVisible()
   })
+})
+
+
+it.each([['claude', 'Claude'], ['grok', 'Grok']] as const)('uses the saved %s identity throughout the composer and connection controls', async (providerId, label) => {
+  const selected = chat({ providerId, modelId: `${providerId}:native-model` })
+  mount(snapshot({ chats: [selected], connected: false, availability: { provider: 'codex', supported: true } }))
+  expect(await screen.findByPlaceholderText(`Reply to ${label}`)).toBeVisible()
+  expect(screen.getByRole('button', { name: `Connect ${label}` })).toBeVisible()
+  expect(screen.getByText(`${label} disconnected`)).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Connect Codex' })).not.toBeInTheDocument()
 })

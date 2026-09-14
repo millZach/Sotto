@@ -126,6 +126,17 @@ export class SottoThreadHost implements AgentHost {
     const catalog = await this.inner.listThreadSkills(binding?.sessionId ?? threadId, forceReload, binding ? undefined : scope)
     return { ...catalog, threadId }
   }
+  rollbackCapability(threadId: string) {
+    const binding = this.registry.byThread(threadId)
+    return binding?.provider === this.provider && this.inner.rollbackCapability
+      ? this.inner.rollbackCapability(binding.sessionId) : { supported: false, reason: 'This native provider has no verified conversation rewind for this thread.' }
+  }
+  async rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (!binding || binding.provider !== this.provider || !this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable for this thread.')
+    return this.inner.rollbackThread(binding.sessionId, removedUserMessages, expectedUserMessageIds)
+  }
   async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
     await this.registry.load()
     const binding = this.registry.byThread(threadId)
