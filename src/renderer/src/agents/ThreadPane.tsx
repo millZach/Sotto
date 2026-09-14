@@ -17,6 +17,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
+import { ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
 
@@ -179,6 +180,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
             : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
       <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
+      <ThreadCompaction thread={thread} supported={capabilities.compact === true && thread.manualCompactionSupported === true && thread.nativeSessionStarted !== false}
+        connected={rowConnected && !closed} blocked={state.busy || handingOff} command={command} />
     </div>
   </>
 }

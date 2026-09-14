@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { fileRelativePathSchema, fileWorkspaceSchema, type FilePath } from './files'
 import { toolTargetSchema, toolListRequestSchema, type ToolsResult } from './tools'
+import type { GitPullRequestsBridge } from './gitPullRequests'
 import type { CheckpointBridge } from './checkpoints'
 
 export const GIT_CHANGES_CHANNEL = 'sotto:git-changes:'
@@ -17,7 +18,7 @@ export const gitChangedSchema = toolTargetSchema.extend({ revision: z.string() }
 export type GitChange = z.infer<typeof gitChangeSchema>
 export type GitChangeListing = z.infer<typeof gitListingSchema>
 export type GitFileDiff = z.infer<typeof gitDiffSchema>
-export interface GitChangesBridge extends CheckpointBridge {
+export interface GitChangesBridge extends CheckpointBridge, GitPullRequestsBridge {
   act?(request: z.infer<typeof gitActionSchema>): Promise<ToolsResult<GitChangeListing>>
   branches?(request: z.infer<typeof toolListRequestSchema>): Promise<ToolsResult<z.infer<typeof gitBranchesSchema>>>
   list(request: z.infer<typeof toolListRequestSchema>): Promise<ToolsResult<GitChangeListing>>

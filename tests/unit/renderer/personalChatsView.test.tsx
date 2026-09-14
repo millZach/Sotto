@@ -6,6 +6,7 @@ import type { AgentSkillCatalog } from '../../../src/shared/agentSkills'
 import type { PersonalChat, PersonalChatBridge, PersonalChatState } from '../../../src/shared/personalChats'
 import { PersonalChatsView } from '../../../src/renderer/src/agents/personal/PersonalChatsView'
 import { PersonalDraftStore } from '../../../src/renderer/src/agents/personal/personalDrafts'
+import { captureDictationDestination } from '../../../src/renderer/src/features/dictation/dictationDestination'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 
 const AT = '2026-09-13T17:00:00.000Z'
@@ -353,4 +354,22 @@ it.each([['claude', 'Claude'], ['grok', 'Grok']] as const)('uses the saved %s id
   expect(screen.getByRole('button', { name: `Connect ${label}` })).toBeVisible()
   expect(screen.getByText(`${label} disconnected`)).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Connect Codex' })).not.toBeInTheDocument()
+})
+
+
+it.each(['codex', 'claude', 'grok'] as const)('dictation stays in its captured %s draft after selecting another chat and cannot send or answer', async providerId => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  const original = chat({ providerId, draft: { revision: 0, text: 'Typed thought', skills: [] } })
+  const other = chat({ id: 'other', title: 'Other chat', providerId })
+  const h = mount(snapshot({ chats: [original, other] }))
+  await screen.findByRole('textbox', { name: 'Message' })
+  const deliver = captureDictationDestination()!
+  expect(deliver).toBeDefined()
+  await act(async () => { await h.bridge.select('other') })
+  await act(async () => { await deliver({ text: 'Create a project and approve it.', autoPaste: true, pasteDelayMs: 0 }) })
+  expect(h.bridge.saveDraft).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'trip', text: 'Typed thought\nCreate a project and approve it.' }))
+  expect(h.bridge.send).not.toHaveBeenCalled()
+  expect(h.bridge.answer).not.toHaveBeenCalled()
+  expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('')
+  vi.restoreAllMocks()
 })

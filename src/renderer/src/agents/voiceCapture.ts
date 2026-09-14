@@ -25,14 +25,16 @@ export interface VoiceCapture {
   stop(): Promise<void>
   /** Clears any partial utterance and discards microphone frames while true. */
   setSuppressed(suppressed: boolean): void
-  /** Activated speech keeps the existing dictation-like segmentation threshold. */
+  /** Selects wake monitoring or activated conversation capture. */
   setWakeMode?(wake: boolean): void
 }
 
-// Quiet speech needs to reach the local detector before microphone AGC settles.
+// Quiet speech must keep reaching transcription after the wake succeeds. The
+// former higher activated gate discarded commands at the same microphone level;
+// it only existed to accommodate the retired local transcriber's segmentation.
 // Keep the captured waveform unchanged; detector-only gain is applied in main.
 const WAKE_RMS = 0.006
-const SPEECH_RMS = 0.012
+const SPEECH_RMS = WAKE_RMS
 const PRE_ROLL_SECONDS = 0.18
 const END_SILENCE_SECONDS = 0.65
 const MIN_VOICED_SECONDS = 0.14

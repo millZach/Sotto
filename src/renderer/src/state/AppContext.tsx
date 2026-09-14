@@ -33,6 +33,7 @@ import {
   type DictationRecorder,
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
+import { captureDictationDestination } from '../features/dictation/dictationDestination'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { updatePromptKey } from '../features/updates/updatePrompt'
 import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
@@ -105,6 +106,7 @@ export function createProductionDictationController(
     cuePlayer: factories.createCuePlayer(),
     getSettings: bindings.getSettings,
     deliverOutput: bindings.deliverOutput,
+    captureOutput: captureDictationDestination,
     addHistory: bindings.addHistory,
     publishWidgetState: bindings.publishWidgetState,
     ...(platform === undefined ? {} : { platform }),
@@ -678,3 +680,5 @@ export function useApp(): AppContextValue {
   if (value === null) throw new Error('AppProvider is required')
   return value
 }
+
+export function useOptionalApp(): AppContextValue | null { return useContext(AppContext) }

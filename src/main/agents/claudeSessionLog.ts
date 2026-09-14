@@ -10,9 +10,11 @@ export function claudeText(content: unknown): string {
   return Array.isArray(content) ? content.map(block => object(block)).filter(block => block?.type === 'text').map(block => typeof block?.text === 'string' ? block.text : '').join('\n') : ''
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
-  if (frame.type !== 'user' || frame.isMeta === true || frame.isCompactSummary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
+  if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
   const content = object(frame.message)?.content
   if (Array.isArray(content) && content.some(block => object(block)?.type === 'tool_result')) return false
+  // The native local-command envelope is operational metadata, not a prompt or takeover.
+  if (/^\s*<command-name>\/compact<\/command-name>\s*<command-message>compact<\/command-message>\s*<command-args>[\s\S]*<\/command-args>\s*$/u.test(claudeText(content))) return false
   return !/^(?:<local-command-stdout>|<session-start-hook>|<tick>|<goal>|\[Request interrupted by user|\s*<ide_opened_file>[\s\S]*<\/ide_opened_file>\s*$|\s*<ide_selection>[\s\S]*<\/ide_selection>\s*$)/u.test(claudeText(content))
 }
 

@@ -5,6 +5,7 @@ import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequest
 import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitActionSchema, gitBranchesSchema, gitDiffRequestSchema, gitWatchRequestSchema, gitListingSchema, gitDiffSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
+import { prReviewRequestSchema, prReviewSchema, prActionSchema, prActionResultSchema } from '../shared/gitPullRequests'
 import { checkpointListingSchema, checkpointRequestSchema, checkpointRevertSchema, checkpointSchema, checkpointInspectionSchema } from '../shared/checkpoints'
 
 export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: TerminalBridge; browser: BrowserBridge; gitChanges: GitChangesBridge } {
@@ -43,6 +44,8 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       onEvent: listener => subscribe(BROWSER_EVENT, browserEventSchema, listener),
     }),
     gitChanges: Object.freeze<GitChangesBridge>({
+      reviewPullRequest: request => call(GIT_CHANGES_CHANNEL + 'reviewPullRequest', prReviewRequestSchema, prReviewSchema, request),
+      actPullRequest: request => call(GIT_CHANGES_CHANNEL + 'actPullRequest', prActionSchema, prActionResultSchema, request),
       checkpoints: request => call(GIT_CHANGES_CHANNEL + 'checkpoints', toolListRequestSchema, checkpointListingSchema, request),
       inspectCheckpoint: request => call(GIT_CHANGES_CHANNEL + 'inspectCheckpoint', checkpointRequestSchema, checkpointInspectionSchema, request),
       revertCheckpoint: request => call(GIT_CHANGES_CHANNEL + 'revertCheckpoint', checkpointRevertSchema, checkpointSchema, request),

@@ -1,6 +1,7 @@
 import { existingWorkingDirectory } from './threadWorktrees'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
+import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -31,6 +32,7 @@ const configArguments = Object.entries({ model_provider: 'openai', approval_poli
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
+  compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
   historyMode: z.enum(['legacy', 'paginated']).optional(), historyEpoch: z.string().optional(),
   rewoundMessageIds: z.array(z.string()).default([]), rewoundTurnIds: z.array(z.string()).default([]),
   pendingRollback: z.object({ removedTurnIds: z.array(z.string()), removedMessageIds: z.array(z.string()), retainedUsers: z.array(z.string()) }).optional(),
@@ -117,7 +119,7 @@ export class CodexAppServerHost implements AgentHost {
   private skillsRevision = 0
   private readonly loadedSkillCwds = new Set<string>()
   private state: AgentHostSnapshot = { connected: false, name: 'Codex', version: '', projects: [], models: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'codex')
@@ -132,6 +134,7 @@ export class CodexAppServerHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Codex connection was cancelled.')
     if (!executable) throw new Error('Install Codex and sign in before connecting this provider.')
     this.aliases = aliases; this.state.projects = projects
+    for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
@@ -244,6 +247,8 @@ export class CodexAppServerHost implements AgentHost {
     if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', ...(alias.kind === 'personal' ? { historyStatus: 'loading' as const } : {}), messages: [], requests: [] })
     const thread = this.threads.get(id)!
+    thread.compaction = alias.compaction
+    thread.manualCompactionSupported = true
     thread.usage = this.usage.get(id)
     if (alias.historyEpoch) thread.historyEpoch = alias.historyEpoch
     return thread
@@ -430,6 +435,15 @@ export class CodexAppServerHost implements AgentHost {
   private applyTurn(id: string, turn: z.infer<typeof turnSchema>, live = false): void {
     if (this.aliases[id]!.rewoundTurnIds.includes(turn.id)) return
     const thread = this.ensureThread(id)
+    const alias = this.aliases[id]!
+    if (compactionPending(alias.compaction)) {
+      if (live && turn.status === 'inProgress' && !alias.compactTurnId) alias.compactTurnId = turn.id
+      if (alias.compactTurnId === turn.id && turn.status !== 'inProgress') {
+        alias.compaction = { commandId: alias.compaction!.commandId, status: turn.status === 'completed' && turn.items.some(item => item.type === 'contextCompaction') ? 'completed' : 'failed',
+          ...(turn.status !== 'completed' ? { error: turn.error?.message ?? 'Native compaction was interrupted or failed.' } : {}) }
+        thread.compaction = alias.compaction
+      }
+    }
     const createdAt = turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : this.aliases[id]!.createdAt
     this.turnDates.set(turn.id, createdAt)
     // A delayed start response must never resurrect a turn whose completion already arrived.
@@ -594,6 +608,27 @@ export class CodexAppServerHost implements AgentHost {
         if (!alias) throw new Error('This Codex provider session is unknown.')
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer') return { accepted: false, uncertain: true }
+        if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
+        if (command.type === 'compact-thread') {
+          const thread = this.ensureThread(id)
+          if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('The thread is working or needs an answer before compaction.')
+          this.dispatching.add(id)
+          try {
+            await this.resume(id)
+            if (this.ensureThread(id).status === 'running' || thread.requests.length) throw new Error('The thread started working before compaction.')
+            alias.compaction = { commandId: command.commandId, status: 'running' }; delete alias.compactTurnId
+            try { await this.persist() } catch (error) { delete alias.compaction; throw error }
+            this.ensureThread(id); this.emit()
+            try { await this.rpc('thread/compact/start', { threadId: alias.codexThreadId }) }
+            catch (error) {
+              if (compactionPending(alias.compaction)) alias.compaction = { commandId: command.commandId, status: error instanceof Rejected ? 'failed' : 'uncertain', error: error instanceof Rejected ? 'Codex rejected native compaction.' : 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.' }
+              await this.persist(); this.ensureThread(id); this.emit()
+              if (error instanceof Rejected) throw error
+              return { accepted: false, uncertain: true }
+            }
+            return { accepted: true }
+          } finally { this.dispatching.delete(id) }
+        }
         if (command.type === 'configure-thread') {
           const thread = this.ensureThread(id)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the thread and resolve pending requests before changing settings.')
@@ -767,6 +802,18 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     this.touch(id)
+    const compactAlias = this.aliases[id]!
+    if (compactionPending(compactAlias.compaction)) {
+      if (frame.method === 'item/completed' && params.item?.type === 'contextCompaction') {
+        compactAlias.compaction = { commandId: compactAlias.compaction!.commandId, status: 'completed' }
+        this.ensureThread(id)
+        await this.persist()
+      } else if (frame.method === 'error' && !params.willRetry) {
+        compactAlias.compaction = { commandId: compactAlias.compaction!.commandId, status: 'failed', error: params.error?.message ?? 'Native compaction failed.' }
+        this.ensureThread(id)
+        await this.persist()
+      }
+    }
     if (params.turn) this.applyTurn(id, params.turn, true)
     if (params.turn?.durationMs !== undefined) { this.usage.elapsed(id, params.turn.durationMs); this.ensureThread(id) }
     if (params.item) this.applyItem(id, params.item, params.turnId, undefined, { phase: frame.method === 'item/started' ? 'started' : 'completed', startedAtMs: params.startedAtMs, completedAtMs: params.completedAtMs })

@@ -1,0 +1,3 @@
+.thread-compaction { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; color: var(--tt-text-muted); padding-top: 4px; }
+.thread-compaction:empty { display: none; }
+.thread-compaction p { margin: 0; font-size: 14px; line-height: 1.45; flex: 1 1 250px; }

@@ -13,6 +13,18 @@ async function usage(provider: 'codex' | 'claude' | 'grok') {
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
 describe('native usage observations', () => {
+  it('keeps confirmed compacted context when old assistant usage replays, then accepts a new context snapshot', async () => {
+    const { store } = await usage('claude')
+    const original = { type: 'assistant', message: { id: 'before', model: 'claude-sonnet-4-6', usage: { input_tokens: 120000, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+    store.claude('thread', original)
+    store.compacted('thread', 30000)
+    const after = store.get('thread')!.contextUpdatedAt
+    store.claude('thread', original)
+    expect(store.get('thread')).toMatchObject({ contextUsed: 30000, contextUpdatedAt: after })
+    store.claude('thread', { ...original, message: { ...original.message, id: 'after', usage: { ...original.message.usage, input_tokens: 31000 } } })
+    expect(store.get('thread')?.contextUsed).toBe(31000)
+    await store.flushed()
+  })
   it('adds previously unseen historical charges without replacing newer live Claude counters', async () => {
     const { store } = await usage('claude')
     const frame = (id: string, timestamp: string, output: number) => ({ type: 'assistant', timestamp, message: {

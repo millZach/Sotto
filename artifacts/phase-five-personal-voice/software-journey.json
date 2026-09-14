@@ -1,0 +1,26 @@
+{
+  "physicalMicrophone": "pending by user direction",
+  "measurements": [
+    {
+      "provider": "codex",
+      "boundary": "injected text through production voice state machine to fixture saved chat",
+      "elapsedMs": 95,
+      "ownerId": "da07ff98-5e25-4104-88c4-9e783e0abe76",
+      "messages": 2
+    },
+    {
+      "provider": "claude",
+      "boundary": "injected text through production voice state machine to fixture saved chat",
+      "elapsedMs": 97,
+      "ownerId": "ee9159cd-c623-4ae4-83f6-75963061a507",
+      "messages": 2
+    },
+    {
+      "provider": "grok",
+      "boundary": "injected text through production voice state machine to fixture saved chat",
+      "elapsedMs": 104,
+      "ownerId": "6b50a42f-8510-41a2-ba21-cd3f6fa86a2f",
+      "messages": 2
+    }
+  ]
+}

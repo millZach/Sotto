@@ -166,6 +166,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     turn.items.push(item); save()
     if (!script.suppressNotifications) notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
     reply({ turnId: turn.id })
+  } else if (method === 'thread/compact/start') {
+    notify('turn/started', { threadId: params.threadId, turn: { id: 'compact-turn', status: 'inProgress', items: [] } })
+    reply({})
   } else if (method === 'turn/interrupt') {
     const thread = state.threads[params.threadId]
     const turn = thread.turns.find(turn => turn.id === params.turnId)

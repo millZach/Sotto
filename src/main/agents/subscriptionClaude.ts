@@ -33,6 +33,8 @@ const ENVIRONMENT_KEYS = new Set([
   'appdata', 'localappdata', 'xdg_config_home', 'xdg_cache_home', 'xdg_data_home',
   'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy',
   'ssl_cert_file', 'ssl_cert_dir', 'node_extra_ca_certs',
+  // Preserve the user's native compaction policy without inventing defaults.
+  'disable_auto_compact', 'disable_compact', 'claude_autocompact_pct_override', 'claude_code_auto_compact_window',
 ])
 
 /** Runs the user's unmodified Claude CLI; OAuth credentials never enter Sotto. */

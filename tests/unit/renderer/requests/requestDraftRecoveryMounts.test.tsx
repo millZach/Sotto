@@ -11,7 +11,10 @@ import { PersonalDraftStore } from '../../../../src/renderer/src/agents/personal
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from '../liveAgentState'
 
-vi.mock('../../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../src/renderer/src/agents/AgentContext')>(),
+  useAgents: vi.fn(),
+}))
 
 const AT = '2026-09-13T17:00:00.000Z'
 const form = (id: string, question: string): AgentRequest => ({ id, kind: 'question', text: 'Native form', options: [], questions: [

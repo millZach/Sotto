@@ -278,3 +278,18 @@ describe('desktop agent voice interaction', () => {
     h.session.dispose()
   })
 })
+
+
+it('starts an explicitly activated personal conversation without wake setup', async () => {
+  const h = harness()
+  h.wake.load.mockRejectedValue(new Error('No wake model'))
+  await h.session.startConversation()
+  expect(h.session.getState().status).toBe('listening')
+  await h.hear('Start a project')
+  expect(h.utterances).toEqual(['Start a project'])
+  expect(h.wake.load).not.toHaveBeenCalled()
+  await h.hear('stop listening')
+  expect(h.session.getState().status).toBe('off')
+  await h.session.stop()
+  h.session.dispose()
+})

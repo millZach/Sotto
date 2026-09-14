@@ -93,6 +93,8 @@ interface AgentContextValue extends AgentConnection {
   readonly muteVoice: () => void
   readonly stopSpeech: () => void
   readonly retryVoice: () => void
+  readonly claimPersonalAudio: () => () => void
+  readonly waitForPersonalAudio: () => Promise<void>
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null)
@@ -105,6 +107,15 @@ export function AgentProvider({ children, settings, dictation }: {
   const connection = useAgentConnection(window.sotto?.agents)
   const [voice, setVoice] = useState<AgentVoiceState>({ status: 'off' })
   const voiceRef = useRef<AgentVoiceSession | null>(null)
+  const [personalAudio, setPersonalAudio] = useState(false)
+  const personalAudioRef = useRef(false)
+  const personalRelease = useRef(Promise.resolve())
+  const claimPersonalAudio = useCallback(() => {
+    personalAudioRef.current = true
+    setPersonalAudio(true)
+    personalRelease.current = voiceRef.current?.stop() ?? Promise.resolve()
+    return () => { personalAudioRef.current = false; setPersonalAudio(false) }
+  }, [])
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const stateRef = useRef(connection.state)
@@ -151,7 +162,9 @@ export function AgentProvider({ children, settings, dictation }: {
       onWake: () => {
         if (settingsRef.current?.soundCues) playWakeCue()
       },
-      onUtterance: async (text, voiceTiming) => { await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) }) },
+      onUtterance: async (text, voiceTiming) => {
+        if (!personalAudioRef.current) await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) })
+      },
       // A long composition must keep accepting speech after the user pauses to think.
       conversationTimeoutMs: 0,
     }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects({
@@ -177,11 +190,11 @@ export function AgentProvider({ children, settings, dictation }: {
     void (async () => {
       await session.setDictationActive(dictationActive)
       if (!current) return
-      if (voiceEnabled) await session.start()
+      if (voiceEnabled && !personalAudio) await session.start()
       else await session.stop()
     })()
     return () => { current = false; void session.stop() }
-  }, [voiceEnabled, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory])
+  }, [voiceEnabled, personalAudio, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory])
 
   useEffect(() => {
     const request = connection.state?.voice
@@ -204,7 +217,7 @@ export function AgentProvider({ children, settings, dictation }: {
     if (spoken.current === null) { spoken.current = state.speech.id; return }
     if (spoken.current === state.speech.id) return
     spoken.current = state.speech.id
-    if (state.speech.preview || (state.configuration.enabled && state.configuration.speak)) {
+    if (!personalAudioRef.current && (state.speech.preview || (state.configuration.enabled && state.configuration.speak))) {
       // Selection updates replace narration; they must not accumulate a backlog.
       voiceRef.current?.stopSpeaking()
       void voiceRef.current?.speak(state.speech.text)
@@ -213,11 +226,13 @@ export function AgentProvider({ children, settings, dictation }: {
 
   return <AgentContext.Provider value={{
     ...connection,
+    claimPersonalAudio,
+    waitForPersonalAudio: () => personalRelease.current,
     attention,
     voice,
     muteVoice: () => { void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },
     stopSpeech,
-    retryVoice: () => { void voiceRef.current?.start() },
+    retryVoice: () => { if (!personalAudioRef.current) void voiceRef.current?.start() },
   }}>{children}</AgentContext.Provider>
 }
 

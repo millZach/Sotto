@@ -6,9 +6,19 @@ import { object, type ClaudeFrame } from './claudeProtocol'
 const questionSchema = z.object({ question: z.string().min(1), header: z.string().optional(), multiSelect: z.boolean().optional(),
   options: z.array(z.object({ label: z.string(), description: z.string().optional() })).optional() })
 const questionsSchema = z.object({ questions: z.array(questionSchema).min(1).max(20) })
-export interface ClaudePending { id: string; tool: string; input: ClaudeFrame; request: AgentRequest; questions?: z.infer<typeof questionSchema>[] }
+export interface ClaudePending { id: string; tool: string; input: ClaudeFrame; request: AgentRequest; questions?: z.infer<typeof questionSchema>[]; resumeDialog?: boolean }
 export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
   const data = object(frame.request)
+  if (typeof frame.request_id === 'string' && data?.subtype === 'request_user_dialog' && data.dialog_kind === 'resume_return') {
+    const payload = object(data.payload)
+    const age = typeof payload?.sessionAgeMinutes === 'number' && Number.isFinite(payload.sessionAgeMinutes) ? Math.max(0, Math.floor(payload.sessionAgeMinutes)) : 0
+    const tokens = typeof payload?.estimatedTokens === 'number' && Number.isFinite(payload.estimatedTokens) ? Math.max(0, Math.floor(payload.estimatedTokens)) : 0
+    const question = `This session is ${age >= 60 ? `${Math.floor(age / 60)}h ${age % 60}m` : `${age}m`} old and uses ${tokens.toLocaleString('en-US')} tokens. Compact it before continuing?`
+    const options = ['Compact and continue', 'Keep full history', "Don't ask again"].map(label => ({ id: label, label }))
+    return { id: frame.request_id, tool: 'resume_return', input: data, resumeDialog: true,
+      request: { id: frame.request_id, kind: 'question', text: question, options,
+        questions: [{ id: '0', question, header: 'Resume session', options, multiSelect: false, allowFreeText: false, required: true }] } }
+  }
   if (typeof frame.request_id !== 'string' || data?.subtype !== 'can_use_tool' || typeof data.tool_name !== 'string' || !data.tool_name.trim() || !object(data.input)) return undefined
   const input = data.input as ClaudeFrame
   if (data.tool_name === 'AskUserQuestion') {
@@ -29,6 +39,11 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
 }
 export function claudeDenial(): ClaudeFrame { return { behavior: 'deny', message: 'The user did not approve this request.' } }
 export function claudeAnswer(pending: ClaudePending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): ClaudeFrame {
+  if (pending.resumeDialog) {
+    const selected = questionAnswers ? questionValues(pending.request, questionAnswers)['0']?.[0] : answer
+    if (!pending.request.options.some(option => option.id === selected)) throw new Error('Choose how to resume this Claude session.')
+    return { behavior: 'completed', result: selected === 'Compact and continue' ? 'compact' : selected === "Don't ask again" ? 'never' : 'continue' }
+  }
   if (permissionChoice) permissionValue(pending.request, permissionChoice, approved)
   if (!pending.questions) return approved === true ? { behavior: 'allow', updatedInput: pending.input } : claudeDenial()
   if (questionAnswers) {

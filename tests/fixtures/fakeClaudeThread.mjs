@@ -17,7 +17,7 @@ if (args.includes('auth')) { console.log(JSON.stringify({ loggedIn: true, authMe
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
 if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || value('--permission-mode') !== 'default')) throw new Error('Coding threads must retain tools and host permission decisions')
-record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, cwd: process.cwd() })
+record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
 const folder = join(root, 'home', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
 const log = join(folder, session + '.jsonl')
 let parentUuid = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)).findLast(frame => frame.uuid)?.uuid ?? null : null
@@ -33,6 +33,10 @@ const timer = setInterval(() => {
   if (lastAction === action.id) return
   lastAction = action.id
   if (action.type === 'raw') { if (action.persist) persist(action.frame); output(action.frame); return }
+  if (action.type === 'dialog') {
+    const request = { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: action.payload }
+    pending.set(action.requestId, request); output({ type: 'control_request', request_id: action.requestId, request }); return
+  }
   if (action.type === 'complete') {
     const id = randomUUID()
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
@@ -78,6 +82,10 @@ lines.on('line', line => {
   } else if (frame.type === 'control_response') {
     const envelope = frame.response; const request = pending.get(envelope?.request_id); const answer = envelope?.response
     if (envelope?.subtype === 'error' && typeof envelope.error === 'string') { pending.delete(envelope.request_id); return }
+    if (request?.subtype === 'request_user_dialog' && ['completed', 'cancelled'].includes(answer?.behavior)) {
+      if (answer.behavior === 'completed' && !['compact', 'continue', 'never'].includes(answer.result)) violation('Malformed dialog choice')
+      pending.delete(envelope.request_id); return
+    }
     if (envelope?.subtype !== 'success' || !answer || !['allow', 'deny'].includes(answer.behavior)) violation('Malformed control_response')
     else if (answer.behavior === 'deny' && typeof answer.message !== 'string') violation('Denial requires message')
     else if (answer.behavior === 'allow') {

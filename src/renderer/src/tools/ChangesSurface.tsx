@@ -4,6 +4,7 @@ import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../shared/g
 import type { ToolsError } from '../../../shared/tools'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, parseUnifiedDiff, useThreadChanges, type ChangesStore, type DiffLine } from './changesStore'
+import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
@@ -37,6 +38,7 @@ export interface ChangesSurfaceProps {
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
   const [split, setSplit] = useState(false)
+  const [pullRequestOpen, setPullRequestOpen] = useState(false)
   if (!changes) return <p className="files-preview__loading" role="status">Loading…</p>
   const { list, selectedPath, diff } = changes
   if (list.status === 'loading') return <p className="files-preview__loading" role="status">Reading changes…</p>
@@ -47,6 +49,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
       {bridge && repository ? <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button> : null}
     </div>
   }
+  if (pullRequestOpen && bridge && changes.workspace) return <div className="changes-surface">
+    <GitPullRequest key={`${threadId}:${changes.workspace.workspaceId}`} threadId={threadId} workspaceId={changes.workspace.workspaceId} bridge={bridge} onBack={() => setPullRequestOpen(false)} />
+  </div>
   const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? 'Path copied' : 'Could not copy the path')) }
   const reveal = (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) }
   const selected = selectedPath === null ? undefined : list.files.find(file => file.path === selectedPath)
@@ -54,6 +59,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
     <div className="changes-summary">
       <span className="changes-summary__text">{list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
         {list.branch ? <> on <bdi className="changes-summary__branch">{list.branch}</bdi></> : <> · Detached HEAD</>}</span>
+      {bridge?.reviewPullRequest ? <button type="button" className="files-link tt-focusable" onClick={() => setPullRequestOpen(true)}>Pull request</button> : null}
       <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
         onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={14} aria-hidden="true" /></button>
     </div>

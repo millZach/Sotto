@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage } from './nativeUsage'
+import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -21,6 +22,7 @@ import { ClaudeActivity } from './claudeActivity'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
+  compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
   reasoningEffort: z.string().optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
@@ -56,7 +58,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private closures: Promise<void>[] = []
   private state: AgentHostSnapshot = { connected: false, name: 'Claude Code', version: '', models: [], projects: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, compact: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'claude')
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
@@ -72,6 +74,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: ['approval-required'], supportsImages: true }))
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
+    for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.threads.clear(); this.logs.clear(); this.activity.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       let alias = stored
@@ -253,6 +256,28 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
+    if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
+    if (command.type === 'compact-thread') {
+      if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for the Claude thread and its requests before compacting.')
+      this.dispatching.add(id)
+      try {
+        const runtime = await this.start(id)
+        if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
+        if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
+        const inputId = randomUUID()
+        alias.compaction = { commandId: command.commandId, status: 'running' }
+        alias.compactStartedAt = new Date().toISOString()
+        alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
+        try { await this.persist() } catch (error) { delete alias.compaction; throw error }
+        thread.compaction = alias.compaction; thread.status = 'running'; this.emit()
+        try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
+        catch {
+          alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.' }
+          thread.compaction = alias.compaction; await this.persist(); this.emit(); return { accepted: false, uncertain: true }
+        }
+        return { accepted: true }
+      } finally { this.dispatching.delete(id) }
+    }
     if (command.type === 'configure-thread') {
       validateThreadOptions(this.state, command, alias.modelId)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
@@ -326,6 +351,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (this.runtimes.get(id) !== runtime || !runtime.requests.has(pending.id)) return { accepted: false, uncertain: true }
       try {
         await this.reply(runtime, pending.id, answer)
+        if (pending.resumeDialog && answer.result === 'never') {
+          alias.resumeCompactionDismissed = true
+          for (const current of this.threads.values()) current.resumeCompactionDismissed = true
+          await this.persist()
+        }
         runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id); this.emit(); return { accepted: true }
       } catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
     }
@@ -369,7 +399,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
         this.state.connected = false; this.state.error = 'Claude Code disconnected. Reconnect to recover its existing session; uncertain prompts will not be resent.'; this.emit()
       }) }
     this.runtimes.set(id, runtime); this.closures.push(runtime.protocol.closed)
-    try { await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false }) }
+    try {
+      const initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] })
+      this.threads.get(id)!.manualCompactionSupported = Array.isArray(initialized.commands) && initialized.commands.some(command => object(command)?.name === 'compact')
+      for (const pending of Array.isArray(initialized.pending_user_dialog_requests) ? initialized.pending_user_dialog_requests : []) {
+        if (object(pending)) this.frame(id, pending as ClaudeFrame)
+      }
+    }
     catch (error) { this.runtimes.delete(id); runtime.protocol.stop(); throw error }
     if (generation !== this.generation) { runtime.protocol.stop(); throw new Error('Claude connection was cancelled.') }
     return runtime
@@ -397,6 +433,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
     this.projectActivity(id, frame)
     if (frame.parent_tool_use_id) { this.emit(); return }
+    this.observeCompaction(id, frame, false)
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
       this.message(id, frame, false)
       const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
@@ -417,6 +454,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
     }
     if (frame.type === 'result') {
+      if (compactionPending(alias.compaction)) {
+        alias.compaction = { commandId: alias.compaction!.commandId, status: frame.is_error === true ? 'failed' : 'uncertain',
+          error: frame.is_error === true ? 'Claude native compaction failed.' : 'Claude finished without confirming a compaction boundary. The operation will not be retried.' }
+        thread.compaction = alias.compaction
+        void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
+      }
       this.usage.claudeResult(id, frame)
       thread.usage = this.usage.get(id)
       thread.messages = thread.messages.filter(message => message.role === 'user' || message.text.length > 0)
@@ -431,6 +474,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.emit()
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
+    if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return
     this.usage.claude(id, frame, this.threads.get(id)!.modelId)
     this.threads.get(id)!.usage = this.usage.get(id)
     if (frame.parent_tool_use_id || frame.isSidechain === true) return
@@ -461,7 +505,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const alias = this.aliases[id]!
       const generation = this.generation
       log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
-        if (generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId) { this.projectActivity(id, frame); this.message(id, frame, true); this.emit() }
+        if (generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, frame, true); this.emit() }
       })
       this.logs.set(id, log)
     }
@@ -470,6 +514,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private ensureThread(id: string, alias: Alias): void {
     this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: 'approval-required', status: 'idle', messages: [], requests: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
+    this.threads.get(id)!.compaction = alias.compaction
+    this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.resumeCompactionDismissed)
+  }
+  private observeCompaction(id: string, frame: ClaudeFrame, fromLog: boolean): void {
+    if (frame.parent_tool_use_id || frame.isSidechain || frame.type !== 'system' || !(frame.subtype === 'compact_boundary' || frame.subtype === 'status' && ['success', 'failed'].includes(String(frame.compact_result)))) return
+    const alias = this.aliases[id]!, thread = this.threads.get(id)!
+    const timestamp = typeof frame.timestamp === 'string' ? Date.parse(frame.timestamp) : NaN
+    // Persisted history may replay older compactions. Only evidence after this
+    // durable request can reconcile an operation whose live acknowledgement was lost.
+    if (compactionPending(alias.compaction) && (!fromLog || timestamp >= Date.parse(alias.compactStartedAt ?? ''))) {
+      alias.compaction = { commandId: alias.compaction!.commandId, status: frame.compact_result === 'failed' ? 'failed' : 'completed',
+        ...(frame.compact_result === 'failed' ? { error: typeof frame.compact_error === 'string' ? frame.compact_error : 'Claude native compaction failed.' } : {}) }
+      thread.compaction = alias.compaction
+      thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
+      void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
+    }
+    if (frame.subtype === 'compact_boundary' && (!fromLog || Number.isFinite(timestamp) && timestamp > Date.parse(thread.usage?.contextUpdatedAt ?? '1970-01-01'))) {
+      const metadata = object(frame.compact_metadata) ?? object(frame.compactMetadata)
+      this.usage.compacted(id, metadata?.post_tokens ?? metadata?.postTokens, Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined)
+      thread.usage = this.usage.get(id)
+    }
   }
   private projectActivity(id: string, frame: ClaudeFrame): void {
     const thread = this.threads.get(id)!
@@ -488,9 +553,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return runtime.protocol.write({ type: 'control_response', response: { subtype: 'success', request_id: id, response } })
   }
   private async denyPending(id: string, runtime: Runtime): Promise<void> {
-    const pending = [...runtime.requests.keys()].filter(id => !runtime.answered.has(id)); runtime.requests.clear()
+    const pending = [...runtime.requests.values()].filter(request => !runtime.answered.has(request.id)); runtime.requests.clear()
     const thread = this.threads.get(id); if (thread) thread.requests = []
-    await Promise.all(pending.map(requestId => this.reply(runtime, requestId, claudeDenial())))
+    await Promise.all(pending.map(request => this.reply(runtime, request.id, request.resumeDialog ? { behavior: 'cancelled' } : claudeDenial())))
   }
   private persist(): Promise<void> { return this.aliasStore.write(structuredClone(this.aliases)) }
   private view(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()].filter((thread): thread is AgentThread => 'projectId' in thread) }) }
