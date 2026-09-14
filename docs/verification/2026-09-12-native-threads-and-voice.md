@@ -1,6 +1,6 @@
 # Native threads and Windows voice measurement
 
-Implementation for issues #24 and #18, built on local commit `6175989`. Both review axes inspected production through `f4ee81c`; a subsequent connection-error presentation fix in `3d2097e` received another Standards review. Work is committed on `work/native-24-18` in `.worktrees/native-24-18`. It has not been pushed, merged into main, packaged or released. The normal application profile and the root checkout are unchanged.
+Historical implementation record for issues #24 and #18, built on local commit `6175989`. Both review axes inspected production through `f4ee81c`; a subsequent connection-error presentation fix in `3d2097e` received another Standards review. This work was originally committed on `work/native-24-18` in `.worktrees/native-24-18`; that branch's final commit `cc41f66` is now an ancestor of published `main` (`0e12b1c`). The original host removal is `1b6d338`. The measurements and test counts below describe that September 12 work, not a new run. Current #24 validation is recorded in [native-host closeout](issue-24-closeout.md). Installer/release and #18's unresolved voice-budget limits are separate.
 
 Ten distinct subagents contributed across source research, migration, native delivery, acceptance and independent reviews, with the voice instrumentation agent working in parallel. The parent integrated the changes, resolved review findings and inspected the rendered result.
 
