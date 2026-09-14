@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-09-14T02:31:02.441Z",
+  "modelCalls": 0,
+  "preservedSottoId": true,
+  "retainedUsers": [
+    "probe-0"
+  ],
+  "messages": [
+    {
+      "id": "probe-0",
+      "role": "user",
+      "text": "<command-message>sotto-phase3-check</command-message>\n<command-name>/sotto-phase3-check</command-name>",
+      "createdAt": "2026-09-13T17:57:20.082Z",
+      "commandId": "probe-0"
+    },
+    {
+      "id": "msg_011Cf1sV17vW1snhwsQKzbtJ",
+      "role": "assistant",
+      "text": "EXPANDED_7770d5750b1f4b14b13405d721728b54",
+      "createdAt": "2026-09-14T02:31:04.598Z"
+    }
+  ],
+  "historyEpoch": "e3b90a51-2f31-478f-af61-e977e5bb1b20",
+  "sameAfterRestart": true
+}

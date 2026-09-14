@@ -41,7 +41,7 @@ const mainImports = [
 ]
 
 const exactInventories = {
-  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['node-pty'] },
+  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['electron', 'node-pty'] },
   preload: { version: 1, scope: 'preload', imports: ['electron'], dynamicImports: [] },
 } as const
 

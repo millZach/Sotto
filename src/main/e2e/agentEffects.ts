@@ -9,6 +9,7 @@ import type { AgentReasoner } from '../agents/reasoning'
 
 /** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
 export class E2EAgentHost implements AgentHost {
+  private readonly checkpointFixture: boolean
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly commands = new Set<string>()
   private uncertain = false
@@ -23,6 +24,7 @@ export class E2EAgentHost implements AgentHost {
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
   }
   constructor(scenario: E2EScenario = 'success') {
+    this.checkpointFixture = scenario === 'phase3-workspace'
     if (scenario === 'design-threads' || scenario === 'design-threads-empty' || scenario === 'phase3-workspace') {
       const fixture = designThreadsFixture()
       this.state.models = structuredClone([...fixture.models])
@@ -66,6 +68,21 @@ export class E2EAgentHost implements AgentHost {
         invocation: `${providerId === 'codex' ? '$' : '/'}${name}`, description: name === 'review' ? 'Review the current changes.' : 'Plan the next change.' })) }
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  rollbackCapability(threadId: string): { supported: boolean; reason?: string } {
+    return this.checkpointFixture && this.state.threads.find(thread => thread.id === threadId)?.providerId === 'codex'
+      ? { supported: true } : { supported: false, reason: 'This synthetic provider has no native conversation rollback.' }
+  }
+  async rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    const thread = this.state.threads.find(thread => thread.id === threadId)
+    if (!thread || !this.rollbackCapability(threadId).supported || thread.status === 'running' || thread.requests.length) throw new Error('Fixture thread cannot rewind.')
+    const users = thread.messages.filter(message => message.role === 'user').map(message => message.id)
+    if (JSON.stringify(users) !== JSON.stringify(expectedUserMessageIds) || removedUserMessages < 1 || removedUserMessages > users.length) throw new Error('Fixture history changed.')
+    const cut = thread.messages.findIndex(message => message.id === users[users.length - removedUserMessages])
+    thread.messages = thread.messages.slice(0, cut)
+    delete thread.lastTurn
+    this.emit()
+    return { accepted: true }
+  }
   disconnect(): void { this.state.connected = false }
   private emit(): void { for (const listener of this.listeners) listener(structuredClone(this.state)) }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
@@ -93,6 +110,7 @@ export class E2EAgentHost implements AgentHost {
       } else if (command.type === 'send') {
         if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) return { accepted: false }
         thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()
+        if (this.checkpointFixture) thread.lastTurn = { id: randomUUID(), status: 'running' }
         thread.messages.push({ id: command.messageId, role: 'user', text: command.text, createdAt: new Date().toISOString(), commandId: command.commandId,
           ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachmentSizeBytes(attachment.dataUrl) })) } : {}) }); thread.status = 'running'
       } else if (command.type === 'answer') { thread.requests = thread.requests.filter(r => r.id !== command.requestId); thread.status = 'running' }
@@ -118,6 +136,7 @@ export class E2EAgentHost implements AgentHost {
     else thread.messages.push({ id: randomUUID(), role: event.type === 'manual' ? 'user' : 'assistant', text: event.text, createdAt: new Date().toISOString() })
     if (event.activities) thread.activities = structuredClone(event.activities)
     thread.status = event.status ?? (event.type === 'manual' ? 'running' : event.type === 'failure' ? 'error' : 'idle')
+    if (this.checkpointFixture && thread.lastTurn && thread.status !== 'running') thread.lastTurn.status = event.type === 'failure' ? 'failed' : 'completed'
     this.emit()
   }
 }

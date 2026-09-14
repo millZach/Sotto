@@ -354,6 +354,7 @@ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
 
 const licenseSections = [
+  ['Claude Agent SDK terms', `${await read('node_modules/@anthropic-ai/claude-agent-sdk/LICENSE.md')}\n\n${await read('node_modules/@anthropic-ai/claude-agent-sdk/README.md')}`],
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
   ['React, React DOM, and Scheduler MIT license', await read('node_modules/react/LICENSE')],
   ['Lucide ISC and Feather MIT licenses', await read('node_modules/lucide-react/LICENSE')],

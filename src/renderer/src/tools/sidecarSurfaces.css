@@ -59,7 +59,7 @@
   .tools-panel .files-surface[data-preview] > .files-notice { grid-area: notice; margin: 8px; }
   .tools-panel .files-surface[data-preview] > .files-tree { grid-area: tree; width: auto; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
   .tools-panel .files-surface[data-preview] > .files-preview { grid-area: preview; }
-  .tools-panel .changes-surface[data-diff] { display: grid; grid-template: 'summary summary' auto 'list note' auto 'list diff' minmax(0, 1fr) / clamp(156px, 29%, 220px) minmax(0, 1fr); }
+  .tools-panel .changes-surface[data-diff] { display: grid; grid-template: 'summary summary' auto 'actions actions' auto 'list note' auto 'list diff' minmax(0, 1fr) / clamp(156px, 29%, 220px) minmax(0, 1fr); }
   .tools-panel .changes-surface[data-diff] > .changes-summary { grid-area: summary; }
   .tools-panel .changes-surface[data-diff] > .changes-list { grid-area: list; max-height: none; padding-block: 8px; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
   .tools-panel .changes-surface[data-diff] > .changes-note { grid-area: note; }

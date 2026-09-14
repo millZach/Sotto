@@ -16,6 +16,10 @@ export interface AgentSkillScope { readonly providerId: ProviderId; readonly wor
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  rollbackCapability?(threadId: string): { supported: boolean; reason?: string }
+  /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
+   * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */
+  rollbackThread?(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult>
   /** Scope is constructed only by WorkspaceHost for an unstarted local thread. */
   listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean

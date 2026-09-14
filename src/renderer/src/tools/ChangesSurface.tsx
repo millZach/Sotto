@@ -4,6 +4,7 @@ import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../shared/g
 import type { ToolsError } from '../../../shared/tools'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, parseUnifiedDiff, useThreadChanges, type ChangesStore, type DiffLine } from './changesStore'
+import { GitActions } from './GitActions'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 export const DIFF_ROW_LIMIT = 3_000
@@ -52,15 +53,19 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
   return <div className="changes-surface" data-diff={selectedPath !== null || undefined}>
     <div className="changes-summary">
       <span className="changes-summary__text">{list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
-        {list.branch ? <> on <bdi className="changes-summary__branch">{list.branch}</bdi></> : null}</span>
+        {list.branch ? <> on <bdi className="changes-summary__branch">{list.branch}</bdi></> : <> · Detached HEAD</>}</span>
       <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
         onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={14} aria-hidden="true" /></button>
     </div>
+    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} />
     {list.files.length === 0
       ? <div className="files-problem" role="status"><strong>The working copy matches HEAD.</strong></div>
       : <ChangeList files={list.files} selectedPath={selectedPath} onSelect={path => store.select(bridge, threadId, path)} />}
     {list.truncated ? <p className="changes-note">Git reported more files than Sotto lists.</p> : null}
     {selectedPath !== null ? <section className="changes-diff" aria-label={`Changes in ${selectedPath}`}>
+      <label className="changes-diff__scope">Compare <select aria-label="Diff comparison" className="tt-focusable" value={changes.diffScope ?? 'working'} onChange={event => store.setDiffScope(bridge, threadId, event.target.value as 'working' | 'staged' | 'unstaged')}>
+        <option value="working">Working copy against HEAD</option><option value="staged">Staged changes</option><option value="unstaged">Unstaged changes</option>
+      </select></label>
       <header className="files-preview__head">
         <div className="files-preview__title">
           {selected ? <span className="changes-badge" data-status={selected.status} title={CHANGE_STATUS[selected.status].label}>{CHANGE_STATUS[selected.status].letter}</span> : null}
@@ -130,6 +135,7 @@ function ChangeList({ files, selectedPath, onSelect }: { readonly files: readonl
         onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(file.path) } }}>
         <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>
         <span className="changes-list__name">{name}</span>
+        <span className="changes-list__staging">{file.staged ? file.unstaged ? 'Staged + unstaged' : 'Staged' : 'Unstaged'}</span>
         {folder ? <span className="changes-list__folder" dir="auto">{folder}</span> : null}
       </li>
     })}

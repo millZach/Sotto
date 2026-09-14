@@ -21,13 +21,13 @@ export class E2EPersonalChatHost {
   private writing: Promise<void> = Promise.resolve()
   private readonly rejections = new Map<string, string>()
 
-  constructor(directory: string) {
-    this.store = new AtomicJsonStore(join(directory, 'e2e-personal-native.json'), value => z.array(conversationSchema).parse(value), () => [])
+  constructor(directory: string, private readonly providerId: 'codex' | 'claude' | 'grok' = 'codex') {
+    this.store = new AtomicJsonStore(join(directory, this.providerId === 'codex' ? 'e2e-personal-native.json' : `e2e-personal-${this.providerId}.json`), value => z.array(conversationSchema).parse(value), () => [])
   }
 
   private current(): AgentHostSnapshot {
-    return { connected: this.connected, name: 'Codex fixture', version: 'e2e', projects: [], threads: [],
-      models: [{ id: 'codex:test', provider: 'Codex', providerId: 'codex', name: 'Codex fixture', ready: this.connected, reasoningEfforts: ['low'] }],
+    return { connected: this.connected, name: `${this.providerId} fixture`, version: 'e2e', projects: [], threads: [],
+      models: [{ id: `${this.providerId}:test`, provider: this.providerId, providerId: this.providerId, name: `${this.providerId} fixture`, ready: this.connected, reasoningEfforts: ['low'] }],
       capabilities: { projects: false, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true,
         messageOrigin: true, reconcile: true, skills: true },
     }
@@ -123,7 +123,7 @@ export class E2EPersonalChatHost {
 
   async listThreadSkills(threadId: string): Promise<AgentSkillCatalog> {
     if (!this.connected) throw new Error('Connect the fixture provider.')
-    return { threadId, providerId: 'codex', cwd: this.conversations.find(value => value.id === threadId)?.workingDirectory ?? 'fixture-personal',
+    return { threadId, providerId: this.providerId, cwd: this.conversations.find(value => value.id === threadId)?.workingDirectory ?? 'fixture-personal',
       status: 'ready', errors: [], skills: [{ name: 'brainstorm', path: '/fixture/personal/brainstorm/SKILL.md',
         description: 'Explore the choices in this synthetic personal chat.', scope: 'user' }] }
   }

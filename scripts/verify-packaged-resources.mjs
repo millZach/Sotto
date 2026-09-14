@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
+import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -235,6 +236,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const target = requireInsideRepositoryRelease(input)
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
+  await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
   if (existsSync(join(resources, 'runtime', 'kws'))) fail('unreviewed wake runtime must not be bundled; use an explicitly supplied local runtime')
   for (const required of [
     profile.executablePath(target),

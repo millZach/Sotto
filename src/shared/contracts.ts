@@ -338,6 +338,7 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
+  readonly chatPrompts?: import('./chatPrompts').ChatPromptBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly personalChats?: import('./personalChats').PersonalChatBridge
   readonly terminal?: import('./terminal').TerminalBridge

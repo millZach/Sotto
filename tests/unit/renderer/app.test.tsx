@@ -285,6 +285,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
 
+    await user.click(screen.getByRole('tab', { name: 'Appearance', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Use light mode' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     await user.click(screen.getByRole('button', { name: 'Use Dusk light mode' }))
@@ -327,6 +328,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
 
+    await user.click(screen.getByRole('tab', { name: 'Appearance', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Use light mode' }))
     await user.click(screen.getByRole('button', { name: /^Use Copper theme/u }))
     expect(root).toHaveAttribute('data-theme', 'light')
@@ -702,6 +704,7 @@ describe('transcription pipeline prewarm', () => {
     expect(screen.getByText(copy.accessibilityHelp ?? '')).toBeVisible()
 
     await user.click(screen.getByRole('link', { name: /settings/i }))
+    await user.click(screen.getByRole('tab', { name: 'Application', exact: true }))
     expect(await screen.findByRole('switch', { name: copy.settingsLaunchAtStartupLabel })).toBeVisible()
   })
 })

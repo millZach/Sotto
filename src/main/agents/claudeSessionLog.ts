@@ -24,7 +24,7 @@ export class ClaudeSessionLog {
   private pending: Promise<void> = Promise.resolve()
   private path: string | undefined
   constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void) {}
-  async exists(): Promise<boolean> { return Boolean(await this.resolve()) }
+  async exists(): Promise<boolean> { const path = await this.resolve(); return Boolean(path && (await stat(path).catch(() => undefined))?.isFile()) }
   poll(): Promise<void> {
     const work = this.pending.then(() => this.read())
     this.pending = work.catch(() => undefined)

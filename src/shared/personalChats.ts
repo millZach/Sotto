@@ -14,7 +14,7 @@ export const personalSubmissionSchema = personalDraftSchema.extend({ id, message
 // answers and their original identities through both storage and renderer IPC.
 const personalMessageSchema = agentMessageSchema.extend({ text: z.string() })
 export const personalChatSchema = agentThreadSchema.omit({ projectId: true, workingDirectory: true, worktree: true, workspaceSettledAt: true, providerId: true }).extend({
-  kind: z.literal('personal'), providerId: z.literal('codex'), createdAt: z.string(), updatedAt: z.string(),
+  kind: z.literal('personal'), providerId: z.enum(['codex', 'claude', 'grok']), connected: z.boolean().optional(), createdAt: z.string(), updatedAt: z.string(),
   nativeState: z.enum(['unstarted', 'starting', 'ready', 'uncertain', 'error']),
   messages: z.array(personalMessageSchema),
   draft: personalDraftSchema, submissions: z.array(personalSubmissionSchema), decisions: z.array(personalDecisionSchema).optional(),

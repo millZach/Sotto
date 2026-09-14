@@ -31,6 +31,19 @@ export class WorkspaceHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly lanes = new Map<string, Promise<unknown>>()
   private readonly worktrees: ThreadWorktrees
+  private checkpointHooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
+
+  setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
+  rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
+  rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
+      return this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+    })
+    this.lanes.set(threadId, pending)
+    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
+    return pending
+  }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true) {
     this.concurrentProviders = inner.concurrentProviders === true
@@ -114,7 +127,7 @@ export class WorkspaceHost implements AgentHost {
       threads.set(thread.id, { ...thread,
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
-        ...(old?.activities || thread.activities ? { activities: mergeAgentActivities(old?.activities, thread.activities) } : {}),
+        ...(old?.activities || thread.activities ? { activities: old?.historyEpoch !== thread.historyEpoch ? thread.activities ?? [] : mergeAgentActivities(old?.activities, thread.activities) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
         workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true })
     }
@@ -160,7 +173,7 @@ export class WorkspaceHost implements AgentHost {
     const creation = this.state.creations.find(item => item.threadId === threadId)
     this.accept(await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
       : this.inner.refreshThread?.(threadId) ?? this.inner.snapshot(thread.providerId)))
-    await this.flush(); return this.workspaceSnapshot()
+    await this.flush(); this.publish(); return this.workspaceSnapshot()
   }
   async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
@@ -233,6 +246,7 @@ export class WorkspaceHost implements AgentHost {
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
+    if ('threadId' in command && command.type !== 'create-thread' && command.type !== 'interrupt' && await this.checkpointHooks?.isBlocked(command.threadId)) throw new Error('Wait for Git changes or resolve the interrupted checkpoint revert before changing this thread.')
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
       const thread = this.thread(command.threadId)
       const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
@@ -350,6 +364,7 @@ export class WorkspaceHost implements AgentHost {
     // history read after dispatch that could turn unknown delivery into a rejection.
     // Never send into a deleted/failed working copy, even if the native client is still live.
     if (command.type === 'send' || command.type === 'steer') await this.threadWorkingDirectory(thread.id)
+    if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
     return this.inner.execute(command)
   }
   private requireCreation(provider?: ProviderId): void {

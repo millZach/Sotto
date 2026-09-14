@@ -6,7 +6,10 @@ import { z } from 'zod'
 import { personalChatSchema, personalDraftInputSchema, personalSendInputSchema, personalAnswerInputSchema, type PersonalChat, type PersonalChatState, type PersonalChatCommand } from '../../shared/personalChats'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { CodexAppServerHost, type CodexPersonalConversation } from './codex'
+import { CodexAppServerHost } from './codex'
+import { ClaudeStreamJsonHost } from './claude'
+import { GrokAcpHost } from './grok'
+import type { PersonalConversation } from './personalConversation'
 import type { MemoryProfile } from '../memory/profile'
 import { MAX_AGENT_ACTIVITIES } from '../../shared/agentActivity'
 
@@ -62,11 +65,12 @@ function recoverSaved(input: unknown): Saved {
 function definedFields<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> }
 }
-type PersonalConversationHost = Pick<CodexAppServerHost, 'closed' | 'connect' | 'createPersonalConversation' | 'disconnect' | 'execute' | 'listThreadSkills' | 'personalSnapshot' | 'refreshThread' | 'sendPersonalConversation' | 'subscribe'>
+export type PersonalConversationHost = Pick<CodexAppServerHost, 'closed' | 'connect' | 'createPersonalConversation' | 'disconnect' | 'execute' | 'listThreadSkills' | 'personalSnapshot' | 'refreshThread' | 'sendPersonalConversation' | 'subscribe'>
 export interface PersonalChatOptions {
   userDataPath: string
   configuration: () => { reasoning: string; reasoningModel: string; reasoningEffort: string }
   host?: PersonalConversationHost
+  hosts?: Partial<Record<PersonalChat['providerId'], PersonalConversationHost>>
   preferences?: Pick<MemoryProfile, 'retrieve'>
   bindRequestDraftDecision?: BindRequestDraftDecision
   historyEnabled?: () => boolean
@@ -76,26 +80,36 @@ export interface PersonalChatOptions {
 export class PersonalChatService {
   private saved: Saved = { selectedChatId: null, chats: [] }
   private readonly store: AtomicJsonStore<Saved>
-  private readonly host: PersonalConversationHost
+  private readonly hosts: Record<PersonalChat['providerId'], PersonalConversationHost>
   private readonly cwd: string
   private readonly directory: string
   private readonly listeners = new Set<(state: PersonalChatState) => void>()
   private readonly jobs = new Set<Promise<void>>()
   private readonly busy = new Set<string>()
   private writing: Promise<unknown> = Promise.resolve()
-  private connected = false
-  private connecting = false
+  private readonly connections = new Set<string>()
+  private readonly connectingProviders = new Set<string>()
+  private readonly providerErrors = new Map<string, string>()
+  private provider(): PersonalChat['providerId'] {
+    return this.saved.chats.find(chat => chat.id === this.saved.selectedChatId)?.providerId ?? this.supportedProvider(this.options.configuration().reasoning) ?? 'codex'
+  }
+  private supportedProvider(value: string): PersonalChat['providerId'] | undefined { return value === 'codex' || value === 'claude' || value === 'grok' ? value : undefined }
+  private get connected(): boolean { return this.connections.has(this.provider()) }
+  private get connecting(): boolean { return this.connectingProviders.has(this.provider()) }
+  private host(chatId: string): PersonalConversationHost { return this.hosts[this.chat(chatId).providerId] }
   private error: string | undefined
   private storageError: string | undefined
   private readonly unreadableNativeState = new Set<string>()
   private generation = 0
   private configurationKey = ''
-  private unsubscribe: (() => void) | undefined
+  private readonly unsubscribers: (() => void)[] = []
   constructor(private readonly options: PersonalChatOptions) {
     const directory = this.directory = join(options.userDataPath, 'personal-chat')
     this.cwd = join(directory, 'native-workspace')
     this.store = new AtomicJsonStore(join(directory, 'chats.json'), savedSchema.parse, () => ({ selectedChatId: null, chats: [] }))
-    this.host = options.host ?? new CodexAppServerHost({ userDataPath: directory })
+    this.hosts = { codex: options.hosts?.codex ?? options.host ?? new CodexAppServerHost({ userDataPath: directory }),
+      claude: options.hosts?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory }),
+      grok: options.hosts?.grok ?? new GrokAcpHost(directory) }
   }
   async start(): Promise<void> {
     // AtomicJsonStore.peek intentionally treats invalid and missing alike. This
@@ -132,11 +146,13 @@ export class PersonalChatService {
       this.emit(); return
     }
     await this.mutate(() => undefined)
-    this.unsubscribe = this.host.subscribe(snapshot => {
-      const conversations = this.host.personalSnapshot()
-      this.connected = snapshot.connected
-      void this.accept(snapshot, conversations).catch(() => { this.error = 'Personal chat history could not be saved. Restore local storage access and refresh.'; this.emit() })
-    })
+    for (const provider of ['codex', 'claude', 'grok'] as const) this.unsubscribers.push(this.hosts[provider].subscribe(snapshot => {
+      const conversations = this.hosts[provider].personalSnapshot()
+      if (snapshot.connected) this.connections.add(provider); else this.connections.delete(provider)
+      if (snapshot.error) this.providerErrors.set(provider, snapshot.error)
+      else if (snapshot.connected) this.providerErrors.delete(provider)
+      void this.accept(provider, snapshot, conversations).catch(() => { this.error = 'Personal chat history could not be saved. Restore local storage access and refresh.'; this.emit() })
+    }))
   }
   configurationChanged(): void {
     const key = JSON.stringify(this.options.configuration())
@@ -144,9 +160,10 @@ export class PersonalChatService {
   }
   get(): PersonalChatState {
     const provider = this.options.configuration().reasoning
-    return structuredClone({ ...this.saved, connected: this.connected, connecting: this.connecting,
-      ...(this.storageError || this.error ? { error: this.storageError || this.error } : {}),
-      availability: { provider, supported: provider === 'codex', ...(provider === 'codex' ? {} : { reason: `Personal conversations with ${provider} are not available yet. Select Codex in coordinator settings for new chats.` }) } })
+    const error = this.storageError || this.error || this.providerErrors.get(this.provider())
+    return structuredClone({ ...this.saved, chats: this.saved.chats.map(chat => ({ ...chat, connected: this.connections.has(chat.providerId) })), connected: this.connected, connecting: this.connecting,
+      ...(error ? { error } : {}),
+      availability: { provider, supported: !!this.supportedProvider(provider), ...(this.supportedProvider(provider) ? {} : { reason: `Personal conversations with ${provider} are not available. Select Codex, Claude or Grok in coordinator settings for new chats.` }) } })
   }
   subscribe(listener: (state: PersonalChatState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private emit(): void { for (const listener of this.listeners) listener(this.get()) }
@@ -184,11 +201,11 @@ export class PersonalChatService {
     this.writing = work; return work
   }
   async privacyChanged(): Promise<void> { await this.mutate(() => undefined) }
-  private accept(snapshot: AgentHostSnapshot, conversations: CodexPersonalConversation[]): Promise<void> {
+  private accept(provider: PersonalChat['providerId'], snapshot: AgentHostSnapshot, conversations: PersonalConversation[]): Promise<void> {
     return this.mutate(saved => {
       for (const native of conversations) {
         const chat = saved.chats.find(c => c.id === native.id)
-        if (!chat) continue // Never adopt arbitrary native/project conversations.
+        if (!chat || chat.providerId !== provider) continue // Never adopt arbitrary native/project conversations.
         const invalid: string[] = []
         chat.nativeState = 'ready'
         const status = personalChatSchema.shape.status.safeParse(native.status)
@@ -201,7 +218,10 @@ export class PersonalChatService {
         else this.unreadableNativeState.delete(chat.id)
         const messages = personalChatSchema.shape.messages.safeParse(native.messages)
         if (!messages.success) invalid.push('messages')
-        if (native.historyStatus !== 'loading' && !(native.historyStatus === 'error' && messages.success && !messages.data.length)) {
+        const usage = personalChatSchema.shape.usage.safeParse(native.usage)
+        if (usage.success) chat.usage = usage.data
+        else invalid.push('usage')
+        if (snapshot.connected && native.historyStatus !== 'loading' && !(native.historyStatus === 'error' && messages.success && !messages.data.length)) {
           const activities = personalChatSchema.shape.activities.safeParse(native.activities)
           if (messages.success) chat.messages = messages.data
           if (activities.success) chat.activities = activities.data
@@ -222,19 +242,19 @@ export class PersonalChatService {
   async connect(): Promise<PersonalChatState> {
     if (this.storageError) return this.get()
     if (this.connecting || this.connected) return this.get()
-    const generation = this.generation
-    this.connecting = true; this.error = undefined; this.emit()
+    const generation = this.generation, provider = this.provider(), host = this.hosts[provider]
+    this.connectingProviders.add(provider); this.providerErrors.delete(provider); this.error = undefined; this.emit()
     try {
       await mkdir(this.cwd, { recursive: true })
       if (generation !== this.generation) return this.get()
-      const snapshot = await this.host.connect()
-      if (generation === this.generation) { this.connected = snapshot.connected; await this.accept(snapshot, this.host.personalSnapshot()) }
-    } catch (error) { if (generation === this.generation) { this.connected = false; this.error = error instanceof Error ? error.message : 'Codex could not connect.' } }
-    finally { if (generation === this.generation) { this.connecting = false; this.emit() } }
+      const snapshot = await host.connect()
+      if (generation === this.generation) { if (snapshot.connected) this.connections.add(provider); else this.connections.delete(provider); if (snapshot.error) this.providerErrors.set(provider, snapshot.error); await this.accept(provider, snapshot, host.personalSnapshot()) }
+    } catch (error) { if (generation === this.generation) { this.connections.delete(provider); this.providerErrors.set(provider, error instanceof Error ? error.message : `${provider} could not connect.`) } }
+    finally { if (generation === this.generation) { this.connectingProviders.delete(provider); this.emit() } }
     return this.get()
   }
   async disconnect(): Promise<PersonalChatState> {
-    this.generation++; this.connecting = false; this.connected = false; this.host.disconnect()
+    this.generation++; this.connectingProviders.clear(); this.connections.clear(); for (const host of Object.values(this.hosts)) host.disconnect()
     if (this.storageError) return this.get()
     await this.mutate(saved => { for (const chat of saved.chats) {
       chat.requests = []; chat.status = 'idle'
@@ -246,10 +266,11 @@ export class PersonalChatService {
   }
   async create(): Promise<PersonalChatState> {
     const config = { ...this.options.configuration() }
-    if (config.reasoning !== 'codex') throw new Error(this.get().availability.reason)
-    if (!config.reasoningModel.trim()) throw new Error('Choose a Codex coordinator model before starting a chat.')
+    const provider = this.supportedProvider(config.reasoning)
+    if (!provider) throw new Error(this.get().availability.reason)
+    if (!config.reasoningModel.trim()) throw new Error(`Choose a ${provider} coordinator model before starting a chat.`)
     const at = new Date().toISOString(), id = randomUUID()
-    await this.mutate(saved => { saved.chats.unshift({ id, kind: 'personal', providerId: 'codex', title: 'New chat', modelId: config.reasoningModel,
+    await this.mutate(saved => { saved.chats.unshift({ id, kind: 'personal', providerId: provider, title: 'New chat', modelId: config.reasoningModel,
       ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}), createdAt: at, updatedAt: at, nativeState: 'unstarted', status: 'idle',
       messages: [], requests: [], draft: { revision: 0, text: '', skills: [] }, submissions: [] }); saved.selectedChatId = id })
     return this.get()
@@ -280,7 +301,7 @@ export class PersonalChatService {
     await this.mutate(saved => {
       const chat = this.chat(chatId, saved)
       if (chat.submissions.some(s => s.revision === revision)) return
-      if (!this.connected) throw new Error('Connect Codex before sending this personal chat.')
+      if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before sending this personal chat.`)
       if (this.unreadableNativeState.has(chatId)) throw new Error('Native requests or status could not be read safely. Refresh before sending.')
       if (this.busy.has(chatId) || chat.status === 'running' || chat.requests.length) throw new Error('Wait for this chat and answer its pending requests before sending.')
       if (chat.nativeState === 'uncertain' || chat.submissions.some(s => s.status === 'submitting' || s.status === 'uncertain')) throw new Error('Delivery is uncertain. Refresh and review the existing conversation; it will not be replayed.')
@@ -305,13 +326,13 @@ export class PersonalChatService {
     try {
       const memories = this.options.preferences?.retrieve({ query: submission.text }) ?? []
       if (chat.nativeState === 'starting') {
-        const result = await this.host.createPersonalConversation({ commandId: submissionId, threadId: chatId, title: 'Personal chat', modelId: chat.modelId,
+        const result = await this.host(chatId).createPersonalConversation({ commandId: submissionId, threadId: chatId, title: 'Personal chat', modelId: chat.modelId,
           ...(chat.reasoningEffort ? { reasoningEffort: chat.reasoningEffort } : {}), workingDirectory: this.cwd }, memories)
         if (!result.accepted) { uncertain = result.uncertain === true; throw new Error('Native conversation creation is uncertain. Refresh without creating a replacement.') }
         await this.mutate(saved => { this.chat(chatId, saved).nativeState = 'ready' })
       }
-      if (generation !== this.generation || !this.connected) { uncertain = true; throw new Error('Codex disconnected before submission completed. Refresh to verify history.') }
-      const result = await this.host.sendPersonalConversation({ type: 'send', commandId: submission.id, threadId: chatId, messageId: submission.messageId,
+      if (generation !== this.generation || !this.connections.has(chat.providerId)) { uncertain = true; throw new Error('The provider disconnected before submission completed. Refresh to verify history.') }
+      const result = await this.host(chatId).sendPersonalConversation({ type: 'send', commandId: submission.id, threadId: chatId, messageId: submission.messageId,
         text: submission.text, skills: submission.skills }, memories)
       accepted = result.accepted; uncertain = result.uncertain === true
     } catch (caught) { error = caught instanceof Error ? caught.message : 'Personal chat submission failed.' }
@@ -325,22 +346,22 @@ export class PersonalChatService {
     })
   }
   async skills(chatId: string, forceReload = false) {
-    this.chat(chatId)
-    if (!this.connected) throw new Error('Connect Codex before browsing skills.')
-    return this.host.listThreadSkills(chatId, forceReload, { providerId: 'codex', workingDirectory: this.cwd })
+    const chat = this.chat(chatId)
+    if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before browsing skills.`)
+    return this.host(chatId).listThreadSkills(chatId, forceReload, { providerId: chat.providerId, workingDirectory: this.cwd })
   }
   async refresh(chatId: string): Promise<PersonalChatState> {
     const chat = this.chat(chatId)
-    if (!this.connected) throw new Error('Connect Codex before refreshing this conversation.')
+    if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before refreshing this conversation.`)
     if (chat.nativeState !== 'unstarted' && chat.nativeState !== 'error') {
-      const snapshot = await this.host.refreshThread(chatId); await this.accept(snapshot, this.host.personalSnapshot())
+      const host = this.host(chatId), snapshot = await host.refreshThread(chatId); await this.accept(chat.providerId, snapshot, host.personalSnapshot())
     }
     return this.get()
   }
   async interrupt(chatId: string): Promise<PersonalChatState> {
-    this.chat(chatId)
-    if (!this.connected) throw new Error('Connect Codex before interrupting.')
-    await this.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: chatId })
+    const chat = this.chat(chatId)
+    if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before interrupting.`)
+    await this.host(chatId).execute({ type: 'interrupt', commandId: randomUUID(), threadId: chatId })
     await this.writing; return this.get()
   }
   async answer(input: z.infer<typeof personalAnswerInputSchema>): Promise<PersonalChatState> {
@@ -349,7 +370,7 @@ export class PersonalChatService {
     await this.mutate(saved => {
       const chat = this.chat(chatId, saved)
       const request = chat.requests.find(r => r.id === answer.requestId)
-      if (!this.connected || !request) throw new Error('This request is no longer pending in this conversation.')
+      if (!this.connections.has(chat.providerId) || !request) throw new Error('This request is no longer pending in this conversation.')
       if (chat.decisions?.some(d => d.requestId === answer.requestId && (d.status === 'submitting' || d.status === 'uncertain'))) throw new Error('Answer delivery is uncertain. Refresh without replaying the answer.')
       const decisions = chat.decisions ??= []
       decisions.push({ ...answer, request, ...(request.questions?.length ? { questionsDigest: requestQuestionsDigest(request.questions) } : {}), id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
@@ -358,8 +379,8 @@ export class PersonalChatService {
     let failure: unknown
     try {
       const request = this.chat(chatId).decisions!.find(d => d.id === decisionId)!.request!
-      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: 'codex', requestId: request.id, questions: request.questions }, decisionId, answer.questionAnswers)
-      const result = await this.host.execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
+      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: this.chat(chatId).providerId, requestId: request.id, questions: request.questions }, decisionId, answer.questionAnswers)
+      const result = await this.host(chatId).execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
       status = result.accepted && !result.uncertain ? 'accepted' : 'uncertain'
       if (!result.accepted) this.error = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'
     } catch (error) { status = 'failed'; failure = error }
@@ -386,5 +407,5 @@ export class PersonalChatService {
     }
   }
   async settled(): Promise<void> { await Promise.all(this.jobs); await this.writing }
-  async close(): Promise<void> { await this.disconnect(); await this.settled(); this.unsubscribe?.(); await this.host.closed() }
+  async close(): Promise<void> { await this.disconnect(); await this.settled(); for (const unsubscribe of this.unsubscribers) unsubscribe(); await Promise.all(Object.values(this.hosts).map(host => host.closed())) }
 }

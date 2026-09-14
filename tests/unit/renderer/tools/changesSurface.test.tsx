@@ -59,6 +59,22 @@ function setup(git = fakeGit()) {
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 
+describe('local Git action feedback', () => {
+  it('keeps the editable commit message after rejection and refreshes only after a confirmed action', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    git.bridge.act = vi.fn(async () => ({ ok: false as const, error: { code: 'blocked' as const, message: 'Resolve the conflicting files first.' } }))
+    git.bridge.branches = vi.fn(async () => ({ ok: true as const, value: { current: 'feature/changes', branches: ['feature/changes'] } }))
+    setup(git)
+    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
+    const message = screen.getByRole('textbox', { name: 'Commit message' })
+    await user.type(message, 'Preserve this commit message')
+    await user.click(screen.getByRole('button', { name: 'Commit staged changes (1)' }))
+    expect(await screen.findByText('Resolve the conflicting files first.')).toBeInTheDocument()
+    expect(message).toHaveValue('Preserve this commit message')
+    expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'commit', message: 'Preserve this commit message' }))
+  })
+})
+
 describe('unified diff rows', () => {
   it('numbers old and new lines from each hunk and keeps headers in order', () => {
     const rows = parseUnifiedDiff(PATCH)
@@ -176,7 +192,7 @@ describe('Changes surface', () => {
     // While the refreshed diff loads, the reader keeps the lines already on screen.
     expect(within(panel()).getByRole('region', { name: 'Changes in src/app.ts' })).toBeInTheDocument()
     expect(await within(panel()).findByText('refreshed')).toBeInTheDocument()
-    expect(within(panel()).getAllByRole('option')).toHaveLength(1)
+    expect(within(list).getAllByRole('option')).toHaveLength(1)
 
     act(() => git.change([{ path: 'src/app.ts', status: 'modified', staged: false, unstaged: true }, { path: 'docs/new.md', status: 'untracked', staged: false, unstaged: true }], 'r3'))
     const newer = await within(panel()).findByRole('option', { name: /^new\.md/u })
