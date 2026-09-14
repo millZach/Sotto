@@ -7,7 +7,7 @@ import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
 
 const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd: z.number().optional(), rate: z.string() })
 const ledgerSchema = z.object({ view: threadUsageSchema, entries: z.record(z.string(), entrySchema),
-  total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false) })
+  total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false), contextCompacted: z.boolean().optional() })
 type Ledger = z.infer<typeof ledgerSchema>
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
@@ -35,6 +35,13 @@ export class NativeUsage {
   async load(): Promise<void> { await this.writing; this.data = await this.store.read(); this.streaming.clear() }
   async flushed(): Promise<void> { await this.writing }
   get(id: string): ThreadUsage | undefined { return this.data[id]?.view }
+  compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
+    const ledger = this.ledger(id)
+    ledger.view.contextUsed = count(used)
+    ledger.view.contextUpdatedAt = updatedAt
+    ledger.contextCompacted = true
+    this.save(id)
+  }
   private ledger(id: string): Ledger {
     return this.data[id] ??= { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
   }
@@ -85,6 +92,7 @@ export class NativeUsage {
     ledger.view.contextUsed = count(object(usage.last).totalTokens)
     ledger.view.contextWindow = count(usage.modelContextWindow) || undefined
     ledger.view.updatedAt = new Date().toISOString()
+    ledger.view.contextUpdatedAt = ledger.view.updatedAt
     this.save(id)
   }
   claude(id: string, value: unknown, selectedModel?: string): void {
@@ -123,13 +131,16 @@ export class NativeUsage {
     }
     this.record(ledger, message.id, typeof message.model === 'string' ? message.model : '', merged)
     const isNew = !previous
-    const older = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) && Date.parse(frame.timestamp) < Date.parse(ledger.view.updatedAt)
-    if (ledger.latestId === message.id || isNew && (!ledger.view.latest || !older)) {
+    const older = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) && Date.parse(frame.timestamp) < Math.max(Date.parse(ledger.view.updatedAt), Date.parse(ledger.view.contextUpdatedAt ?? ledger.view.updatedAt))
+    if (ledger.latestId === message.id && !ledger.contextCompacted && !older || isNew && (!ledger.view.latest && !ledger.contextCompacted || !older)) {
       const nextModel = selectedModel ?? (typeof message.model === 'string' ? message.model : undefined)
       if (ledger.view.modelId !== nextModel) delete ledger.view.contextWindow
+      const contextChanged = ledger.latestId !== message.id || ledger.view.contextUsed !== merged.input
       ledger.latestId = message.id; ledger.view.latest = merged; ledger.view.contextUsed = merged.input
       if (isNew || ledger.view.modelId === undefined) ledger.view.modelId = nextModel
       ledger.view.updatedAt = typeof frame.timestamp === 'string' ? frame.timestamp : new Date().toISOString()
+      if (contextChanged) ledger.view.contextUpdatedAt = ledger.view.updatedAt
+      ledger.contextCompacted = false
     }
     this.save(id)
   }

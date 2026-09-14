@@ -1,0 +1,5 @@
+.personal-voice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 2px 0 4px; }
+.personal-voice__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.personal-voice__controls .tt-button { font-size: 14px; }
+.personal-voice__provider { max-width: 150px; font: inherit; font-size: 14px; color: var(--tt-text-2); background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: 8px; padding: 6px; }
+.personal-voice__status { font-size: 12px; color: var(--tt-text-2); overflow-wrap: anywhere; }

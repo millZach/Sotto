@@ -27,7 +27,7 @@ import { requestDraftProvider } from '../../shared/requestDrafts'
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
-  'cancel-draft', 'cancel-request', 'configure-thread',
+  'cancel-draft', 'cancel-request', 'configure-thread', 'compact-thread',
 ])
 
 const savedSchema = z.object({
@@ -47,7 +47,7 @@ const savedSchema = z.object({
   pendingRequest: z.string().max(20_000).default(''),
   contextSavedAt: z.number().default(0),
   composing: z.boolean(), outbox: z.array(z.object({
-    id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt']),
+    id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),
     threadId: z.string().optional(), messageId: z.string().optional(), entityId: z.string().optional(), requestId: z.string().optional(),
     options: agentThreadOptionsSchema.optional(), draftDigest: z.string().optional(), draftId: z.uuid().optional(),
@@ -1090,6 +1090,17 @@ export class AgentControl {
         await this.dispatch({ type: 'interrupt', commandId: randomUUID(), threadId: command.threadId }, turn, validate)
         return
       }
+      case 'compact-thread': {
+        const validate = (): void => {
+          this.canAct(command.threadId)
+          const thread = this.thread(command.threadId)
+          if (!capabilitiesForThread(this.state.host, thread).compact || thread.manualCompactionSupported === false) throw new Error('Native manual compaction is unavailable for this thread.')
+          if (isThreadClosed(thread) || thread.nativeSessionStarted === false || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its requests before compacting.')
+        }
+        validate()
+        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId }, turn, validate)
+        return
+      }
       case 'later': case 'next': {
         if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before moving to another queued thread.')
         if (this.state.composing) this.clearDraft()
@@ -1535,7 +1546,8 @@ export class AgentControl {
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
       const confirmed = (item.type === 'send' || item.type === 'steer') ? Boolean(message) : item.type === 'create-project'
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
-          ? snapshot.threads.some(t => t.id === item.entityId) : item.type === 'configure-thread'
+          ? snapshot.threads.some(t => t.id === item.entityId) : item.type === 'compact-thread'
+            ? thread?.compaction?.commandId === item.id && ['completed', 'failed'].includes(thread.compaction.status) : item.type === 'configure-thread'
             ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'

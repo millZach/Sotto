@@ -111,6 +111,7 @@ export class AgentVoiceSession {
   private muted = false
   private dictationActive = false
   private conversation = false
+  private explicitConversation = false
   private disposed = false
   private starting = false
   private capture: VoiceCapture | null = null
@@ -144,6 +145,16 @@ export class AgentVoiceSession {
     this.enabled = true
     this.inputError = undefined
     await this.ensureCapture()
+  }
+
+  /** The user explicitly started voice in a captured personal chat. No wake model is needed. */
+  async startConversation(): Promise<void> {
+    if (this.disposed) return
+    this.explicitConversation = true
+    this.conversation = true
+    this.muted = false
+    await this.start()
+    this.capture?.setWakeMode?.(false)
   }
 
   async stop(): Promise<void> {
@@ -187,6 +198,7 @@ export class AgentVoiceSession {
 
   /** Return to wake-only monitoring. The application retains any composed draft. */
   sleep(): void {
+    if (this.explicitConversation) { void this.stop(); return }
     this.conversation = false
     this.capture?.setWakeMode?.(true)
     this.clearInactivity()
@@ -271,9 +283,11 @@ export class AgentVoiceSession {
     this.publish()
     try {
       const settings = this.options.getSettings()
-      const wake = this.dependencies.createWakeDetector()
-      this.wake = wake
-      await wake.load()
+      if (!this.conversation) {
+        const wake = this.dependencies.createWakeDetector()
+        this.wake = wake
+        await wake.load()
+      }
       if (generation !== this.captureGeneration || !this.canCapture()) return
       const local = this.dependencies.createTranscriber()
       this.local = local

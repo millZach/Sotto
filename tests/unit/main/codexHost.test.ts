@@ -32,6 +32,19 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   return control
 }
 describe('Codex App Server provider adapter', () => {
+  it('routes manual compaction through the public control, rejecting concurrent requests and preserving uncertain restart state', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    const control = await startControl(f)
+    await control.command({ type: 'compact-thread', threadId })
+    expect((await control.command({ type: 'compact-thread', threadId })).error).toMatch(/finish|compaction|working/i)
+    expect((await f.driver.requests()).filter(row => row.method === 'thread/compact/start')).toHaveLength(1)
+    control.dispose()
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    expect((await f.host.snapshot()).threads[0]?.compaction?.status).toBe('uncertain')
+    await expect(f.host.execute({ type: 'compact-thread', commandId: 'retry', threadId })).rejects.toThrow(/unconfirmed/i)
+    expect((await f.driver.requests()).filter(row => row.method === 'thread/compact/start')).toHaveLength(1)
+  })
   it('reads a newly created unmaterialized thread without turns, then reads its first message normally', async () => {
     const f = await fixture()
     const { threadId } = await create(f)

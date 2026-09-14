@@ -36,6 +36,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 type HarnessOptions = {
+  readonly captureOutput?: () => DictationControllerDependencies['deliverOutput'] | undefined
   readonly currentSettings?: AppSettings
   readonly recorder?: Partial<DictationRecorder>
   readonly transcribe?: (options: TranscribeOptions) => Promise<TranscriptionResult>
@@ -96,6 +97,7 @@ function createHarness(options: HarnessOptions = {}) {
   const dependencies: DictationControllerDependencies = {
     createRecorder,
     transcriber,
+    ...(options.captureOutput ? { captureOutput: options.captureOutput } : {}),
     getSettings: options.getSettings ?? (() => currentSettings),
     deliverOutput,
     addHistory,
@@ -1054,4 +1056,18 @@ describe('hosted transcription failures', () => {
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
   })
+})
+
+
+it('captures a personal draft destination before recording and never follows later focus', async () => {
+  const original = vi.fn(async () => 'pasted' as const)
+  const next = vi.fn(async () => 'pasted' as const)
+  let destination = original
+  const h = createHarness({ captureOutput: () => destination })
+  await h.controller.start()
+  destination = next
+  await h.controller.stop()
+  expect(original).toHaveBeenCalledWith(expect.objectContaining({ text: 'hello world' }))
+  expect(next).not.toHaveBeenCalled()
+  expect(h.deliverOutput).not.toHaveBeenCalled()
 })

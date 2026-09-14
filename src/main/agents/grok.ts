@@ -267,6 +267,7 @@ export class GrokAcpHost implements AgentHost {
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   private async executeNative(command: AgentHostCommand | (PersonalCreateCommand & { type: 'create-personal' })): Promise<AgentHostResult> {
+    if (command.type === 'compact-thread') throw new Error('Grok does not expose supported native manual compaction.')
     if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected || !this.rpc) throw new Error('Connect Grok before managing threads.')
     const rpc = this.rpc

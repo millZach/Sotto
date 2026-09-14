@@ -253,7 +253,7 @@ export class ConfiguredProviderHost implements AgentHost {
     }
     const id = this.owner(command.threadId); this.requireConnected(id)
     const capabilities = this.slots.get(id)!.status.capabilities
-    const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'configure-thread' ? 'configureThread' : undefined
+    const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'compact-thread' ? 'compact' : command.type === 'configure-thread' ? 'configureThread' : undefined
     if (needed && !capabilities[needed]) throw new Error('This provider does not support that thread action.')
     if (command.type === 'configure-thread' && command.modelId !== undefined) {
       return this.options.hosts[id].execute({ ...command, modelId: nativeEntityId(id, 'model', command.modelId) })

@@ -11,6 +11,7 @@ export const threadUsageSchema = z.object({
   elapsedMs: count.optional(), estimatedUsd: z.number().nonnegative().optional(),
   elapsedKind: z.enum(['turn', 'api']).optional(),
   rateVersions: z.array(z.string()), partial: z.boolean(), updatedAt: z.string(),
+  contextUpdatedAt: z.string().optional(),
   persistenceError: z.boolean().optional(),
   modelId: z.string().optional(),
 })

@@ -8,6 +8,7 @@ import { gitActionSchema, gitDiffRequestSchema, gitWatchRequestSchema, GIT_MAX_P
 import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
+import { GitPullRequestsService } from './gitPullRequests'
 import type { CheckpointService } from './checkpoints'
 
 interface GitDependencies {
@@ -30,7 +31,13 @@ export class GitChangesService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
   private timer: ReturnType<typeof setInterval> | null = null
   private polling = false
-  constructor(private readonly dependencies: GitDependencies) { super() }
+  private readonly pullRequests: GitPullRequestsService
+  constructor(private readonly dependencies: GitDependencies) {
+    super()
+    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}) })
+  }
+  reviewPullRequest(payload: unknown) { return this.pullRequests.review(payload) }
+  actPullRequest(payload: unknown) { return this.pullRequests.act(payload) }
   async isMutating(threadId: string): Promise<boolean> {
     if (this.mutations.size === 0) return false
     const owner = await workspace(this.dependencies.files, threadId)
@@ -230,6 +237,7 @@ export class GitChangesService extends ToolOperations {
   }
   dispose(): void {
     this.disposed = true
+    this.pullRequests.dispose()
     if (this.timer) clearInterval(this.timer)
     this.watches.clear()
     for (const child of this.children) child.kill()

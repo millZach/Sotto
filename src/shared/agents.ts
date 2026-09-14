@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
+import { compactionSchema } from './compaction'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -128,6 +129,9 @@ export const agentThreadSchema = z.object({
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   usage: threadUsageSchema.optional(),
+  compaction: compactionSchema.optional(),
+  manualCompactionSupported: z.boolean().optional(),
+  resumeCompactionDismissed: z.boolean().optional(),
   /** Native outcome evidence for queue admission; never an authority to replay work. */
   lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
@@ -141,6 +145,7 @@ export const agentCapabilitiesSchema = z.object({
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
   configureThread: z.boolean().optional(), skills: z.boolean().optional(),
   steer: z.boolean().optional(),
+  compact: z.boolean().optional(),
 })
 export const agentProviderStatusSchema = z.object({
   id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
@@ -341,6 +346,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume'), threadId: id, expectedDraftId: z.uuid().nullable().optional() }).strict(),
   z.object({ type: z.literal('pause'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
+  z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.enum(['next', 'later']) }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
   z.object({ type: z.literal('membership'), action: z.enum(['refresh', 'signin', 'checkout', 'portal']) }).strict(),

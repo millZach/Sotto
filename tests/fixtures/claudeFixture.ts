@@ -6,9 +6,9 @@ import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterFixture } from '../integration/adapterContract'
 
-export async function claudeFixture(root?: string, requestTimeoutMs = 150): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
+export async function claudeFixture(root?: string, requestTimeoutMs = 150, environment?: NodeJS.ProcessEnv): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-claude-'))
-  const adapter = new ClaudeStreamJsonHost({ userDataPath: root, executable: process.execPath, args: [resolve('tests/fixtures/fakeClaudeThread.mjs'), root], claudeHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15 })
+  const adapter = new ClaudeStreamJsonHost({ userDataPath: root, executable: process.execPath, args: [resolve('tests/fixtures/fakeClaudeThread.mjs'), root], claudeHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...(environment ? { environment } : {}) })
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8'))[id].sessionId
   const action = async (id: string, value: Record<string, unknown>) => { await writeFile(join(root, `control-${await realId(id)}.json`), JSON.stringify({ id: randomUUID(), ...value })) }
   const check = async () => { const violations = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => ''); if (violations) throw new Error(violations) }

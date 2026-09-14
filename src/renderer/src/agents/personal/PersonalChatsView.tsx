@@ -18,6 +18,7 @@ import { MessageList, reachesJumpBand, TRANSCRIPT_PAGE, type ActivityContext } f
 import { personalDraftStore, personalError, usePersonalDraft, type PersonalDraftStore } from './personalDrafts'
 import '../composer.css'
 import './personalChats.css'
+import { PersonalVoice } from './PersonalVoice'
 import { ChatPromptEditor } from './ChatPromptEditor'
 import { ThreadUsage } from '../ThreadUsage'
 
@@ -466,6 +467,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
           onWriteAnswer={() => document.getElementById(PERSONAL_PROMPT_ID)?.focus()} />
         <div className="thread-workspace__compose">
           <PersonalComposer key={selected.id} bridge={bridge} state={state} chat={selected} store={store} onSent={() => setFollowSignal(value => value + 1)} />
+          <PersonalVoice key={`voice-${selected.id}`} bridge={bridge} chat={selected} state={state} store={store} />
           <ThreadUsage usage={selected.usage} modelId={selected.modelId} />
         </div>
       </> : <>
