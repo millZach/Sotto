@@ -7,7 +7,9 @@ export const usageTokensSchema = z.object({
 })
 export type UsageTokens = z.infer<typeof usageTokensSchema>
 export const threadUsageSchema = z.object({
-  latest: usageTokensSchema.optional(), contextUsed: count.optional(), contextWindow: count.positive().optional(),
+  latest: usageTokensSchema.optional(),
+  /** Sum of every recorded request in the thread. */
+  total: usageTokensSchema.optional(), contextUsed: count.optional(), contextWindow: count.positive().optional(),
   elapsedMs: count.optional(), estimatedUsd: z.number().nonnegative().optional(),
   elapsedKind: z.enum(['turn', 'api']).optional(),
   rateVersions: z.array(z.string()), partial: z.boolean(), updatedAt: z.string(),

@@ -226,12 +226,12 @@ describe('composer admission', () => {
 })
 
 describe('composer while a turn runs', () => {
-  it('says the agent is working and puts Stop in the send button’s place', () => {
+  it('says the agent is working only in the placeholder and puts Stop in the send button’s place', () => {
     const { live, prompt } = mount(manualState({ running: true }))
     const form = prompt().closest('form')!
     expect(form).toHaveAttribute('data-running')
     expect(prompt().placeholder).toMatch(/is working\. Write a follow-up to queue it\.$/u)
-    expect(within(form).getByText(/is working · Enter to queue/u)).toBeInTheDocument()
+    expect(form.querySelector('.thread-prompt__status')).toBeNull()
     expect(within(form).queryByRole('button', { name: 'Queue prompt' })).not.toBeInTheDocument()
     fireEvent.click(within(form).getByRole('button', { name: 'Stop agent' }))
     expect(requests(live, 'interrupt')).toEqual([{ type: 'interrupt', threadId: THREAD }])

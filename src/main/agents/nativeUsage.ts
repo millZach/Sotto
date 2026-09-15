@@ -5,10 +5,12 @@ import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageToken
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
 
-const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd: z.number().optional(), rate: z.string() })
+const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd: z.number().optional(), lowerBound: z.boolean().optional(), rate: z.string() })
 const ledgerSchema = z.object({ view: threadUsageSchema, entries: z.record(z.string(), entrySchema),
   total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false), contextCompacted: z.boolean().optional() })
 type Ledger = z.infer<typeof ledgerSchema>
+const SYNTHETIC = '<synthetic>'
+const GROK_REPORTED_COST = 'grok-reported-cost'
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 function codexTokens(value: unknown): UsageTokens {
@@ -32,7 +34,24 @@ export class NativeUsage {
   constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok') {
     this.store = new AtomicJsonStore(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
   }
-  async load(): Promise<void> { await this.writing; this.data = await this.store.read(); this.streaming.clear() }
+  async load(): Promise<void> {
+    await this.writing; this.data = await this.store.read(); this.streaming.clear()
+    let changed = false
+    for (const ledger of Object.values(this.data)) {
+      for (const [key, entry] of Object.entries(ledger.entries)) {
+        // Claude's own local notices carry no billed work.
+        if (entry.model === SYNTHETIC) { delete ledger.entries[key]; changed = true; continue }
+        // Usage recorded before its model had a price is priced once one exists; priced entries keep their rate.
+        if (entry.usd !== undefined) continue
+        const estimate = estimateUsage(this.provider, entry.model, entry.tokens)
+        if (estimate) { ledger.entries[key] = { ...entry, usd: estimate.usd, ...(estimate.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }; changed = true }
+      }
+      const before = JSON.stringify(ledger.view)
+      this.summarize(ledger)
+      changed ||= JSON.stringify(ledger.view) !== before
+    }
+    if (changed) this.writing = this.store.write(structuredClone(this.data)).catch(() => undefined)
+  }
   async flushed(): Promise<void> { await this.writing }
   get(id: string): ThreadUsage | undefined { return this.data[id]?.view }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
@@ -45,20 +64,32 @@ export class NativeUsage {
   private ledger(id: string): Ledger {
     return this.data[id] ??= { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
   }
-  private save(id: string): void {
-    const ledger = this.data[id]!
+  private summarize(ledger: Ledger): void {
     const entries = Object.values(ledger.entries)
     const priced = entries.filter(entry => entry.usd !== undefined)
     ledger.view.estimatedUsd = priced.length ? priced.reduce((sum, entry) => sum + entry.usd!, 0) : undefined
     ledger.view.rateVersions = [...new Set(priced.map(entry => entry.rate))]
-    ledger.view.partial = ledger.incomplete || entries.some(entry => entry.usd === undefined)
+    ledger.view.partial = ledger.incomplete || entries.some(entry => entry.usd === undefined || entry.lowerBound === true)
+    // Every recorded request, so the thread's tokens add up rather than showing only the latest request.
+    const total: UsageTokens = {}
+    for (const field of ['input', 'output', 'cached'] as const) {
+      const reported = entries.filter(entry => entry.tokens[field] !== undefined)
+      if (reported.length) total[field] = reported.reduce((sum, entry) => sum + entry.tokens[field]!, 0)
+    }
+    ledger.view.total = Object.keys(total).length ? total : undefined
+  }
+  private save(id: string): void {
+    const ledger = this.data[id]!
+    this.summarize(ledger)
     this.writing = this.store.write(structuredClone(this.data)).then(() => { delete ledger.view.persistenceError }, () => { ledger.view.persistenceError = true })
   }
-  private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens): void {
-    if (!Object.values(tokens).some(value => value !== undefined)) return
+  private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): void {
+    if (model === SYNTHETIC || !Object.values(tokens).some(value => value !== undefined)) return
     const previous = ledger.entries[key]
     if (previous && previous.model === model && JSON.stringify(previous.tokens) === JSON.stringify(tokens)) return
-    ledger.entries[key] = { tokens, model, usd: estimateUsage(this.provider, model, tokens), rate: USAGE_RATE_VERSION }
+    if (reported) { ledger.entries[key] = { tokens, model, usd: reported.usd, rate: reported.rate }; return }
+    const estimate = estimateUsage(this.provider, model, tokens)
+    ledger.entries[key] = { tokens, model, usd: estimate?.usd, ...(estimate?.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }
   }
   codex(id: string, model: string, value: unknown): void {
     const params = object(value); const usage = object(params.tokenUsage)
@@ -120,7 +151,8 @@ export class NativeUsage {
       return
     }
     const message = object(frame.message)
-    if (frame.type !== 'assistant' || typeof message.id !== 'string' || !message.usage) return
+    // Claude's own local notices carry no billed work or context.
+    if (frame.type !== 'assistant' || typeof message.id !== 'string' || !message.usage || message.model === SYNTHETIC) return
     const ledger = this.ledger(id); const tokens = claudeTokens(message.usage)
     const previous = ledger.entries[message.id]
     // History and stream replay often contain an earlier snapshot of the same message.
@@ -168,8 +200,11 @@ export class NativeUsage {
     if (identity) {
       ledger.seen.push(identity)
       const models = Object.entries(object(usage.modelUsage))
-      if (models.length) for (const [model, row] of models) this.record(ledger, `${identity}:${model}`, model, tokens(object(row)))
-      else this.record(ledger, identity, '', tokens(usage))
+      const ticks = count(usage.costUsdTicks)
+      // Grok reports what the turn cost (docs.x.ai cost tracking: 1 USD = 10^10 ticks). Its Build models have no published list price.
+      if (ticks !== undefined) this.record(ledger, identity, models.length === 1 ? models[0]![0] : selectedModel, tokens(usage), { usd: ticks / 10_000_000_000, rate: GROK_REPORTED_COST })
+      else if (models.length) for (const [model, row] of models) this.record(ledger, `${identity}:${model}`, model, tokens(object(row)))
+      else this.record(ledger, identity, selectedModel, tokens(usage))
     } else ledger.incomplete = true
     const timestamp = count(meta.agentTimestampMs)
     if (!ledger.view.latest || timestamp === undefined || timestamp >= Date.parse(ledger.view.updatedAt)) {

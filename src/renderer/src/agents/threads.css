@@ -180,7 +180,6 @@
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .thread-prompt__actions > .tt-button--icon { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
 .thread-prompt__actions > .thread-prompt__stop[data-beside] { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-2); }
-.thread-prompt__hint .thread-activity__pulse { margin-right: 7px; vertical-align: 1px; }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
 /* Model and option controls inside the Threads composer read at control size. */

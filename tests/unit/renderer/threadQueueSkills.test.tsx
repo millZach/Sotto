@@ -258,13 +258,13 @@ describe('Steer now', () => {
     await waitFor(() => expect(prompt()).toHaveValue(''))
   })
 
-  it('explains an unsupported provider instead of offering a steer that cannot happen', () => {
+  it('offers only queueing when the provider cannot steer', () => {
     const state = manualState({ running: true })
     state.host.providers = [{ id: 'claude', name: 'Claude', version: 'fixture', connection: 'connected', capabilities: { ...BASE, steer: false } }]
     state.host.threads.find(item => item.id === THREAD)!.providerId = 'claude'
     const { prompt } = mount(state)
     expect(screen.queryByRole('button', { name: 'Steer now' })).not.toBeInTheDocument()
-    expect(screen.getByText(/Claude can’t steer a running turn\./)).toBeInTheDocument()
+    expect(screen.queryByText(/steer a running turn/u)).not.toBeInTheDocument()
     type(prompt(), 'Queue instead')
     expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
   })

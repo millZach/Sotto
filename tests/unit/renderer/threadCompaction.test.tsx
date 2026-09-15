@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
+import { compactionOffered, ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
 import type { AgentThread } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear() })
@@ -70,4 +70,12 @@ it('keeps compaction feedback truthful and routes one explicit manual request', 
   expect(screen.getByRole('button', { name: 'Compact context' })).toBeDisabled()
   view.rerender(<ThreadCompaction thread={{ ...thread, compaction: { commandId: 'c', status: 'completed' } }} supported connected command={command} />)
   expect(screen.getByRole('status')).toHaveTextContent('Context compacted')
+})
+it('offers compaction before Claude has reported support, but not once it reports none or before a native session exists', () => {
+  const compact = { compact: true }
+  expect(compactionOffered(compact, { ...thread, manualCompactionSupported: undefined })).toBe(true)
+  expect(compactionOffered(compact, { ...thread, manualCompactionSupported: true })).toBe(true)
+  expect(compactionOffered(compact, { ...thread, manualCompactionSupported: false })).toBe(false)
+  expect(compactionOffered(compact, { ...thread, nativeSessionStarted: false })).toBe(false)
+  expect(compactionOffered({ compact: false }, thread)).toBe(false)
 })

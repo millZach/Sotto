@@ -36,18 +36,21 @@ describe('native usage observations', () => {
     expect(store.get('thread')?.estimatedUsd).toBeCloseTo(0.00315, 8)
     await store.flushed()
   })
-  it('reads installed Grok turn usage without treating the sum of model calls as current context or undocumented ticks as dollars', async () => {
+  it('reads installed Grok turn usage and its reported cost, without treating the sum of model calls as current context', async () => {
     const { store, root } = await usage('grok')
     const frame = { update: { sessionUpdate: 'turn_completed', prompt_id: 'native-prompt', usage: { inputTokens: 35220, outputTokens: 309,
       cachedReadTokens: 6912, cacheCreationTokens: 0, reasoningTokens: 232, apiDurationMs: 6935, costUsdTicks: 210548400,
       modelUsage: { 'grok-4.6-build': { inputTokens: 35220, outputTokens: 309, cachedReadTokens: 6912, cacheCreationTokens: 0 } } } } }
     store.grok('thread', 'grok-4.6-build', frame)
-    expect(store.get('thread')).toMatchObject({ latest: { input: 35220, output: 309, cached: 6912 }, elapsedMs: 6935, elapsedKind: 'api', partial: true })
+    expect(store.get('thread')).toMatchObject({ latest: { input: 35220, output: 309, cached: 6912 }, total: { input: 35220, output: 309, cached: 6912 },
+      elapsedMs: 6935, elapsedKind: 'api', partial: false, rateVersions: ['grok-reported-cost'] })
     expect(store.get('thread')?.contextUsed).toBeUndefined()
-    expect(store.get('thread')?.estimatedUsd).toBeUndefined()
+    // 1 USD = 10^10 ticks.
+    expect(store.get('thread')?.estimatedUsd).toBeCloseTo(0.02105484, 10)
     await store.flushed()
     const reopened = new NativeUsage(root, 'grok'); await reopened.load(); reopened.grok('thread', 'grok-4.6-build', frame)
     expect(reopened.get('thread')?.latest?.output).toBe(309)
+    expect(reopened.get('thread')?.total?.output).toBe(309)
     await reopened.flushed()
   })
   it('matches the installed Astra fixture and keeps reasoning inside reported output rather than charging it twice', async () => {
@@ -99,7 +102,7 @@ describe('native usage observations', () => {
     const reopened = new NativeUsage(root, 'claude'); await reopened.load()
     reopened.claude('thread', { type: 'assistant', message }, 'sonnet')
     expect(reopened.get('thread')?.estimatedUsd).toBeCloseTo(0.006675, 8)
-    expect(reopened.get('thread')?.rateVersions).toEqual(['2026-09-13-standard-v1'])
+    expect(reopened.get('thread')?.rateVersions).toEqual(['2026-09-15-standard-v2'])
     await reopened.flushed()
   })
   it('does not charge an ambiguous counter reset twice, and keeps replay identities across restart', async () => {
@@ -133,5 +136,36 @@ describe('native usage observations', () => {
     expect(store.get('thread')?.contextUsed).toBeUndefined()
     expect(store.get('thread')?.estimatedUsd).toBeUndefined()
     await store.flushed()
+  })
+  it('adds up every request, prices current Claude, Codex and long-context models, and prices older unpriced usage on restart', async () => {
+    const { store, root } = await usage('claude')
+    const message = (id: string, model: string, output: number) => ({ type: 'assistant', message: { id, model, usage: { input_tokens: 2, output_tokens: output,
+      cache_read_input_tokens: 1000, cache_creation_input_tokens: 500, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 500 } } } })
+    store.claude('thread', message('first', 'claude-opus-5', 300))
+    store.claude('thread', message('second', 'claude-opus-5', 100))
+    store.claude('thread', { type: 'assistant', message: { id: 'notice', model: '<synthetic>', usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
+    // Each: 2 uncached x $5 + 1000 read x $0.50 + 500 1h writes x $10, plus output at $25.
+    expect(store.get('thread')).toMatchObject({ latest: { output: 100 }, total: { input: 3004, output: 400, cached: 2000 }, partial: false })
+    expect(store.get('thread')?.estimatedUsd).toBeCloseTo((2 * (10 + 500 + 5000) + 400 * 25) / 1_000_000, 10)
+    await store.flushed()
+
+    const { store: codex } = await usage('codex')
+    const long = { inputTokens: 300_000, cachedInputTokens: 200_000, outputTokens: 1000, totalTokens: 301_000 }
+    codex.codex('thread', 'gpt-6-astra', { turnId: 'long', tokenUsage: { total: long, last: long, modelContextWindow: 1_000_000 } })
+    // Long-context rates; Codex reported no cache writes, so the estimate is a lower bound.
+    expect(codex.get('thread')?.estimatedUsd).toBeCloseTo((100_000 * 20 + 200_000 * 2 + 1000 * 75) / 1_000_000, 10)
+    expect(codex.get('thread')?.partial).toBe(true)
+    await codex.flushed()
+
+    // A ledger written before claude-opus-5 had a price, holding a synthetic notice too.
+    const { writeFile } = await import('node:fs/promises')
+    const tokens = { input: 1502, output: 300, cached: 1000, cacheWrite: 500, cacheWrite5m: 0, cacheWrite1h: 500 }
+    await writeFile(join(root, 'claude-usage.json'), JSON.stringify({ old: { view: { rateVersions: [], partial: true, updatedAt: '2026-09-14T00:00:00Z', latest: tokens },
+      entries: { a: { tokens, model: 'claude-opus-5', rate: '2026-09-13-standard-v1' }, b: { tokens: { input: 0, output: 0 }, model: '<synthetic>', rate: '2026-09-13-standard-v1' } },
+      seen: [], incomplete: false } }))
+    const reopened = new NativeUsage(root, 'claude'); await reopened.load()
+    expect(reopened.get('old')).toMatchObject({ total: { input: 1502, output: 300 }, partial: false, rateVersions: ['2026-09-15-standard-v2'] })
+    expect(reopened.get('old')?.estimatedUsd).toBeCloseTo((10 + 500 + 5000 + 300 * 25) / 1_000_000, 10)
+    await reopened.flushed()
   })
 })

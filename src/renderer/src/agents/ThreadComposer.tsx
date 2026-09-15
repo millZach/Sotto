@@ -209,17 +209,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     textarea.current?.focus()
   }
 
-  const steerNote = running && capabilities.steer !== true ? ` ${row.provider} can’t steer a running turn.` : ''
-  const workingLead = working && !answering ? `${row.provider} is working · ` : ''
-  const idleHint = answering ? 'Enter to send your answer' : queueing ? `${workingLead}Enter to queue · Shift+Enter for a new line.${steerNote}` : null
   const status = saveError !== null && save === 'unsaved'
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
       : answerState.sending ? <span className="thread-prompt__status" role="status">Sending answer…</span>
         // A blocked composer states only why, and not again when its empty prompt already says it; the transcript explains an unconfirmed prompt.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span>
-          : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
-            : content || idleHint ? <span className="thread-prompt__status thread-prompt__hint">{workingLead ? <i className="thread-activity__pulse" data-connected={row.connected || undefined} aria-hidden="true" /> : null}{content ? (save === 'saving' ? `${workingLead}Saving draft…` : queueing ? `${workingLead}Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span> : null
+          // Saving, queueing and a working agent get no caption: the placeholder and buttons already show them.
+          : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
 
   return <>
