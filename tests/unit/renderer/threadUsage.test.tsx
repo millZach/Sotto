@@ -24,3 +24,8 @@ it('does not attribute old model context to a newly selected model, while keepin
   expect(screen.getByText('Context unavailable')).toBeVisible()
   expect(screen.getByText('Est. ≥ $0.0100')).toBeVisible()
 })
+it('adds up the thread tokens across requests and models, keeping the latest request as detail', () => {
+  render(<ThreadUsage modelId="new" usage={{ modelId: 'old', latest: { input: 160_728, output: 439 }, total: { input: 2_410_000, output: 38_694 },
+    rateVersions: [], partial: false, updatedAt: '2026-09-15' }} />)
+  expect(screen.getByText('2,410,000 in / 38,694 out tokens')).toHaveAttribute('title', 'Latest request: 160,728 in / 439 out tokens')
+})
