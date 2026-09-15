@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 
-// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through Write here and a
+// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through usage, Write here and a
 // refused Manage. Holds and refusals are injected at main's IPC handler in-process; no product code is changed for it.
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
@@ -45,7 +45,9 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
     const action = [...card.querySelectorAll('button')].find(button => new RegExp(source, 'u').test(button.getAttribute('aria-label') ?? button.textContent ?? ''))
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
-      footer: Math.round(footer), card: bottom(card), image: bottom(image), action: bottom(action),
+      footer: Math.round(footer), card: bottom(card), image: bottom(image), action: bottom(action), usage: bottom(element.querySelector('.thread-usage')),
+      promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
+      controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
     }
   }, submit.source)
@@ -56,6 +58,12 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
   expect(facts.action!, context).toBeLessThanOrEqual(facts.footer)
   expect(facts.paneScroll, context).toBeLessThanOrEqual(1)
   expect(facts.transcript, context).toBeGreaterThanOrEqual(90)
+  expect(facts.usage!, context).toBeLessThanOrEqual(facts.footer)
+  expect(facts.promptFont).toBe('16px')
+  for (const control of facts.controls) { expect(Math.round(control.height)).toBeGreaterThanOrEqual(34); expect(control.font).toBe('14px') }
+  const name = await page.evaluate(() => `${innerWidth}x${innerHeight}`)
+  const mode = await pane(page, threadId).locator('.agent-composer').count() ? 'managed' : 'manual'
+  await page.screenshot({ path: `test-results/issue74-ui-captures/composer/${name}-${threadId}-${mode}.png`, animations: 'disabled' })
 }
 
 async function attachDraft(thread: Locator, prompt: Locator): Promise<void> {
@@ -137,7 +145,7 @@ async function armProbe(page: Page): Promise<void> {
 }
 const bodyFrames = (page: Page) => page.evaluate(() => { const probe = (window as unknown as { __probe: { bodyFrames: number; stop: boolean } }).__probe; probe.stop = true; return probe.bodyFrames })
 
-test('keyboard focus stays put: Write here by Shift+Tab, and a Manage that main holds then refuses', async () => {
+test('keyboard focus stays put through usage details, Write here, and a refused Manage', async () => {
   test.setTimeout(180_000)
   const launched = await launchSotto()
   const { page } = launched
@@ -157,13 +165,21 @@ test('keyboard focus stays put: Write here by Shift+Tab, and a Manage that main 
     await workshopPrompt.click()
     await expect(workshop).toHaveAttribute('data-focused')
 
-    // Shift+Tab from the divider reaches Docs' Write here: the pane takes the selection and the button keeps focus.
+    // Usage details follow the composer now. Shift+Tab from the divider reaches them and keeps focus there.
     const messages = (await agents(page)).host.threads.find(thread => thread.id === 'docs')!.messages.length
     await page.getByRole('separator', { name: 'Resize panes' }).focus()
     await armProbe(page)
     await page.keyboard.press('Shift+Tab')
-    const writeHere = docs.getByRole('button', { name: 'Write here', exact: true })
     await expect(docs).toHaveAttribute('data-focused')
+    await expect(docs.locator('.thread-usage summary')).toBeFocused()
+    expect(await bodyFrames(page)).toBe(0)
+    // Keyboard entry into the managed pane selects it, so its composer is already in place of Write here.
+    await expect(docs.locator('#agent-prompt')).toBeVisible()
+    // Focusing Write here from the other pane must also hold that button through pane activation until Enter is pressed.
+    await workshopPrompt.click()
+    const writeHere = docs.getByRole('button', { name: 'Write here', exact: true })
+    await armProbe(page)
+    await writeHere.focus()
     await page.waitForTimeout(300)
     await expect(writeHere).toBeFocused()
     await page.keyboard.press('Enter')

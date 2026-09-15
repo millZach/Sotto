@@ -60,7 +60,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   return { folder, panel: page.getByRole('complementary', { name: 'Tools' }) }
 }
 
-test('keeps the working folder to one row in a short window, so an open diff has the panel', async () => {
+test('keeps working-folder actions accessible in the compact header while an open diff has the panel', async () => {
   test.setTimeout(180_000)
   const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-short-path-'))
   const { page } = launched
@@ -83,53 +83,43 @@ test('keeps the working folder to one row in a short window, so an open diff has
     const diff = panel.getByRole('region', { name: 'Changes in src/app.ts' })
     await expect(diff).toContainText('return `Goodbye, ${name}.`')
     const path = panel.locator('.tools-panel__path-text')
-    const measure = () => path.evaluate(element => ({
-      height: element.getBoundingClientRect().height, clipped: element.scrollWidth > element.clientWidth + 1,
-      text: element.textContent, title: element.getAttribute('title'),
-    }))
-
-    // A tall window shows the whole folder, wrapped between folder names.
-    const tall = await measure()
-    expect(tall.height).toBeGreaterThan(30)
-    expect(tall.clipped).toBe(false)
+    const copy = panel.getByRole('button', { name: 'Copy working folder path' })
+    const reveal = panel.getByRole('button', { name: /: working folder$/u })
+    const expectFolderActions = async (): Promise<void> => {
+      // The sidecar replaced the redundant path rail with full tooltips and an accessible path.
+      await expect(path).toHaveText(folder)
+      await expect(copy).toHaveAttribute('title', `Copy path: ${folder}`)
+      await expect(reveal).toHaveAttribute('title', new RegExp(folder.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')))
+      await expect(copy).toBeInViewport()
+      await expect(reveal).toBeInViewport()
+      await expect(panel.getByRole('button', { name: 'Pin to Workshop' })).toBeInViewport()
+      expect(await panel.locator('.tools-panel__head').evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(100)
+    }
+    await expectFolderActions()
 
     await resize(launched, 820, 560)
     await expect(diff).toBeVisible()
-    const short = await measure()
-    // One row: the folder's start is ellipsized, and the whole path is still its text and its title.
-    expect(short.height).toBeLessThanOrEqual(20)
-    expect(short.clipped).toBe(true)
-    expect(short.text).toBe(folder)
-    expect(short.title).toBe(folder)
-    // The end nearest the work is the part left in view.
-    const shown = await path.evaluate(element => {
-      const range = document.createRange()
-      range.selectNodeContents(element)
-      const box = element.getBoundingClientRect()
-      const rects = [...range.getClientRects()]
-      return { right: box.right - Math.max(...rects.map(rect => rect.right)), left: Math.min(...rects.map(rect => rect.left)) < box.left - 1 }
-    })
-    expect(shown.left).toBe(true)
-    expect(Math.abs(shown.right)).toBeLessThanOrEqual(2)
-
-    const copy = panel.getByRole('button', { name: 'Copy working folder path' })
-    await expect(copy).toBeInViewport()
-    await expect(panel.getByRole('button', { name: /: working folder$/u })).toBeInViewport()
-    await expect(panel.getByRole('button', { name: 'Pin to Workshop' })).toBeInViewport()
+    await expectFolderActions()
     const heights = await panel.evaluate(element => ({
-      identity: element.querySelector('.tools-panel__identity')!.getBoundingClientRect().height,
+      header: element.querySelector('.tools-panel__head')!.getBoundingClientRect().height,
       diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height,
+      line: Number.parseFloat(getComputedStyle(element.querySelector('.changes-diff__rows')!).lineHeight),
+      list: element.querySelector('.changes-list')!.getBoundingClientRect().height,
     }))
-    expect(heights.identity).toBeLessThanOrEqual(100)
-    expect(heights.diff).toBeGreaterThanOrEqual(190)
+    expect(heights.header).toBeLessThanOrEqual(100)
+    // Git actions and the comparison selector now share this height. Keep six readable code rows
+    // and substantially more reading space than the selected-file strip.
+    expect(heights.diff).toBeGreaterThanOrEqual(heights.line * 6)
+    expect(heights.diff).toBeGreaterThan(heights.list * 2)
     await shoot(page, 'tools-path-diff-820x560')
 
-    await copy.click()
+    await copy.focus()
+    await page.keyboard.press('Enter')
     await expect(panel.getByRole('status')).toHaveText('Path copied')
     expect(await launched.app.evaluate(({ clipboard }) => clipboard.readText())).toBe(folder)
 
     await resize(launched, 1280, 860)
-    expect((await measure()).clipped).toBe(false)
+    await expectFolderActions()
     await shoot(page, 'tools-path-diff-1280', ['light'])
   } finally {
     await closeSotto(launched)

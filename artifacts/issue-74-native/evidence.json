@@ -1,0 +1,60 @@
+{
+  "root": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-AMdDSo",
+  "project": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-AMdDSo\\project",
+  "syntheticOnly": true,
+  "restoreOnly": false,
+  "startedAt": "2026-09-14T23:05:22.487Z",
+  "submittedProviders": [
+    "codex",
+    "claude",
+    "grok"
+  ],
+  "created": [
+    {
+      "id": "0d71e12a-1dc9-413f-bf8c-e7e0b6af1c2e",
+      "title": "Independent Claude Code acceptance",
+      "providerId": "claude",
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
+      "modelId": "native:claude:model:haiku"
+    },
+    {
+      "id": "cf91d815-8e5d-42f0-a392-b8cfc4194acb",
+      "title": "Independent Grok Build acceptance",
+      "providerId": "grok",
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
+      "modelId": "native:grok:model:grok-4.6"
+    },
+    {
+      "id": "d8a76f4a-421a-481a-b4de-7027166f45f8",
+      "title": "Independent Codex acceptance",
+      "providerId": "codex",
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
+      "modelId": "native:codex:model:gpt-5.6-luna"
+    }
+  ],
+  "connected": [
+    {
+      "id": "codex",
+      "connection": "connected"
+    },
+    {
+      "id": "claude",
+      "connection": "connected"
+    },
+    {
+      "id": "grok",
+      "connection": "connected"
+    }
+  ],
+  "coordinatorOffPreservesProviders": true,
+  "disconnectIsolation": true,
+  "restored": {
+    "sameBindings": true,
+    "sameNativeSessions": true,
+    "sameModels": true,
+    "noAdditionalTurns": true,
+    "noProjectFiles": true,
+    "coordinatorStillOff": true
+  },
+  "passed": true
+}

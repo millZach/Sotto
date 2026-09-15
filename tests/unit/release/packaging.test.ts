@@ -96,7 +96,7 @@ describe('release contract', () => {
     expect(builderConfig.extraResources).toContainEqual({ from: 'resources/runtime', to: 'runtime' })
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')
-    for (const bundled of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom']) {
+    for (const bundled of ['@huggingface/transformers', '@xterm/addon-webgl', 'lucide-react', 'react', 'react-dom']) {
       expect(packageManifest.devDependencies[bundled]).toBeTypeOf('string')
     }
     expect(packageManifest.devDependencies['yaml']).toBeTypeOf('string')

@@ -21,30 +21,51 @@ it.runIf(process.env.SOTTO_NATIVE_PERSONAL_CHAT === '1')('starts one owned nativ
   instrument(host)
   const configuration = () => ({ reasoning: 'codex', reasoningModel: 'gpt-6-astra', reasoningEffort: 'high' })
   let service = new PersonalChatService({ userDataPath: root, host, configuration })
-  const evidence: Record<string, unknown> = { checkedAt: new Date().toISOString(), calls, model: 'gpt-6-astra', reasoningEffort: 'high' }
+  const steps: { name: string; startedAt: string; elapsedMs?: number; failure?: string }[] = []
+  const evidence: Record<string, unknown> = { checkedAt: new Date().toISOString(), root, steps, calls, model: 'gpt-6-astra', reasoningEffort: 'high' }
+  const saveEvidence = async () => {
+    await mkdir('artifacts/personal-chat-native', { recursive: true })
+    await writeFile('artifacts/personal-chat-native/evidence.json', JSON.stringify(evidence, null, 2))
+  }
+  // Persist the last awaited operation before entering it, including cleanup: an overall test
+  // timeout must not discard the only clue or strand evidence behind the same shutdown barrier.
+  const step = async <T>(name: string, action: () => Promise<T>, timeoutMs = 30000): Promise<T> => {
+    const record: typeof steps[number] = { name, startedAt: new Date().toISOString() }
+    steps.push(record); await saveEvidence()
+    const started = performance.now()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([action(), new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Native personal probe timed out during ${name}`)), timeoutMs)
+      })])
+    } catch (error) { record.failure = error instanceof Error ? error.message : String(error); throw error }
+    finally { clearTimeout(timer); record.elapsedMs = Math.round(performance.now() - started); await saveEvidence() }
+  }
   try {
-    await service.start(); const connected = await service.connect(); expect(connected.connected, connected.error).toBe(true)
-    const snapshot = await host.snapshot(); evidence.version = snapshot.version
+    await step('start', () => service.start()); const connected = await step('connect', () => service.connect()); expect(connected.connected, connected.error).toBe(true)
+    const snapshot = await step('snapshot', () => host.snapshot()); evidence.version = snapshot.version
     expect(snapshot.models.some(m => m.id === 'gpt-6-astra' && m.ready)).toBe(true)
-    const chat = (await service.create()).chats[0]!
-    const skills = await service.skills(chat.id, true)
+    const chat = (await step('create local chat', () => service.create())).chats[0]!
+    const skills = await step('skills', () => service.skills(chat.id, true))
     evidence.skills = { status: skills.status, count: skills.skills.length, scopes: [...new Set(skills.skills.map(s => s.scope))], errors: skills.errors.length }
     expect(skills.status).toBe('ready'); expect(skills.skills.some(s => s.scope === 'user')).toBe(true)
-    await service.saveDraft({ chatId: chat.id, revision: 1, text: 'Synthetic persistence check. Reply exactly SOTTO_PERSONAL_OK. Do not call tools, read files, browse, delegate, or change anything.', skills: [] })
-    await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
-    const end = Date.now() + 45000
-    while (Date.now() < end && service.get().chats[0]!.status === 'running') await new Promise(r => setTimeout(r, 250))
-    await service.refresh(chat.id); await service.settled()
+    await step('save draft', () => service.saveDraft({ chatId: chat.id, revision: 1, text: 'Synthetic persistence check. Reply exactly SOTTO_PERSONAL_OK. Do not call tools, read files, browse, delegate, or change anything.', skills: [] }))
+    await step('send', () => service.send({ chatId: chat.id, revision: 1 })); await step('dispatch settled', () => service.settled())
+    await step('wait for completion', async () => {
+      const end = Date.now() + 45000
+      while (Date.now() < end && service.get().chats[0]!.status === 'running') await new Promise(r => setTimeout(r, 250))
+    }, 46000)
+    await step('refresh completed turn', () => service.refresh(chat.id)); await step('refresh settled', () => service.settled())
     const before = service.get().chats[0]!
     const aliasBefore = JSON.parse(await readFile(join(root, 'codex-threads.json'), 'utf8'))[chat.id]
     evidence.nativeId = aliasBefore?.codexThreadId
     evidence.before = { nativeState: before.nativeState, status: before.status, submissions: before.submissions.map(s => ({ status: s.status, error: s.error })), messages: before.messages, activities: before.activities }
     expect(before.messages.some(m => m.role === 'assistant' && m.text.includes('SOTTO_PERSONAL_OK'))).toBe(true)
-    await service.close()
+    await step('close first host', () => service.close())
     host = new CodexAppServerHost({ userDataPath: root }); instrument(host)
     service = new PersonalChatService({ userDataPath: root, host, configuration })
-    await service.start(); expect(service.get().chats[0]!.messages).toEqual(before.messages)
-    await service.connect(); await service.refresh(chat.id); await service.settled()
+    await step('start restored service', () => service.start()); expect(service.get().chats[0]!.messages).toEqual(before.messages)
+    await step('connect restored service', () => service.connect()); await step('refresh restored chat', () => service.refresh(chat.id)); await step('restored settled', () => service.settled())
     const aliasAfter = JSON.parse(await readFile(join(root, 'codex-threads.json'), 'utf8'))[chat.id]
     expect(aliasAfter.codexThreadId).toBe(aliasBefore.codexThreadId)
     expect(service.get().chats[0]!.messages.map(m => [m.id, m.commandId, m.text])).toEqual(before.messages.map(m => [m.id, m.commandId, m.text]))
@@ -53,8 +74,10 @@ it.runIf(process.env.SOTTO_NATIVE_PERSONAL_CHAT === '1')('starts one owned nativ
     evidence.resumedSameId = true; evidence.noReplay = true
   } catch (error) { evidence.failure = error instanceof Error ? error.message : String(error); throw error }
   finally {
-    await service.close()
-    await mkdir('artifacts/personal-chat-native', { recursive: true }); await writeFile('artifacts/personal-chat-native/evidence.json', JSON.stringify(evidence, null, 2))
-    await rm(root, { recursive: true, force: true })
+    await saveEvidence()
+    try { await step('final close', () => service.close(), 10000) }
+    catch (error) { evidence.cleanupFailure = error instanceof Error ? error.message : String(error); await saveEvidence() }
+    if (!evidence.failure && !evidence.cleanupFailure) await rm(root, { recursive: true, force: true })
   }
+  if (evidence.cleanupFailure) throw new Error(String(evidence.cleanupFailure))
 }, 120000)

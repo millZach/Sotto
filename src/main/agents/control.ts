@@ -7,7 +7,7 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema,
-  type ProviderId, type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
+  type ProviderId, type AgentAttachment, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -74,6 +74,7 @@ export class AgentControl {
   private persistedDrafts = new Map<string, string>()
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
+  private publishedDraftPersistence = ''
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
@@ -230,16 +231,24 @@ export class AgentControl {
   }
   get(): AgentState {
     const state = structuredClone(this.state)
-    const current = this.draftSignatures(state.threadDrafts ?? [])
+    state.threadDraftPersistence = this.draftPersistence()
+    this.attachmentPreviews.decorate(state.host)
+    return state
+  }
+  /** Configuration alone. get() copies every thread's history, which is costly on every provider event. */
+  configuration(): AgentConfiguration {
+    return structuredClone(this.state.configuration)
+  }
+  private draftPersistence(): NonNullable<AgentState['threadDraftPersistence']> {
+    const drafts = this.state.threadDrafts ?? []
+    const current = this.draftSignatures(drafts)
     const revisions = new Map(this.emptyDraftRevisions)
-    for (const draft of state.threadDrafts ?? []) revisions.set(draft.threadId, draft.draftId)
-    state.threadDraftPersistence = [...revisions].map(([threadId, draftId]) => {
+    for (const draft of drafts) revisions.set(draft.threadId, draft.draftId)
+    return [...revisions].map(([threadId, draftId]) => {
       const signature = current.get(threadId)
       return { threadId, draftId, status: this.persistedDrafts.get(threadId) === signature ? 'saved'
         : [...this.pendingDraftWrites].some(write => write.get(threadId) === signature) ? 'saving' : 'unsaved' }
     })
-    this.attachmentPreviews.decorate(state.host)
-    return state
   }
   subscribe(listener: (state: AgentState) => void): () => void {
     this.listeners.add(listener)
@@ -294,7 +303,9 @@ export class AgentControl {
       this.pendingDraftWrites.delete(drafts)
       // Some full-state writes are fire-and-forget; a fresh renderer still needs
       // their completion evidence, even when no command response reaches it.
-      this.publish()
+      // Most writes follow host snapshots and change no evidence; republishing
+      // every thread's history for them backs up the main process.
+      if (JSON.stringify(this.draftPersistence()) !== this.publishedDraftPersistence) this.publish()
     }
   }
   private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
@@ -304,6 +315,7 @@ export class AgentControl {
   private publish(feedback?: { receivedAt: number; threadId: string; draftId: string }): void {
     if (this.disposed) return
     const value = this.get()
+    this.publishedDraftPersistence = JSON.stringify(value.threadDraftPersistence)
     if (feedback) {
       const localFeedbackMs = performance.now() - feedback.receivedAt
       for (const state of [this.state, value]) {

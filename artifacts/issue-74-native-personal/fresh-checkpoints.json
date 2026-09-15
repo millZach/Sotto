@@ -1,0 +1,176 @@
+{
+  "checkedAt": "2026-09-14T23:17:34.471Z",
+  "root": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-personal-native-3QSoUD",
+  "steps": [
+    {
+      "name": "start",
+      "startedAt": "2026-09-14T23:17:34.472Z",
+      "elapsedMs": 13
+    },
+    {
+      "name": "connect",
+      "startedAt": "2026-09-14T23:17:34.492Z",
+      "elapsedMs": 160
+    },
+    {
+      "name": "send",
+      "startedAt": "2026-09-14T23:17:34.748Z",
+      "elapsedMs": 4
+    },
+    {
+      "name": "dispatch settled",
+      "startedAt": "2026-09-14T23:17:34.753Z",
+      "elapsedMs": 726
+    },
+    {
+      "name": "refresh completed turn",
+      "startedAt": "2026-09-14T23:17:39.492Z",
+      "elapsedMs": 41
+    },
+    {
+      "name": "refresh settled",
+      "startedAt": "2026-09-14T23:17:39.535Z",
+      "elapsedMs": 0
+    },
+    {
+      "name": "close first host",
+      "startedAt": "2026-09-14T23:17:39.540Z",
+      "elapsedMs": 55
+    },
+    {
+      "name": "start restored service",
+      "startedAt": "2026-09-14T23:17:39.598Z",
+      "elapsedMs": 10
+    },
+    {
+      "name": "connect restored service",
+      "startedAt": "2026-09-14T23:17:39.612Z",
+      "elapsedMs": 477
+    },
+    {
+      "name": "refresh restored chat",
+      "startedAt": "2026-09-14T23:17:40.091Z",
+      "elapsedMs": 23
+    },
+    {
+      "name": "restored settled",
+      "startedAt": "2026-09-14T23:17:40.116Z",
+      "elapsedMs": 0
+    },
+    {
+      "name": "final close",
+      "startedAt": "2026-09-14T23:17:40.123Z",
+      "elapsedMs": 1148
+    }
+  ],
+  "calls": [
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "model/list"
+    },
+    {
+      "method": "skills/list"
+    },
+    {
+      "method": "thread/start",
+      "cwd": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-personal-native-3QSoUD\\personal-chat\\native-workspace",
+      "ephemeral": false
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    },
+    {
+      "method": "turn/start",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd",
+      "cwd": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-personal-native-3QSoUD\\personal-chat\\native-workspace"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    },
+    {
+      "method": "initialize"
+    },
+    {
+      "method": "model/list"
+    },
+    {
+      "method": "thread/resume",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd",
+      "cwd": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-personal-native-3QSoUD\\personal-chat\\native-workspace"
+    },
+    {
+      "method": "thread/read",
+      "threadId": "01a0a236-2dbf-7f32-828e-89f5362f22dd"
+    }
+  ],
+  "model": "gpt-6-astra",
+  "reasoningEffort": "high",
+  "version": "sotto/0.154.0 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)",
+  "skills": {
+    "status": "ready",
+    "count": 58,
+    "scopes": [
+      "user",
+      "system"
+    ],
+    "errors": 0
+  },
+  "nativeId": "01a0a236-2dbf-7f32-828e-89f5362f22dd",
+  "before": {
+    "nativeState": "ready",
+    "status": "idle",
+    "submissions": [
+      {
+        "status": "accepted"
+      }
+    ],
+    "messages": [
+      {
+        "id": "040fc546-0568-4914-b644-37f2ff058345",
+        "role": "user",
+        "text": "Synthetic persistence check. Reply exactly SOTTO_PERSONAL_OK. Do not call tools, read files, browse, delegate, or change anything.",
+        "createdAt": "2026-09-14T23:17:35.412Z",
+        "commandId": "d593fb52-09a7-415f-bb0c-b7dfc992bc6e"
+      },
+      {
+        "id": "msg_0fe2008c6d3ce59e016aa88093138c87d19208f0d6548d43c7",
+        "role": "assistant",
+        "text": "SOTTO_PERSONAL_OK",
+        "createdAt": "2026-09-14T23:17:35.000Z"
+      }
+    ],
+    "activities": [
+      {
+        "id": "codex-activity-c9159a32d72715504814cd505fe9eaa8e99078f766d04b9da6ebbb9529c01f40",
+        "turnId": "01a0a236-3041-7313-8170-528544be31d6",
+        "sequence": 0,
+        "afterMessageId": "040fc546-0568-4914-b644-37f2ff058345",
+        "kind": "turn",
+        "status": "completed",
+        "title": "Turn completed",
+        "startedAt": "2026-09-14T23:17:35.000Z",
+        "completedAt": "2026-09-14T23:17:39.000Z",
+        "timingSource": "provider",
+        "durationMs": 3946
+      }
+    ]
+  },
+  "resumedSameId": true,
+  "noReplay": true
+}

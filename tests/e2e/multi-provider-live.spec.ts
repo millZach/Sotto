@@ -144,7 +144,8 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       expect([...((await state(page)).configuration.enabledProviders ?? [])].sort()).toEqual([...providers].sort())
       await page.getByRole('link', { name: 'Threads', exact: true }).click()
       for (const [index, provider] of providers.entries()) {
-        const model = (await state(page)).host.models.find(model => model.providerId === provider && model.ready)
+        const ready = (await state(page)).host.models.filter(model => model.providerId === provider && model.ready)
+        const model = ready.find(model => /luna|mini|haiku/iu.test(`${model.id} ${model.name}`)) ?? ready[0]
         expect(model, `${provider} must expose a native ready model`).toBeTruthy()
         await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
         const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
@@ -157,6 +158,8 @@ test('three native providers coexist independently of Sotto reasoning and surviv
           .getByRole('button', { name: model!.provider, exact: true }).click()
         await picker.getByRole('option', { name: model!.name, exact: true }).click()
         await expect(dialog.getByRole('combobox', { name: 'Thread model', exact: true })).toContainText(model!.name)
+        const effort = model!.reasoningEfforts?.find(value => ['minimal', 'low', 'none'].includes(value))
+        if (effort) await dialog.getByRole('combobox', { name: 'Thread reasoning' }).selectOption(effort)
         await dialog.getByRole('combobox', { name: 'Thread permissions', exact: true }).selectOption(provider === 'codex' ? 'full-access' : 'approval-required')
         await dialog.getByRole('button', { name: 'Create thread', exact: true }).click()
         await expect(dialog).toHaveCount(0, { timeout: 45_000 })

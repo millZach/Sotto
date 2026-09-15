@@ -7,7 +7,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 
 // The shared Files panel beside a real split: a Git worktree thread and a shared-folder thread on real temporary
 // folders, real Git and Files IPC; only providers are fixtures. Captures are the inspected review evidence.
-const SHOTS = 'artifacts/phase-two-tools-fixed'
+const SHOTS = 'test-results/issue74-ui-captures/files-split'
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Sotto Test', '-c', 'user.email=test@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true })
 
@@ -111,11 +111,11 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
     await expect(left).toHaveAttribute('data-focused')
 
-    // 1600: docked beside a two-pane split, reading the worktree's actual folder.
+    // Sidecar keeps a generous dock; the remaining pane area uses focus tabs at 1600.
     await left.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
-    await expect(panes).not.toHaveAttribute('data-narrow')
+    await expect(panes).toHaveAttribute('data-narrow', 'true')
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', actual.directory)
     await expect(panel.locator('.tools-panel__path-text')).toHaveText(actual.directory)
     await expect(panel.locator('.tools-panel__copy')).toHaveText(`repo-app·${actual.branch}`)
@@ -127,17 +127,18 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
 
     // Pinned to the worktree thread while the other pane holds focus: the panel says so, and that pane's toggle is not pressed-looking.
     await panel.getByRole('button', { name: 'Pin to Worktree checkout' }).click()
+    await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
     await right.getByRole('textbox', { name: 'Prompt', exact: true }).click()
     await expect(right).toHaveAttribute('data-focused')
     const rightToggle = right.getByRole('button', { name: 'Tools', exact: true })
     await expect(rightToggle).toHaveAttribute('data-pinned-elsewhere', 'true')
     await expect(rightToggle).toHaveAttribute('aria-description', 'Showing Worktree checkout, pinned')
-    await expect(panel.locator('.tools-panel__thread')).toHaveText('Worktree checkoutPinned')
+    await expect(panel.locator('.tools-panel__pinned-owner')).toHaveText('Worktree checkoutPinned')
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', actual.directory)
     await capture(page, 'split-1600-pinned-other-pane-focused')
     expect(await closeWithKey(page, panel, 'Enter')).toBe(notesThread)
 
-    // 1280: a default-width panel cannot sit beside two 400px panes, so the split shows as tabs while Files is open.
+    // 1280: a default-width panel cannot sit beside two usable panes, so the split shows as tabs while Files is open.
     await resize(launched, 1280, 800)
     await expect(panes).not.toHaveAttribute('data-narrow')
     await page.keyboard.press('Enter')
@@ -149,8 +150,8 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
       panel: Math.round(document.querySelector('.tools-panel__sheet')!.getBoundingClientRect().width),
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     }))
-    expect(docked1280.pane).toBeGreaterThanOrEqual(480)
-    expect(docked1280.panel).toBe(380)
+    expect(docked1280.pane).toBeGreaterThanOrEqual(320)
+    expect(docked1280.panel).toBeGreaterThanOrEqual(380)
     expect(docked1280.overflow).toBe(false)
     await capture(page, 'split-1280-docked-tabs-pinned')
     // Closing by keyboard restores the same split and keeps focus on the toggle through that re-layout.
@@ -171,24 +172,28 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await capture(page, 'split-1280-docked-tabs-following')
     expect(await closeWithKey(page, panel, 'Enter')).toBe(worktreeThread)
 
-    // 820x560 minimum: the panel overlays the focused tab; Escape and Enter both return to its toggle.
+    // At 820x560 Sidecar hides the sidebar and keeps a usable focused pane beside the dock.
     await resize(launched, 820, 560)
     await page.keyboard.press('Enter')
-    await expect(panel).toHaveAttribute('data-mode', 'overlay')
+    await expect(panel).toHaveAttribute('data-mode', 'docked')
+    await expect(sidebar).toBeHidden()
     await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
-    await capture(page, 'overlay-820x560-following')
-    expect(await closeWithKey(page, panel, 'Escape')).toBe(worktreeThread)
+    await capture(page, 'docked-820x560-following')
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
+    expect(await closeWithKey(page, panel, 'Enter')).toBe(worktreeThread)
     await page.keyboard.press('Enter')
     await panel.getByRole('button', { name: 'Pin to Worktree checkout' }).click()
-    // The overlay covers the pane tabs, so the other thread takes focus from the sidebar.
-    await sidebar.getByRole('button', { name: 'Field notes', exact: true }).click()
+    // The sidebar is hidden; the compact pane tabs still choose the focused thread.
+    await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
     await expect(right).toHaveAttribute('data-focused')
     await expect(right.getByRole('button', { name: 'Tools', exact: true })).toHaveAttribute('data-pinned-elsewhere', 'true')
-    await capture(page, 'overlay-820x560-pinned-other-tab')
+    await capture(page, 'docked-820x560-pinned-other-tab')
     expect(await closeWithKey(page, panel, 'Enter')).toBe(notesThread)
     await page.keyboard.press('Enter')
     await panel.getByRole('button', { name: 'Unpin from Worktree checkout' }).click()
-    expect(await closeWithKey(page, panel, 'Escape')).toBe(notesThread)
+    expect(await closeWithKey(page, panel, 'Enter')).toBe(notesThread)
 
     // Retained browsing: back at 1280 on the worktree thread, the open README is still selected.
     await resize(launched, 1280, 800)

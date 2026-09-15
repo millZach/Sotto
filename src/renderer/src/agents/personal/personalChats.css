@@ -12,3 +12,7 @@
 .personal-chat__diagnostic summary { width: fit-content; border-radius: 6px; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
 .personal-chat__diagnostic summary:hover { color: var(--tt-text); }
 .personal-chat__diagnostic pre { margin: 8px 0 0; font-family: var(--tt-font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+/* Match the compact project header's spacing while keeping a long chat title on its own row. */
+@media (max-height: 640px) {
+  .personal-chat > .thread-workspace__head { gap: 2px; padding-block: 6px; }
+}

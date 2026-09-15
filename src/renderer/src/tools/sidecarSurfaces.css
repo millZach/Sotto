@@ -38,6 +38,10 @@
 .tools-panel .changes-list { padding: 8px; }
 .tools-panel .changes-list__item { min-height: 34px; border-radius: 5px; }
 .tools-panel .changes-list__item[data-selected] { border-color: transparent; }
+/* A short list must hold the sidecar's 34px row plus its bottom border in full. */
+@media (max-height: 640px) {
+  .tools-panel .changes-surface[data-diff] > .changes-list { max-height: 35px; padding-block: 0; }
+}
 .tools-panel .changes-badge { border-color: transparent; background: transparent; }
 .tools-panel .changes-diff__rows { min-width: 0; line-height: 1.8; }
 .tools-panel .changes-line { grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; }
