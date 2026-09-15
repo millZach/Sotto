@@ -28,7 +28,9 @@ describe('Claude native request mapping', () => {
   })
   it('ignores injected, tool-result and subagent input for takeover', () => {
     const user = { type: 'user', message: { content: 'Hello' } }
-    for (const frame of [{ ...user, isMeta: true }, { ...user, isCompactSummary: true }, { ...user, isSidechain: true }, { ...user, parent_tool_use_id: 'tool' }, { ...user, message: { content: [{ type: 'tool_result', content: 'Hello' }] } }, { ...user, message: { content: '<session-start-hook>Injected' } }]) expect(authoredClaudeUser(frame)).toBe(false)
+    for (const frame of [{ ...user, isMeta: true }, { ...user, isCompactSummary: true }, { ...user, isSidechain: true }, { ...user, parent_tool_use_id: 'tool' }, { ...user, message: { content: [{ type: 'tool_result', content: 'Hello' }] } }, { ...user, message: { content: '<session-start-hook>Injected' } },
+      // A finished background task is Claude Code's own turn, whether or not the frame carries its origin.
+      { ...user, origin: { kind: 'task-notification' } }, { ...user, message: { content: '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>' } }]) expect(authoredClaudeUser(frame)).toBe(false)
     expect(authoredClaudeUser(user)).toBe(true)
   })
 })
