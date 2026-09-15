@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ListPlus } from 'lucide-react'
+import { ArrowUp, ListPlus, Square } from 'lucide-react'
 import { capabilitiesForThread, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
@@ -104,7 +104,8 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * The manual prompt (or answer) composer for one thread. Content is the thread's durable draft:
  * every edit is a new revision, Enter sends, Shift+Enter adds a line, and an unsent or unconfirmed
  * prompt stays in the composer until the provider (or the thread's queue) owns that exact revision.
- * While a turn runs, Enter queues; Steer now is the separate, explicit way into the running turn.
+ * While a turn runs, Enter queues; Steer now is the separate, explicit way into the running turn, and Stop
+ * takes the send button's place until there is something to queue.
  */
 export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false }: {
   readonly row: ThreadRow
@@ -149,12 +150,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const admitting = submission?.mode === 'queue' && !submission.resolved
   const reason = (handingOff ? 'Handing this draft to Sotto…' : null) ?? blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
-  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : 'What would you like to do next?'
+  const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
+  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? `${row.provider} is working. Write a follow-up to queue it.` : 'What would you like to do next?'
   const content = hasDraftContent(draft)
   const canSend = reason === null && content && !readingImages && !answerState.sending && !admitting
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
+  const canStop = working && capabilities.interrupt === true && row.connected && !state.busy
   const picker = useSkillPicker({ threadId, state, command, enabled: editable && !answering && capabilities.skills === true, text: draft.text })
   const sigils = skillSigils(picker.catalog?.providerId ?? row.providerId)
   const listId = `${composerId}-skills`
@@ -207,7 +210,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
 
   const steerNote = running && capabilities.steer !== true ? ` ${row.provider} can’t steer a running turn.` : ''
-  const idleHint = answering ? 'Enter to send your answer' : queueing ? `Enter to queue · Shift+Enter for a new line.${steerNote}` : null
+  const workingLead = working && !answering ? `${row.provider} is working · ` : ''
+  const idleHint = answering ? 'Enter to send your answer' : queueing ? `${workingLead}Enter to queue · Shift+Enter for a new line.${steerNote}` : null
   const status = saveError !== null && save === 'unsaved'
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
@@ -215,12 +219,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // A blocked composer states only why, and not again when its empty prompt already says it; the transcript explains an unconfirmed prompt.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span>
           : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span>
-            : content || idleHint ? <span className="thread-prompt__status thread-prompt__hint">{content ? (save === 'saving' ? 'Saving draft…' : queueing ? `Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span> : null
+            : content || idleHint ? <span className="thread-prompt__status thread-prompt__hint">{workingLead ? <i className="thread-activity__pulse" data-connected={row.connected || undefined} aria-hidden="true" /> : null}{content ? (save === 'saving' ? `${workingLead}Saving draft…` : queueing ? `${workingLead}Draft saved · Enter to queue.${steerNote}` : 'Draft saved') : idleHint}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store} onRetryAdmission={() => send(performance.now(), 'queue')} />
-    <form className="thread-prompt" data-thread-id={threadId} data-answering={answering || undefined} data-picker={picker.open || undefined}
+    <form className="thread-prompt" data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={picker.open || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) picker.leave() }}>
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
@@ -269,7 +273,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {running && capabilities.steer === true
             ? <Button variant="secondary" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Add this to the running turn now' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
             : null}
-          <Button iconOnly aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">{queueing ? <ListPlus size={18} /> : <ArrowUp size={18} />}</Button>
+          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label="Stop agent" title="Stop agent" disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={13} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
+          {!working || content ? <Button iconOnly aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">{queueing ? <ListPlus size={18} /> : <ArrowUp size={18} />}</Button> : null}
         </div>
       </div>
     </form>

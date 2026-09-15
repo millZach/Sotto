@@ -147,7 +147,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {row.settledBy === null ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
           : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
         {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
-        {thread.status === 'running' && !closed ? <Button variant="secondary" disabled={state.busy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
+        {/* A thread's own composer carries Stop; Sotto's composer for a managed thread does not. */}
+        {thread.status === 'running' && managed ? <Button variant="secondary" disabled={state.busy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
         {actions}
       </div>
       {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}

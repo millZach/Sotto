@@ -48,6 +48,8 @@ export interface AppSettings {
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   webLinkDestination: 'external' | 'embedded'
+  /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
+  responseStreaming: 'live' | 'complete'
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -97,6 +99,7 @@ const fieldSchemas = {
   glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
+  responseStreaming: z.enum(['live', 'complete']),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -144,6 +147,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glassOpacity: GLASS_OPACITY.default,
   customThemes: [],
   webLinkDestination: 'external',
+  responseStreaming: 'live',
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -216,6 +220,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     glassOpacity: parseField(persisted, 'glassOpacity', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
+    responseStreaming: parseField(persisted, 'responseStreaming', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

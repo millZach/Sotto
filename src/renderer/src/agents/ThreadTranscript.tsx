@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, 
 import { ArrowDown, MessageSquare } from 'lucide-react'
 import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import type { AgentConnection } from './AgentContext'
+import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
@@ -36,17 +36,26 @@ function ActivityGroups({ groups, context }: { readonly groups: readonly Activit
 /**
  * Rendered history with each activity group after the message it followed. Memoized on the message
  * array and placement so composer keystrokes and status ticks do not repaint it.
+ *
+ * An assistant message with no text yet (a provider call that so far holds only tool use) draws no header.
+ * With `streamText` off, the reply being written is held back until something follows it: activity after it,
+ * a later message, or the end of the turn. Activity itself always appears as it runs.
  */
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
-  readonly placement: ActivityPlacement; readonly context: ActivityContext
+  readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
 }): ReactNode {
+  const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
+  const last = messages.findLast(drawn)
+  const writing = running && last?.role === 'assistant' && !placement.after.get(last.id)?.length ? last.id : undefined
   return <>{messages.map(message => <React.Fragment key={message.id}>
-    <article className="thread-message" data-role={message.role}>
+    {drawn(message) && <article className="thread-message" data-role={message.role}>
       <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
-      <MessageContent text={message.text} streaming={running && message.role === 'assistant' && message.id === messages.at(-1)?.id} />
+      {message.id === writing && !streamText
+        ? <p className="thread-message__writing" role="status">Writing a reply…</p>
+        : <MessageContent text={message.text} streaming={message.id === writing} />}
       <AttachmentPreviews attachments={message.attachments ?? []} />
-    </article>
+    </article>}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
   </React.Fragment>)}
   <ActivityGroups groups={placement.trailing} context={context} />
@@ -118,6 +127,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly children?: ReactNode
 }): ReactNode {
   const thread = row.thread
+  const streamText = useAgents().responseStreaming !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -246,7 +256,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

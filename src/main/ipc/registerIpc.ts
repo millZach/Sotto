@@ -103,6 +103,7 @@ const settingKeys = [
   'streamingAsr',
   'autoUpdateCheck',
   'webLinkDestination',
+  'responseStreaming',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema

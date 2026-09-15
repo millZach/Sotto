@@ -6,6 +6,7 @@ import { Button } from '../../components/Button'
 import { composerEnterIntent, readComposerKey, skillMenuKeyAction } from '../composerKeys'
 import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from '../composerSkills'
 import { MessageContent } from '../MessageContent'
+import { useOptionalAgents } from '../AgentContext'
 import { ProviderMark } from '../ProviderMark'
 import { AgentRequestCard } from '../requests/AgentRequestCard'
 import { requestMode } from '../requests/requestAnswers'
@@ -129,6 +130,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
   readonly refreshing: boolean; readonly onRefresh: () => void; readonly onWriteAnswer: () => void
 }): ReactNode {
   const PROVIDER = providerLabel(chat.providerId)
+  const streamText = useOptionalAgents()?.responseStreaming !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -211,7 +213,7 @@ function PersonalTranscript({ bridge, chat, store, state, followSignal, refreshi
         {empty && chat.historyStatus !== 'loading' && chat.historyStatus !== 'error'
           ? <div className="thread-workspace__empty personal-chat__start"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" />
             <h3>What’s on your mind?</h3><p>This chat has no project. {PROVIDER} brings its usual skills, and the conversation is saved here.</p></div>
-          : <MessageList messages={messages} provider={PROVIDER} running={chat.status === 'running'} placement={placement} context={activity} />}
+          : <MessageList messages={messages} provider={PROVIDER} running={chat.status === 'running'} placement={placement} context={activity} streamText={streamText} />}
         <LiveActivity thread={chat} connected={state.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
         {submissions.map(item => <PendingSubmission key={item.id} bridge={bridge} chat={chat} store={store} submission={item} connected={state.connected} refreshing={refreshing} onRefresh={onRefresh} onDisclosure={onDisclosure} />)}
         <PersonalRequests bridge={bridge} chat={chat} connected={state.connected} onWriteAnswer={onWriteAnswer} />

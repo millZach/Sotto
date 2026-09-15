@@ -25,6 +25,7 @@ const customSettings = {
   glassOpacity: 60,
   customThemes: [aurora],
   webLinkDestination: 'embedded',
+  responseStreaming: 'complete',
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -134,6 +135,7 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       webLinkDestination: 'external',
+      responseStreaming: 'live',
       version: 1,
       theme: 'system',
       appearance: 'dark',
