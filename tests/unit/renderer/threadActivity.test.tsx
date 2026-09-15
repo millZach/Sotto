@@ -48,25 +48,53 @@ describe('settled activity in the transcript', () => {
     activity({ id: 'lint', command: 'npm run lint', status: 'failed', exitCode: 1, output: 'src/voice.ts: 1 error' }),
   ]
 
-  it('folds after the message it followed, keeps failures in view and leaves the messages untouched', () => {
+  it('folds the turn’s work under one line above the final reply, which stays in focus', () => {
     const { transcript } = mount(stateWith({ activities: settled() }))
     const messages = transcript.querySelectorAll('.thread-message')
     expect(messages).toHaveLength(2)
-    const group = within(transcript).getByRole('region', { name: /Worked for 2m 04s/ })
-    // DOM order: user message, its activity, then the answer.
-    expect(messages[0]!.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(group.compareDocumentPosition(messages[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const summary = within(group).getByRole('button', { name: 'Worked for 2m 04s, Ran 2 commands, changed 1 file' })
+    const work = within(transcript).getByRole('region', { name: 'Worked for 2m 04s' })
+    // DOM order: the user's message, the folded work, then the answer.
+    expect(messages[0]!.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(work.compareDocumentPosition(messages[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const summary = within(work).getByRole('button', { name: 'Worked for 2m 04s' })
     expect(summary).toHaveAttribute('aria-expanded', 'false')
-    expect(within(group).getAllByRole('listitem')).toHaveLength(1)
-    expect(within(group).getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
+    expect(within(transcript).queryByRole('button', { name: /npm run lint/ })).not.toBeInTheDocument()
     expect(messages[1]).toHaveTextContent('Done. The preview plays a two-second sample')
+
+    fireEvent.click(summary)
+    // Opened, the group carries only its counts and still keeps its failure in view.
+    const group = within(work).getByRole('region', { name: 'Ran 2 commands, changed 1 file' })
+    expect(within(group).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(group).getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
+  })
+
+  it('folds replies written on the way, and times a turn with no lifecycle record from its messages', () => {
+    const { transcript } = mount(stateWith({
+      messages: [
+        { id: `${THREAD}-1`, role: 'user', text: 'Check the parser.', createdAt: iso(0) },
+        { id: 'on-the-way', role: 'assistant', text: 'Looking at the parser first.', createdAt: iso(2_000) },
+        { id: 'empty-call', role: 'assistant', text: '', createdAt: iso(40_000) },
+        { id: 'answer', role: 'assistant', text: 'The parser is fine.', createdAt: iso(65_000) },
+      ],
+      activities: [activity({ id: 'read', afterMessageId: 'on-the-way', command: 'cat parser.ts' })],
+    }))
+    expect([...transcript.querySelectorAll('.thread-message')].map(message => message.textContent)).toEqual([
+      expect.stringContaining('Check the parser.'), expect.stringContaining('The parser is fine.'),
+    ])
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s' }))
+    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s' })
+    expect(work).toHaveTextContent('Looking at the parser first.')
+    expect(within(work).getByRole('button', { name: 'Ran 1 command' })).toBeVisible()
   })
 
   it('opens by keyboard to the exact command, output and diff, with one copy path per block', async () => {
     const user = userEvent.setup()
     const { transcript } = mount(stateWith({ activities: settled() }))
-    const summary = within(transcript).getByRole('button', { name: /Worked for 2m 04s/ })
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s' })
+    work.focus()
+    await user.keyboard('{Enter}')
+    expect(work).toHaveAttribute('aria-expanded', 'true')
+    const summary = within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })
     summary.focus()
     await user.keyboard('{Enter}')
     expect(summary).toHaveAttribute('aria-expanded', 'true')
@@ -146,7 +174,8 @@ describe('the running turn', () => {
         ? { ...thread, status: 'idle', activities: many.map(item => item.id === 'lifecycle-turn-1' ? { ...item, status: 'completed', completedAt: iso(0) } : item) } : thread) } })
     })
     expect(within(transcript).queryByTestId('thread-activity-live')).not.toBeInTheDocument()
-    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s, Ran 9 commands' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(transcript).queryByRole('button', { name: /step 8\b/ })).not.toBeInTheDocument()
   })
 })
 
@@ -159,6 +188,7 @@ describe('honest detail', () => {
       activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: '**Checking the parser**' }),
       activity({ id: 'lost', command: 'git status', status: 'unknown', truncated: true, output: 'On branch' }),
     ] }))
+    await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
     await user.click(within(transcript).getByRole('button', { name: 'Ran 1 command, 1 agent action, 1 reasoning summary' }))
     await user.click(within(transcript).getByRole('button', { name: 'Spawn agent, 2 agents, completed' }))
     const agents = within(transcript).getByRole('list', { name: 'Agents' })
@@ -181,8 +211,9 @@ describe('honest detail', () => {
       activity({ id: 'old', afterMessageId: 'm2', command: 'old command' }),
       activity({ id: 'new', turnId: 'turn-2', afterMessageId: 'm88', command: 'new command' }),
     ] }))
-    expect(transcript.querySelectorAll('.thread-activity')).toHaveLength(1)
+    // Each turn with work folds it under its own line.
+    expect(transcript.querySelectorAll('.thread-work')).toHaveLength(1)
     fireEvent.click(within(transcript).getByRole('button', { name: 'Show earlier messages (10)' }))
-    expect(transcript.querySelectorAll('.thread-activity')).toHaveLength(2)
+    expect(transcript.querySelectorAll('.thread-work')).toHaveLength(2)
   })
 })

@@ -45,19 +45,17 @@ async function scrollTo(page: Page, locator: Locator, offset = 80): Promise<void
   }, offset)
 }
 
-test('settled turn folds under its messages, keeps the failure in view and opens by keyboard', async () => {
+test('settled turn folds its work above the final reply, keeps the failure in view when opened and opens by keyboard', async () => {
   const { app, page } = await launch()
   try {
     const log = transcript(page)
-    const summary = log.getByRole('button', { name: 'Worked for 2m 04s, Ran 2 commands, 1 reasoning summary' })
-    await expect(summary).toHaveAttribute('aria-expanded', 'false')
-    const later = log.getByRole('button', { name: 'Ran 2 commands, changed 2 files, 1 agent action' })
-    await expect(later).toHaveAttribute('aria-expanded', 'false')
-    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
-    // Messages keep their order and count; activity sits between them.
-    await expect(log.locator('.thread-message')).toHaveCount(3)
-    await expect(log.locator('.thread-message, .thread-activity')).toHaveCount(5)
-    await expect(summary).toHaveCSS('font-size', '14px')
+    const work = log.getByRole('button', { name: 'Worked for 2m 04s' })
+    await expect(work).toHaveAttribute('aria-expanded', 'false')
+    // Folded, the turn reads as the request, one line of work and the final reply.
+    await expect(log.locator('.thread-message')).toHaveCount(2)
+    await expect(log.locator('.thread-activity')).toHaveCount(0)
+    await expect(log.locator('.thread-message').last()).toContainText('Fixed. The length marker is patched after every chunk')
+    await expect(work).toHaveCSS('font-size', '14px')
     await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '16px')
     expect(await overflow(page)).toBeLessThanOrEqual(0)
 
@@ -65,6 +63,25 @@ test('settled turn folds under its messages, keeps the failure in view and opens
       await theme(page, mode)
       await scrollTo(page, log.locator('.thread-message').first(), 12)
       await page.screenshot({ path: resolve(shots, `settled-1280-${mode}.png`) })
+    }
+    await theme(page, 'dark')
+
+    await work.focus()
+    await page.keyboard.press('Enter')
+    await expect(work).toHaveAttribute('aria-expanded', 'true')
+    const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
+    await expect(summary).toHaveAttribute('aria-expanded', 'false')
+    const later = log.getByRole('button', { name: 'Ran 2 commands, changed 2 files, 1 agent action' })
+    await expect(later).toHaveAttribute('aria-expanded', 'false')
+    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
+    // Opened, messages keep their order and count; activity sits between them.
+    await expect(log.locator('.thread-message')).toHaveCount(3)
+    await expect(log.locator('.thread-message, .thread-activity')).toHaveCount(5)
+    await expect(summary).toHaveCSS('font-size', '14px')
+    for (const mode of ['dark', 'light'] as const) {
+      await theme(page, mode)
+      await scrollTo(page, log.locator('.thread-message').first(), 12)
+      await page.screenshot({ path: resolve(shots, `settled-open-1280-${mode}.png`) })
     }
     await theme(page, 'dark')
 
@@ -151,7 +168,8 @@ test('restored history reads as unknown and trimmed, never as success', async ()
   try {
     await show(page, 'restored')
     const log = transcript(page)
-    const summary = log.getByRole('button', { name: 'Outcome unknown, Ran 2 commands, 1 reasoning summary' })
+    await log.getByRole('button', { name: 'Outcome unknown' }).click()
+    const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
     await summary.click()
     const read = log.getByRole('button', { name: 'Get-Content -Path src/main/audio/wavStream.ts -TotalCount 80, Outcome unknown' })
     await read.click()
@@ -171,6 +189,7 @@ test('the shipped minimum width and reduced motion keep rows readable without si
   const { app, page } = await launch({ width: 820, height: 800 })
   try {
     const log = transcript(page)
+    await log.getByRole('button', { name: /^Worked for/ }).click()
     await log.getByRole('button', { name: /^Ran 2 commands, changed 2 files/ }).click()
     await log.getByRole('button', { name: 'npm test -- --run tests/unit/wavStream.test.ts, completed in 4.2s' }).click()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
