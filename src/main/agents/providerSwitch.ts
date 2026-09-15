@@ -3,12 +3,12 @@ import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { join, resolve } from 'node:path'
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
+import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
-  return `native:${provider}:${kind}:${encodeURIComponent(value)}`
+  return publicProviderEntityId(provider, kind, value)
 }
 function nativeEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
   const prefix = `native:${provider}:${kind}:`

@@ -70,8 +70,8 @@ async function fixture() {
     if (parsed.pathname === '/v1/billing/portal') return Response.json({ url: service.portalUri })
     throw new Error('Unexpected membership contract endpoint')
   })
-  const makeClient = (vault = credentials, isPackaged = true) => new AgentMembershipClient({ configuration: () => configuration, credentials: vault, directory: root,
-    isPackaged, now: () => clock.now, openExternal: async url => { opened.push(url) } })
+  const makeClient = (vault = credentials) => new AgentMembershipClient({ configuration: () => configuration, credentials: vault, directory: root,
+    now: () => clock.now, openExternal: async url => { opened.push(url) } })
   const client = makeClient()
   const signIn = async () => {
     await client.action('signin')
@@ -230,11 +230,11 @@ describe('desktop membership external contract', () => {
     expect((await f.client.status()).status).toBe('unavailable')
   })
 
-  it('keeps packaged no-service access free, labels development beta, and sends nothing to insecure endpoints', async () => {
+  it('grants private beta access while no membership service is configured, and sends nothing to insecure endpoints', async () => {
     const f = await fixture()
     f.configuration.membershipEndpoint = ''
-    expect((await f.client.status()).status).toBe('free')
-    expect(await f.makeClient(f.credentials, false).status()).toMatchObject({ status: 'beta', label: expect.stringContaining('Private development beta') })
+    // Installed builds must not lock agents behind a service that does not exist yet.
+    expect(await f.client.status()).toMatchObject({ status: 'beta', label: expect.stringContaining('Private beta') })
     await expect(f.client.action('checkout')).rejects.toThrow('not configured')
     f.configuration.membershipEndpoint = 'http://membership.sotto.example'
     expect((await f.client.status()).status).toBe('unavailable')

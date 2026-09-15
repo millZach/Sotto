@@ -9,7 +9,7 @@ export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   auto: 'Auto',
   'full-access': 'Full access',
 }
-export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, onModel, onReasoning, onRuntime, disabled = false }: {
+export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, onModel, onReasoning, onRuntime, disabled = false, modelDisabled = false }: {
   readonly models: AgentModel[]
   readonly modelId: string
   readonly reasoningEffort?: string | undefined
@@ -18,12 +18,14 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   readonly onReasoning: (effort: string) => void
   readonly onRuntime: (mode: AgentRuntimeMode) => void
   readonly disabled?: boolean
+  /** Model and reasoning stay visible but fixed; permissions remain editable. */
+  readonly modelDisabled?: boolean
 }): ReactNode {
   const model = models.find(item => item.id === modelId)
   const reasoning = reasoningEffort ?? model?.defaultReasoningEffort ?? ''
   return <div className="thread-options">
-    <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={disabled} onChange={onModel} /></div>
-    {!!model?.reasoningEfforts?.length && <label><span>Reasoning</span><select aria-label="Thread reasoning" title="Reasoning" value={reasoning} disabled={disabled} onChange={event => onReasoning(event.target.value)}>
+    <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={disabled || modelDisabled} onChange={onModel} /></div>
+    {!!model?.reasoningEfforts?.length && <label><span>Reasoning</span><select aria-label="Thread reasoning" title="Reasoning" value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
       {!model.reasoningEfforts.includes(reasoning) && <option value={reasoning} disabled>{reasoning || 'Provider default'}</option>}
       {model.reasoningEfforts.map(effort => <option key={effort} value={effort}>{effort.charAt(0).toUpperCase() + effort.slice(1)}</option>)}
     </select></label>}
@@ -70,10 +72,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
       if (!result || result.error) setError(result?.error ?? 'Could not confirm this change. Try again.')
     } finally { setSaving(false) }
   }
-  if (locked && !capabilitiesForThread(state.host, thread).configureThread) return null
+  const capabilities = capabilitiesForThread(state.host, thread)
+  if (locked && !capabilities.configureThread) return null
   return <div className="thread-options-bar" data-provider-locked={locked}>
     <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
-      disabled={disabled} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
+      disabled={disabled} modelDisabled={locked && capabilities.configureThreadModel === false} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
     {saving ? <small role="status">Saving...</small>
       : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
         : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}

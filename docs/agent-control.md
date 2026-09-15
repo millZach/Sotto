@@ -43,6 +43,6 @@ Coordinator actions append bounded turn records containing timings, acted-on thr
 
 ## Development status
 
-Run `npm run dev` for the private development beta. Packaged builds without a membership service retain free dictation and do not grant paid agent actions. Production billing and deployment remain separate work. Native protocol evidence, automated tests and live checks are documented separately; a fixture test does not prove native compatibility or microphone performance.
+Every build without a configured membership service, installed or unpackaged, runs as private beta with agent actions available; that is not a paid entitlement. Production billing and deployment remain separate work. Native protocol evidence, automated tests and live checks are documented separately; a fixture test does not prove native compatibility or microphone performance.
 
 See [native-host removal and current verification](verification/issue-24-closeout.md), [native adapter verification](verification/issues-17-22-23.md), [Claude protocol evidence](research/issue-22-claude-native-verification.md), [Grok protocol evidence](research/2026-09-11-issue-23-grok-acp-verification.md), and [Codex adapter decision](adr/0005-codex-app-server-adapter.md).

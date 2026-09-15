@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, FolderGit2, FolderPlus, Search, X } from 'lucide-react'
-import type { AgentProject, AgentRuntimeMode, AgentState } from '../../../shared/agents'
+import { defaultThreadModelId, type AgentProject, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './newThread.css'
@@ -38,7 +38,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
   const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === initialProjectId) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
   const [title, setTitle] = useState('')
-  const [modelId, setModelId] = useState(() => state.host.models.find(model => model.id === state.configuration.defaultModelId && model.ready)?.id ?? state.host.models.find(model => model.ready)?.id ?? '')
+  const [modelId, setModelId] = useState(() => defaultThreadModelId(state.configuration, state.host.models))
+  const modelChosen = useRef(false)
   const [reasoningEffort, setReasoningEffort] = useState<string | undefined>()
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>()
   // Chosen on purpose for every new thread; existing threads keep the folder they already use.
@@ -73,7 +74,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
   useEffect(() => { dialog.current?.querySelector('[data-highlighted]')?.scrollIntoView?.({ block: 'nearest' }) }, [highlight])
   // Keyboard creation continues in the form once a folder is chosen.
   useEffect(() => { (selectedFolder ? nameInput : search).current?.focus() }, [selectedFolder])
-  useEffect(() => { if (!modelId) setModelId(state.host.models.find(model => model.ready)?.id ?? '') }, [modelId, state.host.models])
+  // Providers connect one at a time; follow the default as models become ready until a model is picked here.
+  useEffect(() => { if (!modelChosen.current) setModelId(defaultThreadModelId(state.configuration, state.host.models)) }, [state.configuration, state.host.models])
   const browse = async (): Promise<void> => {
     setError(null)
     try {
@@ -157,7 +159,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
         <p id={workingCopyHint}>{WORKING_COPY_CHOICES.find(choice => choice.value === workingCopy)!.hint}</p>
       </fieldset>
       <ThreadOptionFields models={state.host.models} modelId={modelId} reasoningEffort={reasoningEffort} runtimeMode={runtimeMode}
-        disabled={submitting} onModel={id => { setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
+        disabled={submitting} onModel={id => { modelChosen.current = true; setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
       {error && <p className="agent-error" role="alert">{error}</p>}
       {!connected && <p className="agent-muted">Connect {selectedModel?.provider ?? 'a provider'} in Settings → Providers before creating a thread.</p>}
       <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || state.busy || !connected || !modelId || !canCreateThread}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>

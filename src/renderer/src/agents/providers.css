@@ -6,6 +6,9 @@
 .providers-list__row[data-selected='true'] { background: var(--tt-activity-wash); }
 .providers-list__select { display: flex; align-items: flex-start; flex: 1; gap: 12px; min-width: 0; padding: 19px 10px; border: 0; background: transparent; text-align: left; color: var(--tt-text); cursor: pointer; }
 .providers-list__select > svg { flex: none; margin-top: 1px; }
+.provider-mark[data-provider='codex']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-codex); }
+.provider-mark[data-provider='claude']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-claude); }
+.provider-mark[data-provider='grok']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-grok); }
 .providers-list__select > span { display: grid; gap: 7px; min-width: 0; }
 .providers-list__select strong { font-size: 15px; font-weight: 600; }
 .providers-list__select small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }

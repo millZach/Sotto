@@ -144,6 +144,8 @@ export const agentCapabilitiesSchema = z.object({
   observe: z.boolean(), questions: z.boolean(), permissions: z.boolean(),
   interrupt: z.boolean(), messageOrigin: z.boolean(), reconcile: z.boolean(),
   configureThread: z.boolean().optional(), skills: z.boolean().optional(),
+  /** False when a started thread can change only its permission mode, not its model or reasoning. */
+  configureThreadModel: z.boolean().optional(),
   steer: z.boolean().optional(),
   compact: z.boolean().optional(),
 })
@@ -381,6 +383,24 @@ export function enabledThreadProviders(configuration: AgentConfiguration): Provi
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
   if (!host.providers || !thread.providerId) return host.capabilities
   return host.providers.find(provider => provider.id === thread.providerId)?.capabilities ?? EMPTY_AGENT_HOST.capabilities
+}
+/** Public model and project IDs; only the provider boundary reverses them. */
+export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
+  return `native:${provider}:${kind}:${encodeURIComponent(value)}`
+}
+/**
+ * The model a new thread starts with: the default chosen for new threads, then the agent account's model
+ * (or that provider's first model), then the legacy provider's first model, then any ready model.
+ */
+export function defaultThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[]): string {
+  const ready = models.filter(model => model.ready)
+  const agent = isSubscriptionReasoning(configuration.reasoning) ? configuration.reasoning : null
+  const chosen = ready.find(model => model.id === configuration.defaultModelId)
+    ?? (agent && configuration.reasoningModel ? ready.find(model => model.id === publicProviderEntityId(agent, 'model', configuration.reasoningModel)) : undefined)
+    ?? (agent ? ready.find(model => model.providerId === agent) : undefined)
+    ?? ready.find(model => model.providerId === configuration.provider)
+    ?? ready[0]
+  return chosen?.id ?? ''
 }
 export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {
   if (!host.providers || !thread.providerId) return host.connected

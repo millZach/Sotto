@@ -51,6 +51,32 @@ describe('native folder project resolution', () => {
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
+  it('starts with the selected agent model when no default for new threads is chosen', async () => {
+    const state = fixture([actual])
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus[1m]', defaultModelId: '' }
+    // Grok comes first in the saved model order, as in an installed profile.
+    state.host.models = [{ id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok', ready: true },
+      { id: 'native:claude:model:default', name: 'Default', provider: 'Claude', providerId: 'claude', ready: true },
+      { id: 'native:claude:model:opus%5B1m%5D', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true }]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
+    setup(command, state)
+    await browse(); await submit()
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: 'native:claude:model:opus%5B1m%5D' }))
+  })
+
+  it('moves to the selected agent model when it becomes ready after the dialog opens, unless a model was chosen', async () => {
+    const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok' as const, ready: true }
+    const claude = { id: 'native:claude:model:default', name: 'Default', provider: 'Claude', providerId: 'claude' as const, ready: false }
+    const state = fixture([actual])
+    state.configuration = { ...state.configuration, reasoning: 'claude', defaultModelId: '' }
+    state.host.models = [grok, claude]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
+    const view = setup(command, state)
+    view.update({ ...state, host: { ...state.host, models: [grok, { ...claude, ready: true }] } })
+    await browse(); await submit()
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: claude.id }))
+  })
+
   it('reuses an existing Windows path without creating a duplicate project', async () => {
     const state = fixture([{ ...actual, path: actual.path.toUpperCase() + '\\' }])
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)

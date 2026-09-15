@@ -151,8 +151,46 @@ describe('Claude recovery and safety', () => {
     await f.host.execute({ type: 'send', commandId: 'next', messageId: 'next', threadId: id, text: 'Continue' })
     expect((await f.driver.requests()).filter(record => record.method === 'resume')).toHaveLength(1)
   })
-  it('rejects unsupported runtime modes before dispatch', async () => {
-    await expect(f.host.execute({ type: 'configure-thread', commandId: 'config', threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('permission mode')
+  const launches = async () => (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => (record.params?.frame as { args: string[] }).args).filter(args => !args.includes('--no-session-persistence'))
+  const permission = (args: string[]) => ({ mode: args[args.indexOf('--permission-mode') + 1], prompts: args[args.indexOf('--permission-prompts') + 1], allowBypass: args.includes('--allow-dangerously-skip-permissions') })
+  it('advertises every runtime mode on Claude models', async () => {
+    expect((await f.host.snapshot()).models.every(model => model.runtimeModes?.join() === 'approval-required,auto-accept-edits,auto,full-access')).toBe(true)
+  })
+  it('launches a thread without a stored mode as approval-required with the native default mode', async () => {
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'default', prompts: 'host', allowBypass: false })
+    expect((await thread()).runtimeMode).toBe('approval-required')
+    expect(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id]).not.toHaveProperty('runtimeMode')
+    f = await f.driver.restart() as typeof f; await f.host.connect(); f.host.observeThreads?.([id])
+    await expect.poll(async () => (await launches()).length).toBe(2)
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'default', prompts: 'host', allowBypass: false })
+    expect((await thread()).runtimeMode).toBe('approval-required')
+  })
+  it.each([
+    ['approval-required', 'default', false], ['auto-accept-edits', 'acceptEdits', false], ['auto', 'auto', false], ['full-access', 'bypassPermissions', true],
+  ] as const)('launches %s threads with --permission-mode %s', async (runtimeMode, mode, allowBypass) => {
+    const created = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Mode', modelId: f.modelId, runtimeMode })
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode, prompts: 'host', allowBypass })
+    expect((await f.host.snapshot()).threads.find(t => t.id === created)!.runtimeMode).toBe(runtimeMode)
+  })
+  it('persists the runtime mode across adapter restart', async () => {
+    const created = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Mode', modelId: f.modelId, runtimeMode: 'auto' })
+    const before = (await launches()).length
+    f = await f.driver.restart() as typeof f; await f.host.connect()
+    expect((await f.host.snapshot()).threads.find(t => t.id === created)!.runtimeMode).toBe('auto')
+    f.host.observeThreads?.([created])
+    await expect.poll(async () => (await launches()).length).toBe(before + 1)
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'auto', prompts: 'host', allowBypass: false })
+  })
+  it('restarts the native runtime with the configured mode', async () => {
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId: id, runtimeMode: 'full-access' })).toEqual({ accepted: true })
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'bypassPermissions', prompts: 'host', allowBypass: true })
+    expect((await thread()).runtimeMode).toBe('full-access')
+    expect(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id].runtimeMode).toBe('full-access')
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config-2', threadId: id, runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
+    expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'acceptEdits', prompts: 'host', allowBypass: false })
+    expect((await thread()).runtimeMode).toBe('auto-accept-edits')
   })
   it('keeps native and adapter identifiers behind the durable Sotto thread registry', async () => {
     let registry = new ThreadRegistry(f.root)

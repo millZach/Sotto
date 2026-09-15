@@ -39,7 +39,6 @@ export interface AgentMembershipClientOptions {
   configuration: () => Pick<AgentConfiguration, 'membershipEndpoint'>
   credentials: AgentCredentials
   directory: string
-  isPackaged: boolean
   openExternal: (url: string) => Promise<unknown>
   now?: () => number
 }
@@ -127,8 +126,8 @@ export class AgentMembershipClient implements AgentMembership {
     try { endpoint = this.endpoint() } catch {
       return unavailableState('The Sotto membership service address is invalid. Free dictation is available.')
     }
-    if (!endpoint) return this.options.isPackaged ? freeState('Free dictation · paid membership is not configured') :
-      { status: 'beta', label: 'Private development beta · no paid entitlement or bundled model usage', expiresAt: null }
+    // Until a membership service exists, every build is private beta: agents stay available and nothing is billed.
+    if (!endpoint) return { status: 'beta', label: 'Private beta · no paid entitlement or bundled model usage', expiresAt: null }
     if (!this.options.credentials.available()) return unavailableState('Unlock secure credential storage to verify membership. Free dictation is available.')
     try {
       if (this.pending) {
