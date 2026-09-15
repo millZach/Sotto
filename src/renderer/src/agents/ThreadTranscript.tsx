@@ -1,14 +1,15 @@
-import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, MessageSquare } from 'lucide-react'
+import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowDown, ChevronRight, MessageSquare } from 'lucide-react'
+import type { AgentActivity } from '../../../shared/agentActivity'
 import type { AgentMessage, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import type { AgentConnection } from './AgentContext'
+import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { ActivityGroupView, LiveActivity } from './ThreadActivity'
-import { liveTurnId, nestActivities, placeActivities, type ActivityGroup, type ActivityPlacement } from './threadActivityView'
+import { liveTurnId, nestActivities, placeActivities, splitTurns, workHeadline, type ActivityGroup, type ActivityPlacement } from './threadActivityView'
 
 type Command = AgentConnection['command']
 
@@ -28,27 +29,89 @@ export interface ActivityContext {
   readonly onDisclosure: (element: HTMLElement) => void
 }
 
-function ActivityGroups({ groups, context }: { readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext }): ReactNode {
+function ActivityGroups({ groups, context, outcome }: {
+  readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
+}): ReactNode {
   return groups?.map(group => <ActivityGroupView key={group.key} group={group} live={group.turnId === context.liveTurn} threadRunning={context.running}
-    connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} />) ?? null
+    connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />) ?? null
 }
 
 /**
- * Rendered history with each activity group after the message it followed. Memoized on the message
- * array and placement so composer keystrokes and status ticks do not repaint it.
+ * A finished turn's work, folded to one line above its final reply: the replies written on the way and every
+ * activity group, in the order they happened. The turn's own error stays in view.
  */
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context }: {
-  readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
-  readonly placement: ActivityPlacement; readonly context: ActivityContext
+function TurnWork({ headline, error, onDisclosure, children }: {
+  readonly headline: string; readonly error?: string | undefined
+  readonly onDisclosure: (element: HTMLElement) => void; readonly children: ReactNode
 }): ReactNode {
-  return <>{messages.map(message => <React.Fragment key={message.id}>
-    <article className="thread-message" data-role={message.role}>
-      <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
-      <MessageContent text={message.text} streaming={running && message.role === 'assistant' && message.id === messages.at(-1)?.id} />
-      <AttachmentPreviews attachments={message.attachments ?? []} />
-    </article>
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
+  return <section className="thread-work" data-expanded={open || undefined} aria-label={headline}>
+    <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
+      onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
+      <span className="thread-work__headline">{headline}</span>
+      <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
+    </button>
+    {error ? <p className="thread-activity__error thread-activity__error--turn">{error}</p> : null}
+    {open ? <div id={bodyId} className="thread-work__body">{children}</div> : null}
+  </section>
+}
+
+/** Inside a folded turn the turn line already says how it ended, so its groups carry only their counts. */
+const withoutTurn = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =>
+  (groups ?? []).filter(group => group.records.length > 0).map(group => group.turn ? { key: group.key, turnId: group.turnId, anchorMessageId: group.anchorMessageId, records: group.records } : group)
+
+/**
+ * Rendered history, turn by turn. A finished turn shows the user's message and its final reply, with everything in
+ * between folded under one "Worked for" line above the reply. The running turn shows its messages and activity as
+ * they arrive. Memoized on the message array and placement so composer keystrokes and status ticks do not repaint it.
+ *
+ * An assistant message with no text yet (a provider call that so far holds only tool use) draws no header.
+ * With `streamText` off, the reply being written is held back until something follows it: activity after it,
+ * a later message, or the end of the turn. Activity itself always appears as it runs.
+ */
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true }: {
+  readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
+  readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
+}): ReactNode {
+  const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
+  const last = messages.findLast(drawn)
+  const writing = running && last?.role === 'assistant' && !placement.after.get(last.id)?.length ? last.id : undefined
+  const article = (message: AgentMessage): ReactNode => drawn(message) && <article className="thread-message" data-role={message.role}>
+    <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
+    {message.id === writing && !streamText
+      ? <p className="thread-message__writing" role="status">Writing a reply…</p>
+      : <MessageContent text={message.text} streaming={message.id === writing} />}
+    <AttachmentPreviews attachments={message.attachments ?? []} />
+  </article>
+  const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
+    {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
-  </React.Fragment>)}
+  </React.Fragment>
+  const turns = splitTurns(messages)
+  return <>{turns.map((turn, index) => {
+    const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
+    // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
+    // a finished turn folds under its last written reply.
+    const final = !turn.user || running && index === turns.length - 1 ? undefined : turn.replies.findLast(message => message.role === 'assistant' && drawn(message))
+    const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+    const work = final ? turn.replies.filter(message => message !== final && drawn(message)) : []
+    // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
+    if (!final || (!work.length && !groups.some(group => group.records.length))) return <React.Fragment key={turn.key}>{everything.map(plain)}</React.Fragment>
+    const lifecycle = groups.find(group => group.turn)?.turn
+    const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
+    return <React.Fragment key={turn.key}>
+      {turn.user ? article(turn.user) : null}
+      <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} onDisclosure={context.onDisclosure}>
+        {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
+          {message === turn.user ? null : article(message)}
+          <ActivityGroups groups={withoutTurn(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
+        </React.Fragment>)}
+        <ActivityGroups groups={withoutTurn(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
+      </TurnWork>
+      {article(final)}
+    </React.Fragment>
+  })}
   <ActivityGroups groups={placement.trailing} context={context} />
   </>
 })
@@ -118,6 +181,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly children?: ReactNode
 }): ReactNode {
   const thread = row.thread
+  const streamText = useAgents().responseStreaming !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -246,7 +310,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

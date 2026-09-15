@@ -224,3 +224,35 @@ describe('composer admission', () => {
     expect(screen.getByText('Available once the working folder is ready.')).toBeInTheDocument()
   })
 })
+
+describe('composer while a turn runs', () => {
+  it('says the agent is working and puts Stop in the send button’s place', () => {
+    const { live, prompt } = mount(manualState({ running: true }))
+    const form = prompt().closest('form')!
+    expect(form).toHaveAttribute('data-running')
+    expect(prompt().placeholder).toMatch(/is working\. Write a follow-up to queue it\.$/u)
+    expect(within(form).getByText(/is working · Enter to queue/u)).toBeInTheDocument()
+    expect(within(form).queryByRole('button', { name: 'Queue prompt' })).not.toBeInTheDocument()
+    fireEvent.click(within(form).getByRole('button', { name: 'Stop agent' }))
+    expect(requests(live, 'interrupt')).toEqual([{ type: 'interrupt', threadId: THREAD }])
+    // One Stop for the pane: the header leaves it to the composer.
+    expect(screen.getAllByRole('button', { name: 'Stop agent' })).toHaveLength(1)
+  })
+
+  it('keeps Enter’s button last once there is a follow-up to queue, with Stop beside it', () => {
+    const { prompt } = mount(manualState({ running: true }))
+    type(prompt(), 'Then run the audio suite')
+    const buttons = within(prompt().closest('form')!.querySelector('.thread-prompt__actions')!).getAllByRole('button')
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['Stop agent', 'Queue prompt'])
+  })
+
+  it('disables Stop when the provider cannot interrupt, and shows neither Stop nor the working note when idle', () => {
+    mount(manualState({ running: true, capabilities: { interrupt: false } }))
+    expect(screen.getByRole('button', { name: 'Stop agent' })).toBeDisabled()
+    cleanup()
+    const { prompt } = mount(manualState())
+    expect(screen.queryByRole('button', { name: 'Stop agent' })).not.toBeInTheDocument()
+    expect(prompt().closest('form')).not.toHaveAttribute('data-running')
+    expect(prompt().placeholder).toBe('What would you like to do next?')
+  })
+})

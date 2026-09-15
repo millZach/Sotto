@@ -127,6 +127,7 @@
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 13px; }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
 .thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 14px; }
 .thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.65; font-size: 16px; }
 .thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
@@ -163,6 +164,7 @@
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: start; margin: 10px 2px 0 -8px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
+.thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
 .thread-prompt:focus-within { border-color: var(--threads-field-focus); }
 .thread-prompt textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-prompt textarea::placeholder { color: var(--tt-text-muted); }
@@ -177,6 +179,8 @@
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .thread-prompt__actions > .tt-button--icon { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
+.thread-prompt__actions > .thread-prompt__stop[data-beside] { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-2); }
+.thread-prompt__hint .thread-activity__pulse { margin-right: 7px; vertical-align: 1px; }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
 /* Model and option controls inside the Threads composer read at control size. */

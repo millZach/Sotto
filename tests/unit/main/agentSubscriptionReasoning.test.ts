@@ -99,6 +99,25 @@ describe('Sotto subscription reasoning integration', () => {
     expect(f.fetch).not.toHaveBeenCalled()
   })
 
+  it('checks a newly selected subscription account without a separate connection check', async () => {
+    const f = await fixture()
+    const grok = { ...f.client, status: vi.fn(async () => ({ provider: 'grok' as const, installed: true, ready: true, label: 'Grok', detail: 'Connected',
+      models: [{ id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'high'] }] })) }
+    const control: AgentControl = new AgentControl({ directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
+      reasoner: new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client, grok }),
+      membership: { status: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }),
+        action: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }) } })
+    controls.push(control)
+    await control.start()
+    const published: string[][] = []
+    control.subscribe(state => published.push(state.reasoningAccounts.filter(account => account.ready).map(account => account.provider)))
+    // Settings saves only the account choice; its model and effort menus need that account's models.
+    await control.command({ type: 'configure', patch: { reasoning: 'grok', reasoningModel: '', reasoningEffort: '' } })
+    await vi.waitFor(() => expect(published.at(-1)).toContain('grok'))
+    expect(grok.status).toHaveBeenCalledTimes(1)
+    expect(control.get().reasoningAccounts.find(account => account.provider === 'grok')?.models).toHaveLength(1)
+  })
+
   it('persists a subscription selection, restores its status, and executes through the real controller without a key', async () => {
     const f = await fixture()
     let control: AgentControl

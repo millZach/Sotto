@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -24,8 +24,23 @@ function personalAuthoredText(text: string): string {
   return boundary >= 0 && text.endsWith('\n</SottoPersonalContext>') ? text.slice(0, boundary) : text
 }
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
+// Grok 1.0.5 applies session _meta when a session starts or loads while not resident in its leader.
+// A resident session can gain always-approve from session/load but never loses it, so mode changes
+// close the session first. session/set_mode accepts any value, so it is not used as proof of a mode.
+const grokRuntimeModes = ['approval-required', 'auto', 'full-access'] as const
+type GrokRuntimeMode = typeof grokRuntimeModes[number]
+const grokRuntimeModeSchema = z.enum(grokRuntimeModes)
+function grokRuntimeMode(mode: AgentRuntimeMode): GrokRuntimeMode {
+  const parsed = grokRuntimeModeSchema.safeParse(mode)
+  if (!parsed.success) throw new Error('That permission mode is not supported by this provider.')
+  return parsed.data
+}
+/** Both flags are always explicit; a missing mode keeps the original approval-required policy. */
+function sessionPolicy(mode: GrokRuntimeMode | undefined): { yoloMode: boolean; autoMode: boolean } {
+  return { yoloMode: mode === 'full-access', autoMode: mode === 'auto' }
+}
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
-const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
+const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional() })).optional() }).optional() })).min(1) })
 const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
@@ -79,7 +94,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly historyReads = new Map<string, Promise<void>>()
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private generation = 0
-  private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: false, skills: true } }
+  private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
     this.usage = new NativeUsage(userDataDirectory, 'grok')
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
@@ -91,8 +106,19 @@ export class GrokAcpHost implements AgentHost {
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
   private thread(id: string): NativeConversation {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
-    if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
+    if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
     const thread = this.threads.get(id)!; thread.usage = this.usage.get(id); return thread
+  }
+  /** Applies a native load that carried the alias's pending (or committed) mode policy. */
+  private confirmLoad(id: string, alias: Alias, value: unknown): void {
+    const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
+    alias.nativeModelId = response.models.currentModelId
+    alias.settingsConfirmed = alias.nativeModelId === alias.modelId && (!alias.reasoningEffort || response.models.availableModels.find(model => model.modelId === alias.modelId)?._meta?.reasoningEffort === alias.reasoningEffort)
+    if (alias.pendingRuntimeMode) { alias.runtimeMode = alias.pendingRuntimeMode; delete alias.pendingRuntimeMode }
+    const thread = this.thread(id); thread.modelId = alias.nativeModelId; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
+  }
+  private closeSession(rpc: GrokRpc, alias: Alias): Promise<void> {
+    return rpc.request('_x.ai/session/close', { sessionId: alias.grokSessionId }, value => { z.object({ result: z.object({ success: z.literal(true), outcome: z.enum(['closed', 'notResident']) }) }).parse(value) })
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
@@ -114,18 +140,17 @@ export class GrokAcpHost implements AgentHost {
         const response = z.object({ protocolVersion: z.literal(GROK_ACP_VERSION), agentCapabilities: z.object({ loadSession: z.literal(true) }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.literal(GROK_CLI_VERSION), modelState: catalogSchema }) }).parse(value)
         if (!response.authMethods.some(auth => auth.id === 'cached_token') || response.authMethods.some(auth => /api.?key/iu.test(auth.id))) throw new Error('Subscription authentication required.')
         this.state.version = `${GROK_CLI_VERSION} / ACP ${GROK_ACP_VERSION}`
-        this.state.models = response._meta.modelState.availableModels.map(model => ({ id: model.modelId, name: model.name, provider: 'Grok', ready: true, runtimeModes: ['approval-required'], supportsImages: false,
+        this.state.models = response._meta.modelState.availableModels.map(model => ({ id: model.modelId, name: model.name, provider: 'Grok', ready: true, runtimeModes: [...grokRuntimeModes], supportsImages: false,
           reasoningEfforts: model._meta?.supportsReasoningEffort ? model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? [] : [], ...(model._meta?.reasoningEffort ? { defaultReasoningEffort: model._meta.reasoningEffort } : {}) }))
       })
       await rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } }, value => { z.object({}).parse(value) })
       for (const [id, alias] of Object.entries(this.aliases)) {
         this.thread(id)
         if (!alias.grokSessionId) continue
-        await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
-          const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
-          alias.nativeModelId = response.models.currentModelId
-          alias.settingsConfirmed = alias.nativeModelId === alias.modelId && (!alias.reasoningEffort || response.models.availableModels.find(model => model.modelId === alias.modelId)?._meta?.reasoningEffort === alias.reasoningEffort)
-          this.thread(id).modelId = alias.nativeModelId; await this.persist()
+        // An unconfirmed mode change is finished before anything else can use the session.
+        if (alias.pendingRuntimeMode) await this.closeSession(rpc, alias)
+        await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.pendingRuntimeMode ?? alias.runtimeMode) }, async value => {
+          this.confirmLoad(id, alias, value); await this.persist()
         })
       }
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
@@ -279,9 +304,9 @@ export class GrokAcpHost implements AgentHost {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
         const project = command.type === 'create-thread' ? this.state.projects.find(project => project.id === command.projectId) : undefined; if (command.type === 'create-thread' && !project) throw new Error('Choose a Grok project first.')
-        const alias: Alias = { ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}) }
+        const alias: Alias = { ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}), ...(command.runtimeMode ? { runtimeMode: grokRuntimeMode(command.runtimeMode) } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
-        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, async value => {
+        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.runtimeMode) }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
           alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
         })
@@ -290,7 +315,7 @@ export class GrokAcpHost implements AgentHost {
         })
         if (alias.reasoningEffort && this.selections.get(alias.grokSessionId!)?.effort !== alias.reasoningEffort) {
           // Grok can reply before model_changed. Read its owned session's native state; never infer success.
-          await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: { yoloMode: false, autoMode: false } }, value => {
+          await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.runtimeMode) }, value => {
             const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
             if (response.models.currentModelId !== alias.modelId || response.models.availableModels.find(model => model.modelId === alias.modelId)?._meta?.reasoningEffort !== alias.reasoningEffort) throw new Error('Grok did not confirm the requested reasoning effort.')
           })
@@ -299,8 +324,28 @@ export class GrokAcpHost implements AgentHost {
         const thread = this.thread(command.threadId); thread.modelId = alias.modelId; thread.status = 'idle'; if (alias.reasoningEffort) thread.reasoningEffort = alias.reasoningEffort
       } else {
         const alias = this.aliases[command.threadId]; if (!alias?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session. Do not repeat its creation automatically.')
-        if (command.type === 'configure-thread') throw new Error('Grok thread settings cannot be changed in Sotto yet.')
-        if (command.type === 'send') {
+        if (command.type === 'configure-thread') {
+          if ((command.modelId !== undefined && command.modelId !== alias.modelId) || (command.reasoningEffort !== undefined && command.reasoningEffort !== alias.reasoningEffort)) throw new Error('Grok cannot change the model or reasoning level of an existing thread in Sotto yet. Only the permission mode can be changed.')
+          if (command.runtimeMode !== undefined) {
+            validateThreadOptions(this.state, { runtimeMode: command.runtimeMode }, alias.modelId)
+            const mode = grokRuntimeMode(command.runtimeMode)
+            if (alias.pendingRuntimeMode || (alias.runtimeMode ?? 'approval-required') !== mode) {
+              if (!alias.settingsConfirmed && !alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before changing its permission mode.')
+              try { await this.refreshThread(command.threadId) }
+              catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before changing the permission mode.', { cause: error }) : error }
+              const thread = this.thread(command.threadId)
+              if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Grok thread to finish and answer its pending requests before changing its permission mode.')
+              // Until the reload is confirmed, sends are blocked and reconnect finishes the change.
+              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+              await this.closeSession(rpc, alias)
+              await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(mode) }, async value => {
+                this.confirmLoad(command.threadId, alias, value); await this.persist()
+              })
+              thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+            }
+          }
+        } else if (command.type === 'send') {
+          if (alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s permission mode. Reconnect to check before sending.')
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           try { await this.refreshThread(command.threadId) }
@@ -315,6 +360,8 @@ export class GrokAcpHost implements AgentHost {
           // ACP has no per-turn developer-instruction field. Append context after the
           // leading native slash command so skills still expand; preserve authored text by origin.
           const nativeText = alias.kind === 'personal' ? `${skillText}\n\n<SottoPersonalContext>\n${this.personalContexts.get(command.threadId) ?? personalContext()}\n</SottoPersonalContext>` : skillText
+          // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
+          if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
           const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)

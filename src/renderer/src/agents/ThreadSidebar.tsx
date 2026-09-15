@@ -1,6 +1,6 @@
 import React, { useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderPlus, Search, SquarePen, X } from 'lucide-react'
-import type { AgentState } from '../../../shared/agents'
+import { defaultThreadModelId, type AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { folderKey } from './NewThreadDialog'
@@ -28,7 +28,8 @@ export function useAddProject(state: AgentState, command: Command): { readonly a
       if (!path) return
       const existing = state.host.projects.find(project => folderKey(project.path) === folderKey(path))
       if (existing) { await command({ type: 'select-project', projectId: existing.id }); return }
-      const provider = state.host.models.find(model => model.id === state.configuration.defaultModelId)?.providerId
+      const defaultModelId = defaultThreadModelId(state.configuration, state.host.models)
+      const provider = state.host.models.find(model => model.id === defaultModelId)?.providerId
       const title = path.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || 'Project'
       const result = await command({ type: 'create-project', title, path, useExisting: true, ...(provider ? { provider } : {}) })
       if (result === null || result.error !== null) setError(result?.error ?? 'Could not confirm the new project. Choose the folder again to check; it will not be added twice.')

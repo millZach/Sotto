@@ -16,6 +16,14 @@ const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...f
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const catalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 const pending = new Map(); let serial = 5000
+// Mirrors Grok 1.0.5 as probed through SessionStart hooks: _meta applies when a session starts or is
+// loaded while not resident; loading a resident session can add always-approve but never removes it.
+const resident = new Set()
+const nativeMode = meta => meta?.yoloMode ? 'bypassPermissions' : meta?.autoMode ? 'auto' : 'default'
+// Sotto must always state both flags explicitly, never both on, and never swap the agent profile.
+function checkPolicy(meta) {
+ if (typeof meta?.yoloMode !== 'boolean' || typeof meta?.autoMode !== 'boolean' || (meta.yoloMode && meta.autoMode) || meta.agentProfile) appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Coding session policy wrong',meta})+'\n')
+}
 function update(sessionId, update, extension = false, notify = true, meta = {}) {
  const entry = { timestamp: Math.floor(Date.now()/1000), method: extension ? '_x.ai/session/update' : 'session/update', params: { sessionId, update, _meta: {eventId:read('script.json',{}).reusedEventIds ? `${sessionId}-2` : randomUUID(),agentTimestampMs:Date.now(),...meta} } }
  sessions[sessionId].updates.push(entry); save()
@@ -55,14 +63,27 @@ createInterface({input:process.stdin}).on('line', line => {
  if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalog}}})
  else if (frame.method === 'authenticate') send({id:frame.id,result:{}})
  else if (frame.method === 'session/new') {
-  if (p._meta?.yoloMode !== false || p._meta?.autoMode !== false || p._meta?.agentProfile) appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Coding session policy wrong'})+'\n')
-  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[]}; save()
+  checkPolicy(p._meta)
+  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta)}; resident.add(sessionId); save()
   const reply = () => send({id:frame.id,result:{sessionId,models:catalog}})
   if (script.delayCreate) setTimeout(reply,script.delayCreate); else reply()
  }
  else if (frame.method === 'session/load') {
+  checkPolicy(p._meta)
   if (!sessions[p.sessionId]) send({id:frame.id,error:{code:-32602,message:'Missing session'}})
-  else send({id:frame.id,result:{models:catalog,_meta:{sessionId:p.sessionId}}})
+  else if (script.rejectLoad) send({id:frame.id,error:{code:-32603,message:'Rejected load'}})
+  else {
+   const session = sessions[p.sessionId]
+   if (!resident.has(p.sessionId)) session.permissionMode = nativeMode(p._meta)
+   else if (p._meta?.yoloMode) session.permissionMode = 'bypassPermissions'
+   resident.add(p.sessionId); save()
+   send({id:frame.id,result:{models:catalog,_meta:{sessionId:p.sessionId}}})
+  }
+ }
+ else if (frame.method === '_x.ai/session/close') {
+  if (script.rejectClose) { send({id:frame.id,error:{code:-32603,message:'Rejected close'}}); return }
+  const closed = resident.delete(p.sessionId)
+  send({id:frame.id,result:{result:{success:true,outcome:closed ? 'closed' : 'notResident'}}})
  }
  else if (frame.method === 'session/set_model') {
   if (script.rejectModel) send({id:frame.id,error:{code:-32602,message:'Rejected model'}})

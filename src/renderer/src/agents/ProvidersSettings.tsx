@@ -1,17 +1,14 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
-import { CircleDot, RefreshCw, Sun, TerminalSquare } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
 import { newestModelsFirst } from './ModelPicker'
+import { ProviderMark } from './ProviderMark'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build' }
-function ProviderIcon({ provider }: { readonly provider: ProviderId }): ReactNode {
-  const Icon = provider === 'codex' ? TerminalSquare : provider === 'claude' ? Sun : CircleDot
-  return <Icon size={21} strokeWidth={1.6} aria-hidden="true" />
-}
 
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
@@ -58,13 +55,13 @@ export function ProvidersSettings(): ReactNode {
         const statusLabel = pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : current.connection === 'connected' ? 'Connected' : current.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
         return <div key={provider} className="providers-list__row" data-selected={provider === selected}>
           <button type="button" className="providers-list__select" aria-label={PROVIDER_LABELS[provider]} aria-pressed={provider === selected}
-            onClick={() => setSelected(provider)}><ProviderIcon provider={provider} /><span><strong>{PROVIDER_LABELS[provider]}</strong>
+            onClick={() => setSelected(provider)}><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={21} /><span><strong>{PROVIDER_LABELS[provider]}</strong>
               <small data-status={current.connection}><i aria-hidden="true" />{statusLabel}</small></span></button>
           <Toggle label={`Enable ${PROVIDER_LABELS[provider]}`} checked={active} disabled={Boolean(connecting)} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
         </div>
       })}</nav>
       <section className="provider-detail" aria-label="Provider configuration">
-        <header className="provider-detail__header"><ProviderIcon provider={selected} /><h3>{label}</h3>{status.version && <span className="provider-detail__version">{status.version.match(/\d+\.\d+\.\d+(?:-[\w.]+)?/)?.[0] ?? status.version.slice(0, 36)}</span>}
+        <header className="provider-detail__header"><ProviderMark provider={selected} name={label} size={21} /><h3>{label}</h3>{status.version && <span className="provider-detail__version">{status.version.match(/\d+\.\d+\.\d+(?:-[\w.]+)?/)?.[0] ?? status.version.slice(0, 36)}</span>}
           {connected && <Button variant="ghost" iconOnly aria-label={`Refresh ${label}`} disabled={Boolean(working)} onClick={() => void perform(selected, 'refresh')}><RefreshCw size={15} /></Button>}
         </header>
         <div className="provider-tabs" role="tablist" aria-label="Provider details">{(['configuration', 'models'] as const).map(value => <button type="button" key={value} id={`${tabId}-${value}`} role="tab" aria-selected={tab === value} aria-controls={`${tabId}-panel`}

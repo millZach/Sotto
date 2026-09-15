@@ -33,7 +33,27 @@ With explicit leader mode, the live restart-during-run probe verified that a mod
 
 On Windows the leader can inherit the proxy's output handles. Destroying the proxy's output streams after its process exits prevents those inherited handles from keeping Node's close event and the adapter shutdown barrier open indefinitely. A fake child reproduces that inherited-handle case.
 
-Permissions expose the tool title and bounded raw input, and select only an offered `allow_once` on explicit `approved: true`. All other answers use `reject_once` or ACP cancellation. Sotto never chooses `allow_always`. Interrupt/disconnect cancel outstanding questions/permissions. An answer is removed before writing so it cannot be answered or declined twice. Unknown tool/client requests receive unsupported-method errors. Only approval-required mode is advertised; runtime configuration and images are deliberately unavailable until verified mappings exist.
+Permissions expose the tool title and bounded raw input, and select only an offered `allow_once` on explicit `approved: true`. All other answers use `reject_once` or ACP cancellation. Sotto never chooses `allow_always`. Interrupt/disconnect cancel outstanding questions/permissions. An answer is removed before writing so it cannot be answered or declined twice. Unknown tool/client requests receive unsupported-method errors. Images remain deliberately unavailable. Per-thread permission modes are described below; Sotto's own answers never select `allow_always` in any mode.
+
+### Per-thread permission modes (verified 2026-09-14, Grok 1.0.5)
+
+The shared leader still launches with `--permission-mode default`; the mode is applied per native session through `session/new` / `session/load` `_meta`, which Grok's installed docs (`user-guide/15-agent-mode.md`, "Session `_meta` options"; `22-permissions-and-safety.md`) define as `yoloMode` (always-approve) and `autoMode` (auto, superseded by always-approve). Advertised modes and mapping:
+
+| Sotto mode | `_meta` sent on create, resume and reload |
+| --- | --- |
+| `approval-required` (also any thread without a stored mode) | `{ yoloMode: false, autoMode: false }` |
+| `auto` | `{ yoloMode: false, autoMode: true }` |
+| `full-access` | `{ yoloMode: true, autoMode: false }` |
+
+`auto-accept-edits` is not advertised. `acceptEdits` appears only as a process-wide `--permission-mode` / settings `defaultMode` value, which cannot vary per thread on the shared leader. There is no per-session `_meta` flag for it, and Grok's hook docs say the effective session mode is only ever `default`, `auto`, `plan` or `bypassPermissions`. `session/set_mode` is not a verified switch either: against the real binary it returned `{}` for `default`, `acceptEdits`, `auto`, `bypassPermissions`, `always-approve` and `nonsense` alike, with no `current_mode_update` notification.
+
+Live probe method: a throwaway ACP client against the installed `grok.exe` in a temporary working directory with a temporary `GROK_HOME` (native `GROK_AUTH_PATH`), holding one global `SessionStart` hook that recorded its stdin. The only prompts were the local `/session-info` host command (`hostTurn: true`, zero model tokens); no model turn or tool ran. Observed `permissionMode` in the hook payload and `yolo` in `_x.ai/sessions/changed`:
+
+- `session/new` with the three `_meta` values above produced `default`, `auto` and `bypassPermissions`.
+- `session/load` of a session that is **resident** in the leader does not fire `SessionStart` and does not downgrade it: loading an always-approve session with `yoloMode: false` left `yolo: true`. Loading a resident ask session with `yoloMode: true` did turn `yolo` on.
+- `_x.ai/session/close` returns `{ result: { success: true, outcome: 'closed' } }` (or `'notResident'`). A following `session/load` fires `SessionStart` with `source: 'load'` and applies its `_meta` exactly: always-approve became `default`, auto became `default`, ask became `auto`. A load without `_meta` produced `default`, so the mode must be resent on every resume.
+
+Sotto therefore stores `runtimeMode` in the Grok alias and sends its policy on every `session/new` and `session/load`. `configure-thread` can change only the permission mode of an existing thread (model/reasoning changes are still rejected). It refreshes history, refuses while the thread runs or has pending requests, persists `pendingRuntimeMode` and blocks sends, then closes and reloads the native session with the new `_meta`. The mode is committed only after the load is confirmed. An interrupted change is finished on reconnect with the same close-then-load sequence before the thread can send again. Closing a native session could disturb another client attached to it at that moment, such as the Grok CLI; that interaction was not probed. The effect of `autoMode` on real tool calls was not exercised, and neither was a close/reload during a leader-hosted running turn (Sotto refuses mode changes while a turn is known to be running).
 
 ## Validation
 
@@ -49,4 +69,4 @@ The live probe only used newly created synthetic sessions and temporary working 
 - Foreign session discovery is not implemented: only aliases Sotto created are loaded. A crash before receiving `session/new` can leave an unknown native session and a deliberately unresolved alias; it is never recreated automatically.
 - Full history is read in bounded pages at each poll. Very large sessions may need incremental indexing later. Native rewinds are filtered by Grok; origin metadata survives, so a removed prior dispatch is not automatically retried.
 - A byte-identical external prompt arriving while an identical Sotto dispatch is still unconfirmed is indistinguishable by text digest until stronger native identity is available. Previously confirmed prompts are protected by composite event identity, including against event-ID reuse after native CLI resume.
-- Model/reasoning settings are available at creation; changing an existing thread's configuration, images, persistent permission grants, plan-exit extensions, and richer tool presentation are not advertised. No native CLI TUI visual review is claimed; the tested takeover path is the native headless resume command.
+- Model/reasoning settings are available at creation; changing an existing thread's model or reasoning level, images, persistent permission grants, plan-exit extensions, and richer tool presentation are not advertised. No native CLI TUI visual review is claimed; the tested takeover path is the native headless resume command.

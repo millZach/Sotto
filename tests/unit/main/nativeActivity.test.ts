@@ -22,6 +22,22 @@ describe('native activity projection', () => {
     rows = projector.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'task', status: 'completed', summary: 'Checked' }, 't', 'm2', '/p')
     expect(rows[1]).toMatchObject({ kind: 'subagent', status: 'completed', agents: [{ id: 'task', status: 'completed' }], afterMessageId: 'm' })
   })
+  it('keeps Claude shell tasks and housekeeping tasks out of the subagent rows, and gives a background command its real outcome', () => {
+    const projector = new ClaudeActivity()
+    let rows = projector.apply([], { type: 'assistant', message: { content: [
+      { type: 'tool_use', id: 'tests', name: 'PowerShell', input: { command: 'npx vitest run', description: 'Run the tests' } },
+      { type: 'tool_use', id: 'build', name: 'Bash', input: { command: 'npm run build', run_in_background: true } },
+    ] } }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'shell', tool_use_id: 'tests', task_type: 'local_bash', is_backgrounded: false, description: 'Run the tests' }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tests', is_error: true, content: 'Exit code 1' }] } }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'shell', tool_use_id: 'tests', status: 'failed', summary: 'Run the tests' }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'build', content: 'Command running in background with ID: bg' }] } }, 't', 'm', '/p')
+    // A notification whose start was missed still belongs to its command.
+    rows = projector.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'bg', tool_use_id: 'build', status: 'failed', summary: 'Build failed' }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'watch', description: 'Watch CI', ambient: true }, 't', 'm', '/p')
+    rows = projector.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'watch', status: 'completed', summary: 'Done' }, 't', 'm', '/p')
+    expect(rows.map(row => [row.id, row.kind, row.status])).toEqual([['claude-tool-tests', 'command', 'failed'], ['claude-tool-build', 'command', 'failed']])
+  })
   it('upserts ACP full output snapshots and preserves status on replay', () => {
     const context = { turnId: 'turn', afterMessageId: 'user', cwd: '/p' }
     const initial = grokActivities({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'in_progress', rawInput: { command: 'echo hi' } }, context)

@@ -563,7 +563,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const membership = new AgentMembershipClient({
     configuration: () => agentControl.configuration(),
-    credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
+    credentials, directory: userDataPath, openExternal: url => shell.openExternal(url),
   })
   let openedThreadFolder: string | null = null
   const agentControl: AgentControl = new AgentControl({

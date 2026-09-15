@@ -39,6 +39,15 @@ describe('independent provider settings', () => {
     expect(state.configuration.reasoning).toBe('claude')
     expect(command).toHaveBeenCalledTimes(1)
   })
+  it("marks each provider and the selected detail with that provider's own logo", () => {
+    provide()
+    const { container } = render(<ProvidersSettings />)
+    for (const provider of providerIdSchema.options) {
+      expect(screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)).not.toBeNull()
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Grok Build', exact: true }))
+    expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()
+  })
   it('shows a provider-specific failure and retries it while others stay connected', async () => {
     const state = fixture()
     state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Sign in to Claude Code.' }
@@ -75,6 +84,20 @@ describe('independent provider settings', () => {
     state.host.providers![0]!.connection = 'disconnected'
     view.rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeDisabled()
+  })
+  it('offers only permissions on a started thread whose provider cannot change its model', async () => {
+    const state = fixture()
+    const grok = state.host.providers!.find(provider => provider.id === 'grok')!
+    grok.capabilities = { ...caps, configureThreadModel: false }
+    state.host.models = state.host.models.map(model => model.providerId === 'grok' ? { ...model, reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'auto', 'full-access'] } : model)
+    const thread = { ...state.host.threads[0]!, id: 'grok-thread', providerId: 'grok' as const, modelId: 'grok:same-native-model', runtimeMode: 'approval-required' as const }
+    state.host.threads = [thread]
+    const command = vi.fn(async () => state)
+    render(<ThreadOptions thread={thread} state={state} command={command} />)
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeDisabled()
+    expect(screen.getByLabelText('Thread reasoning')).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'grok-thread', runtimeMode: 'full-access' }))
   })
   it.each([undefined, 'grok'] as const)('does not queue a healthy send behind provider connection %s in the renderer', async provider => {
     const state = fixture()

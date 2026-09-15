@@ -3,6 +3,16 @@
    Colour: accent only for running work, error ink for failures, muted words for stopped or unknown. */
 
 .thread-activity { margin: 0 0 24px; }
+/* A finished turn folds its work to one line above the final reply, with a rule between the two. */
+.thread-work { margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+.thread-message + .thread-work { margin-top: -8px; }
+.thread-work__summary {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer;
+}
+.thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-work__body { padding: 8px 0 4px; }
+.thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
 .thread-message + .thread-activity, .thread-message + .thread-activity-live, .thread-activity + .thread-activity-live { margin-top: -14px; }
 
 .thread-activity__summary {

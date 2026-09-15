@@ -95,6 +95,7 @@ interface AgentContextValue extends AgentConnection {
   readonly retryVoice: () => void
   readonly claimPersonalAudio: () => () => void
   readonly waitForPersonalAudio: () => Promise<void>
+  readonly responseStreaming: AppSettings['responseStreaming']
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null)
@@ -228,6 +229,7 @@ export function AgentProvider({ children, settings, dictation }: {
     ...connection,
     claimPersonalAudio,
     waitForPersonalAudio: () => personalRelease.current,
+    responseStreaming: settings?.responseStreaming ?? 'live',
     attention,
     voice,
     muteVoice: () => { void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },

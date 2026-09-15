@@ -28,6 +28,8 @@ export interface ActivityGroupViewProps {
   readonly provider: string
   /** Called before a disclosure changes height so the transcript can keep the control in place. */
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
+  /** How the turn ended, when a folded turn line above the group already says it. */
+  readonly outcome?: AgentActivity['status'] | undefined
 }
 
 /** Whole seconds while the clock runs, so the number does not flicker through tenths. */
@@ -141,7 +143,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
  * The work a provider reported after one message. A running turn lists its rows; a settled one folds
  * to a single line and keeps any failure in view. Nothing here can act on the provider or its agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
   const [choice, setChoice] = useState<boolean | null>(null)
   const [showAll, setShowAll] = useState(false)
   const listId = useId()
@@ -170,7 +172,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     {rows.length ? <ul id={listId} className="thread-activity__rows">
       {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
         onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}>Show {earlier} earlier</button></li> : null}
-      {rows.map(node => <ActivityRow key={node.record.id} node={node} connected={connected} provider={provider} quietUnknown={group.turn?.status === 'unknown'} onDisclosure={onDisclosure} />)}
+      {rows.map(node => <ActivityRow key={node.record.id} node={node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
     </ul> : null}
   </section>
 })
