@@ -8,6 +8,7 @@ const json = (value: unknown): string | undefined => value === undefined ? undef
 /** Same projector for native transcript snapshots and the streaming CLI. No execution. */
 export class ClaudeActivity {
   private readonly blocks = new Map<string, { block: ClaudeFrame; input: string }>()
+  private readonly hiddenTasks = new Set<string>()
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string): AgentActivity[] {
     const rows: AgentActivity[] = []
     const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
@@ -54,6 +55,15 @@ export class ClaudeActivity {
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : frame.status === 'stopped' ? 'interrupted' : 'unknown' : 'running'
+      // Claude Code registers every shell command as a task too, and files housekeeping watchers as tasks the transcript should not show.
+      // Neither is a subagent: a shell task's outcome belongs to its command row, whose exit code a background command only learns here.
+      const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) : undefined
+      if (frame.subtype === 'task_started' && (frame.task_type === 'local_bash' || frame.skip_transcript === true || frame.ambient === true)) this.hiddenTasks.add(frame.task_id)
+      if (this.hiddenTasks.has(frame.task_id) || owner?.kind === 'command') {
+        if (frame.subtype === 'task_notification' && owner?.kind === 'command' && status !== 'unknown') rows.push({ ...owner, status })
+        if (frame.subtype === 'task_notification') this.hiddenTasks.delete(frame.task_id)
+        return mergeAgentActivities(previous, rows)
+      }
       const old = previous.find(row => row.id === `claude-task-${frame.task_id}`)
       rows.push({ ...base, ...old, id: `claude-task-${frame.task_id}`, kind: 'subagent', status, title: text(frame.description) ?? old?.title ?? 'Subagent',
         ...(typeof frame.tool_use_id === 'string' ? { parentId: `claude-tool-${frame.tool_use_id}` } : {}),
