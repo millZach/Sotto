@@ -7,7 +7,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 
 // Requires the shared tools slot to be mounted (ThreadsView `tools={props => <ToolsPanel {...props} />}` and one
 // ToolsPanelToggle in the focused pane header). Real Files IPC reads real temporary folders; only providers are fixtures.
-const SHOTS = 'artifacts/tools-ui'
+const SHOTS = 'test-results/issue74-ui-captures/files'
 
 function crc32(buffer: Buffer): number {
   let crc = ~0
@@ -108,7 +108,7 @@ test('browses real working folders in the shared tools panel, following focus or
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(page.getByRole('tab', { name: 'Files' })).toBeFocused()
-    await expect(panel.getByRole('tab')).toHaveText(['Files', 'Changes', 'Terminal', 'Browser'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes'])
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', workshop)
     const tree = panel.getByRole('tree')
     await expect(tree.getByRole('treeitem')).toHaveText(['assets', 'docs', 'src', 'build.log', 'data.bin', 'notes.txt', 'README.md'])
@@ -186,16 +186,21 @@ test('browses real working folders in the shared tools panel, following focus or
     await expect(panel.locator('.files-preview__markdown').getByRole('heading', { name: 'Changes' })).toBeVisible()
     await capture(page, 'focused-docs-1280')
 
-    // The shipped minimum overlays the panel instead of squeezing the conversation.
+    // Sidecar hides project navigation at the minimum and keeps the conversation beside the dock.
     await resize(launched, 820)
-    await expect(panel).toHaveAttribute('data-mode', 'overlay')
+    await expect(panel).toHaveAttribute('data-mode', 'docked')
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeHidden()
     const paneWidth = await page.locator('.thread-pane').first().evaluate(node => node.getBoundingClientRect().width)
-    expect(paneWidth).toBeGreaterThanOrEqual(480)
-    await capture(page, 'overlay-820')
+    expect(paneWidth).toBeGreaterThanOrEqual(320)
+    await capture(page, 'docked-820')
     await panel.getByRole('button', { name: 'Pin to Docs site' }).click()
-    await capture(page, 'overlay-pinned-820')
+    await capture(page, 'docked-pinned-820')
     await panel.getByRole('tab', { name: 'Files' }).focus()
     await page.keyboard.press('Escape')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
+    await panel.getByRole('button', { name: 'Close tools panel' }).focus()
+    await page.keyboard.press('Enter')
     await expect(panel).toHaveCount(0)
     await expect(toggle).toBeFocused()
 

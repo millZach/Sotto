@@ -1,0 +1,12 @@
+{
+  "lane": "provider fixtures; real Electron services; GitHub status IPC fixture",
+  "original": "4eabe3ce6dd85773126a8a494814328e07e4f470",
+  "committed": "5bd8ddd30549a6df4de4f70e7d11bf2492018910",
+  "pushed": "5bd8ddd30549a6df4de4f70e7d11bf2492018910",
+  "first": "2049f86e-569b-4756-8a16-07b501d3ddd0",
+  "second": "f383ea64-fbb7-4f32-af26-429adf9b0556",
+  "working": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-daily-workspace-nW2F2E\\thread-worktrees\\0aee6a5a-f24e-4832-8d85-387c39ba3a89",
+  "other": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-daily-workspace-nW2F2E\\thread-worktrees\\5b0d7d82-2701-43e9-9d0d-bc6b9da0180e",
+  "realGitHubWrites": 0,
+  "errors": []
+}

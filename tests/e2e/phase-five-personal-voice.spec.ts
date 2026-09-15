@@ -23,9 +23,12 @@ test('personal dictation and spoken exchange retain each provider chat, support 
     })
     for (const [provider, label] of [['codex', 'Codex'], ['claude', 'Claude'], ['grok', 'Grok']] as const) {
       await page.evaluate(async provider => window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: provider, reasoningModel: `${provider}:test`, reasoningEffort: 'low' } }), provider)
+      const earlier = (await page.evaluate(() => window.sotto!.personalChats!.get())).chats.map(chat => chat.id)
       await page.getByRole('navigation', { name: 'Chats', exact: true }).getByRole('button', { name: 'New chat', exact: true }).click()
       const composer = page.getByRole('textbox', { name: 'Message', exact: true })
-      await expect(composer).toBeEnabled()
+      // Until the new chat is selected, the previous chat's composer is still the enabled textbox.
+      await expect.poll(async () => { const selected = (await page.evaluate(() => window.sotto!.personalChats!.get())).selectedChatId; return Boolean(selected) && !earlier.includes(selected!) }).toBe(true)
+      await expect(composer).toBeFocused()
       await composer.fill('Typed thought')
       await page.getByRole('button', { name: 'Dictate', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Finish dictation', exact: true })).toBeVisible()

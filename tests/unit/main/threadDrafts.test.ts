@@ -322,3 +322,53 @@ describe('truthful durable draft delivery', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
 })
+
+describe('state publication cost', () => {
+  // Every publish copies and sends every thread's full history, so writes that change no
+  // renderer-visible evidence must not publish again once they complete.
+  async function settledWrites(writes: Promise<void>[]) {
+    while (writes.length) await Promise.allSettled(writes.splice(0))
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  function recordWrites() {
+    const writes: Promise<void>[] = []
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      const pending = write.call(this, value); writes.push(pending); return pending
+    })
+    return writes
+  }
+
+  it('publishes a host update once when its write leaves draft evidence unchanged', async () => {
+    const f = await fixture()
+    const draft = save('workshop', 'Already saved')
+    await f.control.command(draft)
+    const writes = recordWrites(); await settledWrites(writes)
+    const published: AgentState[] = []
+    f.control.subscribe(state => published.push(state))
+    f.host.event({ type: 'stream', threadId: 'docs', messageId: 'streaming', text: 'First delta', status: 'running' })
+    await settledWrites(writes)
+    expect(published).toHaveLength(1)
+    expect(published[0]!.host.threads.find(thread => thread.id === 'docs')!.messages.at(-1)!.text).toBe('First delta')
+    expect(published[0]!.threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
+  })
+
+  it('still publishes completed draft evidence to listeners that received no command response', async () => {
+    const f = await fixture()
+    const writes = recordWrites()
+    const published: AgentState[] = []
+    f.control.subscribe(state => published.push(state))
+    const draft = save('workshop', 'Confirm me', [image])
+    const response = f.control.command(draft)
+    await settledWrites(writes); await response; await settledWrites(writes)
+    expect(published.at(-1)!.threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
+  })
+
+  it('reads configuration without copying thread histories or exposing internal state', async () => {
+    const f = await fixture()
+    const configuration = f.control.configuration()
+    expect(configuration).toEqual(f.control.get().configuration)
+    configuration.provider = configuration.provider === 'codex' ? 'claude' : 'codex'
+    expect(f.control.get().configuration).not.toEqual(configuration)
+  })
+})

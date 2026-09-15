@@ -37,15 +37,14 @@ async function theme(page: Page, mode: Mode): Promise<void> {
 
 /** Nothing on the page scrolls sideways, and the named elements sit wholly inside the window. */
 async function expectContained(page: Page, selectors: readonly string[]): Promise<void> {
-  const report = await page.evaluate(selectors => ({
-    overflow: document.documentElement.scrollWidth - window.innerWidth,
+  // Native resize arrives before ResizeObserver has placed the sidecar in the new workspace.
+  await expect.poll(() => page.evaluate(selectors => ({
+    overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
     outside: selectors.flatMap(selector => [...document.querySelectorAll(selector)].map(element => {
       const box = element.getBoundingClientRect()
       return box.left < -1 || box.top < -1 || box.right > window.innerWidth + 1 || box.bottom > window.innerHeight + 1 ? `${selector} ${JSON.stringify(box)}` : null
     }).filter(Boolean)),
-  }), selectors)
-  expect(report.overflow).toBeLessThanOrEqual(0)
-  expect(report.outside).toEqual([])
+  }), selectors)).toEqual({ overflow: 0, outside: [] })
 }
 
 /** The smallest rendered text in the Phase 3 surfaces on screen, with where it is, so no new label drops below 12px. */
@@ -151,11 +150,23 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     // In the short window the diff, not the file list, takes the panel; the selected file stays in view above it.
     const heights = await panel.evaluate(element => ({ list: element.querySelector('.changes-list')!.getBoundingClientRect().height, diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height }))
     expect(heights.diff).toBeGreaterThan(heights.list * 2)
-    expect(await files.evaluate(list => {
+    const selectionContained = () => files.evaluate(list => {
       const box = list.getBoundingClientRect()
       const row = list.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
       return row.top >= box.top - 1 && row.bottom <= box.bottom + 1
-    })).toBe(true)
+    })
+    expect(await selectionContained()).toBe(true)
+    // Other rows remain reachable by keyboard in the one-row strip, without clipping their selection.
+    await files.getByRole('option', { name: /^app\.ts/u }).focus()
+    for (const key of ['Home', 'End'] as const) {
+      await page.keyboard.press(key)
+      await page.keyboard.press('Enter')
+      await expect.poll(selectionContained).toBe(true)
+    }
+    await files.getByRole('option', { name: /^app\.ts/u }).focus()
+    await page.keyboard.press('Enter')
+    await expect(diff).toContainText('return `Hello, ${name}!`')
+    await expect.poll(selectionContained).toBe(true)
     await expectContained(page, ['.tools-panel'])
     await shoot(page, 'changes-diff-820x560')
     await panel.getByRole('button', { name: 'Close diff' }).click()
@@ -330,11 +341,11 @@ test('starts, continues and resumes a project-free chat, by keyboard, across dis
     expect(after).toEqual({ ...before, assignments: 0 })
 
     // A different coordinator: saved chats stay readable and stay with Codex; new chats explain where to change it.
-    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: 'claude', reasoningModel: 'changed-default' } }))
+    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'changed-default' } }))
     await page.getByRole('link', { name: 'Threads', exact: true }).click()
     await page.getByRole('link', { name: 'Chats', exact: true }).click()
     await expect(page.getByRole('navigation', { name: 'Chats' }).getByRole('button', { name: 'New chat' })).toBeDisabled()
-    await expect(page.getByText(/Select Codex in coordinator settings for new chats/u)).toBeVisible()
+    await expect(page.getByText(/Select Codex, Claude or Grok in coordinator settings for new chats/u)).toBeVisible()
     await expect(page.getByText('Codex · test')).toBeVisible()
     await expectContained(page, ['.personal-chats .thread-nav', '.thread-prompt'])
     await shoot(page, 'chats-unsupported-default-1280')

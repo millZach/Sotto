@@ -1,4 +1,4 @@
-import React, { createContext, memo, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
@@ -206,7 +206,6 @@ const remarkPlugins = [remarkGfm]
 
 /** Renders one message's text as safe Markdown. Raw HTML stays literal text; only vetted web links are links. */
 export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
-  const deferredText = useDeferredValue(text)
   const [failedLink, setFailedLink] = useState<string | null>(null)
   const [linkNotice, setLinkNotice] = useState<string | null>(null)
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
@@ -238,8 +237,11 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     if (!failedLink) return
     void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyFeedback('Link copied') }, () => showCopyFeedback('Could not copy the link'))
   }
-  const rendered = useMemo(() => <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{deferredText}</ReactMarkdown>, [deferredText])
-  const markdownSource = useMemo(() => ({ text: deferredText, streaming }), [deferredText, streaming])
+  // A deferred copy can be repeatedly interrupted by incoming snapshots, leaving
+  // a running answer stale even after its latest text has reached the renderer.
+  // Memoization still keeps unchanged messages out of Markdown parsing.
+  const rendered = useMemo(() => <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{text}</ReactMarkdown>, [text])
+  const markdownSource = useMemo(() => ({ text, streaming }), [text, streaming])
   return <LinkContext.Provider value={context}><MarkdownSourceContext.Provider value={markdownSource}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {rendered}

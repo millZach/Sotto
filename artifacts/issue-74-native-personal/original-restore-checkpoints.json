@@ -1,0 +1,157 @@
+[
+  {
+    "step": "start",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.483Z"
+  },
+  {
+    "step": "start",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.494Z"
+  },
+  {
+    "step": "connect",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.495Z"
+  },
+  {
+    "step": "rpc:initialize",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.516Z"
+  },
+  {
+    "step": "rpc:initialize",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.626Z"
+  },
+  {
+    "step": "rpc:model/list",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.627Z"
+  },
+  {
+    "step": "rpc:model/list",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.630Z"
+  },
+  {
+    "step": "rpc:thread/resume",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.651Z"
+  },
+  {
+    "step": "rpc:thread/resume",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.797Z"
+  },
+  {
+    "step": "connect",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.810Z"
+  },
+  {
+    "step": "refresh",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.811Z"
+  },
+  {
+    "step": "rpc:thread/read",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.812Z"
+  },
+  {
+    "step": "rpc:thread/read",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.826Z"
+  },
+  {
+    "step": "refresh",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.830Z"
+  },
+  {
+    "step": "settled",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.830Z"
+  },
+  {
+    "step": "settled",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.831Z"
+  },
+  {
+    "step": "same native and message identities; no creation or send RPC allowed",
+    "state": "verified",
+    "at": "2026-09-14T23:19:12.832Z"
+  },
+  {
+    "step": "disconnect",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.833Z"
+  },
+  {
+    "step": "disconnect",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.845Z"
+  },
+  {
+    "step": "final-settled",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.845Z"
+  },
+  {
+    "step": "final-settled",
+    "state": "done",
+    "at": "2026-09-14T23:19:12.846Z"
+  },
+  {
+    "step": "host-stopping",
+    "state": "begin",
+    "at": "2026-09-14T23:19:12.847Z"
+  },
+  {
+    "step": "host-stopping",
+    "state": "done",
+    "at": "2026-09-14T23:19:13.656Z"
+  },
+  {
+    "step": "host-frames",
+    "state": "begin",
+    "at": "2026-09-14T23:19:13.656Z"
+  },
+  {
+    "step": "host-frames",
+    "state": "done",
+    "at": "2026-09-14T23:19:13.657Z"
+  },
+  {
+    "step": "host-writing",
+    "state": "begin",
+    "at": "2026-09-14T23:19:13.657Z"
+  },
+  {
+    "step": "host-writing",
+    "state": "done",
+    "at": "2026-09-14T23:19:13.657Z"
+  },
+  {
+    "step": "host-usage",
+    "state": "begin",
+    "at": "2026-09-14T23:19:13.658Z"
+  },
+  {
+    "step": "host-usage",
+    "state": "done",
+    "at": "2026-09-14T23:19:13.658Z"
+  },
+  {
+    "step": "service-close",
+    "state": "begin",
+    "at": "2026-09-14T23:19:13.658Z"
+  },
+  {
+    "step": "service-close",
+    "state": "done",
+    "at": "2026-09-14T23:19:13.673Z"
+  }
+]

@@ -1,0 +1,1488 @@
+{
+    "measuredAt":  "2026-09-14T23:14:23.447Z",
+    "sourceRevision":  "2297f648b092ae2d4e04774a436a5dcfff0f64e5",
+    "environment":  {
+                        "platform":  "win32",
+                        "osRelease":  "10.0.26200",
+                        "cpu":  "Intel(R) Core(TM) Ultra 9 275HX",
+                        "logicalProcessors":  24,
+                        "memoryGiB":  31.43492889404297,
+                        "electron":  {
+                                         "node":  "24.18.0",
+                                         "acorn":  "8.16.0",
+                                         "ada":  "3.4.4",
+                                         "amaro":  "1.1.9",
+                                         "ares":  "1.34.6",
+                                         "brotli":  "1.2.0",
+                                         "cldr":  "48.0",
+                                         "icu":  "78.2",
+                                         "llhttp":  "9.4.2",
+                                         "merve":  "1.2.2",
+                                         "modules":  "148",
+                                         "napi":  "10",
+                                         "nbytes":  "0.1.4",
+                                         "ncrypto":  "0.0.1",
+                                         "nghttp2":  "1.69.0",
+                                         "nghttp3":  "",
+                                         "ngtcp2":  "",
+                                         "openssl":  "0.0.0",
+                                         "simdjson":  "4.6.4",
+                                         "simdutf":  "7.7.0",
+                                         "sqlite":  "3.53.1",
+                                         "tz":  "2025c",
+                                         "undici":  "7.28.0",
+                                         "unicode":  "17.0",
+                                         "uv":  "1.52.1",
+                                         "uvwasi":  "0.0.23",
+                                         "v8":  "15.0.245.13-electron.0",
+                                         "zlib":  "1.3.2.1-motley",
+                                         "zstd":  "1.6.0",
+                                         "electron":  "43.1.0",
+                                         "chrome":  "150.0.7871.47"
+                                     },
+                        "renderer":  {
+                                         "userAgent":  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7871.47 Electron/43.1.0 Safari/537.36",
+                                         "viewport":  [
+                                                          1600,
+                                                          1000
+                                                      ],
+                                         "devicePixelRatio":  1.5
+                                     }
+                    },
+    "definitions":  {
+                        "localSend":  "Captured Enter keydown to pending-message DOM and next requestAnimationFrame callback.",
+                        "rendererStream":  "Validated renderer bridge snapshot callback to matching assistant text DOM and next requestAnimationFrame callback. This is a frame opportunity, not a physical display timestamp.",
+                        "controlledTransport":  "E2E event injection to renderer bridge callback, including fixture/main controller/IPC/preload parsing. No provider or network timing is measured.",
+                        "paneFocus":  "Captured pointerdown on another pane to its data-focused DOM attribute and next requestAnimationFrame callback."
+                    },
+    "scenarios":  [
+                      {
+                          "historyMessagesPerThread":  80,
+                          "paneCount":  4,
+                          "textBytes":  84060,
+                          "rendered":  [
+                                           {
+                                               "threadId":  "grok-previews",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "footer-links",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "weekly-note",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "visual-gate",
+                                               "messageCount":  80
+                                           }
+                                       ],
+                          "send":  {
+                                       "domMs":  {
+                                                     "count":  20,
+                                                     "p50":  28.200000047683716,
+                                                     "p95":  48.09999996423721,
+                                                     "max":  61.90000003576279
+                                                 },
+                                       "nextFrameMs":  {
+                                                           "count":  20,
+                                                           "p50":  30.80000001192093,
+                                                           "p95":  52.19999998807907,
+                                                           "max":  67.30000001192093
+                                                       }
+                                   },
+                          "stream":  {
+                                         "rendererDomMs":  {
+                                                               "count":  38,
+                                                               "p50":  22.30000001192093,
+                                                               "p95":  65.5,
+                                                               "max":  66.5
+                                                           },
+                                         "rendererNextFrameMs":  {
+                                                                     "count":  38,
+                                                                     "p50":  39.10000002384186,
+                                                                     "p95":  68.69999998807907,
+                                                                     "max":  83.29999995231628
+                                                                 },
+                                         "controlledTransportMs":  {
+                                                                       "count":  40,
+                                                                       "p50":  22.400000035762787,
+                                                                       "p95":  65.90000003576279,
+                                                                       "max":  90.69999998807907
+                                                                   },
+                                         "visibleUpdateGapMs":  {
+                                                                    "count":  38,
+                                                                    "p50":  54.5,
+                                                                    "p95":  105.09999996423721,
+                                                                    "max":  112.5
+                                                                },
+                                         "observedSnapshots":  40,
+                                         "emittedUpdates":  40,
+                                         "renderedUpdates":  38,
+                                         "coalescedUpdates":  2,
+                                         "requestedCadenceMs":  50,
+                                         "actualEmissionIntervalMs":  {
+                                                                          "count":  39,
+                                                                          "p50":  51.5,
+                                                                          "p95":  102.10000002384186,
+                                                                          "max":  127.40000003576279
+                                                                      }
+                                     },
+                          "focus":  {
+                                        "domMs":  {
+                                                      "count":  32,
+                                                      "p50":  3.5,
+                                                      "p95":  4.300000011920929,
+                                                      "max":  4.400000035762787
+                                                  },
+                                        "nextFrameMs":  {
+                                                            "count":  32,
+                                                            "p50":  39.30000001192093,
+                                                            "p95":  52.30000001192093,
+                                                            "max":  53.30000001192093
+                                                        }
+                                    },
+                          "samples":  {
+                                          "send":  [
+                                                       {
+                                                           "dom":  24.69999998807907,
+                                                           "frame":  27.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  24.69999998807907,
+                                                           "frame":  27.600000023841858
+                                                       },
+                                                       {
+                                                           "dom":  42.69999998807907,
+                                                           "frame":  46
+                                                       },
+                                                       {
+                                                           "dom":  32.80000001192093,
+                                                           "frame":  35.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  48.09999996423721,
+                                                           "frame":  52.19999998807907
+                                                       },
+                                                       {
+                                                           "dom":  22.100000023841858,
+                                                           "frame":  24.600000023841858
+                                                       },
+                                                       {
+                                                           "dom":  24.600000023841858,
+                                                           "frame":  27.100000023841858
+                                                       },
+                                                       {
+                                                           "dom":  28.30000001192093,
+                                                           "frame":  31.19999998807907
+                                                       },
+                                                       {
+                                                           "dom":  61.90000003576279,
+                                                           "frame":  67.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  24.5,
+                                                           "frame":  26.80000001192093
+                                                       },
+                                                       {
+                                                           "dom":  24.100000023841858,
+                                                           "frame":  26.5
+                                                       },
+                                                       {
+                                                           "dom":  24.599999964237213,
+                                                           "frame":  27
+                                                       },
+                                                       {
+                                                           "dom":  28.30000001192093,
+                                                           "frame":  31.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  28.200000047683716,
+                                                           "frame":  30.80000001192093
+                                                       },
+                                                       {
+                                                           "dom":  40.30000001192093,
+                                                           "frame":  43.5
+                                                       },
+                                                       {
+                                                           "dom":  26.899999976158142,
+                                                           "frame":  29.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  37.19999998807907,
+                                                           "frame":  40.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  31.19999998807907,
+                                                           "frame":  33.89999997615814
+                                                       },
+                                                       {
+                                                           "dom":  46.30000001192093,
+                                                           "frame":  49
+                                                       },
+                                                       {
+                                                           "dom":  21.30000001192093,
+                                                           "frame":  23.80000001192093
+                                                       }
+                                                   ],
+                                          "focus":  [
+                                                        {
+                                                            "dom":  4.300000011920929,
+                                                            "frame":  48.5
+                                                        },
+                                                        {
+                                                            "dom":  3.599999964237213,
+                                                            "frame":  43.59999996423721
+                                                        },
+                                                        {
+                                                            "dom":  3.5,
+                                                            "frame":  36.5
+                                                        },
+                                                        {
+                                                            "dom":  2.899999976158142,
+                                                            "frame":  27.899999976158142
+                                                        },
+                                                        {
+                                                            "dom":  3,
+                                                            "frame":  27.099999964237213
+                                                        },
+                                                        {
+                                                            "dom":  3.800000011920929,
+                                                            "frame":  34.09999996423721
+                                                        },
+                                                        {
+                                                            "dom":  2.400000035762787,
+                                                            "frame":  25.400000035762787
+                                                        },
+                                                        {
+                                                            "dom":  2.899999976158142,
+                                                            "frame":  26.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  2.399999976158142,
+                                                            "frame":  25.399999976158142
+                                                        },
+                                                        {
+                                                            "dom":  2.300000011920929,
+                                                            "frame":  35
+                                                        },
+                                                        {
+                                                            "dom":  3.800000011920929,
+                                                            "frame":  38.80000001192093
+                                                        },
+                                                        {
+                                                            "dom":  2.300000011920929,
+                                                            "frame":  26.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  2.399999976158142,
+                                                            "frame":  24.899999976158142
+                                                        },
+                                                        {
+                                                            "dom":  2.300000011920929,
+                                                            "frame":  25.5
+                                                        },
+                                                        {
+                                                            "dom":  2.300000011920929,
+                                                            "frame":  26.600000023841858
+                                                        },
+                                                        {
+                                                            "dom":  2.900000035762787,
+                                                            "frame":  32.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  2.600000023841858,
+                                                            "frame":  39.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.300000011920929,
+                                                            "frame":  28.900000035762787
+                                                        },
+                                                        {
+                                                            "dom":  3.299999952316284,
+                                                            "frame":  40.299999952316284
+                                                        },
+                                                        {
+                                                            "dom":  4.400000035762787,
+                                                            "frame":  53.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.800000011920929,
+                                                            "frame":  46.40000003576279
+                                                        },
+                                                        {
+                                                            "dom":  4.099999964237213,
+                                                            "frame":  52.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.800000011920929,
+                                                            "frame":  47.5
+                                                        },
+                                                        {
+                                                            "dom":  4,
+                                                            "frame":  48.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.599999964237213,
+                                                            "frame":  44.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  4.100000023841858,
+                                                            "frame":  48.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.599999964237213,
+                                                            "frame":  44.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.5,
+                                                            "frame":  46.19999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.800000011920929,
+                                                            "frame":  49.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.699999988079071,
+                                                            "frame":  43.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.699999988079071,
+                                                            "frame":  43.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.600000023841858,
+                                                            "frame":  42.10000002384186
+                                                        }
+                                                    ],
+                                          "stream":  [
+                                                         {
+                                                             "dom":  54.700000047683716,
+                                                             "frame":  64.80000001192093,
+                                                             "sequence":  0,
+                                                             "transport":  3.799999952316284,
+                                                             "displayedAt":  11107.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  17.900000035762787,
+                                                             "frame":  19.69999998807907,
+                                                             "sequence":  1,
+                                                             "transport":  6.099999964237213,
+                                                             "displayedAt":  11154
+                                                         },
+                                                         {
+                                                             "dom":  20.100000023841858,
+                                                             "frame":  39.10000002384186,
+                                                             "sequence":  2,
+                                                             "transport":  3.299999952316284,
+                                                             "displayedAt":  11224.100000023842
+                                                         },
+                                                         {
+                                                             "dom":  16.799999952316284,
+                                                             "frame":  20.099999964237213,
+                                                             "sequence":  3,
+                                                             "transport":  4.700000047683716,
+                                                             "displayedAt":  11247.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  65.5,
+                                                             "frame":  68.69999998807907,
+                                                             "sequence":  4,
+                                                             "transport":  6.600000023841858,
+                                                             "displayedAt":  11340.400000035763
+                                                         },
+                                                         {
+                                                             "dom":  49.19999998807907,
+                                                             "frame":  56.299999952316284,
+                                                             "sequence":  5,
+                                                             "transport":  33.40000003576279,
+                                                             "displayedAt":  11428.5
+                                                         },
+                                                         {
+                                                             "dom":  42.80000001192093,
+                                                             "frame":  68.19999998807907,
+                                                             "sequence":  6,
+                                                             "transport":  84.5,
+                                                             "displayedAt":  11491.5
+                                                         },
+                                                         {
+                                                             "dom":  19.900000035762787,
+                                                             "frame":  21.600000023841858,
+                                                             "sequence":  7,
+                                                             "transport":  3.799999952316284,
+                                                             "displayedAt":  11491.600000023842
+                                                         },
+                                                         {
+                                                             "dom":  22.19999998807907,
+                                                             "frame":  24.100000023841858,
+                                                             "sequence":  8,
+                                                             "transport":  28.899999976158142,
+                                                             "displayedAt":  11519.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  23.5,
+                                                             "frame":  44.5,
+                                                             "sequence":  9,
+                                                             "transport":  27.69999998807907,
+                                                             "displayedAt":  11589.600000023842
+                                                         },
+                                                         {
+                                                             "dom":  17.5,
+                                                             "frame":  19.19999998807907,
+                                                             "sequence":  10,
+                                                             "transport":  24.099999964237213,
+                                                             "displayedAt":  11612
+                                                         },
+                                                         {
+                                                             "dom":  15.699999988079071,
+                                                             "frame":  33.799999952316284,
+                                                             "sequence":  11,
+                                                             "transport":  22.400000035762787,
+                                                             "displayedAt":  11666.5
+                                                         },
+                                                         {
+                                                             "dom":  16.700000047683716,
+                                                             "frame":  43.40000003576279,
+                                                             "sequence":  12,
+                                                             "transport":  6,
+                                                             "displayedAt":  11713.400000035763
+                                                         },
+                                                         {
+                                                             "dom":  66.5,
+                                                             "frame":  83.29999995231628,
+                                                             "sequence":  13,
+                                                             "transport":  3.600000023841858,
+                                                             "displayedAt":  11802
+                                                         },
+                                                         {
+                                                             "dom":  15,
+                                                             "frame":  18.5,
+                                                             "sequence":  14,
+                                                             "transport":  18.700000047683716,
+                                                             "displayedAt":  11823.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  15.599999964237213,
+                                                             "frame":  36.09999996423721,
+                                                             "sequence":  15,
+                                                             "transport":  24,
+                                                             "displayedAt":  11880.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  25.399999976158142,
+                                                             "frame":  33.10000002384186,
+                                                             "sequence":  16,
+                                                             "transport":  18.69999998807907,
+                                                             "displayedAt":  11911.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  17.19999998807907,
+                                                             "frame":  54.39999997615814,
+                                                             "sequence":  17,
+                                                             "transport":  4.300000011920929,
+                                                             "displayedAt":  11994.600000023842
+                                                         },
+                                                         {
+                                                             "dom":  19.899999976158142,
+                                                             "frame":  39.30000001192093,
+                                                             "sequence":  18,
+                                                             "transport":  35.40000003576279,
+                                                             "displayedAt":  12032.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  26,
+                                                             "frame":  31.899999976158142,
+                                                             "sequence":  19,
+                                                             "transport":  17.80000001192093,
+                                                             "displayedAt":  12062.5
+                                                         },
+                                                         {
+                                                             "dom":  21.399999976158142,
+                                                             "frame":  47.39999997615814,
+                                                             "sequence":  20,
+                                                             "transport":  4.600000023841858,
+                                                             "displayedAt":  12135.800000011921
+                                                         },
+                                                         {
+                                                             "dom":  22.5,
+                                                             "frame":  25.700000047683716,
+                                                             "sequence":  21,
+                                                             "transport":  24.19999998807907,
+                                                             "displayedAt":  12159.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  17.399999976158142,
+                                                             "frame":  19.19999998807907,
+                                                             "sequence":  22,
+                                                             "transport":  64.80000001192093,
+                                                             "displayedAt":  12264.800000011921
+                                                         },
+                                                         {
+                                                             "dom":  22.5,
+                                                             "frame":  24.400000035762787,
+                                                             "sequence":  24,
+                                                             "transport":  43.799999952316284,
+                                                             "displayedAt":  12313.900000035763
+                                                         },
+                                                         {
+                                                             "dom":  20.19999998807907,
+                                                             "frame":  26.5,
+                                                             "sequence":  25,
+                                                             "transport":  5.699999988079071,
+                                                             "displayedAt":  12344.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  23.5,
+                                                             "frame":  47.19999998807907,
+                                                             "sequence":  26,
+                                                             "transport":  3.699999988079071,
+                                                             "displayedAt":  12424
+                                                         },
+                                                         {
+                                                             "dom":  20.100000023841858,
+                                                             "frame":  47.5,
+                                                             "sequence":  27,
+                                                             "transport":  5.399999976158142,
+                                                             "displayedAt":  12475
+                                                         },
+                                                         {
+                                                             "dom":  26.80000001192093,
+                                                             "frame":  53.30000001192093,
+                                                             "sequence":  28,
+                                                             "transport":  8.099999964237213,
+                                                             "displayedAt":  12533.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  22.80000001192093,
+                                                             "frame":  53.90000003576279,
+                                                             "sequence":  29,
+                                                             "transport":  6.599999964237213,
+                                                             "displayedAt":  12591.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  30.5,
+                                                             "frame":  63.40000003576279,
+                                                             "sequence":  30,
+                                                             "transport":  28.899999976158142,
+                                                             "displayedAt":  12652.900000035763
+                                                         },
+                                                         {
+                                                             "dom":  28.599999964237213,
+                                                             "frame":  31.099999964237213,
+                                                             "sequence":  31,
+                                                             "transport":  35.30000001192093,
+                                                             "displayedAt":  12688.800000011921
+                                                         },
+                                                         {
+                                                             "dom":  22.200000047683716,
+                                                             "frame":  24.30000001192093,
+                                                             "sequence":  32,
+                                                             "transport":  90.69999998807907,
+                                                             "displayedAt":  12801.300000011921
+                                                         },
+                                                         {
+                                                             "dom":  22.30000001192093,
+                                                             "frame":  47,
+                                                             "sequence":  34,
+                                                             "transport":  55.19999998807907,
+                                                             "displayedAt":  12877
+                                                         },
+                                                         {
+                                                             "dom":  20.899999976158142,
+                                                             "frame":  23.099999964237213,
+                                                             "sequence":  35,
+                                                             "transport":  27.600000023841858,
+                                                             "displayedAt":  12877
+                                                         },
+                                                         {
+                                                             "dom":  27.900000035762787,
+                                                             "frame":  59.69999998807907,
+                                                             "sequence":  36,
+                                                             "transport":  40.5,
+                                                             "displayedAt":  12975
+                                                         },
+                                                         {
+                                                             "dom":  34.39999997615814,
+                                                             "frame":  42.80000001192093,
+                                                             "sequence":  37,
+                                                             "transport":  29.399999976158142,
+                                                             "displayedAt":  13015.400000035763
+                                                         },
+                                                         {
+                                                             "dom":  36.19999998807907,
+                                                             "frame":  38.69999998807907,
+                                                             "sequence":  38,
+                                                             "transport":  65.90000003576279,
+                                                             "displayedAt":  13047.900000035763
+                                                         },
+                                                         {
+                                                             "dom":  30.400000035762787,
+                                                             "frame":  64.40000003576279,
+                                                             "sequence":  39,
+                                                             "transport":  7.899999976158142,
+                                                             "displayedAt":  13117.700000047684
+                                                         }
+                                                     ],
+                                          "injections":  {
+                                                             "0":  11038.700000047684,
+                                                             "1":  11128.200000047684,
+                                                             "2":  11181.700000047684,
+                                                             "3":  11222.5,
+                                                             "4":  11265.100000023842,
+                                                             "5":  11338.800000011921,
+                                                             "6":  11338.800000011921,
+                                                             "7":  11466.200000047684,
+                                                             "8":  11466.200000047684,
+                                                             "9":  11517.400000035763,
+                                                             "10":  11568.700000047684,
+                                                             "11":  11610.300000011921,
+                                                             "12":  11664,
+                                                             "13":  11715.100000023842,
+                                                             "14":  11786.5,
+                                                             "15":  11820.200000047684,
+                                                             "16":  11859.900000035763,
+                                                             "17":  11935.900000035763,
+                                                             "18":  11957.5,
+                                                             "19":  12012.800000011921,
+                                                             "20":  12083.800000011921,
+                                                             "21":  12109.800000011921,
+                                                             "22":  12180.800000011921,
+                                                             "23":  12245.700000047684,
+                                                             "24":  12245.700000047684,
+                                                             "25":  12312.100000023842,
+                                                             "26":  12373.100000023842,
+                                                             "27":  12422.100000023842,
+                                                             "28":  12471.900000035763,
+                                                             "29":  12531.200000047684,
+                                                             "30":  12560.600000023842,
+                                                             "31":  12622.400000035763,
+                                                             "32":  12686.300000011921,
+                                                             "33":  12774.700000047684,
+                                                             "34":  12774.800000011921,
+                                                             "35":  12826.300000011921,
+                                                             "36":  12874.800000011921,
+                                                             "37":  12943.200000047684,
+                                                             "38":  12943.300000011921,
+                                                             "39":  13045.400000035763
+                                                         },
+                                          "arrivals":  {
+                                                           "0":  11042.5,
+                                                           "1":  11134.300000011921,
+                                                           "2":  11185,
+                                                           "3":  11227.200000047684,
+                                                           "4":  11271.700000047684,
+                                                           "5":  11372.200000047684,
+                                                           "6":  11423.300000011921,
+                                                           "7":  11470,
+                                                           "8":  11495.100000023842,
+                                                           "9":  11545.100000023842,
+                                                           "10":  11592.800000011921,
+                                                           "11":  11632.700000047684,
+                                                           "12":  11670,
+                                                           "13":  11718.700000047684,
+                                                           "14":  11805.200000047684,
+                                                           "15":  11844.200000047684,
+                                                           "16":  11878.600000023842,
+                                                           "17":  11940.200000047684,
+                                                           "18":  11992.900000035763,
+                                                           "19":  12030.600000023842,
+                                                           "20":  12088.400000035763,
+                                                           "21":  12134,
+                                                           "22":  12245.600000023842,
+                                                           "23":  12287.700000047684,
+                                                           "24":  12289.5,
+                                                           "25":  12317.800000011921,
+                                                           "26":  12376.800000011921,
+                                                           "27":  12427.5,
+                                                           "28":  12480,
+                                                           "29":  12537.800000011921,
+                                                           "30":  12589.5,
+                                                           "31":  12657.700000047684,
+                                                           "32":  12777,
+                                                           "33":  12828.700000047684,
+                                                           "34":  12830,
+                                                           "35":  12853.900000035763,
+                                                           "36":  12915.300000011921,
+                                                           "37":  12972.600000023842,
+                                                           "38":  13009.200000047684,
+                                                           "39":  13053.300000011921
+                                                       },
+                                          "rendered":  {
+                                                           "0":  true,
+                                                           "1":  true,
+                                                           "2":  true,
+                                                           "3":  true,
+                                                           "4":  true,
+                                                           "5":  true,
+                                                           "6":  true,
+                                                           "7":  true,
+                                                           "8":  true,
+                                                           "9":  true,
+                                                           "10":  true,
+                                                           "11":  true,
+                                                           "12":  true,
+                                                           "13":  true,
+                                                           "14":  true,
+                                                           "15":  true,
+                                                           "16":  true,
+                                                           "17":  true,
+                                                           "18":  true,
+                                                           "19":  true,
+                                                           "20":  true,
+                                                           "21":  true,
+                                                           "22":  true,
+                                                           "24":  true,
+                                                           "25":  true,
+                                                           "26":  true,
+                                                           "27":  true,
+                                                           "28":  true,
+                                                           "29":  true,
+                                                           "30":  true,
+                                                           "31":  true,
+                                                           "32":  true,
+                                                           "34":  true,
+                                                           "35":  true,
+                                                           "36":  true,
+                                                           "37":  true,
+                                                           "38":  true,
+                                                           "39":  true
+                                                       },
+                                          "emitted":  [
+                                                          0,
+                                                          89.5,
+                                                          143,
+                                                          183.79999995231628,
+                                                          226.39999997615814,
+                                                          300.0999999642372,
+                                                          300.0999999642372,
+                                                          427.5,
+                                                          427.5,
+                                                          478.69999998807907,
+                                                          530,
+                                                          571.5999999642372,
+                                                          625.2999999523163,
+                                                          676.3999999761581,
+                                                          747.7999999523163,
+                                                          781.5,
+                                                          821.1999999880791,
+                                                          897.1999999880791,
+                                                          918.7999999523163,
+                                                          974.0999999642372,
+                                                          1045.0999999642372,
+                                                          1071.0999999642372,
+                                                          1142.0999999642372,
+                                                          1207,
+                                                          1207,
+                                                          1273.3999999761581,
+                                                          1334.3999999761581,
+                                                          1383.3999999761581,
+                                                          1433.199999988079,
+                                                          1492.5,
+                                                          1521.8999999761581,
+                                                          1583.699999988079,
+                                                          1647.5999999642372,
+                                                          1736,
+                                                          1736.0999999642372,
+                                                          1787.5999999642372,
+                                                          1836.0999999642372,
+                                                          1904.5,
+                                                          1904.5999999642372,
+                                                          2006.699999988079
+                                                      ]
+                                      }
+                      },
+                      {
+                          "historyMessagesPerThread":  2000,
+                          "paneCount":  4,
+                          "textBytes":  2120340,
+                          "rendered":  [
+                                           {
+                                               "threadId":  "grok-previews",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "footer-links",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "weekly-note",
+                                               "messageCount":  80
+                                           },
+                                           {
+                                               "threadId":  "visual-gate",
+                                               "messageCount":  80
+                                           }
+                                       ],
+                          "send":  {
+                                       "domMs":  {
+                                                     "count":  20,
+                                                     "p50":  28.100000023841858,
+                                                     "p95":  60.80000001192093,
+                                                     "max":  66.59999996423721
+                                                 },
+                                       "nextFrameMs":  {
+                                                           "count":  20,
+                                                           "p50":  32.5,
+                                                           "p95":  66.60000002384186,
+                                                           "max":  69.5
+                                                       }
+                                   },
+                          "stream":  {
+                                         "rendererDomMs":  {
+                                                               "count":  32,
+                                                               "p50":  19.600000023841858,
+                                                               "p95":  40.5,
+                                                               "max":  58.69999998807907
+                                                           },
+                                         "rendererNextFrameMs":  {
+                                                                     "count":  32,
+                                                                     "p50":  38.90000003576279,
+                                                                     "p95":  101.39999997615814,
+                                                                     "max":  114.5
+                                                                 },
+                                         "controlledTransportMs":  {
+                                                                       "count":  40,
+                                                                       "p50":  153.69999998807907,
+                                                                       "p95":  229.5999999642372,
+                                                                       "max":  238.39999997615814
+                                                                   },
+                                         "visibleUpdateGapMs":  {
+                                                                    "count":  32,
+                                                                    "p50":  61.89999997615814,
+                                                                    "p95":  132.30000001192093,
+                                                                    "max":  145
+                                                                },
+                                         "observedSnapshots":  40,
+                                         "emittedUpdates":  40,
+                                         "renderedUpdates":  32,
+                                         "coalescedUpdates":  8,
+                                         "requestedCadenceMs":  50,
+                                         "actualEmissionIntervalMs":  {
+                                                                          "count":  39,
+                                                                          "p50":  58.30000001192093,
+                                                                          "p95":  135,
+                                                                          "max":  144.5
+                                                                      }
+                                     },
+                          "focus":  {
+                                        "domMs":  {
+                                                      "count":  32,
+                                                      "p50":  4.100000023841858,
+                                                      "p95":  10.800000011920929,
+                                                      "max":  15.300000011920929
+                                                  },
+                                        "nextFrameMs":  {
+                                                            "count":  32,
+                                                            "p50":  39.5,
+                                                            "p95":  55.5,
+                                                            "max":  57.80000001192093
+                                                        }
+                                    },
+                          "samples":  {
+                                          "send":  [
+                                                       {
+                                                           "dom":  29.5,
+                                                           "frame":  32.5
+                                                       },
+                                                       {
+                                                           "dom":  43.30000001192093,
+                                                           "frame":  46.40000003576279
+                                                       },
+                                                       {
+                                                           "dom":  60.80000001192093,
+                                                           "frame":  66.60000002384186
+                                                       },
+                                                       {
+                                                           "dom":  33.40000003576279,
+                                                           "frame":  36.10000002384186
+                                                       },
+                                                       {
+                                                           "dom":  44.09999996423721,
+                                                           "frame":  47.299999952316284
+                                                       },
+                                                       {
+                                                           "dom":  25.100000023841858,
+                                                           "frame":  28.100000023841858
+                                                       },
+                                                       {
+                                                           "dom":  23.30000001192093,
+                                                           "frame":  25.80000001192093
+                                                       },
+                                                       {
+                                                           "dom":  25.30000001192093,
+                                                           "frame":  28.100000023841858
+                                                       },
+                                                       {
+                                                           "dom":  66.59999996423721,
+                                                           "frame":  69.5
+                                                       },
+                                                       {
+                                                           "dom":  44.19999998807907,
+                                                           "frame":  48.69999998807907
+                                                       },
+                                                       {
+                                                           "dom":  23.5,
+                                                           "frame":  25.900000035762787
+                                                       },
+                                                       {
+                                                           "dom":  28.100000023841858,
+                                                           "frame":  33.200000047683716
+                                                       },
+                                                       {
+                                                           "dom":  40.30000001192093,
+                                                           "frame":  45.60000002384186
+                                                       },
+                                                       {
+                                                           "dom":  26.5,
+                                                           "frame":  28.69999998807907
+                                                       },
+                                                       {
+                                                           "dom":  40.89999997615814,
+                                                           "frame":  44.09999996423721
+                                                       },
+                                                       {
+                                                           "dom":  22.099999964237213,
+                                                           "frame":  24.19999998807907
+                                                       },
+                                                       {
+                                                           "dom":  25,
+                                                           "frame":  27.30000001192093
+                                                       },
+                                                       {
+                                                           "dom":  23.5,
+                                                           "frame":  25.600000023841858
+                                                       },
+                                                       {
+                                                           "dom":  39,
+                                                           "frame":  41.40000003576279
+                                                       },
+                                                       {
+                                                           "dom":  23.799999952316284,
+                                                           "frame":  26.099999964237213
+                                                       }
+                                                   ],
+                                          "focus":  [
+                                                        {
+                                                            "dom":  4,
+                                                            "frame":  32.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  15.300000011920929,
+                                                            "frame":  41.19999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3,
+                                                            "frame":  28.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.299999952316284,
+                                                            "frame":  32
+                                                        },
+                                                        {
+                                                            "dom":  3.900000035762787,
+                                                            "frame":  37.80000001192093
+                                                        },
+                                                        {
+                                                            "dom":  4.199999988079071,
+                                                            "frame":  39.89999997615814
+                                                        },
+                                                        {
+                                                            "dom":  4.5,
+                                                            "frame":  45.89999997615814
+                                                        },
+                                                        {
+                                                            "dom":  4.399999976158142,
+                                                            "frame":  41.5
+                                                        },
+                                                        {
+                                                            "dom":  6.300000011920929,
+                                                            "frame":  47.90000003576279
+                                                        },
+                                                        {
+                                                            "dom":  5,
+                                                            "frame":  50.19999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.699999988079071,
+                                                            "frame":  36.80000001192093
+                                                        },
+                                                        {
+                                                            "dom":  4.799999952316284,
+                                                            "frame":  52.89999997615814
+                                                        },
+                                                        {
+                                                            "dom":  5.100000023841858,
+                                                            "frame":  54.700000047683716
+                                                        },
+                                                        {
+                                                            "dom":  3.699999988079071,
+                                                            "frame":  41
+                                                        },
+                                                        {
+                                                            "dom":  4.199999988079071,
+                                                            "frame":  46.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  4.5,
+                                                            "frame":  48.40000003576279
+                                                        },
+                                                        {
+                                                            "dom":  4.399999976158142,
+                                                            "frame":  45
+                                                        },
+                                                        {
+                                                            "dom":  2.799999952316284,
+                                                            "frame":  30.5
+                                                        },
+                                                        {
+                                                            "dom":  2.699999988079071,
+                                                            "frame":  26.5
+                                                        },
+                                                        {
+                                                            "dom":  3.899999976158142,
+                                                            "frame":  39.39999997615814
+                                                        },
+                                                        {
+                                                            "dom":  2.800000011920929,
+                                                            "frame":  26.600000023841858
+                                                        },
+                                                        {
+                                                            "dom":  2.600000023841858,
+                                                            "frame":  26
+                                                        },
+                                                        {
+                                                            "dom":  3,
+                                                            "frame":  30.099999964237213
+                                                        },
+                                                        {
+                                                            "dom":  4.100000023841858,
+                                                            "frame":  42.10000002384186
+                                                        },
+                                                        {
+                                                            "dom":  3.699999988079071,
+                                                            "frame":  37.69999998807907
+                                                        },
+                                                        {
+                                                            "dom":  3.5,
+                                                            "frame":  38.30000001192093
+                                                        },
+                                                        {
+                                                            "dom":  8.600000023841858,
+                                                            "frame":  55.5
+                                                        },
+                                                        {
+                                                            "dom":  4.700000047683716,
+                                                            "frame":  50.5
+                                                        },
+                                                        {
+                                                            "dom":  4.900000035762787,
+                                                            "frame":  39.10000002384186
+                                                        },
+                                                        {
+                                                            "dom":  10.800000011920929,
+                                                            "frame":  57.80000001192093
+                                                        },
+                                                        {
+                                                            "dom":  3.100000023841858,
+                                                            "frame":  33.89999997615814
+                                                        },
+                                                        {
+                                                            "dom":  7.300000011920929,
+                                                            "frame":  39.5
+                                                        }
+                                                    ],
+                                          "stream":  [
+                                                         {
+                                                             "dom":  58.69999998807907,
+                                                             "frame":  68.30000001192093,
+                                                             "sequence":  0,
+                                                             "transport":  62,
+                                                             "displayedAt":  45132.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  18.69999998807907,
+                                                             "frame":  20.400000035762787,
+                                                             "sequence":  1,
+                                                             "transport":  97.69999998807907,
+                                                             "displayedAt":  45255.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  31.099999964237213,
+                                                             "frame":  34.19999998807907,
+                                                             "sequence":  2,
+                                                             "transport":  146.80000001192093,
+                                                             "displayedAt":  45318.10000002384
+                                                         },
+                                                         {
+                                                             "dom":  39.59999996423721,
+                                                             "frame":  42.69999998807907,
+                                                             "sequence":  3,
+                                                             "transport":  118.10000002384186,
+                                                             "displayedAt":  45395.90000003576
+                                                         },
+                                                         {
+                                                             "dom":  19.599999964237213,
+                                                             "frame":  21.30000001192093,
+                                                             "sequence":  4,
+                                                             "transport":  188.19999998807907,
+                                                             "displayedAt":  45444.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  19.700000047683716,
+                                                             "frame":  21.400000035762787,
+                                                             "sequence":  6,
+                                                             "transport":  178.79999995231628,
+                                                             "displayedAt":  45515.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  18.399999976158142,
+                                                             "frame":  20.100000023841858,
+                                                             "sequence":  7,
+                                                             "transport":  119.39999997615814,
+                                                             "displayedAt":  45563.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  40.5,
+                                                             "frame":  42.19999998807907,
+                                                             "sequence":  8,
+                                                             "transport":  158.4000000357628,
+                                                             "displayedAt":  45624.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  22.600000023841858,
+                                                             "frame":  24.30000001192093,
+                                                             "sequence":  9,
+                                                             "transport":  127.09999996423721,
+                                                             "displayedAt":  45668.80000001192
+                                                         },
+                                                         {
+                                                             "dom":  17.399999976158142,
+                                                             "frame":  19,
+                                                             "sequence":  10,
+                                                             "transport":  175.20000004768372,
+                                                             "displayedAt":  45711.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  19.600000023841858,
+                                                             "frame":  21.19999998807907,
+                                                             "sequence":  11,
+                                                             "transport":  128.39999997615814,
+                                                             "displayedAt":  45772.30000001192
+                                                         },
+                                                         {
+                                                             "dom":  40.10000002384186,
+                                                             "frame":  93.30000001192093,
+                                                             "sequence":  13,
+                                                             "transport":  101.19999998807907,
+                                                             "displayedAt":  45904.60000002384
+                                                         },
+                                                         {
+                                                             "dom":  20.899999976158142,
+                                                             "frame":  63.59999996423721,
+                                                             "sequence":  14,
+                                                             "transport":  192.19999998807907,
+                                                             "displayedAt":  45966
+                                                         },
+                                                         {
+                                                             "dom":  31.599999964237213,
+                                                             "frame":  68.30000001192093,
+                                                             "sequence":  16,
+                                                             "transport":  152.10000002384186,
+                                                             "displayedAt":  46032.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  16.599999964237213,
+                                                             "frame":  63.59999996423721,
+                                                             "sequence":  18,
+                                                             "transport":  166.70000004768372,
+                                                             "displayedAt":  46153.80000001192
+                                                         },
+                                                         {
+                                                             "dom":  17.80000001192093,
+                                                             "frame":  38.90000003576279,
+                                                             "sequence":  19,
+                                                             "transport":  121.59999996423721,
+                                                             "displayedAt":  46190.700000047684
+                                                         },
+                                                         {
+                                                             "dom":  21.099999964237213,
+                                                             "frame":  60.59999996423721,
+                                                             "sequence":  20,
+                                                             "transport":  158.5,
+                                                             "displayedAt":  46249.30000001192
+                                                         },
+                                                         {
+                                                             "dom":  14.800000011920929,
+                                                             "frame":  16.69999998807907,
+                                                             "sequence":  21,
+                                                             "transport":  103,
+                                                             "displayedAt":  46249.30000001192
+                                                         },
+                                                         {
+                                                             "dom":  17.400000035762787,
+                                                             "frame":  19.100000023841858,
+                                                             "sequence":  22,
+                                                             "transport":  141.5,
+                                                             "displayedAt":  46290.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  15.300000011920929,
+                                                             "frame":  69.19999998807907,
+                                                             "sequence":  23,
+                                                             "transport":  126.30000001192093,
+                                                             "displayedAt":  46384.60000002384
+                                                         },
+                                                         {
+                                                             "dom":  25.599999964237213,
+                                                             "frame":  32.89999997615814,
+                                                             "sequence":  24,
+                                                             "transport":  104.30000001192093,
+                                                             "displayedAt":  46384.60000002384
+                                                         },
+                                                         {
+                                                             "dom":  17.30000001192093,
+                                                             "frame":  41.90000003576279,
+                                                             "sequence":  26,
+                                                             "transport":  153.69999998807907,
+                                                             "displayedAt":  46511.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  18,
+                                                             "frame":  88.40000003576279,
+                                                             "sequence":  27,
+                                                             "transport":  158.0999999642372,
+                                                             "displayedAt":  46656.40000003576
+                                                         },
+                                                         {
+                                                             "dom":  37.19999998807907,
+                                                             "frame":  101.39999997615814,
+                                                             "sequence":  29,
+                                                             "transport":  137.20000004768372,
+                                                             "displayedAt":  46754.10000002384
+                                                         },
+                                                         {
+                                                             "dom":  36.5,
+                                                             "frame":  38.80000001192093,
+                                                             "sequence":  30,
+                                                             "transport":  199.80000001192093,
+                                                             "displayedAt":  46754.200000047684
+                                                         },
+                                                         {
+                                                             "dom":  16.80000001192093,
+                                                             "frame":  18.5,
+                                                             "sequence":  31,
+                                                             "transport":  137.5,
+                                                             "displayedAt":  46816.10000002384
+                                                         },
+                                                         {
+                                                             "dom":  15.399999976158142,
+                                                             "frame":  61.89999997615814,
+                                                             "sequence":  32,
+                                                             "transport":  186.19999998807907,
+                                                             "displayedAt":  46908.30000001192
+                                                         },
+                                                         {
+                                                             "dom":  16.80000001192093,
+                                                             "frame":  18.5,
+                                                             "sequence":  33,
+                                                             "transport":  229.5999999642372,
+                                                             "displayedAt":  46908.30000001192
+                                                         },
+                                                         {
+                                                             "dom":  31.900000035762787,
+                                                             "frame":  78.80000001192093,
+                                                             "sequence":  34,
+                                                             "transport":  160.19999998807907,
+                                                             "displayedAt":  47018.60000002384
+                                                         },
+                                                         {
+                                                             "dom":  30.5,
+                                                             "frame":  114.5,
+                                                             "sequence":  35,
+                                                             "transport":  235.29999995231628,
+                                                             "displayedAt":  47129.5
+                                                         },
+                                                         {
+                                                             "dom":  27.5,
+                                                             "frame":  29.19999998807907,
+                                                             "sequence":  37,
+                                                             "transport":  238.39999997615814,
+                                                             "displayedAt":  47129.5
+                                                         },
+                                                         {
+                                                             "dom":  14.699999988079071,
+                                                             "frame":  61.19999998807907,
+                                                             "sequence":  39,
+                                                             "transport":  211,
+                                                             "displayedAt":  47244.10000002384
+                                                         }
+                                                     ],
+                                          "injections":  {
+                                                             "0":  45002.10000002384,
+                                                             "1":  45137.10000002384,
+                                                             "2":  45137.10000002384,
+                                                             "3":  45235.10000002384,
+                                                             "4":  45235.200000047684,
+                                                             "5":  45315.10000002384,
+                                                             "6":  45315.200000047684,
+                                                             "7":  45423.700000047684,
+                                                             "8":  45423.80000001192,
+                                                             "9":  45517.40000003576,
+                                                             "10":  45517.5,
+                                                             "11":  45622.700000047684,
+                                                             "12":  45622.80000001192,
+                                                             "13":  45710.10000002384,
+                                                             "14":  45710.200000047684,
+                                                             "15":  45811.80000001192,
+                                                             "16":  45811.80000001192,
+                                                             "17":  45923.40000003576,
+                                                             "18":  45923.5,
+                                                             "19":  46030.200000047684,
+                                                             "20":  46030.200000047684,
+                                                             "21":  46129.60000002384,
+                                                             "22":  46129.80000001192,
+                                                             "23":  46189.10000002384,
+                                                             "24":  46247.40000003576,
+                                                             "25":  46315.700000047684,
+                                                             "26":  46315.80000001192,
+                                                             "27":  46409.90000003576,
+                                                             "28":  46410,
+                                                             "29":  46515.5,
+                                                             "30":  46515.60000002384,
+                                                             "31":  46660.10000002384,
+                                                             "32":  46660.200000047684,
+                                                             "33":  46660.200000047684,
+                                                             "34":  46779.60000002384,
+                                                             "35":  46779.700000047684,
+                                                             "36":  46861.90000003576,
+                                                             "37":  46861.90000003576,
+                                                             "38":  46971.80000001192,
+                                                             "39":  46971.90000003576
+                                                         },
+                                          "arrivals":  {
+                                                           "0":  45064.10000002384,
+                                                           "1":  45234.80000001192,
+                                                           "2":  45283.90000003576,
+                                                           "3":  45353.200000047684,
+                                                           "4":  45423.40000003576,
+                                                           "5":  45471.5,
+                                                           "6":  45494,
+                                                           "7":  45543.10000002384,
+                                                           "8":  45582.200000047684,
+                                                           "9":  45644.5,
+                                                           "10":  45692.700000047684,
+                                                           "11":  45751.10000002384,
+                                                           "12":  45792.80000001192,
+                                                           "13":  45811.30000001192,
+                                                           "14":  45902.40000003576,
+                                                           "15":  45944.40000003576,
+                                                           "16":  45963.90000003576,
+                                                           "17":  46069.200000047684,
+                                                           "18":  46090.200000047684,
+                                                           "19":  46151.80000001192,
+                                                           "20":  46188.700000047684,
+                                                           "21":  46232.60000002384,
+                                                           "22":  46271.30000001192,
+                                                           "23":  46315.40000003576,
+                                                           "24":  46351.700000047684,
+                                                           "25":  46446.40000003576,
+                                                           "26":  46469.5,
+                                                           "27":  46568,
+                                                           "28":  46612.5,
+                                                           "29":  46652.700000047684,
+                                                           "30":  46715.40000003576,
+                                                           "31":  46797.60000002384,
+                                                           "32":  46846.40000003576,
+                                                           "33":  46889.80000001192,
+                                                           "34":  46939.80000001192,
+                                                           "35":  47015,
+                                                           "36":  47066.80000001192,
+                                                           "37":  47100.30000001192,
+                                                           "38":  47148.5,
+                                                           "39":  47182.90000003576
+                                                       },
+                                          "rendered":  {
+                                                           "0":  true,
+                                                           "1":  true,
+                                                           "2":  true,
+                                                           "3":  true,
+                                                           "4":  true,
+                                                           "6":  true,
+                                                           "7":  true,
+                                                           "8":  true,
+                                                           "9":  true,
+                                                           "10":  true,
+                                                           "11":  true,
+                                                           "13":  true,
+                                                           "14":  true,
+                                                           "16":  true,
+                                                           "18":  true,
+                                                           "19":  true,
+                                                           "20":  true,
+                                                           "21":  true,
+                                                           "22":  true,
+                                                           "23":  true,
+                                                           "24":  true,
+                                                           "26":  true,
+                                                           "27":  true,
+                                                           "29":  true,
+                                                           "30":  true,
+                                                           "31":  true,
+                                                           "32":  true,
+                                                           "33":  true,
+                                                           "34":  true,
+                                                           "35":  true,
+                                                           "37":  true,
+                                                           "39":  true
+                                                       },
+                                          "emitted":  [
+                                                          0,
+                                                          135,
+                                                          135,
+                                                          233,
+                                                          233.10000002384186,
+                                                          313,
+                                                          313.10000002384186,
+                                                          421.60000002384186,
+                                                          421.69999998807907,
+                                                          515.3000000119209,
+                                                          515.3999999761581,
+                                                          620.6000000238419,
+                                                          620.6999999880791,
+                                                          708,
+                                                          708.1000000238419,
+                                                          809.6999999880791,
+                                                          809.6999999880791,
+                                                          921.3999999761581,
+                                                          921.3999999761581,
+                                                          1028.1000000238419,
+                                                          1028.1000000238419,
+                                                          1127.6000000238419,
+                                                          1127.699999988079,
+                                                          1187,
+                                                          1245.300000011921,
+                                                          1313.6000000238419,
+                                                          1313.699999988079,
+                                                          1407.800000011921,
+                                                          1407.8999999761581,
+                                                          1513.3999999761581,
+                                                          1513.5,
+                                                          1658,
+                                                          1658.1000000238419,
+                                                          1658.1000000238419,
+                                                          1777.5,
+                                                          1777.6000000238419,
+                                                          1859.800000011921,
+                                                          1859.800000011921,
+                                                          1969.699999988079,
+                                                          1969.800000011921
+                                                      ]
+                                      }
+                      }
+                  ],
+    "sourceState":  "uncommitted working tree",
+    "rendererSource":  "src/renderer/src/agents/MessageContent.tsx",
+    "rendererSourceSha256":  "7285f74afaa081161b465745804e6d57dcaee87ef229915be3bda1593f7203ac",
+    "metadataNote":  "Source identity metadata appended after measurement; renderer source was unchanged between the measured build and hashing."
+}

@@ -117,3 +117,19 @@
   .threads-view .thread-panes__divider::before, .threads-view .thread-panes__drop::before, .threads-view .thread-panes__drop-label { transition: none; }
 }
 :root[data-reduced-motion='on'] .threads-view .thread-panes__divider::before, :root[data-reduced-motion='on'] .threads-view :is(.thread-panes__drop::before, .thread-panes__drop-label) { transition: none; }
+
+/* Short desktop splits retain every header action without giving Tools a row of its own. */
+@container thread-pane (max-height: 600px) and (max-width: 600px) {
+  .threads-view .thread-pane .thread-workspace__actions .tt-button { padding-inline: 4px; }
+}
+/* The tab strip and usage footer also share the minimum window's height budget. Keep the same type and
+   34px action targets; tighten surrounding space so an image draft and its queue stay wholly visible. */
+@media (max-height: 600px) {
+  .threads-view .thread-panes__tabs { padding-top: 2px; }
+  .threads-view .thread-panes__tab { min-height: 34px; }
+}
+@container thread-pane (max-height: 450px) {
+  .threads-view .thread-pane .thread-workspace__compose { padding-block: 2px 4px; }
+  .threads-view .thread-panes .thread-pane > header.thread-workspace__head { padding-block: 4px; }
+  .threads-view .thread-pane .thread-usage { padding-block: 0; }
+}

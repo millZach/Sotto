@@ -549,8 +549,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
       grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),
     },
-    provider: () => agentControl.get().configuration.provider,
-    enabledProviders: () => { const configuration = agentControl.get().configuration; return configuration.enabledProviders ?? [configuration.provider] },
+    provider: () => agentControl.configuration().provider,
+    enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), userDataPath, () => agentHistoryEnabled)
   const turns = new TurnRecorder({
@@ -562,7 +562,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
   })
   const membership = new AgentMembershipClient({
-    configuration: () => agentControl.get().configuration,
+    configuration: () => agentControl.configuration(),
     credentials, directory: userDataPath, isPackaged: app.isPackaged, openExternal: url => shell.openExternal(url),
   })
   let openedThreadFolder: string | null = null
@@ -577,7 +577,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     historyEnabled: () => agentHistoryEnabled,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     turns,
-    reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.get().configuration, credentials, {
+    reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {
       claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude')),
       codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok')),
@@ -587,7 +587,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const testPersonalChatHosts = e2eConfiguration ? {
     codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
   } : undefined
-  const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.get().configuration,
+  const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.configuration(),
     ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
     ...(testPersonalChatHosts ? { hosts: testPersonalChatHosts } : {}) })
   await personalChats.start()
@@ -604,7 +604,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       return { objective: [{ text: source.text, evidence: [{ messageId: source.id, quote: source.text }] }],
         context: [], decisions: [], constraints: [], deliverables: [], acceptanceChecks: [], unresolvedQuestions: [], suggestions: [] }
     }
-    return new ConfiguredAgentReasoner(() => ({ ...agentControl.get().configuration,
+    return new ConfiguredAgentReasoner(() => ({ ...agentControl.configuration(),
       reasoning: chat.providerId, reasoningModel: chat.modelId.replace(/^(?:codex|claude|grok):/u, ''), reasoningEffort: chat.reasoningEffort ?? '',
     }), credentials, promptSubscriptions).transformText(system, input)
   })
