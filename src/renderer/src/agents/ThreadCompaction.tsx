@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { AgentCommand, AgentThread } from '../../../shared/agents'
+import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shared/agents'
 import { compactionPending } from '../../../shared/compaction'
 import { Button } from '../components/Button'
 import './threadCompaction.css'
@@ -12,6 +12,13 @@ const dismissalListeners = new Set<() => void>()
 const subscribeDismissals = (listener: () => void): (() => void) => {
   dismissalListeners.add(listener)
   return () => { dismissalListeners.delete(listener) }
+}
+/**
+ * Whether a thread shows its compaction control. Claude learns whether its client can compact only once
+ * that thread's process starts, so an unknown answer still offers it; the provider checks before compacting.
+ */
+export function compactionOffered(capabilities: Pick<AgentCapabilities, 'compact'>, thread: AgentThread): boolean {
+  return capabilities.compact === true && thread.manualCompactionSupported !== false && thread.nativeSessionStarted !== false
 }
 /** Recommendations describe context age and size, never inferred cache expiry. */
 export function ThreadCompaction({ thread, supported, connected, command, blocked = false }: {
