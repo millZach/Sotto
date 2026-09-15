@@ -200,14 +200,18 @@ describe('thread draft recovery through the real connection and disk', () => {
       expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this unsaved draft')
       expect(screen.getByRole('img', { name: 'pixel.png' })).toBeVisible()
       if (stage === 'pending') {
-        expect(screen.getByText('Saving draft…')).toBeVisible()
+        expect(store.snapshot('workshop').save).toBe('saving')
+        // Saving is silent; only a failure speaks.
+        expect(screen.queryByText(/Saving draft|Draft saved/u)).not.toBeInTheDocument()
         release()
       }
       await screen.findByRole('button', { name: 'Save again' })
       expect((await f.disk()).threadDrafts).toEqual([])
       spy.mockRestore()
       fireEvent.click(screen.getByRole('button', { name: 'Save again' }))
-      await screen.findByText('Draft saved')
+      await waitFor(() => expect(store.snapshot('workshop').save).toBe('saved'))
+      expect(screen.queryByRole('button', { name: 'Save again' })).not.toBeInTheDocument()
+      expect(screen.queryByText(/Draft saved/u)).not.toBeInTheDocument()
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'workshop', text: 'Keep this unsaved draft', attachments: [image] }))
     } finally { release(); spy?.mockRestore(); await f.close() }
   })

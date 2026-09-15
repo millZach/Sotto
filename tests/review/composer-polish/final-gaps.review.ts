@@ -141,7 +141,7 @@ test('keyboard Manage keeps focus through a held and a refused handoff; the mana
     await manual.fill(DRAFT)
     await pane.getByLabel('Screenshot files').setInputFiles({ name: 'draft-image.png', mimeType: 'image/png', buffer: PNG })
     await expect(pane.getByRole('img', { name: 'draft-image.png' })).toBeVisible()
-    await expect(pane.locator('.thread-prompt__status')).toContainText('Draft saved', { timeout: 10_000 })
+    await expect(pane.locator('.thread-prompt__status')).toHaveCount(0)
 
     // The manual composer with the same draft, image and queue at the minimum size (neighbor of the managed case).
     await size(launched, 820, 560)

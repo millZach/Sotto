@@ -271,7 +271,7 @@ describe('Threads manual composer', () => {
     state.host.capabilities = { ...state.host.capabilities, configureThread: true }
     mount(state)
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeInTheDocument()
-    expect(screen.getByText(/is working · Enter to queue · Shift\+Enter for a new line\./)).toBeVisible()
+    expect(screen.queryByText(/Enter to queue/u)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
     expect(screen.queryByText('Available after this turn finishes.')).not.toBeInTheDocument()
     // An empty composer offers Stop where Queue will appear once there is text.
