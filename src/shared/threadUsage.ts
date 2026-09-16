@@ -18,3 +18,11 @@ export const threadUsageSchema = z.object({
   modelId: z.string().optional(),
 })
 export type ThreadUsage = z.infer<typeof threadUsageSchema>
+
+/** Token counts for a line with no room for "120,000": 940, 120k, 1.2M. */
+export function formatTokenCount(value: number): string {
+  const scaled = value >= 1_000_000 ? { amount: value / 1_000_000, unit: 'M' } : value >= 1_000 ? { amount: value / 1_000, unit: 'k' } : undefined
+  if (!scaled) return String(Math.round(value))
+  const rounded = scaled.amount < 10 ? scaled.amount.toFixed(1).replace(/\.0$/u, '') : String(Math.round(scaled.amount))
+  return `${rounded}${scaled.unit}`
+}

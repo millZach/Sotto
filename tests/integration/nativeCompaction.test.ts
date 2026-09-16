@@ -63,6 +63,9 @@ it('Claude uses an advertised native slash command, requires a boundary, exclude
   await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 120000, post_tokens: 30000 } } })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction?.status).toBe('completed')
   expect((await f.host.snapshot()).threads[0]?.usage?.contextUsed).toBe(30000)
+  // The transcript says a compaction happened and what it reclaimed, in the sizes the boundary itself reported.
+  expect((await f.host.snapshot()).threads[0]?.activities?.filter(record => record.kind === 'compaction'))
+    .toEqual([expect.objectContaining({ title: 'Context compacted', status: 'completed', context: { before: 120000, after: 30000 } })])
   expect((await f.host.snapshot()).threads[0]?.status).toBe('idle')
   const summary = { type: 'user', uuid: randomUUID(), isSynthetic: true, message: { role: 'user', content: 'Generated native compaction summary.' } }
   await f.action('thread', { type: 'raw', frame: summary, persist: true })
@@ -100,4 +103,26 @@ it('reconciles Claude compaction from a missed persisted native boundary after r
   expect((await f.host.snapshot()).threads[0]?.compaction?.status).toBe('completed')
   expect((await f.driver.requests()).filter(row => row.method === 'user')).toHaveLength(1)
   expect((await f.host.snapshot()).threads[0]?.messages.filter(message => message.role === 'user')).toEqual([])
+})
+
+it('Codex brackets a compaction it reports without numbers using the context sizes either side of it', async () => {
+  const f = await codexFixture(); cleanup.push(f.cleanup)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  const threadId = await f.realId('thread')
+  const reported = async (totalTokens: number, turnId: string): Promise<void> => {
+    await f.action('thread', { type: 'notify', method: 'thread/tokenUsage/updated',
+      params: { threadId, turnId, tokenUsage: { total: { inputTokens: totalTokens, outputTokens: 1 }, last: { inputTokens: totalTokens, outputTokens: 1, totalTokens }, modelContextWindow: 258400 } } })
+  }
+  await reported(90000, 'turn-1')
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.usage?.contextUsed).toBe(90000)
+  await f.action('thread', { type: 'notify', method: 'item/completed', params: { threadId, turnId: 'turn-1', item: { id: 'boundary', type: 'contextCompaction' } } })
+  const compaction = async () => (await f.host.snapshot()).threads[0]?.activities?.find(record => record.kind === 'compaction')
+  await expect.poll(async () => (await compaction())?.context).toEqual({ before: 90000 })
+  await reported(12000, 'turn-2')
+  await expect.poll(async () => (await compaction())?.context).toEqual({ before: 90000, after: 12000 })
+  // Later growth is the next turn filling the context again, not this compaction reclaiming less.
+  await reported(41000, 'turn-3')
+  expect((await compaction())?.context).toEqual({ before: 90000, after: 12000 })
 })

@@ -19,6 +19,7 @@ import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from '
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
 import type { AgentActivity } from '../../shared/agentActivity'
 
@@ -546,9 +547,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (frame.subtype === 'compact_boundary' && (!fromLog || Number.isFinite(timestamp) && timestamp > Date.parse(thread.usage?.contextUpdatedAt ?? '1970-01-01'))) {
       const metadata = object(frame.compact_metadata) ?? object(frame.compactMetadata)
+      const tokens = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined
+      // The size Sotto last saw is the honest stand-in when the boundary omits its own before-count.
+      const before = tokens(metadata?.pre_tokens ?? metadata?.preTokens) ?? thread.usage?.contextUsed
+      const after = tokens(metadata?.post_tokens ?? metadata?.postTokens)
+      this.markCompaction(id, String(frame.uuid ?? timestamp), before, after, Number.isFinite(timestamp) ? timestamp : undefined)
       this.usage.compacted(id, metadata?.post_tokens ?? metadata?.postTokens, Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined)
       thread.usage = this.usage.get(id)
     }
+  }
+  /** A compaction is not a turn and not a tool: the transcript says so on its own line. */
+  private markCompaction(id: string, key: string, before: number | undefined, after: number | undefined, at: number | undefined): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const anchor = thread.messages.filter(message => message.text.length > 0).at(-1)?.id
+    thread.activities = markCompactionActivity(thread.activities, { provider: 'claude', key,
+      turnId: thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history',
+      ...(anchor !== undefined ? { afterMessageId: anchor } : {}),
+      ...(before !== undefined ? { before } : {}), ...(after !== undefined ? { after } : {}), ...(at !== undefined ? { at } : {}) })
   }
   /**
    * Claude reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by

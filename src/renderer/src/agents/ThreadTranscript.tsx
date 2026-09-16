@@ -8,8 +8,8 @@ import { sendThreadRevision } from './ThreadComposer'
 import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
-import { ActivityGroupView, LiveActivity, TurnChangedFiles } from './ThreadActivity'
-import { liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TurnChange } from './threadActivityView'
+import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 
@@ -32,8 +32,13 @@ export interface ActivityContext {
 function ActivityGroups({ groups, context, outcome }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
 }): ReactNode {
-  return groups?.map(group => <ActivityGroupView key={group.key} group={group} live={group.turnId === context.liveTurn} threadRunning={context.running}
-    connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />) ?? null
+  return groups?.map(group => {
+    const compaction = compactionOf(group)
+    return compaction
+      ? <CompactionLine key={group.key} record={compaction} />
+      : <ActivityGroupView key={group.key} group={group} live={group.turnId === context.liveTurn} threadRunning={context.running}
+        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />
+  }) ?? null
 }
 
 /**
@@ -58,9 +63,10 @@ function TurnWork({ headline, error, changes, onDisclosure, children }: {
   </section>
 }
 
-/** Inside a folded turn the turn line already says how it ended, so its groups carry only their counts. */
-const withoutTurn = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =>
-  (groups ?? []).filter(group => group.records.length > 0).map(group => group.turn ? { key: group.key, turnId: group.turnId, anchorMessageId: group.anchorMessageId, records: group.records } : group)
+/** Inside a folded turn the turn line already says how it ended, so its groups carry only their counts, and the boundaries it crossed are drawn outside the fold. */
+const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =>
+  (groups ?? []).filter(group => group.records.length > 0 && !compactionOf(group))
+    .map(group => group.turn ? { key: group.key, turnId: group.turnId, anchorMessageId: group.anchorMessageId, records: group.records } : group)
 
 /**
  * Rendered history, turn by turn. A finished turn shows the user's message and its final reply, with everything in
@@ -96,9 +102,11 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     // a finished turn folds under its last written reply.
     const final = !turn.user || running && index === turns.length - 1 ? undefined : turn.replies.findLast(message => message.role === 'assistant' && drawn(message))
     const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+    // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
+    const boundaries = groups.filter(group => compactionOf(group))
     const work = final ? turn.replies.filter(message => message !== final && drawn(message)) : []
     // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
-    if (!final || (!work.length && !groups.some(group => group.records.length))) return <React.Fragment key={turn.key}>{everything.map(plain)}</React.Fragment>
+    if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <React.Fragment key={turn.key}>{everything.map(plain)}</React.Fragment>
     const lifecycle = groups.find(group => group.turn)?.turn
     const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
     return <React.Fragment key={turn.key}>
@@ -107,10 +115,11 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
         changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
         {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
           {message === turn.user ? null : article(message)}
-          <ActivityGroups groups={withoutTurn(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
+          <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
         </React.Fragment>)}
-        <ActivityGroups groups={withoutTurn(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
+        <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
       </TurnWork>
+      <ActivityGroups groups={boundaries} context={context} />
       {article(final)}
     </React.Fragment>
   })}

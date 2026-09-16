@@ -113,3 +113,13 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-changes__list li { display: grid; gap: 6px; min-width: 0; }
 .thread-changes__list .rich-code { margin: 0; }
 .thread-changes__list .rich-code__scroll { max-height: 320px; overflow: auto; font-size: 13px; }
+
+/* A compaction is a boundary in the conversation: a rule across the transcript, not a card of work. */
+.thread-boundary {
+  display: flex; align-items: center; gap: 12px; margin: 10px 0; padding: 0;
+  color: var(--tt-text-muted); font-size: 12px;
+}
+.thread-boundary__rule { flex: 1; height: 1px; background: var(--tt-hairline, var(--tt-border)); }
+.thread-boundary__label { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.thread-boundary__icon { flex-shrink: 0; }
+.thread-boundary__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }

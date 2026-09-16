@@ -1,11 +1,11 @@
 import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode, type TurnChange,
 } from './threadActivityView'
 import './activity.css'
@@ -14,7 +14,24 @@ import './activity.css'
 export const LIVE_ROWS = 6
 
 const ICONS: Record<AgentActivity['kind'], LucideIcon> = {
-  turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info,
+  turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info, compaction: Shrink,
+}
+
+/**
+ * A compaction is a boundary in the conversation rather than work inside a turn, so it reads as a rule across
+ * the transcript naming what the context went from and to. Only the sides the provider reported are named.
+ */
+export function CompactionLine({ record }: { readonly record: AgentActivity }): ReactNode {
+  const summary = compactionSummary(record)
+  return <p className="thread-boundary" role="separator" aria-label={[record.title, summary].filter(Boolean).join(', ')}>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+    <span className="thread-boundary__label">
+      <Shrink className="thread-boundary__icon" size={13} strokeWidth={1.8} aria-hidden="true" />
+      <span>{record.title}</span>
+      {summary ? <span className="thread-boundary__count">{summary}</span> : null}
+    </span>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+  </p>
 }
 
 export interface ActivityGroupViewProps {

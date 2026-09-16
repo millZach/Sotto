@@ -106,7 +106,7 @@ export class CodexActivityProjection {
       mcpToolCall: ['tool', [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
       dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', 'Reasoning summary'],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
-      webSearch: ['tool', 'Web search'], contextCompaction: ['status', 'Context compaction'],
+      webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
     }
     const kind = kinds[item.type]
     if (!kind) return
