@@ -7,7 +7,7 @@ const CHOICES: ReadonlyArray<{ readonly value: WorkingCopyChoice; readonly label
   { value: 'independent', label: 'New worktree', Icon: FolderGit2 },
   { value: 'shared', label: 'Project folder', Icon: Folder },
 ]
-const WORKTREE_HINT = 'Its own Git branch and folder. Folders without Git are used as they are.'
+const WORKTREE_HINT = 'Its own Git branch and folder, checked out when it opens. Folders without Git are used as they are.'
 
 /** The New worktree / Project folder choice a New thread and a New terminal share. */
 export function WorkingCopyFieldset({ value, disabled, sharedHint, onChange }: {

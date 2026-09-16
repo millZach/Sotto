@@ -152,6 +152,9 @@ describe('Terminal mode', () => {
     expect(within(dialog).queryByRole('combobox', { name: 'Terminal permissions' })).toBeNull()
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Terminal provider' }), { target: { value: 'claude' } })
 
+    // A terminal opens in the project folder unless a worktree is chosen on purpose.
+    expect(within(dialog).getByRole('radio', { name: 'Project folder' })).toBeChecked()
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'New worktree' }))
     fireEvent.change(name, { target: { value: 'Build' } })
     await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Open terminal' })) })
     expect(view.bridge.open).toHaveBeenCalledWith({ projectId: 'workshop', title: 'Build', workingCopy: 'independent', launch: { provider: 'claude', modelId: 'claude:sonnet', reasoning: null, permission: 'ask' } })

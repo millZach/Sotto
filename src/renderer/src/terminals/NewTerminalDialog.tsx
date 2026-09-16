@@ -53,7 +53,8 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === initialProjectId) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
   const [title, setTitle] = useState('')
-  const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('independent')
+  // A terminal usually wants the project itself; a worktree is a deliberate choice, and takes a moment to check out.
+  const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('shared')
   const providers = useMemo(() => providersOf(state.host.models), [state.host.models])
   const defaultModel = state.host.models.find(model => model.id === defaultThreadModelId(state.configuration, state.host.models))
   const defaultProvider = defaultModel ? providerOf(defaultModel) : undefined
