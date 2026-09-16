@@ -19,6 +19,8 @@ import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from '
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { markTurnActivity } from './turnActivity'
+import type { AgentActivity } from '../../shared/agentActivity'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
@@ -368,7 +370,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'interrupt') {
       await this.denyPending(id, runtime)
-      try { await runtime.protocol.control({ subtype: 'interrupt' }); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.emit(); return { accepted: true } }
+      try { await runtime.protocol.control({ subtype: 'interrupt' }); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.markTurn(id, 'interrupted'); this.emit(); return { accepted: true } }
       catch { return { accepted: false, uncertain: true } }
     }
     throw new Error('Unsupported Claude command.')
@@ -444,7 +446,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
       this.message(id, frame, false)
       const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
-      if (alias.origins.some(origin => origin.uuid === uuid)) { if (!this.completedOrigins.has(uuid)) thread.status = 'running'; this.acknowledgements.get(uuid)?.() }
+      if (alias.origins.some(origin => origin.uuid === uuid)) {
+        if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
+        this.acknowledgements.get(uuid)?.()
+      }
     }
     if (frame.type === 'assistant') this.message(id, frame, false)
     if (frame.type === 'stream_event') {
@@ -474,6 +479,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (origin) {
         this.completedOrigins.add(origin)
         if (thread.lastTurn?.id !== origin || thread.lastTurn.status !== 'interrupted') thread.lastTurn = { id: origin, status: frame.is_error === true ? 'failed' : 'completed' }
+        this.markTurn(id, thread.lastTurn?.status === 'interrupted' ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed',
+          alias.origins.find(value => value.uuid === origin)?.messageId, typeof frame.result === 'string' && frame.is_error === true ? frame.result : undefined)
       }
       thread.status = frame.is_error === true ? 'error' : 'idle'; runtime.requests.clear(); thread.requests = []
       if (frame.is_error === true) this.state.error = 'Claude could not complete this turn. Check its native subscription, model and usage limits.'
@@ -542,6 +549,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.usage.compacted(id, metadata?.post_tokens ?? metadata?.postTokens, Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined)
       thread.usage = this.usage.get(id)
     }
+  }
+  /**
+   * Claude reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
+   * its user message, the same identity the projected activity rows already carry.
+   */
+  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const last = thread.messages.filter(message => message.role === 'user').at(-1)
+    const turn = turnId ?? last?.id
+    if (turn === undefined) return
+    thread.activities = markTurnActivity(thread.activities, { provider: 'claude', turnId: turn, status,
+      ...(last?.id === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
   }
   private projectActivity(id: string, frame: ClaudeFrame): void {
     const thread = this.threads.get(id)!
