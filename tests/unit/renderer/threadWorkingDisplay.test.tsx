@@ -45,7 +45,7 @@ describe('a turn that has reported nothing yet', () => {
     const { transcript } = mount(stateWith({ status: 'running', activities: waiting() }))
     const liveRow = within(transcript).getByTestId('thread-activity-live')
     const word = liveRow.querySelector('.thread-activity-live__word')!
-    expect(word.textContent).toBe('Thinking')
+    expect(word.textContent).toBe('Combing the desert')
     expect(word).toHaveAttribute('aria-hidden', 'true')
     expect(liveRow).toHaveTextContent('Working for 12s')
 

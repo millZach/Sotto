@@ -83,10 +83,11 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
  * Words for a turn that has reported nothing yet. They say only that the agent is still going: Sotto
  * cannot see inside a provider's turn, so no word here claims to know what it is thinking about.
  */
-// A short turn only ever shows the first word, so that one stays plain; the wit is for the waits long enough to earn it.
+// A short turn only ever shows the first word, so that one still reads as work; the rest are for the longer waits.
 const WORKING_WORDS = [
-  'Thinking', 'Pondering', 'Noodling', 'Percolating', 'Untangling', 'Rummaging', 'Squinting at it',
-  'Wrangling', 'Whittling', 'Mulling it over', 'Chasing a hunch', 'Herding details', 'Marinating', 'Cogitating',
+  'Combing the desert', 'Winding up the Schwartz', 'Going to plaid', 'Ludicrous speed', 'Consulting Yogurt',
+  'Checking Mr. Radar', 'Cracking 1-2-3-4-5', 'Getting to now, now', 'Raising the air shield', 'Canning the Perri-air',
+  'Waking Barf', 'Scanning for Druidia', 'Merchandising', 'Prepping for light speed',
 ] as const
 const WORD_MS = 3800
 const FADE_MS = 220
