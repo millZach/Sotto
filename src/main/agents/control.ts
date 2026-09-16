@@ -1823,3 +1823,54 @@ export class AgentControl {
   }
   dispose(): void { this.disposed = true; if (this.membershipTimer) clearInterval(this.membershipTimer); this.unsubscribe?.(); this.disconnect(); this.listeners.clear() }
 }
+
+/**
+ * A provider frame publishes the whole agent state, and Claude emits dozens of frames a
+ * second, so the renderer and the widget each revalidate every thread's history that often.
+ * 50ms caps that at 20 sends a second: still faster than the ~100ms a person reads as
+ * instant, and the first state of a burst is never held back at all.
+ */
+export const AGENT_STATE_PUBLISH_INTERVAL_MS = 50
+/** Schedules a deferred run and returns its cancel; injectable so tests own the clock. */
+export type PublishScheduler = (run: () => void, ms: number) => () => void
+export interface CoalescedAgentStatePublisher {
+  publish(state: AgentState): void
+  /** Deliver a held state now, for a caller that must not wait out the interval. */
+  flush(): void
+  dispose(): void
+}
+const realPublishScheduler: PublishScheduler = (run, ms) => {
+  const timer = setTimeout(run, ms)
+  return () => clearTimeout(timer)
+}
+/**
+ * Coalesces agent-state sends at the IPC boundary rather than inside AgentControl, so
+ * in-process listeners (the checkpoint observer) still see every intermediate state and
+ * command responses still carry the exact state their command produced.
+ */
+export function coalesceAgentStatePublishes(send: (state: AgentState) => void,
+  options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedAgentStatePublisher {
+  const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
+  const schedule = options.schedule ?? realPublishScheduler
+  let cancel: (() => void) | null = null
+  let pending: AgentState | null = null
+  let disposed = false
+  const sendNow = (state: AgentState): void => {
+    cancel?.()
+    pending = null
+    send(state)
+    // Keep the window open after every send: a burst that continues must coalesce, and the
+    // last state of one always reaches the renderer on this trailing run.
+    cancel = schedule(() => { cancel = null; if (pending) sendNow(pending) }, intervalMs)
+  }
+  return {
+    publish: state => {
+      if (disposed) return
+      // Only the newest state survives an open window, so no stale state follows a newer one.
+      if (cancel) pending = state
+      else sendNow(state)
+    },
+    flush: () => { if (!disposed && pending) sendNow(pending) },
+    dispose: () => { disposed = true; cancel?.(); cancel = null; pending = null },
+  }
+}
