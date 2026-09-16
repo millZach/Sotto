@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentHost } from '../../src/main/agents/host'
+import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 
@@ -108,9 +109,14 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       await send(); const before = await thread()
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       // Some protocols restore transcript but cannot prove the previous turn outcome.
-      // Optional live observation metadata must not be invented to satisfy replay equality.
-      const beforeCore = { ...before }; delete beforeCore.lastTurn
-      const restored = await thread(); delete restored.lastTurn
+      // Optional live observation metadata must not be invented to satisfy replay equality:
+      // that includes the turn records Sotto writes for providers that report none.
+      const watched = (thread: { activities?: AgentActivity[] | undefined }): void => {
+        const rows = (thread.activities ?? []).filter(record => record.kind !== 'turn')
+        if (rows.length) thread.activities = rows; else delete thread.activities
+      }
+      const beforeCore = { ...before }; delete beforeCore.lastTurn; watched(beforeCore)
+      const restored = await thread(); delete restored.lastTurn; watched(restored)
       expect(restored).toEqual({ ...beforeCore, status: f.restartStatus ?? before.status })
       expect((await f.driver.requests()).some(r => r.method === (f.protocol?.resumeMethod ?? 'thread/resume'))).toBe(true)
     })

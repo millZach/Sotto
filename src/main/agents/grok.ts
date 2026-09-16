@@ -54,6 +54,10 @@ function eventKey(params: z.infer<typeof updateSchema>, fallback: string | numbe
 function assistantKey(id: string, params: z.infer<typeof updateSchema>, userId: string, lastActivityId?: string): string {
   return `grok-assistant-${digest(JSON.stringify([id, params._meta?.promptId ?? userId, params._meta?.streamStartMs ?? lastActivityId ?? 'start']))}`
 }
+// A stream's identity is the work that preceded it, as Grok reported it. Sotto's own turn records are
+// not Grok's work, so they must not shift that identity between the live rail and durable history.
+const lastReportedId = (rows: readonly AgentActivity[] | undefined): string | undefined =>
+  rows?.filter(row => row.kind !== 'turn').at(-1)?.id
 function messageOrigin(alias: Alias, key: string, text: string, timestampMs: number) {
   const hash = digest(text)
   return alias.origins.find(origin => origin.entryKey === key && origin.digest === hash)
@@ -231,7 +235,7 @@ export class GrokAcpHost implements AgentHost {
               messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
-              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', activities.at(-1)?.id)
+              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(activities))
               if (!assistant || assistant.id !== assistantId) { assistant = { id: assistantId, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
               assistant.text += content.text
             }
@@ -466,7 +470,7 @@ export class GrokAcpHost implements AgentHost {
       }
       if (update.sessionUpdate === 'agent_message_chunk' && content?.type === 'text') {
         const userId = thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history'
-        const streamId = assistantKey(id, parsed.data, userId, thread.activities?.at(-1)?.id)
+        const streamId = assistantKey(id, parsed.data, userId, lastReportedId(thread.activities))
         const previous = this.streams.get(streamId)?.message
         if (previous) previous.text += content.text ?? ''
         else {

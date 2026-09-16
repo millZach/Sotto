@@ -259,7 +259,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
  * action is left out when it is the row directly above, so the line never repeats it.
  */
 export function LiveActivity({ thread, connected, adjacentRecordId }: {
-  readonly thread: Pick<AgentThread, 'status' | 'activities'>; readonly connected: boolean
+  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>; readonly connected: boolean
   /** The last activity row rendered immediately before this line, if any. */
   readonly adjacentRecordId?: string | undefined
 }): ReactNode {
