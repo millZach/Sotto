@@ -856,7 +856,7 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       // The coordinator queues the fixture's permission request once it has connected.
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
-      await expect(page.getByText('Waiting on you')).toBeVisible()
+      await expect(page.getByText('Needs your approval')).toBeVisible()
       const open = async (title: string): Promise<void> => {
         const toggle = page.getByRole('button', { name: title, exact: true })
         await toggle.click()

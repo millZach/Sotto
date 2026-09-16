@@ -1,11 +1,11 @@
-import React, { useState, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderPlus, Search, SquarePen, X } from 'lucide-react'
-import { defaultThreadModelId, type AgentState } from '../../../shared/agents'
+import { defaultThreadModelId, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { folderKey } from './NewThreadDialog'
 import { ProviderMark } from './ProviderMark'
-import type { ProjectFolder, ThreadRow, WorkspaceOrganization } from './threadFacts'
+import { workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 
 type Command = AgentConnection['command']
@@ -47,6 +47,48 @@ function Indicators({ working, needs }: { readonly working: number; readonly nee
   </span>
 }
 
+/**
+ * A row's clock. A working row counts up once a second and writes its own text, the way the transcript's
+ * clock does, so one running thread never re-renders the sidebar every second.
+ */
+function RowTime({ row, live }: { readonly row: ThreadRow; readonly live: boolean }): ReactNode {
+  const ref = useRef<HTMLTimeElement>(null)
+  const since = live && row.state === 'working' ? row.workingSince : Number.NaN
+  useEffect(() => {
+    if (!Number.isFinite(since)) return
+    const tick = (): void => { if (ref.current) ref.current.textContent = workingLabel(since, Date.now()) }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [since])
+  const at = Number.isFinite(row.activityAt) ? new Date(row.activityAt) : null
+  return <time ref={ref} className="thread-nav__time" title={at === null ? 'Last activity unavailable' : at.toLocaleString()} dateTime={at?.toISOString()}>{row.when}</time>
+}
+
+/**
+ * Threads that finished while you were looking somewhere else. It is about what you have seen, not about the
+ * thread itself, so it stays here: opening the thread clears it and a restart forgets it.
+ */
+function useFinishedUnseen(threads: readonly AgentThread[], onScreen: readonly string[]): ReadonlySet<string> {
+  const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => new Set())
+  const working = useRef<ReadonlySet<string>>(new Set())
+  // A thread ID is opaque, so the key joins on a character one cannot contain.
+  const onScreenKey = [...onScreen].sort().join('\n')
+  const seen = useMemo(() => new Set(onScreenKey === '' ? [] : onScreenKey.split('\n')), [onScreenKey])
+  useEffect(() => {
+    const live = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
+    const stopped = [...working.current].filter(id => !live.has(id))
+    working.current = live
+    // The mark lasts only while the thread is still finished, still known, and still out of sight.
+    const finished = (id: string): boolean => !seen.has(id) && threads.some(thread => thread.id === id && thread.status === 'idle')
+    setUnseen(current => {
+      const next = new Set([...current, ...stopped].filter(finished))
+      return next.size === current.size && [...next].every(id => current.has(id)) ? current : next
+    })
+  }, [threads, seen])
+  return unseen
+}
+
 /** What the workspace offers a sidebar row beyond opening it: a place beside the focused thread. */
 export interface PaneActions {
   /** The focused pane's thread; a row can open beside it. */
@@ -58,12 +100,17 @@ export interface PaneActions {
   readonly onDragThread: (threadId: string | null) => void
 }
 
-function ThreadNavRow({ row, current, open, busy, onOpen, command, panes }: {
+function ThreadNavRow({ row, current, open, busy, unseen, liveClock, onOpen, command, panes }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly busy: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
+  /** The thread finished while you were elsewhere and you have not opened it since. */
+  readonly unseen: boolean
+  readonly liveClock: boolean
   readonly panes: PaneActions
 }): ReactNode {
   const title = row.thread.title
-  const status = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
+  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
+  const finished = unseen && label === 'Done'
+  const status = finished ? 'Just finished' : label
   const besideAvailable = panes.currentThreadId !== null && !current
   return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-current={current ? 'page' : undefined} draggable
@@ -74,8 +121,8 @@ function ThreadNavRow({ row, current, open, busy, onOpen, command, panes }: {
       onDragEnd={() => panes.onDragThread(null)}>
       <span className="thread-nav__mark" data-provider={row.providerId ?? 'other'} title={row.provider}><ProviderMark provider={row.providerId} name={row.provider} /></span>
       <span className="thread-nav__title">{title}</span>
-      <time className="thread-nav__time" title={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toLocaleString() : 'Last activity unavailable'} dateTime={Number.isFinite(row.activityAt) ? new Date(row.activityAt).toISOString() : undefined}>{row.when}</time>
-      <span className="thread-nav__status" data-state={row.state} data-disconnected={row.connected ? undefined : true}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
+      <RowTime row={row} live={liveClock} />
+      <span className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
     </button>
     <span className="thread-nav__row-actions">
       {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(row.thread.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
@@ -88,9 +135,10 @@ function ThreadNavRow({ row, current, open, busy, onOpen, command, panes }: {
   </li>
 }
 
-function FolderView({ folder, section, panes, activeProjectId, expanded, onToggle, onOpen, onNewThread, command, busy }: {
+function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, busy }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   readonly expanded: boolean; readonly onToggle: () => void; readonly onOpen: (threadId: string) => void
+  readonly unseen: ReadonlySet<string>; readonly liveClock: boolean
   readonly onNewThread: (projectId: string) => void; readonly command: Command; readonly busy: boolean
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
@@ -111,18 +159,21 @@ function FolderView({ folder, section, panes, activeProjectId, expanded, onToggl
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={busy} onOpen={onOpen} command={command} panes={panes} />)}
+      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={busy}
+        unseen={unseen.has(row.thread.id)} liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} />)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
 }
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, onQuery, onOpen, onNewThread, ...panes }: PaneActions & {
+export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen, onNewThread, ...panes }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
   readonly query: string
+  /** False where the page holds its clock still (a capture run); working rows then keep the time they were given. */
+  readonly liveClock?: boolean | undefined
   readonly onQuery: (query: string) => void
   readonly onOpen: (threadId: string) => void
   readonly onNewThread: (projectId?: string) => void
@@ -130,6 +181,8 @@ export function ThreadSidebar({ state, command, organization, query, onQuery, on
   const [settledOpen, setSettledOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const addProject = useAddProject(state, command)
+  const onScreen = panes.currentThreadId === null ? panes.openThreadIds : [...panes.openThreadIds, panes.currentThreadId]
+  const unseen = useFinishedUnseen(state.host.threads, onScreen)
   const searching = query.trim() !== ''
   const toggle = (key: string): void => setCollapsed(previous => {
     const next = new Set(previous)
@@ -138,7 +191,7 @@ export function ThreadSidebar({ state, command, organization, query, onQuery, on
   })
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = `${section}:${folder.id}`
-    return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId}
+    return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} unseen={unseen} liveClock={liveClock}
       expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewThread={onNewThread} command={command} busy={state.busy} />
   }
   const { open, settled } = organization

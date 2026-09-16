@@ -38,6 +38,8 @@ export interface ThreadRow {
   readonly settledBy: 'project' | 'thread' | 'provider' | null
   readonly state: ThreadRowState
   readonly stateLabel: string
+  /** What a row that needs you is waiting for: a permission to allow or deny, or a question to answer. */
+  readonly waitingFor: 'approval' | 'question' | null
   /** The queue item waiting on a decision, when the row carries one inline. */
   readonly request: AgentQueueItem | undefined
   /** In the attention queue: a pending request or any queue entry. Search never hides these rows. */
@@ -48,6 +50,8 @@ export interface ThreadRow {
   readonly activityAt: number
   /** Beside the state: how long a working thread has been at it, otherwise the clock of its last activity. */
   readonly when: string
+  /** When the run on screen started, for the sidebar's live clock; NaN when the thread is not working. */
+  readonly workingSince: number
   /** The facts line under an open row: how it started, who is managing, follow-ups, the model. */
   readonly facts: ThreadFactsLine
   /** Your side of the thread, shown under an open row; the sentence already carries the provider's. */
@@ -102,6 +106,18 @@ export function elapsedLabel(since: number, now: number): string {
   return `${Math.floor(hours / 24)} d`
 }
 
+/** "12s", "4m 05s", "2h 07m": a working thread's clock, counted in whole seconds so it can tick. */
+export function workingLabel(since: number, now: number): string {
+  if (!Number.isFinite(since) || !Number.isFinite(now)) return ''
+  const seconds = Math.max(0, Math.floor((now - since) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`
+  return `${Math.floor(hours / 24)}d`
+}
+
 function startOfDay(at: number): number {
   const date = new Date(at)
   date.setHours(0, 0, 0, 0)
@@ -154,6 +170,14 @@ function factsLine(assignment: AgentAssignment | undefined, model: AgentModel | 
   return { lead, rest: parts.join(' ') }
 }
 
+/** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
+function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
+  const turn = (thread.activities ?? []).filter(record => record.kind === 'turn' && record.status === 'running')
+    .sort((first, second) => first.sequence - second.sequence).at(-1)
+  const started = parse(turn?.startedAt)
+  return Number.isFinite(started) ? started : Number.isFinite(lastUserAt) ? lastUserAt : activityAt
+}
+
 function describe(state: AgentState, thread: AgentThread, now: number): ThreadRow {
   const project = state.host.projects.find(entry => entry.id === thread.projectId)
   const model = state.host.models.find(entry => entry.id === thread.modelId)
@@ -181,13 +205,18 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   let stateLabel: string
   let sentence: string
   let sentenceFromUser = false
+  let waitingFor: ThreadRow['waitingFor'] = null
   if (closed) {
     state_ = 'done'
     stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
     sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
   } else if (decision !== undefined || (blocked !== undefined && !stopped) || thread.status === 'error') {
     state_ = 'needs'
-    stateLabel = thread.status === 'error' && decision === undefined && blocked === undefined ? 'Needs attention' : 'Waiting on you'
+    // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
+    const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
+    waitingFor = kinds.includes('permission') ? 'approval' : kinds.includes('question') ? 'question' : null
+    stateLabel = waitingFor === 'approval' ? 'Needs your approval' : waitingFor === 'question' ? 'Needs your answer'
+      : thread.status === 'error' && decision === undefined && blocked === undefined ? 'Needs attention' : 'Waiting on you'
     sentence = decision !== undefined
       ? (lastAssistant?.text ?? decision.text)
       : blocked !== undefined ? blocked.text : (lastAssistant?.text ?? 'The agent reported an error. Open the transcript to see what happened.')
@@ -218,15 +247,16 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     text: lastUser.text,
   }
 
+  const workingSince = state_ === 'working' ? runStartedAt(thread, lastUserAt, activityAt) : Number.NaN
   const key = providerKey(provider)
   const settledBy: ThreadRow['settledBy'] = isWorkspaceThreadSettled({ workspaceSettledAt: null }, project) ? 'project'
     : isWorkspaceThreadSettled(thread) ? 'thread' : closed ? 'provider' : null
   return {
-    thread, project, model, assignment, provider, providerKey: key, state: state_, stateLabel, request: decision, attention,
+    thread, project, model, assignment, provider, providerKey: key, state: state_, stateLabel, waitingFor, request: decision, attention,
     providerId: thread.providerId ?? model?.providerId ?? (key === 'other' ? undefined : key),
     connected: isThreadProviderConnected(state.host, thread), settledBy,
     sentence, activityAt,
-    when: state_ === 'working' ? elapsedLabel(activityAt, now) : clockLabel(activityAt),
+    when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     facts: factsLine(assignment, model, provider, management, state.configuration.followupLimit, now),
     lastMessage, management,
   }

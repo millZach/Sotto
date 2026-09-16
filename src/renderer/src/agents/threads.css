@@ -92,7 +92,12 @@
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }
 .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected] { color: var(--threads-warning-text); }
-.thread-nav__status[data-state='working'] i, .thread-nav__status[data-state='needs'] i { display: block; }
+.thread-nav__status[data-state='working'] i, .thread-nav__status[data-state='needs'] i, .thread-nav__status[data-unseen] i { display: block; }
+/* An answer is yours to write, so its dot is an open ring; a permission holds the agent still, so its dot stays filled. */
+.thread-nav__status[data-waiting='question'] i { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+/* Finished while you were elsewhere: a quiet dot in the working colour, since the row's own text is muted. */
+.thread-nav__status[data-unseen] { color: var(--tt-text-2); }
+.thread-nav__status[data-unseen] i { background: var(--tt-activity); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__status[data-state='working']:not([data-disconnected]) i { animation: thread-working 1.6s ease-in-out infinite; } }
 @keyframes thread-working { 50% { opacity: .35; } }
 
