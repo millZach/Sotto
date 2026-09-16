@@ -398,6 +398,7 @@ describe('typed preload bridge', () => {
         'setStartup',
         'showApp',
         'terminal',
+        'terminals',
         'themes',
         'transcribe',
         'updateSettings',

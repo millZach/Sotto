@@ -21,6 +21,8 @@ export interface TerminalViewLike {
 export interface TerminalViewHandlers {
   readonly onInput: (data: string) => void
   readonly onInterrupt: () => void
+  /** An image was pasted: its PNG as a data URL. Left out where images have nowhere to go. */
+  readonly onPasteImage?: ((dataUrl: string) => void) | undefined
 }
 
 export type TerminalViewFactory = (handlers: TerminalViewHandlers) => TerminalViewLike

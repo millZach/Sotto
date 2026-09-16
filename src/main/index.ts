@@ -156,6 +156,10 @@ import { TerminalService } from './tools/terminal'
 import { BrowserService } from './tools/browser'
 import { GitChangesService } from './tools/gitChanges'
 import { TERMINAL_EVENT } from '../shared/terminal'
+import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
+import { TerminalWorkspaceService } from './terminals/service'
+import { registerTerminalWorkspaceIpc } from './terminals/ipc'
+import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
@@ -925,6 +929,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
+      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
+        projects: () => agentControl.get().host.projects, git: runWorktreeGit,
+        worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
+        emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
+      }), () => windows.getTrustedRenderers())
       const cleanupTools = registerToolsIpc(ipcMain, {
         terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
         browser: new BrowserService({ files,
@@ -1023,6 +1032,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
+        cleanupTerminals()
         cleanupTools()
         cleanupThemes()
         cleanupMemory()

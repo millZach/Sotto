@@ -4,6 +4,7 @@ import { agentSkillCatalogSchema } from '../shared/agentSkills'
 import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatPromptCopySchema, chatPromptResultSchema, type ChatPromptBridge } from '../shared/chatPrompts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { createToolsBridges } from './tools'
+import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
@@ -251,6 +252,7 @@ export function createSottoBridge(
   )
   const bridge: SottoBridge = {
     ...createToolsBridges(renderer),
+    terminals: createTerminalWorkspaceBridge(renderer),
     themes: createThemesBridge(renderer),
     files: Object.freeze<FilesBridge>({
       list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),

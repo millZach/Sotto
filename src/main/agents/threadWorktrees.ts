@@ -31,9 +31,17 @@ function registeredWorktrees(output: string): Array<{ path: string; branch: stri
   })
 }
 
+/** Where a set of worktrees lives under Sotto's data folder, and how their branches are named. */
+export interface WorktreeHome {
+  readonly folder: string
+  readonly branchPrefix: string
+}
+export const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/thread-' }
+export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
+
 /** Never removes files or branches. Allocation is persisted by WorkspaceHost before ensure. */
 export class ThreadWorktrees {
-  constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit) {}
+  constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
 
   async allocate(projectPath: string, mode: 'independent' | 'shared'): Promise<AgentWorktree> {
     const cwd = await existingWorkingDirectory(projectPath)
@@ -54,7 +62,7 @@ export class ThreadWorktrees {
       } catch { throw new Error('The project subdirectory is not present in the committed source. Commit that folder or explicitly choose a shared working copy, then retry.') }
     }
     const token = randomUUID()
-    return { mode, status: 'pending', path: join(await realpath(this.directory), 'thread-worktrees', token), repositoryRoot: await realpath(repositoryRoot), branch: `sotto/thread-${token}`, baseCommit, projectRelativePath }
+    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${token}`, baseCommit, projectRelativePath }
   }
 
   async workingDirectory(metadata: AgentWorktree): Promise<string> {
@@ -74,7 +82,7 @@ export class ThreadWorktrees {
     if (metadata.mode === 'shared') return { ...metadata, path: await existingWorkingDirectory(metadata.path), status: 'ready', error: undefined }
     const { repositoryRoot, branch, baseCommit } = metadata
     if (!repositoryRoot || !branch || !baseCommit) throw new Error('The independent working-copy allocation is incomplete.')
-    const allocationRoot = join(await realpath(this.directory), 'thread-worktrees')
+    const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('The working-copy allocation is outside Sotto’s reserved folder.')
     await existingWorkingDirectory(repositoryRoot)
     const entries = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))

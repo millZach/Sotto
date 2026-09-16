@@ -148,6 +148,15 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   }
 
   terminal.onData(data => { if (inputEnabled) handlers.onInput(data) })
+  // An image on the clipboard goes to the handler as PNG; text keeps flowing through xterm's own paste.
+  element.addEventListener('paste', event => {
+    const image = handlers.onPasteImage ? [...event.clipboardData?.items ?? []].find(item => item.kind === 'file' && item.type.startsWith('image/')) : undefined
+    const file = image?.getAsFile()
+    if (!file || !inputEnabled) return
+    event.preventDefault()
+    event.stopPropagation()
+    void pngDataUrl(file).then(dataUrl => { if (dataUrl) handlers.onPasteImage?.(dataUrl) })
+  }, true)
   terminal.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') return true
     const ctrl = event.ctrlKey && !event.altKey && !event.metaKey
@@ -218,6 +227,27 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     dispose() { retheme.disconnect(); systemMotion.removeEventListener('change', followMotion); releaseRenderer(); terminal.dispose(); element.remove() },
   }
   return view
+}
+
+/** The clipboard image as a PNG data URL, redrawn when the clipboard gave another format. */
+export async function pngDataUrl(file: Blob): Promise<string | null> {
+  const read = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+  try {
+    if (file.type === 'image/png') return await read(file)
+    if (typeof createImageBitmap !== 'function') return null
+    const bitmap = await createImageBitmap(file)
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0)
+    bitmap.close()
+    return canvas.toDataURL('image/png')
+  } catch { return null }
 }
 
 /** Moves keyboard focus to the next or previous focusable element outside the terminal. */
