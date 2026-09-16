@@ -137,7 +137,7 @@ import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
 import { WorkspaceHost } from './agents/workspace'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
-import { AgentControl } from './agents/control'
+import { AgentControl, coalesceAgentStatePublishes } from './agents/control'
 import { TurnRecorder } from './agents/turns'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
@@ -624,14 +624,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
   const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
   app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
-  const unsubscribeAgents = agentControl.subscribe(state => {
+  const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     personalChats.configurationChanged()
     windows.sendToMain(AGENT_STATE, state)
     windows.sendToWidget(AGENT_STATE, state)
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
-  app.on('will-quit', () => { unsubscribeAgents(); agentControl.dispose() })
+  const unsubscribeAgents = agentControl.subscribe(state => agentStatePublisher.publish(state))
+  // Quitting drops the held state with its timer: the windows it would reach are going away.
+  app.on('will-quit', () => { unsubscribeAgents(); agentStatePublisher.dispose(); agentControl.dispose() })
   const showTurnRecords = (): void => {
     void (async () => {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)

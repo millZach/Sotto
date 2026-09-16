@@ -75,12 +75,19 @@ describe('placing activity in the transcript', () => {
 })
 
 describe('the live turn', () => {
+  const messages = [message('u1', 'user'), message('a1'), message('t1', 'user')]
+
   it('is the running lifecycle while the thread runs, and its newest running record is the current action', () => {
     const activities = [turn({ status: 'running', sequence: 1 }), record({ id: 'one', status: 'running', command: 'npm ci', sequence: 2 }), record({ id: 'two', status: 'running', command: 'npm test', sequence: 3 }), record({ id: 'done', sequence: 4 })]
-    expect(liveTurnId({ status: 'running', activities })).toBe('t1')
+    expect(liveTurnId({ status: 'running', activities, messages })).toBe('t1')
     expect(currentAction({ activities }, 't1')?.id).toBe('two')
-    expect(liveTurnId({ status: 'idle', activities })).toBeNull()
-    expect(liveTurnId({ status: 'running', activities: activities.slice(1) })).toBeNull()
+    expect(liveTurnId({ status: 'idle', activities, messages })).toBeNull()
+  })
+
+  it('falls back to the turn’s user message when no record survived, so the line still reads', () => {
+    // A turn restored from a provider's own history carries no record of Sotto watching it.
+    expect(liveTurnId({ status: 'running', activities: [], messages })).toBe(messages.findLast(message => message.role === 'user')!.id)
+    expect(liveTurnId({ status: 'running', activities: [], messages: [] })).toBeNull()
   })
 })
 

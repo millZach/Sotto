@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, mergeAgentActivities, isTerminalActivity, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'>
 
@@ -106,7 +106,7 @@ export class CodexActivityProjection {
       mcpToolCall: ['tool', [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
       dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', 'Reasoning summary'],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
-      webSearch: ['tool', 'Web search'], contextCompaction: ['status', 'Context compaction'],
+      webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
     }
     const kind = kinds[item.type]
     if (!kind) return
@@ -194,7 +194,8 @@ export class CodexActivityProjection {
   plan(thread: ActivityConversation, turnId: string, plan: { step: string; status: string }[], explanation?: string | null): void {
     if (this.terminalTurns.get(thread)?.has(turnId)) return
     this.put(thread, { id: codexActivityId(turnId, '$plan'), turnId, sequence: 0, kind: 'plan', title: 'Plan', status: 'running',
-      afterMessageId: thread.messages.at(-1)?.id, text: [explanation, ...plan.map(step => `${step.status}: ${step.step}`)].filter(Boolean).join('\n') })
+      afterMessageId: thread.messages.at(-1)?.id, steps: planSteps(plan.map(step => ({ text: step.step, status: step.status }))),
+      ...(explanation ? { text: explanation } : {}) })
   }
 
   error(thread: ActivityConversation, turnId: string, message: string, willRetry: boolean): void {

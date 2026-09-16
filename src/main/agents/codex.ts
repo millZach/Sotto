@@ -1,6 +1,7 @@
 import { existingWorkingDirectory } from './threadWorktrees'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
+import { bracketCompaction } from './compactionActivity'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { stat } from 'node:fs/promises'
@@ -403,6 +404,10 @@ export class CodexAppServerHost implements AgentHost {
     if (turnId && this.aliases[id]!.rewoundTurnIds.includes(turnId)) return
     const thread = this.ensureThread(id)
     if (turnId) this.activity.item(thread, item, { ...lifecycle, turnId, afterMessageId: lifecycle.afterMessageId ?? thread.messages.at(-1)?.id })
+    // Codex names a compaction but reports no sizes with it, so the ledger's latest reading opens the bracket.
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase !== 'history' && thread.usage?.contextUsed !== undefined) {
+      thread.activities = bracketCompaction(thread.activities, { before: thread.usage.contextUsed })
+    }
     if (item.type === 'fileChange') {
       this.fileSummaries.set(item.id, (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return
@@ -789,7 +794,13 @@ export class CodexAppServerHost implements AgentHost {
     if (frame.method === 'thread/tokenUsage/updated') {
       const params = frame.params as { threadId?: string } | undefined
       const id = params?.threadId ? this.sessionId(params.threadId) : undefined
-      if (id) { this.usage.codex(id, this.ensureThread(id).modelId, frame.params); this.ensureThread(id); this.emit() }
+      if (id) {
+        this.usage.codex(id, this.ensureThread(id).modelId, frame.params)
+        const thread = this.ensureThread(id)
+        // The first size reported after a compaction closes the bracket the item opened.
+        if (thread.usage?.contextUsed !== undefined) thread.activities = bracketCompaction(thread.activities, { after: thread.usage.contextUsed })
+        this.emit()
+      }
       return
     }
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',

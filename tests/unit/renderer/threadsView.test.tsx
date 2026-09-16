@@ -73,7 +73,7 @@ describe('thread grouping and states from Sotto state', () => {
     const state = stateFixture()
     const rows = describeThreads(state, NOW)
     const byTitle = (title: string) => rows.find(entry => entry.thread.title === title)!
-    expect(byTitle('Visual gate flake')).toMatchObject({ state: 'needs', stateLabel: 'Waiting on you', provider: 'Claude', providerKey: 'claude', management: 'managed', attention: true })
+    expect(byTitle('Visual gate flake')).toMatchObject({ state: 'needs', stateLabel: 'Needs your approval', waitingFor: 'approval', provider: 'Claude', providerKey: 'claude', management: 'managed', attention: true })
     expect(byTitle('Visual gate flake').request?.requestId).toBe('visual-gate-permission')
     expect(byTitle('Footer links')).toMatchObject({ state: 'working', stateLabel: 'Working', provider: 'Codex', providerKey: 'codex', attention: false })
     expect(byTitle('Streaming WAV stall')).toMatchObject({ state: 'stopped', stateLabel: 'Stopped', management: 'stopped' })

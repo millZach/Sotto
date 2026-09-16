@@ -12,6 +12,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { grokActivities } from './grokActivity'
+import { markTurnActivity } from './turnActivity'
 import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -53,6 +54,10 @@ function eventKey(params: z.infer<typeof updateSchema>, fallback: string | numbe
 function assistantKey(id: string, params: z.infer<typeof updateSchema>, userId: string, lastActivityId?: string): string {
   return `grok-assistant-${digest(JSON.stringify([id, params._meta?.promptId ?? userId, params._meta?.streamStartMs ?? lastActivityId ?? 'start']))}`
 }
+// A stream's identity is the work that preceded it, as Grok reported it. Sotto's own turn records are
+// not Grok's work, so they must not shift that identity between the live rail and durable history.
+const lastReportedId = (rows: readonly AgentActivity[] | undefined): string | undefined =>
+  rows?.filter(row => row.kind !== 'turn').at(-1)?.id
 function messageOrigin(alias: Alias, key: string, text: string, timestampMs: number) {
   const hash = digest(text)
   return alias.origins.find(origin => origin.entryKey === key && origin.digest === hash)
@@ -230,7 +235,7 @@ export class GrokAcpHost implements AgentHost {
               messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
-              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', activities.at(-1)?.id)
+              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(activities))
               if (!assistant || assistant.id !== assistantId) { assistant = { id: assistantId, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
               assistant.text += content.text
             }
@@ -384,10 +389,14 @@ export class GrokAcpHost implements AgentHost {
           void rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
+            this.markTurn(command.threadId, turnOutcome(completion.stopReason), command.messageId)
             this.activePrompts.delete(command.threadId); this.thread(command.threadId).status = 'idle'; this.deliveries.get(command.messageId)?.resolve(); this.emit()
           }, true).catch(async error => {
             if (error instanceof GrokRejected) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist() }
-            this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error); this.thread(command.threadId).status = 'error'; this.emit()
+            this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error)
+            this.thread(command.threadId).status = 'error'
+            this.markTurn(command.threadId, 'failed', command.messageId, error instanceof Error ? error.message : undefined)
+            this.emit()
           }).catch(() => this.disconnect())
           try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
           await this.refreshThread(command.threadId)
@@ -457,10 +466,11 @@ export class GrokAcpHost implements AgentHost {
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: 'running' })
         thread.status = 'running'; thread.lastTurn = { id: messageId, status: 'running' }
+        this.markTurn(id, 'running', messageId)
       }
       if (update.sessionUpdate === 'agent_message_chunk' && content?.type === 'text') {
         const userId = thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history'
-        const streamId = assistantKey(id, parsed.data, userId, thread.activities?.at(-1)?.id)
+        const streamId = assistantKey(id, parsed.data, userId, lastReportedId(thread.activities))
         const previous = this.streams.get(streamId)?.message
         if (previous) previous.text += content.text ?? ''
         else {
@@ -472,10 +482,23 @@ export class GrokAcpHost implements AgentHost {
         this.activePrompts.delete(id); thread.status = completedStatus(update.stop_reason ?? update.stopReason)
         thread.lastTurn = { id: thread.lastTurn?.id ?? eventKey(parsed.data, 0), status: turnOutcome(update.stop_reason ?? update.stopReason) }
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: thread.status })
+        this.markTurn(id, turnOutcome(update.stop_reason ?? update.stopReason))
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
       this.emit()
     }
+  }
+  /**
+   * Grok reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
+   * its user message, the same identity the projected activity rows already carry.
+   */
+  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const last = thread.messages.filter(message => message.role === 'user').at(-1)
+    const turn = turnId ?? last?.id
+    if (turn === undefined) return
+    thread.activities = markTurnActivity(thread.activities, { provider: 'grok', turnId: turn, status,
+      ...(last?.id === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
   }
   private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.emit() }
   private refusal(pending: Pending): unknown { return pending.permission ? { outcome: { outcome: 'cancelled' } } : { outcome: 'cancelled' } }

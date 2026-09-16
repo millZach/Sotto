@@ -204,6 +204,59 @@ const components: Components = {
 }
 const remarkPlugins = [remarkGfm]
 
+const BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})/u
+const BLOCK_FENCE_END = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u
+// A block that opens with one of these can still be claimed by whatever precedes the blank line
+// above it — list continuation, a loose list item, a lazy blockquote, indented code, a setext rule
+// or an HTML block — so the two sides would not parse the same apart as together.
+const CLAIMABLE_BLOCK_START = /^(?:[ \t]|[-*+>=]|\d{1,9}[.)]|\[|<)/u
+// Link and footnote definitions are resolved from anywhere in the message, and these HTML blocks run
+// on past blank lines, so a message holding one is never split.
+const WHOLE_MESSAGE_ONLY = /^ {0,3}(?:\[[^\]]*\]:|<(?:script|pre|style|textarea)\b|<!|<\?)/iu
+
+/**
+ * Splits a message still being written into blocks that are already final, followed by the block
+ * being written. Concatenating the result restores the input, and every split lands where no
+ * construct can reach across it, so rendering the parts is the same as rendering the whole. When
+ * that cannot be guaranteed the message is returned whole: an extra parse costs less than wrong text.
+ */
+export function splitStreamingMarkdown(text: string): string[] {
+  const segments: string[] = []
+  let start = 0
+  let blank = -1
+  let offset = 0
+  let fence: string | null = null
+  for (const line of text.split('\n')) {
+    const next = offset + line.length + 1
+    if (fence !== null) {
+      const closing = BLOCK_FENCE_END.exec(line)?.[1]
+      if (closing && closing[0] === fence[0] && closing.length >= fence.length) fence = null
+    } else if (!line.trim()) {
+      blank = next
+    } else {
+      if (WHOLE_MESSAGE_ONLY.test(line)) return [text]
+      if (blank > start && !CLAIMABLE_BLOCK_START.test(line)) {
+        segments.push(text.slice(start, blank))
+        start = blank
+      }
+      blank = -1
+      fence = BLOCK_FENCE.exec(line)?.[1] ?? null
+    }
+    offset = next
+  }
+  segments.push(text.slice(start))
+  return segments
+}
+
+/** One parse unit. Memoized so an appended chunk only re-parses the block it lands in. */
+const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { source: string; streaming: boolean }): ReactNode {
+  // Node offsets are relative to this segment, so a fenced diagram is told its own source.
+  const markdownSource = useMemo(() => ({ text: source, streaming }), [source, streaming])
+  return <MarkdownSourceContext.Provider value={markdownSource}>
+    <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{source}</ReactMarkdown>
+  </MarkdownSourceContext.Provider>
+})
+
 /** Renders one message's text as safe Markdown. Raw HTML stays literal text; only vetted web links are links. */
 export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
   const [failedLink, setFailedLink] = useState<string | null>(null)
@@ -239,18 +292,17 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   }
   // A deferred copy can be repeatedly interrupted by incoming snapshots, leaving
   // a running answer stale even after its latest text has reached the renderer.
-  // Memoization still keeps unchanged messages out of Markdown parsing.
-  const rendered = useMemo(() => <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{text}</ReactMarkdown>, [text])
-  const markdownSource = useMemo(() => ({ text, streaming }), [text, streaming])
-  return <LinkContext.Provider value={context}><MarkdownSourceContext.Provider value={markdownSource}>
+  // A finished message is one document; a running one re-parses only its last block.
+  const segments = useMemo(() => streaming ? splitStreamingMarkdown(text) : [text], [text, streaming])
+  return <LinkContext.Provider value={context}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
-      {rendered}
+      {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} />)}
       <div className="rich-message__feedback" role="status" aria-live="polite">
         {failedLink ? <><span>{linkNotice ?? `Could not open ${linkLabel(failedLink)}.`}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>Copy link</button></> : linkNotice ?? copyFeedback}
       </div>
     </div>
     {linkMenu ? <LinkMenu at={linkMenu.at} label={`Link: ${linkLabel(linkMenu.url)}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
-  </MarkdownSourceContext.Provider></LinkContext.Provider>
+  </LinkContext.Provider>
 })
 
 function AttachmentTile({ attachment }: { attachment: MessageAttachment }): ReactNode {

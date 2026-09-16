@@ -196,7 +196,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
 
   return <div className="management-view threads-view" onKeyDown={onKeyDown}>
     {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} onClose={() => setNewThread(null)} onCreated={() => { setNewThread(null); window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0) }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })}
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })}
       currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBesideFocused} onDragThread={setDragging} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}

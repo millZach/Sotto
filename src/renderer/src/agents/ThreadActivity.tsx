@@ -1,12 +1,12 @@
 import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode,
+  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode, type TurnChange,
 } from './threadActivityView'
 import './activity.css'
 
@@ -14,7 +14,24 @@ import './activity.css'
 export const LIVE_ROWS = 6
 
 const ICONS: Record<AgentActivity['kind'], LucideIcon> = {
-  turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info,
+  turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info, compaction: Shrink,
+}
+
+/**
+ * A compaction is a boundary in the conversation rather than work inside a turn, so it reads as a rule across
+ * the transcript naming what the context went from and to. Only the sides the provider reported are named.
+ */
+export function CompactionLine({ record }: { readonly record: AgentActivity }): ReactNode {
+  const summary = compactionSummary(record)
+  return <p className="thread-boundary" role="separator" aria-label={[record.title, summary].filter(Boolean).join(', ')}>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+    <span className="thread-boundary__label">
+      <Shrink className="thread-boundary__icon" size={13} strokeWidth={1.8} aria-hidden="true" />
+      <span>{record.title}</span>
+      {summary ? <span className="thread-boundary__count">{summary}</span> : null}
+    </span>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+  </p>
 }
 
 export interface ActivityGroupViewProps {
@@ -51,14 +68,92 @@ export function Elapsed({ startedAt }: { readonly startedAt: string }): ReactNod
   return <span ref={ref} className="thread-activity__clock" data-elapsed>{elapsedText(startedAt)}</span>
 }
 
+/**
+ * What a finished turn left behind. The count stays in view while the work is folded, because the files
+ * a turn changed are what a reader comes back for; the diffs are the ones the provider reported.
+ */
+export function TurnChangedFiles({ changes, onDisclosure }: {
+  readonly changes: readonly TurnChange[]
+  readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
+  if (!changes.length) return null
+  const label = `Changed ${changes.length} ${changes.length === 1 ? 'file' : 'files'}`
+  return <div className="thread-changes" data-expanded={open || undefined}>
+    <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
+      onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
+      <FilePen className="thread-activity__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+      <span>{label}</span>
+      <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
+    </button>
+    {open ? <ul id={bodyId} className="thread-changes__list" aria-label={label}>
+      {changes.map(change => <li key={change.path}>
+        <p className="thread-activity__fact">{change.verb} <code>{change.path}</code></p>
+        {change.diffs.map((diff, index) => <MessageContent key={index} text={fenced(displayDiff(diff), 'diff')} />)}
+      </li>)}
+    </ul> : null}
+  </div>
+}
+
+/**
+ * Words for a turn that has reported nothing yet. They say only that the agent is still going: Sotto
+ * cannot see inside a provider's turn, so no word here claims to know what it is thinking about.
+ */
+// A short turn only ever shows the first word, so that one still reads as work; the rest are for the longer waits.
+const WORKING_WORDS = [
+  'Combing the desert', 'Winding up the Schwartz', 'Going to plaid', 'Ludicrous speed', 'Consulting Yogurt',
+  'Checking Mr. Radar', 'Cracking 1-2-3-4-5', 'Getting to now, now', 'Raising the air shield', 'Canning the Perri-air',
+  'Waking Barf', 'Scanning for Druidia', 'Merchandising', 'Prepping for light speed',
+] as const
+const WORD_MS = 3800
+const FADE_MS = 220
+
+/** Changes its own word instead of re-rendering the transcript, and never repeats the word it is replacing. */
+function WorkingWord(): ReactNode {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    let current = 0
+    const timer = window.setInterval(() => {
+      const node = ref.current
+      if (!node) return
+      current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
+      node.textContent = WORKING_WORDS[current]!
+      const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+      if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+    }, WORD_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+  // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
+  return <>
+    <span ref={ref} className="thread-activity-live__word" aria-hidden="true">{WORKING_WORDS[0]}</span>
+    <span className="tt-visually-hidden">Working</span>
+  </>
+}
+
 /** A finished subagent whose provider sent no result says so, instead of opening to nothing. */
 function missingAgentOutput(record: AgentActivity): boolean {
   return record.kind === 'subagent' && isTerminalActivity(record.status) && !record.output && !record.error && !record.agents?.some(agent => agent.message)
 }
 
 function hasDetails(record: AgentActivity): boolean {
-  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.agents?.length || record.truncated)
+  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated)
     || missingAgentOutput(record)
+}
+
+const STEP_LABELS: Record<string, string> = { completed: 'Done', running: 'In progress', pending: 'To do' }
+
+/** The plan as the provider last reported it. Sotto shows its state; only the provider can change it. */
+function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
+  const steps = record.steps ?? []
+  const done = steps.filter(step => step.status === 'completed').length
+  return <ol className="thread-activity__steps" aria-label={`Plan, ${done} of ${steps.length} done`}>
+    {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
+      <span className="thread-activity__step-mark" aria-hidden="true" />
+      <span className="thread-activity__step-text">{step.text}</span>
+      <span className="tt-visually-hidden">{STEP_LABELS[step.status] ?? step.status}</span>
+    </li>)}
+  </ol>
 }
 
 function ActivityDetails({ record, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
@@ -68,6 +163,7 @@ function ActivityDetails({ record, provider, connected }: { readonly record: Age
   const text = parsed ? inputDetail(record) : record.text
   const json = parsed && record.kind !== 'command'
   return <div className="thread-activity__details">
+    {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
     {record.cwd ? <p className="thread-activity__fact">In <code>{record.cwd}</code></p> : null}
     {text ? record.kind === 'reasoning'
@@ -182,7 +278,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
  * action is left out when it is the row directly above, so the line never repeats it.
  */
 export function LiveActivity({ thread, connected, adjacentRecordId }: {
-  readonly thread: Pick<AgentThread, 'status' | 'activities'>; readonly connected: boolean
+  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>; readonly connected: boolean
   /** The last activity row rendered immediately before this line, if any. */
   readonly adjacentRecordId?: string | undefined
 }): ReactNode {
@@ -194,7 +290,8 @@ export function LiveActivity({ thread, connected, adjacentRecordId }: {
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">
-      {connected ? 'Working' : 'Last seen working'}
+      {/* With an action to name, the line says what is happening; without one, the words carry the wait. */}
+      {connected ? label ? 'Working' : <WorkingWord /> : 'Last seen working'}
       {connected && turn?.startedAt ? <> for <Elapsed startedAt={turn.startedAt} /></> : null}
     </span>
     {label ? <span className="thread-activity-live__action">

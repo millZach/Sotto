@@ -8,18 +8,33 @@ export const agentActivitySchema = z.object({
   afterMessageId: z.string().optional(),
   /** Observational parent activity, never a routable provider/thread identity. */
   parentId: z.string().optional(),
-  kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status']),
+  kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status', 'compaction']),
   status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']),
   title: detail, text: detail.optional(), command: detail.optional(), cwd: detail.optional(),
   output: detail.optional(), error: detail.optional(), exitCode: z.number().int().optional(),
   startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   timingSource: z.enum(['provider', 'observed']).optional(), durationMs: z.number().nonnegative().optional(),
   changes: z.array(z.object({ path: detail, kind: detail, diff: detail.optional() })).max(200).optional(),
+  /** A plan exactly as the provider last reported it, so it reads as a checklist rather than lines of text. */
+  steps: z.array(z.object({ text: detail, status: z.enum(['pending', 'running', 'completed']) })).max(200).optional(),
+  /** Context size in tokens either side of a compaction, as the provider reported it or as the ledger bracketed it. */
+  context: z.object({ before: z.number().int().nonnegative().optional(), after: z.number().int().nonnegative().optional() }).optional(),
   /** Display identities only. These cannot address provider sessions or grant authority. */
   agents: z.array(z.object({ id: z.string(), status: detail, message: detail.optional() })).max(200).optional(),
   truncated: z.boolean().optional(),
 })
 export type AgentActivity = z.infer<typeof agentActivitySchema>
+
+export type PlanStep = NonNullable<AgentActivity['steps']>[number]
+
+/** Codex, Claude and Grok name the same three plan states differently; anything else has not started. */
+export function planSteps(steps: readonly { text: unknown; status: unknown }[]): PlanStep[] {
+  const state = (value: unknown): PlanStep['status'] =>
+    value === 'completed' || value === 'done' ? 'completed' : value === 'in_progress' || value === 'running' || value === 'active' ? 'running' : 'pending'
+  // A step is one line of a checklist, so it is bounded far below a record's detail budget.
+  return steps.flatMap(step => typeof step.text === 'string' && step.text.trim()
+    ? [{ text: step.text.slice(0, 1_000), status: state(step.status) }] : []).slice(0, 200)
+}
 
 export function isTerminalActivity(status: AgentActivity['status']): boolean {
   return status !== 'running' && status !== 'unknown'
