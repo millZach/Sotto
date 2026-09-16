@@ -1,4 +1,4 @@
-import { MAX_ACTIVITY_TEXT, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
 
 export function grokActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string | undefined; cwd: string }, previous: readonly AgentActivity[] = []): AgentActivity[] {
@@ -14,6 +14,13 @@ export function grokActivities(update: Record<string, unknown>, context: { turnI
       agents: [{ id: update.subagent_id, status }], ...(typeof update.output === 'string' ? { output: bounded(update.output) } : {}),
       ...(typeof update.error === 'string' ? { error: bounded(update.error) } : {}),
       ...(typeof update.duration_ms === 'number' && Number.isFinite(update.duration_ms) && update.duration_ms >= 0 ? { durationMs: update.duration_ms, timingSource: 'provider' as const } : {}), ...(truncated ? { truncated: true } : {}) }]
+  }
+  // Grok replaces its whole plan on every update, so the turn keeps one plan row rather than a row per revision.
+  if (update.sessionUpdate === 'plan' && Array.isArray(update.entries)) {
+    const steps = planSteps(update.entries.map(entry => ({ text: object(entry)?.content, status: object(entry)?.status })))
+    if (!steps.length) return []
+    const id = `grok-plan-${context.turnId}`
+    return [{ ...context, ...previous.find(row => row.id === id), id, sequence: 0, kind: 'plan', status: 'running', title: 'Plan', steps }]
   }
   if (!['tool_call', 'tool_call_update'].includes(String(update.sessionUpdate)) || typeof update.toolCallId !== 'string') return []
   const id = `grok-tool-${update.toolCallId}`; const old = previous.find(row => row.id === id)

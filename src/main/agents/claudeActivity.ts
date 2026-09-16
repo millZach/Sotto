@@ -1,4 +1,4 @@
-import { MAX_ACTIVITY_TEXT, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
 
@@ -19,10 +19,15 @@ export class ClaudeActivity {
       const input = object(block.input)
       const name = block.name
       const old = previous.find(row => row.id === `claude-tool-${block.id}`)
-      const kind = /^(Bash|PowerShell|Shell)$/u.test(name) ? 'command' : /^(Write|Edit|MultiEdit|NotebookEdit)$/u.test(name) ? 'file-change' : /^(Agent|Task)$/u.test(name) ? 'subagent' : 'tool'
+      const kind = /^(Bash|PowerShell|Shell)$/u.test(name) ? 'command' : /^(Write|Edit|MultiEdit|NotebookEdit)$/u.test(name) ? 'file-change'
+        : /^(Agent|Task)$/u.test(name) ? 'subagent' : /^Todo(Write|Update)$/u.test(name) ? 'plan' : 'tool'
       const path = text(input?.file_path ?? input?.notebook_path)
-      rows.push({ ...base, id: `claude-tool-${block.id}`, kind, status: old && isTerminalActivity(old.status) ? old.status : 'running', title: name,
-        ...(input ? { text: json(input) } : {}), ...(typeof input?.command === 'string' ? { command: text(input.command) } : {}),
+      // Claude keeps its plan in a todo list; its steps are the plan, not tool input to read as JSON.
+      const todos = kind === 'plan' && Array.isArray(input?.todos)
+        ? planSteps(input.todos.map(value => ({ text: object(value)?.content, status: object(value)?.status }))) : undefined
+      rows.push({ ...base, id: `claude-tool-${block.id}`, kind, status: old && isTerminalActivity(old.status) ? old.status : 'running', title: kind === 'plan' ? 'Plan' : name,
+        ...(todos?.length ? { steps: todos } : {}),
+        ...(input && !todos?.length ? { text: json(input) } : {}), ...(typeof input?.command === 'string' ? { command: text(input.command) } : {}),
         ...(input && JSON.stringify(input).length > MAX_ACTIVITY_TEXT ? { truncated: true } : {}),
         ...(path ? { changes: [{ path, kind: name, ...(typeof input?.old_string === 'string' && typeof input?.new_string === 'string' ? { diff: text(`--- before\n${input.old_string}\n+++ after\n${input.new_string}`) } : {}) }] } : {}) })
     }

@@ -147,7 +147,9 @@ describe('the running turn', () => {
       activity({ id: 'test', command: 'npm test', status: 'running', startedAt: iso(-8_000), afterMessageId: last }),
     ] }))
     const liveRow = (): HTMLElement => within(transcript).getByTestId('thread-activity-live')
-    expect(liveRow()).toHaveTextContent(/^Working for 1m 05s$/)
+    // With the action named directly above, the line carries the wait in words instead of repeating it.
+    expect(liveRow().querySelector('.thread-activity-live__word')).toHaveTextContent('Thinking')
+    expect(liveRow()).toHaveTextContent(/^ThinkingWorking for 1m 05s$/)
     act(() => {
       live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD
         ? { ...thread, activities: [...thread.activities!, activity({ id: 'read', command: 'git diff', durationMs: 300, afterMessageId: last })] } : thread) } })
