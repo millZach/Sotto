@@ -2,7 +2,7 @@ import React from 'react'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import { defaultSettings } from '../../../src/shared/settings'
 import { AgentProvider } from '../../../src/renderer/src/agents/AgentContext'
 import type { AgentVoiceDependencies } from '../../../src/renderer/src/agents/voiceSession'
@@ -44,7 +44,7 @@ describe('wake acknowledgement in the real application voice session', () => {
     }
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true },
-      connection: 'disconnected', host: null, assignments: [], queue: [],
+      connection: 'disconnected', host: EMPTY_AGENT_HOST, assignments: [], queue: [],
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
       composing: false, pendingRequest: '', busy: false, notice: '', error: null,
       speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },

@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
   bootstrapSotto,
@@ -415,7 +415,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'voiceModel'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'onThreadDetail', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'threadDetail', 'voiceModel'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {

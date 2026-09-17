@@ -8,10 +8,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import type { AgentBridge } from '../../../src/shared/agents'
+import { agentShell, type AgentBridge } from '../../../src/shared/agents'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentComposer, AgentQueue } from '../../../src/renderer/src/agents/AgentView'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { agentBridgeFor } from '../../fixtures/agentBridge'
 
 const directories: string[] = []
 const controls: AgentControl[] = []
@@ -58,7 +59,7 @@ async function fixture() {
   return {
     host,
     get control() { return control },
-    get bridge(): AgentBridge { return { get: async () => control.get(), command: request => trackCommand(control.command(request)), onState: listener => control.subscribe(listener) } },
+    get bridge(): AgentBridge { return agentBridgeFor(control, { command: request => trackCommand(control.command(request).then(agentShell)) }) },
     async restart() { await finishCommands(); control.dispose(); await start() },
   }
 }
@@ -112,7 +113,8 @@ describe('durable typed queue answers', () => {
     main.unmount(); widget.unmount()
     await f.restart()
     const restored = render(<Surface bridge={f.bridge} />)
-    expect(await within(restored.container).findByLabelText('Your answer')).toHaveValue('Use indigo with white text.')
+    // The window paints its cached shell first and replaces it with main's own state.
+    await waitFor(() => expect(within(restored.container).getByLabelText('Your answer')).toHaveValue('Use indigo with white text.'))
     expect(f.control.get()).toMatchObject({ draftThreadId: 'workshop', draftRequestId: 'workshop-colors', composing: true })
   })
 

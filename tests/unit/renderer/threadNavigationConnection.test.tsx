@@ -15,6 +15,7 @@ import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentBridge, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { agentBridgeFor } from '../../fixtures/agentBridge'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -25,7 +26,7 @@ async function draftFixture() {
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   await credentials.load(); await control.start(); await control.command({ type: 'connect' })
-  const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: request => control.command(request) }
+  const bridge: AgentBridge = agentBridgeFor(control)
   return { control, host, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
     followupsOnDisk: async () => JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')),
     async close() {
@@ -257,7 +258,7 @@ describe('thread navigation through the real renderer connection and controller'
       await credentials.load(); await control.start(); await control.command({ type: 'connect' })
       const execute = host.execute.bind(host)
       vi.spyOn(host, 'execute').mockImplementation(async command => { if (command.type === 'send') await gate; return execute(command) })
-      const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: command => control.command(command) }
+      const bridge: AgentBridge = agentBridgeFor(control)
       const { result } = renderHook(() => useAgentConnection(bridge))
       await waitFor(() => expect(result.current.state).not.toBeNull())
       act(() => { sending = result.current.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Pending provider acknowledgement.' }) })
@@ -297,7 +298,7 @@ describe('thread navigation through the real renderer connection and controller'
       await control.command({ type: 'select-thread', threadId: 'workshop' })
       if (pending === 'refresh') await control.command({ type: 'compose', text: 'Bound to A' })
       const cached = control.get()
-      const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: vi.fn(command => control.command(command)) }
+      const bridge: AgentBridge = agentBridgeFor(control)
       const { result } = renderHook(() => {
         const connection = useAgentConnection(bridge)
         return { ...connection, title: connection.state?.host.threads.find(thread => thread.id === connection.state?.activeThreadId)?.title }

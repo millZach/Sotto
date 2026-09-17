@@ -350,7 +350,8 @@ describe('state publication cost', () => {
     f.host.event({ type: 'stream', threadId: 'docs', messageId: 'streaming', text: 'First delta', status: 'running' })
     await settledWrites(writes)
     expect(published).toHaveLength(1)
-    expect(published[0]!.host.threads.find(thread => thread.id === 'docs')!.messages.at(-1)!.text).toBe('First delta')
+    // The broadcast is the shell, so the streamed text reaches listeners as the thread's summary.
+    expect(published[0]!.host.threads.find(thread => thread.id === 'docs')!.summary!.lastAssistant!.text).toBe('First delta')
     expect(published[0]!.threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
   })
 

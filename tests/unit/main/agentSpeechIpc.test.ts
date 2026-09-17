@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
-import { AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
+import { AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
@@ -20,8 +20,8 @@ function fixture() {
     return { role, url, webContents: { mainFrame, isDestroyed: () => false, getURL: () => url } }
   }
   const main = sender('main'), widget = sender('widget')
-  const state = { configuration: { ...defaultAgentConfiguration(), speechProvider: 'grok', grokSpeechVoice: 'custom-voice' } } as AgentState
-  const control = { get: () => state, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(() => null) }
+  const state = { configuration: { ...defaultAgentConfiguration(), speechProvider: 'grok', grokSpeechVoice: 'custom-voice' }, host: EMPTY_AGENT_HOST } as AgentState
+  const control = { get: () => state, shell: () => state, threadDetail: () => null, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(() => null) }
   const grok = {
     synthesize: vi.fn<(text: string, voice: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'grok-fixture', mimeType: 'audio/wav' })),
     voices: vi.fn(async () => [{ id: 'custom-voice', name: 'Custom' }]), cancel: vi.fn(),
@@ -39,7 +39,7 @@ describe('agent command IPC authorization', () => {
   it.each([false, true])('allows a trusted widget to configure speak=%s', async speak => {
     const f = fixture()
     const command = { type: 'configure', patch: { speak } }
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toBe(f.state)
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(agentShell(f.state))
     expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
   })
 
@@ -50,7 +50,7 @@ describe('agent command IPC authorization', () => {
         const command = { type: 'configure', patch }
         await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
         expect(f.control.command).not.toHaveBeenCalled()
-        await expect(f.invoke(AGENT_COMMAND, command)).resolves.toBe(f.state)
+        await expect(f.invoke(AGENT_COMMAND, command)).resolves.toEqual(agentShell(f.state))
         expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
         f.control.command.mockClear()
       }
@@ -77,7 +77,7 @@ describe('agent command IPC authorization', () => {
     const f = fixture()
     await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
     expect(f.control.command).not.toHaveBeenCalled()
-    await expect(f.invoke(AGENT_COMMAND, command)).resolves.toBe(f.state)
+    await expect(f.invoke(AGENT_COMMAND, command)).resolves.toEqual(agentShell(f.state))
     expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
   })
 
@@ -95,7 +95,7 @@ describe('agent command IPC authorization', () => {
   it.each(['mute', 'unmute'])('preserves widget microphone %s commands', async action => {
     const f = fixture()
     const command = { type: 'voice', action }
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toBe(f.state)
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(agentShell(f.state))
     expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
   })
 })
