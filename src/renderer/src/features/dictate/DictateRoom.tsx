@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { TRANSCRIPTION_ERROR_DETAIL, type DictationState } from '../../../../shared/dictation'
+import {
+  MICROPHONE_NOT_SET_UP_DETAIL,
+  TRANSCRIPTION_ERROR_DETAIL,
+  type DictationState,
+} from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
@@ -55,6 +59,7 @@ function errorDetail(code: string, copy: PlatformCopy): string {
   switch (code) {
     case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
     case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
+    case 'MIC_NOT_SET_UP': return MICROPHONE_NOT_SET_UP_DETAIL
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your text could not be delivered. Try again, then paste from the clipboard manually.'
@@ -69,7 +74,13 @@ function errorDetail(code: string, copy: PlatformCopy): string {
 export function dictateSentence(
   state: DictationState,
   copy: PlatformCopy,
+  microphoneSkipped = false,
 ): { sentence: string; detail?: string; tone: 'normal' | 'error' } {
+  // Setup was finished without a microphone, so the resting room says so
+  // rather than offering a start that could only fail.
+  if (microphoneSkipped && state.status === 'idle') {
+    return { sentence: 'No microphone is set up.', detail: MICROPHONE_NOT_SET_UP_DETAIL, tone: 'normal' }
+  }
   switch (state.status) {
     case 'requesting-permission': return { sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
     case 'listening': return { sentence: 'Listening.', tone: 'normal' }
@@ -111,7 +122,8 @@ export function DictateRoom({
   const stage = waveStage(dictation)
   const listening = dictation.status === 'listening'
   const sessionId = 'sessionId' in dictation ? dictation.sessionId : undefined
-  const said = dictateSentence(dictation, copy)
+  const microphoneSkipped = settings.microphoneSkipped
+  const said = dictateSentence(dictation, copy, microphoneSkipped)
 
   useEffect(() => {
     if (!listening) return
@@ -138,8 +150,8 @@ export function DictateRoom({
     try { await onCopy(latest.text) } catch { /* the notice belongs to the caller */ } finally { setCopying(false) }
   }
 
-  let actionLabel = configured ? 'Start dictation' : 'API key required'
-  let actionDisabled = submitting || !configured
+  let actionLabel = microphoneSkipped ? 'Microphone needed' : configured ? 'Start dictation' : 'API key required'
+  let actionDisabled = submitting || !configured || microphoneSkipped
   let action = onStart
   if (dictation.status === 'requesting-permission') {
     actionLabel = 'Connecting...'
@@ -183,7 +195,7 @@ export function DictateRoom({
         </div>
         <div className="dictate__actions">
           <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
-          {configured ? (
+          {configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}
             </span>

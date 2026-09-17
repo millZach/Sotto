@@ -465,8 +465,35 @@ describe('Sotto application onboarding integration', () => {
     renderApp(bridge)
 
     await completeReadySetup(user)
-    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true }))
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true, microphoneSkipped: false }))
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
+  })
+
+  it('finishes setup without a microphone and lands in a working shell', async () => {
+    const user = userEvent.setup()
+    const updateSettings = vi.fn(async (patch) => ({ ...DEFAULT_SETTINGS, ...patch }))
+    renderApp(
+      createBridge({ updateSettings }),
+      () => ({ start: vi.fn(async () => 'missing' as const), stop: vi.fn(async () => undefined) }),
+    )
+
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: /test microphone/i }))
+    await waitFor(() => expect(screen.getByText(/no microphone was found/i)).toBeVisible())
+    await user.click(screen.getByRole('button', { name: /skip for now/i }))
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /finish setup/i }))
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true, microphoneSkipped: true }))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /no microphone is set up/i })).toBeVisible())
+    // Everything that is not voice is still one click away.
+    expect(screen.getByRole('tab', { name: /agents/i })).toBeVisible()
+    for (const destination of ['Threads', 'Chats', 'History', 'Settings']) {
+      expect(screen.getByRole('link', { name: destination })).toBeVisible()
+    }
+    await user.click(screen.getByRole('link', { name: 'Chats' }))
+    expect(screen.queryByRole('heading', { name: /check your microphone/i })).not.toBeInTheDocument()
   })
 
 

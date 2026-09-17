@@ -28,7 +28,9 @@ export interface OnboardingProps {
   readonly platform: SottoPlatform
   readonly onRequestMicrophone: () => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
-  readonly onComplete: () => boolean | void | Promise<boolean | void>
+  readonly onComplete: (
+    outcome: { readonly microphoneSkipped: boolean },
+  ) => boolean | void | Promise<boolean | void>
 }
 
 const STEP_COUNT = 4
@@ -51,6 +53,7 @@ export function Onboarding({
   onComplete,
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
+  const [skipRequested, setSkipRequested] = useState(false)
   const [pasteTest, setPasteTest] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
@@ -71,12 +74,18 @@ export function Onboarding({
   const advance = (): void => setStep((current) => Math.min(STEP_COUNT, current + 1))
   const goBack = (): void => setStep((current) => Math.max(1, current - 1))
 
+  // A test that later reports ready retires the skip, so finishing after a
+  // second attempt leaves the dictation surfaces in their working state.
+  const microphoneSkipped = skipRequested && microphoneState !== 'ready'
+
+  const skipMicrophone = (): void => setSkipRequested(true)
+
   const finish = async (): Promise<void> => {
-    if (finishing || microphoneState !== 'ready') return
+    if (finishing || (microphoneState !== 'ready' && !microphoneSkipped)) return
     setFinishing(true)
     setCompletionError(false)
     try {
-      const completed = await onComplete()
+      const completed = await onComplete({ microphoneSkipped })
       if (completed === false) setCompletionError(true)
     } catch {
       setCompletionError(true)
@@ -138,7 +147,13 @@ export function Onboarding({
                   ? 'Try microphone again'
                   : microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
               </Button>
+              {microphoneState === 'ready' ? null : (
+                <Button variant="ghost" onClick={skipMicrophone}>Skip for now</Button>
+              )}
             </div>
+            {microphoneSkipped ? (
+              <p className="onboarding-aside">Microphone test skipped. Dictation waits until you run the test in Settings.</p>
+            ) : null}
             {microphoneState === 'denied' ? (
               <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
             ) : null}
@@ -172,6 +187,7 @@ export function Onboarding({
                 placeholder="Paste or type here"
               />
             </Field>
+            {microphoneSkipped ? <p className="onboarding-aside">Microphone test skipped. Run it in Settings when you want to dictate.</p> : null}
             {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
           </section>
         ) : null}
@@ -181,7 +197,7 @@ export function Onboarding({
           {step < STEP_COUNT ? <Button onClick={advance}>Continue</Button> : (
             <Button
               onClick={() => void finish()}
-              disabled={microphoneState !== 'ready' || finishing}
+              disabled={(microphoneState !== 'ready' && !microphoneSkipped) || finishing}
             >
               {finishing ? 'Saving setup...' : 'Finish setup'}
             </Button>

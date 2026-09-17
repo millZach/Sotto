@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 
 import { DEFAULT_HOTKEY } from './constants'
 import {
@@ -67,6 +67,12 @@ export interface AppSettings {
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
+  /**
+   * Set when setup was finished without a working microphone. The dictation
+   * surfaces say so instead of failing, and the microphone test in Settings
+   * clears it. Older settings files have no such field and load as `false`.
+   */
+  microphoneSkipped: boolean
   llmFormatting: boolean
   /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
@@ -122,6 +128,7 @@ const fieldSchemas = {
     z.literal('unlimited'),
   ]),
   onboardingComplete: z.boolean(),
+  microphoneSkipped: z.boolean(),
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
@@ -165,6 +172,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
+  microphoneSkipped: false,
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
@@ -238,6 +246,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),
+    microphoneSkipped: parseField(persisted, 'microphoneSkipped', defaults),
     llmFormatting: parseField(persisted, 'llmFormatting', defaults),
     llmApiKey: parseField(persisted, 'llmApiKey', defaults),
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),

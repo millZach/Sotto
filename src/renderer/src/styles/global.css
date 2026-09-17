@@ -707,7 +707,8 @@ textarea.tt-input {
   color: var(--tt-success);
 }
 
-.onboarding-microphone-test {
+.onboarding-microphone-test,
+.settings-microphone-test {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -718,18 +719,21 @@ textarea.tt-input {
   padding: 20px;
 }
 
-.onboarding-microphone-test .tt-level-meter {
+.onboarding-microphone-test .tt-level-meter,
+.settings-microphone-test .tt-level-meter {
   grid-column: 1;
 }
 
-.onboarding-microphone-test p {
+.onboarding-microphone-test p,
+.settings-microphone-test p {
   grid-column: 1;
   margin: 0;
   color: var(--tt-text-muted);
   font-size: 13px;
 }
 
-.onboarding-microphone-test .tt-button {
+.onboarding-microphone-test .tt-button,
+.settings-microphone-test .tt-button {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
@@ -883,11 +887,13 @@ textarea.tt-input {
   }
 
   .onboarding-microphone-test,
+  .settings-microphone-test,
   .onboarding-model-list {
     grid-template-columns: 1fr;
   }
 
-  .onboarding-microphone-test .tt-button {
+  .onboarding-microphone-test .tt-button,
+  .settings-microphone-test .tt-button {
     grid-column: 1;
     grid-row: auto;
   }
