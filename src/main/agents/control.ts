@@ -1262,16 +1262,18 @@ export class AgentControl {
       ...(command.type === 'create-project' ? { entityId: command.projectId } : command.type === 'create-thread' ? { entityId: command.threadId } : {}),
     })
     const answerIntent = command.type === 'answer' ? this.outbox.find(item => item.id === command.commandId) : undefined
-    if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, 'submitting', { commandId: command.commandId, messageId: command.messageId })
+    if ((command.type === 'send' || command.type === 'steer') && draftId) {
+      this.setDelivery(command.threadId, draftId, 'submitting', { commandId: command.commandId, messageId: command.messageId })
+      // The message shows as Sending as soon as the intent exists, not after the disk write.
+      // Durability still gates dispatch: the outbox entry is persisted below, before host.execute.
+      this.publish()
+    }
     try { await this.persist() }
     catch (error) {
       // Nothing crossed the adapter boundary. Do not leave phantom uncertain intent.
       this.outbox = this.outbox.filter(item => item.id !== command.commandId)
-      if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, 'failed')
+      if ((command.type === 'send' || command.type === 'steer') && draftId) { this.setDelivery(command.threadId, draftId, 'failed'); this.publish() }
       throw error
-    }
-    if ((command.type === 'send' || command.type === 'steer') && draftId) {
-      this.publish()
     }
     let result
     if ((command.type === 'send' || command.type === 'steer') || command.type === 'answer') addTurnContext(turn, (command.type === 'send' || command.type === 'steer') ? command.text : command.answer)

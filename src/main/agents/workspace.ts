@@ -30,6 +30,8 @@ export class WorkspaceHost implements AgentHost {
   private saveError: string | undefined
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly lanes = new Map<string, Promise<unknown>>()
+  /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
+  private readonly preparations = new Map<string, Promise<void>>()
   private readonly worktrees: ThreadWorktrees
   private checkpointHooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
 
@@ -195,20 +197,45 @@ export class WorkspaceHost implements AgentHost {
     if (!thread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
     return thread
   }
+  /** Starts working-copy setup, or returns the setup already running for this thread.
+   * The checkout runs after `create-thread` has returned, so the pane appears at once; the
+   * promise is also this thread's lane, so every later command queues behind it. */
+  private startWorkingCopy(thread: AgentThread): Promise<void> {
+    const existing = this.preparations.get(thread.id)
+    if (existing) return existing
+    const pending = this.prepareWorkingCopy(thread).catch(() => {
+      this.saveError = 'Working-copy setup could not be saved. Restore local storage and retry setup.'
+      this.publish()
+    })
+    this.preparations.set(thread.id, pending)
+    this.lanes.set(thread.id, pending)
+    void pending.finally(() => {
+      if (this.preparations.get(thread.id) === pending) this.preparations.delete(thread.id)
+      if (this.lanes.get(thread.id) === pending) this.lanes.delete(thread.id)
+    }).catch(() => undefined)
+    return pending
+  }
   private async prepareWorkingCopy(thread: AgentThread): Promise<void> {
     if (!thread.worktree) return // Existing threads keep their native directory.
+    // Native events can replace the thread object while Git is pending; always write the current one.
+    const current = (): AgentThread => this.state.snapshot.threads.find(item => item.id === thread.id) ?? thread
     try {
-      if (!thread.worktree.path) {
+      let metadata = current().worktree ?? thread.worktree
+      if (!metadata.path) {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
-        thread.worktree = await this.worktrees.allocate(project.path, thread.worktree.mode)
+        metadata = await this.worktrees.allocate(project.path, metadata.mode)
+        current().worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
-      thread.worktree = await this.worktrees.ensure(thread.worktree)
-      thread.workingDirectory = await this.worktrees.workingDirectory(thread.worktree)
+      metadata = await this.worktrees.ensure(metadata)
+      const target = current()
+      target.worktree = metadata
+      target.workingDirectory = await this.worktrees.workingDirectory(metadata)
     } catch (error) {
-      thread.worktree = { ...thread.worktree, status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
+      const target = current()
+      target.worktree = { ...(target.worktree ?? thread.worktree), status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
     }
     this.dirty = true; await this.flush(); this.publish()
   }
@@ -233,6 +260,7 @@ export class WorkspaceHost implements AgentHost {
   }
   async threadWorkingDirectory(threadId: string): Promise<string> {
     await this.initialize()
+    await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     const thread = this.thread(threadId)
     if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') await this.worktrees.inspect(thread.worktree)
     return existingWorkingDirectory(resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)))
@@ -286,8 +314,10 @@ export class WorkspaceHost implements AgentHost {
         throw error
       }
       this.publish()
-      // The local thread is already durable; setup failure must not turn its creation into rejection.
-      await this.prepareWorkingCopy(thread).catch(() => { this.saveError = 'Working-copy setup could not be saved. Restore local storage and retry setup.'; this.publish() })
+      // The local thread is already durable, so creation is accepted here and the pane appears at once.
+      // The checkout continues in the background and publishes its own pending/ready/error status;
+      // setup failure is shown on the thread's working copy, never a silent success or a late rejection.
+      void this.startWorkingCopy(thread).catch(() => undefined)
       return { accepted: true }
     }
     let thread = this.thread(command.threadId)
@@ -316,7 +346,9 @@ export class WorkspaceHost implements AgentHost {
         await this.refreshThread(thread.id)
         if (this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
       } else {
-        if (thread.worktree?.status !== 'ready') await this.prepareWorkingCopy(thread)
+        // Waits for setup already running from creation; only an unstarted or failed one starts here.
+        if (thread.worktree?.status !== 'ready') await this.startWorkingCopy(thread)
+        thread = this.thread(command.threadId)
         const workingDirectory = await this.threadWorkingDirectory(thread.id)
         validateThreadOptions(this.state.snapshot, thread)
         this.requireCreation(thread.providerId)

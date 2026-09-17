@@ -72,11 +72,13 @@ describe('integrated Phase 1 workspace persistence', () => {
     const model = initial.host.models.find(model => model.providerId === 'codex')!
     const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Recover setup', managed: false })
     const threadId = created.activeThreadId!
-    expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('error')
+    // The pane exists as soon as creation returns; its checkout is still being prepared.
+    expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('pending')
     const draft = { threadId, draftId: randomUUID(), text: 'Keep this exact unsent task', attachments: [image] }
     await f.command({ type: 'save-thread-draft', ...draft })
     const failed = await f.control.command({ type: 'manual-send', ...draft })
     expect(failed.error).toContain('no commit')
+    expect(failed.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('error')
     await f.command({ type: 'select-thread', threadId: initial.host.threads[0]!.id })
     await f.restart()
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining(draft))
