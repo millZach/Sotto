@@ -36,6 +36,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const detail = useMemo(() => ({
     held: new Map<string, AgentThreadDetail>(), used: new Map<string, number>(), asked: new Set<string>(),
     viewed: new Set<string>(), shell: null as AgentState | null, clock: 0,
+    channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
   const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
@@ -61,8 +62,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         return { ...thread, messages: held.messages, ...(held.activities === undefined ? {} : { activities: held.activities }) }
       }
       // A thread whose history has not arrived is exactly what `historyStatus: 'loading'` already says;
-      // a thread the provider itself could not load keeps its own error.
-      return thread.summary !== undefined && (thread.summary.messageCount > 0 || thread.summary.activityCount > 0) && wanted(thread) && thread.historyStatus !== 'error'
+      // a thread the provider itself could not load keeps its own error. A window with no detail channel
+      // — the widget, which draws a thread from its summary alone — is never told to wait for one.
+      return detail.channel && thread.summary !== undefined && (thread.summary.messageCount > 0 || thread.summary.activityCount > 0) && wanted(thread) && thread.historyStatus !== 'error'
         ? { ...thread, historyStatus: 'loading' as const } : thread
     }
   }, [detail])
