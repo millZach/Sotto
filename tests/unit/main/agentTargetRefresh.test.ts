@@ -10,6 +10,7 @@ import { providerIdSchema, type AgentHostSnapshot, type ProviderId } from '../..
 import type { AgentHost } from '../../../src/main/agents/host'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 class TargetHost extends E2EAgentHost {
   blocked: Promise<void> | undefined
@@ -23,7 +24,7 @@ it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting fo
   const host = new TargetHost()
   const credentials = new AgentCredentials(join(root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
-  const control = new AgentControl({ directory: root, host, credentials,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   let release!: () => void

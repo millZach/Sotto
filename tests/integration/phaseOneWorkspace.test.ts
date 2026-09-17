@@ -13,6 +13,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import type { AgentAttachment, AgentCommand } from '../../src/shared/agents'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -39,7 +40,7 @@ async function fixture() {
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
     const host = new WorkspaceHost(native, directory, () => historyEnabled)
-    const control = new AgentControl({ directory, host, credentials, historyEnabled: () => historyEnabled,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })

@@ -6,6 +6,7 @@ import { afterEach, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const f of cleanup.splice(0).reverse()) await f() })
@@ -18,7 +19,7 @@ async function fixture() {
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, modelId: f.modelId, title: 'Synthetic' })
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() })
   await credentials.load()
-  const c = new AgentControl({ directory: f.root, host: f.host, credentials,
+  const c = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Synthetic', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Synthetic', expiresAt: null }) } })
   cleanup.push(async () => { c.dispose(); await c.privacyChanged() })

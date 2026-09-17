@@ -10,6 +10,7 @@ import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { defaultAgentConfiguration } from '../../../src/shared/agents'
 import { designThreadsFixture } from '../../../src/shared/e2e'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -31,7 +32,7 @@ async function fixture(saved?: object) {
     intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
     decide,
   }
-  const control = new AgentControl({ directory: root, host, credentials, reasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
     turns: new TurnRecorder({ directory: root, historyEnabled: () => true, resolveSession: () => undefined }),
     membership: {
       status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

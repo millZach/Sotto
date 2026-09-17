@@ -11,6 +11,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { TrayController } from '../../../src/main/tray/trayController'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentConfiguration } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -56,7 +57,7 @@ async function fixture() {
   const binding: { control: AgentControl } = {} as { control: AgentControl }
   const reasoner = new ConfiguredAgentReasoner(() => binding.control.get().configuration, credentials)
   const host = new E2EAgentHost()
-  binding.control = new AgentControl({
+  binding.control = new AgentControl({ schedule: immediatePublishScheduler,
     directory: root, host, credentials, reasoner, turns: recorder,
     membership: {
       status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

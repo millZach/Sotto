@@ -10,6 +10,7 @@ import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../src/main/agents/host'
 import { agentCommandSchema, type AgentCommand, type AgentState } from '../../src/shared/agents'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
+import { immediatePublishScheduler } from './publishScheduler'
 
 export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequestDraftDecision) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-draft-handoff-'))
@@ -20,7 +21,7 @@ export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequest
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
   await credentials.load()
   let history = true
-  const create = () => new AgentControl({ directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), historyEnabled: () => history,
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), historyEnabled: () => history,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   let control = create(); await control.start(); await control.command({ type: 'connect' })

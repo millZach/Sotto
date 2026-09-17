@@ -124,10 +124,34 @@ async function invokeParsed<Output>(
   return schema.parse(await renderer.invoke(channel, ...args))
 }
 
+/**
+ * What a subscription checks a payload with. A schema satisfies it, and so does the structural
+ * guard the state channels use.
+ */
+interface PayloadCheck<Output> {
+  safeParse: (value: unknown) => { success: true; data: Output } | { success: false }
+}
+
+/**
+ * The state channels carry Sotto's own state, sent by Sotto's own main process over a private
+ * channel on this machine, and they are by far the largest and most frequent payloads on the
+ * bridge: revalidating every thread's history costs more than the whole rest of the trip from main
+ * to the window, many times a second while an agent works. A structural check is what this side
+ * needs — it is the shape of the payload, not its trustworthiness, that could still surprise us.
+ * Every other channel keeps its schema.
+ */
+function trustedState<Output>(key: string): PayloadCheck<Output> {
+  return {
+    safeParse: value => typeof value === 'object' && value !== null && key in value
+      ? { success: true, data: value as Output }
+      : { success: false },
+  }
+}
+
 function subscribe<Output>(
   renderer: IpcRendererAdapter,
   channel: string,
-  schema: z.ZodType<Output>,
+  schema: PayloadCheck<Output>,
   listener: (payload: Output) => void,
 ): () => void {
   const wrapped: RendererListener = (_event, ...args) => {
@@ -200,7 +224,8 @@ function createPersonalChatBridge(renderer: IpcRendererAdapter): PersonalChatBri
     interrupt: (chatId: string) => command({ type: 'interrupt', chatId }),
     answer: (input: Parameters<PersonalChatBridge['answer']>[0]) => command({ ...input, type: 'answer' }),
     connect: () => command({ type: 'connect' }), disconnect: () => command({ type: 'disconnect' }),
-    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE, personalChatStateSchema, listener),
+    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE,
+      trustedState<import('../shared/personalChats').PersonalChatState>('chats'), listener),
   })
 }
 
@@ -218,7 +243,8 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
     } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
-    onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE, agentStateSchema, listener),
+    onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
+      trustedState<import('../shared/agents').AgentState>('host'), listener),
   })
 }
 

@@ -9,6 +9,7 @@ import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '.
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -77,7 +78,7 @@ async function fixture(host = new E2EAgentHost()) {
   let control: AgentControl
   const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials)
   const create = async (): Promise<void> => {
-    control = new AgentControl({ directory: root, host, credentials, reasoner,
+    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
       membership: {
         status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

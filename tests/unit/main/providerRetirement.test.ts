@@ -10,6 +10,7 @@ import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 vi.mock('node:fs/promises', async () => { const actual = await vi.importActual<typeof fs>('node:fs/promises'); return { ...actual, link: vi.fn(actual.link) } })
 
@@ -24,7 +25,7 @@ async function fixture() {
   const host = new FakeProviderHost(); const connect = vi.spyOn(host, 'connect'); const execute = vi.spyOn(host, 'execute')
   let historyEnabled = true
   const create = () => {
-    const control = new AgentControl({ directory: root, host, credentials, historyEnabled: () => historyEnabled,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: vi.fn(), decide: vi.fn() } as never,
       membership: { status: async () => ({ status: 'beta', label: 'Beta', expiresAt: null }), action: vi.fn() } })
     controls.push(control); return control

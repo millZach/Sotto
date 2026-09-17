@@ -13,6 +13,7 @@ import { MemoryProfile } from '../../../src/main/memory/profile'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { MAX_PREFERENCE_CONTEXT_CHARACTERS, memoryTopics } from '../../../src/shared/memory'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -48,7 +49,7 @@ async function fixture() {
     const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials, { claude: {
       complete, status: async () => ({ provider: 'claude', installed: true, ready: true, label: 'Fixture', detail: '', models: [] }),
     } })
-    control = new AgentControl({ directory: root, host, credentials, reasoner, preferences: profile, authority: new PolicyStore(store), turns,
+    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, preferences: profile, authority: new PolicyStore(store), turns,
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
     controls.push(control)
     await control.start()

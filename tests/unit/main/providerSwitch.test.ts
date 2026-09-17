@@ -14,6 +14,7 @@ import { PolicyStore } from '../../../src/main/memory/policies'
 import { memoryTopics } from '../../../src/shared/memory'
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -34,7 +35,7 @@ async function fixture() {
 async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' })) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
-  const control = new AgentControl({ directory: f.root, host: f.host, credentials,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   control.subscribe(state => f.configuration(state.configuration))

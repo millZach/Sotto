@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { codexFixture, rolloutLine } from '../../fixtures/codexFixture'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 const controls: AgentControl[] = []
@@ -25,7 +26,7 @@ async function create(f: Awaited<ReturnType<typeof fixture>>, threadId = randomU
 }
 async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: v => Buffer.from(v), decryptString: v => v.toString() }); await credentials.load()
-  const control = new AgentControl({ directory: f.root, host: f.host, credentials,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   controls.push(control); await control.start(); await control.command({ type: 'connect' })

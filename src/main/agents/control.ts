@@ -105,6 +105,9 @@ export class AgentControl {
   private viewedThreadIds: readonly string[] = []
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
   private readonly feedbackReady = new Set<ActiveTurn>()
+  private broadcastCancel: (() => void) | null = null
+  private broadcastOpen = false
+  private broadcastPending = false
   private contextActivityAt = Date.now()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
@@ -114,6 +117,8 @@ export class AgentControl {
     authority?: Authority
     preferences?: Pick<MemoryProfile, 'retrieve'>
     openThreadFolder?: (path: string) => Promise<void>
+    /** Defers a coalesced broadcast; injectable so tests own the clock. */
+    schedule?: PublishScheduler
   }) {
     this.followupStore = new FollowupStore(dependencies.directory)
     this.state = {
@@ -312,20 +317,42 @@ export class AgentControl {
     return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, requestId }) => [threadId,
       createHash('sha256').update(JSON.stringify({ draftId, text, attachments, skills, requestId })).digest('hex')]))
   }
+  /**
+   * Records this moment's feedback evidence, then asks for a broadcast. A provider emits dozens of
+   * frames a second and every one of them publishes, so the broadcast itself — the full copy of
+   * every thread's history each listener receives — coalesces onto one run per window. Commands
+   * that `return this.get()` are untouched: their caller still gets the state its command produced.
+   */
   private publish(feedback?: { receivedAt: number; threadId: string; draftId: string }): void {
     if (this.disposed) return
-    const value = this.get()
-    this.publishedDraftPersistence = JSON.stringify(value.threadDraftPersistence)
+    // Timing evidence belongs to the moment publish was called, not to the run that carries it out;
+    // recording it on this.state now means the copy the broadcast makes later already holds it.
     if (feedback) {
       const localFeedbackMs = performance.now() - feedback.receivedAt
-      for (const state of [this.state, value]) {
-        const delivery = state.deliveries?.find(item => item.threadId === feedback.threadId && item.draftId === feedback.draftId)
-        if (delivery) delivery.localFeedbackMs = localFeedbackMs
-      }
+      const delivery = this.state.deliveries?.find(item => item.threadId === feedback.threadId && item.draftId === feedback.draftId)
+      if (delivery) delivery.localFeedbackMs = localFeedbackMs
     }
     for (const turn of this.feedbackReady) turn.firstFeedbackAtMs ??= Date.now()
     this.feedbackReady.clear()
+    // The first publish of a burst is never held back; anything during the window rides the trailing run.
+    if (this.broadcastOpen) this.broadcastPending = true
+    else this.broadcast()
+  }
+  private broadcast(): void {
+    if (this.disposed) return
+    this.broadcastPending = false
+    const value = this.get()
+    this.publishedDraftPersistence = JSON.stringify(value.threadDraftPersistence)
     for (const listener of this.listeners) listener(value)
+    // Keep the window open after every broadcast: a burst that continues must keep coalescing.
+    this.broadcastOpen = true
+    const cancel = (this.dependencies.schedule ?? realPublishScheduler)(() => {
+      this.broadcastOpen = false
+      this.broadcastCancel = null
+      if (this.broadcastPending) this.broadcast()
+    }, AGENT_STATE_BROADCAST_INTERVAL_MS)
+    // A scheduler that runs its work immediately (tests) has already closed the window.
+    if (this.broadcastOpen) this.broadcastCancel = cancel
   }
   private say(text: string, preview = false): void {
     this.attentionNarration = null
@@ -1821,8 +1848,26 @@ export class AgentControl {
       }
     }
   }
-  dispose(): void { this.disposed = true; if (this.membershipTimer) clearInterval(this.membershipTimer); this.unsubscribe?.(); this.disconnect(); this.listeners.clear() }
+  dispose(): void {
+    this.disposed = true
+    // A held broadcast dies with the control: its listeners are going away, and a run that
+    // escapes the cancel still finds `disposed` and does nothing.
+    this.broadcastCancel?.()
+    this.broadcastCancel = null
+    this.broadcastOpen = false
+    this.broadcastPending = false
+    if (this.membershipTimer) clearInterval(this.membershipTimer)
+    this.unsubscribe?.()
+    this.disconnect()
+    this.listeners.clear()
+  }
 }
+
+/**
+ * One broadcast per animation frame. Below what a person can see, so no state looks late, and
+ * far fewer full copies of every thread's history than a streaming provider would otherwise force.
+ */
+export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
 
 /**
  * A provider frame publishes the whole agent state, and Claude emits dozens of frames a

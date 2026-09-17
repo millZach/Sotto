@@ -9,6 +9,7 @@ import type { SubscriptionClient } from '../../../src/main/agents/subscriptionTy
 import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, type SubscriptionProvider } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -103,7 +104,7 @@ describe('Sotto subscription reasoning integration', () => {
     const f = await fixture()
     const grok = { ...f.client, status: vi.fn(async () => ({ provider: 'grok' as const, installed: true, ready: true, label: 'Grok', detail: 'Connected',
       models: [{ id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'high'] }] })) }
-    const control: AgentControl = new AgentControl({ directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
+    const control: AgentControl = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
       reasoner: new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client, grok }),
       membership: { status: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }) } })
@@ -123,7 +124,7 @@ describe('Sotto subscription reasoning integration', () => {
     let control: AgentControl
     const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client })
     const start = async () => {
-      control = new AgentControl({ directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
+      control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
         membership: { status: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }),
           action: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }) } })
       controls.push(control)

@@ -80,13 +80,18 @@ describe('state pipeline cost', async () => {
     const wire = serialize(decorated)
     const receive = time(() => { deserialize(wire) })
     const received = deserialize(wire) as unknown
+    // What preload does now: the state channel carries Sotto's own state from Sotto's own main
+    // process, so it is checked for shape alone. The schema parse it replaced is still measured,
+    // to keep what the structural guard buys visible.
+    const guard = time(() => { void (typeof received === 'object' && received !== null && 'host' in received) })
     const parse = time(() => { agentStateSchema.safeParse(received) })
-    const total = clone + decorate + send + receive + parse
+    const total = clone + decorate + send + receive + guard
 
     const report = {
       threads: state.host.threads.length, messages,
       payloadKB: Math.round(bytes / 1024), payloadWithoutPreviewsKB: Math.round(bare / 1024),
-      ms: { clone: round(clone), decorate: round(decorate), serialize: round(send), deserialize: round(receive), schemaParse: round(parse), total: round(total) },
+      ms: { clone: round(clone), decorate: round(decorate), serialize: round(send), deserialize: round(receive),
+        schemaParse: round(guard), schemaParseSkipped: round(parse), total: round(total) },
     }
     console.info(`state pipeline: ${JSON.stringify(report)}`)
     expect(report.threads).toBeGreaterThan(0)

@@ -11,6 +11,7 @@ import { validatePromptAttachments } from '../../../src/main/agents/threadOption
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const image: AgentAttachment = { id: 'shot-1', name: 'Screenshot.png', mimeType: 'image/png',
   dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZ0AAAAASUVORK5CYII=' }
@@ -46,7 +47,7 @@ async function controlFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-options-')); roots.push(root)
   const host = new FixtureHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
-  const create = () => new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   let control = create(); disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await control.command({ type: 'connect' })
