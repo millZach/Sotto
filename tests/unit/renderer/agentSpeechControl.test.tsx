@@ -12,6 +12,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { useAttentionReview } from '../../../src/renderer/src/agents/attentionReview'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const external = vi.hoisted(() => ({ dependencies: null as AgentVoiceDependencies | null }))
 vi.mock('../../../src/renderer/src/e2e/agentVoiceEffects', () => ({ createE2EAgentVoiceEffects: () => external.dependencies }))
@@ -27,7 +28,7 @@ describe('speech interruption from the renderer', () => {
     const host = new E2EAgentHost()
     const execute = vi.spyOn(host, 'execute')
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-    const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner, membership: {
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, membership: {
       status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }),
     } })
     try {

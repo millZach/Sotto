@@ -11,6 +11,7 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffec
 import type { AgentBridge } from '../../../src/shared/agents'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentComposer, AgentQueue } from '../../../src/renderer/src/agents/AgentView'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const directories: string[] = []
 const controls: AgentControl[] = []
@@ -39,7 +40,7 @@ async function fixture() {
   const host = new E2EAgentHost()
   let control: AgentControl
   const start = async (): Promise<void> => {
-    control = new AgentControl({ directory, host, credentials, reasoner: e2eAgentReasoner,
+    control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner,
       membership: {
         status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

@@ -14,6 +14,7 @@ import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadCompo
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentBridge, AgentState } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -21,7 +22,7 @@ async function draftFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-drafts-'))
   const host = new E2EAgentHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   await credentials.load(); await control.start(); await control.command({ type: 'connect' })
   const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: request => control.command(request) }
@@ -246,7 +247,7 @@ describe('thread navigation through the real renderer connection and controller'
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-connection-')) throw new Error('Unexpected fixture directory')
     const host = new E2EAgentHost()
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
       membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
     let release!: () => void
     const gate = new Promise<void>(done => { release = done })
@@ -285,7 +286,7 @@ describe('thread navigation through the real renderer connection and controller'
     const execute = vi.spyOn(host, 'execute')
     const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    const control = new AgentControl({ directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
       membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
     let release!: () => void
     let operation: Promise<AgentState | null> | undefined
