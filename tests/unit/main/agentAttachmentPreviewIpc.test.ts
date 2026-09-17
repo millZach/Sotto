@@ -21,7 +21,7 @@ function fixture() {
   const main = sender('main'), widget = sender('widget')
   const stranger = sender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
   const attachmentPreview = vi.fn<AgentControl['attachmentPreview']>(() => ({ dataUrl: PNG }))
-  const control = { get: () => ({} as AgentState), command: vi.fn<AgentControl['command']>(), attachmentPreview }
+  const control = { get: () => ({} as AgentState), shell: () => ({} as AgentState), threadDetail: () => null, command: vi.fn<AgentControl['command']>(), attachmentPreview }
   disposables.push(registerAgentIpc(ipc, control, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() },
     { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }))
   const invoke = async (payload: unknown, source = main) =>

@@ -21,7 +21,7 @@ function fixture() {
   }
   const main = sender('main'), widget = sender('widget')
   const state = { configuration: { ...defaultAgentConfiguration(), speechProvider: 'grok', grokSpeechVoice: 'custom-voice' } } as AgentState
-  const control = { get: () => state, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(() => null) }
+  const control = { get: () => state, shell: () => state, threadDetail: () => null, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(() => null) }
   const grok = {
     synthesize: vi.fn<(text: string, voice: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'grok-fixture', mimeType: 'audio/wav' })),
     voices: vi.fn(async () => [{ id: 'custom-voice', name: 'Custom' }]), cancel: vi.fn(),

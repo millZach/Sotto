@@ -35,7 +35,7 @@ function fixture() {
     return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } }
   }
   const main = sender('main'), widget = sender('widget')
-  const control = { get: vi.fn<() => AgentState>(), command: vi.fn(), attachmentPreview: vi.fn(() => null) }
+  const control = { get: vi.fn<() => AgentState>(), shell: vi.fn<() => AgentState>(), threadDetail: vi.fn(() => null), command: vi.fn(), attachmentPreview: vi.fn(() => null) }
   const parent = { isDestroyed: () => false }
   native.fromWebContents.mockReturnValue(parent)
   native.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\Existing Folder\\project'] })

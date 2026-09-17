@@ -128,7 +128,7 @@ import {
   snapshotE2EState,
 } from './e2e/e2eBoundary'
 import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, e2eAgentEventSchema } from '../shared/e2e'
-import { AGENT_STATE, AGENT_E2E } from '../shared/agents'
+import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
 import { CodexAppServerHost } from './agents/codex'
@@ -137,7 +137,7 @@ import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
 import { WorkspaceHost } from './agents/workspace'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
-import { AgentControl, coalesceAgentStatePublishes } from './agents/control'
+import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { TurnRecorder } from './agents/turns'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
@@ -628,6 +628,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
   const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
   app.on('will-quit', () => { unsubscribePersonalChats(); void personalChats.close() })
+  // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
+  // nothing more. Only the threads the main window has declared viewed receive their messages.
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     personalChats.configurationChanged()
@@ -635,9 +637,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     windows.sendToWidget(AGENT_STATE, state)
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
+  const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail))
   const unsubscribeAgents = agentControl.subscribe(state => agentStatePublisher.publish(state))
+  const unsubscribeAgentDetail = agentControl.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
-  app.on('will-quit', () => { unsubscribeAgents(); agentStatePublisher.dispose(); agentControl.dispose() })
+  app.on('will-quit', () => { unsubscribeAgents(); unsubscribeAgentDetail(); agentStatePublisher.dispose(); agentDetailPublisher.dispose(); agentControl.dispose() })
   const showTurnRecords = (): void => {
     void (async () => {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)

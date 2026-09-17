@@ -11,7 +11,7 @@ import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
+import { AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -244,9 +244,14 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
     } : {}),
+    threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
       trustedState<import('../shared/agents').AgentState>('host'), listener),
+    // One thread's history, by far the largest payload left on the bridge and pushed as often as a
+    // provider streams; the same structural guard the state channels use is what this side needs.
+    onThreadDetail: (listener: (detail: import('../shared/agents').AgentThreadDetail) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
+      trustedState<import('../shared/agents').AgentThreadDetail>('messages'), listener),
   })
 }
 
