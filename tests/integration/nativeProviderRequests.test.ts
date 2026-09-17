@@ -47,6 +47,14 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} pins structu
       f.host.execute({ type: 'answer', commandId: 'two', threadId: second, requestId: permission.id, answer: '', approved: true, permissionChoice: choice.id }),
     ])
     expect(answers.filter(result => result.accepted)).toHaveLength(1)
-    expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) === true)).toHaveLength(provider === 'claude' ? 2 : 1)
+    // The fake provider records what it was asked in a file it appends to, so the record of the
+    // accepted decision can land just after the answer resolves. Wait for it rather than assume it,
+    // then read the count once more: a second decision would still fail, because nothing is in
+    // flight once both answers have settled.
+    const decisions = async (): Promise<number> =>
+      (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) === true).length
+    const expected = provider === 'claude' ? 2 : 1
+    await expect.poll(decisions).toBe(expected)
+    expect(await decisions()).toBe(expected)
   } finally { await f.cleanup() }
 })

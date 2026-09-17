@@ -355,17 +355,17 @@ describe('AtomicJsonStore', () => {
       const firstCandidate = `${filePath}.corrupt-1725000000015-broken-link`
       const secondCandidate = `${filePath}.corrupt-1725000000015-fresh-backup`
       const missingTarget = 'missing-backup-target'
-      await writeFile(filePath, corruptBytes)
-      try {
-        await symlink(missingTarget, firstCandidate)
-      } catch (error) {
-        const code =
-          typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
-        if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES')) {
-          skip('Symbolic-link creation is not permitted on this Windows host')
-        }
-        throw error
+      // A dangling symbolic link occupying a backup candidate is a POSIX scenario and is asserted
+      // there. Windows cannot show it either way: creating a symbolic link needs a privilege an
+      // ordinary account does not hold (EPERM), and where it is held — the CI runner, which runs
+      // elevated — CopyFileEx follows the dangling link and creates its target instead of failing
+      // with EEXIST, so the retry this test is about never happens. The guarantee the store makes on
+      // Windows is covered by the occupied-plain-file and timestamp-only cases above.
+      if (process.platform === 'win32') {
+        skip('Windows cannot present a dangling symbolic link as an occupied backup candidate')
       }
+      await writeFile(filePath, corruptBytes)
+      await symlink(missingTarget, firstCandidate)
       const ids = ['broken-link', 'fresh-backup']
       const store = createStore(
         filePath,

@@ -205,16 +205,22 @@ describe('diagram renderer', () => {
 
   it('reports a slow render, keeps renders one at a time, and retries a slow source later', async () => {
     const { renderDiagram } = await renderer()
+    // The renderer's budget is a timer and its own `performance.now()` reading, so the test owns both
+    // clocks. A 30 ms stopwatch run against real time says whether the machine was busy, not whether
+    // the renderer gave up when it should have.
+    vi.useFakeTimers()
     let finishSlow!: (value: { svg: string }) => void
     mermaid.mermaidAPI.getDiagramFromText.mockResolvedValue(parsedGraph)
     mermaid.render.mockImplementationOnce(() => new Promise(resolve => { finishSlow = resolve }))
     const slow = renderDiagram('stateDiagram-v2\n  slow', palette, 30)
     const next = renderDiagram('stateDiagram-v2\n  next', palette, 30)
+    await vi.advanceTimersByTimeAsync(31)
     await expect(slow).resolves.toEqual({ ok: false, reason: 'Took too long to draw.' })
     expect(mermaid.render).toHaveBeenCalledTimes(1)
     mermaid.render.mockResolvedValue({ svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>` })
     finishSlow({ svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 10 10"/>` })
-    // The waiting render's own clock starts only when it starts.
+    // The waiting render's own clock starts only when it starts: the 31 ms the slow render held
+    // Mermaid are past its own 30 ms budget, and it still draws.
     await expect(next).resolves.toMatchObject({ ok: true, width: 10, height: 10 })
     await expect(renderDiagram('stateDiagram-v2\n  slow', palette, 30)).resolves.toMatchObject({ ok: true })
     expect(mermaid.render).toHaveBeenCalledTimes(3)

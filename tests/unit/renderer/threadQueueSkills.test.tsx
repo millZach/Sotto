@@ -2,6 +2,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { expectWithinBudget } from '../../fixtures/perfBudget'
 import type { AgentSkillCatalog } from '../../../src/shared/agentSkills'
 import type { AgentCapabilities, AgentCommand, AgentFollowup, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
@@ -70,7 +71,7 @@ describe('follow-up queue in the Threads composer', () => {
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
     expect(within(queue).getByText('Queuing…')).toBeInTheDocument()
-    expect(performance.now() - started).toBeLessThan(100)
+    expectWithinBudget(performance.now() - started, 100, 'queueing a follow-up and painting its row')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
     expect(requests(live, 'queue-followup')).toEqual([{ type: 'queue-followup', threadId: THREAD, draftId: expect.any(String), text: 'Then run the visual gate' }])
     expect(requests(live, 'manual-send')).toHaveLength(0)
