@@ -22,14 +22,18 @@ jobs:
     env:
       # Live provider suites stay opt-in; CI never holds provider credentials.
       CI: 'true'
-      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
-      # so a path a test builds from os.tmpdir() never equals the real path the
-      # code resolves. The runner's work temp folder is a long path.
-      TMP: ${{ runner.temp }}
-      TEMP: ${{ runner.temp }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
+      # so a path a test builds from os.tmpdir() never equals the real path the
+      # code resolves. The runner's work temp folder is a long path.
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
