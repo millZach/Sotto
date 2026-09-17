@@ -22,8 +22,8 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
- * The models offered for Sotto's short writing jobs: a thread's own title today,
- * commit messages and pull request text later. They are the same cheap, fast
+ * The models offered for Sotto's short writing jobs: thread titles, commit
+ * message drafts and pull request drafts. They are the same cheap, fast
  * OpenRouter models the cleanup tiers use, named here so the choice is one
  * setting rather than one per job.
  */

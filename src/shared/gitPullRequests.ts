@@ -6,7 +6,7 @@ export const prActionSchema = toolTargetSchema.extend({ revision: z.string().min
 /** Drafting reads the branch; the base and remote come from the review the form already holds. */
 export const prDraftRequestSchema = toolListRequestSchema.extend({ remote: z.string().min(1).max(240).optional(), base: z.string().min(1).max(240).optional() }).strict()
 /** Nulls mean nothing was written - no key, generation off, no commits, or a failed request. Never an error. */
-export const prDraftSchema = z.object({ title: z.string().nullable(), body: z.string().nullable(), truncated: z.boolean() }).strict()
+export const prDraftSchema = z.object({ title: z.string().nullable(), body: z.string().nullable() }).strict()
 export const pullRequestSchema = z.object({ number: z.number().int().positive(), title: z.string(), url: z.string().url(), state: z.string(), base: z.string(), head: z.string(), draft: z.boolean(), review: z.string(), checks: z.array(z.object({ name: z.string(), status: z.string(), url: z.string().nullable() }).strict()) }).strict()
 export const prReviewSchema = z.object({ workspace: fileWorkspaceSchema, revision: z.string(), branch: z.string().nullable(), head: z.string(), remotes: z.array(z.string()), remote: z.string().nullable(), remoteUrl: z.string(), repository: z.string().nullable(), base: z.string(), title: z.string(), body: z.string(), pullRequest: pullRequestSchema.nullable(), error: z.string().nullable() }).strict()
 export const prActionResultSchema = z.object({ message: z.string(), pullRequest: pullRequestSchema.nullable() }).strict()

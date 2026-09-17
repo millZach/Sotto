@@ -139,6 +139,10 @@ describe('naming a thread from its first exchange', () => {
     await f.control.command({ type: 'refresh' })
     expect(f.titles).not.toHaveBeenCalled()
     expect(titled(f.control, workshop(f.control).id).title).toBe('Workshop')
+    // Nor on request: Regenerate title sends nothing either while history is off.
+    await f.control.command({ type: 'regenerate-thread-title', threadId: workshop(f.control).id })
+    expect(f.titles).not.toHaveBeenCalled()
+    expect(titled(f.control, workshop(f.control).id).title).toBe('Workshop')
   })
 
   it('requests nothing of OpenRouter with generation off or with no key stored', async () => {

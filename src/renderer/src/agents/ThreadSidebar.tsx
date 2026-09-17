@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, Pencil, Sparkles, SquarePen } from 'lucide-react'
-import type { AgentState, AgentThread } from '../../../shared/agents'
+import { isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
@@ -164,7 +164,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={busyThreadIds?.includes(row.thread.id) === true}
+      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
         unseen={unseen.has(row.thread.id)} liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} />)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}

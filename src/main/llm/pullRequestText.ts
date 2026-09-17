@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../shared/settings'
-import type { ShortTextRequest, ShortTextWriter } from './shortTextWriter'
+import { settingsGatedWriter, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
 
 /** A pull request title is read in a list of them, so it stays one short line. */
 export const PULL_REQUEST_TITLE_MAX_CHARACTERS = 72
@@ -74,21 +74,15 @@ export function splitPullRequestText(written: string | null): PullRequestText | 
   return { title: title.slice(0, PULL_REQUEST_TITLE_MAX_CHARACTERS).trim(), body: lines.slice(start + 1).join('\n').trim() }
 }
 
-/**
- * What the pull request tool calls to draft a form. The off switch is read for
- * every request, so turning generation off stops the next one without a
- * restart, and nothing is asked of OpenRouter while it is off.
- */
+/** What the pull request tool calls to draft a form; see `settingsGatedWriter` for the off switch. */
 export function pullRequestTextWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
 ): (material: PullRequestMaterial) => Promise<PullRequestText | null> {
-  return async material => {
-    let settings: AppSettings
-    try { settings = await getSettings() }
-    catch { return null }
-    if (!settings.pullRequestText) return null
-    if (material.subjects.length === 0) return null
-    return splitPullRequestText(await writer.write(pullRequestTextRequest(material)))
-  }
+  return settingsGatedWriter(writer, getSettings, {
+    enabled: settings => settings.pullRequestText,
+    worthAsking: material => material.subjects.length > 0,
+    request: pullRequestTextRequest,
+    shape: splitPullRequestText,
+  })
 }

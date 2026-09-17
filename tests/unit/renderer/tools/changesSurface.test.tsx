@@ -89,6 +89,8 @@ describe('the drafted commit message', () => {
     expect(await screen.findByText('Writing…')).toBeInTheDocument()
     expect(message).toHaveValue('')
     expect(git.bridge.draftCommitMessage).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1' })
+    // Writing never locks the form: only an empty message keeps Commit disabled.
+    expect(screen.getByRole('button', { name: 'Commit staged changes (1)' })).toBeDisabled()
 
     await act(async () => { release({ message: 'Raise the dark palette contrast', truncated: false }) })
     await waitFor(() => expect(message).toHaveValue('Raise the dark palette contrast'))

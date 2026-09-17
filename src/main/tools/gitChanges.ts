@@ -5,7 +5,8 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { FilePath, FileWorkspace } from '../../shared/files'
 import { fileRelativePathSchema } from '../../shared/files'
 import { gitActionSchema, gitCommitDraftRequestSchema, gitDiffRequestSchema, gitWatchRequestSchema, GIT_MAX_PATCH, type GitChange, type GitChangeListing, type GitCommitDraft, type GitFileDiff } from '../../shared/gitChanges'
-import { stagedDiffExcerpt, type StagedDiffExcerpt } from '../llm/commitMessage'
+import { COMMIT_DIFF_MAX_CHARACTERS } from '../llm/commitMessage'
+import { diffExcerpt, type DiffExcerpt } from '../llm/diffExcerpt'
 import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
@@ -23,7 +24,7 @@ interface GitDependencies {
   /** Sotto's own writing of a pull request form; absent, the form drafts nothing. */
   draftPullRequestText?: PullRequestDraftWriter
   /** Writes a commit message from the staged diff, or null when Sotto writes nothing. */
-  writeCommitMessage?(excerpt: StagedDiffExcerpt): Promise<string | null>
+  writeCommitMessage?(excerpt: DiffExcerpt): Promise<string | null>
 }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const inside = (root: string, target: string): boolean => {
@@ -60,7 +61,8 @@ export class GitChangesService extends ToolOperations {
     return new Promise((resolveOutput, reject) => {
       const child = execFile('git', ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '-c', 'diff.external=', ...args], { cwd, env, windowsHide: true, timeout: 10_000, maxBuffer, encoding: 'utf8' }, (error, stdout) => {
         this.children.delete(child)
-        if (error) reject(error); else resolveOutput(stdout)
+        // The output read before a failure travels with it: an overflowing diff is still a diff.
+        if (error) reject(Object.assign(error, { stdout })); else resolveOutput(stdout)
       })
       this.children.add(child)
     })
@@ -189,8 +191,13 @@ export class GitChangesService extends ToolOperations {
     const root = await realpath(owner.workingDirectory)
     let patch: string
     try { patch = await this.git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'], GIT_MAX_PATCH) }
-    catch { return { message: null, truncated: true } }
-    const excerpt = stagedDiffExcerpt(patch)
+    catch (error) {
+      // A staged diff past the buffer is still a diff: the first part is all the excerpt needs, and it says it was cut.
+      const overflow = error as { code?: unknown; stdout?: unknown }
+      if (overflow.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || typeof overflow.stdout !== 'string') return empty
+      patch = overflow.stdout + '\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS)
+    }
+    const excerpt = diffExcerpt(patch, COMMIT_DIFF_MAX_CHARACTERS)
     await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     const message = await this.dependencies.writeCommitMessage(excerpt)
     return { message, truncated: excerpt.truncated }

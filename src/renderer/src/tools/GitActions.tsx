@@ -97,7 +97,7 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
         {drafting ? <p className="git-actions__status" role="status">Writing…</p> : null}
         {draftNote ? <p className="git-actions__status">{draftNote}</p> : null}
         <div className="git-actions__bar">
-          <button className="files-link tt-focusable" type="submit" disabled={busy || drafting || !message.trim() || staged === 0}>Commit staged changes ({staged})</button>
+          <button className="files-link tt-focusable" type="submit" disabled={busy || !message.trim() || staged === 0}>Commit staged changes ({staged})</button>
           {bridge.draftCommitMessage ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || staged === 0} onClick={() => draft(true)}>Regenerate</button> : null}
         </div>
       </form>

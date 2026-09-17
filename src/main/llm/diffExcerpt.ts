@@ -6,17 +6,20 @@
  */
 export const DIFF_EXCERPT_CHARACTERS = 20_000
 
+const TRUNCATION_NOTE = '[The diff was longer than this and was cut here. Describe only what is above.]'
+
 export interface DiffExcerpt {
-  /** The diff as it will be sent, with the truncation note when there is one. */
+  /** The diff as it will be sent, with the truncation note when there is one. Never longer than the cap. */
   readonly text: string
   readonly truncated: boolean
 }
 
 export function diffExcerpt(diff: string, maxCharacters: number = DIFF_EXCERPT_CHARACTERS): DiffExcerpt {
-  const text = diff.trim()
+  const text = diff.replace(/\r\n/gu, '\n').trim()
   if (text.length <= maxCharacters) return { text, truncated: false }
-  const cut = text.slice(0, maxCharacters)
+  const room = maxCharacters - TRUNCATION_NOTE.length - 2
+  const cut = text.slice(0, room)
   const boundary = cut.lastIndexOf('\n')
-  const kept = (boundary > maxCharacters / 2 ? cut.slice(0, boundary) : cut).trimEnd()
-  return { text: `${kept}\n\n[The diff was longer than this and was cut here. Describe only what is above.]`, truncated: true }
+  const kept = (boundary > room / 2 ? cut.slice(0, boundary) : cut).trimEnd()
+  return { text: `${kept}\n\n${TRUNCATION_NOTE}`, truncated: true }
 }

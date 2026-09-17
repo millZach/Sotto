@@ -10,9 +10,11 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Generated thread title.** The name Sotto writes for a thread that still carries a `default` one, once the first reply to its first message lands. The writing model sees that first message and that first reply alone, and is asked nothing while generated titles are off, while no OpenRouter key is stored, or while Keep local history is off. A failure leaves the stand-in name and is logged, never shown. Regenerate title asks again for a `default` or `generated` name; a `user` name is never offered for rewriting.
 
-**Writing model.** The small OpenRouter model, chosen in Settings under Cleanup, that writes Sotto's own short text: thread titles and commit messages today, pull request text next. It reaches OpenRouter with the same stored key as transcript cleanup and transcription.
+**Writing model.** The small OpenRouter model, chosen in Settings under Cleanup, that writes Sotto's own short text: thread titles, commit message drafts and pull request drafts. It reaches OpenRouter with the same stored key as transcript cleanup and transcription.
 
 **Commit message draft.** The message the writing model drafts from the staged diff alone when the Changes panel's commit form opens, with an imperative subject under 72 characters and a body only where the change needs one. It is a draft: the user edits, clears or regenerates it, and only the Commit button commits it. With no OpenRouter key or generated commit messages off, the form opens empty.
+
+**Pull request draft.** The title and body the writing model drafts when the pull request form opens on a branch with commits, from the branch's commit subjects and its capped diff against the base alone. It replaces the form's prefill from the last commit, not words the user has typed; the user edits, clears or regenerates it, and only the Create button creates anything. With no OpenRouter key or generated pull request text off, the form opens as it always did.
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 

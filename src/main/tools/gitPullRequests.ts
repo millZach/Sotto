@@ -20,7 +20,7 @@ const safeRemote = (remote: string): string => remote.replace(/((?:https?|ssh):\
 interface Dependencies { files: FilesService; mutations: Set<string>; canMutate?(threadId: string): Promise<boolean> | boolean; command?: GitPrCommand
   /** Sotto's own writing of the form. Absent, or resolving to null, leaves the form as the user found it. */
   draftText?(material: PullRequestMaterial): Promise<PullRequestText | null> }
-const NO_DRAFT: PrDraft = { title: null, body: null, truncated: false }
+const NO_DRAFT: PrDraft = { title: null, body: null }
 export class GitPullRequestsService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
   constructor(private readonly dependencies: Dependencies) { super() }
@@ -101,7 +101,7 @@ export class GitPullRequestsService extends ToolOperations {
     if (subjects.length === 0) return NO_DRAFT
     const excerpt = diffExcerpt(await git('diff', '--no-color', '--no-ext-diff', '--unified=3', start, 'HEAD').catch(() => ''))
     const written = await write({ subjects, diff: excerpt.text }).catch(() => null)
-    return { title: written?.title ?? null, body: written?.body ?? null, truncated: excerpt.truncated } as PrDraft
+    return written ? { title: written.title, body: written.body } : NO_DRAFT
   }) }
   act(payload: unknown) { return this.run(async () => {
     const request = parse(prActionSchema, payload)

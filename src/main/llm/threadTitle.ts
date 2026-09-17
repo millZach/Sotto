@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../shared/settings'
-import type { ShortTextRequest, ShortTextWriter } from './shortTextWriter'
+import { settingsGatedWriter, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
 
 /** A sidebar row and a pane heading both have to hold the whole title. */
 export const THREAD_TITLE_MAX_CHARACTERS = 60
@@ -39,22 +39,12 @@ export function threadTitleRequest(exchange: ThreadTitleExchange): ShortTextRequ
   }
 }
 
-/**
- * What the coordinator calls to name a thread. The off switch is read for every
- * request, so turning generation off stops the next one without a restart, and
- * nothing is asked of OpenRouter while it is off.
- */
+/** What the coordinator calls to name a thread; see `settingsGatedWriter` for the off switch. */
 export function threadTitleWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
 ): (exchange: ThreadTitleExchange) => Promise<string | null> {
-  return async exchange => {
-    let settings: AppSettings
-    try { settings = await getSettings() }
-    catch { return null }
-    if (!settings.threadTitles) return null
-    return writer.write(threadTitleRequest(exchange))
-  }
+  return settingsGatedWriter(writer, getSettings, { enabled: settings => settings.threadTitles, request: threadTitleRequest })
 }
 
 function excerpt(text: string): string {

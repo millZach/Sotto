@@ -1,4 +1,4 @@
-﻿// @vitest-environment node
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, readFile, rm, rename, symlink } from 'node:fs/promises'
@@ -13,7 +13,7 @@ const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Err
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' })
-async function fixture(options: { writeCommitMessage?: (excerpt: { diff: string; truncated: boolean }) => Promise<string | null> } = {}) {
+async function fixture(options: { writeCommitMessage?: (excerpt: { text: string; truncated: boolean }) => Promise<string | null> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-git-unit-'))
   // dispose() kills an in-flight Git poll, but Windows releases its cwd handle after process exit.
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
@@ -160,7 +160,7 @@ describe('Git review in exact thread working directories', () => {
 
 describe('Commit message drafts', () => {
   it('sends the staged diff alone, capped, and commits nothing on its own', async () => {
-    const writeCommitMessage = vi.fn(async (excerpt: { diff: string; truncated: boolean }) => excerpt.truncated ? 'Describe the first part' : 'Raise the contrast of the dark palette')
+    const writeCommitMessage = vi.fn(async (excerpt: { text: string; truncated: boolean }) => excerpt.truncated ? 'Describe the first part' : 'Raise the contrast of the dark palette')
     const f = await fixture({ writeCommitMessage })
     await writeFile(join(f.repo, 'changed.txt'), 'staged content\n')
     let listing = unwrap(await f.service.list(f.target))
@@ -171,10 +171,10 @@ describe('Commit message drafts', () => {
 
     const draft = unwrap(await f.service.draftCommitMessage({ ...f.target, revision: listing.revision }))
     expect(draft).toEqual({ message: 'Raise the contrast of the dark palette', truncated: false })
-    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { diff: string; truncated: boolean }
-    expect(excerpt.diff).toContain('+staged content')
-    expect(excerpt.diff).not.toContain('later working edit')
-    expect(excerpt.diff).not.toContain('never sent')
+    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { text: string; truncated: boolean }
+    expect(excerpt.text).toContain('+staged content')
+    expect(excerpt.text).not.toContain('later working edit')
+    expect(excerpt.text).not.toContain('never sent')
     expect(excerpt.truncated).toBe(false)
     // Drafting is not committing: HEAD is still the fixture commit and the index is untouched.
     expect(git(f.repo, 'log', '--oneline').trim().split('\n')).toHaveLength(1)
@@ -185,15 +185,16 @@ describe('Commit message drafts', () => {
   }, 20000)
 
   it('cuts an oversized staged diff and says it was cut', async () => {
-    const writeCommitMessage = vi.fn(async (excerpt: { diff: string; truncated: boolean }) => excerpt.truncated ? 'Add the generated fixture file' : 'Describe the whole diff')
+    const writeCommitMessage = vi.fn(async (excerpt: { text: string; truncated: boolean }) => excerpt.truncated ? 'Add the generated fixture file' : 'Describe the whole diff')
     const f = await fixture({ writeCommitMessage })
-    await writeFile(join(f.repo, 'huge.txt'), Array.from({ length: 4_000 }, (_unused, line) => `generated line ${line}`).join('\n') + '\n')
+    // Past the 512 KiB read buffer as well as the excerpt cap: the first part of the diff is still a draft.
+    await writeFile(join(f.repo, 'huge.txt'), Array.from({ length: 30_000 }, (_unused, line) => `generated line ${line}`).join('\n') + '\n')
     let listing = unwrap(await f.service.list(f.target))
     listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'huge.txt' }))
     const draft = unwrap(await f.service.draftCommitMessage({ ...f.target, revision: listing.revision }))
     expect(draft).toEqual({ message: 'Add the generated fixture file', truncated: true })
-    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { diff: string; truncated: boolean }
-    expect(excerpt.diff.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
+    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { text: string; truncated: boolean }
+    expect(excerpt.text.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
     expect(excerpt.truncated).toBe(true)
   }, 20000)
 

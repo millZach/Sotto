@@ -486,7 +486,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const settings = new SecureSettings(plainSettings, credentials)
   await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
   let agentHistoryEnabled = (await settings.get()).historyEnabled
-  // Sotto's own short writing: thread titles today, commit messages and pull request text next.
+  // Sotto's own short writing: thread titles, commit message drafts and pull request drafts.
   // E2E runs never reach the network, so every title there resolves to the stand-in name.
   const shortTextWriter = new ShortTextWriter({
     getSettings: () => settings.forFormatting(),

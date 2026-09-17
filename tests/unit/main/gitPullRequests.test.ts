@@ -90,7 +90,7 @@ it('drafts the form from the commit subjects and the capped diff alone, and crea
     draftText: async input => { material.push(input); return { title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' } },
   })
   const drafted = unwrap(await service.draft({ threadId: 'a', base: 'main', remote: 'origin' }))
-  expect(drafted).toEqual({ title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.', truncated: true })
+  expect(drafted).toEqual({ title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' })
   expect(material).toHaveLength(1)
   expect(material[0]!.subjects).toEqual(['Add the first piece', 'Second subject', 'Pad the diff past the cap'])
   expect(material[0]!.diff.length).toBeLessThan(21_000)
@@ -104,14 +104,14 @@ it('leaves the form alone when nothing is written and never fails over it', asyn
   const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => { if (executable === 'gh') throw new Error('Must not reach GitHub'); return git(cwd, ...args) }
   // No writer at all: the key is missing, or generation is off, so main never asks.
   const silent = new GitPullRequestsService({ files: f.files, mutations: new Set(), command })
-  expect(unwrap(await silent.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null, truncated: false })
+  expect(unwrap(await silent.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null })
   // A writer that answers nothing, and a branch with no base to compare against.
   const draftText = vi.fn(async () => null)
   const service = new GitPullRequestsService({ files: f.files, mutations: new Set(), command, draftText })
   git(f.repo, 'branch', 'main')
-  expect(unwrap(await service.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null, truncated: false })
+  expect(unwrap(await service.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null })
   expect(draftText).toHaveBeenCalledTimes(0) // The branch is its base: no commits, nothing to describe.
-  expect(unwrap(await service.draft({ threadId: 'a', base: 'never-a-branch' }))).toEqual({ title: null, body: null, truncated: false })
+  expect(unwrap(await service.draft({ threadId: 'a', base: 'never-a-branch' }))).toEqual({ title: null, body: null })
 }, 20000)
 it('redacts remote credentials in review and failure diagnostics', async () => {
   const f = await fixture(); git(f.repo, 'remote', 'set-url', 'origin', 'https://account:secret-token@github.com/sotto-fixture/owned.git')

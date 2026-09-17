@@ -43,9 +43,9 @@ export interface ShortTextWriterDependencies {
 }
 
 /**
- * One line of text written by a small OpenRouter model, for the jobs where Sotto
- * writes on the user's behalf: a thread's title today, commit messages and pull
- * request text next. Every failure resolves to `null` - a caller keeps whatever
+ * Short text written by a small OpenRouter model, for the jobs where Sotto
+ * writes on the user's behalf: thread titles, commit messages and pull request
+ * text. Every failure resolves to `null` - a caller keeps whatever
  * it already had, and the user is never shown an error for text they did not ask
  * for. The OpenRouter key is read through the same settings path the transcript
  * cleanup uses and never leaves this module.
@@ -100,6 +100,36 @@ export class ShortTextWriter {
   }
 }
 
+export interface GatedWriterShape<Input, Output> {
+  /** The setting that turns this job off. */
+  readonly enabled: (settings: AppSettings) => boolean
+  /** Input with nothing to describe is not sent; absent, every input is. */
+  readonly worthAsking?: (input: Input) => boolean
+  readonly request: (input: Input) => ShortTextRequest
+  /** Turns the written text into what the caller keeps; absent, the text itself. */
+  readonly shape?: (written: string | null) => Output
+}
+
+/**
+ * The writer every job is built from. The off switch is read for every request,
+ * so turning generation off stops the next one without a restart, and nothing is
+ * asked of OpenRouter while it is off or while settings cannot be read.
+ */
+export function settingsGatedWriter<Input, Output = string | null>(
+  writer: Pick<ShortTextWriter, 'write'>,
+  getSettings: () => AppSettings | Promise<AppSettings>,
+  job: GatedWriterShape<Input, Output>,
+): (input: Input) => Promise<Output | null> {
+  return async input => {
+    let settings: AppSettings
+    try { settings = await getSettings() }
+    catch { return null }
+    if (!job.enabled(settings) || job.worthAsking?.(input) === false) return null
+    const written = await writer.write(job.request(input))
+    return job.shape ? job.shape(written) : (written as Output)
+  }
+}
+
 function extractContent(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null
   const choices = (payload as { choices?: unknown }).choices
@@ -122,10 +152,15 @@ export function trimToLine(content: string | null, maxCharacters: number): strin
     .replace(/^["'“”‘’`]+|["'“”‘’`]+$/gu, '')
     .replace(/[.、。]+$/u, '')
     .trim()
+  return cutAtBoundary(text, maxCharacters, ' ')
+}
+
+/** Cuts text past the ceiling at the last boundary character, unless that would lose more than half of it. */
+function cutAtBoundary(text: string, maxCharacters: number, ...boundaries: string[]): string | null {
   if (text.length === 0) return null
   if (text.length <= maxCharacters) return text
   const cut = text.slice(0, maxCharacters)
-  const boundary = cut.lastIndexOf(' ')
+  const boundary = Math.max(...boundaries.map(mark => cut.lastIndexOf(mark)))
   return (boundary > maxCharacters / 2 ? cut.slice(0, boundary) : cut).trim()
 }
 
@@ -144,9 +179,5 @@ export function trimToText(content: string | null, maxCharacters: number): strin
     .join('\n')
     .replace(/\n{3,}/gu, '\n\n')
     .trim()
-  if (text.length === 0) return null
-  if (text.length <= maxCharacters) return text
-  const cut = text.slice(0, maxCharacters)
-  const boundary = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '))
-  return (boundary > maxCharacters / 2 ? cut.slice(0, boundary) : cut).trimEnd()
+  return cutAtBoundary(text, maxCharacters, '\n', ' ')
 }

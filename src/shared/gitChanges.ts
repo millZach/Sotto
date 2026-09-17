@@ -15,7 +15,7 @@ export const gitActionSchema = toolTargetSchema.extend({ revision: z.string().mi
 export const gitCommitDraftRequestSchema = toolTargetSchema.extend({ revision: z.string().min(1) }).strict()
 /** `message` is null whenever nothing was written: no key, generation off, or a failed request. The form then opens empty. */
 export const gitCommitDraftSchema = z.object({ message: z.string().max(10000).nullable(), truncated: z.boolean() }).strict()
-export const gitBranchesSchema =z.object({ branches: z.array(z.string()), current: z.string().nullable() }).strict()
+export const gitBranchesSchema = z.object({ branches: z.array(z.string()), current: z.string().nullable() }).strict()
 export const gitWatchRequestSchema = toolTargetSchema.extend({ enabled: z.boolean() })
 export const gitDiffSchema = z.object({ workspace: fileWorkspaceSchema, path: fileRelativePathSchema, revision: z.string(), content: z.union([z.object({ kind: z.literal('text'), patch: z.string().max(GIT_MAX_PATCH) }).strict(), z.object({ kind: z.enum(['binary', 'too-large', 'unavailable']), message: z.string() }).strict()]) }).strict()
 export const gitChangedSchema = toolTargetSchema.extend({ revision: z.string() })

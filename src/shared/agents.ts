@@ -545,7 +545,7 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
  * Whether this thread's own lane is running a command right now. Every control that acts on one thread
  * asks this about the thread it shows, so work on one thread never dims or locks another thread's pane.
  */
-export function isThreadBusy(state: Pick<AgentState, 'busyThreadIds'>, threadId: string | null | undefined): boolean {
+export function isThreadBusy(state: { readonly busyThreadIds?: readonly string[] | undefined }, threadId: string | null | undefined): boolean {
   return threadId ? state.busyThreadIds?.includes(threadId) === true : false
 }
 export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {

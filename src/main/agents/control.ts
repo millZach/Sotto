@@ -88,11 +88,11 @@ const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto 
 /**
  * The first thing asked of a thread and the first answer it got, the only content a generated title is
  * written from. Automatic naming needs the thread to be at its first exchange and settled: a running turn
- * has no finished reply yet, and a thread that has moved on was named or left alone long ago. An explicit
- * Regenerate (`anyExchange`) still reads the same first exchange out of a longer history.
+ * has no finished reply yet, and a thread that has moved on was named or left alone long ago. A requested
+ * Regenerate still reads the same first exchange out of a longer history.
  */
-function firstExchange(thread: AgentThread, anyExchange = false): ThreadTitleExchange | null {
-  if (!anyExchange && (thread.status === 'running' || thread.messages.filter(message => message.role === 'user').length !== 1)) return null
+function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested'): ThreadTitleExchange | null {
+  if (trigger === 'automatic' && (thread.status === 'running' || thread.messages.filter(message => message.role === 'user').length !== 1)) return null
   const prompt = thread.messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
   if (prompt === -1) return null
   const reply = thread.messages.slice(prompt + 1).find(message => message.role === 'assistant' && message.text.trim().length > 0)
@@ -748,7 +748,7 @@ export class AgentControl {
     if (this.dependencies.historyEnabled?.() === false) return
     for (const thread of this.state.host.threads) {
       if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
-      const exchange = firstExchange(thread)
+      const exchange = firstExchange(thread, 'automatic')
       if (!exchange) continue
       this.titled.add(thread.id)
       void this.writeThreadTitle(thread.id, exchange)
@@ -771,7 +771,8 @@ export class AgentControl {
   /** Ask again for a thread's name, replacing a generated or stand-in one on explicit request. */
   private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
     const thread = this.state.host.threads.find(item => item.id === threadId)
-    const exchange = thread ? firstExchange(thread, true) : null
+    // The same rule as automatic naming: with local history off, no thread content is sent to name it.
+    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested') : null
     if (thread && exchange) {
       this.titled.add(thread.id)
       await this.writeThreadTitle(threadId, exchange)

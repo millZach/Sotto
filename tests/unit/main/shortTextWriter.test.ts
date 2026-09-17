@@ -8,7 +8,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
 import { THREAD_TITLE_MAX_CHARACTERS, threadTitleRequest, threadTitleWriter } from '../../../src/main/llm/threadTitle'
 import { pullRequestTextWriter } from '../../../src/main/llm/pullRequestText'
-import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, commitMessageRequest, commitMessageWriter, stagedDiffExcerpt } from '../../../src/main/llm/commitMessage'
+import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, commitMessageRequest, commitMessageWriter } from '../../../src/main/llm/commitMessage'
+import { diffExcerpt } from '../../../src/main/llm/diffExcerpt'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const KEYED: AppSettings = { ...DEFAULT_SETTINGS, llmApiKey: 'sk-or-v1-test', writingModel: 'anthropic/claude-haiku-4.5' }
@@ -128,7 +129,7 @@ describe('the short-text writing path', () => {
   })
 })
 
-const excerpt = { diff: 'diff --git a/src/app.ts b/src/app.ts\n+export const ready = true\n', truncated: false }
+const excerpt = { text: 'diff --git a/src/app.ts b/src/app.ts\n+export const ready = true\n', truncated: false }
 
 describe('the commit message a staged diff earns', () => {
   it('carries the staged diff alone, and the note when it was cut', async () => {
@@ -138,11 +139,12 @@ describe('the commit message a staged diff earns', () => {
     const material = sent.find(message => message.role === 'user')!.content
     expect(material).toContain('+export const ready = true')
     expect(material).not.toContain('sk-or-v1-test')
-    expect(material).not.toMatch(/continues past this point/u)
+    expect(material).not.toMatch(/was cut here/u)
     expect(sent).toHaveLength(2)
-    expect(commitMessageRequest({ ...excerpt, truncated: true }).material).toMatch(/continues past this point/u)
-    expect(stagedDiffExcerpt('a\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS))).toMatchObject({ truncated: true })
-    expect(stagedDiffExcerpt('a\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS)).diff.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
+    const cut = diffExcerpt('a\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS), COMMIT_DIFF_MAX_CHARACTERS)
+    expect(cut).toMatchObject({ truncated: true })
+    expect(cut.text.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
+    expect(commitMessageRequest(cut).material).toMatch(/was cut here/u)
   })
 
   it('keeps a short body, shortens an over-long subject and drops a fence', async () => {
