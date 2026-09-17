@@ -19,7 +19,6 @@ import {
   T3_CODE_THEME,
   THEME_FILE_VERSION,
   canonicalizeTheme,
-  findTheme,
   getThemeColorsForMode,
   getThemeModes,
   parseThemeFile,
@@ -39,7 +38,7 @@ export type LibraryPatch = Pick<SettingsPatch, 'lightTheme' | 'darkTheme' | 'cus
 // ---------------------------------------------------------------------------
 // Cards
 
-export const THEME_PREVIEW_ROLES = ['sidebar', 'canvas', 'surface', 'accentSurface', 'accent', 'messageSurface', 'messageAction'] as const
+const THEME_PREVIEW_ROLES = ['sidebar', 'canvas', 'surface', 'accentSurface', 'accent', 'messageSurface', 'messageAction'] as const
 export type ThemePreviewRole = (typeof THEME_PREVIEW_ROLES)[number]
 export type ThemePreviewColors = Readonly<Record<ThemePreviewRole, string>>
 
@@ -52,7 +51,7 @@ export interface ThemeCardPreview {
  * T3 Code draws its standard card from these fixed swatches rather than from
  * the palette (T3's ThemePreviewCircles.tsx and packages/shared themePreview.ts).
  */
-export const STANDARD_THEME_PREVIEW_COLORS: Readonly<Record<ThemeAppearance, ThemePreviewColors>> = {
+const STANDARD_THEME_PREVIEW_COLORS: Readonly<Record<ThemeAppearance, ThemePreviewColors>> = {
   light: { sidebar: '#fafafa', surface: '#ffffff', accentSurface: '#f4f4f5', messageSurface: '#e4e4e7', canvas: '#fcfcfc', accent: '#f4f4f5', messageAction: '#4f46e5' },
   dark: { sidebar: '#0f0f10', surface: '#121212', accentSurface: '#27272a', messageSurface: '#27272a', canvas: '#0a0a0a', accent: '#1c1c1f', messageAction: '#8b9cff' },
 }
@@ -63,12 +62,6 @@ export function themeCardPreviews(theme: ThemeDefinition): ThemeCardPreview[] {
     const colors = getThemeColorsForMode(theme, mode) ?? theme.colors
     return { mode, colors: Object.fromEntries(THEME_PREVIEW_ROLES.map(role => [role, colors[role]])) as unknown as ThemePreviewColors }
   })
-}
-
-export function previewColorsFor(id: string, mode: ThemeAppearance, customThemes: readonly ThemeDefinition[]): ThemePreviewColors {
-  const theme = findTheme(id, customThemes) ?? findTheme(DEFAULT_THEME_ID, [])!
-  const previews = themeCardPreviews(theme)
-  return (previews.find(preview => preview.mode === mode) ?? previews[0]!).colors
 }
 
 /** The halves a theme owns right now, in light-then-dark order. */

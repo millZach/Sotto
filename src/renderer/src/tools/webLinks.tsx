@@ -29,7 +29,7 @@ async function openSystem(url: string): Promise<WebLinkResult> {
 }
 
 /** Outside any thread: every link goes to the system browser or mail app. */
-export const systemLinkRouter: WebLinkRouter = { canEmbed: false, open: url => openSystem(url) }
+const systemLinkRouter: WebLinkRouter = { canEmbed: false, open: url => openSystem(url) }
 
 const WebLinkRouterContext = createContext<WebLinkRouter>(systemLinkRouter)
 

@@ -27,7 +27,7 @@ function mix(a: Rgb, b: Rgb, t: number): Rgb {
 const rgba = (c: Rgb, alpha: number): string => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${alpha})`
 const WHITE: Rgb = [255, 255, 255]
 
-export const ORB_PRESETS: Readonly<Record<OrbPreset, readonly [string, string]>> = {
+const ORB_PRESETS: Readonly<Record<OrbPreset, readonly [string, string]>> = {
   violet: ['#4f7dff', '#e04cff'],
   ice: ['#bff4ff', '#5cc8ff'],
   teal: ['#9df0e3', '#2c7a72'],
@@ -92,7 +92,7 @@ export function orbColorsBeneath(filter: string, visible: readonly [string, stri
 interface Motion { amp: number; flow: number; spin: number; pulse: number; glow: number }
 
 /** Motion per state: amp scales the lumps, flow evolves the noise field, spin rotates, pulse breathes, glow multiplies bloom. */
-export const ORB_STATES: Readonly<Record<OrbState, Motion>> = {
+const ORB_STATES: Readonly<Record<OrbState, Motion>> = {
   idle: { amp: 0.55, flow: 0.25, spin: 0.04, pulse: 0.0, glow: 0.7 },
   wake: { amp: 0.85, flow: 0.45, spin: 0.06, pulse: 0.0, glow: 1.0 },
   listening: { amp: 1.05, flow: 0.9, spin: 0.08, pulse: 0.06, glow: 1.15 },
@@ -101,7 +101,7 @@ export const ORB_STATES: Readonly<Record<OrbState, Motion>> = {
 }
 
 /** The look. The mockup's TUNE block, verbatim. */
-export const ORB_TUNE = {
+const ORB_TUNE = {
   density: 4, // icosphere subdivision level: 3 (642 verts), 4 (2562), 5 (10242)
   radius: 0.23, // sphere radius as a fraction of min(canvas w, h)
   amp: 0.18, // displacement amplitude (multiplied by the state's amp)
@@ -163,7 +163,7 @@ function grad(h: number, x: number, y: number, z: number): number {
     default: return -y - z
   }
 }
-export function noise(x: number, y: number, z: number): number {
+function noise(x: number, y: number, z: number): number {
   const X = Math.floor(x) & 255
   const Y = Math.floor(y) & 255
   const Z = Math.floor(z) & 255
@@ -190,7 +190,7 @@ export function noise(x: number, y: number, z: number): number {
 type Vertex = [number, number, number]
 interface Mesh { readonly verts: readonly Vertex[]; readonly edges: readonly (readonly [number, number])[] }
 const meshCache = new Map<number, Mesh>()
-export function icosphere(level: number): Mesh {
+function icosphere(level: number): Mesh {
   const cached = meshCache.get(level)
   if (cached !== undefined) return cached
   const t = (1 + Math.sqrt(5)) / 2

@@ -23,7 +23,7 @@ import {
 import './tools.css'
 import './sidecarSurfaces.css'
 
-export const TOOLS_PANEL_ID = 'sotto-tools-panel'
+const TOOLS_PANEL_ID = 'sotto-tools-panel'
 const FEEDBACK_MS = 1_600
 const RESIZE_STEP = 24
 const OVERLAY_GUTTER = 48
@@ -125,7 +125,7 @@ const NO_THREAD: Record<ToolSurfaceId, string> = {
 }
 
 /** The panel's surface tabs. Only implemented surfaces are listed. */
-export function ToolSurfaceSelector({ value, onChange }: { readonly value: ToolSurfaceId; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
+function ToolSurfaceSelector({ value, onChange }: { readonly value: ToolSurfaceId; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   return <div className="tools-surfaces" role="tablist" aria-label="Tools">
     {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-surfaces__tab tt-focusable"
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}

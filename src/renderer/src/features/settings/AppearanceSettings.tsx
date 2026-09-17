@@ -21,7 +21,7 @@ export interface AppearanceSettingsProps {
 }
 
 /** How long a slider waits after the last movement before it saves. */
-export const SLIDER_SAVE_DELAY_MS = 250
+const SLIDER_SAVE_DELAY_MS = 250
 
 /**
  * The main window's colour scheme, themes, contrast and glass (ADR-0011). Every

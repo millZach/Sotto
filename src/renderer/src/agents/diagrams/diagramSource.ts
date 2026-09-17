@@ -6,7 +6,7 @@ export type DiagramKind = 'sequence' | 'flowchart' | 'state' | 'class' | 'er'
 /** Bounds parser input. Parsed layout complexity is separately checked in diagramSafety. */
 export const MAX_DIAGRAM_SOURCE_LENGTH = 12_000
 /** Coarse parser-work budget, in addition to (never instead of) parsed graph limits. */
-export const MAX_DIAGRAM_SOURCE_UNITS = 600
+const MAX_DIAGRAM_SOURCE_UNITS = 600
 /** Mermaid stops a flowchart with more edges than this. */
 export const MAX_DIAGRAM_EDGES = 300
 /** Async stall / elapsed-time reporting only; a same-thread timer cannot interrupt layout. */

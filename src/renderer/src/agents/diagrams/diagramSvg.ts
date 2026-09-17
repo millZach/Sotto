@@ -112,7 +112,7 @@ export interface InertDiagramOptions {
 }
 
 /** Space kept around measured content, so strokes and arrowheads outside the geometry still show. */
-export const DIAGRAM_BOUNDS_PADDING = 12
+const DIAGRAM_BOUNDS_PADDING = 12
 
 /** Parses Mermaid's SVG, removes anything active or external, and fixes its size. Null when it is not a drawable SVG. */
 export function toInertDiagramSvg(markup: string, options: InertDiagramOptions = {}): InertDiagramImage | null {

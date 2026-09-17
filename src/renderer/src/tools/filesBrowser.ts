@@ -41,7 +41,7 @@ function freshThread(threadId: string, generation = 0, workspaceChanged = false)
   }
 }
 
-export function parentPath(path: string): string {
+function parentPath(path: string): string {
   const index = path.lastIndexOf('/')
   return index < 0 ? ROOT : path.slice(0, index)
 }
@@ -283,7 +283,7 @@ export function sortEntries(entries: readonly FileEntry[]): FileEntry[] {
 }
 
 /** Git's administrative entry (a folder in a checkout, a file in a worktree) is not part of the working copy, so the tree leaves it out. */
-export function isGitAdministrative(entry: FileEntry): boolean {
+function isGitAdministrative(entry: FileEntry): boolean {
   return entry.name.toLowerCase() === '.git'
 }
 

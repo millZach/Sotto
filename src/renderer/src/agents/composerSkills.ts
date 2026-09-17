@@ -12,7 +12,7 @@ export interface SkillTrigger {
 }
 
 const SCOPE_LABELS: Record<CatalogSkill['scope'], string> = { user: 'Personal', repo: 'Project', system: 'System', admin: 'Admin' }
-export const MAX_SELECTED_SKILLS = 32
+const MAX_SELECTED_SKILLS = 32
 
 export function skillScopeLabel(scope: CatalogSkill['scope']): string { return SCOPE_LABELS[scope] }
 

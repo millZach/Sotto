@@ -23,7 +23,7 @@ const HEX = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu
  * Resolves any colour the page can paint (OKLCH, color-mix) by drawing it on a 1x1 canvas. xterm parses such
  * values itself only when they are opaque and blends its selection from them, so it is given hex.
  */
-export function canvasColorResolver(): ColorResolver {
+function canvasColorResolver(): ColorResolver {
   let context: CanvasRenderingContext2D | null | undefined
   return css => {
     const value = css.trim()
@@ -230,7 +230,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
 }
 
 /** The clipboard image as a PNG data URL, redrawn when the clipboard gave another format. */
-export async function pngDataUrl(file: Blob): Promise<string | null> {
+async function pngDataUrl(file: Blob): Promise<string | null> {
   const read = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))

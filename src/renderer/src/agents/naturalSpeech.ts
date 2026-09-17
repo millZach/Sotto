@@ -2,8 +2,6 @@
 import type { AgentBridge, AgentConfiguration } from '../../../shared/agents'
 import { NativeSystemSpeech } from './voiceSpeech'
 
-export const NATURAL_SPEECH_REPOSITORY = 'onnx-community/Supertonic-TTS-ONNX'
-
 /** One reusable local worker; neither reply text nor audio is sent to a provider. */
 export class NaturalSpeechSynthesizer {
   private worker: Worker | null = null

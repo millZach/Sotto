@@ -6,7 +6,7 @@ import type { SequenceDB } from 'mermaid/dist/diagrams/sequence/sequenceDb.js'
 import type { ClassDB } from 'mermaid/dist/diagrams/class/classDb.js'
 import type { ErDB } from 'mermaid/dist/diagrams/er/erDb.js'
 
-export const DIAGRAM_LAYOUT_LIMITS = Object.freeze({
+const DIAGRAM_LAYOUT_LIMITS = Object.freeze({
   nodes: 40, edges: 60, depth: 3, graphWork: 1200,
   actors: 16, messages: 60, sequenceWork: 600,
   labelLength: 400, labelCharacters: 4000, rows: 120, edgeSpan: 4,

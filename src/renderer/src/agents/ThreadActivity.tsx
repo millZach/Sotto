@@ -11,7 +11,7 @@ import {
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
-export const LIVE_ROWS = 6
+const LIVE_ROWS = 6
 
 const ICONS: Record<AgentActivity['kind'], LucideIcon> = {
   turn: Info, command: SquareTerminal, 'file-change': FilePen, tool: Wrench, reasoning: Brain, plan: ListChecks, subagent: Bot, status: Info, compaction: Shrink,
@@ -57,7 +57,7 @@ const elapsedText = (startedAt: string): string => {
 }
 
 /** Updates its own text once a second instead of re-rendering the transcript. */
-export function Elapsed({ startedAt }: { readonly startedAt: string }): ReactNode {
+function Elapsed({ startedAt }: { readonly startedAt: string }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     const tick = (): void => { if (ref.current) ref.current.textContent = elapsedText(startedAt) }

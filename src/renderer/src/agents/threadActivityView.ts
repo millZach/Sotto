@@ -139,7 +139,7 @@ export function formatDuration(ms: number): string {
 }
 
 /** Native duration when reported, otherwise the recorded start and completion; undefined when neither exists. */
-export function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' | 'completedAt'>): number | undefined {
+function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' | 'completedAt'>): number | undefined {
   if (record.durationMs !== undefined) return record.durationMs
   const start = record.startedAt ? Date.parse(record.startedAt) : Number.NaN
   const end = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
@@ -209,7 +209,7 @@ export function activityInput(record: Pick<AgentActivity, 'kind' | 'text'>): Rec
 const PREVIEW_KEYS = ['file_path', 'notebook_path', 'pattern', 'query', 'url', 'path', 'skill', 'description', 'prompt', 'command', 'name'] as const
 const PREVIEW_LIMIT = 140
 
-export function inputPreview(input: Record<string, unknown> | null): string {
+function inputPreview(input: Record<string, unknown> | null): string {
   if (input === null) return ''
   for (const key of PREVIEW_KEYS) {
     const value = input[key]

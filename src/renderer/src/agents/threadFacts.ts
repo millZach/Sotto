@@ -124,16 +124,8 @@ function startOfDay(at: number): number {
   return date.valueOf()
 }
 
-/** Group labels for finished threads: today, yesterday, then the weekday and date. */
-export function dayLabel(at: number, now: number): string {
-  const today = startOfDay(now)
-  if (at >= today) return 'Finished today'
-  if (at >= today - DAY_MS) return 'Yesterday'
-  return new Date(at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-}
-
 /** A clock for today, otherwise the weekday and clock, so "Started" reads right from any group. */
-export function startedLabel(at: number, now: number): string {
+function startedLabel(at: number, now: number): string {
   const clock = clockLabel(at)
   if (at >= startOfDay(now)) return clock
   if (at >= startOfDay(now) - DAY_MS) return `yesterday ${clock}`
@@ -145,7 +137,7 @@ function originLabel(origin: AgentAssignment['origin']): string {
 }
 
 /** Why Sotto stopped managing, as the clause after "stopped": "at the follow-up limit", "because…", "after an error". */
-export function stopReasonLabel(reason: AgentAssignment['stopReason']): string {
+function stopReasonLabel(reason: AgentAssignment['stopReason']): string {
   return reason === 'limit' ? 'at the follow-up limit'
     : reason === 'repeat' ? 'because the same failure kept repeating'
       : 'after an error'
@@ -268,7 +260,7 @@ export function describeThreads(state: AgentState, now: number): ThreadRow[] {
 }
 
 /** A row matches when the query appears anywhere in it: title, project, provider, sentence, facts or your last message. */
-export function matchesThreadQuery(row: ThreadRow, query: string): boolean {
+function matchesThreadQuery(row: ThreadRow, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase()
   if (needle === '') return true
   return [row.thread.title, row.project?.title ?? '', row.provider, row.sentence, row.facts.lead, row.facts.rest, row.lastMessage?.text ?? '']

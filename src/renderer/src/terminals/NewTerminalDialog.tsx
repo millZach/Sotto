@@ -14,7 +14,7 @@ import '../agents/newThread.css'
 import './terminals.css'
 
 /** What the Runs box shows for a launch: the provider's CLI with its flags, or the shell main says it opens. */
-export function launchCommandLine(launch: TerminalLaunch, shell: string | null): string {
+function launchCommandLine(launch: TerminalLaunch, shell: string | null): string {
   const argv = providerCommand({ provider: launch.provider, model: launch.modelId === null ? null : nativeModelName(launch.modelId), reasoning: launch.reasoning, permission: launch.permission })
   return argv.length ? commandLine(argv) : shell ?? 'your shell'
 }
