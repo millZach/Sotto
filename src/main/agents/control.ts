@@ -528,7 +528,8 @@ export class AgentControl {
     }
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
-    const actionThreadId = 'threadId' in command ? command.threadId : ''
+    // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
+    const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
     if (command.type === 'manual-send' && !reconcilingDraft && (this.threadActions.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
@@ -1027,7 +1028,11 @@ export class AgentControl {
         if (!this.state.host.projects.some(p => p.id === command.projectId)) throw new Error('Choose an available project.')
         if (!this.state.host.models.some(m => m.id === command.modelId && m.ready)) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
         validateThreadOptions(this.state.host, command)
-        const threadId = randomUUID()
+        // The window may already be showing this thread under an ID it minted; main adopts it so nothing has to move.
+        if (command.threadId !== undefined && this.state.host.threads.some(thread => thread.id === command.threadId)) {
+          throw new Error('This thread already exists. Select it instead of creating it again.')
+        }
+        const threadId = command.threadId ?? randomUUID()
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         const previousSelectionPinned = this.queueSelectionPinned
         if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = true

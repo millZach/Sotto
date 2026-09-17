@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { AgentSkillReference } from '../../../shared/agentSkills'
 import { MAX_DELIVERED_DRAFTS, type AgentAttachment, type AgentCommand, type AgentDelivery, type AgentState } from '../../../shared/agents'
+import { gateOnCreation } from './draftThreads'
 
 type Command = (command: AgentCommand) => Promise<AgentState | null>
 
@@ -141,7 +142,11 @@ export class ThreadDraftStore {
   private readonly pendingSaves = new Map<string, Set<Promise<void>>>()
   private readonly handoffs = new Map<string, Promise<AgentState | null>>()
   private submissionList: readonly Submission[] = []
-  constructor(private readonly command: Command, private readonly debounceMs = 250, private readonly uuid: () => string = () => crypto.randomUUID()) {}
+  /** Every write waits for the creation of a thread this window minted, so a fresh thread's draft is never refused. */
+  private readonly command: Command
+  constructor(command: Command, private readonly debounceMs = 250, private readonly uuid: () => string = () => crypto.randomUUID()) {
+    this.command = gateOnCreation(command)
+  }
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)

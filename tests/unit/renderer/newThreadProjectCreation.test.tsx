@@ -1,7 +1,7 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NewThreadDialog } from '../../../src/renderer/src/agents/NewThreadDialog'
+import { NewThreadDialog, type ThreadCreationStart } from '../../../src/renderer/src/agents/NewThreadDialog'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 
 const path = 'C:/Users/zache/Documents/Codex'
@@ -160,6 +160,57 @@ describe('native folder project resolution', () => {
     await submit()
     expect(command.mock.calls.map(([request]) => request.type)).toEqual(['create-project', 'create-thread'])
     expect(view.onCreated).toHaveBeenCalledOnce()
+  })
+})
+
+describe('a client-minted thread id', () => {
+  function startCreation(command: (request: AgentCommand) => Promise<AgentState>) {
+    vi.stubGlobal('sotto', { agents: { chooseProjectDirectory: vi.fn(async () => path) } })
+    const onCreating = vi.fn<(start: ThreadCreationStart) => void>()
+    const onCreated = vi.fn()
+    render(<NewThreadDialog state={fixture([actual])} command={command} onCreated={onCreated} onClose={vi.fn()} onCreating={onCreating} />)
+    return { onCreating, onCreated, start: () => onCreating.mock.calls[0]![0] }
+  }
+
+  it('hands the creation over the moment it is issued, with the record the window can show', async () => {
+    let settle: () => void = () => undefined
+    const command = vi.fn(() => new Promise<AgentState>(resolve => { settle = () => resolve(fixture([actual])) }))
+    const view = startCreation(command)
+    await browse()
+    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
+    expect(view.onCreating).toHaveBeenCalledOnce()
+    expect(view.onCreated).not.toHaveBeenCalled()
+    const start = view.start()
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', projectId: actual.id, title: 'My work', threadId: start.thread.id }))
+    expect(start.thread).toMatchObject({ id: expect.any(String), projectId: actual.id, title: 'My work', modelId: 'codex:model',
+      status: 'idle', messages: [], requests: [], nativeSessionStarted: false, historyStatus: 'ready', worktree: { mode: 'independent', status: 'pending' } })
+    expect(start.choices).toEqual({ projectId: actual.id, title: 'My work', modelId: 'codex:model', workingCopy: 'independent' })
+    settle()
+    await expect(start.created).resolves.toBeNull()
+  })
+
+  it('reports a refusal on the same creation instead of throwing it away', async () => {
+    const command = vi.fn(async () => ({ ...fixture([actual]), error: 'That model or account is unavailable.' }))
+    const view = startCreation(command)
+    await browse()
+    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
+    await expect(view.start().created).resolves.toBe('That model or account is unavailable.')
+    expect(view.onCreated).not.toHaveBeenCalled()
+  })
+
+  it('reopens with the choices already made and says why the last attempt was refused', async () => {
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
+    vi.stubGlobal('sotto', { agents: { chooseProjectDirectory: vi.fn(async () => path) } })
+    const onCreating = vi.fn<(start: ThreadCreationStart) => void>()
+    render(<NewThreadDialog state={fixture([actual])} command={command} onCreated={vi.fn()} onClose={vi.fn()} onCreating={onCreating}
+      initialChoices={{ projectId: actual.id, title: 'Second attempt', modelId: 'codex:model', workingCopy: 'shared', reasoningEffort: 'high' }}
+      initialError="Send or clear your draft before creating another thread." />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft')
+    expect(screen.getByLabelText('Thread name')).toHaveValue('Second attempt')
+    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
+    await waitFor(() => expect(onCreating).toHaveBeenCalledOnce())
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', title: 'Second attempt', workingCopy: 'shared', reasoningEffort: 'high' }))
   })
 })
 

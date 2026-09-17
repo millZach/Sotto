@@ -337,6 +337,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
+    threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
