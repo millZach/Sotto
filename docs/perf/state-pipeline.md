@@ -19,19 +19,17 @@ Every provider event publishes, including streaming chunks, so this cost is paid
 
 Payload: 6,593 KB per publish, of which 5,060 KB is embedded attachment preview images.
 
-## After (previews fetched on demand)
+## After
 
-`get()` now publishes `preview: { available: true }` instead of the image bytes, and the window asks for one
-image at a time over `agents.attachmentPreview({ threadId, messageId, attachmentId })`, caching what comes back.
+Three changes to the pipeline itself.
 
-| Stage | ms |
-| --- | ---: |
-| structuredClone of the state in main | 5.1 |
-| Attachment preview decoration | 5.6 |
-| Serialise for IPC | 2.6 |
-| Deserialise in the window | 1.0 |
-| Schema parse in preload | 2.2 |
-| **Total per publish** | **16.4** |
+- **Previews leave the state.** `get()` publishes `preview: { available: true }` instead of the image bytes, and the
+  window asks for one image at a time over `agents.attachmentPreview({ threadId, messageId, attachmentId })`,
+  caching what comes back. The image bytes are sent once per image instead of on every provider event.
+- **Broadcasts coalesce inside the coordinator.** A burst of provider frames costs one copy of the state per 16 ms
+  instead of one per frame, ahead of the existing 50 ms coalescer at the IPC boundary. A command's own response is
+  still the exact state it produced.
+- **No schema parse on the state channels.** The preload no longer revalidates the agent-state and chat-state
+  channels; both carry Sotto's own state from Sotto's own main process, and a structural guard is what that side needs.
 
-Payload: 1,534 KB per publish, 1 KB of it attachment metadata. The 5,059 KB of image bytes is now sent once
-per image instead of on every provider event.
+(Combined numbers are filled in below once measured on the merged branch.)

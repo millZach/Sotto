@@ -11,6 +11,7 @@ import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { MemoryStore } from '../../../src/main/memory/store'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -46,7 +47,7 @@ async function fixture(authority?: Authority, recordTurns = true) {
     resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
   const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
   const host = new RecordingHost()
-  const control = new AgentControl({ directory: root, host, credentials, reasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
     ...(recordTurns ? { turns: recorder } : {}),
     ...(authority === undefined ? {} : { authority }),
     membership: {

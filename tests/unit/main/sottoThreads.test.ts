@@ -11,6 +11,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -34,7 +35,7 @@ async function startControl(root: string, host: SottoThreadHost): Promise<AgentC
     isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
   })
   await credentials.load()
-  const control = new AgentControl({ directory: root, host, credentials,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
       decide: async () => ({ decision: 'human', text: 'Review this.' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

@@ -10,6 +10,7 @@ import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 class WorkspaceHost extends E2EAgentHost {
   transform = (snapshot: AgentHostSnapshot): AgentHostSnapshot => snapshot
@@ -27,7 +28,7 @@ async function fixture(reasoner: AgentReasoner = e2eAgentReasoner) {
   const host = new WorkspaceHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
   await credentials.load()
-  const create = () => new AgentControl({ directory: root, host, credentials, reasoner, membership: {
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, membership: {
     status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }),
   } })
   const f = { root, host, control: create(), async restart() { this.control.dispose(); this.control = create(); await this.control.start() } }

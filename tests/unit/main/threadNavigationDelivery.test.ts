@@ -11,6 +11,7 @@ import type { AgentIntent } from '../../../src/main/agents/reasoning'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, type AgentAttachment, type AgentHostSnapshot, type AgentState } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls = new Set<AgentControl>()
@@ -55,7 +56,7 @@ async function fixture(receiptIds: string[] = []) {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
   await credentials.load()
   const create = () => {
-    const control = new AgentControl({ directory: root, host, credentials, reasoner, membership: {
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, membership: {
       status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
     } }); controls.add(control); return control
   }

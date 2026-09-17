@@ -33,8 +33,14 @@ describe('workspace preload contract', () => {
     const handler = ipc.on.mock.calls.find(([channel]) => channel === AGENT_STATE)![1] as (event: unknown, ...args: unknown[]) => void
     handler({}, state)
     expect(listener.mock.calls[0]![0].host.threads[0]).toMatchObject({ nativeSessionStarted: false, workspaceSettledAt: null })
+    // The state channel carries Sotto's own state from Sotto's own main process, so it is passed
+    // through on a structural guard alone: only a payload that is not a state at all is dropped.
     handler({}, { ...state, host: { ...state.host, projects: [{ ...state.host.projects[0], workspaceSettledAt: 'invalid' }] } })
-    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener.mock.calls[1]![0].host.projects[0].workspaceSettledAt).toBe('invalid')
+    for (const payload of [null, 'state', 42, { configuration: state.configuration }]) handler({}, payload)
+    handler({}, state, state)
+    expect(listener).toHaveBeenCalledTimes(2)
     unsubscribe()
     expect(ipc.removeListener).toHaveBeenCalledWith(AGENT_STATE, handler)
   })

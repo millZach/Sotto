@@ -11,6 +11,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 describe('Claude native request mapping', () => {
   it('rejects malformed permissions and questions', () => {
@@ -112,7 +113,7 @@ describe('Claude recovery and safety', () => {
     await credentials.load()
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    const create = () => new AgentControl({ directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
       membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
     let control = create()
     try {
