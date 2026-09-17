@@ -32,4 +32,18 @@ Three changes to the pipeline itself.
 - **No schema parse on the state channels.** The preload no longer revalidates the agent-state and chat-state
   channels; both carry Sotto's own state from Sotto's own main process, and a structural guard is what that side needs.
 
-(Combined numbers are filled in below once measured on the merged branch.)
+Measured on the merged branch:
+
+| Stage | ms |
+| --- | ---: |
+| structuredClone of the state in main | 4.5 |
+| Attachment preview decoration | 4.5 |
+| Serialise for IPC | 2.6 |
+| Deserialise in the window | 0.9 |
+| Structural guard in preload | 0.0 |
+| **Total per publish** | **12.6** |
+
+Payload: 1,534 KB per publish, 1 KB of it attachment metadata. The clone and decoration are now paid once per
+16 ms window rather than once per provider event, so a streaming burst costs a fraction of even this.
+
+What the window then does with an update is measured separately in `threads-render.md`: 47 ms before, 23 ms after.
