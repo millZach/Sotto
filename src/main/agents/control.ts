@@ -2005,6 +2005,7 @@ export class AgentControl {
     this.disconnect()
     this.listeners.clear()
     this.detailListeners.clear()
+    this.detailSnapshots.clear()
   }
 }
 
