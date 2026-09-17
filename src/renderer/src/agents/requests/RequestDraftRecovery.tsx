@@ -29,7 +29,7 @@ function renderedLive(draft: RequestDraft, live: readonly AgentRequest[]): boole
 }
 
 /** One question's saved answer in words: the chosen option labels, then Other or free text. Null when unanswered. */
-export function savedAnswerText(question: StructuredQuestion, selection: RequestDraft['selections'][string] | undefined): string | null {
+function savedAnswerText(question: StructuredQuestion, selection: RequestDraft['selections'][string] | undefined): string | null {
   if (!selection || answerProgress(question, selection) === 'empty') return null
   const text = selection.text.trim()
   if (textOnly(question)) return text || null
@@ -63,7 +63,7 @@ export interface RequestDraftRecoveryModel {
  * A request can close before its last save or answer acknowledgement settles. When the answer store reports either
  * for a request that left the live set, the list is read again; main alone decides what it still keeps.
  */
-export function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentRequest[], observed: string,
+function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentRequest[], observed: string,
   bridge: RequestDraftBridge | undefined = window.sotto?.requestDrafts, answers: RequestAnswerStore = requestAnswerStore): RequestDraftRecoveryModel {
   const ownerKey = requestDraftOwnerKey(owner)
   const [result, setResult] = useState<{ readonly ownerKey: string; readonly drafts: readonly RequestDraft[]; readonly error: string | null } | null>(null)
@@ -143,7 +143,7 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
 }
 
 /** One sentence: whether the answer went anywhere, and what Sotto can honestly say about its question now. */
-export function recoveryExplanation(held: boolean, changed: boolean, observation: RecoveryObservation, provider: string): string {
+function recoveryExplanation(held: boolean, changed: boolean, observation: RecoveryObservation, provider: string): string {
   // The title already says a held answer is unconfirmed; the sentence gives its consequence.
   const delivery = held ? 'The answer may have arrived, so Sotto won’t send it again.' : 'This answer was not sent.'
   if (observation === 'disconnected') return `${delivery} Reconnect ${provider} to see whether its question is still open.`

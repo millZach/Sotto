@@ -67,7 +67,6 @@ export class BrowserStore {
   }
 
   thread(threadId: string): ThreadBrowser | undefined { return this.threads.get(threadId) }
-  mountedPageId(): string | null { return this.mounted?.pageId ?? null }
 
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
     if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null })

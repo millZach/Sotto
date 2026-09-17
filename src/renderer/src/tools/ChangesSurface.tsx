@@ -8,7 +8,7 @@ import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
-export const DIFF_ROW_LIMIT = 3_000
+const DIFF_ROW_LIMIT = 3_000
 
 function splitPath(path: string): { readonly folder: string; readonly name: string } {
   const index = path.lastIndexOf('/')

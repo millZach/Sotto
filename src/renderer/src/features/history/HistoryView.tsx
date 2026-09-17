@@ -30,7 +30,7 @@ export interface HistoryViewProps {
 const COPIED_MS = 1_600
 
 /** Day labels: Today, Yesterday, then the weekday and date. */
-export function dayLabel(createdAt: number, now: number): string {
+function dayLabel(createdAt: number, now: number): string {
   const date = new Date(createdAt)
   if (!Number.isFinite(date.valueOf())) return 'Saved'
   const startOfToday = new Date(now)
@@ -43,7 +43,7 @@ export function dayLabel(createdAt: number, now: number): string {
 }
 
 /** The row's clock: "2:32 pm" in a 12-hour locale, "14:32" in a 24-hour one. */
-export function clockLabel(createdAt: number): { dateTime?: string; time: string; full: string } {
+function clockLabel(createdAt: number): { dateTime?: string; time: string; full: string } {
   const date = new Date(createdAt)
   if (!Number.isFinite(date.valueOf())) return { time: 'Saved', full: 'Saved transcript' }
   return {
@@ -58,7 +58,7 @@ function modelLabel(preset: HistoryEntry['modelPreset']): string {
   return preset === 'mai' ? 'MAI-Transcribe-2 model' : 'an earlier model'
 }
 
-export function lengthLabel(durationMs: number): string {
+function lengthLabel(durationMs: number): string {
   const seconds = Math.max(0, Math.round(durationMs / 1_000))
   if (seconds < 60) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
   const minutes = Math.floor(seconds / 60)

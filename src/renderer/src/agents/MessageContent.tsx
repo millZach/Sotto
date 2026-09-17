@@ -80,7 +80,7 @@ const validatedPreviews = new Map<string, boolean>()
 const VALIDATED_PREVIEW_CACHE = 48
 
 /** The preview as an image source only when it is a validated raster data URL. */
-export function trustedPreviewSource(dataUrl: string | undefined): string | null {
+function trustedPreviewSource(dataUrl: string | undefined): string | null {
   if (typeof dataUrl !== 'string') return null
   let valid = validatedPreviews.get(dataUrl)
   if (valid === undefined) {

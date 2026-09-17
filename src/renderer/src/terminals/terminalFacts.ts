@@ -6,7 +6,7 @@ import { elapsedLabel } from '../agents/threadFacts'
 export type TerminalRowState = 'starting' | 'running' | 'idle' | 'exited' | 'closed'
 
 /** Output within this long ago reads as Running; a quiet terminal is Idle. */
-export const TERMINAL_IDLE_AFTER_MS = 4_000
+const TERMINAL_IDLE_AFTER_MS = 4_000
 
 export interface TerminalRow {
   readonly terminal: WorkspaceTerminal
@@ -36,12 +36,12 @@ export interface TerminalOrganization {
 export const isOpenTerminal = (terminal: WorkspaceTerminal): boolean => terminal.closedAt === null
 
 /** A terminal with a process, or on its way to one: it takes input soon and counts among a project's running ones. */
-export const isLiveTerminal = (terminal: WorkspaceTerminal): boolean => terminal.status === 'running' || terminal.status === 'starting'
+const isLiveTerminal = (terminal: WorkspaceTerminal): boolean => terminal.status === 'running' || terminal.status === 'starting'
 
 /** The sidebar row's state token, on the same scale the thread rows use so the status dot reads the same. */
 export const SIDEBAR_STATE: Readonly<Record<TerminalRowState, string>> = { starting: 'working', running: 'working', idle: 'idle', exited: 'stopped', closed: 'done' }
 
-export function terminalProviderName(providerId: ProviderId | null): string {
+function terminalProviderName(providerId: ProviderId | null): string {
   return providerId === null ? 'Shell' : PROVIDER_LABELS[providerId]
 }
 
@@ -96,7 +96,7 @@ export function lastNotableLine(output: string, limit = 60): string {
   return ''
 }
 
-export function matchesTerminalQuery(row: TerminalRow, query: string): boolean {
+function matchesTerminalQuery(row: TerminalRow, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase()
   if (!needle) return true
   return [row.title, row.provider, row.terminal.command, row.terminal.branch ?? '', row.project?.title ?? ''].some(text => text.toLocaleLowerCase().includes(needle))

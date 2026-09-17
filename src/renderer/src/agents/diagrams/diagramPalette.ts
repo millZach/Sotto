@@ -109,7 +109,7 @@ function paletteFrom(dark: boolean, fallback: typeof DARK_FALLBACK, token: (name
   }
 }
 
-export function samePalette(a: DiagramPalette, b: DiagramPalette): boolean {
+function samePalette(a: DiagramPalette, b: DiagramPalette): boolean {
   return (Object.keys(a) as (keyof DiagramPalette)[]).every(key => a[key] === b[key])
 }
 

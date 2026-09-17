@@ -5,7 +5,7 @@ import type { PersonalChat, PersonalChatBridge } from '../../../../shared/person
 type Submission = PersonalChat['submissions'][number]
 
 /** Typing settles for this long before the draft is written; sending writes it at once. */
-export const PERSONAL_DRAFT_SAVE_MS = 400
+const PERSONAL_DRAFT_SAVE_MS = 400
 
 export interface PersonalDraftView {
   /** The revision this text is, or will be once saved. Revisions only grow. */
