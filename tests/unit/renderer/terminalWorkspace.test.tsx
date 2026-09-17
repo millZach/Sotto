@@ -38,11 +38,12 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
   const find = (id: string): WorkspaceTerminal => terminals.find(item => item.id === id)!
   const bridge: TerminalWorkspaceBridge = {
     list: vi.fn(async () => ok({ terminals, shell: 'pwsh' })),
+    // Main answers as soon as the terminal exists: no process yet, no branch, nothing on screen.
     open: vi.fn(async (request: TerminalOpenRequest) => {
       next += 1
-      const opened = terminal([ID_1, ID_2, '33333333-3333-4333-8333-333333333333'][next - 1] ?? ID_2, { title: request.title, launch: request.launch, workingCopy: request.workingCopy, openedAt: NOW })
+      const opened = terminal([ID_1, ID_2, '33333333-3333-4333-8333-333333333333'][next - 1] ?? ID_2, { title: request.title, launch: request.launch, workingCopy: request.workingCopy, openedAt: NOW, status: 'starting', branch: null })
       terminals = [...terminals, opened]
-      return ok({ terminal: opened, output: 'Opened by Sotto at C:/workshop · claude\r\n', sequence: 1 })
+      return ok({ terminal: opened, output: '', sequence: 0 })
     }),
     read: vi.fn(async ({ id }) => ok({ terminal: find(id), output: '', sequence: 0 })),
     write: vi.fn(async () => ok(undefined)),
@@ -62,7 +63,14 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     pasteImage: vi.fn(async () => ok({ path: 'C:\\workshop\\.sotto\\clipboard\\20260916-101010-abcdef12.png' })),
     onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
   }
-  return { bridge, emit: (event: WorkspaceTerminalEvent) => { for (const listener of [...listeners]) listener(event) } }
+  const emit = (event: WorkspaceTerminalEvent): void => { for (const listener of [...listeners]) listener(event) }
+  /** Main finishing a start: the process is up, the branch is known and the first line arrives. */
+  const settle = (id: string): void => {
+    terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main' } : item)
+    emit({ type: 'terminal', terminal: find(id) })
+    emit({ type: 'output', id, data: 'Opened by Sotto at C:/workshop · claude\r\n', sequence: 1 })
+  }
+  return { bridge, emit, settle }
 }
 
 /** A stand-in for xterm that records what it was asked to draw. */
@@ -159,11 +167,20 @@ describe('Terminal mode', () => {
     await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Open terminal' })) })
     expect(view.bridge.open).toHaveBeenCalledWith({ projectId: 'workshop', title: 'Build', workingCopy: 'independent', launch: { provider: 'claude', modelId: 'claude:sonnet', reasoning: null, permission: 'ask' } })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The pane is there before the process is: the header, the status line and an empty screen.
     const pane = await screen.findByRole('region', { name: 'Build' })
     expect(within(pane).getByRole('heading', { level: 2, name: 'Build' })).toBeInTheDocument()
     expect(within(pane).getByText('workshop · Worktree')).toBeInTheDocument()
-    expect(within(pane).getByText('main')).toBeInTheDocument()
+    expect(within(pane).getByText('Starting…')).toBeInTheDocument()
+    expect(within(pane).getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    expect(within(pane).queryByText('Could not start.')).toBeNull()
     expect(within(pane).getByText(/Ctrl\+C copies a selection or interrupts · Ctrl\+V pastes/)).toBeInTheDocument()
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Starting')
+    await waitFor(() => expect(view.views[0]!.written).toEqual(['<reset>']))
+
+    await act(async () => { view.settle(ID_1) })
+    expect(within(pane).getByText('main')).toBeInTheDocument()
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Running')
     await waitFor(() => expect(view.views[0]!.written).toEqual(['<reset>', 'Opened by Sotto at C:/workshop · claude\r\n']))
     expect(view.views[0]!.input.at(-1)).toBe(true)
     expect(view.views[0]!.focused).toBe(1)
