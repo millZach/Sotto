@@ -226,13 +226,28 @@ export function splitStreamingMarkdown(text: string): string[] {
   let blank = -1
   let offset = 0
   let fence: string | null = null
+  // The open fence began a top-level block, so its closing line ends a leaf block that no later
+  // text can reach into: the blank line after it is a boundary whatever comes next, even a list.
+  let fenceSeals = false
+  let sealed = false
+  let blockStart = true
   for (const line of text.split('\n')) {
     const next = offset + line.length + 1
     if (fence !== null) {
       const closing = BLOCK_FENCE_END.exec(line)?.[1]
-      if (closing && closing[0] === fence[0] && closing.length >= fence.length) fence = null
+      if (closing && closing[0] === fence[0] && closing.length >= fence.length) {
+        fence = null
+        sealed = fenceSeals
+      }
     } else if (!line.trim()) {
-      blank = next
+      // The trailing element of the split is past the end of the text, so it never becomes a block.
+      if (sealed && next <= text.length) {
+        segments.push(text.slice(start, next))
+        start = next
+        sealed = false
+        blank = -1
+      } else blank = next
+      blockStart = true
     } else {
       if (WHOLE_MESSAGE_ONLY.test(line)) return [text]
       if (blank > start && !CLAIMABLE_BLOCK_START.test(line)) {
@@ -240,7 +255,11 @@ export function splitStreamingMarkdown(text: string): string[] {
         start = blank
       }
       blank = -1
+      sealed = false
       fence = BLOCK_FENCE.exec(line)?.[1] ?? null
+      // Indented fences belong to a list item or a quote, which the text after them can still extend.
+      fenceSeals = fence !== null && blockStart && !/^[ \t]/u.test(line)
+      blockStart = false
     }
     offset = next
   }
