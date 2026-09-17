@@ -25,15 +25,18 @@ function storage(): ShellCacheStorage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null }
 }
 
-/** The shell as it is safe to keep: history summaries only, and no bytes a person supplied. */
+/**
+ * The shell as it is safe to keep: what a sidebar row draws, and nothing else. Drafts, follow-ups and
+ * delivery evidence are deliberately dropped rather than trimmed — they are durable in main, and a copy
+ * from the last run is not evidence of what is on disk now.
+ */
 export function cacheableShell(state: AgentState): AgentState {
   const shell = agentShell(state)
   return {
     ...shell,
     host: { ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [] })) },
-    draftAttachments: [],
-    threadDrafts: (shell.threadDrafts ?? []).map(draft => ({ ...draft, attachments: [] })),
-    followups: (shell.followups ?? []).map(item => ({ ...item, attachments: [] })),
+    draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
+    deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
     stale: true,
   }
 }

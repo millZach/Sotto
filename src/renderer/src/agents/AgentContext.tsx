@@ -42,15 +42,19 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   /** When the newest state arrived, and when the dev console was last told what one cost. */
   const arrived = useRef<number | null>(null)
   const reported = useRef(0)
-  /**
-   * Every published state is a whole new object, so the window would repaint all of it for one streaming
-   * chunk. Reconciling the arrival against the state on screen keeps the reference of every part that did
-   * not change, and a state that changed nothing at all stops here instead of becoming a render.
-   */
   /** One shell plus the histories this window holds: the whole state every consumer already reads. */
   const assemble = useCallback((shell: AgentState): AgentState => {
     const wanted = (thread: AgentThread): boolean => detail.viewed.has(thread.id) || shell.activeThreadId === thread.id
-    const threads = shell.host.threads.map(thread => {
+    let changed = false
+    const threads = shell.host.threads.map(original => {
+      const thread = splice(original)
+      if (thread !== original) changed = true
+      return thread
+    })
+    // A state that already carries its own history — a fixture, a test bridge — is passed through as it is.
+    return changed ? { ...shell, host: { ...shell.host, threads } } : shell
+
+    function splice(thread: AgentThread): AgentThread {
       const held = detail.held.get(thread.id)
       if (held !== undefined) {
         detail.used.set(thread.id, ++detail.clock)
@@ -60,15 +64,24 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       // a thread the provider itself could not load keeps its own error.
       return thread.summary !== undefined && thread.summary.messageCount > 0 && wanted(thread) && thread.historyStatus !== 'error'
         ? { ...thread, historyStatus: 'loading' as const } : thread
-    })
-    return { ...shell, host: { ...shell.host, threads } }
+    }
   }, [detail])
+  /**
+   * Every published state is a whole new object, so the window would repaint all of it for one streaming
+   * chunk. Reconciling the arrival against the state on screen keeps the reference of every part that did
+   * not change, and a state that changed nothing at all stops here instead of becoming a render.
+   */
+  const ask = useRef<(threadId: string) => void>(() => undefined)
   const receiveState = useCallback((next: AgentState): void => {
     arrived.current = performance.now()
     detail.shell = next
+    // The thread on screen needs its history whether or not this window asked for it: a restart opens
+    // straight onto the selected thread, with no pane change to declare it viewed.
+    if (next.stale !== true && next.activeThreadId !== null) ask.current(next.activeThreadId)
     const assembled = assemble(next)
     setSnapshot(current => {
-      if (current?.session !== session) return { session, state: assembled }
+      // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
+      if (current?.session !== session || current.state.stale === true) return { session, state: assembled }
       const state = share(current.state, assembled)
       return state === current.state ? current : { session, state }
     })
@@ -96,6 +109,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       if (result !== null && session.current) receiveDetail.current(result)
     }).catch(() => { detail.asked.delete(threadId) })
   }, [bridge, detail, session])
+  ask.current = requestDetail
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {
@@ -178,7 +192,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   }, [state])
   // Both published and command-returned snapshots reach the store before paint,
   // including while the Threads page is absent.
-  useLayoutEffect(() => { if (state !== null) threadDrafts.receive(state) }, [state, threadDrafts])
+  // The cached shell carries no draft evidence and must not be read as any: what a previous run saw
+  // says nothing about what is on disk now.
+  useLayoutEffect(() => { if (state !== null && state.stale !== true) threadDrafts.receive(state) }, [state, threadDrafts])
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second. Development only: the production bundle drops the whole effect body.
   useEffect(() => {
