@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Measures what the window re-renders when one agent state update arrives: the Threads page with one thread
- * open, re-rendered 20 times with a state object that carries one more streaming chunk on the open thread.
- * Uses a copy of a real Sotto data folder and skips when none is available.
+ * open, re-rendered with a state object that carries one more streaming chunk on the open thread, ten times
+ * to warm up and twenty more that are timed. Uses a copy of a real Sotto data folder, and skips without one.
  *
  *   npx vitest run tests/perf/threadsRender.perf.test.tsx --disable-console-intercept
  *   SOTTO_PERF_DATA=<folder with workspace.json> to point elsewhere.
@@ -23,6 +23,7 @@ import { share } from '../../src/renderer/src/agents/stateSharing'
 vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
 const ITERATIONS = 20
+const WARMUP = 10
 const NOW = Date.parse('2026-09-16T12:00:00Z')
 const dataDirectory = process.env.SOTTO_PERF_DATA ?? (process.env.APPDATA ? join(process.env.APPDATA, 'sotto') : '')
 
@@ -99,17 +100,17 @@ describe('threads render cost', async () => {
     const rendered = render(view())
 
     // Every update is prepared outside the measured window: what is measured is receiving one and painting it.
-    const updates = Array.from({ length: ITERATIONS }, (_unused, index) => withChunk(state, open!.id, ` chunk ${index}`))
-    commits = 0
-    committed = 0
+    const updates = Array.from({ length: WARMUP + ITERATIONS }, (_unused, index) => withChunk(state, open!.id, ` chunk ${index}`))
     const samples: number[] = []
-    for (const update of updates) {
+    updates.forEach((update, index) => {
+      // The first arrivals pay for warm-up (parsers, styles, the browser's own caches) and are not counted.
+      if (index === WARMUP) { commits = 0; committed = 0 }
       const started = performance.now()
       // Where the receive path shares structure with the previous state, that work belongs in the measurement.
       state = receive(state, update)
       act(() => { rendered.rerender(view()) })
-      samples.push(performance.now() - started)
-    }
+      if (index >= WARMUP) samples.push(performance.now() - started)
+    })
 
     const report = {
       threads: host.threads.length, messages, openThreadMessages: open!.messages.length,
