@@ -283,7 +283,7 @@ export function sortEntries(entries: readonly FileEntry[]): FileEntry[] {
 }
 
 /** Git's administrative entry (a folder in a checkout, a file in a worktree) is not part of the working copy, so the tree leaves it out. */
-function isGitAdministrative(entry: FileEntry): boolean {
+export function isGitAdministrative(entry: FileEntry): boolean {
   return entry.name.toLowerCase() === '.git'
 }
 
