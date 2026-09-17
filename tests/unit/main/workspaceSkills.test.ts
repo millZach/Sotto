@@ -47,6 +47,9 @@ it('loads unstarted skills from the independent project subfolder and rejects it
   const project = snapshot.projects.find(project => project.providerId === 'codex')!
   const model = snapshot.models.find(model => model.providerId === 'codex')!
   await f.host.execute({ type: 'create-thread', commandId: 'isolated', threadId: 'isolated', projectId: project.id, title: 'Independent', modelId: model.id })
+  // Creation returns before the checkout; asking for the folder waits for the setup it started.
+  expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')?.worktree?.status).toBe('pending')
+  await f.host.threadWorkingDirectory('isolated')
   const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')!
   expect(thread.worktree?.status).toBe('ready')
   expect(thread.workingDirectory).toBe(join(thread.worktree!.path!, 'packages', 'app'))
@@ -71,8 +74,8 @@ it('does not browse the project catalog when independent worktree setup failed',
   const project = snapshot.projects.find(project => project.providerId === 'codex')!
   const model = snapshot.models.find(model => model.providerId === 'codex')!
   await f.host.execute({ type: 'create-thread', commandId: 'failed', threadId: 'failed', projectId: project.id, title: 'Recoverable', modelId: model.id })
-  expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'failed')?.worktree?.status).toBe('error')
   await expect(f.host.listThreadSkills('failed')).rejects.toThrow('no commit')
+  expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'failed')?.worktree?.status).toBe('error')
   expect(list).not.toHaveBeenCalled()
   expect(f.registry.byThread('failed')).toBeUndefined()
 })

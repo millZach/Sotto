@@ -95,7 +95,8 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
   if (!row.connected) return 'Reconnect to send. Your draft stays here.'
   if (!capabilitiesForThread(state.host, row.thread).submit) return `${row.provider} cannot take prompts from Sotto.`
   // The notice above the composer says why setup stopped and offers the one recovery; this only says when sending returns.
-  if (row.thread.worktree?.status === 'pending' || row.thread.worktree?.status === 'error') return 'Available once the working folder is ready.'
+  // A pending checkout runs in the background after the thread opens; a prompt sent meanwhile waits for it.
+  if (row.thread.worktree?.status === 'error') return 'Available once the working folder is ready.'
   if (!answering && inFlight) return 'Waiting for your last prompt to be confirmed.'
   return null
 }

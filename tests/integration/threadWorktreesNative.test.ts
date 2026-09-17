@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -44,6 +44,9 @@ async function fixture(provider: ProviderId, committed = true, nested = false) {
   return { f, registry, workspace, project, native, create }
 }
 const prompt = (id: string) => ({ type: 'send' as const, commandId: `send-${id}`, threadId: id, messageId: `message-${id}`, text: `Synthetic changes for ${id}` })
+/** Creation returns before the checkout; asking for the folder waits for the setup it started. */
+const prepared = (workspace: WorkspaceHost, ...ids: string[]): Promise<unknown> =>
+  Promise.all(ids.map(id => workspace.threadWorkingDirectory(id).catch(() => undefined)))
 
 describe('native thread working copies', () => {
   for (const provider of ['codex', 'claude', 'grok'] as const) it(`${provider}: concurrent native adapters write separate working files with unchanged project scope`, async () => {
@@ -51,6 +54,7 @@ describe('native thread working copies', () => {
     await writeFile(join(project, 'tracked.txt'), 'original dirty edits')
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
     await Promise.all([create('first'), create('second')])
+    await prepared(workspace, 'first', 'second')
     const before = workspace.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id))
     expect(before.every(thread => thread.worktree?.status === 'ready')).toBe(true)
     expect(new Set(before.map(thread => thread.workingDirectory)).size).toBe(2)
@@ -79,6 +83,7 @@ describe('native thread working copies', () => {
   it('keeps a failed local thread recoverable across restart, then retries exactly one allocation without native replay', async () => {
     const { workspace, f, project, native, create } = await fixture('codex', false)
     expect(await create('recoverable')).toEqual({ accepted: true })
+    await prepared(workspace, 'recoverable')
     const failed = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'recoverable')!
     expect(failed).toMatchObject({ nativeSessionStarted: false, projectId: 'original-scope', worktree: { status: 'error' } })
     await expect(workspace.execute(prompt('recoverable'))).rejects.toThrow('no commit')
@@ -102,6 +107,7 @@ describe('native thread working copies', () => {
   it('uses an explicitly shared project folder without creating a branch', async () => {
     const { workspace, project, create } = await fixture('codex')
     await create('shared', 'shared')
+    await prepared(workspace, 'shared')
     const thread = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'shared')!
     expect(thread).toMatchObject({ workingDirectory: project, worktree: { mode: 'shared', status: 'ready' } })
     await workspace.execute(prompt('shared'))
@@ -111,6 +117,7 @@ describe('native thread working copies', () => {
   it('retains the reserved working copy after lost native creation acknowledgement and refuses replay after workspace restart', async () => {
     const { f, workspace, native, create, project } = await fixture('codex')
     await create('uncertain')
+    await prepared(workspace, 'uncertain')
     const path = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'uncertain')!.workingDirectory
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ delay: { method: 'thread/start', ms: 3000 }, suppressNotifications: true }))
     await expect(workspace.execute(prompt('uncertain'))).rejects.toThrow('not confirmed')

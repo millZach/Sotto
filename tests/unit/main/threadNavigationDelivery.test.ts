@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import { AgentCredentials } from '../../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { AgentIntent } from '../../../src/main/agents/reasoning'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, type AgentAttachment, type AgentHostSnapshot, type AgentState } from '../../../src/shared/agents'
 
 const roots: string[] = []
@@ -25,6 +26,10 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+/** The saved coordinator state that carries an undispatched prompt's durable intent. */
+function outboxHasSend(value: unknown): boolean {
+  return (value as { outbox?: { type?: string }[] } | null)?.outbox?.some(item => item.type === 'send') === true
+}
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>(done => { resolve = done })
@@ -336,6 +341,41 @@ describe('manual delivery receipts', () => {
     expect(f.control.get().deliveredDrafts).toEqual([{ threadId: 'workshop', draftId }])
     expect(f.host.attempts).toHaveLength(1)
   })
+  it('shows the prompt as Sending before its durable write finishes, and still writes the outbox before dispatch', async () => {
+    const f = await fixture()
+    const gate = deferred<void>()
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (outboxHasSend(value)) await gate.promise
+      return write.call(this, value)
+    })
+    const states: AgentState[] = []; f.control.subscribe(state => states.push(state))
+    const draftId = randomUUID()
+    const sending = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Appears at once', draftId })
+    try {
+      await vi.waitFor(() => expect(states.at(-1)?.deliveries).toContainEqual(expect.objectContaining({ threadId: 'docs', draftId, status: 'submitting' })))
+      // Durability still gates the provider: the outbox entry is written before anything is dispatched.
+      expect(f.host.attempts).toEqual([])
+    } finally { gate.resolve(); await sending }
+    expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(1)
+    expect(f.control.get().deliveredDrafts).toContainEqual({ threadId: 'docs', draftId })
+  })
+
+  it('marks the delivery failed and dispatches nothing when its durable write fails', async () => {
+    const f = await fixture()
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (outboxHasSend(value)) throw new Error('Disk unavailable')
+      return write.call(this, value)
+    })
+    const draftId = randomUUID()
+    const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Never sent', draftId })
+    expect(result.error).toContain('Disk unavailable')
+    expect(result.deliveries).toContainEqual(expect.objectContaining({ threadId: 'docs', draftId, status: 'failed' }))
+    expect(f.host.attempts).toEqual([])
+    expect(result.threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'docs', draftId, text: 'Never sent' }))
+  })
+
   it('bounds receipt history to 128 persisted identities', async () => {
     // Load a full durable history, then cross its retention boundary through real
     // sends. Recreating all 128 prior conversations only measures filesystem load.
