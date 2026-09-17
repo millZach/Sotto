@@ -222,8 +222,10 @@ describe('SettingsView', () => {
     // Turning generation off stops every title request, so the model choice has nothing left to pick for.
     await user.click(screen.getByRole('switch', { name: 'Generated thread titles' }))
     expect(update).toHaveBeenCalledWith({ threadTitles: false })
+    await user.click(screen.getByRole('switch', { name: 'Generated pull request text' }))
+    expect(update).toHaveBeenCalledWith({ pullRequestText: false })
     cleanup()
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, threadTitles: false } })} />)
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, threadTitles: false, pullRequestText: false } })} />)
     await selectCategory('Cleanup')
     expect(screen.getByRole('combobox', { name: 'Writing model' })).toBeDisabled()
   })

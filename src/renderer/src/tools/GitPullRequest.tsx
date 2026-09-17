@@ -6,9 +6,25 @@ import { threadLinkRouter } from './webLinks'
 export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { threadId: string; workspaceId: string; bridge: GitChangesBridge; onBack?: () => void }): ReactNode {
   const [review, setReview] = useState<PrReview | null>(null)
   const [base, setBase] = useState(''), [title, setTitle] = useState(''), [body, setBody] = useState('')
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState('')
+  const [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [drafting, setDrafting] = useState(false)
   const content = useRef<HTMLDivElement>(null)
   const generation = useRef(0), locked = useRef(false)
+  /**
+   * Sotto's own draft of the form. It is never an error: a request that writes
+   * nothing leaves the fields exactly as the review left them, so a user with
+   * no OpenRouter key sees the form they have always seen.
+   */
+  const draft = async (value: PrReview): Promise<void> => {
+    if (!bridge.draftPullRequestText || value.pullRequest) return
+    const token = generation.current
+    setDrafting(true)
+    try {
+      const result = await bridge.draftPullRequestText({ threadId, workspaceId, ...(value.remote ? { remote: value.remote } : {}), ...(value.base ? { base: value.base } : {}) })
+      if (token !== generation.current) return
+      if (result.ok && result.value.title !== null) { setTitle(result.value.title); setBody(result.value.body ?? '') }
+    } catch { /* Text the user did not ask for never becomes an error they must clear. */ }
+    finally { if (token === generation.current) setDrafting(false) }
+  }
   const load = async (remote?: string, reset = false): Promise<void> => {
     if (!bridge.reviewPullRequest || locked.current) return
     const token = generation.current
@@ -18,7 +34,11 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { thre
       if (token !== generation.current) return
       if (!result.ok) { setReview(null); setStatus(result.error.message); return }
       setReview(result.value)
-      if (reset || review?.branch !== result.value.branch || review?.remote !== result.value.remote) { setBase(result.value.base); setTitle(result.value.title); setBody(result.value.body) }
+      if (reset || review?.branch !== result.value.branch || review?.remote !== result.value.remote) {
+        setBase(result.value.base); setTitle(result.value.title); setBody(result.value.body)
+        // Sotto writes over the commit's own words; nothing is created either way.
+        void draft(result.value)
+      }
     } catch { if (token === generation.current) { setReview(null); setStatus('Could not refresh the pull request. Check your connection and try again.') } }
     finally { if (token === generation.current) { locked.current = false; setBusy(false) } }
   }
@@ -62,13 +82,14 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { thre
           <label>Base branch<input className="tt-focusable" aria-label="Base branch" value={base} disabled={busy} maxLength={240} onChange={event => setBase(event.target.value)} placeholder="main" /></label>
           <label>PR title<input className="tt-focusable" aria-label="PR title" value={title} disabled={busy} maxLength={500} onChange={event => setTitle(event.target.value)} /></label>
           <label>PR body<textarea className="tt-focusable" aria-label="PR body" value={body} disabled={busy} rows={5} maxLength={60000} onChange={event => setBody(event.target.value)} /></label>
+          {bridge.draftPullRequestText ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting} onClick={() => void draft(review)}>Regenerate</button> : null}
         </>}
       </> : !busy && !status ? <p>Refresh to review this branch.</p> : null}
     </div>
     <footer className="git-pr__footer">
-      {busy || status ? <p role="status">{busy ? 'Working...' : status}</p> : null}
+      {busy || drafting || status ? <p role="status">{busy ? 'Working...' : drafting ? 'Writing...' : status}</p> : null}
       <div className="git-pr__actions"><button type="button" className="files-link tt-focusable" disabled={busy || !review?.branch || !review.remote} onClick={() => void act('push')}>Push branch</button>
-        {!pr ? <button type="button" className="files-link tt-focusable" disabled={busy || !review?.repository || !!review.error || !base.trim() || !title.trim()} onClick={() => void act('create')}>Create pull request</button> : null}</div>
+        {!pr ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || !review?.repository || !!review.error || !base.trim() || !title.trim()} onClick={() => void act('create')}>Create pull request</button> : null}</div>
     </footer>
   </section>
 }

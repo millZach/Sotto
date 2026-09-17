@@ -52,6 +52,7 @@ const customSettings = {
   llmMinWords: 4,
   writingModel: 'anthropic/claude-haiku-4.5',
   threadTitles: false,
+  pullRequestText: false,
   streamingAsr: false,
   autoUpdateCheck: false,
 } satisfies AppSettings
@@ -173,6 +174,7 @@ describe('settings', () => {
       llmMinWords: 5,
       writingModel: 'google/gemini-3.1-flash-lite',
       threadTitles: true,
+      pullRequestText: true,
       streamingAsr: true,
       autoUpdateCheck: true,
     })

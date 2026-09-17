@@ -19,6 +19,12 @@ export interface ShortTextRequest {
   /** Longer output is cut back to this at a word boundary. */
   readonly maxCharacters: number
   readonly maxTokens?: number
+  /**
+   * 'line' (the default) keeps the first non-empty line, which is what a name
+   * or a subject is. 'text' keeps every line, for the one caller that asks for
+   * a written body; the cut and the emptiness rule are the same either way.
+   */
+  readonly shape?: 'line' | 'text'
 }
 
 export interface ShortTextFailure {
@@ -78,7 +84,8 @@ export class ShortTextWriter {
         signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
       })
       if (!response.ok) return this.fail(request.purpose, `http-${response.status}`)
-      const text = trimToLine(extractContent(await response.json()), request.maxCharacters)
+      const content = extractContent(await response.json())
+      const text = request.shape === 'text' ? trimToText(content, request.maxCharacters) : trimToLine(content, request.maxCharacters)
       return text ?? this.fail(request.purpose, 'empty')
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
@@ -120,4 +127,26 @@ export function trimToLine(content: string | null, maxCharacters: number): strin
   const cut = text.slice(0, maxCharacters)
   const boundary = cut.lastIndexOf(' ')
   return (boundary > maxCharacters / 2 ? cut.slice(0, boundary) : cut).trim()
+}
+
+/**
+ * The same promise for text that is meant to have lines: a model asked for a
+ * written body sometimes wraps the whole answer in a code fence, and blank
+ * lines multiply. The fence is dropped, runs of blank lines collapse to one,
+ * and an over-long body is cut at a line or a word rather than mid-word.
+ */
+export function trimToText(content: string | null, maxCharacters: number): string | null {
+  if (content === null) return null
+  const fenced = /^```[^\n]*\n([\s\S]*?)\n?```$/u.exec(content.trim())
+  const text = (fenced?.[1] ?? content)
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim()
+  if (text.length === 0) return null
+  if (text.length <= maxCharacters) return text
+  const cut = text.slice(0, maxCharacters)
+  const boundary = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '))
+  return (boundary > maxCharacters / 2 ? cut.slice(0, boundary) : cut).trimEnd()
 }

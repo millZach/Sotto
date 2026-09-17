@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
 import { THREAD_TITLE_MAX_CHARACTERS, threadTitleRequest, threadTitleWriter } from '../../../src/main/llm/threadTitle'
+import { pullRequestTextWriter } from '../../../src/main/llm/pullRequestText'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const KEYED: AppSettings = { ...DEFAULT_SETTINGS, llmApiKey: 'sk-or-v1-test', writingModel: 'anthropic/claude-haiku-4.5' }
@@ -85,6 +86,35 @@ describe('the short-text writing path', () => {
     const empty = createWriter({ fetchFn: async () => answer('   ') })
     await expect(empty.writer.write(threadTitleRequest(exchange))).resolves.toBeNull()
     expect(empty.failures).toEqual(['thread-title:empty'])
+  })
+
+  it('writes a pull request title and body from the subjects and the capped diff alone', async () => {
+    const written = 'Draft the pull request form\n\n## What changed\n\n- The form drafts itself.\n\n\n\n## Test plan\n\n- `npx vitest run`\n'
+    const { fetchFn, writer } = createWriter({ fetchFn: async () => answer(`\`\`\`markdown\n${written}\`\`\``) })
+    const material = { subjects: ['Draft the form', 'Cap the diff'], diff: 'diff --git a/src/form.ts b/src/form.ts\n+const drafted = true' }
+    const draft = pullRequestTextWriter(writer, () => KEYED)
+    await expect(draft(material)).resolves.toEqual({
+      title: 'Draft the pull request form',
+      body: '## What changed\n\n- The form drafts itself.\n\n## Test plan\n\n- `npx vitest run`',
+    })
+    const sent = body(fetchFn).messages.find(message => message.role === 'user')!.content
+    for (const subject of material.subjects) expect(sent).toContain(subject)
+    expect(sent).toContain(material.diff)
+    // Nothing but the two labels is left once the subjects and the diff are removed.
+    const rest = sent.replace(material.diff, '').replace(/- .*/gu, '').trim()
+    expect(rest).toBe('Commit subjects:\n\n\n\nDiff against the base branch:')
+    expect(sent).not.toContain('sk-or-v1-test')
+  })
+
+  it('asks for nothing while generated pull request text is off, or when the branch has no commits', async () => {
+    const { fetchFn, writer } = createWriter()
+    const material = { subjects: ['Draft the form'], diff: 'diff' }
+    await expect(pullRequestTextWriter(writer, () => ({ ...KEYED, pullRequestText: false }))(material)).resolves.toBeNull()
+    await expect(pullRequestTextWriter(writer, () => KEYED)({ subjects: [], diff: 'diff' })).resolves.toBeNull()
+    expect(fetchFn).not.toHaveBeenCalled()
+    const keyless = createWriter({ settings: { ...KEYED, llmApiKey: '' } })
+    await expect(pullRequestTextWriter(keyless.writer, () => ({ ...KEYED, llmApiKey: '' }))(material)).resolves.toBeNull()
+    expect(keyless.failures).toEqual(['pull-request-text:no-key'])
   })
 
   it('asks for nothing while generated titles are off', async () => {
