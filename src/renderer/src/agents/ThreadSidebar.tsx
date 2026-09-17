@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, SquarePen } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
@@ -75,7 +75,12 @@ export interface PaneActions {
   readonly onDragThread: (threadId: string | null) => void
 }
 
-function ThreadNavRow({ row, current, open, busy, unseen, liveClock, onOpen, command, panes }: {
+/**
+ * One thread in the sidebar. Memoised: with the state and the rows derived from it structurally shared, a
+ * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
+ * cheap to compare — no object or array is built for it here.
+ */
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unseen, liveClock, onOpen, command, panes }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly busy: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
   /** The thread finished while you were elsewhere and you have not opened it since. */
   readonly unseen: boolean
@@ -108,11 +113,15 @@ function ThreadNavRow({ row, current, open, busy, unseen, liveClock, onOpen, com
           : null}
     </span>
   </li>
-}
+})
 
-function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, busy }: {
+/** A folder's key in the sidebar's collapsed set; a project can appear in both sections. */
+const folderKey = (section: Section, folderId: string): string => `${section}:${folderId}`
+
+/** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, busy }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
-  readonly expanded: boolean; readonly onToggle: () => void; readonly onOpen: (threadId: string) => void
+  readonly expanded: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
   readonly unseen: ReadonlySet<string>; readonly liveClock: boolean
   readonly onNewThread: (projectId: string) => void; readonly command: Command; readonly busy: boolean
 }): ReactNode {
@@ -120,7 +129,7 @@ function FolderView({ folder, section, panes, activeProjectId, expanded, unseen,
   const project = folder.project
   return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
     <div className="thread-folder__head">
-      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={onToggle} title={project?.path}>
+      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))} title={project?.path}>
         <ChevronRight size={14} aria-hidden="true" className="thread-folder__chevron" /><Folder size={16} aria-hidden="true" />
         <span className="thread-folder__title">{folder.title}</span>
         {!expanded ? <Indicators working={folder.working} needs={folder.needs} /> : null}
@@ -139,10 +148,11 @@ function FolderView({ folder, section, panes, activeProjectId, expanded, unseen,
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
-}
+})
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread, ...panes }: PaneActions & {
+export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
+  currentThreadId, openThreadIds, onOpenBeside, onDragThread }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
@@ -158,18 +168,21 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
 }): ReactNode {
   const [settledOpen, setSettledOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
-  const onScreen = panes.currentThreadId === null ? panes.openThreadIds : [...panes.openThreadIds, panes.currentThreadId]
+  // One object for the whole list, rebuilt only when a pane action actually changes: every row compares it.
+  const panes = useMemo<PaneActions>(() => ({ currentThreadId, openThreadIds, onOpenBeside, onDragThread }),
+    [currentThreadId, openThreadIds, onOpenBeside, onDragThread])
+  const onScreen = currentThreadId === null ? openThreadIds : [...openThreadIds, currentThreadId]
   const unseen = useFinishedUnseen(state.host.threads, onScreen)
   const searching = query.trim() !== ''
-  const toggle = (key: string): void => setCollapsed(previous => {
+  const toggle = useCallback((key: string): void => setCollapsed(previous => {
     const next = new Set(previous)
     if (next.has(key)) next.delete(key); else next.add(key)
     return next
-  })
+  }), [])
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
-    const key = `${section}:${folder.id}`
+    const key = folderKey(section, folder.id)
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} unseen={unseen} liveClock={liveClock}
-      expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewThread={onNewThread} command={command} busy={state.busy} />
+      expanded={searching || !collapsed.has(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} busy={state.busy} />
   }
   const { open, settled } = organization
   const settledThreads = settled.reduce((count, folder) => count + folder.rows.length, 0)

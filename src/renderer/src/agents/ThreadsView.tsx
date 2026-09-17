@@ -13,6 +13,7 @@ import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { useSidebarMode } from './SidebarFrame'
+import { useShared } from './stateSharing'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
@@ -74,10 +75,12 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   const store = agents.threadDrafts
   const state = agents.state
   const command = agents.command
-  const rows = useMemo(() => state === null ? [] : describeThreads(state, now), [state, now])
+  // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
+  // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
-  const labels = useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows])
-  const organization = useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query])
+  const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query]))
   const stored = useSplitLayout(layoutStore)
   const activeId = state?.activeThreadId != null && rowsById.has(state.activeThreadId) ? state.activeThreadId : null
   const pendingFocus = pending?.threadId ?? null
@@ -87,7 +90,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   // the pane focused when the arrangement was saved.
   const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
-  const paneIds = isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : []
+  const paneIds = useShared(isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : [])
 
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
@@ -117,6 +120,12 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   }, [])
 
   const openThread = useCallback((threadId: string): void => { setPending(null); void command({ type: 'select-thread', threadId }) }, [command])
+  // Callbacks that cross into the memoised sidebar are hoisted: a fresh function each render would undo the memo.
+  const startNewThread = useCallback((projectId?: string): void => { setNewThread({ projectId }) }, [])
+  // The pane actions are rebuilt every render from the current layout; the sidebar is handed a stable
+  // entry point into the latest one instead.
+  const gridRef = useRef<ReturnType<typeof paneGridActions> | null>(null)
+  const openBeside = useCallback((threadId: string): void => gridRef.current?.openBesideFocused(threadId), [])
   /** The user put this pane in focus: it takes the selection. Nothing else ever sends select-thread from here. */
   const focusPane = useCallback((threadId: string): void => {
     if (threadId === focusedId) return
@@ -133,6 +142,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   }
 
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
+  gridRef.current = grid
 
   const connected = state.connection === 'connected'
   const localDraftPresent = focusedId !== null && hasDraftContent(store.draft(focusedId))
@@ -157,8 +167,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
 
   return <div className="management-view threads-view" onKeyDown={grid.onKeyDown}>
     {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} onClose={() => setNewThread(null)} onCreated={() => { setNewThread(null); window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0) }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })}
-      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={grid.openBesideFocused} onDragThread={setDragging} />
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={startNewThread}
+      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
       <div className="thread-workspace__body">
