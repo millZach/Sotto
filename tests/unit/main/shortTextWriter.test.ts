@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
 import { THREAD_TITLE_MAX_CHARACTERS, threadTitleRequest, threadTitleWriter } from '../../../src/main/llm/threadTitle'
 import { pullRequestTextWriter } from '../../../src/main/llm/pullRequestText'
+import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, commitMessageRequest, commitMessageWriter, stagedDiffExcerpt } from '../../../src/main/llm/commitMessage'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 const KEYED: AppSettings = { ...DEFAULT_SETTINGS, llmApiKey: 'sk-or-v1-test', writingModel: 'anthropic/claude-haiku-4.5' }
@@ -124,5 +125,43 @@ describe('the short-text writing path', () => {
     expect(fetchFn).not.toHaveBeenCalled()
     await expect(threadTitleWriter(writer, () => KEYED)(exchange)).resolves.toBe('Palette contrast pass')
     expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+})
+
+const excerpt = { diff: 'diff --git a/src/app.ts b/src/app.ts\n+export const ready = true\n', truncated: false }
+
+describe('the commit message a staged diff earns', () => {
+  it('carries the staged diff alone, and the note when it was cut', async () => {
+    const { fetchFn, writer } = createWriter({ fetchFn: async () => answer('Raise the dark palette contrast') })
+    await expect(commitMessageWriter(writer, () => KEYED)(excerpt)).resolves.toBe('Raise the dark palette contrast')
+    const sent = body(fetchFn).messages
+    const material = sent.find(message => message.role === 'user')!.content
+    expect(material).toContain('+export const ready = true')
+    expect(material).not.toContain('sk-or-v1-test')
+    expect(material).not.toMatch(/continues past this point/u)
+    expect(sent).toHaveLength(2)
+    expect(commitMessageRequest({ ...excerpt, truncated: true }).material).toMatch(/continues past this point/u)
+    expect(stagedDiffExcerpt('a\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS))).toMatchObject({ truncated: true })
+    expect(stagedDiffExcerpt('a\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS)).diff.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
+  })
+
+  it('keeps a short body, shortens an over-long subject and drops a fence', async () => {
+    const fenced = createWriter({ fetchFn: async () => answer('```\nAdd the commit draft to the Changes panel.\n\nThe staged diff is the only material sent.\n```') })
+    await expect(commitMessageWriter(fenced.writer, () => KEYED)(excerpt)).resolves
+      .toBe('Add the commit draft to the Changes panel\n\nThe staged diff is the only material sent.')
+    const long = createWriter({ fetchFn: async () => answer('Subject: Draft the commit message from the staged diff so the Changes panel opens with words already written') })
+    const message = await commitMessageWriter(long.writer, () => KEYED)(excerpt)
+    expect(message!.length).toBeLessThanOrEqual(COMMIT_SUBJECT_MAX_CHARACTERS)
+    expect(message).toBe('Draft the commit message from the staged diff so the Changes panel')
+  })
+
+  it('asks for nothing while generated commit messages are off or no key is stored', async () => {
+    const off = createWriter()
+    await expect(commitMessageWriter(off.writer, () => ({ ...KEYED, commitMessages: false }))(excerpt)).resolves.toBeNull()
+    expect(off.fetchFn).not.toHaveBeenCalled()
+    const keyless = createWriter({ settings: { ...KEYED, llmApiKey: '' } })
+    await expect(commitMessageWriter(keyless.writer, () => ({ ...KEYED, llmApiKey: '' }))(excerpt)).resolves.toBeNull()
+    expect(keyless.fetchFn).not.toHaveBeenCalled()
+    expect(keyless.failures).toEqual(['commit-message:no-key'])
   })
 })

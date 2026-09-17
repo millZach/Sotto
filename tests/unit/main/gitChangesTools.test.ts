@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, readFile, rm, rename, symlink } from 'node:fs/promises'
@@ -6,13 +6,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FilesService } from '../../../src/main/files/service'
 import { GitChangesService } from '../../../src/main/tools/gitChanges'
+import { COMMIT_DIFF_MAX_CHARACTERS } from '../../../src/main/llm/commitMessage'
 import type { ToolsResult } from '../../../src/shared/tools'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' })
-async function fixture() {
+async function fixture(options: { writeCommitMessage?: (excerpt: { diff: string; truncated: boolean }) => Promise<string | null> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-git-unit-'))
   // dispose() kills an in-flight Git poll, but Windows releases its cwd handle after process exit.
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
@@ -24,7 +25,7 @@ async function fixture() {
   const bindings: Record<string, string> = { a: repo, b: other, shared: repo }
   const files = new FilesService({ resolveBinding: threadId => bindings[threadId] ? { threadId, projectId: 'project', workingDirectory: bindings[threadId]! } : null, copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), copyPath = vi.fn(), reveal = vi.fn()
-  const service = new GitChangesService({ files, emit, copyPath, reveal, pollMs: 40 })
+  const service = new GitChangesService({ files, emit, copyPath, reveal, pollMs: 40, ...(options.writeCommitMessage ? { writeCommitMessage: options.writeCommitMessage } : {}) })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   return { root, repo, other, service, target: { threadId: 'a', workspaceId: owner.workspaceId }, emit, copyPath, reveal }
@@ -154,5 +155,66 @@ describe('Git review in exact thread working directories', () => {
     cleanup.push(async () => fresh.dispose())
     const initial = unwrap(await fresh.list({ threadId: 'fresh' }))
     expect(unwrap(await fresh.diff({ threadId: 'fresh', workspaceId: initial.workspace.workspaceId, path: 'first.txt' })).content).toMatchObject({ kind: 'text', patch: expect.stringContaining('+first line') })
+  }, 20000)
+})
+
+describe('Commit message drafts', () => {
+  it('sends the staged diff alone, capped, and commits nothing on its own', async () => {
+    const writeCommitMessage = vi.fn(async (excerpt: { diff: string; truncated: boolean }) => excerpt.truncated ? 'Describe the first part' : 'Raise the contrast of the dark palette')
+    const f = await fixture({ writeCommitMessage })
+    await writeFile(join(f.repo, 'changed.txt'), 'staged content\n')
+    let listing = unwrap(await f.service.list(f.target))
+    unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    await writeFile(join(f.repo, 'changed.txt'), 'later working edit\n')
+    await writeFile(join(f.repo, 'unstaged.txt'), 'never sent\n')
+    listing = unwrap(await f.service.list(f.target))
+
+    const draft = unwrap(await f.service.draftCommitMessage({ ...f.target, revision: listing.revision }))
+    expect(draft).toEqual({ message: 'Raise the contrast of the dark palette', truncated: false })
+    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { diff: string; truncated: boolean }
+    expect(excerpt.diff).toContain('+staged content')
+    expect(excerpt.diff).not.toContain('later working edit')
+    expect(excerpt.diff).not.toContain('never sent')
+    expect(excerpt.truncated).toBe(false)
+    // Drafting is not committing: HEAD is still the fixture commit and the index is untouched.
+    expect(git(f.repo, 'log', '--oneline').trim().split('\n')).toHaveLength(1)
+    expect(unwrap(await f.service.list(f.target)).files.some(file => file.path === 'changed.txt' && file.staged)).toBe(true)
+
+    expect(await f.service.draftCommitMessage({ ...f.target, revision: 'stale' })).toMatchObject({ ok: false, error: { code: 'workspace-changed' } })
+    expect(writeCommitMessage).toHaveBeenCalledTimes(1)
+  }, 20000)
+
+  it('cuts an oversized staged diff and says it was cut', async () => {
+    const writeCommitMessage = vi.fn(async (excerpt: { diff: string; truncated: boolean }) => excerpt.truncated ? 'Add the generated fixture file' : 'Describe the whole diff')
+    const f = await fixture({ writeCommitMessage })
+    await writeFile(join(f.repo, 'huge.txt'), Array.from({ length: 4_000 }, (_unused, line) => `generated line ${line}`).join('\n') + '\n')
+    let listing = unwrap(await f.service.list(f.target))
+    listing = unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'huge.txt' }))
+    const draft = unwrap(await f.service.draftCommitMessage({ ...f.target, revision: listing.revision }))
+    expect(draft).toEqual({ message: 'Add the generated fixture file', truncated: true })
+    const excerpt = writeCommitMessage.mock.calls[0]![0] as unknown as { diff: string; truncated: boolean }
+    expect(excerpt.diff.length).toBeLessThanOrEqual(COMMIT_DIFF_MAX_CHARACTERS)
+    expect(excerpt.truncated).toBe(true)
+  }, 20000)
+
+  it('answers with an empty draft when Sotto writes nothing and when nothing is staged', async () => {
+    const silent = await fixture({ writeCommitMessage: async () => null })
+    await writeFile(join(silent.repo, 'changed.txt'), 'staged content\n')
+    let listing = unwrap(await silent.service.list(silent.target))
+    listing = unwrap(await silent.service.act({ ...silent.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    expect(unwrap(await silent.service.draftCommitMessage({ ...silent.target, revision: listing.revision }))).toEqual({ message: null, truncated: false })
+
+    const writeCommitMessage = vi.fn(async () => 'Never asked for')
+    const unstagedOnly = await fixture({ writeCommitMessage })
+    await writeFile(join(unstagedOnly.repo, 'changed.txt'), 'working only\n')
+    const current = unwrap(await unstagedOnly.service.list(unstagedOnly.target))
+    expect(unwrap(await unstagedOnly.service.draftCommitMessage({ ...unstagedOnly.target, revision: current.revision }))).toEqual({ message: null, truncated: false })
+    expect(writeCommitMessage).not.toHaveBeenCalled()
+
+    const unwired = await fixture()
+    await writeFile(join(unwired.repo, 'changed.txt'), 'staged content\n')
+    let plain = unwrap(await unwired.service.list(unwired.target))
+    plain = unwrap(await unwired.service.act({ ...unwired.target, revision: plain.revision, action: 'stage', path: 'changed.txt' }))
+    expect(unwrap(await unwired.service.draftCommitMessage({ ...unwired.target, revision: plain.revision }))).toEqual({ message: null, truncated: false })
   }, 20000)
 })

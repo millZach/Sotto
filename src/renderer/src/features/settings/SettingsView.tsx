@@ -532,8 +532,9 @@ export function SettingsView({
 
                   </div>
                   <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a thread from its first message and the first reply. Only those two are sent, and only while local history is kept. A name you type is never replaced." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
                   <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
-                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles && !settings.pullRequestText} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
+                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles && !settings.commitMessages && !settings.pullRequestText} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
 
                 </div>
               </Card>

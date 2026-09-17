@@ -53,6 +53,7 @@ const customSettings = {
   writingModel: 'anthropic/claude-haiku-4.5',
   threadTitles: false,
   pullRequestText: false,
+  commitMessages: false,
   streamingAsr: false,
   autoUpdateCheck: false,
 } satisfies AppSettings
@@ -175,6 +176,7 @@ describe('settings', () => {
       writingModel: 'google/gemini-3.1-flash-lite',
       threadTitles: true,
       pullRequestText: true,
+      commitMessages: true,
       streamingAsr: true,
       autoUpdateCheck: true,
     })
