@@ -22,6 +22,11 @@ jobs:
     env:
       # Live provider suites stay opt-in; CI never holds provider credentials.
       CI: 'true'
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
+      # so a path a test builds from os.tmpdir() never equals the real path the
+      # code resolves. The runner's work temp folder is a long path.
+      TMP: ${{ runner.temp }}
+      TEMP: ${{ runner.temp }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
