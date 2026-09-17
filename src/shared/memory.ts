@@ -10,7 +10,7 @@ export const MAX_MEMORY_CONTENT_CHARACTERS = 2000
 export const MAX_PREFERENCE_CONTEXT_CHARACTERS = memoryTopics.length * MAX_MEMORY_CONTENT_CHARACTERS
 export const memoryTopicSchema = z.enum(memoryTopics)
 export type MemoryTopic = z.infer<typeof memoryTopicSchema>
-export const memoryProvenanceSchema = z.union([
+const memoryProvenanceSchema = z.union([
   z.object({ threadId: z.string().min(1).describe('Sotto thread ID'), ref: z.string() }),
   z.object({ source: z.enum(['questionnaire', 'inspector']), ref: z.string().min(1), recordedAt: z.iso.datetime() }).strict(),
 ])

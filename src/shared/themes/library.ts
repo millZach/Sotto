@@ -103,7 +103,7 @@ export function isThemeId(value: unknown): value is string {
   return typeof value === 'string' && THEME_ID.test(value)
 }
 
-export function isThemeLabel(value: unknown): value is string {
+function isThemeLabel(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 48
 }
 
@@ -159,7 +159,7 @@ function lenientThemeColors(value: unknown, appearance: ThemeAppearance): ThemeC
 }
 
 /** Read one saved theme leniently; null when it cannot be a theme at all. */
-export function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
+function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
   if (!isRecord(value)) return null
   if (!isThemeId(value.id) || RESERVED_THEME_IDS.has(value.id)) return null
   if (!isThemeLabel(value.label) || !isThemeAppearance(value.appearance)) return null
@@ -212,12 +212,6 @@ export function getThemeColorsForMode(theme: ThemeDefinition, mode: ThemeAppeara
 
 export function getThemeModes(theme: ThemeDefinition): ThemeAppearance[] {
   return (['light', 'dark'] as const).filter(mode => getThemeColorsForMode(theme, mode) !== null)
-}
-
-/** Which half a theme can claim, or null when it renders both appearances. */
-export function singleAppearanceOf(theme: ThemeDefinition): ThemeAppearance | null {
-  const modes = getThemeModes(theme)
-  return modes.length === 1 ? modes[0]! : null
 }
 
 export function findTheme(id: string, customThemes: readonly ThemeDefinition[]): ThemeDefinition | null {

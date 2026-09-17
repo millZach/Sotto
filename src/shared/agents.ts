@@ -33,7 +33,7 @@ export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_0
 export const agentVoiceModelStatusSchema = z.object({ ready: z.boolean(), completedBytes: z.number().nonnegative(), totalBytes: z.number().nonnegative() })
 export type AgentVoiceModelStatus = z.infer<typeof agentVoiceModelStatusSchema>
 export const NATURAL_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
-export const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => !/\p{Cc}/u.test(value), 'Choose a valid Grok voice ID.')
+const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => !/\p{Cc}/u.test(value), 'Choose a valid Grok voice ID.')
 export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
 export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
 
@@ -85,7 +85,7 @@ export const agentAttachmentPreviewDataSchema = z.object({ dataUrl: z.string().m
   return parsed.success && hasRasterImageSignature(parsed.data)
 }, 'Choose a valid raster image preview.')
 /** Published state carries the marker alone; the window asks for the bytes when it draws the image. */
-export const agentAttachmentPreviewMarkerSchema = z.object({ available: z.literal(true) }).strict()
+const agentAttachmentPreviewMarkerSchema = z.object({ available: z.literal(true) }).strict()
 export const agentAttachmentPreviewSchema = z.union([agentAttachmentPreviewDataSchema, agentAttachmentPreviewMarkerSchema])
 export type AgentAttachmentPreview = z.infer<typeof agentAttachmentPreviewSchema>
 export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, messageId: id, attachmentId: id }).strict()
@@ -123,10 +123,10 @@ export const agentMessageSchema = z.object({
  * What the sidebar reads about a thread's history without holding that history. The shell stream
  * carries it in place of `messages`; a thread whose messages are present derives the same facts.
  */
-export const AGENT_THREAD_EXCERPT_MAX = 2_000
+const AGENT_THREAD_EXCERPT_MAX = 2_000
 const excerpt = z.string().max(AGENT_THREAD_EXCERPT_MAX)
 const threadExcerptSchema = z.object({ id, text: excerpt, createdAt: z.string() }).strict()
-export const agentThreadSummarySchema = z.object({
+const agentThreadSummarySchema = z.object({
   messageCount: z.number().int().nonnegative(),
   /** The newest `createdAt` across every message, so a row's clock survives without them. */
   lastMessageAt: z.string().optional(),
@@ -226,10 +226,10 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
 }
-export const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
-export const orbColorSchema = z.enum(ORB_COLORS)
+const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
+const orbColorSchema = z.enum(ORB_COLORS)
 export type OrbColor = z.infer<typeof orbColorSchema>
-export const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
+const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
   enabledProviders: z.array(providerIdSchema).max(3).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
@@ -402,7 +402,7 @@ export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activiti
   return thread.summary ?? summarizeThread(thread)
 }
 /** One thread as the shell stream carries it: the sidebar's facts, none of its history. */
-export function threadShell(thread: AgentThread): AgentThread {
+function threadShell(thread: AgentThread): AgentThread {
   return { ...thread, messages: [], ...(thread.activities === undefined ? {} : { activities: [] }), summary: threadSummaryOf(thread) }
 }
 /** The published state with every thread's history replaced by its summary. */

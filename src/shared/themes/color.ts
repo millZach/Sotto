@@ -374,7 +374,7 @@ export function solveOklchLightness(
 }
 
 export const THEME_LIGHT_FOREGROUND: ThemeRgb = { r: 255, g: 250, b: 255 }
-export const THEME_DARK_FOREGROUND: ThemeRgb = { r: 36, g: 21, b: 35 }
+const THEME_DARK_FOREGROUND: ThemeRgb = { r: 36, g: 21, b: 35 }
 export const THEME_WHITE_FOREGROUND: ThemeRgb = { r: 255, g: 255, b: 255 }
 export const THEME_BLACK_FOREGROUND: ThemeRgb = { r: 0, g: 0, b: 0 }
 
