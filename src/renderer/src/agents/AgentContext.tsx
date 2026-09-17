@@ -8,6 +8,7 @@ import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
 import { createConfiguredSpeech } from './naturalSpeech'
 import { playWakeCue } from './voiceCue'
 import { useAttentionReview, type AttentionReview } from './attentionReview'
+import { share } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 
 export interface AgentConnection {
@@ -23,6 +24,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown> }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
   const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
+  /**
+   * Every published state is a whole new object, so the window would repaint all of it for one streaming
+   * chunk. Reconciling the arrival against the state on screen keeps the reference of every part that did
+   * not change, and a state that changed nothing at all stops here instead of becoming a render.
+   */
+  const receiveState = useCallback((next: AgentState): void => {
+    setSnapshot(current => {
+      if (current?.session !== session) return { session, state: next }
+      const state = share(current.state, next)
+      return state === current.state ? current : { session, state }
+    })
+  }, [session])
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !session.current) return null
@@ -31,7 +44,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         const next = await bridge.command(request)
         if (session.current) {
           setFailure(null)
-          if (version === session.observed) setSnapshot({ session, state: next })
+          if (version === session.observed) receiveState(next)
         }
         return next
       } catch {
@@ -53,16 +66,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
-  }, [bridge, session])
+  }, [bridge, session, receiveState])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   const state = snapshot?.session === session ? snapshot.state : null
   const error = failure?.session === session ? failure.error : null
   useEffect(() => {
     session.current = true
     let active = true
-    const receive = (next: AgentState): void => {
-      setSnapshot({ session, state: next })
-    }
+    const receive = receiveState
     const version = session.observed
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
@@ -80,7 +91,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)
     }
-  }, [bridge, session, threadDrafts])
+  }, [bridge, session, threadDrafts, receiveState])
   // Both published and command-returned snapshots reach the store before paint,
   // including while the Threads page is absent.
   useLayoutEffect(() => { if (state !== null) threadDrafts.receive(state) }, [state, threadDrafts])

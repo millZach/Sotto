@@ -18,6 +18,7 @@ import { useAgents } from '../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 import { SplitLayoutStore } from '../../src/renderer/src/agents/splitLayout'
+import { share } from '../../src/renderer/src/agents/stateSharing'
 
 vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -73,9 +74,11 @@ describe('threads render cost', async () => {
   it.skipIf(!present)('reports the cost of one state update with a thread open', async () => {
     const workspace = JSON.parse(await readFile(join(directory, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
     const host = workspace.snapshot
-    // The busiest thread is the one a streaming agent is writing into.
+    // The busiest thread is the one a streaming agent is writing into, and it is running: that is when
+    // broadcasts arrive many times a second, and it is what decides how the transcript renders a chunk.
     const open = [...host.threads].sort((first, second) => second.messages.length - first.messages.length)[0]
     expect(open).toBeDefined()
+    ;(open as { status: string }).status = 'running'
     const messages = host.threads.reduce((count, thread) => count + thread.messages.length, 0)
 
     let state = stateAround(host, open!.id)
@@ -118,10 +121,7 @@ describe('threads render cost', async () => {
   }, 120_000)
 })
 
-/**
- * What AgentContext does with an arriving state before React sees it. Today it keeps the incoming object
- * as it is; structural sharing replaces this with the real merge so its cost stays inside the number.
- */
-function receive(_previous: AgentState, next: AgentState): AgentState {
-  return next
+/** What AgentContext does with an arriving state before React sees it, so its cost stays inside the number. */
+function receive(previous: AgentState, next: AgentState): AgentState {
+  return share(previous, next)
 }
