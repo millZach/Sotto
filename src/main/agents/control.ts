@@ -17,7 +17,7 @@ import { approvalWords, classifyRiskyAction, denialWords, type Authority } from 
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
-import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -689,6 +689,24 @@ export class AgentControl {
     }
     this.publish(); return this.get()
   }
+  /**
+   * The thread's new name. It is a state edit alone: no native work is started, interrupted or queued
+   * behind, so a thread can be renamed while its agent is still working.
+   */
+  private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
+    const title = command.title.trim()
+    try {
+      const thread = this.thread(command.threadId)
+      if (title === '') throw new Error('Type a name for this thread.')
+      if (isThreadArchived(thread)) throw new Error('Archived threads keep the name they were archived under.')
+      if (!this.dependencies.host.renameThread) throw new Error('Renaming a thread is unavailable.')
+      if (title !== thread.title) this.acceptSnapshot(await this.dependencies.host.renameThread(command.threadId, title))
+      this.state.error = null
+      await this.persist().catch(() => { throw new Error('Could not save the new name. Retry when storage is available.') })
+    } catch (error) { this.state.error = error instanceof Error ? error.message : 'Could not rename this thread.' }
+    this.publish()
+    return this.get()
+  }
   command(command: AgentCommand): Promise<AgentState> {
     if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
@@ -736,6 +754,8 @@ export class AgentControl {
       return Promise.resolve(this.get())
     }
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
+    // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
+    if (command.type === 'rename-thread') return this.renameThread(command)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId : ''
@@ -1261,6 +1281,7 @@ export class AgentControl {
         if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = true
         try {
           await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+            ...(command.titleSource ? { titleSource: command.titleSource } : {}),
             ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
             ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}) }, turn)

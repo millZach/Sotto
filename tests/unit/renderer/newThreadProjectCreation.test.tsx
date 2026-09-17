@@ -47,7 +47,7 @@ describe('native folder project resolution', () => {
     fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
     await submit()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', reasoningEffort: 'high', runtimeMode: 'full-access' })
+    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', titleSource: 'user', reasoningEffort: 'high', runtimeMode: 'full-access' })
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
