@@ -325,6 +325,12 @@ export const agentStateSchema = z.object({
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
   busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
+  /**
+   * The threads whose own lane is running a command right now. A command that names one thread waits
+   * only on that thread, so `busy` — which still means the one global lane is occupied — cannot say
+   * which threads are working. Absent when no thread lane is running.
+   */
+  busyThreadIds: z.array(id).max(1_000).optional(),
   speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),

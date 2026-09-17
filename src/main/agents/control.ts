@@ -34,6 +34,24 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
   'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread', 'compact-thread',
 ])
+/**
+ * The commands that name one thread and act only on it. Each runs in that thread's own lane, so an
+ * action on one thread never waits on an action on another, nor on the global lane.
+ *
+ * Everything else keeps the one global lane, including commands that carry a `threadId` but reach
+ * past the thread they name:
+ * - `assign`, `unassign`, `resume`, `pause` move assignment authority and hand the single composer
+ *   draft to or from management, which supervision reads across every thread.
+ * - `recover-draft` and `resume-draft` rebind that same single composer draft.
+ * - `create-thread` has no existing thread to key a lane on, and it also takes the selection.
+ * - `settle-project` and `restore-project` move every thread of a project at once.
+ * `interrupt`, `select-thread`, `save-thread-draft`, `refresh-thread-skills` and the follow-up queue
+ * edits answer before any lane is chosen and are unchanged here.
+ */
+const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
+  'manual-send', 'steer', 'answer', 'configure-thread', 'compact-thread',
+  'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder',
+])
 
 const savedSchema = z.object({
   providerUpgrade: providerUpgradeSchema.nullable().default(null),
@@ -72,6 +90,14 @@ export interface AgentMembership {
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly threadActions = new Map<string, Promise<unknown>>()
+  /** How many lanes of each thread's own work are running; ephemeral, like the global busy flag. */
+  private readonly busyThreads = new Map<string, number>()
+  /**
+   * Threads with a prompt of their own — a manual send or a steer — admitted and not yet finished.
+   * Send admission and the follow-up pump read this rather than the lane, so a thread action that is
+   * not a prompt never diverts a send into the queue or holds a queued follow-up back.
+   */
+  private readonly threadPrompts = new Map<string, number>()
   private readonly pumping = new Set<string>()
   private state: AgentState
   private outbox: Saved['outbox'] = []
@@ -252,8 +278,26 @@ export class AgentControl {
     const state = structuredClone(this.state)
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
+    if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     this.attachmentPreviews.decorate(state.host)
     return state
+  }
+  /**
+   * Counts one thread into a live set until the returned release is called. Releasing is idempotent,
+   * so a lane can release when it finishes and its cleanup can release again for a lane that never
+   * reached that point. The global `busy` flag stands for the one global lane alone, so work running
+   * in a thread's own lane marks itself here instead.
+   */
+  private mark(counts: Map<string, number>, threadId: string): () => void {
+    counts.set(threadId, (counts.get(threadId) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const remaining = (counts.get(threadId) ?? 1) - 1
+      if (remaining > 0) counts.set(threadId, remaining)
+      else counts.delete(threadId)
+    }
   }
   /**
    * The published state without any thread's history: every thread the window lists, each one carrying the
@@ -271,6 +315,7 @@ export class AgentControl {
     const state = structuredClone(bare)
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
+    if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     return state
   }
   /**
@@ -696,7 +741,7 @@ export class AgentControl {
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
-    if (command.type === 'manual-send' && !reconcilingDraft && (this.threadActions.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
+    if (command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
       return this.followupCommand({ ...command, type: 'queue-followup', draftId: command.draftId ?? randomUUID() })
     }
     if (command.type === 'interrupt') return this.interruptThread(command)
@@ -743,9 +788,12 @@ export class AgentControl {
       return Promise.resolve(this.get())
     }
     // Host observations bypass this lane: a direct provider send must revoke authority even during model reasoning.
-    const independent = command.type === 'manual-send' || command.type === 'steer'
-    const task = (independent ? this.threadActions.get(actionThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
-      if (!independent) this.state.busy = true
+    const laneThreadId = actionThreadId && THREAD_SCOPED_COMMAND_TYPES.has(command.type) ? actionThreadId : ''
+    const independent = laneThreadId !== ''
+    let releaseThread = (): void => {}
+    const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
+      if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
+      else this.state.busy = true
       this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
@@ -772,7 +820,8 @@ export class AgentControl {
           this.setDelivery(command.threadId, command.draftId, this.outbox.some(item => item.threadId === command.threadId && item.draftId === command.draftId) ? 'uncertain' : 'failed')
         }
       }
-      if (!independent) this.state.busy = false
+      if (independent) releaseThread()
+      else this.state.busy = false
       this.updateCredentials()
       await this.persist().catch(error => {
         // The user sees the fixed guidance; the raw storage error goes to the turn record only.
@@ -790,8 +839,13 @@ export class AgentControl {
       return this.get()
     })
     if (independent) {
-      this.threadActions.set(actionThreadId, task)
-      void task.finally(() => { if (this.threadActions.get(actionThreadId) === task) this.threadActions.delete(actionThreadId); this.pumpFollowups() }).catch(() => undefined)
+      this.threadActions.set(laneThreadId, task)
+      const releasePrompt = command.type === 'manual-send' || command.type === 'steer' ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
+      void task.finally(() => {
+        releasePrompt(); releaseThread()
+        if (this.threadActions.get(laneThreadId) === task) this.threadActions.delete(laneThreadId)
+        this.pumpFollowups()
+      }).catch(() => undefined)
     } else this.serial = task.catch(() => undefined)
     return task
   }
@@ -860,6 +914,7 @@ export class AgentControl {
     if (this.disposed) return
     const items = this.followupStore.get().items
     for (const threadId of new Set(items.map(item => item.threadId))) {
+      // A queued follow-up waits for that thread's own lane to be clear, then this runs again from its cleanup.
       if (this.pumping.has(threadId) || this.threadActions.has(threadId)) continue
       const first = items.find(item => item.threadId === threadId)!
       const thread = this.state.host.threads.find(t => t.id === threadId)
@@ -919,11 +974,15 @@ export class AgentControl {
     const turn = this.beginTurn({ source: 'command', commandType: 'interrupt', text: '', threadId: command.threadId,
       projectId: this.state.host.threads.find(thread => thread.id === command.threadId)?.projectId ?? null })
     let failure: string | undefined
+    // Stopping a turn waits for nothing, not even that thread's own lane, but the thread is working on it.
+    const release = this.mark(this.busyThreads, command.threadId)
     try {
       this.state.error = null
+      this.publish()
       await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume queued follow-ups when ready.')
       this.syncFollowups(); await this.execute(command, turn); await this.persist()
     } catch (error) { failure = error instanceof Error ? error.message : 'Could not interrupt this thread.'; this.state.error = failure }
+    release()
     this.publish(); await this.finishTurn(turn, failure); return this.get()
   }
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
