@@ -150,7 +150,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {!isThreadArchived(thread) && !renaming ? <Button variant="ghost" onClick={() => setRenaming(true)}>Rename</Button> : null}
         {/* Sotto writes the name from the thread's first exchange; a name typed by hand is left alone and offers no rewrite. */}
         {!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user'
-          ? <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: thread.id })}>Regenerate title</Button> : null}
+          ? <Button variant="ghost" disabled={threadBusy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: thread.id })}>Regenerate title</Button> : null}
         {/* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */}
         {assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume'))
           : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
