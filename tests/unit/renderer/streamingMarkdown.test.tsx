@@ -78,7 +78,10 @@ describe('splitting a message being written', () => {
     }
   })
 
-  it('renders the same text streamed as it does whole', () => {
+  // Eighteen documents, each rendered whole and then streamed in four chunk sizes down to one byte
+  // at a time: thousands of real React renders of real Markdown. It is slow because of how much it
+  // covers, not because it waits for anything, so a loaded runner only needs a longer timeout.
+  it('renders the same text streamed as it does whole', { timeout: 60_000 }, () => {
     for (const { name, text } of DOCUMENTS) {
       const whole = markup(text, false)
       expect(markup(text, true), name).toBe(whole)

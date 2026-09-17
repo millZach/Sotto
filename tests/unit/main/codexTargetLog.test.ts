@@ -6,7 +6,10 @@ import { expect, it } from 'vitest'
 import { CodexSessionLogWatcher } from '../../../src/main/agents/codexSessionLog'
 import { rolloutLine } from '../../fixtures/codexFixture'
 
-it('reads through the target history before declaring its latest user message current', async () => {
+// The point of this test is a rollout larger than one read chunk, so it writes and then parses two
+// megabytes of JSONL. That is real work, not a wait: a two-core CI runner needs well past the five
+// second default for it, and the timeout is the only thing that has to grow to let it finish.
+it('reads through the target history before declaring its latest user message current', { timeout: 60_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-target-log-'))
   const messages: string[] = []
   const watcher = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message.text) })

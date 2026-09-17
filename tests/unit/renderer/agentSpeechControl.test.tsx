@@ -107,7 +107,9 @@ describe('speech interruption from the renderer', () => {
     let controls!: ReturnType<typeof useAgents>
     function Room() { controls = useAgents(); return null }
     render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><Room /></AgentProvider>)
-    await waitFor(() => expect(controls.state).not.toBeNull())
+    // The provider paints the cached shell first and replaces it with the live state the bridge answers
+    // with, so the review only means anything once this thread's own queue has arrived.
+    await waitFor(() => expect(controls.attention.items.map(item => item.id)).toEqual(['a', 'b']))
     await act(async () => { await controls.attention.next() })
     expect(controls.attention.items[0]?.id).toBe('b')
     expect(controls.attention.show).toBe(true)

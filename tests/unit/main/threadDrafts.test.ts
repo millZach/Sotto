@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { expectWithinBudget } from '../../fixtures/perfBudget'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
@@ -220,7 +221,7 @@ describe('truthful durable draft delivery', () => {
     f.control.subscribe(state => { const delivery = state.deliveries?.find(item => item.draftId === draft.draftId); if (delivery) samples.push({ status: delivery.status, ms: performance.now() - started }) })
     const pending = f.control.command(send(draft))
     expect(samples[0]).toMatchObject({ status: 'queued' })
-    expect(samples[0]!.ms).toBeLessThan(100)
+    expectWithinBudget(samples[0]!.ms, 100, 'publishing queued feedback for a send')
     try {
       await vi.waitFor(() => expect(f.host.attempts).toHaveLength(1))
       expect((await f.disk()).deliveries).toEqual([expect.objectContaining({ draftId: draft.draftId, status: 'submitting' })])
