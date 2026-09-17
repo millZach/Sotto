@@ -50,6 +50,10 @@ const customSettings = {
   llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
+  writingModel: 'anthropic/claude-haiku-4.5',
+  threadTitles: false,
+  pullRequestText: false,
+  commitMessages: false,
   streamingAsr: false,
   autoUpdateCheck: false,
 } satisfies AppSettings
@@ -169,6 +173,10 @@ describe('settings', () => {
       llmQuality: 'low',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
+      writingModel: 'google/gemini-3.1-flash-lite',
+      threadTitles: true,
+      pullRequestText: true,
+      commitMessages: true,
       streamingAsr: true,
       autoUpdateCheck: true,
     })

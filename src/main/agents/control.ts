@@ -23,6 +23,7 @@ import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
+import type { ThreadTitleExchange } from '../llm/threadTitle'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
@@ -84,6 +85,21 @@ const savedSchema = z.object({
 type Saved = z.infer<typeof savedSchema>
 class SupersededSupervision extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
+/**
+ * The first thing asked of a thread and the first answer it got, the only content a generated title is
+ * written from. Automatic naming needs the thread to be at its first exchange and settled: a running turn
+ * has no finished reply yet, and a thread that has moved on was named or left alone long ago. A requested
+ * Regenerate still reads the same first exchange out of a longer history.
+ */
+function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested'): ThreadTitleExchange | null {
+  if (trigger === 'automatic' && (thread.status === 'running' || thread.messages.filter(message => message.role === 'user').length !== 1)) return null
+  const prompt = thread.messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
+  if (prompt === -1) return null
+  const reply = thread.messages.slice(prompt + 1).find(message => message.role === 'assistant' && message.text.trim().length > 0)
+  if (!reply) return null
+  return { prompt: thread.messages[prompt]!.text, reply: reply.text }
+}
+
 export interface AgentMembership {
   status(): Promise<AgentState['membership']>
   action(action: 'refresh' | 'signin' | 'checkout' | 'portal'): Promise<AgentState['membership']>
@@ -93,7 +109,7 @@ export interface AgentMembership {
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly threadActions = new Map<string, Promise<unknown>>()
-  /** How many lanes of each thread's own work are running; ephemeral, like the global busy flag. */
+  /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
   /**
    * Threads with a prompt of their own — a manual send or a steer — admitted and not yet finished.
@@ -152,6 +168,8 @@ export class AgentControl {
    */
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   private contextActivityAt = Date.now()
+  /** Threads already asked about this run, so a failure is not retried on every provider frame. */
+  private readonly titled = new Set<string>()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     bindRequestDraftDecision?: BindRequestDraftDecision
@@ -160,6 +178,14 @@ export class AgentControl {
     authority?: Authority
     preferences?: Pick<MemoryProfile, 'retrieve'>
     openThreadFolder?: (path: string) => Promise<void>
+    /**
+     * Writes a thread's name from its first exchange. `null` leaves the thread the name it has,
+     * which is also what an off switch, a missing key and every failure resolve to. Absent here
+     * means no thread is ever named by Sotto.
+     */
+    writeThreadTitle?: (exchange: ThreadTitleExchange) => Promise<string | null>
+    /** Local record of a silent failure; never a banner, never shown to the user. */
+    logFailure?: (code: string, detail: string) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
     schedule?: PublishScheduler
   }) {
@@ -169,7 +195,7 @@ export class AgentControl {
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
       draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
       pendingRequest: '',
-      busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
@@ -288,7 +314,7 @@ export class AgentControl {
   /**
    * Counts one thread into a live set until the returned release is called. Releasing is idempotent,
    * so a lane can release when it finishes and its cleanup can release again for a lane that never
-   * reached that point. The global `busy` flag stands for the one global lane alone, so work running
+   * reached that point. `globalLaneBusy` stands for the one global lane alone, so work running
    * in a thread's own lane marks itself here instead.
    */
   private mark(counts: Map<string, number>, threadId: string): () => void {
@@ -710,6 +736,50 @@ export class AgentControl {
     this.publish()
     return this.get()
   }
+  /**
+   * A thread names itself once, from its first exchange. Only a thread still carrying a stand-in or
+   * provider name is named, so a name typed in the New thread dialog or a later rename is left alone,
+   * and a thread is only ever asked about once per run: a failure leaves the stand-in name rather than
+   * asking again on the next provider frame.
+   */
+  private generateTitles(): void {
+    if (!this.dependencies.writeThreadTitle || !this.dependencies.host.renameThread) return
+    // Local history off means Sotto keeps no thread content; none of it is sent to name a thread either.
+    if (this.dependencies.historyEnabled?.() === false) return
+    for (const thread of this.state.host.threads) {
+      if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
+      const exchange = firstExchange(thread, 'automatic')
+      if (!exchange) continue
+      this.titled.add(thread.id)
+      void this.writeThreadTitle(thread.id, exchange)
+    }
+  }
+  /** Asks for the name and applies it, unless the thread was renamed by hand while the answer was in flight. */
+  private async writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
+    try {
+      const title = await this.dependencies.writeThreadTitle!(exchange)
+      if (title === null) return
+      const thread = this.state.host.threads.find(item => item.id === threadId)
+      if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
+      this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, 'generated'))
+      await this.persist()
+    } catch (error) {
+      // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.
+      this.dependencies.logFailure?.('thread-title-failed', error instanceof Error ? error.message : 'unknown')
+    }
+  }
+  /** Ask again for a thread's name, replacing a generated or stand-in one on explicit request. */
+  private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    // The same rule as automatic naming: with local history off, no thread content is sent to name it.
+    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested') : null
+    if (thread && exchange) {
+      this.titled.add(thread.id)
+      await this.writeThreadTitle(threadId, exchange)
+    }
+    this.publish()
+    return this.get()
+  }
   command(command: AgentCommand): Promise<AgentState> {
     if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
@@ -759,6 +829,8 @@ export class AgentControl {
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
+    // Naming a thread is Sotto's own record too, and it asks a writing model, never the provider.
+    if (command.type === 'regenerate-thread-title') return this.regenerateThreadTitle(command.threadId)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId : ''
@@ -816,7 +888,7 @@ export class AgentControl {
     let releaseThread = (): void => {}
     const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
-      else this.state.busy = true
+      else this.state.globalLaneBusy = true
       this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
@@ -844,7 +916,7 @@ export class AgentControl {
         }
       }
       if (independent) releaseThread()
-      else this.state.busy = false
+      else this.state.globalLaneBusy = false
       this.updateCredentials()
       await this.persist().catch(error => {
         // The user sees the fixed guidance; the raw storage error goes to the turn record only.
@@ -1927,6 +1999,7 @@ export class AgentControl {
     // Requests resolved directly in the host leave the queue; skipped requests stay pending.
     this.state.queue = this.state.queue.filter(item => this.keepPendingAttention(item, snapshot))
     this.pumpFollowups()
+    this.generateTitles()
     if (!announcedManualControl) this.presentQueue(false)
     void this.persist().catch(() => { this.state.assignments.forEach(a => { a.paused = true }); this.state.error = 'Agent state could not be saved. Management paused.'; this.publish() })
     this.publish()

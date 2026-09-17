@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import { Button } from '../components/Button'
@@ -95,7 +95,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
   const capabilities = capabilitiesForThread(state.host, thread)
-  const canManage = rowConnected && !state.busy && supportsAgentSupervision(capabilities) && !closed
+  /** This thread's own lane. Work on another thread leaves every control here live. */
+  const threadBusy = isThreadBusy(state, thread.id)
+  // Management moves assignment authority and the single composer draft, which is global-lane work.
+  const canManage = rowConnected && !state.globalLaneBusy && supportsAgentSupervision(capabilities) && !closed
   const reconnect = row.providerId && state.host.providers ? { provider: row.providerId } : {}
   const foreignDraft = focused && (state.draft.trim() || state.draftAttachments?.length) && state.draftThreadId && state.draftThreadId !== thread.id ? state.host.threads.find(item => item.id === state.draftThreadId) : undefined
   // A send that failed or went unconfirmed is already told by its pending message in this thread; other errors still show.
@@ -145,24 +148,27 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       <div className="thread-workspace__actions">
         {/* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */}
         {!isThreadArchived(thread) && !renaming ? <Button variant="ghost" onClick={() => setRenaming(true)}>Rename</Button> : null}
+        {/* Sotto writes the name from the thread's first exchange; a name typed by hand is left alone and offers no rewrite. */}
+        {!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user'
+          ? <Button variant="ghost" disabled={threadBusy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: thread.id })}>Regenerate title</Button> : null}
         {/* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */}
         {assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume'))
           : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
           : !assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => handOff(true, () => store.handoffToManagement(thread.id, 'assign'))}>Manage</Button> : null}
-        {assigned ? <Button variant="ghost" disabled={state.busy || !connected || handingOff} onClick={() => handOff(false, () => command({ type: 'unassign', threadId: thread.id }))}>Stop managing</Button> : null}
+        {assigned ? <Button variant="ghost" disabled={state.globalLaneBusy || !connected || handingOff} onClick={() => handOff(false, () => command({ type: 'unassign', threadId: thread.id }))}>Stop managing</Button> : null}
         {/* While a handoff waits for its save, nothing else may act on this thread; other panes stay usable. */}
-        {row.settledBy === null ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
-          : row.settledBy === 'thread' ? <Button variant="ghost" disabled={state.busy || handingOff} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
+        {row.settledBy === null ? <Button variant="ghost" disabled={threadBusy || handingOff} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
+          : row.settledBy === 'thread' ? <Button variant="ghost" disabled={threadBusy || handingOff} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
         {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
         {/* A thread's own composer carries Stop; Sotto's composer for a managed thread does not. */}
-        {thread.status === 'running' && managed ? <Button variant="secondary" disabled={state.busy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
+        {thread.status === 'running' && managed ? <Button variant="secondary" disabled={threadBusy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
         {actions}
       </div>
       {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
-      <ThreadRequests row={row} state={state} command={command} blocked={state.busy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
+      <ThreadRequests row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={() => {
           const target = (): void => document.getElementById(managed ? 'agent-prompt' : promptId)?.focus()
           // A managed pane's composer appears only once the pane holds the selection.
@@ -189,7 +195,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
             : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
       <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
       <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
-        connected={rowConnected && !closed} blocked={state.busy || handingOff} command={command} />
+        connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
     </div>
   </>
 }

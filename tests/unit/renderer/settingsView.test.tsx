@@ -1,4 +1,4 @@
-﻿import React from 'react'
+import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -206,6 +206,30 @@ describe('SettingsView', () => {
     await user.click(screen.getByRole('switch', { name: 'Show floating widget when idle' }))
 
     expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
+  })
+
+  it('offers the writing model and the off switch for generated thread titles', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Cleanup')
+
+    const model = screen.getByRole('combobox', { name: 'Writing model' })
+    expect(model).toHaveValue('google/gemini-3.1-flash-lite')
+    await user.selectOptions(model, 'anthropic/claude-haiku-4.5')
+    expect(update).toHaveBeenCalledWith({ writingModel: 'anthropic/claude-haiku-4.5' })
+
+    // Turning generation off stops every title request, so the model choice has nothing left to pick for.
+    await user.click(screen.getByRole('switch', { name: 'Generated thread titles' }))
+    expect(update).toHaveBeenCalledWith({ threadTitles: false })
+    await user.click(screen.getByRole('switch', { name: 'Generated commit messages' }))
+    expect(update).toHaveBeenCalledWith({ commitMessages: false })
+    await user.click(screen.getByRole('switch', { name: 'Generated pull request text' }))
+    expect(update).toHaveBeenCalledWith({ pullRequestText: false })
+    cleanup()
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, threadTitles: false, commitMessages: false, pullRequestText: false } })} />)
+    await selectCategory('Cleanup')
+    expect(screen.getByRole('combobox', { name: 'Writing model' })).toBeDisabled()
   })
 
   it('resynchronizes numeric drafts from authoritative settings', async () => {
@@ -751,7 +775,7 @@ describe('SettingsView', () => {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
       membership: { status: 'beta', label: 'Test', expiresAt: null },

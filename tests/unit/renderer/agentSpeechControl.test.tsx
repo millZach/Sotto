@@ -19,7 +19,7 @@ vi.mock('../../../src/renderer/src/e2e/agentVoiceEffects', () => ({ createE2EAge
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function stateFixture(): AgentState {
-  return { configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true }, connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST), assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', busy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [], membership: { status: 'beta', label: 'Test', expiresAt: null } }
+  return { configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true }, connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST), assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [], membership: { status: 'beta', label: 'Test', expiresAt: null } }
 }
 
 describe('speech interruption from the renderer', () => {
@@ -107,7 +107,9 @@ describe('speech interruption from the renderer', () => {
     let controls!: ReturnType<typeof useAgents>
     function Room() { controls = useAgents(); return null }
     render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><Room /></AgentProvider>)
-    await waitFor(() => expect(controls.state).not.toBeNull())
+    // The provider paints the cached shell first and replaces it with the live state the bridge answers
+    // with, so the review only means anything once this thread's own queue has arrived.
+    await waitFor(() => expect(controls.attention.items.map(item => item.id)).toEqual(['a', 'b']))
     await act(async () => { await controls.attention.next() })
     expect(controls.attention.items[0]?.id).toBe('b')
     expect(controls.attention.show).toBe(true)

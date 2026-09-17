@@ -76,6 +76,43 @@ it('keeps closed PR status visible and never treats an authentication failure as
   expect(await service.act({ threadId: 'a', workspaceId: denied.workspace.workspaceId, remote: 'origin', revision: denied.revision, action: 'create', base: 'main', title: 'No duplicate' })).toMatchObject({ ok: false })
   expect(command.mock.calls.some(call => call[1] === 'gh' && call[2][1] === 'create')).toBe(false)
 }, 20000)
+it('drafts the form from the commit subjects and the capped diff alone, and creates nothing', async () => {
+  const f = await fixture()
+  git(f.repo, 'branch', 'main') // The base keeps the first commit; everything after it is this branch's work.
+  await writeFile(join(f.repo, 'added.txt'), 'added work\n'); git(f.repo, 'add', '.'); git(f.repo, 'commit', '-qm', 'Add the first piece')
+  git(f.repo, 'commit', '-q', '--allow-empty', '-m', 'Second subject')
+  await writeFile(join(f.repo, 'work.txt'), 'padding line\n'.repeat(2_000)); git(f.repo, 'commit', '-qam', 'Pad the diff past the cap')
+  const material: { subjects: readonly string[]; diff: string }[] = []
+  const gh = vi.fn()
+  const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => { if (executable === 'gh') { gh(); throw new Error('Must not reach GitHub') } return git(cwd, ...args) }
+  const service = new GitPullRequestsService({
+    files: f.files, mutations: new Set(), command,
+    draftText: async input => { material.push(input); return { title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' } },
+  })
+  const drafted = unwrap(await service.draft({ threadId: 'a', base: 'main', remote: 'origin' }))
+  expect(drafted).toEqual({ title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' })
+  expect(material).toHaveLength(1)
+  expect(material[0]!.subjects).toEqual(['Add the first piece', 'Second subject', 'Pad the diff past the cap'])
+  expect(material[0]!.diff.length).toBeLessThan(21_000)
+  expect(material[0]!.diff).toContain('padding line')
+  expect(material[0]!.diff).toContain('cut here')
+  expect(Object.keys(material[0]!).sort()).toEqual(['diff', 'subjects'])
+  expect(gh).not.toHaveBeenCalled()
+}, 20000)
+it('leaves the form alone when nothing is written and never fails over it', async () => {
+  const f = await fixture()
+  const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => { if (executable === 'gh') throw new Error('Must not reach GitHub'); return git(cwd, ...args) }
+  // No writer at all: the key is missing, or generation is off, so main never asks.
+  const silent = new GitPullRequestsService({ files: f.files, mutations: new Set(), command })
+  expect(unwrap(await silent.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null })
+  // A writer that answers nothing, and a branch with no base to compare against.
+  const draftText = vi.fn(async () => null)
+  const service = new GitPullRequestsService({ files: f.files, mutations: new Set(), command, draftText })
+  git(f.repo, 'branch', 'main')
+  expect(unwrap(await service.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null })
+  expect(draftText).toHaveBeenCalledTimes(0) // The branch is its base: no commits, nothing to describe.
+  expect(unwrap(await service.draft({ threadId: 'a', base: 'never-a-branch' }))).toEqual({ title: null, body: null })
+}, 20000)
 it('redacts remote credentials in review and failure diagnostics', async () => {
   const f = await fixture(); git(f.repo, 'remote', 'set-url', 'origin', 'https://account:secret-token@github.com/sotto-fixture/owned.git')
   const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => {

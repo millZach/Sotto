@@ -50,7 +50,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       const { result } = renderHook(() => useAgentConnection(f.bridge))
       await waitFor(() => expect(result.current.state).not.toBeNull())
       act(() => { refreshing = result.current.command({ type: 'refresh' }) })
-      await waitFor(() => expect(f.control.get().busy).toBe(true))
+      await waitFor(() => expect(f.control.get().globalLaneBusy).toBe(true))
       const store = result.current.threadDrafts
       const row = describeThreads(f.control.get(), Date.now()).find(item => item.thread.id === 'workshop')!
       act(() => {
@@ -59,7 +59,7 @@ describe('thread draft recovery through the real connection and disk', () => {
         store.edit('workshop', { text: 'Keep editing while busy' }); store.flush('workshop')
       })
       await act(async () => { await sending })
-      expect(f.control.get().busy).toBe(true)
+      expect(f.control.get().globalLaneBusy).toBe(true)
       expect(execute.mock.calls.filter(([request]) => request.type === 'send')).toEqual([[expect.objectContaining({ text: 'Sent while the coordinator refreshes' })]])
       expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', status: 'accepted' }))
       await waitFor(() => expect(store.snapshot('workshop').save).toBe('saved'))
@@ -85,7 +85,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Original unconfirmed prompt')
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Independent newer draft')
       fireEvent.click(check)
-      await waitFor(() => expect(f.control.get().busy).toBe(false))
+      await waitFor(() => expect(f.control.get().globalLaneBusy).toBe(false))
       expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ draftId: oldId, status: 'uncertain' }))
       expect(execute).toHaveBeenCalledTimes(1)
       // The provider finally reports the exact original command, independently
@@ -144,7 +144,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       await waitFor(() => expect(result.current.state).not.toBeNull())
       act(() => { previous = result.current.command({ type: 'select-project', projectId: f.control.get().host.projects[0]!.id }) })
       await waitFor(() => expect(waiting).toBe(true))
-      expect(f.control.get()).toMatchObject({ busy: false, error: null })
+      expect(f.control.get()).toMatchObject({ globalLaneBusy: false, error: null })
       const store = result.current.threadDrafts
       const row = describeThreads(f.control.get(), Date.now()).find(item => item.thread.id === 'workshop')!
       act(() => {
@@ -307,10 +307,10 @@ describe('thread navigation through the real renderer connection and controller'
       if (pending === 'refresh') vi.spyOn(host, 'snapshot').mockImplementationOnce(async () => { await gate; return cached.host })
       else reasoner.intent.mockImplementationOnce(async () => { await gate; return { type: 'compose', threadId: 'workshop', text: 'For A' } })
       act(() => { operation = result.current.command(pending === 'refresh' ? { type: 'refresh' } : { type: 'utterance', text: 'Prepare my request' }) })
-      await waitFor(() => expect(result.current.state?.busy).toBe(true))
+      await waitFor(() => expect(result.current.state?.globalLaneBusy).toBe(true))
       act(() => { selection = result.current.command({ type: 'select-thread', threadId: 'docs' }) })
       await waitFor(() => expect(result.current.title).toBe('Docs'))
-      expect(result.current.state?.busy).toBe(true)
+      expect(result.current.state?.globalLaneBusy).toBe(true)
       expect(observeThreads).toHaveBeenLastCalledWith(['docs'])
       expect(execute).not.toHaveBeenCalled()
       expect(result.current.state?.assignments).toEqual([])

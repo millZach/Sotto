@@ -17,7 +17,9 @@ import type {
   LlmQuality,
   ReducedMotion,
   SettingsPatch,
+  WritingModelId,
 } from '../../../../shared/settings'
+import { WRITING_MODELS } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
@@ -519,7 +521,7 @@ export function SettingsView({
               </Card>
 
               <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
-                <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting & vocabulary</p></div>
+                <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting, vocabulary & writing</p></div>
                 <div className="settings-rows">
                   <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
                   <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
@@ -529,6 +531,10 @@ export function SettingsView({
                     </Field>
 
                   </div>
+                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a thread from its first message and the first reply. Only those two are sent, and only while local history is kept. A name you type is never replaced." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
+                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
+                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles && !settings.commitMessages && !settings.pullRequestText} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
 
                 </div>
               </Card>

@@ -13,7 +13,7 @@ const state = (notice: string): AgentState => ({
   configuration: defaultAgentConfiguration(), connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST),
   assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
   draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-  busy: false, notice, error: null, speech: { id: 0, text: '' },
+  globalLaneBusy: false, notice, error: null, speech: { id: 0, text: '' },
   voice: { status: 'off', error: null, action: 'none', revision: 0 },
   credentials: { reasoning: false, grokSpeech: false, secure: false },
   reasoningAccounts: [],

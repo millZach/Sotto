@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { codexFixture } from '../fixtures/codexFixture'
+import { expectWithinBudget } from '../fixtures/perfBudget'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { agentRequestSchema } from '../../src/shared/agents'
 import { MemoryStore, type Memory } from '../../src/main/memory/store'
@@ -47,7 +48,7 @@ it('durably acknowledges send before native completion and retains newer drafts'
   const started = performance.now()
   await service.send({ chatId: chat.id, revision: 1 })
   const localAckMs = performance.now() - started
-  expect(localAckMs).toBeLessThan(100)
+  expectWithinBudget(localAckMs, 100, 'acknowledging a send before the provider answers')
   expect(service.get().chats[0]!.submissions[0]!.status).toBe('submitting')
   await service.saveDraft({ chatId: chat.id, revision: 2, text: 'Next', skills: [] })
   await service.settled()
