@@ -18,3 +18,20 @@ Every provider event publishes, including streaming chunks, so this cost is paid
 | **Total per publish** | **95.7** |
 
 Payload: 6,593 KB per publish, of which 5,060 KB is embedded attachment preview images.
+
+## After (previews fetched on demand)
+
+`get()` now publishes `preview: { available: true }` instead of the image bytes, and the window asks for one
+image at a time over `agents.attachmentPreview({ threadId, messageId, attachmentId })`, caching what comes back.
+
+| Stage | ms |
+| --- | ---: |
+| structuredClone of the state in main | 5.1 |
+| Attachment preview decoration | 5.6 |
+| Serialise for IPC | 2.6 |
+| Deserialise in the window | 1.0 |
+| Schema parse in preload | 2.2 |
+| **Total per publish** | **16.4** |
+
+Payload: 1,534 KB per publish, 1 KB of it attachment metadata. The 5,059 KB of image bytes is now sent once
+per image instead of on every provider event.

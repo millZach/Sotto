@@ -120,20 +120,39 @@ export class AttachmentPreviews {
       if (this.prune()) await this.write()
     })
   }
-  /** Decorate only an outbound clone. Workspace/native history must never cache these bytes. */
-  decorate(snapshot: AgentHostSnapshot): void {
+  /** Entries retention and the privacy setting still allow, keyed by thread and message. */
+  private live(): Map<string, Entry> {
     const now = this.now()
-    const entries = new Map(this.entries.filter(entry => entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS
+    return new Map(this.entries.filter(entry => entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS
       && entry.storedAt <= now && (this.historyEnabled() || !entry.retain))
       .map(entry => [JSON.stringify([entry.threadId, entry.messageId]), entry]))
+  }
+  /** Only the exact user message that submitted these bytes may show them. */
+  private permits(message: AgentHostSnapshot['threads'][number]['messages'][number], entry: Entry): boolean {
+    return message.role === 'user' && (message.commandId === undefined || message.commandId === entry.commandId)
+  }
+  /**
+   * Decorate only an outbound clone. Workspace/native history must never cache these bytes, and the
+   * published state carries markers alone: the window asks for one image at a time through preview().
+   */
+  decorate(snapshot: AgentHostSnapshot): void {
+    const entries = this.live()
     for (const thread of snapshot.threads) for (const message of thread.messages) {
       // Provider content cannot mint previews, including when no local record exists.
       for (const attachment of message.attachments ?? []) delete attachment.preview
       const entry = entries.get(JSON.stringify([thread.id, message.id]))
-      if (!entry || message.role !== 'user' || (message.commandId !== undefined && message.commandId !== entry.commandId)) continue
+      if (!entry || !this.permits(message, entry)) continue
       const local = entry.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType,
-        sizeBytes: attachmentSizeBytes(attachment.dataUrl), preview: { dataUrl: attachment.dataUrl } }))
+        sizeBytes: attachmentSizeBytes(attachment.dataUrl), preview: { available: true as const } }))
       message.attachments = [...local, ...(message.attachments ?? []).filter(attachment => !local.some(item => item.id === attachment.id))]
     }
+  }
+  /** The bytes behind one marker, under exactly the rules decorate() places it by. */
+  preview(snapshot: AgentHostSnapshot, threadId: string, messageId: string, attachmentId: string): string | null {
+    const entry = this.live().get(JSON.stringify([threadId, messageId]))
+    if (!entry) return null
+    const message = snapshot.threads.find(thread => thread.id === threadId)?.messages.find(item => item.id === messageId)
+    if (!message || !this.permits(message, entry)) return null
+    return entry.attachments.find(attachment => attachment.id === attachmentId)?.dataUrl ?? null
   }
 }
