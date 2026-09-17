@@ -94,6 +94,7 @@ const settingKeys = [
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
+  'microphoneSkipped',
   'llmFormatting',
   'llmApiKey',
   'llmDictionary',

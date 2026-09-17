@@ -138,27 +138,27 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
   const hint = options.length === 0 ? (trigger.kind === 'slash' || unsupported ? 'Enter sends what you typed.' : null)
     : trigger.kind === 'slash' && activeIndex === null ? '↓ to choose · Enter sends what you typed' : 'Enter or Tab inserts the skill'
   // The list gets the height; what Sotto has to say about it and the one reload action share a line under it.
-  return <div className="skill-picker" data-kind={trigger.kind}>
-    {message === null ? <ul ref={list} className="skill-picker__list" role="listbox" id={listId} aria-label="Skills">
+  return <div className="composer-picker" data-kind={trigger.kind}>
+    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label="Skills">
       {options.map((skill, index) => {
         const over = skillLimitReached(selected, skill, limit)
         return <li key={`${skill.path}\n${skill.name}\n${index}`} id={skillOptionId(listId, index)} role="option" aria-selected={index === activeIndex} aria-disabled={over || undefined}
-          className="skill-picker__option" data-active={index === activeIndex || undefined}
+          className="composer-picker__option" data-active={index === activeIndex || undefined}
           onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== activeIndex) model.highlight(index) }} onClick={() => { if (!over) onSelect(skill) }}>
-          <span className="skill-picker__name">{skillToken(skill)}</span>
-          <span className="skill-picker__description">{skill.description}</span>
-          <span className="skill-picker__scope">{skillScopeLabel(skill.scope)}</span>
+          <span className="composer-picker__name">{skillToken(skill)}</span>
+          <span className="composer-picker__description">{skill.description}</span>
+          <span className="composer-picker__scope">{skillScopeLabel(skill.scope)}</span>
         </li>
       })}
     </ul> : null}
-    <div className="skill-picker__foot" data-message={message !== null || undefined}>
-      <span className="skill-picker__notes">
-        {message !== null ? <span className="skill-picker__message" role={failure !== null ? 'alert' : 'status'} data-tone={failure !== null ? 'warning' : undefined}>{message}</span> : null}
-        {limitNote !== null ? <span className="skill-picker__limit" role="status">{limitNote}</span> : hint !== null ? <span>{hint}</span> : null}
+    <div className="composer-picker__foot" data-message={message !== null || undefined}>
+      <span className="composer-picker__notes">
+        {message !== null ? <span className="composer-picker__message" role={failure !== null ? 'alert' : 'status'} data-tone={failure !== null ? 'warning' : undefined}>{message}</span> : null}
+        {limitNote !== null ? <span className="composer-picker__limit" role="status">{limitNote}</span> : hint !== null ? <span>{hint}</span> : null}
         {catalog?.invocationNotice && catalog.status !== 'error' ? <span>{catalog.invocationNotice}</span> : null}
         {skipped > 0 ? <span data-tone="warning">{skipped === 1 ? '1 skill file couldn’t be read' : `${skipped} skill files couldn’t be read`}</span> : null}
       </span>
-      <button type="button" className="skill-picker__refresh tt-focusable" data-loading={loading || undefined} disabled={loading}
+      <button type="button" className="composer-picker__refresh tt-focusable" data-loading={loading || undefined} disabled={loading}
         onMouseDown={event => event.preventDefault()} onClick={() => model.refresh(true)}>
         <RotateCw size={14} aria-hidden="true" />{loading ? 'Refreshing' : failure !== null ? 'Try again' : 'Refresh'}
       </button>

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hasMentionToken } from './mentions'
 
 /** Native catalog identity, not a path the renderer may ask Sotto to read. */
 export const agentSkillReferenceSchema = z.object({
@@ -22,13 +23,5 @@ export type AgentSkillCatalog = z.infer<typeof agentSkillCatalogSchema>
 
 /** Literal native token boundaries; never interpret ordinary manual syntax as a selection. */
 export function hasSkillInvocation(text: string, name: string): boolean {
-  const token = `$${name}`
-  let offset = text.indexOf(token)
-  while (offset !== -1) {
-    const before = text[offset - 1]
-    const after = text[offset + token.length]
-    if ((!before || /\s/u.test(before)) && (!after || /\s|[.,;!?()[\]{}]/u.test(after))) return true
-    offset = text.indexOf(token, offset + token.length)
-  }
-  return false
+  return hasMentionToken(text, `$${name}`)
 }

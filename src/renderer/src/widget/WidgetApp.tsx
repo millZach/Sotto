@@ -32,6 +32,7 @@ import type {
 } from '../../../shared/contracts'
 import { formatAccelerator } from '../../../shared/accelerator'
 import {
+  MICROPHONE_NOT_SET_UP_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
   type WidgetErrorCode,
   type WidgetProcessingStage,
@@ -69,6 +70,10 @@ function errorCopyFor(
     MIC_DEVICE_NOT_FOUND: {
       title: 'No microphone found',
       detail: 'Connect a microphone and try again.',
+    },
+    MIC_NOT_SET_UP: {
+      title: 'No microphone set up',
+      detail: MICROPHONE_NOT_SET_UP_DETAIL,
     },
     MIC_START_FAILED: {
       title: 'Microphone unavailable',

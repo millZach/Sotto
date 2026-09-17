@@ -1,7 +1,8 @@
 import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { capabilitiesForThread, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
-import { isThreadClosed } from '../../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
+import { ThreadNameField } from './ThreadName'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
@@ -75,6 +76,7 @@ export interface ThreadPaneProps {
 export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, crumb, actions, notice }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [handingOff, setHandingOff] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const [holdingWriteHere, setHoldingWriteHere] = useState(false)
   const compose = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLElement>(null)
@@ -135,9 +137,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
         </span>
-        <h2>{thread.title}</h2>
+        {renaming
+          ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
+            onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={() => setRenaming(false)} /></h2>
+          : <h2>{thread.title}</h2>}
       </div>
       <div className="thread-workspace__actions">
+        {/* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */}
+        {!isThreadArchived(thread) && !renaming ? <Button variant="ghost" onClick={() => setRenaming(true)}>Rename</Button> : null}
         {/* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */}
         {assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume'))
           : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>

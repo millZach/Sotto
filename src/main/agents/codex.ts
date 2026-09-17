@@ -12,6 +12,8 @@ import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
+import type { AgentFileReference } from '../../shared/agentFiles'
+import { verifyFileMentions } from './promptFiles'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
@@ -239,7 +241,8 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   /** Send and steer share native reference validation and input mapping. */
-  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = []) {
+  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = []) {
+    verifyFileMentions(text, files)
     if (!skills.length) return [{ type: 'text' as const, text }]
     return codexSkillInput(text, skills, await this.listThreadSkills(threadId, true))
   }
@@ -668,7 +671,7 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
           try {
-            input = await this.prepareSkillInput(id, command.text, command.skills)
+            input = await this.prepareSkillInput(id, command.text, command.skills, command.files)
             skillsRevision = this.skillsRevision
             validate()
           } catch (error) { this.dispatching.delete(id); throw error }
@@ -719,7 +722,7 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           const generation = this.generation
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
-          try { input = await this.prepareSkillInput(id, command.text, command.skills) }
+          try { input = await this.prepareSkillInput(id, command.text, command.skills, command.files) }
           catch (error) { this.dispatching.delete(id); throw error }
           const skillsRevision = this.skillsRevision
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true }

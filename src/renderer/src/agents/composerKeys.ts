@@ -38,13 +38,14 @@ export function readComposerKey(event: KeyboardEvent<HTMLTextAreaElement>, menuO
   }
 }
 
-export type SkillMenuKeyAction = 'next' | 'previous' | 'select' | 'close' | 'none'
+export type ComposerMenuKeyAction = 'next' | 'previous' | 'select' | 'close' | 'none'
 
 /**
- * What a key means while the skills menu is showing. Arrow keys move, Tab takes the highlighted (or
- * first) choice, Enter takes only a highlighted choice, Escape closes. Composition owns every key.
+ * What a key means while a composer menu is showing — the `$` skills list or the `@` files list, which
+ * answer keys identically. Arrow keys move, Tab takes the highlighted (or first) choice, Enter takes
+ * only a highlighted choice, Escape closes. Composition owns every key.
  */
-export function skillMenuKeyAction(event: Pick<ComposerKeyEvent, 'key' | 'shiftKey' | 'altKey' | 'isComposing' | 'keyCode' | 'defaultPrevented'> & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }, options: { readonly optionCount: number; readonly highlighted: boolean }): SkillMenuKeyAction {
+export function composerMenuKeyAction(event: Pick<ComposerKeyEvent, 'key' | 'shiftKey' | 'altKey' | 'isComposing' | 'keyCode' | 'defaultPrevented'> & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }, options: { readonly optionCount: number; readonly highlighted: boolean }): ComposerMenuKeyAction {
   if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return 'none'
   if (event.key === 'Escape') return 'close'
   if (options.optionCount === 0) return 'none'
@@ -53,4 +54,30 @@ export function skillMenuKeyAction(event: Pick<ComposerKeyEvent, 'key' | 'shiftK
   if (event.key === 'Tab' && !event.shiftKey) return 'select'
   if (event.key === 'Enter' && !event.shiftKey && options.highlighted) return 'select'
   return 'none'
+}
+
+/** One open composer menu and what it can do with a key. */
+export interface ComposerMenu {
+  readonly open: boolean
+  readonly optionCount: number
+  readonly activeIndex: number | null
+  readonly move: (offset: 1 | -1) => void
+  readonly close: () => void
+  readonly select: (index: number) => void
+}
+
+/**
+ * Offer this keydown to one open menu. True when the menu took it, and the composer's own keys —
+ * Enter above all — stand down for this keystroke.
+ */
+export function runComposerMenuKey(event: KeyboardEvent<HTMLTextAreaElement>, key: ComposerKeyEvent, menu: ComposerMenu): boolean {
+  if (!menu.open) return false
+  const action = composerMenuKeyAction({ ...key, ctrlKey: event.ctrlKey, metaKey: event.metaKey }, { optionCount: menu.optionCount, highlighted: menu.activeIndex !== null })
+  if (action === 'none') return false
+  event.preventDefault()
+  if (action === 'next') menu.move(1)
+  else if (action === 'previous') menu.move(-1)
+  else if (action === 'close') menu.close()
+  else menu.select(menu.activeIndex ?? 0)
+  return true
 }

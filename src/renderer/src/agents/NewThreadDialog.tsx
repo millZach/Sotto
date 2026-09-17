@@ -107,7 +107,9 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       if (!selectedProject) return
       const choices: NewThreadChoices = { projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, workingCopy,
         ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) }
+      // A name the user typed is theirs from the start; Sotto's stand-in name is not.
       const request = { type: 'create-thread', projectId: choices.projectId, title: choices.title, modelId, managed, workingCopy,
+        titleSource: title.trim() ? 'user' : 'default',
         ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) } as const
       if (onCreating) {
         // The window shows the thread under this ID at once; main adopts the same ID when it catches up.
