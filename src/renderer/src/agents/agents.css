@@ -79,7 +79,6 @@
 .agent-reasoning-setup strong { font-size: 12px; }
 .agent-reasoning-setup p { font-size: 12px; color: var(--tt-text-muted); margin: 4px 0 0; }
 .agent-reasoning-setup > .tt-button { flex-shrink: 0; }
-.agent-answer { display: grid; gap: 8px; justify-items: start; }
 .agent-empty { text-align: center; color: var(--tt-text-muted); padding: 18px 4px 0; }
 .agent-empty > svg { color: var(--tt-activity); margin-bottom: 12px; }
 .agent-empty > h2 { color: var(--tt-text); }

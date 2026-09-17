@@ -20,8 +20,6 @@
 .thread-options-bar .thread-options option { background: var(--tt-field); color: var(--tt-text-2); }
 .thread-prompt__footer > .tt-button, .thread-workspace__compose .agent-composer__footer > .agent-actions { flex-shrink: 0; align-self: flex-end; }
 .thread-options-bar > small { display: block; margin-top: 7px; color: var(--tt-text-muted); font-size: 10.5px; }
-.thread-message__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; color: var(--tt-text-muted); font-size: 11px; }
 .new-thread-dialog .thread-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
 .new-thread-dialog .thread-options label:first-child { grid-column: 1 / -1; }
 .new-thread-dialog .thread-options select { max-width: none; width: 100%; }

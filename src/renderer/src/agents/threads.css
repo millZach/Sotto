@@ -168,8 +168,6 @@
 .thread-message[data-role='user'] + .thread-delivery { margin-top: -18px; }
 .thread-delivery .thread-message__status { margin-left: 0; }
 .thread-delivery .thread-message__delivery { flex: 1 1 auto; margin: 0; padding: 0; border: 0; }
-.threads-view .thread-message__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.threads-view .thread-message__attachments > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--tt-hairline); border-radius: 6px; color: var(--tt-text-muted); font-size: 12px; }
 
 /* Composer */
 /* Height, in order: the composer card keeps its full size, the transcript keeps a readable minimum, and the queue
@@ -233,16 +231,6 @@
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
 .thread-workspace__transcript .thread-workspace__empty h3 { font-size: 18px; }
 
-.thread-row__ask { grid-column: 2 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; margin-top: 8px; padding: 12px 14px 12px 16px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-lg); background: rgb(255 255 255 / 3%); cursor: default; }
-.thread-row__ask-text { min-width: 0; display: grid; gap: 2px; }
-.thread-row__ask strong { font-size: 14px; font-weight: 600; letter-spacing: -.1px; overflow-wrap: anywhere; }
-.thread-row__ask code { font-family: var(--tt-font-mono); font-size: 13px; color: var(--tt-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
-.thread-row__ask p { margin: 0; font-size: 16px; line-height: 1.55; color: var(--tt-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
-.thread-row__ask-actions { display: flex; gap: 8px; }
-.thread-row__ask-actions .tt-button { min-height: 34px; padding: 0 15px; font-size: 14px; }
-.thread-row__say { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: 13px; }
-.thread-workspace .thread-row__ask { margin: 16px 0 0; }
-
 .thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; font-size: 14px; color: var(--tt-text-muted); }
 .thread-draft-notice p { margin: 0; }
 .thread-draft-notice strong { color: var(--tt-text); font-weight: 500; }
@@ -260,7 +248,6 @@
   .thread-workspace__transcript { padding: 22px 18px; }
   .thread-workspace__compose { padding: 8px 16px 16px; }
   .thread-message[data-role='user'] { margin-left: 24px; }
-  .thread-row__ask { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
   .threads-view { grid-template-columns: 224px minmax(0, 1fr); }

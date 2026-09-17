@@ -34,7 +34,6 @@
 .side-sheet .agent-settings { border: 0; padding: 0; background: transparent; }
 .side-sheet .agent-fields { grid-template-columns: minmax(0, 1fr); }
 .side-sheet .agent-field-wide { grid-column: auto; }
-.side-sheet .agent-project-choice { display: grid; gap: 8px; margin-bottom: 12px; }
 .side-sheet select, .side-sheet input:not([type='checkbox']), .side-sheet textarea { width: 100%; min-height: 36px; border: 1px solid var(--tt-hairline); border-radius: 10px; padding: 8px 12px; background: var(--tt-field); color: var(--tt-text); font: inherit; }
 .agent-transcript { display: grid; gap: 24px; margin: 24px 0; }
 .agent-transcript article { border-top: 1px solid var(--tt-hairline); padding-top: 16px; }
