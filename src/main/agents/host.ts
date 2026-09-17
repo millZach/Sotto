@@ -29,8 +29,9 @@ export interface AgentHost {
   /** Local organization/history; available without a provider connection. */
   workspaceSnapshot?(): AgentHostSnapshot
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
-  /** Rename a thread in Sotto's own workspace and mark its title as set by hand. The provider is not told. */
-  renameThread?(threadId: string, title: string): Promise<AgentHostSnapshot>
+  /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
+   * `user` and outranks everything later. The provider is not told. */
+  renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   privacyChanged?(): Promise<void>
