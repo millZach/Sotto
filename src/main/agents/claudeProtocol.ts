@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 
 export type ClaudeFrame = Record<string, unknown>
-export class ClaudeUncertain extends Error {}
+class ClaudeUncertain extends Error {}
 // Native user replay and transcript entries include base64 image data. Honor the
 // shared aggregate attachment limit plus room for prompt/protocol metadata.
 export const CLAUDE_MAX_FRAME_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024

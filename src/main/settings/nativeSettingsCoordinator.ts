@@ -44,7 +44,7 @@ export class NativeManagedSettingMutationError extends Error {
   }
 }
 
-export class NativeSettingsTransactionError extends Error {
+class NativeSettingsTransactionError extends Error {
   readonly code = 'NATIVE_SETTINGS_TRANSACTION_FAILED'
 
   constructor() {

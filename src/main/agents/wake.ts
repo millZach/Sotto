@@ -6,7 +6,7 @@ import { Worker } from 'node:worker_threads'
 import type { AgentWakeDetection } from '../../shared/agents'
 
 // An explicitly supplied model only. No model downloader or network path exists here.
-export const WAKE_MODEL_FILES = [
+const WAKE_MODEL_FILES = [
   'encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx',
   'decoder-epoch-13-avg-2-chunk-16-left-64.onnx',
   'joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx',
@@ -49,7 +49,7 @@ async function validateWakeRuntimeDirectory(input: string): Promise<string> {
   return directory
 }
 
-export async function validateWakeModelDirectory(input: string): Promise<string> {
+async function validateWakeModelDirectory(input: string): Promise<string> {
   if (!isAbsolute(input) || input.startsWith('\\\\') || input.startsWith('//')) {
     throw new Error('Wake setup required. Select a local absolute model folder in Agent connection settings.')
   }

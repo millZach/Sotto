@@ -25,7 +25,7 @@ export interface WarmPasteAdapter extends PasteProcessAdapter {
   dispose(): void
 }
 
-export const HELPER_RESPONSE_TIMEOUT_MS = 5_000
+const HELPER_RESPONSE_TIMEOUT_MS = 5_000
 
 interface PendingPaste {
   resolve(successful: boolean | 'helper-lost'): void

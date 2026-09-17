@@ -36,7 +36,7 @@ export interface WorktreeHome {
   readonly folder: string
   readonly branchPrefix: string
 }
-export const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/thread-' }
+const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/thread-' }
 export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
 
 /** Never removes files or branches. Allocation is persisted by WorkspaceHost before ensure. */
