@@ -46,7 +46,7 @@ describe('wake acknowledgement in the real application voice session', () => {
       configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true },
       connection: 'disconnected', host: EMPTY_AGENT_HOST, assignments: [], queue: [],
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-      composing: false, pendingRequest: '', busy: false, notice: '', error: null,
+      composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
       speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
       membership: { status: 'beta', label: 'Development beta', expiresAt: null },

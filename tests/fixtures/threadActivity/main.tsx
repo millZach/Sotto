@@ -99,7 +99,7 @@ function state(scenario: Scenario): AgentState {
     },
     assignments: [], queue: [], activeThreadId: THREAD, activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    pendingRequest: '', busy: false, notice: '', error: null,
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },

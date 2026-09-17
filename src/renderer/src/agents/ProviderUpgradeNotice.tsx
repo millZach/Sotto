@@ -20,8 +20,8 @@ export function ProviderUpgradeNotice({ state, command, threadId, localDraftPres
       <label>Recovered draft<textarea rows={3} value={state.draft} readOnly /></label>
       {!!state.draftAttachments?.length && <p>{state.draftAttachments.map(image => image.name).join(', ')}</p>}
       <div className="agent-actions">
-        {threadId ? <Button variant="secondary" disabled={localDraftPresent || state.busy || !target || !isThreadProviderConnected(state.host, target)} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
-        <Button variant="ghost" disabled={state.busy} onClick={() => void command({ type: 'cancel-draft' })}>Clear saved draft</Button>
+        {threadId ? <Button variant="secondary" disabled={localDraftPresent || state.globalLaneBusy || !target || !isThreadProviderConnected(state.host, target)} onClick={() => void command({ type: 'recover-draft', threadId })}>Use saved draft here</Button> : <span>Choose or create a thread to review this draft.</span>}
+        <Button variant="ghost" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'cancel-draft' })}>Clear saved draft</Button>
       </div>
       {localDraftPresent ? <p>Finish or clear the current prompt, or choose another thread, before using this saved draft.</p> : null}
     </> : null}

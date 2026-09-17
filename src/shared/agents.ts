@@ -329,11 +329,16 @@ export const agentStateSchema = z.object({
   followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
-  busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
+  /**
+   * The one global lane is occupied: a command with no thread, or one that moves assignment authority,
+   * the composer draft or a whole project. It says nothing about any thread's own lane — the provider
+   * and configuration surfaces are what read it.
+   */
+  globalLaneBusy: z.boolean(), notice: z.string(), error: z.string().nullable(),
   /**
    * The threads whose own lane is running a command right now. A command that names one thread waits
-   * only on that thread, so `busy` — which still means the one global lane is occupied — cannot say
-   * which threads are working. Absent when no thread lane is running.
+   * only on that thread, so `globalLaneBusy` cannot say which threads are working: a thread's own
+   * surfaces read this instead. Absent when no thread lane is running.
    */
   busyThreadIds: z.array(id).max(1_000).optional(),
   speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
@@ -532,6 +537,13 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
     ?? ready.find(model => model.providerId === configuration.provider)
     ?? ready[0]
   return chosen?.id ?? ''
+}
+/**
+ * Whether this thread's own lane is running a command right now. Every control that acts on one thread
+ * asks this about the thread it shows, so work on one thread never dims or locks another thread's pane.
+ */
+export function isThreadBusy(state: Pick<AgentState, 'busyThreadIds'>, threadId: string | null | undefined): boolean {
+  return threadId ? state.busyThreadIds?.includes(threadId) === true : false
 }
 export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {
   if (!host.providers || !thread.providerId) return host.connected

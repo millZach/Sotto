@@ -150,13 +150,13 @@ describe('thread-scoped command lanes', () => {
     const discovery = deferred<AgentHostSnapshot>()
     vi.spyOn(f.host, 'snapshot').mockReturnValueOnce(discovery.promise)
     const refresh = f.control.command({ type: 'refresh' })
-    await vi.waitFor(() => expect(f.control.get().busy).toBe(true))
+    await vi.waitFor(() => expect(f.control.get().globalLaneBusy).toBe(true))
     // A thread's own command finishes while the global lane is still blocked on provider discovery.
     expect((await f.control.command(options('docs', 'full-access'))).error).toBeNull()
-    expect(f.control.get().busy).toBe(true)
+    expect(f.control.get().globalLaneBusy).toBe(true)
     discovery.resolve(connected)
     await refresh
-    expect(f.control.get().busy).toBe(false)
+    expect(f.control.get().globalLaneBusy).toBe(false)
 
     f.host.hold = true
     const held = f.control.command(options('workshop', 'full-access'))
@@ -167,7 +167,7 @@ describe('thread-scoped command lanes', () => {
     expect((await held).error).toBeNull()
   })
 
-  it('publishes which threads are busy while the global flag keeps meaning the global lane', async () => {
+  it('publishes which threads are busy, and marks the global lane for global work alone', async () => {
     const f = await fixture()
     f.host.hold = true
     const docs = f.control.command(options('docs', 'full-access'))
@@ -175,9 +175,9 @@ describe('thread-scoped command lanes', () => {
     await vi.waitFor(() => expect(f.host.holding).toBe(2))
     expect(busyThreads(f.control.get())).toEqual(['docs', 'workshop'])
     expect(busyThreads(f.published.at(-1)!)).toEqual(['docs', 'workshop'])
-    // Thread work is not global work: the window's own busy flag stays exactly as it was.
-    expect(f.control.get().busy).toBe(false)
-    expect(f.published.every(state => state.busy === false)).toBe(true)
+    // Thread work is not global work: the global lane's mark stays exactly as it was.
+    expect(f.control.get().globalLaneBusy).toBe(false)
+    expect(f.published.every(state => state.globalLaneBusy === false)).toBe(true)
     f.host.release()
     await Promise.all([docs, workshop])
     expect(f.control.get().busyThreadIds).toBeUndefined()

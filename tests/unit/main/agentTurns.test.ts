@@ -109,7 +109,7 @@ describe('coordinator turn records', () => {
     try {
       await vi.waitFor(() => expect(intent).toHaveBeenCalled())
       const result = await f.control.command({ type: 'interrupt', threadId: 'docs' })
-      expect(result.busy).toBe(true)
+      expect(result.globalLaneBusy).toBe(true)
       expect(await lastRawRecord(f.root)).toMatchObject({ commandType: 'interrupt', source: 'command', outcome,
         threadId: 'docs', projectId: 'project', providerSessionId: 'session-docs',
         error: outcome === 'failed' ? 'Synthetic interrupt failure' : '' })
@@ -373,7 +373,7 @@ describe('coordinator turn records', () => {
     const f = await fixture()
     vi.spyOn(f.recorder, 'begin').mockImplementation(() => { throw new Error('Broken recorder') })
     await expect(f.control.command({ type: 'select-thread', threadId: 'docs' })).resolves.toMatchObject({
-      activeThreadId: 'docs', busy: false, error: null,
+      activeThreadId: 'docs', globalLaneBusy: false, error: null,
     })
   })
 

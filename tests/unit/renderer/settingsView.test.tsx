@@ -751,7 +751,7 @@ describe('SettingsView', () => {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
       membership: { status: 'beta', label: 'Test', expiresAt: null },

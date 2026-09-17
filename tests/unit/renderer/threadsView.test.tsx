@@ -32,7 +32,7 @@ function stateFixture(): AgentState {
     queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(NOW).toISOString(), deferred: false }],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', busy: false, notice: '', error: null,
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],
@@ -383,7 +383,7 @@ describe('ThreadsView workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Deny', exact: true }))
     expect(command).toHaveBeenCalledTimes(1)
     await act(async () => { await Promise.resolve() })
-    vi.mocked(useAgents).mockReturnValue(connection({ ...state, busy: true }, command))
+    vi.mocked(useAgents).mockReturnValue(connection({ ...state, globalLaneBusy: true }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Pause managing', exact: true })).toBeDisabled()

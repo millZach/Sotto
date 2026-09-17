@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ChevronRight, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
-import type { AgentMessage, AgentState } from '../../../shared/agents'
+import { isThreadBusy, type AgentMessage, type AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
@@ -180,8 +180,9 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   const delivery = detail === null ? null : <div className="thread-message__delivery">
     <span>{detail}</span>
     <div className="thread-message__delivery-actions">
-      {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || state.busy} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
-      {unresolved && row.connected ? <Button variant="secondary" disabled={state.busy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
+      {/* Checking again refreshes the provider, which is global-lane work. */}
+      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
       {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
     </div>
   </div>
@@ -353,7 +354,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
-        {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
+        {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
         {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>

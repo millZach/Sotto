@@ -21,7 +21,7 @@ function pausedState(): AgentState {
     threadDrafts: [{ threadId: 'thread', draftId: 'efc0d780-9ffd-4a0a-9497-09cdc9f3bdc8', text: 'Keep the existing colors.',
       attachments: [{ id: 'reference', name: 'Reference.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }],
       requestId: null, updatedAt: '2026-09-14T16:00:00.000Z' }],
-    pendingRequest: '', busy: false, notice: '', error: null,
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'listening', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
     membership: { status: 'beta', label: 'Development beta', expiresAt: null },

@@ -92,7 +92,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   // Providers connect one at a time; follow the default as models become ready until a model is picked here.
   useEffect(() => { if (!modelChosen.current) setModelId(defaultThreadModelId(state.configuration, state.host.models)) }, [state.configuration, state.host.models])
   const create = async (): Promise<void> => {
-    if (creating.current || completed.current || submitting || state.busy || !connected || !canCreateThread || !selectedFolder || !modelId) return
+    if (creating.current || completed.current || submitting || state.globalLaneBusy || !connected || !canCreateThread || !selectedFolder || !modelId) return
     creating.current = true
     setSubmitting(true)
     setError(null)
@@ -147,7 +147,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
         disabled={submitting} onModel={id => { modelChosen.current = true; setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
       {error && <p className="agent-error" role="alert">{error}</p>}
       {!connected && <p className="agent-muted">Connect {selectedModel?.provider ?? 'a provider'} in Settings → Providers before creating a thread.</p>}
-      <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || state.busy || !connected || !modelId || !canCreateThread}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>
+      <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || state.globalLaneBusy || !connected || !modelId || !canCreateThread}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>
     </form> : chooser.choices}
     <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Esc</kbd> Close</span></footer>
   </dialog>
