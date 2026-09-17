@@ -9,7 +9,7 @@ export const DIVIDER_WIDTH = 9
 /** Keyboard resizing moves a divider by this fraction of its row or column. */
 export const RESIZE_STEP = 0.05
 /** A dragged divider this close to an even boundary settles on it. */
-export const SNAP_DISTANCE = 12
+const SNAP_DISTANCE = 12
 /** The drag data type a sidebar row carries: a Sotto thread ID. */
 export const THREAD_DRAG_TYPE = 'application/x-sotto-thread'
 /** The drag data type a pane's move handle carries: the pane's thread ID. */
@@ -166,7 +166,7 @@ export function fitsArea(layout: SplitLayout, width: number, height: number): bo
 }
 
 /** The size set a divider edits. */
-export function dividerFractions(layout: SplitLayout, target: DividerTarget): readonly number[] {
+function dividerFractions(layout: SplitLayout, target: DividerTarget): readonly number[] {
   if (target.axis === 'rows') return layout.arrangement === 'row' ? [1] : layout.grid.rows
   return layout.arrangement === 'row' ? layout.sizes : layout.grid.columns[target.row] ?? []
 }

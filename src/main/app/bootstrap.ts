@@ -55,7 +55,7 @@ interface InstalledPermissionPolicy {
 
 const permissionOwners = new WeakMap<SessionPermissionAdapter, InstalledPermissionPolicy>()
 
-export class PermissionPolicyInstallError extends Error {
+class PermissionPolicyInstallError extends Error {
   readonly code = 'PERMISSION_POLICY_INSTALL_FAILED'
 
   constructor() {
@@ -64,7 +64,7 @@ export class PermissionPolicyInstallError extends Error {
   }
 }
 
-export class PermissionPolicyCleanupError extends Error {
+class PermissionPolicyCleanupError extends Error {
   readonly code = 'PERMISSION_POLICY_CLEANUP_FAILED'
 
   constructor() {

@@ -172,7 +172,7 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
   </section>
 }
 
-export function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
+function AgentConnectionSettings({ state, command, focusReasoning }: { readonly state: AgentState; readonly command: Command; readonly focusReasoning: boolean }): ReactNode {
   const [configuration, setConfiguration] = useState(state.configuration)
   const [reasoningKey, setReasoningKey] = useState('')
   const [saved, setSaved] = useState(false)
@@ -281,7 +281,7 @@ export function AgentConnectionSettings({ state, command, focusReasoning }: { re
   </section>
 }
 
-export function AgentNewProject({ state, command, onCreated }: { readonly state: AgentState; readonly command: Command; readonly onCreated: () => void }): ReactNode {
+function AgentNewProject({ state, command, onCreated }: { readonly state: AgentState; readonly command: Command; readonly onCreated: () => void }): ReactNode {
   const [title, setTitle] = useState('')
   const [path, setPath] = useState('')
   const [existing, setExisting] = useState(false)
@@ -305,7 +305,7 @@ export function AgentNewProject({ state, command, onCreated }: { readonly state:
   </form>
 }
 
-export function AgentNewThread({ state, command, project, onCreated }: { readonly state: AgentState; readonly command: Command; readonly project: AgentProject; readonly onCreated?: () => void }): ReactNode {
+function AgentNewThread({ state, command, project, onCreated }: { readonly state: AgentState; readonly command: Command; readonly project: AgentProject; readonly onCreated?: () => void }): ReactNode {
   const [threadName, setThreadName] = useState('')
   const [modelOverride, setModelOverride] = useState('')
   const [submitting, setSubmitting] = useState(false)

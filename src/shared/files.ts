@@ -28,7 +28,7 @@ export const fileWorkspaceSchema = z.object({
   threadId: z.string(), projectId: z.string(), workingDirectory: z.string(), workspaceId: workspaceIdSchema,
 }).strict()
 export type FileWorkspace = z.infer<typeof fileWorkspaceSchema>
-export const fileEntrySchema = z.object({ name: z.string(), path: fileRelativePathSchema, kind: z.enum(['directory', 'file', 'unavailable']) }).strict()
+const fileEntrySchema = z.object({ name: z.string(), path: fileRelativePathSchema, kind: z.enum(['directory', 'file', 'unavailable']) }).strict()
 export const fileListingSchema = z.object({ workspace: fileWorkspaceSchema, path: fileRelativePathSchema,
   entries: z.array(fileEntrySchema).max(FILES_MAX_ENTRIES), truncated: z.boolean() }).strict()
 export type FileListing = z.infer<typeof fileListingSchema>

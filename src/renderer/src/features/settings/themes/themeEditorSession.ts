@@ -42,7 +42,7 @@ export function closeThemeEditor(): void {
   emit()
 }
 
-export function currentThemeEditorSession(): ThemeEditorSession | null {
+function currentThemeEditorSession(): ThemeEditorSession | null {
   return session
 }
 

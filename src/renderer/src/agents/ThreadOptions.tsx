@@ -3,7 +3,7 @@ import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, type Ag
 import type { AgentConnection } from './AgentContext'
 import { ModelPicker } from './ModelPicker'
 
-export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
+const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   'approval-required': 'Ask for approval',
   'auto-accept-edits': 'Allow edits',
   auto: 'Auto',
@@ -48,7 +48,7 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
  * from a connected provider that can create threads is a choice; once a native session exists (or its
  * start is unknown) the thread stays with its own provider.
  */
-export function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
+function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
   if (thread.nativeSessionStarted === false) {
     const models = state.host.models.filter(model => model.id === thread.modelId || canCreateWith(state, model))
     return { models, locked: false }

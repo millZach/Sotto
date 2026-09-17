@@ -6,7 +6,7 @@ import { STORED_CREDENTIAL_PLACEHOLDER, type SettingsPatch } from '../../../shar
 import { Button } from './Button'
 import { Field } from './Field'
 
-export function transcriptionKeyStatusCopy(result: TranscriptionKeyCheck): string {
+function transcriptionKeyStatusCopy(result: TranscriptionKeyCheck): string {
   if (result.ok) return 'Key verified.'
   switch (result.reason) {
     case 'unauthorized': return 'OpenRouter rejected this key.'

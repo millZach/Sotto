@@ -80,7 +80,6 @@
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
   .threads-view .thread-pane .thread-message[data-role='user'] { margin-left: 24px; }
-  .threads-view .thread-pane .thread-row__ask { grid-template-columns: 1fr; }
 }
 
 /* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps

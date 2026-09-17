@@ -41,7 +41,7 @@ function freshThread(threadId: string, generation = 0, workspaceChanged = false)
   }
 }
 
-export function parentPath(path: string): string {
+function parentPath(path: string): string {
   const index = path.lastIndexOf('/')
   return index < 0 ? ROOT : path.slice(0, index)
 }

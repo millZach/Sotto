@@ -279,7 +279,7 @@ export interface WidgetIpcService {
   reportDrag(payload: WidgetDragPayload): void
 }
 
-export class InvalidIpcPayloadError extends Error {
+class InvalidIpcPayloadError extends Error {
   readonly code = 'INVALID_IPC_PAYLOAD'
 
   constructor() {
@@ -288,7 +288,7 @@ export class InvalidIpcPayloadError extends Error {
   }
 }
 
-export class UnauthorizedIpcSenderError extends Error {
+class UnauthorizedIpcSenderError extends Error {
   readonly code = 'UNAUTHORIZED_IPC_SENDER'
 
   constructor() {
@@ -297,7 +297,7 @@ export class UnauthorizedIpcSenderError extends Error {
   }
 }
 
-export class IpcRegistrationActiveError extends Error {
+class IpcRegistrationActiveError extends Error {
   readonly code = 'IPC_REGISTRATION_ACTIVE'
 
   constructor() {
@@ -306,7 +306,7 @@ export class IpcRegistrationActiveError extends Error {
   }
 }
 
-export class IpcCleanupError extends Error {
+class IpcCleanupError extends Error {
   readonly code = 'IPC_CLEANUP_FAILED'
 
   constructor() {

@@ -3,7 +3,7 @@ import type { FileWorkspace } from '../../shared/files'
 import type { ToolsError, ToolsResult } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 
-export class ToolFailure extends Error {
+class ToolFailure extends Error {
   constructor(readonly code: ToolsError['code'], message: string) { super(message) }
 }
 export const fail = (code: ToolsError['code'], message: string): never => { throw new ToolFailure(code, message) }

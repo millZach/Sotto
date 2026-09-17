@@ -18,7 +18,7 @@ export function followupsFor(state: AgentState, threadId: string): AgentFollowup
 }
 
 /** Only an item Sotto has not started sending may change; a dispatching or unconfirmed one might already be with the provider. */
-export function followupEditable(item: AgentFollowup): boolean {
+function followupEditable(item: AgentFollowup): boolean {
   return item.status === 'queued' || item.status === 'paused' || item.status === 'failed'
 }
 

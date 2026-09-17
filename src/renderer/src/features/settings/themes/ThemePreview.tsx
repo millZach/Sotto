@@ -1,12 +1,10 @@
 /*
- * Theme previews: the glowing preview circle, a card's pair of circles, and
- * the miniature app drawn on the mode tiles.
+ * Theme previews: the glowing preview circle and a card's pair of circles.
  *
- * Ported from T3 Code's apps/web/src/components/settings/ThemePreviewCircles.tsx,
- * ThemeWireframe.tsx and packages/shared/src/themePreview.ts at commit
+ * Ported from T3 Code's apps/web/src/components/settings/ThemePreviewCircles.tsx
+ * and packages/shared/src/themePreview.ts at commit
  * d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3. MIT License, Copyright (c) 2026
- * T3 Tools Inc.; see THIRD_PARTY_NOTICES.md. The wireframe keeps T3's geometry
- * but draws Sotto's room: sidebar, a thread, the composer and the tools island.
+ * T3 Tools Inc.; see THIRD_PARTY_NOTICES.md.
  *
  * Every colour here is a canonical theme colour or a fixed hex constant, so
  * the inline styles cannot carry anything but a colour.
@@ -105,47 +103,6 @@ export function ThemePreviewCircles({ label, previews, activeModes, onSelectMode
         )
       })}
     </div>
-  )
-}
-
-const WIREFRAME_LINE = 'rgb(127 127 127 / 0.25)'
-
-function WireframePane({ colors, clip }: { readonly colors: ThemePreviewColors; readonly clip?: 'left' | 'right' }): ReactNode {
-  const box = (style: CSSProperties, className = 'theme-wireframe__box'): ReactNode => <span className={className} style={style} />
-  return (
-    <span className="theme-wireframe__pane" data-clip={clip}>
-      {box({ inset: 0, backgroundColor: colors.canvas })}
-      {box({ top: 0, bottom: 0, left: 0, width: '22%', backgroundColor: colors.sidebar, boxShadow: `inset -1px 0 0 ${WIREFRAME_LINE}` })}
-      {box({ left: '3%', top: '8%', height: '8%', width: '16%', borderRadius: 4, backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${WIREFRAME_LINE}` })}
-      {box({ left: '3%', top: '22%', height: '7%', width: '16%', borderRadius: 4, backgroundColor: colors.accentSurface })}
-      {box({ left: '3%', top: '32%', height: '7%', width: '16%', borderRadius: 4, backgroundColor: colors.messageSurface, opacity: 0.7 })}
-      {box({ left: '3%', top: '42%', height: '7%', width: '16%', borderRadius: 4, backgroundColor: colors.messageSurface, opacity: 0.5 })}
-      {box({ right: '28%', top: '11%', height: '9%', width: '24%', borderRadius: 6, backgroundColor: colors.messageSurface })}
-      {box({ left: '27%', top: '28%', height: '5%', width: '34%', borderRadius: 2, backgroundColor: WIREFRAME_LINE })}
-      {box({ left: '27%', top: '38%', height: '5%', width: '26%', borderRadius: 2, backgroundColor: WIREFRAME_LINE })}
-      <span className="theme-wireframe__composer" style={{ backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${WIREFRAME_LINE}` }}>
-        <span style={{ height: '26%', width: '34%', borderRadius: 999, backgroundColor: WIREFRAME_LINE, opacity: 0.7 }} />
-        <span style={{ height: '58%', aspectRatio: '1', borderRadius: 999, backgroundColor: colors.messageAction }} />
-      </span>
-      <span className="theme-wireframe__island" style={{ backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${WIREFRAME_LINE}, 0 2px 5px rgb(0 0 0 / 0.14)` }}>
-        {[0, 1, 2].map(row => (
-          <span key={row} className="theme-wireframe__row" style={{ top: `${10 + row * 30}%` }}>
-            <span style={{ height: '26%', aspectRatio: '1', borderRadius: 999, opacity: 0.55, backgroundColor: row === 0 ? '#34d399' : row === 1 ? colors.messageAction : '#fbbf24' }} />
-            <span style={{ height: '30%', width: '52%', borderRadius: 2, backgroundColor: WIREFRAME_LINE }} />
-          </span>
-        ))}
-      </span>
-    </span>
-  )
-}
-
-export function ThemeWireframe({ panes }: {
-  readonly panes: ReadonlyArray<{ readonly colors: ThemePreviewColors; readonly clip?: 'left' | 'right' }>
-}): ReactNode {
-  return (
-    <span className="theme-wireframe" aria-hidden="true">
-      {panes.map(pane => <WireframePane key={pane.clip ?? 'pane'} colors={pane.colors} {...(pane.clip ? { clip: pane.clip } : {})} />)}
-    </span>
   )
 }
 

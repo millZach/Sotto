@@ -26,7 +26,7 @@ export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
  * A thread with a prompt still on its way cannot take another: a new send would only reconcile the earlier one.
  * With `besideQueue`, a follow-up the queue owns does not count, so a later revision can line up behind it.
  */
-export function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean, besideQueue = false): boolean {
+function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean, besideQueue = false): boolean {
   return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && deliveryPending(item.status)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === item.draftId)
     // Beside the queue, only an unconfirmed prompt holds: one main has admitted and is still delivering can have the queue behind it.
@@ -42,7 +42,7 @@ function deliveryOnItsWay(status: SubmissionStatus): boolean {
  * Whether the composer's next revision goes to the thread's follow-up queue: while a turn runs, and
  * behind anything already queued so the order the user typed is the order the provider receives.
  */
-export function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boolean): boolean {
+function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boolean): boolean {
   return row.thread.status === 'running' || localAdmissions || followupsFor(state, row.thread.id).length > 0
 }
 

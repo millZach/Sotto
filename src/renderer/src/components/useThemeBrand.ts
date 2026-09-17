@@ -30,7 +30,7 @@ function readRole(root: HTMLElement, variable: string): string {
 }
 
 /** The brand the root's current roles describe; unreadable roles fall back to the default theme. */
-export function readRootBrand(root: HTMLElement): ThemeBrand {
+function readRootBrand(root: HTMLElement): ThemeBrand {
   return themeBrand({
     canvas: readRole(root, '--theme-canvas'),
     accent: readRole(root, '--theme-accent'),

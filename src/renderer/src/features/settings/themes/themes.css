@@ -36,102 +36,6 @@
 
 .theme-settings__status--error { color: var(--tt-error-text); }
 
-/* Colour-scheme tiles ------------------------------------------------------ */
-
-.theme-mode-tiles {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  /* A gutter for the focus ring, which the settings scroller would otherwise clip at its edges. */
-  padding: 4px;
-}
-
-.theme-mode-tile {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  color: var(--tt-text-2);
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.theme-mode-tile .theme-wireframe { border-radius: 10px; }
-
-/*
- * The tile's edge is a layer above the wireframe's positioned panes, which
- * would otherwise paint over an inset shadow or outline. It sits inside the
- * tile, so a scrolling container never clips the chosen ring.
- */
-.theme-mode-tile .theme-wireframe::after {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--tt-border);
-  pointer-events: none;
-  transition: box-shadow 140ms ease;
-}
-
-.theme-mode-tile:hover .theme-wireframe::after { box-shadow: inset 0 0 0 1px var(--tt-text-faint); }
-.theme-mode-tile[aria-pressed='true'] { color: var(--tt-text); }
-.theme-mode-tile[aria-pressed='true'] .theme-wireframe::after { box-shadow: inset 0 0 0 2px var(--tt-accent-text), inset 0 0 0 5px var(--tt-accent-wash); }
-.theme-mode-tile:focus-visible { outline-offset: 2px; border-radius: 10px; }
-.theme-mode-tile__label { font-weight: 500; }
-
-.theme-wireframe {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  aspect-ratio: 16 / 10;
-  isolation: isolate;
-}
-
-.theme-wireframe__pane { position: absolute; inset: 0; display: block; }
-.theme-wireframe__pane[data-clip='left'] { clip-path: polygon(0 0, 62% 0, 38% 100%, 0 100%); }
-.theme-wireframe__pane[data-clip='right'] { clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%); }
-.theme-wireframe__box { position: absolute; display: block; }
-
-.theme-wireframe__composer {
-  position: absolute;
-  left: 30%;
-  right: 6%;
-  bottom: 8%;
-  height: 16%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 3%;
-  border-radius: 8px;
-}
-
-.theme-wireframe__composer > span,
-.theme-wireframe__row > span { display: block; }
-
-.theme-wireframe__island {
-  position: absolute;
-  top: 10%;
-  right: 4%;
-  width: 22%;
-  height: 34%;
-  border-radius: 6px;
-}
-
-.theme-wireframe__row {
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  height: 26%;
-  display: flex;
-  align-items: center;
-  gap: 8%;
-}
-
 /* Theme cards --------------------------------------------------------------- */
 
 .theme-grid {
@@ -157,14 +61,6 @@
 }
 
 .theme-card[data-active] .theme-card__title { font-weight: 600; }
-
-/* T3's pair: two 68px buttons 10px apart, so each ring and badge belongs to one circle. */
-.theme-card__circles {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 4px 0;
-}
 
 .theme-circle {
   position: relative;
@@ -379,7 +275,6 @@
   .settings-rows .theme-slider { grid-template-columns: minmax(0, 1fr) auto; }
   .theme-slider .tt-field__description { grid-column: 1 / -1; }
   .theme-slider__input { grid-column: 1 / -1; grid-row: 3; }
-  .theme-mode-tiles { gap: 8px; }
 }
 
 /* Editor ---------------------------------------------------------------------- */

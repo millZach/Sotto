@@ -18,7 +18,7 @@ function SavedField({ label, value, onSave, secret = false, placeholder }: {
   }} aria-invalid={error} />{error ? <span role="alert">Could not save. Check the value and try again.</span> : null}</label>
 }
 
-export function AgentAccountSettings(): ReactNode {
+function AgentAccountSettings(): ReactNode {
   const agents = useOptionalAgents()
   const state = agents?.state
   const command = agents?.command

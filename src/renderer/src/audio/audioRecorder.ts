@@ -16,8 +16,8 @@ export const LEVEL_EMIT_INTERVAL_MS = 33
  * SEGMENT_SILENCE_RMS) closes it so transcription can start while the speaker
  * continues. SEGMENT_MAX_SECONDS bounds segments when no silence appears.
  */
-export const SEGMENT_MIN_SECONDS = 6
-export const SEGMENT_MAX_SECONDS = 15
+const SEGMENT_MIN_SECONDS = 6
+const SEGMENT_MAX_SECONDS = 15
 export const SEGMENT_SILENCE_RMS = 0.01
 export const SEGMENT_SILENCE_SECONDS = 0.3
 

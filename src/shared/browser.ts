@@ -12,7 +12,7 @@ export function safeBrowserUrl(input: string): string | null {
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null
   } catch { return null }
 }
-export const browserUrlSchema = z.string().refine(value => safeBrowserUrl(value) !== null, 'Use a complete HTTP or HTTPS URL without credentials.').transform(value => safeBrowserUrl(value)!)
+const browserUrlSchema = z.string().refine(value => safeBrowserUrl(value) !== null, 'Use a complete HTTP or HTTPS URL without credentials.').transform(value => safeBrowserUrl(value)!)
 export const browserCreateSchema = toolTargetSchema.extend({ url: browserUrlSchema })
 export const browserRequestSchema = toolTargetSchema.extend({ pageId: z.string().uuid() })
 export const browserNavigateSchema = browserRequestSchema.extend({ url: browserUrlSchema })

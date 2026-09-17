@@ -14,7 +14,7 @@ import { z } from 'zod'
 import { customThemeSchema } from './library'
 import type { ThemeDefinition } from './palettes'
 
-export const THEMES_CHANNEL = 'themes:'
+const THEMES_CHANNEL = 'themes:'
 export const THEMES_EXPORT = `${THEMES_CHANNEL}export`
 export const THEMES_SEARCH = `${THEMES_CHANNEL}searchOpenVsx`
 export const THEMES_INSTALL = `${THEMES_CHANNEL}installOpenVsx`

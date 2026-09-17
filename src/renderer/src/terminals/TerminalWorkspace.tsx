@@ -17,9 +17,9 @@ import { TerminalSidebar } from './TerminalSidebar'
 import { terminalWorkspaceStore, useTerminalWorkspace, type TerminalWorkspaceStore } from './terminalWorkspaceStore'
 import './terminals.css'
 
-export const TERMINAL_LAYOUT_STORAGE_KEY = 'sotto.terminalWorkspace.layout'
+const TERMINAL_LAYOUT_STORAGE_KEY = 'sotto.terminalWorkspace.layout'
 /** Terminal mode's own arrangement, remembered per window beside the thread arrangement. */
-export const terminalLayoutStore = new SplitLayoutStore(browserStorage(), TERMINAL_LAYOUT_STORAGE_KEY)
+const terminalLayoutStore = new SplitLayoutStore(browserStorage(), TERMINAL_LAYOUT_STORAGE_KEY)
 
 function defaultBridge(): TerminalWorkspaceBridge | undefined {
   return (window.sotto as { terminals?: TerminalWorkspaceBridge } | undefined)?.terminals

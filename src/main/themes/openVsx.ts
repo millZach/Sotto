@@ -43,7 +43,7 @@ import {
   resolveThemeLabelCollisions,
 } from '../../shared/themes/vscodeImport'
 
-export const OPEN_VSX_ORIGIN = 'https://open-vsx.org'
+const OPEN_VSX_ORIGIN = 'https://open-vsx.org'
 const DOWNLOAD_HOSTS: ReadonlySet<string> = new Set(['open-vsx.org', 'openvsxorg.blob.core.windows.net', 'openvsx.eclipsecontent.org'])
 
 export const OPEN_VSX_LIMITS = {
@@ -65,7 +65,7 @@ export const OPEN_VSX_LIMITS = {
 } as const
 
 /** SPDX identifiers of licences that allow redistributing a theme's colours. */
-export const OPEN_VSX_LICENSES: ReadonlySet<string> = new Set([
+const OPEN_VSX_LICENSES: ReadonlySet<string> = new Set([
   '0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'CC0-1.0', 'ISC', 'MIT', 'MPL-2.0', 'Unlicense',
 ])
 
@@ -246,7 +246,7 @@ function boundedText(value: unknown, max: number): string {
 }
 
 /** The collection id every variant of an extension shares, e.g. `open-vsx:dracula-theme.theme-dracula`. */
-export function openVsxCollectionId(namespace: string, name: string): string {
+function openVsxCollectionId(namespace: string, name: string): string {
   return `open-vsx:${namespace}.${name}`.toLowerCase().replace(/_/gu, '-').slice(0, 128)
 }
 

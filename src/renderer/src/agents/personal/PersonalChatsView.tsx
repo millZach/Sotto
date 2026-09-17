@@ -23,7 +23,7 @@ import { PersonalVoice } from './PersonalVoice'
 import { ChatPromptEditor } from './ChatPromptEditor'
 import { ThreadUsage } from '../ThreadUsage'
 
-export const PERSONAL_PROMPT_ID = 'personal-chat-prompt'
+const PERSONAL_PROMPT_ID = 'personal-chat-prompt'
 const providerLabel = (provider: string): string => ({ codex: 'Codex', claude: 'Claude', grok: 'Grok' })[provider] ?? provider
 const FOLLOW_SLACK_PX = 48
 
@@ -42,7 +42,7 @@ function composerQuestion(chat: PersonalChat): PersonalChat['requests'][number] 
 }
 
 /** Why this chat cannot take a message now, in one sentence; null when it can. */
-export function personalBlockedReason(state: PersonalChatState, chat: PersonalChat, answering: boolean): string | null {
+function personalBlockedReason(state: PersonalChatState, chat: PersonalChat, answering: boolean): string | null {
   const PROVIDER = providerLabel(chat.providerId)
   if (!state.connected) return state.connecting ? `Connecting to ${PROVIDER}…` : `Connect ${PROVIDER} to send. Your draft stays here.`
   if (answering) return null
