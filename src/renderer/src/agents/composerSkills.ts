@@ -1,6 +1,6 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { hasMentionToken } from '../../../shared/mentions'
-import { detectMentionTrigger } from './composerMentions'
+import { detectMentionTrigger, mentionMatchScore } from './composerMentions'
 
 export type CatalogSkill = AgentSkillCatalog['skills'][number]
 
@@ -51,11 +51,8 @@ export function detectSkillTrigger(text: string, selectionStart: number, selecti
 }
 
 function matchScore(value: string, query: string, base: number): number | null {
-  if (value === query) return base
-  if (value.startsWith(query)) return base + 2
-  if (value.split(/[-_/:.\s]+/u).some(part => part.startsWith(query))) return base + 4
-  if (value.includes(query)) return base + 6
-  return null
+  const tier = mentionMatchScore(value, query)
+  return tier === null ? null : base + tier * 2
 }
 
 /** Native order with an empty query; otherwise name matches rank above description matches, native order breaking ties. */

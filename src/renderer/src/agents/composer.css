@@ -55,37 +55,37 @@
 /* Skills: a lookup list that opens over the transcript directly above the text it edits. It never takes
    height from the composer, so the typed text and its send action stay where they were. */
 .thread-prompt { position: relative; }
-.thread-prompt > .skill-picker { position: absolute; right: -1px; bottom: calc(100% + 6px); left: -1px; z-index: 4; padding: 6px 6px 2px; border: 1px solid var(--threads-field-border); border-radius: 14px; background: var(--threads-field); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.skill-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.skill-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
-.skill-picker__option[data-active] { background: var(--tt-accent-wash); }
-.skill-picker__option[aria-disabled='true'] { cursor: default; }
-.skill-picker__option[aria-disabled='true'] > span { opacity: .55; }
-.skill-picker__notes .skill-picker__limit { color: var(--tt-text-2); font-size: 13px; }
-.skill-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.skill-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.skill-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
-.skill-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: 2px; padding: 2px 0 0 8px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
-.skill-picker__notes { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
-.skill-picker__notes [data-tone='warning'] { color: var(--threads-warning-text); }
-.skill-picker__foot[data-message] { min-height: 40px; }
-.skill-picker__notes .skill-picker__message { font-size: 14px; line-height: 1.45; }
-.skill-picker__notes .skill-picker__message:not([data-tone]) { color: var(--tt-text-2); }
-.skill-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
-.skill-picker__refresh:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
-.skill-picker__refresh:disabled { cursor: default; }
+.thread-prompt > .composer-picker { position: absolute; right: -1px; bottom: calc(100% + 6px); left: -1px; z-index: 4; padding: 6px 6px 2px; border: 1px solid var(--threads-field-border); border-radius: 14px; background: var(--threads-field); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.composer-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.composer-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.composer-picker__option[data-active] { background: var(--tt-accent-wash); }
+.composer-picker__option[aria-disabled='true'] { cursor: default; }
+.composer-picker__option[aria-disabled='true'] > span { opacity: .55; }
+.composer-picker__notes .composer-picker__limit { color: var(--tt-text-2); font-size: 13px; }
+.composer-picker__name { max-width: 30ch; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.composer-picker__description { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.composer-picker__scope { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
+.composer-picker__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: 2px; padding: 2px 0 0 8px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.composer-picker__notes { display: flex; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
+.composer-picker__notes [data-tone='warning'] { color: var(--threads-warning-text); }
+.composer-picker__foot[data-message] { min-height: 40px; }
+.composer-picker__notes .composer-picker__message { font-size: 14px; line-height: 1.45; }
+.composer-picker__notes .composer-picker__message:not([data-tone]) { color: var(--tt-text-2); }
+.composer-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.composer-picker__refresh:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
+.composer-picker__refresh:disabled { cursor: default; }
 
 /* The one motion: a queued message settles onto the composer it left. A refresh turns while it works. */
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-followup[data-arriving] { animation: thread-followup-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
-  :root:not([data-reduced-motion='on']) .skill-picker__refresh[data-loading] svg { animation: skill-picker-turn 900ms linear infinite; }
+  :root:not([data-reduced-motion='on']) .composer-picker__refresh[data-loading] svg { animation: composer-picker-turn 900ms linear infinite; }
 }
 @keyframes thread-followup-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes skill-picker-turn { to { transform: rotate(360deg); } }
+@keyframes composer-picker-turn { to { transform: rotate(360deg); } }
 
 @media (max-width: 980px) {
   .thread-followups { margin-inline: 8px; }
-  .skill-picker__name { max-width: 22ch; }
+  .composer-picker__name { max-width: 22ch; }
 }
 /* Short windows and large display scaling: the prompt and its send button stay in view. Below 680px the queue also rests as one line until opened. */
 @media (max-height: 760px) {

@@ -1,7 +1,7 @@
 import { fileMentionToken, hasFileMention, type AgentFileReference } from '../../../shared/agentFiles'
 import type { FileListing } from '../../../shared/files'
 import { isGitAdministrative } from '../tools/filesBrowser'
-import { detectMentionTrigger, type MentionTrigger } from './composerMentions'
+import { detectMentionTrigger, mentionMatchScore, type MentionTrigger } from './composerMentions'
 
 export type FileEntry = FileListing['entries'][number]
 export const MAX_MENTIONED_FILES = 32
@@ -23,24 +23,34 @@ export function fileQueryParts(query: string): { readonly directory: string; rea
   return cut < 0 ? { directory: '', filter: query } : { directory: query.slice(0, cut), filter: query.slice(cut + 1) }
 }
 
-function matchScore(value: string, filter: string): number | null {
-  if (value === filter) return 0
-  if (value.startsWith(filter)) return 1
-  if (value.split(/[-_.\s]+/u).some(part => part.startsWith(filter))) return 2
-  if (value.includes(filter)) return 3
-  return null
+/**
+ * A `@path` token ends at the first space, in this composer and in all three providers, so a path
+ * with a space in it cannot be mentioned at all — offering one would send a truncated path. It is
+ * left out of the picker here and refused by `agentFileReferenceSchema` in main.
+ */
+export function mentionableFile(entry: FileEntry): boolean {
+  return entry.kind !== 'unavailable' && !isGitAdministrative(entry) && !/\s/u.test(entry.path)
+}
+
+/** Entries this folder holds that no prompt can name, so the picker can say why they are missing. */
+export function unmentionableCount(entries: readonly FileEntry[]): number {
+  return entries.filter(entry => entry.kind !== 'unavailable' && !isGitAdministrative(entry) && /\s/u.test(entry.path)).length
 }
 
 /** Folders first, then files; a filter ranks name matches, native order breaking ties. */
 export function searchFileEntries(entries: readonly FileEntry[], filter: string): FileEntry[] {
   const normalized = filter.trim().toLowerCase()
-  const offered = entries.filter(entry => entry.kind !== 'unavailable' && !isGitAdministrative(entry))
   const rank = (entry: FileEntry): number => entry.kind === 'directory' ? 0 : 1
-  return offered
-    .map((entry, index) => ({ entry, index, score: normalized ? matchScore(entry.name.toLowerCase(), normalized) : 0 }))
-    .filter((item): item is { entry: FileEntry; index: number; score: number } => item.score !== null)
+  return entries.filter(mentionableFile)
+    .map((entry, index) => ({ entry, index, score: normalized ? mentionMatchScore(entry.name.toLowerCase(), normalized, /[-_.\s]+/u) : 0 }))
+    .flatMap(item => item.score === null ? [] : [{ entry: item.entry, index: item.index, score: item.score }])
     .sort((a, b) => rank(a.entry) - rank(b.entry) || a.score - b.score || a.index - b.index)
     .map(item => item.entry)
+}
+
+/** A draft already holding the most files it may mention takes no other; mentioning one again is fine. */
+export function fileLimitReached(selected: readonly AgentFileReference[], path: string): boolean {
+  return selected.length >= MAX_MENTIONED_FILES && !selected.some(file => file.path === path)
 }
 
 /** Mentioned files whose `@path` is still written in the text; a deleted token takes its reference with it. */
@@ -62,7 +72,8 @@ export function insertFile(text: string, trigger: FileTrigger, path: string, sel
   const token = `${fileMentionToken(path)}${spacer}`
   const next = `${text.slice(0, trigger.start)}${token}${after}`
   const kept = retainFileReferences(next, selected)
-  const files = kept.some(file => file.path === path) ? kept : [...kept, { path }].slice(-MAX_MENTIONED_FILES)
+  // Never silently forget a reference whose token stays written: the cap is held before insertion.
+  const files = kept.some(file => file.path === path) ? kept : [...kept, { path }]
   return { text: next, caret: trigger.start + token.length, files }
 }
 

@@ -1,25 +1,18 @@
 import { agentFileReferencesSchema, fileMentionToken, hasFileMention, type AgentFileReference } from '../../shared/agentFiles'
 
 /**
- * The working-copy paths a prompt's file mentions carry, verified against the prompt they travel with.
+ * Check a prompt's file mentions before it is dispatched, for every provider.
  *
- * Every provider reads `@path`, so the token the composer wrote is already the provider-facing form and
- * no host rewrites the text. What main owns is the promise behind it: each reference is a relative path
- * inside the thread's working copy (the schema admits nothing else), it is mentioned once in this exact
- * prompt, and a mention the user deleted is refused rather than sent as a stale path.
+ * All three read `@path`, so the token the composer wrote is already the provider-facing form and no
+ * host rewrites the text. What main owns is the promise behind it: each reference is a space-free
+ * relative path inside the thread's working copy (the schema admits nothing else) and it is still
+ * written in this exact prompt, so a mention the user deleted is refused instead of travelling as a
+ * stale path. Throws on the first reference that fails; returns nothing, because the text is the text.
  */
-export function filePromptPaths(text: string, files: readonly AgentFileReference[] = []): string[] {
-  const references = agentFileReferencesSchema.parse(files)
-  for (const file of references) {
+export function verifyFileMentions(text: string, files: readonly AgentFileReference[] = []): void {
+  for (const file of agentFileReferencesSchema.parse(files)) {
     if (!hasFileMention(text, file.path)) {
       throw new Error(`The mentioned file ${fileMentionToken(file.path)} is no longer in this prompt. Remove its mention or restore it.`)
     }
   }
-  return references.map(file => file.path)
-}
-
-/** The prompt each provider receives for a send carrying file mentions: the authored text, once verified. */
-export function filePromptText(text: string, files: readonly AgentFileReference[] = []): string {
-  filePromptPaths(text, files)
-  return text
 }

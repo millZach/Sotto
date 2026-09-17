@@ -103,14 +103,14 @@ export async function paneMetrics(page: Page, scope = 'section.thread-pane[data-
       followups: box(root.querySelector('.thread-followups')),
       card: box(card ?? null),
       cardFullyVisible: cardRect ? cardRect.bottom <= visibleBottom + 1 && cardRect.top >= visibleTop - 1 : null,
-      picker: box(root.querySelector('.skill-picker')),
+      picker: box(root.querySelector('.composer-picker')),
       scrollers,
       outsideControls,
       queueHead: root.querySelector('.thread-followups__head')?.textContent ?? null,
       status: root.querySelector('.thread-prompt__status')?.textContent ?? null,
       fonts: {
         prompt: font('.thread-prompt textarea, .agent-composer textarea'), queueRow: font('.thread-followup__text'), queueToggle: font('.thread-followups__toggle'),
-        queueNote: font('.thread-followups__note'), status: font('.thread-prompt__status'), pickerName: font('.skill-picker__name'),
+        queueNote: font('.thread-followups__note'), status: font('.thread-prompt__status'), pickerName: font('.composer-picker__name'),
       },
     }
   }, scope)

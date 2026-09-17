@@ -13,7 +13,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
-import { filePromptText } from './promptFiles'
+import { verifyFileMentions } from './promptFiles'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
@@ -242,10 +242,9 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** Send and steer share native reference validation and input mapping. */
   async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = []) {
-    // Mentioned files travel inside the prompt as the `@path` Codex already reads; main only verifies they are still written here.
-    const authored = filePromptText(text, files)
-    if (!skills.length) return [{ type: 'text' as const, text: authored }]
-    return codexSkillInput(authored, skills, await this.listThreadSkills(threadId, true))
+    verifyFileMentions(text, files)
+    if (!skills.length) return [{ type: 'text' as const, text }]
+    return codexSkillInput(text, skills, await this.listThreadSkills(threadId, true))
   }
   private ensureThread(id: string): NativeConversation {
     const alias = this.aliases[id]!

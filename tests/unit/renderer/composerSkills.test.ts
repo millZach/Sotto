@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { detectSkillTrigger, insertSkill, retainSkillReferences, searchSkills, type CatalogSkill } from '../../../src/renderer/src/agents/composerSkills'
-import { skillMenuKeyAction } from '../../../src/renderer/src/agents/composerKeys'
+import { composerMenuKeyAction } from '../../../src/renderer/src/agents/composerKeys'
 
 const skill = (name: string, description = '', scope: CatalogSkill['scope'] = 'user'): CatalogSkill => ({ name, description, scope, path: `C:/skills/${name}/SKILL.md` })
 
@@ -51,16 +51,16 @@ describe('skill insertion and references', () => {
 })
 
 describe('skills menu keys', () => {
-  const key = (patch: Partial<Parameters<typeof skillMenuKeyAction>[0]> = {}) => ({ key: 'Enter', shiftKey: false, altKey: false, isComposing: false, keyCode: 13, defaultPrevented: false, ...patch })
+  const key = (patch: Partial<Parameters<typeof composerMenuKeyAction>[0]> = {}) => ({ key: 'Enter', shiftKey: false, altKey: false, isComposing: false, keyCode: 13, defaultPrevented: false, ...patch })
   it('lets Enter select only a highlighted option and never during composition', () => {
-    expect(skillMenuKeyAction(key(), { optionCount: 2, highlighted: true })).toBe('select')
-    expect(skillMenuKeyAction(key(), { optionCount: 2, highlighted: false })).toBe('none')
-    expect(skillMenuKeyAction(key({ shiftKey: true }), { optionCount: 2, highlighted: true })).toBe('none')
-    expect(skillMenuKeyAction(key({ isComposing: true }), { optionCount: 2, highlighted: true })).toBe('none')
-    expect(skillMenuKeyAction(key({ keyCode: 229, key: 'ArrowDown' }), { optionCount: 2, highlighted: true })).toBe('none')
-    expect(skillMenuKeyAction(key({ key: 'Tab' }), { optionCount: 2, highlighted: false })).toBe('select')
-    expect(skillMenuKeyAction(key({ key: 'Tab', shiftKey: true }), { optionCount: 2, highlighted: false })).toBe('none')
-    expect(skillMenuKeyAction(key({ key: 'Escape' }), { optionCount: 0, highlighted: false })).toBe('close')
-    expect(skillMenuKeyAction(key({ key: 'ArrowDown' }), { optionCount: 0, highlighted: false })).toBe('none')
+    expect(composerMenuKeyAction(key(), { optionCount: 2, highlighted: true })).toBe('select')
+    expect(composerMenuKeyAction(key(), { optionCount: 2, highlighted: false })).toBe('none')
+    expect(composerMenuKeyAction(key({ shiftKey: true }), { optionCount: 2, highlighted: true })).toBe('none')
+    expect(composerMenuKeyAction(key({ isComposing: true }), { optionCount: 2, highlighted: true })).toBe('none')
+    expect(composerMenuKeyAction(key({ keyCode: 229, key: 'ArrowDown' }), { optionCount: 2, highlighted: true })).toBe('none')
+    expect(composerMenuKeyAction(key({ key: 'Tab' }), { optionCount: 2, highlighted: false })).toBe('select')
+    expect(composerMenuKeyAction(key({ key: 'Tab', shiftKey: true }), { optionCount: 2, highlighted: false })).toBe('none')
+    expect(composerMenuKeyAction(key({ key: 'Escape' }), { optionCount: 0, highlighted: false })).toBe('close')
+    expect(composerMenuKeyAction(key({ key: 'ArrowDown' }), { optionCount: 0, highlighted: false })).toBe('none')
   })
 })

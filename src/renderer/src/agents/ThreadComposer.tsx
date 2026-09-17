@@ -4,8 +4,8 @@ import { capabilitiesForThread, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
-import { composerEnterIntent, readComposerKey, skillMenuKeyAction } from './composerKeys'
-import { browseFolder, insertFile, retainFileReferences, sameFileReferences, type FileEntry } from './composerFiles'
+import { composerEnterIntent, readComposerKey, runComposerMenuKey } from './composerKeys'
+import { browseFolder, fileLimitReached, insertFile, retainFileReferences, sameFileReferences, type FileEntry } from './composerFiles'
 import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './FilePicker'
 import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
@@ -225,6 +225,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const selectFile = (index: number): void => {
     const entry = files.options[index]
     if (entry === undefined || files.trigger === null) return
+    // At the cap the picker says so and the choice does nothing, rather than dropping it silently.
+    if (entry.kind !== 'directory' && fileLimitReached(draft.files, entry.path)) return
     const next = entry.kind === 'directory'
       ? { ...browseFolder(draft.text, files.trigger, entry.path), files: draft.files }
       : insertFile(draft.text, files.trigger, entry.path, draft.files)
@@ -251,7 +253,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
-      <FilePicker model={files} listId={fileListId} onSelect={(entry: FileEntry) => selectFile(files.options.indexOf(entry))} />
+      <FilePicker model={files} listId={fileListId} selected={draft.files} onSelect={(entry: FileEntry) => selectFile(files.options.indexOf(entry))} />
       <label className="tt-visually-hidden" htmlFor={composerId}>{answering ? 'Your answer' : 'Prompt'}</label>
       <ScreenshotInput key={threadId} attachments={[...draft.attachments]} disabled={!editable} supported={row.model?.supportsImages === true && !answering && !permission}
         onReadingChange={setReadingImages} onChange={attachments => edit({ attachments })}>
@@ -268,29 +270,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           onKeyDown={event => {
             // Without the skills list, an open menu is still told by aria-expanded.
             const key = readComposerKey(event, menus ? menuOpen && (picker.activeIndex !== null || files.activeIndex !== null) : undefined)
-            if (picker.open) {
-              const action = skillMenuKeyAction({ ...key, ctrlKey: event.ctrlKey, metaKey: event.metaKey }, { optionCount: picker.options.length, highlighted: picker.activeIndex !== null })
-              if (action !== 'none') {
-                event.preventDefault()
-                if (action === 'next') picker.move(1)
-                else if (action === 'previous') picker.move(-1)
-                else if (action === 'close') picker.close()
-                else selectSkill(picker.activeIndex ?? 0)
-                return
-              }
-            }
-            // The @ menu follows the same keys as the skills menu: arrows move, Tab and Enter take the highlighted entry, Escape closes.
-            if (files.open) {
-              const action = skillMenuKeyAction({ ...key, ctrlKey: event.ctrlKey, metaKey: event.metaKey }, { optionCount: files.options.length, highlighted: files.activeIndex !== null })
-              if (action !== 'none') {
-                event.preventDefault()
-                if (action === 'next') files.move(1)
-                else if (action === 'previous') files.move(-1)
-                else if (action === 'close') files.close()
-                else selectFile(files.activeIndex ?? 0)
-                return
-              }
-            }
+            // Only one of the two can be open, since a token starts with one sigil; both answer keys alike.
+            if (runComposerMenuKey(event, key, { open: picker.open, optionCount: picker.options.length, activeIndex: picker.activeIndex, move: picker.move, close: picker.close, select: selectSkill })) return
+            if (runComposerMenuKey(event, key, { open: files.open, optionCount: files.options.length, activeIndex: files.activeIndex, move: files.move, close: files.close, select: selectFile })) return
             if (composerEnterIntent(key) !== 'send') return
             // Enter never inserts a stray newline, even when sending is blocked.
             event.preventDefault()
