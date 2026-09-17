@@ -1,4 +1,4 @@
-﻿import type { ReducedMotion, Theme } from './settings'
+import type { ReducedMotion, Theme } from './settings'
 import type { WidgetPalette } from './themeBranding'
 
 export type DictationState =

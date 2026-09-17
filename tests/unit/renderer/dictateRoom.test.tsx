@@ -1,4 +1,4 @@
-﻿import { readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'

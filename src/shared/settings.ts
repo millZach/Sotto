@@ -1,4 +1,4 @@
-﻿import { z } from 'zod'
+import { z } from 'zod'
 
 import { DEFAULT_HOTKEY } from './constants'
 import {

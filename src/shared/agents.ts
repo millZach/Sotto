@@ -352,8 +352,8 @@ export const agentStateSchema = z.object({
 export type AgentState = z.infer<typeof agentStateSchema>
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
- * activity beside them. Activity is the larger half by far â€” a working thread reports hundreds of
- * records â€” and, like the messages, only the open pane draws it.
+ * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
+ * records — and, like the messages, only the open pane draws it.
  */
 export const agentThreadDetailSchema = z.object({
   threadId: id, revision: z.number().int().nonnegative(), messages: z.array(agentMessageSchema),
@@ -365,7 +365,7 @@ export const agentThreadDetailRequestSchema = id
 /**
  * What changed in one viewed thread since the revision the window already holds, sent in place of the
  * whole detail while an agent streams into it: a message that grew by a chunk costs the chunk, not the
- * thread. A message delta is a whole message â€” new, or changed in a way an append cannot say â€” or the
+ * thread. A message delta is a whole message — new, or changed in a way an append cannot say — or the
  * suffix a streaming message grew by; an activity delta is one record as it now stands, or its removal.
  * The window applies one only when `baseRevision` is the revision it holds, and asks for the whole
  * detail when it is not. The full form remains for first delivery and for that resync.
