@@ -3,8 +3,9 @@ import { MessageSquare } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
+import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
-import { NewThreadDialog } from './NewThreadDialog'
+import { NewThreadDialog, type NewThreadChoices } from './NewThreadDialog'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
 import { hasDraftContent } from './threadDraftStore'
@@ -18,6 +19,11 @@ import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/Ter
 import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
+
+/** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
+function focusNewComposer(): void {
+  window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0)
+}
 
 /** What a shared tools surface beside the panes receives. It follows the focused thread unless it pins its own. */
 export interface ThreadToolsProps {
@@ -65,7 +71,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   const now = useClock(fixedNow)
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
-  const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined } | null>(null)
+  // Reopened with `choices` and `error` when main refuses a creation this view was already showing.
+  const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined; readonly choices?: NewThreadChoices | undefined; readonly error?: string | undefined } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   // The pane the user just focused, shown at once while main confirms the selection. Once the command
   // settles, the next published state is the truth, so an older echo cannot pull focus back meanwhile.
@@ -73,8 +80,13 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   const stateRef = useRef<AgentState | null>(null)
   const lastFocused = useRef<string | null>(null)
   const store = agents.threadDrafts
-  const state = agents.state
-  const command = agents.command
+  // A thread created in this window is shown from its local record until main's state carries it, and every
+  // command about it waits for that creation instead of being refused for naming a thread main does not know.
+  const drafts = useDraftThreads()
+  const published = agents.state
+  const state = useMemo(() => overlayDraftThreads(published, drafts), [published, drafts])
+  const command = useMemo(() => gateOnCreation(agents.command), [agents.command])
+  useEffect(() => { draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
   // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
@@ -105,10 +117,11 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   // Leaving a thread (or the page) saves its latest revision now instead of after the debounce.
   useEffect(() => () => { if (focusedId !== null) store.flush(focusedId) }, [focusedId, store])
   useEffect(() => () => store.flushAll(), [store])
-  // Report the threads on screen once per change, and clear them when Threads closes.
+  // Report the threads on screen once per change, and clear them when Threads closes. A thread main has not
+  // taken yet is reported when it lands, since naming an unknown thread would say nothing.
   const paneThreads = useRef({ sent: '[]', notify: onPaneThreadsChange })
   useEffect(() => { paneThreads.current.notify = onPaneThreadsChange })
-  const paneKey = JSON.stringify(paneIds)
+  const paneKey = JSON.stringify(drafts.length === 0 ? paneIds : paneIds.filter(id => !drafts.some(draft => draft.id === id)))
   useEffect(() => {
     if (paneKey === paneThreads.current.sent) return
     paneThreads.current.sent = paneKey
@@ -166,7 +179,17 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   }
 
   return <div className="management-view threads-view" onKeyDown={grid.onKeyDown}>
-    {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} onClose={() => setNewThread(null)} onCreated={() => { setNewThread(null); window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0) }} />}
+    {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} initialChoices={newThread.choices} initialError={newThread.error}
+      onClose={() => setNewThread(null)}
+      onCreating={start => {
+        // The pane and its composer are on screen before the command is answered; main catches up under the same ID.
+        draftThreads.open(start.thread, start.created)
+        setNewThread(null)
+        setPending({ threadId: start.thread.id })
+        focusNewComposer()
+        void start.created.then(error => { if (error !== null) setNewThread({ projectId: start.choices.projectId, choices: start.choices, error }) })
+      }}
+      onCreated={() => { setNewThread(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={startNewThread}
       currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging} />
     <section className="thread-workspace" aria-label="Thread workspace">

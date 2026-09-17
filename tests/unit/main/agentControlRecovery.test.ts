@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -396,6 +397,21 @@ describe('composition navigation and explicit spoken controls', () => {
     expect(dictated.draft).toBe(text === 'Start prompt' ? '' : 'Build the page.')
     expect(dictated.composing).toBe(true)
     expect(f.requests).toEqual([])
+  })
+
+  it('adopts the thread ID the window minted, refuses to create it twice, and still mints one when none is given', async () => {
+    const f = await fixture()
+    const threadId = randomUUID()
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Minted in the window', modelId: 'claude:test', threadId })
+    expect(created).toMatchObject({ error: null, activeThreadId: threadId })
+    expect(created.host.threads.filter(thread => thread.id === threadId)).toHaveLength(1)
+    const duplicate = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Same ID again', modelId: 'claude:test', threadId })
+    expect(duplicate.error).toBe('This thread already exists. Select it instead of creating it again.')
+    expect(duplicate.host.threads.filter(thread => thread.id === threadId)).toHaveLength(1)
+    const minted = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Main mints this one', modelId: 'claude:test' })
+    expect(minted.error).toBeNull()
+    expect(minted.activeThreadId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
+    expect(minted.activeThreadId).not.toBe(threadId)
   })
 
   it('preserves an unfinished draft and creates no extra thread when creation is blocked', async () => {
