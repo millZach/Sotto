@@ -64,6 +64,19 @@ describe('SettingsRepository', () => {
     expect(settings.pasteDelayMs).toBe(DEFAULT_SETTINGS.pasteDelayMs)
   })
 
+  it('keeps a skipped microphone across a restart and reads older files without the field', async () => {
+    const { filePath, repository } = await createRepository()
+
+    await repository.save({ onboardingComplete: true, microphoneSkipped: true })
+
+    expect((await new SettingsRepository(filePath).get()).microphoneSkipped).toBe(true)
+
+    await writeFile(filePath, JSON.stringify({ theme: 'dark', onboardingComplete: true }), 'utf8')
+    const older = await new SettingsRepository(filePath).get()
+    expect(older.microphoneSkipped).toBe(false)
+    expect(older.onboardingComplete).toBe(true)
+  })
+
   it('strips unknown fields when loading valid JSON', async () => {
     const { filePath, repository } = await createRepository()
     await writeFile(

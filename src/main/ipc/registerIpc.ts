@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { externalLinkSchema } from '../../shared/externalLinks'
 
 import {
@@ -94,6 +94,7 @@ const settingKeys = [
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
+  'microphoneSkipped',
   'llmFormatting',
   'llmApiKey',
   'llmDictionary',

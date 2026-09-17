@@ -303,6 +303,39 @@ describe('SettingsView', () => {
     expect(mediaDevices.removeEventListener).toHaveBeenCalledWith('devicechange', listener)
   })
 
+  it('clears a skipped microphone once the Settings test reports ready', async () => {
+    const user = userEvent.setup()
+    const onUpdateSettings = vi.fn(async () => true)
+    const start = vi.fn(async (onLevel: (level: number) => void) => { onLevel(0.5); return 'ready' as const })
+    render(<SettingsView {...baseProps({
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, microphoneSkipped: true },
+      onUpdateSettings,
+      createMicrophoneTest: () => ({ start, stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    expect(screen.getByText(/no microphone is set up/i)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    expect(start).toHaveBeenCalledOnce()
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ microphoneSkipped: false }))
+    expect(await screen.findByText(/microphone ready/i)).toBeVisible()
+  })
+
+  it('keeps the skip when the Settings test cannot reach a microphone', async () => {
+    const user = userEvent.setup()
+    const onUpdateSettings = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, microphoneSkipped: true },
+      onUpdateSettings,
+      createMicrophoneTest: () => ({ start: vi.fn(async () => 'missing' as const), stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    expect(await screen.findByText(/no microphone was found/i)).toBeVisible()
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
+
   it('keeps the newest microphone enumeration when overlapping refreshes settle out of order', async () => {
     const first = deferred<MediaDeviceInfo[]>()
     const second = deferred<MediaDeviceInfo[]>()

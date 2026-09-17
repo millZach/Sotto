@@ -1,4 +1,4 @@
-import type { ReducedMotion, Theme } from './settings'
+﻿import type { ReducedMotion, Theme } from './settings'
 import type { WidgetPalette } from './themeBranding'
 
 export type DictationState =
@@ -20,6 +20,7 @@ export type WidgetErrorCode =
   | 'MIC_PERMISSION_DENIED'
   | 'MIC_DEVICE_NOT_FOUND'
   | 'MIC_START_FAILED'
+  | 'MIC_NOT_SET_UP'
   | 'RECORDING_FAILED'
   | 'NO_SPEECH'
   | 'TRANSCRIPTION_UNCONFIGURED'
@@ -46,6 +47,13 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
     TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Check your connection and try again.',
     TRANSCRIPTION_FAILED: 'Transcription failed. Try again.',
   })
+
+/**
+ * What every surface says when setup was finished without a microphone. The
+ * dictate room, the widget and the hotkey all point at the one place that can
+ * clear the state, so the recovery is worded once.
+ */
+export const MICROPHONE_NOT_SET_UP_DETAIL = 'Run the microphone test in Settings to set one up.'
 
 interface WidgetSnapshotMetadata {
   readonly theme: Theme

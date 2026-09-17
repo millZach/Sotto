@@ -163,6 +163,19 @@ describe('DictationController', () => {
     expect(snapshots(harness).at(-1)).not.toHaveProperty('message')
   })
 
+  it('says no microphone is set up when setup was finished without one', async () => {
+    const harness = createHarness({ currentSettings: settings({ microphoneSkipped: true }) })
+
+    await harness.controller.toggle()
+
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'MIC_NOT_SET_UP' })
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(snapshots(harness).at(-1)).toEqual(expect.objectContaining({
+      status: 'error', code: 'MIC_NOT_SET_UP',
+    }))
+  })
+
   it.each([
     [undefined, 'CommandOrControl+Shift+Space'],
     ['win32', 'CommandOrControl+Shift+Space'],

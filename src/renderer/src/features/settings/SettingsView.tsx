@@ -31,6 +31,12 @@ import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { AppearanceSettings } from './AppearanceSettings'
+import { LevelMeter } from '../../components/LevelMeter'
+import {
+  BrowserMicrophoneTest,
+  type MicrophoneTestController,
+  type MicrophoneTestState,
+} from '../onboarding/microphoneTest'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -47,6 +53,8 @@ export interface SettingsViewProps {
   /** Null until the main process answers; the section still renders. */
   readonly updateStatus: UpdateStatus | null
   readonly mediaDevices?: MediaDevicesAdapter | undefined
+  /** Injected in tests; production runs the same browser test onboarding uses. */
+  readonly createMicrophoneTest?: () => MicrophoneTestController
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
   readonly onSetStartup: (enabled: boolean) => Promise<StartupState | null>
@@ -108,6 +116,7 @@ export function SettingsView({
   platform,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
+  createMicrophoneTest = () => new BrowserMicrophoneTest(),
   onUpdateSettings,
   onReplaceHotkey,
   onSetStartup,
@@ -119,6 +128,9 @@ export function SettingsView({
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
+  const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
+  const [microphoneLevel, setMicrophoneLevel] = useState(0)
+  const microphoneTestRef = useRef<MicrophoneTestController | null>(null)
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [hotkeyDraft, setHotkeyDraft] = useState(() => formatAccelerator(settings.hotkey, platform, 'editing'))
   const [pasteDelayDraft, setPasteDelayDraft] = useState(String(settings.pasteDelayMs))
@@ -243,6 +255,44 @@ export function SettingsView({
       : { text: 'That setting could not be saved. Your previous setting is still active.', error: true })
     return saved
   }, [onUpdateSettings])
+
+  // The microphone opened here is released when Settings goes away.
+  useEffect(() => () => {
+    const controller = microphoneTestRef.current
+    microphoneTestRef.current = null
+    if (controller !== null) void Promise.resolve(controller.stop()).catch(() => undefined)
+  }, [])
+
+  /**
+   * The same level test onboarding runs. A microphone that reports ready is
+   * proof one is set up, so it retires a skip made during setup; any other
+   * outcome leaves the skip alone and says what went wrong.
+   */
+  const runMicrophoneTest = async (): Promise<void> => {
+    const previous = microphoneTestRef.current
+    microphoneTestRef.current = null
+    setMicrophoneLevel(0)
+    setMicrophoneState('requesting')
+    if (previous !== null) await Promise.resolve(previous.stop()).catch(() => undefined)
+    let controller: MicrophoneTestController
+    try { controller = createMicrophoneTest() } catch {
+      setMicrophoneState('error')
+      return
+    }
+    microphoneTestRef.current = controller
+    const outcome = await controller.start((level) => {
+      if (microphoneTestRef.current === controller) setMicrophoneLevel(level)
+    }).catch(() => 'error' as const)
+    if (microphoneTestRef.current !== controller) return
+    setMicrophoneState(outcome)
+    if (outcome !== 'ready') {
+      microphoneTestRef.current = null
+      setMicrophoneLevel(0)
+      await Promise.resolve(controller.stop()).catch(() => undefined)
+      return
+    }
+    if (settingsRef.current.microphoneSkipped) await onUpdateSettings({ microphoneSkipped: false }).catch(() => false)
+  }
 
   const savePasteDelay = async (): Promise<void> => {
     const value = parseBoundedInteger(pasteDelayDraftRef.current, 50, 1_000)
@@ -416,6 +466,26 @@ export function SettingsView({
                       {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
                       {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
                     </Select>
+                  </Field>
+                  <Field label="Microphone test" description="Check that Sotto can hear you. Access is asked for only while the test runs.">
+                    <div className="settings-microphone-test" data-state={microphoneState}>
+                      <LevelMeter value={microphoneLevel} label="Microphone level" />
+                      <p role="status">
+                        {microphoneState === 'ready' ? 'Microphone ready.' : null}
+                        {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
+                        {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
+                        {microphoneState === 'denied' ? copy.settingsMicrophoneUnavailable : null}
+                        {microphoneState === 'missing' ? 'No microphone was found.' : null}
+                        {microphoneState === 'error' ? 'The microphone test could not start.' : null}
+                      </p>
+                      <Button
+                        variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
+                        disabled={microphoneState === 'requesting'}
+                        onClick={() => void runMicrophoneTest()}
+                      >
+                        {microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
+                      </Button>
+                    </div>
                   </Field>
                   <div className="settings-input-action">
                     <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
