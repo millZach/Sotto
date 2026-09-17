@@ -9,6 +9,8 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffec
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import type { AgentBridge, AgentState } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { agentBridgeFor } from '../../fixtures/agentBridge'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -17,10 +19,10 @@ const image = { id: 'retained-image', name: 'pixel.png', mimeType: 'image/png' a
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-reload-drafts-'))
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  const control = new AgentControl({ directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   await credentials.load(); await control.start(); await control.command({ type: 'connect' })
-  const bridge: AgentBridge = { get: async () => control.get(), onState: listener => control.subscribe(listener), command: request => control.command(request) }
+  const bridge: AgentBridge = agentBridgeFor(control)
   return { control, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
     async close() {
       cleanup(); control.dispose(); await control.privacyChanged()

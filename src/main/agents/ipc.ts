@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../../shared/agents'
 import { resolveE2EConfiguration } from '../e2e/e2eBoundary'
-import { AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, agentCommandSchema } from '../../shared/agents'
+import { AGENT_ATTACHMENT_PREVIEW, AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL_GET, agentAttachmentPreviewRequestSchema, agentCommandSchema, agentThreadDetailRequestSchema, agentShell } from '../../shared/agents'
 import type { SottoPlatform } from '../../shared/platform'
 import { synthesizeAgentSpeech } from './speech'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -14,7 +14,7 @@ import type { NaturalSpeechModels } from './speechModels'
 import type { GrokSpeechService } from './grokSpeech'
 import type { KokoroSpeechService } from './kokoroSpeech'
 
-export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell' | 'threadDetail' | 'command' | 'attachmentPreview'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>): () => void {
   ipc.handle(AGENT_CHOOSE_PROJECT_DIRECTORY, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     z.tuple([]).or(z.tuple([z.undefined()])).parse(args)
@@ -77,16 +77,27 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
       return await synthesizeAgentSpeech(text, platform)
     } finally { if (speechOperation === operation) speechOperation = null }
   })
+  // The window assembles its own full state from the shell and the detail of the threads it is looking at,
+  // so neither the first state nor a command's answer carries every thread's history across the bridge.
   ipc.handle(AGENT_GET, event => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
-    return control.get()
+    return control.shell()
+  })
+  // Thread history is the management window's alone; the widget draws a thread's state from the shell.
+  ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    return control.threadDetail(agentThreadDetailRequestSchema.parse(payload))
+  })
+  ipc.handle(AGENT_ATTACHMENT_PREVIEW, (event, payload) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    return control.attachmentPreview(agentAttachmentPreviewRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_COMMAND, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
     const command = agentCommandSchema.parse(payload)
     const speakOnly = command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1
     if (!speakOnly && ['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice', 'observe-threads'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    return control.command(command)
+    return control.command(command).then(agentShell)
   })
-  return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
+  return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

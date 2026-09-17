@@ -271,6 +271,34 @@ describe('attachment previews', () => {
     expect(container.innerHTML).not.toMatch(/tracker\.example|svg\+xml;base64|text\/html/u)
   })
 
+  it('fetches a submitted image through the bridge once and caches it for later renders', async () => {
+    const attachmentPreview = vi.fn(async () => ({ dataUrl: PNG }))
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const attachments = [{ id: 'fetched', name: 'shot.png', mimeType: 'image/png', sizeBytes: 900, preview: { available: true as const } }]
+    const origin = { threadId: 'workshop', messageId: 'message' }
+    const view = render(<AttachmentPreviews attachments={attachments} origin={origin} />)
+    // The published state carried no bytes, so the tile starts as the metadata placeholder.
+    expect(view.container.querySelector('img')).toBeNull()
+    expect(screen.getByText('shot.png').parentElement).toHaveTextContent('PNG · 900 B')
+    expect(attachmentPreview).toHaveBeenCalledWith({ threadId: 'workshop', messageId: 'message', attachmentId: 'fetched' })
+    await waitFor(() => expect(screen.getByRole('img', { name: 'shot.png' })).toHaveAttribute('src', PNG))
+    cleanup()
+    render(<AttachmentPreviews attachments={attachments} origin={origin} />)
+    await waitFor(() => expect(screen.getByRole('img', { name: 'shot.png' })).toHaveAttribute('src', PNG))
+    expect(attachmentPreview).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the metadata tile when no preview comes back and never asks without a message to ask about', async () => {
+    const attachmentPreview = vi.fn(async () => null)
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const attachment = { id: 'missing', name: 'gone.png', mimeType: 'image/png', sizeBytes: 2048, preview: { available: true as const } }
+    const { container, rerender } = render(<AttachmentPreviews attachments={[attachment]} origin={{ threadId: 'workshop', messageId: 'message' }} />)
+    await waitFor(() => expect(screen.getByText('gone.png').parentElement).toHaveTextContent('PNG · 2 KB · Preview unavailable'))
+    expect(container.querySelector('img')).toBeNull()
+    rerender(<AttachmentPreviews attachments={[{ ...attachment, id: 'unasked' }]} />)
+    expect(attachmentPreview).toHaveBeenCalledTimes(1)
+  })
+
   it('replaces a preview the browser cannot decode with metadata', () => {
     const { container } = render(<AttachmentPreviews attachments={[{ id: 'a', name: 'shot.png', mimeType: 'image/png', sizeBytes: 900, preview: { dataUrl: PNG } }]} />)
     fireEvent.error(screen.getByRole('img', { name: 'shot.png' }))

@@ -11,7 +11,7 @@ import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../shared/agents'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
+import { AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -124,10 +124,34 @@ async function invokeParsed<Output>(
   return schema.parse(await renderer.invoke(channel, ...args))
 }
 
+/**
+ * What a subscription checks a payload with. A schema satisfies it, and so does the structural
+ * guard the state channels use.
+ */
+interface PayloadCheck<Output> {
+  safeParse: (value: unknown) => { success: true; data: Output } | { success: false }
+}
+
+/**
+ * The state channels carry Sotto's own state, sent by Sotto's own main process over a private
+ * channel on this machine, and they are by far the largest and most frequent payloads on the
+ * bridge: revalidating every thread's history costs more than the whole rest of the trip from main
+ * to the window, many times a second while an agent works. A structural check is what this side
+ * needs — it is the shape of the payload, not its trustworthiness, that could still surprise us.
+ * Every other channel keeps its schema.
+ */
+function trustedState<Output>(key: string): PayloadCheck<Output> {
+  return {
+    safeParse: value => typeof value === 'object' && value !== null && key in value
+      ? { success: true, data: value as Output }
+      : { success: false },
+  }
+}
+
 function subscribe<Output>(
   renderer: IpcRendererAdapter,
   channel: string,
-  schema: z.ZodType<Output>,
+  schema: PayloadCheck<Output>,
   listener: (payload: Output) => void,
 ): () => void {
   const wrapped: RendererListener = (_event, ...args) => {
@@ -200,13 +224,16 @@ function createPersonalChatBridge(renderer: IpcRendererAdapter): PersonalChatBri
     interrupt: (chatId: string) => command({ type: 'interrupt', chatId }),
     answer: (input: Parameters<PersonalChatBridge['answer']>[0]) => command({ ...input, type: 'answer' }),
     connect: () => command({ type: 'connect' }), disconnect: () => command({ type: 'disconnect' }),
-    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE, personalChatStateSchema, listener),
+    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE,
+      trustedState<import('../shared/personalChats').PersonalChatState>('chats'), listener),
   })
 }
 
 function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentBridge {
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
+      invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
     ...(role === 'main' ? {
     chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, z.string().min(1).max(4_096).nullable()),
     synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
@@ -216,9 +243,15 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
     detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
+    // Thread history reaches the management window alone: the widget draws a thread's state from the shell.
+    threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    // Whole details and the deltas between them share this channel, so the shape they share is the guard.
+    onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
+      trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
-    onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE, agentStateSchema, listener),
+    onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
+      trustedState<import('../shared/agents').AgentState>('host'), listener),
   })
 }
 

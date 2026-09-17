@@ -6,13 +6,14 @@ import { expect, it } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { codexFixture } from '../fixtures/codexFixture'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it('restores drafts and reconciles a lost native acknowledgement under the original Sotto binding without a duplicate turn', async () => {
   const f = await codexFixture(undefined, true, 200)
   const threadId = randomUUID(); const draftId = randomUUID(); const newerId = randomUUID()
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
-  const create = () => new AgentControl({ directory: f.root, host: f.host, credentials,
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   let control = create()

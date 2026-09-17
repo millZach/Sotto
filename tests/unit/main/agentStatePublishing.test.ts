@@ -1,6 +1,11 @@
 // @vitest-environment node
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AGENT_STATE_PUBLISH_INTERVAL_MS, coalesceAgentStatePublishes, type PublishScheduler } from '../../../src/main/agents/control'
+import { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentStatePublishes, type PublishScheduler } from '../../../src/main/agents/control'
+import { AgentCredentials } from '../../../src/main/agents/credentials'
+import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 
 /** A streamed frame only changes the notice here; identity is all these tests compare. */
@@ -99,5 +104,58 @@ describe('coalesced agent state publishing', () => {
     expect(sent).toEqual(['first', 'last'])
     publisher.dispose()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('coalesced coordinator broadcasts', () => {
+  const roots: string[] = []
+  const controls: AgentControl[] = []
+  afterEach(async () => {
+    for (const control of controls.splice(0)) control.dispose()
+    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  })
+  async function control(clock: TestClock): Promise<AgentControl> {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-broadcast-'))
+    roots.push(root)
+    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
+    await credentials.load()
+    const created = new AgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
+      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    controls.push(created)
+    await created.start()
+    // Settle whatever start published so the burst under test owns a fresh window.
+    while (clock.pending) clock.tick()
+    return created
+  }
+  it('broadcasts the first state of a burst at once and collapses the rest onto one trailing run', async () => {
+    const clock = new TestClock()
+    const coordinator = await control(clock)
+    const broadcasts: string[] = []
+    coordinator.subscribe(state => broadcasts.push(state.configuration.orbColor))
+    for (const orbColor of ['teal', 'ice', 'amber', 'violet'] as const) {
+      // Every command response is the state its own command produced, coalescing or not.
+      const response = await coordinator.command({ type: 'configure', patch: { orbColor } })
+      expect(response.configuration.orbColor).toBe(orbColor)
+    }
+    expect(broadcasts).toEqual(['teal'])
+    clock.tick()
+    expect(broadcasts).toEqual(['teal', 'violet'])
+    expect(clock.intervals.every(ms => ms === AGENT_STATE_BROADCAST_INTERVAL_MS)).toBe(true)
+    // A quiet window closes without inventing a broadcast.
+    clock.tick()
+    expect(broadcasts).toEqual(['teal', 'violet'])
+  })
+  it('drops a held broadcast on dispose', async () => {
+    const clock = new TestClock()
+    const coordinator = await control(clock)
+    const broadcasts: string[] = []
+    coordinator.subscribe(state => broadcasts.push(state.configuration.orbColor))
+    await coordinator.command({ type: 'configure', patch: { orbColor: 'teal' } })
+    await coordinator.command({ type: 'configure', patch: { orbColor: 'ice' } })
+    expect(broadcasts).toEqual(['teal'])
+    coordinator.dispose()
+    expect(clock.pending).toBe(false)
+    clock.tick()
+    expect(broadcasts).toEqual(['teal'])
   })
 })

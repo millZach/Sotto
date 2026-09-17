@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../src/shared/threadActivity'
-import { agentCommandSchema } from '../../../src/shared/agents'
+import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
+import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -22,6 +23,10 @@ async function local(f: Awaited<ReturnType<typeof fixture>>, id = 'local') {
   return { project, model }
 }
 const send = (threadId = 'local') => ({ type: 'send' as const, commandId: `send-${threadId}`, threadId, messageId: `message-${threadId}`, text: 'Implement the task' })
+function deferred() {
+  let release!: () => void
+  return { promise: new Promise<void>(resolve => { release = resolve }), release }
+}
 
 describe('durable project/thread organization', () => {
   it('keeps individual settlement across whole-project settlement, events, and restart without stopping work', async () => {
@@ -187,6 +192,45 @@ describe('durable project/thread organization', () => {
     write.mockRestore()
     await f.host.execute(send())
     expect(f.adapters.codex.commands.filter(command => command.type === 'create-thread')).toHaveLength(1)
+  })
+
+  it('publishes the new thread before its working copy is prepared, and waits for that one preparation on send', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const gate = deferred()
+    const allocate = ThreadWorktrees.prototype.allocate
+    const spy = vi.spyOn(ThreadWorktrees.prototype, 'allocate')
+      .mockImplementation(async function (this: ThreadWorktrees, ...args: Parameters<typeof allocate>) { await gate.promise; return allocate.apply(this, args) })
+    const published: AgentHostSnapshot[] = []
+    f.host.subscribe(snapshot => published.push(snapshot))
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    // The thread is durable and published while its checkout is still being prepared.
+    expect(published.at(-1)?.threads.find(thread => thread.id === 'local')).toMatchObject({ title: 'New task', worktree: { status: 'pending' } })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('pending')
+    const sent = f.host.execute(send())
+    await Promise.resolve()
+    expect(f.adapters.codex.commands).toEqual([])
+    gate.release()
+    await sent
+    expect(spy).toHaveBeenCalledTimes(1) // the send joined the preparation instead of starting a second one
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('ready')
+    expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
+  })
+
+  it('marks the working copy error when its preparation fails, without turning creation into a rejection', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockRejectedValue(new Error('Git is unavailable.'))
+    expect(await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })).toEqual({ accepted: true })
+    await expect(f.host.threadWorkingDirectory('local')).rejects.toThrow('Git is unavailable.')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ status: 'error', error: 'Git is unavailable.' })
+    await expect(f.host.execute(send())).rejects.toThrow('Git is unavailable.')
+    expect(f.adapters.codex.commands).toEqual([])
+    expect(f.registry.byThread('local')).toBeUndefined()
   })
 
   it('strictly validates settlement commands and rejects missing entities', async () => {

@@ -6,11 +6,12 @@ import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it.each([{ name: 'Claude', create: () => claudeFixture(undefined, 1000) }, { name: 'Grok', create: () => grokFixture() }])('$name dispatches a queued follow-up only after native completion and refuses native steering', async ({ create }) => {
   const f = await create(); const threadId = randomUUID()
   const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
-  const control = new AgentControl({ directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   try {
     await f.host.connect()

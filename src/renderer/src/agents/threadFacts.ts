@@ -1,4 +1,4 @@
-import { isThreadProviderConnected, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
@@ -172,9 +172,8 @@ function factsLine(assignment: AgentAssignment | undefined, model: AgentModel | 
 
 /** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
 function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
-  const turn = (thread.activities ?? []).filter(record => record.kind === 'turn' && record.status === 'running')
-    .sort((first, second) => first.sequence - second.sequence).at(-1)
-  const started = parse(turn?.startedAt)
+  // The shell stream carries the running turn's start in the summary; a full state still has the record.
+  const started = parse(threadSummaryOf(thread).runningTurnStartedAt)
   return Number.isFinite(started) ? started : Number.isFinite(lastUserAt) ? lastUserAt : activityAt
 }
 
@@ -183,8 +182,9 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const model = state.host.models.find(entry => entry.id === thread.modelId)
   const assignment = state.assignments.find(entry => entry.threadId === thread.id)
   const provider = model?.provider ?? state.host.name
-  const lastAssistant = thread.messages.findLast(entry => entry.role === 'assistant')
-  const lastUser = thread.messages.findLast(entry => entry.role === 'user')
+  // A row's history facts come from the thread's summary: the shell stream carries it in place of the
+  // messages, and a thread whose messages did arrive derives exactly the same thing.
+  const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
   const closed = isThreadClosed(thread)
   const decision = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
   const blocked = state.queue.find(item => item.threadId === thread.id && item.kind === 'blocked')
@@ -198,7 +198,7 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const stoppedAt = parse(assignment?.stoppedAt)
   const startedAt = parse(assignment?.startedAt)
   const activityAt = [parse(thread.updatedAt), parse(thread.settledAt), parse(thread.archivedAt), stoppedAt, startedAt,
-    ...thread.messages.map(message => parse(message.createdAt))]
+    parse(lastMessageAt)]
     .reduce((latest, at) => Number.isFinite(at) && (!Number.isFinite(latest) || at > latest) ? at : latest, Number.NaN)
 
   let state_: ThreadRowState

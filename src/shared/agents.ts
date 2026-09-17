@@ -22,6 +22,11 @@ export const AGENT_SPEECH_CANCEL = 'sotto:agents:speech-cancel'
 export const AGENT_GROK_VOICES = 'sotto:agents:grok-voices'
 export const AGENT_VOICE_MODEL = 'sotto:agents:voice-model'
 export const AGENT_WAKE = 'sotto:agents:wake'
+export const AGENT_ATTACHMENT_PREVIEW = 'sotto:agents:attachment-preview'
+/** Pushed per thread: the messages of a thread the window is actually looking at. */
+export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
+/** Asked for by the window when it opens a thread whose detail it has not been sent. */
+export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 export const agentWakeDetectionSchema = z.object({ detected: z.boolean(), endSeconds: z.number().min(0).max(8.25) })
 export type AgentWakeDetection = z.infer<typeof agentWakeDetectionSchema>
 export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_000), mimeType: z.literal('audio/wav') })
@@ -73,11 +78,20 @@ export function hasRasterImageSignature(attachment: Pick<AgentAttachment, 'mimeT
       : attachment.mimeType === 'image/gif' ? /^(GIF87a|GIF89a)/u.test(header)
         : attachment.mimeType === 'image/webp' && header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP'
 }
-export const agentAttachmentPreviewSchema = z.object({ dataUrl: z.string().max(14_000_000) }).strict().refine(preview => {
+/** Preview bytes themselves: an unsent draft's own image, or one main hands back on request. */
+export const agentAttachmentPreviewDataSchema = z.object({ dataUrl: z.string().max(14_000_000) }).strict().refine(preview => {
   const parsed = agentAttachmentSchema.safeParse({ id: 'preview', name: 'preview',
     mimeType: preview.dataUrl.slice(5, preview.dataUrl.indexOf(';')), dataUrl: preview.dataUrl })
   return parsed.success && hasRasterImageSignature(parsed.data)
 }, 'Choose a valid raster image preview.')
+/** Published state carries the marker alone; the window asks for the bytes when it draws the image. */
+export const agentAttachmentPreviewMarkerSchema = z.object({ available: z.literal(true) }).strict()
+export const agentAttachmentPreviewSchema = z.union([agentAttachmentPreviewDataSchema, agentAttachmentPreviewMarkerSchema])
+export type AgentAttachmentPreview = z.infer<typeof agentAttachmentPreviewSchema>
+export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, messageId: id, attachmentId: id }).strict()
+export type AgentAttachmentPreviewRequest = z.infer<typeof agentAttachmentPreviewRequestSchema>
+export const agentAttachmentPreviewResultSchema = agentAttachmentPreviewDataSchema.nullable()
+export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreviewResultSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
@@ -105,6 +119,24 @@ export const agentMessageSchema = z.object({
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
+/**
+ * What the sidebar reads about a thread's history without holding that history. The shell stream
+ * carries it in place of `messages`; a thread whose messages are present derives the same facts.
+ */
+export const AGENT_THREAD_EXCERPT_MAX = 2_000
+const excerpt = z.string().max(AGENT_THREAD_EXCERPT_MAX)
+const threadExcerptSchema = z.object({ id, text: excerpt, createdAt: z.string() }).strict()
+export const agentThreadSummarySchema = z.object({
+  messageCount: z.number().int().nonnegative(),
+  /** The newest `createdAt` across every message, so a row's clock survives without them. */
+  lastMessageAt: z.string().optional(),
+  lastUser: threadExcerptSchema.optional(),
+  lastAssistant: threadExcerptSchema.optional(),
+  activityCount: z.number().int().nonnegative().default(0),
+  /** When the run on screen began, for a row that no longer carries the turn record itself. */
+  runningTurnStartedAt: z.string().optional(),
+}).strict()
+export type AgentThreadSummary = z.infer<typeof agentThreadSummarySchema>
 export const agentWorktreeSchema = z.object({
   mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
@@ -127,6 +159,8 @@ export const agentThreadSchema = z.object({
   settledAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
   settledOverride: z.enum(['settled', 'active']).nullable().optional(),
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
+  /** Present on the shell stream, where `messages` is empty; absent when the messages themselves are here. */
+  summary: agentThreadSummarySchema.optional(),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   usage: threadUsageSchema.optional(),
   compaction: compactionSchema.optional(),
@@ -299,8 +333,82 @@ export const agentStateSchema = z.object({
     status: z.enum(['beta', 'free', 'active', 'expired', 'unavailable']),
     label: z.string(), expiresAt: z.string().nullable(),
   }),
+  /** Whether the user keeps local history; the window persists its startup shell only when true. */
+  historyEnabled: z.boolean().optional(),
+  /** True only for the shell the window painted from its own cache before main answered. */
+  stale: z.boolean().optional(),
 })
 export type AgentState = z.infer<typeof agentStateSchema>
+/**
+ * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
+ * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
+ * records — and, like the messages, only the open pane draws it.
+ */
+export const agentThreadDetailSchema = z.object({
+  threadId: id, revision: z.number().int().nonnegative(), messages: z.array(agentMessageSchema),
+  activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+}).strict()
+export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
+export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
+export const agentThreadDetailRequestSchema = id
+/**
+ * What changed in one viewed thread since the revision the window already holds, sent in place of the
+ * whole detail while an agent streams into it: a message that grew by a chunk costs the chunk, not the
+ * thread. A message delta is a whole message — new, or changed in a way an append cannot say — or the
+ * suffix a streaming message grew by; an activity delta is one record as it now stands, or its removal.
+ * The window applies one only when `baseRevision` is the revision it holds, and asks for the whole
+ * detail when it is not. The full form remains for first delivery and for that resync.
+ */
+export const agentMessageDeltaSchema = z.union([
+  z.object({ message: agentMessageSchema }).strict(),
+  z.object({ id, appendText: text }).strict(),
+])
+export type AgentMessageDelta = z.infer<typeof agentMessageDeltaSchema>
+export const agentActivityDeltaSchema = z.union([
+  z.object({ record: agentActivitySchema }).strict(),
+  z.object({ id: z.string(), removed: z.literal(true) }).strict(),
+])
+export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema>
+export const agentThreadDetailDeltaSchema = z.object({
+  threadId: id, baseRevision: z.number().int().nonnegative(), revision: z.number().int().nonnegative(),
+  messageDeltas: z.array(agentMessageDeltaSchema),
+  activityDeltas: z.array(agentActivityDeltaSchema).max(MAX_AGENT_ACTIVITIES),
+}).strict()
+export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema>
+export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
+export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
+
+/** The sidebar's facts about a thread's history, derived from the history itself. */
+export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+  const { messages, activities = [] } = thread
+  const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
+    ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
+  const lastUser = messages.findLast(message => message.role === 'user')
+  const lastAssistant = messages.findLast(message => message.role === 'assistant')
+  const lastMessageAt = messages.reduce<string | undefined>((latest, message) => {
+    const at = Date.parse(message.createdAt)
+    return Number.isFinite(at) && (latest === undefined || at > Date.parse(latest)) ? message.createdAt : latest
+  }, undefined)
+  const running = activities.filter(record => record.kind === 'turn' && record.status === 'running')
+    .sort((first, second) => first.sequence - second.sequence).at(-1)
+  return { messageCount: messages.length, activityCount: activities.length,
+    ...(lastMessageAt === undefined ? {} : { lastMessageAt }),
+    ...(lastUser === undefined ? {} : { lastUser: cut(lastUser) }),
+    ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
+    ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
+}
+/** The same facts, from the summary the shell carries or from the history a full state holds. */
+export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
+  return thread.summary ?? summarizeThread(thread)
+}
+/** One thread as the shell stream carries it: the sidebar's facts, none of its history. */
+export function threadShell(thread: AgentThread): AgentThread {
+  return { ...thread, messages: [], ...(thread.activities === undefined ? {} : { activities: [] }), summary: threadSummaryOf(thread) }
+}
+/** The published state with every thread's history replaced by its summary. */
+export function agentShell(state: AgentState): AgentState {
+  return { ...state, host: { ...state.host, threads: state.host.threads.map(threadShell) } }
+}
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
@@ -337,6 +445,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
+    threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
@@ -366,8 +476,14 @@ export interface AgentBridge {
   grokVoices?(): Promise<AgentSpeechVoice[]>
   voiceModel?(action: 'status' | 'download'): Promise<AgentVoiceModelStatus>
   get(): Promise<AgentState>
+  /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
+  attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   command(command: AgentCommand): Promise<AgentState>
   onState(listener: (state: AgentState) => void): () => void
+  /** One viewed thread's messages, for a thread the window opened before main pushed them. */
+  threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
+  /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
+  onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
 }
 
 export const EMPTY_AGENT_HOST: AgentHostSnapshot = {

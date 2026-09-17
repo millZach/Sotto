@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isThreadProviderConnected } from '../../shared/agents'
+import { isThreadProviderConnected, threadSummaryOf } from '../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import type { AgentControl } from '../agents/control'
 import type { WorkspaceHost } from '../agents/workspace'
@@ -62,7 +62,8 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   const unsubscribe = control.subscribe(state => {
     for (const thread of state.host.threads) {
       if (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || !thread.lastTurn || thread.lastTurn.status === 'running') continue
-      const key = `${thread.lastTurn.id}:${thread.lastTurn.status}:${thread.messages.length}`
+      // The published state is the shell, so a thread's message count comes from its summary.
+      const key = `${thread.lastTurn.id}:${thread.lastTurn.status}:${threadSummaryOf(thread).messageCount}`
       if (completions.get(thread.id) === key) continue
       completions.set(thread.id, key)
       void ready.then(() => checkpoints.afterTurn(thread.id)).catch(() => options.report('A completed turn checkpoint could not be saved. Check the Changes panel before attempting a revert.'))

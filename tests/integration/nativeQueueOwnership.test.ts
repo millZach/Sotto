@@ -7,6 +7,7 @@ import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { FollowupStore } from '../../src/main/agents/followups'
 import { codexFixture } from '../fixtures/codexFixture'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 async function fixture() {
   const f = await codexFixture(undefined, true, 1500)
@@ -16,7 +17,7 @@ async function fixture() {
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, modelId: f.modelId, title: 'Synthetic' })
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
   await credentials.load()
-  const create = () => new AgentControl({ directory: f.root, host: f.host, credentials,
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
   const control = create(); await control.start(); await control.command({ type: 'connect' })

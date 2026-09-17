@@ -10,6 +10,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentAttachmentPreviewSchema, type AgentAttachment, type AgentHostSnapshot } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const image: AgentAttachment = { id: 'image', name: 'Screenshot.png', mimeType: 'image/png',
   dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZ0AAAAASUVORK5CYII=' }
@@ -43,7 +44,11 @@ describe('app-owned submitted attachment previews', () => {
     const source = await snapshot(); source.connected = false
     const decorated = structuredClone(source); restarted.decorate(decorated)
     expect(attachment(source)).toBeUndefined()
-    expect(attachment(decorated)).toEqual({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: 68, preview: { dataUrl: image.dataUrl } })
+    // The published state says a preview exists; its bytes stay in main until the window asks for them.
+    expect(attachment(decorated)).toEqual({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: 68, preview: { available: true } })
+    expect(JSON.stringify(decorated)).not.toContain(image.dataUrl)
+    expect(restarted.preview(source, 'workshop', 'message', image.id)).toBe(image.dataUrl)
+    expect(restarted.preview(source, 'workshop', 'message', 'other')).toBeNull()
     expect(decorated.threads[0]!.id).toBe('workshop')
     expect(decorated.threads[0]!.messages[0]!.id).toBe('message')
     for (const change of ['thread', 'message', 'command', 'role'] as const) {
@@ -53,6 +58,8 @@ describe('app-owned submitted attachment previews', () => {
       if (change === 'command') other.threads[0]!.messages[0]!.commandId = 'different'
       if (change === 'role') other.threads[0]!.messages[0]!.role = 'assistant'
       restarted.decorate(other); expect(attachment(other)).toBeUndefined()
+      // The read path answers only where decoration would have placed a marker.
+      expect(restarted.preview(other, other.threads[0]!.id, other.threads[0]!.messages[0]!.id, image.id)).toBeNull()
     }
   })
   it('never turns provider markup, paths, URLs or forged previews into file reads; preserves metadata-only files', async () => {
@@ -80,9 +87,11 @@ describe('app-owned submitted attachment previews', () => {
     await store.remember('workshop', 'message', 'command', [image])
     await expect(store.remember('workshop', 'message', 'other', [image])).rejects.toThrow(/already owns/)
     await expect(store.remember('workshop', 'message', 'command', [{ ...image, name: 'replacement.png' }])).rejects.toThrow(/already owns/)
-    const live = await snapshot(); store.decorate(live); expect(attachment(live)?.preview).toBeDefined()
+    const live = await snapshot(); store.decorate(live); expect(attachment(live)?.preview).toEqual({ available: true })
+    expect(store.preview(live, 'workshop', 'message', image.id)).toBe(image.dataUrl)
     now += 1
     const expired = await snapshot(); store.decorate(expired); expect(attachment(expired)).toBeUndefined()
+    expect(store.preview(expired, 'workshop', 'message', image.id)).toBeNull()
     await store.maintain(); expect((await saved(root)).entries).toEqual([])
   })
   it('bounds retained content to 100 MiB and evicts the oldest submission first', async () => {
@@ -108,6 +117,7 @@ describe('app-owned submitted attachment previews', () => {
     await store.remember('workshop', 'message', 'command', [image])
     enabled = false
     const redacted = await snapshot(); store.decorate(redacted); expect(attachment(redacted)).toBeUndefined()
+    expect(store.preview(redacted, 'workshop', 'message', image.id)).toBeNull()
     await store.maintain(); expect((await saved(root)).entries).toEqual([])
     await store.remember('workshop', 'message', 'command', [image])
     const current = await snapshot(); store.decorate(current); expect(attachment(current)?.preview).toBeDefined()
@@ -170,7 +180,7 @@ async function fixture() {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const create = () => {
-    const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => enabled,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => enabled,
       membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
     controls.add(control); return control
   }
@@ -207,7 +217,10 @@ describe('coordinator attachment dispatch boundary', () => {
     await f.restart()
     expect((await f.control.command(send)).error).toMatch(/unknown result/)
     await f.host.acknowledge()
-    expect(attachment(f.control.get().host)?.preview).toEqual({ dataUrl: image.dataUrl })
+    expect(attachment(f.control.get().host)?.preview).toEqual({ available: true })
+    const messageId = f.control.get().host.threads[0]!.messages[0]!.id
+    expect(f.control.attachmentPreview({ threadId: 'workshop', messageId, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
+    expect(f.control.attachmentPreview({ threadId: 'workshop', messageId: 'unknown', attachmentId: image.id })).toBeNull()
     expect(attachment(await f.host.snapshot())?.preview).toBeUndefined()
     expect(f.control.get().draftAttachments).toEqual([])
     expect(f.host.attempts).toHaveLength(1)

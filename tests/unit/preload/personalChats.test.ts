@@ -17,6 +17,9 @@ it('exposes personal chat only in the main window and validates payloads and sub
   const subscription = ipc.on.mock.calls.find(call => call[0] === PERSONAL_CHAT_STATE)!
   subscription[1]({}, state)
   expect(listener).toHaveBeenCalledWith(state)
+  // Chat state streams from the same machine and is guarded structurally, like agent state.
+  for (const payload of [null, 'chats', { selectedChatId: null }]) subscription[1]({}, payload)
+  expect(listener).toHaveBeenCalledTimes(1)
   unsubscribe(); expect(ipc.removeListener).toHaveBeenCalledWith(PERSONAL_CHAT_STATE, subscription[1])
   ipc.invoke.mockResolvedValueOnce({ ...state, chats: [{ projectId: 'fake-project' }] })
   await expect(bridge.get()).rejects.toThrow()

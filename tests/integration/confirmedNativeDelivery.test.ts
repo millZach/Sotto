@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { codexFixture } from '../fixtures/codexFixture'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send successful when streaming invalidates post-send reads (%s)', async confirmation => {
   const f = await codexFixture()
@@ -12,7 +13,7 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
   const draftId = randomUUID()
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
-  const control = new AgentControl({ directory: f.root, host: f.host, credentials,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
   try {

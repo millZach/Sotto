@@ -13,6 +13,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import type { AgentAttachment, AgentCommand } from '../../src/shared/agents'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -39,7 +40,7 @@ async function fixture() {
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
     const host = new WorkspaceHost(native, directory, () => historyEnabled)
-    const control = new AgentControl({ directory, host, credentials, historyEnabled: () => historyEnabled,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
@@ -72,11 +73,13 @@ describe('integrated Phase 1 workspace persistence', () => {
     const model = initial.host.models.find(model => model.providerId === 'codex')!
     const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Recover setup', managed: false })
     const threadId = created.activeThreadId!
-    expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('error')
+    // The pane exists as soon as creation returns; its checkout is still being prepared.
+    expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('pending')
     const draft = { threadId, draftId: randomUUID(), text: 'Keep this exact unsent task', attachments: [image] }
     await f.command({ type: 'save-thread-draft', ...draft })
     const failed = await f.control.command({ type: 'manual-send', ...draft })
     expect(failed.error).toContain('no commit')
+    expect(failed.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('error')
     await f.command({ type: 'select-thread', threadId: initial.host.threads[0]!.id })
     await f.restart()
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining(draft))
@@ -197,8 +200,9 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(changed.host.threads.find(item => item.id === thread.id)).toMatchObject({ providerId: 'claude', projectId: project.id, nativeSessionStarted: false })
     const sent = await f.command({ type: 'manual-send', ...draft })
     expect(sent.deliveries).toContainEqual(expect.objectContaining({ threadId: thread.id, draftId: draft.draftId, status: 'accepted' }))
-    expect(sent.host.threads.find(item => item.id === thread.id)?.messages.at(-1)?.attachments)
-      .toContainEqual(expect.objectContaining({ id: image.id, preview: { dataUrl: image.dataUrl } }))
+    const sentMessage = sent.host.threads.find(item => item.id === thread.id)!.messages.at(-1)!
+    expect(sentMessage.attachments).toContainEqual(expect.objectContaining({ id: image.id, preview: { available: true } }))
+    expect(f.control.attachmentPreview({ threadId: thread.id, messageId: sentMessage.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
     expect(sent.assignments).toEqual([])
     await f.command({ type: 'settle-project', projectId: project.id })
     await f.restart()
@@ -206,8 +210,9 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(f.adapters.claude.commands.filter(command => command.type === 'send')).toHaveLength(1)
     expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)
     expect(f.control.get().host.threads.find(item => item.id === thread.id)).toMatchObject({ providerId: 'claude', projectId: project.id, nativeSessionStarted: true })
-    expect(f.control.get().host.threads.find(item => item.id === thread.id)?.messages.at(-1)?.attachments)
-      .toContainEqual(expect.objectContaining({ id: image.id, preview: { dataUrl: image.dataUrl } }))
+    const restored = f.control.get().host.threads.find(item => item.id === thread.id)!.messages.at(-1)!
+    expect(restored.attachments).toContainEqual(expect.objectContaining({ id: image.id, preview: { available: true } }))
+    expect(f.control.attachmentPreview({ threadId: thread.id, messageId: restored.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
     expect(f.control.get().threadDrafts?.some(item => item.threadId === thread.id)).toBe(false)
   })
 })

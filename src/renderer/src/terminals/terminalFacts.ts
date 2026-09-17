@@ -3,7 +3,7 @@ import type { WorkspaceTerminal } from '../../../shared/terminalWorkspace'
 import { elapsedLabel } from '../agents/threadFacts'
 
 /** What the sidebar says a terminal is doing; every value derives from main's record and the output clock. */
-export type TerminalRowState = 'running' | 'idle' | 'exited' | 'closed'
+export type TerminalRowState = 'starting' | 'running' | 'idle' | 'exited' | 'closed'
 
 /** Output within this long ago reads as Running; a quiet terminal is Idle. */
 export const TERMINAL_IDLE_AFTER_MS = 4_000
@@ -35,8 +35,11 @@ export interface TerminalOrganization {
 
 export const isOpenTerminal = (terminal: WorkspaceTerminal): boolean => terminal.closedAt === null
 
+/** A terminal with a process, or on its way to one: it takes input soon and counts among a project's running ones. */
+export const isLiveTerminal = (terminal: WorkspaceTerminal): boolean => terminal.status === 'running' || terminal.status === 'starting'
+
 /** The sidebar row's state token, on the same scale the thread rows use so the status dot reads the same. */
-export const SIDEBAR_STATE: Readonly<Record<TerminalRowState, string>> = { running: 'working', idle: 'idle', exited: 'stopped', closed: 'done' }
+export const SIDEBAR_STATE: Readonly<Record<TerminalRowState, string>> = { starting: 'working', running: 'working', idle: 'idle', exited: 'stopped', closed: 'done' }
 
 export function terminalProviderName(providerId: ProviderId | null): string {
   return providerId === null ? 'Shell' : PROVIDER_LABELS[providerId]
@@ -50,9 +53,10 @@ export function describeTerminals(state: Pick<AgentState, 'host'>, terminals: re
   }))
 }
 
-/** Running, Idle, Exited or Closed, from the record and when its output last moved. */
+/** Starting, Running, Idle, Exited or Closed, from the record and when its output last moved. */
 export function terminalState(terminal: WorkspaceTerminal, lastOutputAt: number, now: number): TerminalRowState {
   if (!isOpenTerminal(terminal)) return 'closed'
+  if (terminal.status === 'starting') return 'starting'
   if (terminal.status !== 'running') return 'exited'
   return now - lastOutputAt <= TERMINAL_IDLE_AFTER_MS ? 'running' : 'idle'
 }
@@ -71,6 +75,7 @@ export function exitNote(terminal: WorkspaceTerminal): string {
 /** The row's status: Running, the last notable line while it waits, how it ended, or Closed. */
 export function terminalStateLabel(terminal: WorkspaceTerminal, state: TerminalRowState, lastLine = ''): string {
   switch (state) {
+    case 'starting': return 'Starting'
     case 'running': return 'Running'
     case 'idle': return lastLine || 'Idle'
     case 'closed': return 'Closed'
@@ -118,7 +123,7 @@ export function organizeTerminals(state: Pick<AgentState, 'host'>, rows: readonl
     const title = project?.title ?? all[0]?.project?.title ?? 'Project'
     const openRows = all.filter(row => isOpenTerminal(row.terminal))
     const closedRows = all.filter(row => !isOpenTerminal(row.terminal))
-    if (openRows.length || (needle === '' && project !== undefined && !(project.workspaceSettledAt ?? null))) open.push({ id, project, title, rows: openRows, running: openRows.filter(row => row.terminal.status === 'running').length })
+    if (openRows.length || (needle === '' && project !== undefined && !(project.workspaceSettledAt ?? null))) open.push({ id, project, title, rows: openRows, running: openRows.filter(row => isLiveTerminal(row.terminal)).length })
     if (closedRows.length) closed.push({ id, project, title, rows: closedRows, running: 0 })
   }
   const latest = (folder: TerminalFolder): number => folder.rows[0]?.terminal.openedAt ?? Number.NEGATIVE_INFINITY

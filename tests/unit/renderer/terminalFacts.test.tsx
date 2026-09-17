@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceTerminal } from '../../../src/shared/terminalWorkspace'
-import { describeTerminals, lastNotableLine, organizeTerminals, terminalState, terminalStateLabel } from '../../../src/renderer/src/terminals/terminalFacts'
+import { SIDEBAR_STATE, describeTerminals, isOpenTerminal, lastNotableLine, organizeTerminals, terminalState, terminalStateLabel } from '../../../src/renderer/src/terminals/terminalFacts'
 import { threadsStateFixture } from './liveAgentState'
 
 const NOW = 1_700_000_000_000
@@ -20,7 +20,13 @@ describe('terminal rows', () => {
     expect(rows.map(row => [row.provider, row.since, row.project?.title])).toEqual([['Claude Code', '5 min', 'workshop'], ['Shell', '', 'workshop']])
   })
 
-  it('reads Running from recent output, Idle from quiet, and the exit from the record', () => {
+  it('reads Starting before the process, Running from recent output, Idle from quiet, and the exit from the record', () => {
+    // A terminal main has published but not yet spawned is open, and says so.
+    const starting = terminal(1, { status: 'starting', branch: null })
+    expect(isOpenTerminal(starting)).toBe(true)
+    expect(terminalState(starting, Number.NEGATIVE_INFINITY, NOW)).toBe('starting')
+    expect(terminalStateLabel(starting, 'starting')).toBe('Starting')
+    expect(SIDEBAR_STATE.starting).toBe('working')
     expect(terminalState(terminal(1), NOW - 1_000, NOW)).toBe('running')
     expect(terminalState(terminal(1), NOW - 60_000, NOW)).toBe('idle')
     expect(terminalState(terminal(1, { status: 'exited', exitCode: 2 }), NOW, NOW)).toBe('exited')
@@ -40,10 +46,11 @@ describe('terminal rows', () => {
 
   it('groups open terminals by project, newest first, and keeps closed ones on their own shelf', () => {
     const state = threadsStateFixture()
-    const rows = describeTerminals(state, [terminal(1, { openedAt: NOW - 60_000 }), terminal(2), terminal(3, { closedAt: NOW })], NOW)
+    const rows = describeTerminals(state, [terminal(1, { openedAt: NOW - 60_000 }), terminal(2, { status: 'starting' }), terminal(3, { closedAt: NOW })], NOW)
     const organization = organizeTerminals(state, rows, '')
     const workshop = organization.open.find(folder => folder.id === 'workshop')!
     expect(workshop.rows.map(row => row.title)).toEqual(['Terminal 1', 'Terminal 2'])
+    // A terminal on its way up counts among the folder's running ones.
     expect(workshop.running).toBe(2)
     // Every open project is listed so a terminal can be started there.
     expect(organization.open.map(folder => folder.id)).toEqual(expect.arrayContaining(state.host.projects.filter(project => !project.workspaceSettledAt).map(project => project.id)))

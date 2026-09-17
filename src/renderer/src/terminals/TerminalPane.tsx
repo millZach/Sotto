@@ -59,7 +59,9 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
     return () => window.clearTimeout(timer)
   }, [pasted, store, id])
 
-  const running = terminal.status === 'running'
+  // A terminal still starting shows as it will look: the header, an empty screen and the status line, with no exit note.
+  const starting = terminal.status === 'starting'
+  const running = terminal.status === 'running' || starting
   const workingCopy = terminal.workingCopy === 'independent' ? 'Worktree' : 'Project folder'
   const modifier = platform === 'darwin' ? '⌘' : 'Ctrl'
   return <div className="terminal-pane" data-focused={focused || undefined}>
@@ -90,7 +92,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
       {pasted ? <p className="terminal-pane__chip" role="status">Image saved · {fileName(pasted.path)}</p> : null}
     </div>
     <p className="terminal-status">
-      <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? 'No branch'}</span>
+      <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? (starting ? 'Starting…' : 'No branch')}</span>
       <span className="terminal-status__hints">{modifier}+C copies a selection or interrupts · {modifier}+V pastes text or an image</span>
     </p>
   </div>

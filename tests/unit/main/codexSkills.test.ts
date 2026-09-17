@@ -9,6 +9,7 @@ import { agentCommandSchema, agentThreadDraftSchema } from '../../../src/shared/
 import { hasSkillInvocation } from '../../../src/shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from '../../../src/main/agents/codexSkills'
 import { codexFixture } from '../../fixtures/codexFixture'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 const controls: AgentControl[] = []
@@ -97,7 +98,7 @@ describe('Codex native skills', () => {
     const f = await fixture()
     const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
     await credentials.load()
-    const control = new AgentControl({ directory: f.root, host: f.host, credentials,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })

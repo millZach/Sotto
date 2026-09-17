@@ -7,9 +7,10 @@ import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
+import { useShared } from './stateSharing'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } from './ThreadActivity'
-import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TurnChange } from './threadActivityView'
+import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 
@@ -77,52 +78,83 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
  * With `streamText` off, the reply being written is held back until something follows it: activity after it,
  * a later message, or the end of the turn. Activity itself always appears as it runs.
  */
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true }: {
-  readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
-  readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
+const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
+
+/**
+ * One message in the transcript. Memoised on the message itself: the state the window receives shares the
+ * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
+ * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
+ */
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId }: {
+  readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
+  readonly threadId: string | undefined
 }): ReactNode {
-  const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
-  const last = messages.findLast(drawn)
-  const writing = running && last?.role === 'assistant' && !placement.after.get(last.id)?.length ? last.id : undefined
-  const article = (message: AgentMessage): ReactNode => drawn(message) && <article className="thread-message" data-role={message.role}>
+  return <article className="thread-message" data-role={message.role}>
     <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
-    {message.id === writing && !streamText
+    {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
-      : <MessageContent text={message.text} streaming={message.id === writing} />}
-    <AttachmentPreviews attachments={message.attachments ?? []} />
+      : <MessageContent text={message.text} streaming={writing} />}
+    <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
   </article>
+})
+
+/**
+ * One turn: the user's message, the work it caused and its reply. Memoised, so a chunk arriving in the turn
+ * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
+ * to know about its place; everything else it reads is shared across updates.
+ */
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId }: {
+  readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
+  readonly writing: string | undefined
+  readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
+  readonly threadId: string | undefined
+}): ReactNode {
+  const article = (message: AgentMessage): ReactNode => drawn(message)
+    && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
   </React.Fragment>
-  const turns = splitTurns(messages)
-  return <>{turns.map((turn, index) => {
-    const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
-    // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
-    // a finished turn folds under its last written reply.
-    const final = !turn.user || running && index === turns.length - 1 ? undefined : turn.replies.findLast(message => message.role === 'assistant' && drawn(message))
-    const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
-    // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
-    const boundaries = groups.filter(group => compactionOf(group))
-    const work = final ? turn.replies.filter(message => message !== final && drawn(message)) : []
-    // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
-    if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <React.Fragment key={turn.key}>{everything.map(plain)}</React.Fragment>
-    const lifecycle = groups.find(group => group.turn)?.turn
-    const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
-    return <React.Fragment key={turn.key}>
-      {turn.user ? article(turn.user) : null}
-      <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error}
-        changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
-        {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
-          {message === turn.user ? null : article(message)}
-          <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
-        </React.Fragment>)}
-        <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
-      </TurnWork>
-      <ActivityGroups groups={boundaries} context={context} />
-      {article(final)}
-    </React.Fragment>
-  })}
+  const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
+  // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
+  // a finished turn folds under its last written reply.
+  const final = !turn.user || running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && drawn(message))
+  const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+  // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
+  const boundaries = groups.filter(group => compactionOf(group))
+  const work = final ? turn.replies.filter(message => message !== final && drawn(message)) : []
+  // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
+  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}</>
+  const lifecycle = groups.find(group => group.turn)?.turn
+  const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
+  return <>
+    {turn.user ? article(turn.user) : null}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error}
+      changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
+      {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
+        {message === turn.user ? null : article(message)}
+        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
+      </React.Fragment>)}
+      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
+    </TurnWork>
+    <ActivityGroups groups={boundaries} context={context} />
+    {article(final)}
+  </>
+})
+
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId }: {
+  readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
+  readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
+  /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
+  readonly threadId?: string
+}): ReactNode {
+  const last = messages.findLast(drawn)
+  const writing = running && last?.role === 'assistant' && !placement.after.get(last.id)?.length ? last.id : undefined
+  // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
+  // memoised turns below compare equal.
+  const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
+  return <>{turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
+    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} />)}
   <ActivityGroups groups={placement.trailing} context={context} />
   </>
 })
@@ -222,8 +254,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const messages = useMemo(() => thread.messages.slice(start), [thread.messages, start])
   const hidden = thread.messages.length - messages.length
   const lastMessageId = thread.messages.at(-1)?.id
-  const placement = useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading'),
-    [thread.messages, messages, thread.activities, thread.historyStatus])
+  // Placement is rebuilt whenever a message arrives, but the groups it holds are mostly the ones already on
+  // screen; sharing their structure keeps the memoised activity views from redrawing the whole history.
+  const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading'),
+    [thread.messages, messages, thread.activities, thread.historyStatus]))
   const liveTurn = liveTurnId(thread)
   const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
@@ -321,7 +355,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

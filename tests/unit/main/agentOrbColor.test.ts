@@ -6,6 +6,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const workspace = resolve('.')
 const roots: string[] = []
@@ -21,7 +22,7 @@ async function fixture(directory?: string) {
   if (directory === undefined) roots.push(root)
   const credentials = new AgentCredentials(join(root, 'vault'), encryption)
   await credentials.load()
-  const control = new AgentControl({
+  const control = new AgentControl({ schedule: immediatePublishScheduler,
     directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
     membership: {
       status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),

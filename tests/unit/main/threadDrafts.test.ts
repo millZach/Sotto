@@ -10,6 +10,7 @@ import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, agentStateSchema, type AgentAttachment, type AgentState } from '../../../src/shared/agents'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
 const controls = new Set<AgentControl>()
@@ -46,7 +47,7 @@ async function fixture() {
   await credentials.load()
   let history = true
   const create = () => {
-    const control = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
       membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
     controls.add(control); return control
   }
@@ -349,7 +350,8 @@ describe('state publication cost', () => {
     f.host.event({ type: 'stream', threadId: 'docs', messageId: 'streaming', text: 'First delta', status: 'running' })
     await settledWrites(writes)
     expect(published).toHaveLength(1)
-    expect(published[0]!.host.threads.find(thread => thread.id === 'docs')!.messages.at(-1)!.text).toBe('First delta')
+    // The broadcast is the shell, so the streamed text reaches listeners as the thread's summary.
+    expect(published[0]!.host.threads.find(thread => thread.id === 'docs')!.summary!.lastAssistant!.text).toBe('First delta')
     expect(published[0]!.threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
   })
 

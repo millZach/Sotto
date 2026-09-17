@@ -32,7 +32,8 @@ export const workspaceTerminalSchema = z.object({
   branch: z.string().max(256).nullable(),
   /** The command as shown in the dialog's Runs box and printed on the terminal's first line. */
   command: z.string().max(4_096),
-  status: z.enum(['running', 'exited', 'unavailable']),
+  /** `starting` is published the moment the terminal is asked for, before its process exists; its branch may still be null. */
+  status: z.enum(['starting', 'running', 'exited', 'unavailable']),
   ...terminalSizeSchema.shape,
   exitCode: z.number().int().nullable(),
   openedAt: z.number().finite(),
@@ -66,6 +67,7 @@ export type TerminalOpenRequest = z.infer<typeof terminalOpenSchema>
 
 export interface TerminalWorkspaceBridge {
   list(): Promise<ToolsResult<z.infer<typeof workspaceTerminalListingSchema>>>
+  /** Resolves as soon as the terminal exists, with status `starting`; the process and the branch follow as events. */
   open(request: TerminalOpenRequest): Promise<ToolsResult<WorkspaceTerminalSnapshot>>
   read(request: z.infer<typeof workspaceTerminalRequestSchema>): Promise<ToolsResult<WorkspaceTerminalSnapshot>>
   write(request: z.infer<typeof workspaceTerminalWriteSchema>): Promise<ToolsResult<void>>

@@ -1,8 +1,9 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
-import { defaultThreadModelId, type AgentProject, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
+import { defaultThreadModelId, type AgentProject, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
+import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import './newThread.css'
 import { folderName, projectForFolder, useProjectChooser } from './ProjectChooser'
 import { ThreadOptionFields } from './ThreadOptions'
@@ -10,29 +11,57 @@ import { WorkingCopyFieldset, type WorkingCopyChoice } from './WorkingCopyFields
 
 export { folderKey } from './ProjectChooser'
 
-export function NewThreadDialog({ state, command, onClose, onCreated, managed = false, initialProjectId }: {
+/** Everything the user chose here, so a refused creation can reopen the dialog exactly as it was. */
+export interface NewThreadChoices {
+  readonly projectId: string
+  readonly title: string
+  readonly modelId: string
+  readonly workingCopy: WorkingCopyChoice
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
+}
+
+/** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
+export interface ThreadCreationStart {
+  /** The local record for the ID this window minted, to show until main's state carries the thread. */
+  readonly thread: AgentThread
+  readonly choices: NewThreadChoices
+  /** Resolves null once main has the thread, or with the reason main refused it. Never rejects. */
+  readonly created: Promise<string | null>
+}
+
+export function NewThreadDialog({ state, command, onClose, onCreated, onCreating, managed = false, initialProjectId, initialChoices, initialError }: {
   readonly state: AgentState
   readonly command: AgentConnection['command']
   readonly onClose: () => void
   readonly onCreated: () => void
+  /**
+   * Present when the caller shows the thread itself: the dialog mints the ID, issues the command and hands
+   * the creation over at once instead of waiting for it, and `onCreated` is not called.
+   */
+  readonly onCreating?: ((start: ThreadCreationStart) => void) | undefined
   readonly managed?: boolean
   /** Opens straight to the thread form for this project, as "New thread here" does. */
   readonly initialProjectId?: string | undefined
+  /** Reopening after a refusal: the same choices, and the reason shown above the button. */
+  readonly initialChoices?: NewThreadChoices | undefined
+  readonly initialError?: string | undefined
 }): ReactNode {
   const dialog = useRef<HTMLDialogElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   const titleId = useId()
-  const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === initialProjectId) ?? null)
+  const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === (initialChoices?.projectId ?? initialProjectId)) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
-  const [title, setTitle] = useState('')
-  const [modelId, setModelId] = useState(() => defaultThreadModelId(state.configuration, state.host.models))
-  const modelChosen = useRef(false)
-  const [reasoningEffort, setReasoningEffort] = useState<string | undefined>()
-  const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>()
+  const [title, setTitle] = useState(initialChoices?.title ?? '')
+  const [modelId, setModelId] = useState(() => initialChoices?.modelId ?? defaultThreadModelId(state.configuration, state.host.models))
+  // Choices carried back from a refused creation are the user's own; the default must not move under them.
+  const modelChosen = useRef(initialChoices !== undefined)
+  const [reasoningEffort, setReasoningEffort] = useState<string | undefined>(initialChoices?.reasoningEffort)
+  const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>(initialChoices?.runtimeMode)
   // Chosen on purpose for every new thread; existing threads keep the folder they already use.
-  const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('independent')
+  const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>(initialChoices?.workingCopy ?? 'independent')
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError ?? null)
   const latestState = useRef(state)
   latestState.current = state
   const creating = useRef(false)
@@ -76,9 +105,24 @@ export function NewThreadDialog({ state, command, onClose, onCreated, managed = 
         setProject(selectedProject)
       }
       if (!selectedProject) return
-      const result = await command({ type: 'create-thread', projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, managed, workingCopy,
-        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) })
-      if (!result || result.error) { setError(result?.error ?? 'Could not confirm thread creation. Your choices are retained.'); return }
+      const choices: NewThreadChoices = { projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, workingCopy,
+        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) }
+      const request = { type: 'create-thread', projectId: choices.projectId, title: choices.title, modelId, managed, workingCopy,
+        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) } as const
+      if (onCreating) {
+        // The window shows the thread under this ID at once; main adopts the same ID when it catches up.
+        const threadId = crypto.randomUUID()
+        const thread = draftThread({ id: threadId, projectId: choices.projectId, title: choices.title, modelId, workingCopy,
+          ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
+          reasoningEffort: reasoningEffort ?? selectedModel?.defaultReasoningEffort, runtimeMode })
+        const created = command({ ...request, threadId })
+          .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
+        completed.current = true
+        onCreating({ thread, choices, created })
+        return
+      }
+      const result = await command(request)
+      if (!result || result.error) { setError(result?.error ?? UNCONFIRMED_CREATION); return }
       completed.current = true
       onCreated()
     } catch { setError('Could not confirm creation. Your choices are retained; try again to check the existing action.') }

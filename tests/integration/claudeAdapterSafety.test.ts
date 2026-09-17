@@ -11,6 +11,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 describe('Claude native request mapping', () => {
   it('rejects malformed permissions and questions', () => {
@@ -112,7 +113,7 @@ describe('Claude recovery and safety', () => {
     await credentials.load()
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    const create = () => new AgentControl({ directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
       membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
     let control = create()
     try {
@@ -122,7 +123,8 @@ describe('Claude recovery and safety', () => {
       const result = await control.command({ type: 'manual-send', threadId: sottoId, text: '', attachments: [image] })
       expect(result.error).toBeNull()
       const message = result.host.threads.find(thread => thread.id === sottoId)!.messages[0]!
-      expect(message.attachments?.[0]?.preview).toEqual({ dataUrl: image.dataUrl })
+      expect(message.attachments?.[0]?.preview).toEqual({ available: true })
+      expect(control.attachmentPreview({ threadId: sottoId, messageId: message.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
       const cache = await readFile(join(f.root, 'attachment-previews.json'), 'utf8')
       expect(JSON.parse(cache).entries[0]).toMatchObject({ threadId: sottoId, messageId: message.id, commandId: message.commandId })
       expect(cache).not.toContain(id)
@@ -132,6 +134,7 @@ describe('Claude recovery and safety', () => {
       registry = new ThreadRegistry(f.root); wrapped = new SottoThreadHost('claude', f.adapter, registry)
       control = create(); await control.start(); await control.command({ type: 'connect' })
       expect(control.get().host.threads.find(thread => thread.id === sottoId)!.messages[0]).toEqual(message)
+      expect(control.attachmentPreview({ threadId: sottoId, messageId: message.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
       expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
     } finally { control.dispose(); await control.privacyChanged(); await f.adapter.closed(); await registry.flush() }
   })
