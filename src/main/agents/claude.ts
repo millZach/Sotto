@@ -13,6 +13,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
+import { filePromptText } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, object, type ClaudeFrame } from './claudeProtocol'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
@@ -314,7 +315,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (stale) { await this.denyPending(id, stale); this.runtimes.delete(id); stale.protocol.stop(); await stale.protocol.closed }
         }
         const runtime = await this.start(id)
-        const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
+        // Mentioned files travel as the `@path` Claude already reads; main only verifies they are still written here.
+        const authored = filePromptText(command.text, command.files)
+        const nativePrompt = command.skills?.length ? claudeSkillPrompt(authored, command.skills, await this.listThreadSkills(id, true)) : authored
         const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
         const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
           ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachmentSizeBytes(attachment.dataUrl) })) } : {}) }

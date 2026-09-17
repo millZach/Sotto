@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
+import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
@@ -281,12 +282,14 @@ export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
   threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  files: agentFileReferencesSchema.optional(),
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
 /** User-authored follow-ups; independent of attention and dispatched outbox intent. */
 export const agentFollowupSchema = z.object({
   id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  files: agentFileReferencesSchema.optional(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
   error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
@@ -341,8 +344,8 @@ export const agentStateSchema = z.object({
 export type AgentState = z.infer<typeof agentStateSchema>
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
- * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
- * records — and, like the messages, only the open pane draws it.
+ * activity beside them. Activity is the larger half by far â€” a working thread reports hundreds of
+ * records â€” and, like the messages, only the open pane draws it.
  */
 export const agentThreadDetailSchema = z.object({
   threadId: id, revision: z.number().int().nonnegative(), messages: z.array(agentMessageSchema),
@@ -354,7 +357,7 @@ export const agentThreadDetailRequestSchema = id
 /**
  * What changed in one viewed thread since the revision the window already holds, sent in place of the
  * whole detail while an agent streams into it: a message that grew by a chunk costs the chunk, not the
- * thread. A message delta is a whole message — new, or changed in a way an append cannot say — or the
+ * thread. A message delta is a whole message â€” new, or changed in a way an append cannot say â€” or the
  * suffix a streaming message grew by; an activity delta is one record as it now stands, or its removal.
  * The window applies one only when `baseRevision` is the revision it holds, and asks for the whole
  * detail when it is not. The full form remains for first delivery and for that resync.
@@ -424,16 +427,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
+    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
-  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
-  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
-  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
-  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('pause-draft') }).strict(),
   z.object({ type: z.literal('resume-draft'), threadId: id }).strict(),
