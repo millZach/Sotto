@@ -77,9 +77,11 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
  * With `streamText` off, the reply being written is held back until something follows it: activity after it,
  * a later message, or the end of the turn. Activity itself always appears as it runs.
  */
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
+  /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
+  readonly threadId?: string
 }): ReactNode {
   const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
   const last = messages.findLast(drawn)
@@ -89,7 +91,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     {message.id === writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={message.text} streaming={message.id === writing} />}
-    <AttachmentPreviews attachments={message.attachments ?? []} />
+    <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
   </article>
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
@@ -321,7 +323,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.busy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0 && <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

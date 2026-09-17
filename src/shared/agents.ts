@@ -22,6 +22,7 @@ export const AGENT_SPEECH_CANCEL = 'sotto:agents:speech-cancel'
 export const AGENT_GROK_VOICES = 'sotto:agents:grok-voices'
 export const AGENT_VOICE_MODEL = 'sotto:agents:voice-model'
 export const AGENT_WAKE = 'sotto:agents:wake'
+export const AGENT_ATTACHMENT_PREVIEW = 'sotto:agents:attachment-preview'
 export const agentWakeDetectionSchema = z.object({ detected: z.boolean(), endSeconds: z.number().min(0).max(8.25) })
 export type AgentWakeDetection = z.infer<typeof agentWakeDetectionSchema>
 export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_000), mimeType: z.literal('audio/wav') })
@@ -73,11 +74,20 @@ export function hasRasterImageSignature(attachment: Pick<AgentAttachment, 'mimeT
       : attachment.mimeType === 'image/gif' ? /^(GIF87a|GIF89a)/u.test(header)
         : attachment.mimeType === 'image/webp' && header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP'
 }
-export const agentAttachmentPreviewSchema = z.object({ dataUrl: z.string().max(14_000_000) }).strict().refine(preview => {
+/** Preview bytes themselves: an unsent draft's own image, or one main hands back on request. */
+export const agentAttachmentPreviewDataSchema = z.object({ dataUrl: z.string().max(14_000_000) }).strict().refine(preview => {
   const parsed = agentAttachmentSchema.safeParse({ id: 'preview', name: 'preview',
     mimeType: preview.dataUrl.slice(5, preview.dataUrl.indexOf(';')), dataUrl: preview.dataUrl })
   return parsed.success && hasRasterImageSignature(parsed.data)
 }, 'Choose a valid raster image preview.')
+/** Published state carries the marker alone; the window asks for the bytes when it draws the image. */
+export const agentAttachmentPreviewMarkerSchema = z.object({ available: z.literal(true) }).strict()
+export const agentAttachmentPreviewSchema = z.union([agentAttachmentPreviewDataSchema, agentAttachmentPreviewMarkerSchema])
+export type AgentAttachmentPreview = z.infer<typeof agentAttachmentPreviewSchema>
+export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, messageId: id, attachmentId: id }).strict()
+export type AgentAttachmentPreviewRequest = z.infer<typeof agentAttachmentPreviewRequestSchema>
+export const agentAttachmentPreviewResultSchema = agentAttachmentPreviewDataSchema.nullable()
+export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreviewResultSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
@@ -366,6 +376,8 @@ export interface AgentBridge {
   grokVoices?(): Promise<AgentSpeechVoice[]>
   voiceModel?(action: 'status' | 'download'): Promise<AgentVoiceModelStatus>
   get(): Promise<AgentState>
+  /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
+  attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   command(command: AgentCommand): Promise<AgentState>
   onState(listener: (state: AgentState) => void): () => void
 }

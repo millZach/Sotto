@@ -4,7 +4,7 @@ import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { common, createLowlight } from 'lowlight'
-import { agentAttachmentPreviewSchema, type AgentAttachmentReference } from '../../../shared/agents'
+import { agentAttachmentPreviewDataSchema, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from './diagrams/diagramSource'
@@ -28,6 +28,8 @@ export interface AttachmentPreviewsProps {
   readonly attachments: readonly MessageAttachment[]
   /** One provider limit or unsupported note, shown under the attachments. */
   readonly notice?: string
+  /** The submitted message these belong to; without it only a draft's own bytes can be drawn. */
+  readonly origin?: AttachmentOrigin | undefined
 }
 
 export type LinkOpenResult = Readonly<{ ok: boolean }>
@@ -78,16 +80,38 @@ const validatedPreviews = new Map<string, boolean>()
 const VALIDATED_PREVIEW_CACHE = 48
 
 /** The preview as an image source only when it is a validated raster data URL. */
-export function trustedPreviewSource(attachment: MessageAttachment): string | null {
-  const dataUrl = attachment.preview?.dataUrl
+export function trustedPreviewSource(dataUrl: string | undefined): string | null {
   if (typeof dataUrl !== 'string') return null
   let valid = validatedPreviews.get(dataUrl)
   if (valid === undefined) {
-    valid = agentAttachmentPreviewSchema.safeParse({ dataUrl }).success
+    valid = agentAttachmentPreviewDataSchema.safeParse({ dataUrl }).success
     if (validatedPreviews.size >= VALIDATED_PREVIEW_CACHE) validatedPreviews.delete(validatedPreviews.keys().next().value!)
     validatedPreviews.set(dataUrl, valid)
   }
   return valid ? dataUrl : null
+}
+
+/** The message a submitted attachment belongs to, which is how main finds its preview bytes. */
+export interface AttachmentOrigin { readonly threadId: string; readonly messageId: string }
+
+// Published state carries markers alone, so each image is fetched once and kept for the session.
+const fetchedPreviews = new Map<string, Promise<string | null>>()
+const FETCHED_PREVIEW_CACHE = 64
+
+function requestPreview(origin: AttachmentOrigin, attachmentId: string): Promise<string | null> {
+  const key = JSON.stringify([origin.threadId, origin.messageId, attachmentId])
+  const cached = fetchedPreviews.get(key)
+  if (cached) return cached
+  const bridge = window.sotto?.agents ?? window.sottoWidget?.agents
+  const pending: Promise<string | null> = bridge?.attachmentPreview
+    ? bridge.attachmentPreview({ threadId: origin.threadId, messageId: origin.messageId, attachmentId })
+      .then(result => trustedPreviewSource(result?.dataUrl), () => null)
+    : Promise.resolve(null)
+  if (fetchedPreviews.size >= FETCHED_PREVIEW_CACHE) fetchedPreviews.delete(fetchedPreviews.keys().next().value!)
+  fetchedPreviews.set(key, pending)
+  // A preview main could not hand over may exist later; only the bytes themselves are worth keeping.
+  void pending.then(source => { if (source === null) fetchedPreviews.delete(key) })
+  return pending
 }
 
 interface LinkActions {
@@ -305,9 +329,23 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   </LinkContext.Provider>
 })
 
-function AttachmentTile({ attachment }: { attachment: MessageAttachment }): ReactNode {
-  const dataUrl = attachment.preview?.dataUrl
-  const source = useMemo(() => trustedPreviewSource({ id: '', name: '', ...(dataUrl === undefined ? {} : { preview: { dataUrl } }) }), [dataUrl])
+function AttachmentTile({ attachment, origin }: { attachment: MessageAttachment; origin?: AttachmentOrigin | undefined }): ReactNode {
+  // An unsent draft holds its own bytes; a submitted image arrives as a marker and is fetched here.
+  const inline = attachment.preview && 'dataUrl' in attachment.preview ? attachment.preview.dataUrl : undefined
+  const marked = Boolean(attachment.preview && 'available' in attachment.preview)
+  // undefined while the request is still out, so a pending tile does not claim the preview is unavailable.
+  const [fetched, setFetched] = useState<string | null | undefined>(undefined)
+  const threadId = origin?.threadId
+  const messageId = origin?.messageId
+  useEffect(() => {
+    setFetched(undefined)
+    if (inline !== undefined || !marked || threadId === undefined || messageId === undefined) return
+    let live = true
+    void requestPreview({ threadId, messageId }, attachment.id).then(source => { if (live) setFetched(source) })
+    return () => { live = false }
+  }, [inline, marked, threadId, messageId, attachment.id])
+  const dataUrl = inline ?? fetched ?? undefined
+  const source = useMemo(() => trustedPreviewSource(dataUrl), [dataUrl])
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [source])
   const name = attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
@@ -317,7 +355,8 @@ function AttachmentTile({ attachment }: { attachment: MessageAttachment }): Reac
     <div className="rich-attachment__frame"><img src={source} alt={name} decoding="async" draggable={false} onError={() => setFailed(true)} /></div>
     <figcaption><span className="rich-attachment__name" title={name}>{name}</span>{details && <span className="rich-attachment__meta">{details}</span>}</figcaption>
   </figure>
-  const reason = !attachment.mimeType ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
+  const awaiting = inline === undefined && marked && fetched === undefined && threadId !== undefined && messageId !== undefined
+  const reason = !attachment.mimeType || awaiting ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
   return <div className="rich-attachment rich-attachment--file" role="listitem">
     {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
     <span className="rich-attachment__text">
@@ -328,11 +367,11 @@ function AttachmentTile({ attachment }: { attachment: MessageAttachment }): Reac
 }
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
-export function AttachmentPreviews({ attachments, notice }: AttachmentPreviewsProps): ReactNode {
+export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
   if (!attachments.length && !notice) return null
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
   </div>

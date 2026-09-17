@@ -122,7 +122,8 @@ describe('Claude recovery and safety', () => {
       const result = await control.command({ type: 'manual-send', threadId: sottoId, text: '', attachments: [image] })
       expect(result.error).toBeNull()
       const message = result.host.threads.find(thread => thread.id === sottoId)!.messages[0]!
-      expect(message.attachments?.[0]?.preview).toEqual({ dataUrl: image.dataUrl })
+      expect(message.attachments?.[0]?.preview).toEqual({ available: true })
+      expect(control.attachmentPreview({ threadId: sottoId, messageId: message.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
       const cache = await readFile(join(f.root, 'attachment-previews.json'), 'utf8')
       expect(JSON.parse(cache).entries[0]).toMatchObject({ threadId: sottoId, messageId: message.id, commandId: message.commandId })
       expect(cache).not.toContain(id)
@@ -132,6 +133,7 @@ describe('Claude recovery and safety', () => {
       registry = new ThreadRegistry(f.root); wrapped = new SottoThreadHost('claude', f.adapter, registry)
       control = create(); await control.start(); await control.command({ type: 'connect' })
       expect(control.get().host.threads.find(thread => thread.id === sottoId)!.messages[0]).toEqual(message)
+      expect(control.attachmentPreview({ threadId: sottoId, messageId: message.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
       expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
     } finally { control.dispose(); await control.privacyChanged(); await f.adapter.closed(); await registry.flush() }
   })

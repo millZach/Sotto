@@ -197,8 +197,9 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(changed.host.threads.find(item => item.id === thread.id)).toMatchObject({ providerId: 'claude', projectId: project.id, nativeSessionStarted: false })
     const sent = await f.command({ type: 'manual-send', ...draft })
     expect(sent.deliveries).toContainEqual(expect.objectContaining({ threadId: thread.id, draftId: draft.draftId, status: 'accepted' }))
-    expect(sent.host.threads.find(item => item.id === thread.id)?.messages.at(-1)?.attachments)
-      .toContainEqual(expect.objectContaining({ id: image.id, preview: { dataUrl: image.dataUrl } }))
+    const sentMessage = sent.host.threads.find(item => item.id === thread.id)!.messages.at(-1)!
+    expect(sentMessage.attachments).toContainEqual(expect.objectContaining({ id: image.id, preview: { available: true } }))
+    expect(f.control.attachmentPreview({ threadId: thread.id, messageId: sentMessage.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
     expect(sent.assignments).toEqual([])
     await f.command({ type: 'settle-project', projectId: project.id })
     await f.restart()
@@ -206,8 +207,9 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(f.adapters.claude.commands.filter(command => command.type === 'send')).toHaveLength(1)
     expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)
     expect(f.control.get().host.threads.find(item => item.id === thread.id)).toMatchObject({ providerId: 'claude', projectId: project.id, nativeSessionStarted: true })
-    expect(f.control.get().host.threads.find(item => item.id === thread.id)?.messages.at(-1)?.attachments)
-      .toContainEqual(expect.objectContaining({ id: image.id, preview: { dataUrl: image.dataUrl } }))
+    const restored = f.control.get().host.threads.find(item => item.id === thread.id)!.messages.at(-1)!
+    expect(restored.attachments).toContainEqual(expect.objectContaining({ id: image.id, preview: { available: true } }))
+    expect(f.control.attachmentPreview({ threadId: thread.id, messageId: restored.id, attachmentId: image.id })).toEqual({ dataUrl: image.dataUrl })
     expect(f.control.get().threadDrafts?.some(item => item.threadId === thread.id)).toBe(false)
   })
 })

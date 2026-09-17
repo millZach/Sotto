@@ -415,7 +415,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'voiceModel'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'voiceModel'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -439,7 +439,7 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('deliverOutput')
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.agents)).toBe(true)
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['command', 'get', 'onState'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'command', 'get', 'onState'])
 
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })
