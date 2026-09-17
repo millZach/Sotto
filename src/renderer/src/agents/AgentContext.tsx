@@ -24,12 +24,16 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown> }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
   const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
+  /** When the newest state arrived, and when the dev console was last told what one cost. */
+  const arrived = useRef<number | null>(null)
+  const reported = useRef(0)
   /**
    * Every published state is a whole new object, so the window would repaint all of it for one streaming
    * chunk. Reconciling the arrival against the state on screen keeps the reference of every part that did
    * not change, and a state that changed nothing at all stops here instead of becoming a render.
    */
   const receiveState = useCallback((next: AgentState): void => {
+    arrived.current = performance.now()
     setSnapshot(current => {
       if (current?.session !== session) return { session, state: next }
       const state = share(current.state, next)
@@ -95,6 +99,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // Both published and command-returned snapshots reach the store before paint,
   // including while the Threads page is absent.
   useLayoutEffect(() => { if (state !== null) threadDrafts.receive(state) }, [state, threadDrafts])
+  // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
+  // dev console at most once a second. Development only: the production bundle drops the whole effect body.
+  useEffect(() => {
+    if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
+    const at = arrived.current
+    arrived.current = null
+    if (at === null) return
+    const now = performance.now()
+    if (now - reported.current < 1000) return
+    reported.current = now
+    console.info(`sotto: state update ${Math.round(now - at)} ms`)
+  }, [state])
   return { state, error, command, threadDrafts }
 }
 
