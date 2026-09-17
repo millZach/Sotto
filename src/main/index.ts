@@ -68,6 +68,7 @@ import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { ShortTextWriter } from './llm/shortTextWriter'
 import { threadTitleWriter } from './llm/threadTitle'
+import { commitMessageWriter } from './llm/commitMessage'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
@@ -943,6 +944,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
+        writeCommitMessage: commitMessageWriter(shortTextWriter, () => settings.forFormatting()),
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.get().host.projects, git: runWorktreeGit,

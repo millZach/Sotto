@@ -12,8 +12,9 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
   const [checkpoints, setCheckpoints] = useState<z.infer<typeof checkpointListingSchema> | null>(null)
   const [inspection, setInspection] = useState<z.infer<typeof checkpointInspectionSchema> | null>(null)
   const [confirmed, setConfirmed] = useState(false)
+  const [drafting, setDrafting] = useState(false), [draftNote, setDraftNote] = useState('')
   const generation = useRef(0)
-  useEffect(() => { generation.current++; setOpen(null); setStatus(''); setMessage(''); setBranch(''); setBranches([]); setCheckpoints(null); setInspection(null); setBusy(false) }, [threadId, changes.workspace?.workspaceId])
+  useEffect(() => { generation.current++; setOpen(null); setStatus(''); setMessage(''); setBranch(''); setBranches([]); setCheckpoints(null); setInspection(null); setBusy(false); setDrafting(false); setDraftNote('') }, [threadId, changes.workspace?.workspaceId])
   if (!changes.workspace || changes.list.status !== 'ready' || !bridge) return null
   const target = { threadId, workspaceId: changes.workspace.workspaceId }, listing = changes.list
   const run = async <T,>(operation: () => Promise<ToolsResult<T>>, success: (value: T) => void | Promise<void>): Promise<void> => {
@@ -40,10 +41,32 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
     setInspection(null); setConfirmed(false)
     void run(() => bridge.inspectCheckpoint!({ ...target, checkpointId: checkpoint.id }), setInspection)
   }
+  const staged = listing.files.filter(file => file.staged).length
+  /**
+   * Sotto writes the first draft from the staged diff; the field stays the user's.
+   * A draft that arrives after the user has typed is dropped rather than pasted
+   * over their words, and a draft is never committed on its own.
+   */
+  const draft = (replace: boolean): void => {
+    if (!bridge.draftCommitMessage || drafting || staged === 0) return
+    const token = generation.current, from = message
+    if (!replace && from.trim().length > 0) return
+    setDrafting(true); setDraftNote('')
+    void bridge.draftCommitMessage({ ...target, revision: listing.revision })
+      .then(result => {
+        if (token !== generation.current || !result.ok) return
+        const written = result.value.message
+        if (written) setMessage(current => (replace || current === from ? written : current))
+        if (written && result.value.truncated) setDraftNote('The staged diff was too large to send whole, so this draft covers only its first part.')
+      })
+      .catch(() => undefined)
+      .finally(() => { if (token === generation.current) setDrafting(false) })
+  }
   const selected = listing.files.find(file => file.path === changes.selectedPath)
   const toggle = (next: 'git' | 'checkpoints'): void => {
     setOpen(open === next ? null : next); setStatus('')
     if (open === next) return
+    if (next === 'git') draft(false)
     if (next === 'git' && bridge.branches) void run(() => bridge.branches!(target), value => setBranches(value.branches))
     if (next === 'checkpoints' && bridge.checkpoints) void run(() => bridge.checkpoints!(target), setCheckpoints)
   }
@@ -70,8 +93,13 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
     {open === 'git' ? <div className="git-actions__drawer">
       <form onSubmit={event => { event.preventDefault(); action('commit') }}>
         <label htmlFor={`commit-${threadId}`}>Commit message</label>
-        <textarea id={`commit-${threadId}`} className="tt-focusable" rows={2} value={message} onChange={event => setMessage(event.target.value)} placeholder="Describe the staged changes" maxLength={10000} />
-        <button className="files-link tt-focusable" type="submit" disabled={busy || !message.trim() || !listing.files.some(file => file.staged)}>Commit staged changes ({listing.files.filter(file => file.staged).length})</button>
+        <textarea id={`commit-${threadId}`} className="tt-focusable" rows={4} value={message} onChange={event => setMessage(event.target.value)} placeholder="Describe the staged changes" maxLength={10000} />
+        {drafting ? <p className="git-actions__status" role="status">Writing…</p> : null}
+        {draftNote ? <p className="git-actions__status">{draftNote}</p> : null}
+        <div className="git-actions__bar">
+          <button className="files-link tt-focusable" type="submit" disabled={busy || drafting || !message.trim() || staged === 0}>Commit staged changes ({staged})</button>
+          {bridge.draftCommitMessage ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || staged === 0} onClick={() => draft(true)}>Regenerate</button> : null}
+        </div>
       </form>
       <div className="git-actions__branch">
         <label htmlFor={`branch-${threadId}`}>Local branch</label>

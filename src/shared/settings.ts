@@ -99,6 +99,8 @@ export interface AppSettings {
   writingModel: WritingModelId
   /** Off stops every title request; a thread keeps the name it was created with. */
   threadTitles: boolean
+  /** Off stops every commit-message draft; the commit form opens empty. */
+  commitMessages: boolean
   streamingAsr: boolean
   autoUpdateCheck: boolean
 }
@@ -156,6 +158,7 @@ const fieldSchemas = {
   llmMinWords: z.number().int().min(0).max(50),
   writingModel: z.enum(WRITING_MODEL_IDS),
   threadTitles: z.boolean(),
+  commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
@@ -204,6 +207,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default, but nothing is ever requested without an OpenRouter key, so
   // an install that never configures one keeps its stand-in names offline.
   threadTitles: true,
+  // On by default for the same reason: with no OpenRouter key nothing is ever
+  // requested, and the commit form simply opens empty.
+  commitMessages: true,
   streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
@@ -280,6 +286,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     writingModel: parseField(persisted, 'writingModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
   }

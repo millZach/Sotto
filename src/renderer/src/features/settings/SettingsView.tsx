@@ -532,7 +532,8 @@ export function SettingsView({
 
                   </div>
                   <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a thread from its first message and the first reply. Only those two are sent, and only while local history is kept. A name you type is never replaced." />
-                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
+                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles && !settings.commitMessages} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
 
                 </div>
               </Card>

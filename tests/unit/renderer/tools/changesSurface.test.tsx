@@ -2,7 +2,7 @@ import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../../src/shared/gitChanges'
+import type { GitChange, GitChangesBridge, GitChangeListing, GitCommitDraft, GitFileDiff } from '../../../../src/shared/gitChanges'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
@@ -72,6 +72,53 @@ describe('local Git action feedback', () => {
     expect(await screen.findByText('Resolve the conflicting files first.')).toBeInTheDocument()
     expect(message).toHaveValue('Preserve this commit message')
     expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'commit', message: 'Preserve this commit message' }))
+  })
+})
+
+describe('the drafted commit message', () => {
+  const committed: GitChangeListing = { workspace, branch: 'feature/changes', revision: 'r2', files: [], truncated: false }
+
+  it('shows a writing state, then the draft, and commits only the edited text when the button is pressed', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    let release!: (draft: GitCommitDraft) => void
+    git.bridge.draftCommitMessage = vi.fn(() => new Promise<ToolsResult<GitCommitDraft>>(resolve => { release = draft => resolve({ ok: true, value: draft }) }))
+    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
+    setup(git)
+    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
+    const message = screen.getByRole('textbox', { name: 'Commit message' })
+    expect(await screen.findByText('Writing…')).toBeInTheDocument()
+    expect(message).toHaveValue('')
+    expect(git.bridge.draftCommitMessage).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1' })
+
+    await act(async () => { release({ message: 'Raise the dark palette contrast', truncated: false }) })
+    await waitFor(() => expect(message).toHaveValue('Raise the dark palette contrast'))
+    expect(screen.queryByText('Writing…')).toBeNull()
+    // A draft on screen is not a commit.
+    expect(git.bridge.act).not.toHaveBeenCalled()
+
+    await user.clear(message)
+    await user.type(message, 'Raise the dark palette contrast in both themes')
+    await user.click(screen.getByRole('button', { name: 'Commit staged changes (1)' }))
+    expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ action: 'commit', message: 'Raise the dark palette contrast in both themes' }))
+  })
+
+  it('opens empty with nothing written, and regenerates over the field on request', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: null, truncated: false } }))
+    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
+    setup(git)
+    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
+    const message = screen.getByRole('textbox', { name: 'Commit message' })
+    await waitFor(() => expect(git.bridge.draftCommitMessage).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByText('Writing…')).toBeNull())
+    expect(message).toHaveValue('')
+    expect(screen.queryByText(/could not|unavailable|failed/iu)).toBeNull()
+
+    await user.type(message, 'Something I typed')
+    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: 'Add the drafted commit message', truncated: true } }))
+    await user.click(screen.getByRole('button', { name: 'Regenerate' }))
+    await waitFor(() => expect(message).toHaveValue('Add the drafted commit message'))
+    expect(await screen.findByText(/too large to send whole/u)).toBeInTheDocument()
   })
 })
 

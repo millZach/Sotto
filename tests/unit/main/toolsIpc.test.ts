@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi } from 'vitest'
 import { registerToolsIpc } from '../../../src/main/tools/ipc'
 import { createToolsBridges } from '../../../src/preload/tools'
 import { safeBrowserUrl } from '../../../src/shared/browser'
@@ -8,17 +8,17 @@ describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink']), gitChanges: make(['list', 'diff', 'copyPath', 'reveal', 'watch', 'act', 'branches', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint', 'reviewPullRequest', 'actPullRequest']) } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink']), gitChanges: make(['list', 'diff', 'copyPath', 'reveal', 'watch', 'act', 'draftCommitMessage', 'branches', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint', 'reviewPullRequest', 'actPullRequest']) } as unknown as Parameters<typeof registerToolsIpc>[1]
     const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
     const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
     const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(30)
+    expect(handlers.size).toBe(31)
     for (const handler of handlers.values()) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
       handler({ sender, senderFrame: mainFrame }, {})
     }
-    expect(operation).toHaveBeenCalledTimes(30)
+    expect(operation).toHaveBeenCalledTimes(31)
     sender.getURL = () => 'https://example.invalid'
     for (const handler of handlers.values()) expect(() => handler({ sender, senderFrame: mainFrame }, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
     cleanup(); expect(handlers.size).toBe(0)
@@ -36,6 +36,9 @@ describe('tools IPC and preload boundary', () => {
     expect(invoke).not.toHaveBeenCalled()
     expect(await gitChanges.act!({ ...target, revision: 'reviewed', action: 'commit', message: 'Commit staged work' })).toEqual(rejected)
     expect(invoke).toHaveBeenLastCalledWith('sotto:git-changes:act', { ...target, revision: 'reviewed', action: 'commit', message: 'Commit staged work' })
+    await expect(gitChanges.draftCommitMessage!({ ...target, revision: '' })).rejects.toThrow()
+    expect(await gitChanges.draftCommitMessage!({ ...target, revision: 'reviewed' })).toEqual(rejected)
+    expect(invoke).toHaveBeenLastCalledWith('sotto:git-changes:draftCommitMessage', { ...target, revision: 'reviewed' })
     expect(await gitChanges.branches!(target)).toEqual(rejected)
     expect(invoke).toHaveBeenLastCalledWith('sotto:git-changes:branches', target)
     expect(await gitChanges.checkpoints!(target)).toEqual(rejected)

@@ -3,7 +3,7 @@ import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolsResultSchema } from '../shared/tools'
 import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSnapshotSchema, terminalListingSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
 import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, type BrowserBridge } from '../shared/browser'
-import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitActionSchema, gitBranchesSchema, gitDiffRequestSchema, gitWatchRequestSchema, gitListingSchema, gitDiffSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
+import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitActionSchema, gitBranchesSchema, gitCommitDraftRequestSchema, gitCommitDraftSchema, gitDiffRequestSchema, gitWatchRequestSchema, gitListingSchema, gitDiffSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
 import { prReviewRequestSchema, prReviewSchema, prActionSchema, prActionResultSchema } from '../shared/gitPullRequests'
 import { checkpointListingSchema, checkpointRequestSchema, checkpointRevertSchema, checkpointSchema, checkpointInspectionSchema } from '../shared/checkpoints'
@@ -51,6 +51,7 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       revertCheckpoint: request => call(GIT_CHANGES_CHANNEL + 'revertCheckpoint', checkpointRevertSchema, checkpointSchema, request),
       recoverCheckpoint: request => call(GIT_CHANGES_CHANNEL + 'recoverCheckpoint', checkpointRequestSchema, checkpointSchema, request),
       act: request => call(GIT_CHANGES_CHANNEL + 'act', gitActionSchema, gitListingSchema, request),
+      draftCommitMessage: request => call(GIT_CHANGES_CHANNEL + 'draftCommitMessage', gitCommitDraftRequestSchema, gitCommitDraftSchema, request),
       branches: request => call(GIT_CHANGES_CHANNEL + 'branches', toolListRequestSchema, gitBranchesSchema, request),
       list: request => call(GIT_CHANGES_CHANNEL + 'list', toolListRequestSchema, gitListingSchema, request),
       diff: request => call(GIT_CHANGES_CHANNEL + 'diff', gitDiffRequestSchema, gitDiffSchema, request),
