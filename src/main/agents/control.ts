@@ -46,7 +46,9 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
  * - `create-thread` has no existing thread to key a lane on, and it also takes the selection.
  * - `settle-project` and `restore-project` move every thread of a project at once.
  * `interrupt`, `select-thread`, `save-thread-draft`, `refresh-thread-skills` and the follow-up queue
- * edits answer before any lane is chosen and are unchanged here.
+ * edits are thread-scoped too, and are absent here because they never enter a lane at all: each one
+ * answers before a lane is chosen, which is already the behaviour this list gives the rest, so none of
+ * them waits on the global lane or on another thread. They are unchanged.
  */
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'manual-send', 'steer', 'answer', 'configure-thread', 'compact-thread',
@@ -914,8 +916,8 @@ export class AgentControl {
     if (this.disposed) return
     const items = this.followupStore.get().items
     for (const threadId of new Set(items.map(item => item.threadId))) {
-      // A queued follow-up waits for that thread's own lane to be clear, then this runs again from its cleanup.
-      if (this.pumping.has(threadId) || this.threadActions.has(threadId)) continue
+      // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
+      if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       const first = items.find(item => item.threadId === threadId)!
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // Native idle status can precede turn/completed. A still-running outcome is
