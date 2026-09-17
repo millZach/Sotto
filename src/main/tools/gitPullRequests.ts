@@ -2,11 +2,14 @@ import { z } from 'zod'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
-import { prActionSchema, prReviewRequestSchema, type PrReview, type PullRequest } from '../../shared/gitPullRequests'
+import { prActionSchema, prDraftRequestSchema, prReviewRequestSchema, type PrDraft, type PrReview, type PullRequest } from '../../shared/gitPullRequests'
 import type { FilesService } from '../files/service'
+import { diffExcerpt } from '../llm/diffExcerpt'
+import type { PullRequestMaterial, PullRequestText } from '../llm/pullRequestText'
 import { fail, parse, ToolOperations, workspace } from './common'
 
 export type GitPrCommand = (cwd: string, command: 'git' | 'gh', args: string[], stdin?: string) => Promise<string>
+export type PullRequestDraftWriter = (material: PullRequestMaterial) => Promise<PullRequestText | null>
 const repositorySchema = z.object({ nameWithOwner: z.string(), url: z.string().url(), defaultBranchRef: z.object({ name: z.string() }).nullable() })
 const rawPrSchema = z.object({ number: z.number(), title: z.string(), url: z.string().url(), state: z.string(), baseRefName: z.string(), headRefName: z.string(), isDraft: z.boolean(), headRepository: z.object({ name: z.string() }).nullable(), headRepositoryOwner: z.object({ login: z.string() }).nullable(), reviewDecision: z.string().nullable().optional(), statusCheckRollup: z.array(z.object({ name: z.string().optional(), context: z.string().optional(), status: z.string().optional(), state: z.string().optional(), conclusion: z.string().nullable().optional(), detailsUrl: z.string().nullable().optional(), targetUrl: z.string().nullable().optional() })).nullable().optional() })
 const githubRemote = (remote: string): string | null => {
@@ -14,7 +17,10 @@ const githubRemote = (remote: string): string | null => {
   return match ? `https://${match[1]}/${match[2]}` : null
 }
 const safeRemote = (remote: string): string => remote.replace(/((?:https?|ssh):\/\/)[^\s/@]+@/gi, '$1')
-interface Dependencies { files: FilesService; mutations: Set<string>; canMutate?(threadId: string): Promise<boolean> | boolean; command?: GitPrCommand }
+interface Dependencies { files: FilesService; mutations: Set<string>; canMutate?(threadId: string): Promise<boolean> | boolean; command?: GitPrCommand
+  /** Sotto's own writing of the form. Absent, or resolving to null, leaves the form as the user found it. */
+  draftText?(material: PullRequestMaterial): Promise<PullRequestText | null> }
+const NO_DRAFT: PrDraft = { title: null, body: null, truncated: false }
 export class GitPullRequestsService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
   constructor(private readonly dependencies: Dependencies) { super() }
@@ -64,6 +70,38 @@ export class GitPullRequestsService extends ToolOperations {
     const revision = createHash('sha256').update(JSON.stringify([owner.workspaceId, branch, head, remote, remoteUrl, repository])).digest('hex')
     await workspace(this.dependencies.files, request.threadId, owner.workspaceId)
     return { workspace: owner, branch, head, remotes, remote, remoteUrl: safeRemote(remoteUrl), revision, title, body, repository, base, pullRequest, error } as PrReview
+  }) }
+  /** Where the branch left its base, tried against the base the form holds, then its remote copy. */
+  private async mergeBase(cwd: string, base: string | undefined, remote: string | undefined): Promise<string | null> {
+    const named = base ? [base, ...(remote ? [`${remote}/${base}`] : []), `origin/${base}`] : []
+    for (const candidate of [...named, 'origin/HEAD']) {
+      const start = await this.command(cwd, 'git', ['merge-base', '--', candidate, 'HEAD']).catch(() => '')
+      if (start) return start
+    }
+    return null
+  }
+  /**
+   * The drafted title and body for the form. Reading only: it runs no `gh` and
+   * changes nothing, and every way of having no text - no writer, no key,
+   * generation off, a detached head, no commits on the branch, a failed request
+   * - is the same quiet `{ title: null, body: null }`, never an error.
+   */
+  draft(payload: unknown) { return this.run(async () => {
+    const request = parse(prDraftRequestSchema, payload)
+    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    const write = this.dependencies.draftText
+    if (!write) return NO_DRAFT
+    const git = (...args: string[]) => this.command(owner.workingDirectory, 'git', args)
+    const branch = await git('symbolic-ref', '--short', '-q', 'HEAD').catch(() => null)
+    if (!branch) return NO_DRAFT
+    const start = await this.mergeBase(owner.workingDirectory, request.base, request.remote)
+    if (!start) return NO_DRAFT
+    const subjects = (await git('log', '--no-merges', '--reverse', '--format=%s', `${start}..HEAD`).catch(() => ''))
+      .split('\n').map(subject => subject.trim()).filter(Boolean)
+    if (subjects.length === 0) return NO_DRAFT
+    const excerpt = diffExcerpt(await git('diff', '--no-color', '--no-ext-diff', '--unified=3', start, 'HEAD').catch(() => ''))
+    const written = await write({ subjects, diff: excerpt.text }).catch(() => null)
+    return { title: written?.title ?? null, body: written?.body ?? null, truncated: excerpt.truncated } as PrDraft
   }) }
   act(payload: unknown) { return this.run(async () => {
     const request = parse(prActionSchema, payload)

@@ -8,7 +8,7 @@ import { gitActionSchema, gitDiffRequestSchema, gitWatchRequestSchema, GIT_MAX_P
 import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
-import { GitPullRequestsService } from './gitPullRequests'
+import { GitPullRequestsService, type PullRequestDraftWriter } from './gitPullRequests'
 import type { CheckpointService } from './checkpoints'
 
 interface GitDependencies {
@@ -19,6 +19,8 @@ interface GitDependencies {
   pollMs?: number
   canMutate?(threadId: string): Promise<boolean> | boolean
   checkpoints?: CheckpointService
+  /** Sotto's own writing of a pull request form; absent, the form drafts nothing. */
+  draftPullRequestText?: PullRequestDraftWriter
 }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const inside = (root: string, target: string): boolean => {
@@ -34,9 +36,10 @@ export class GitChangesService extends ToolOperations {
   private readonly pullRequests: GitPullRequestsService
   constructor(private readonly dependencies: GitDependencies) {
     super()
-    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}) })
+    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}), ...(dependencies.draftPullRequestText ? { draftText: dependencies.draftPullRequestText } : {}) })
   }
   reviewPullRequest(payload: unknown) { return this.pullRequests.review(payload) }
+  draftPullRequestText(payload: unknown) { return this.pullRequests.draft(payload) }
   actPullRequest(payload: unknown) { return this.pullRequests.act(payload) }
   async isMutating(threadId: string): Promise<boolean> {
     if (this.mutations.size === 0) return false
