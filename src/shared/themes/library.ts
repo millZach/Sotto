@@ -82,7 +82,7 @@ export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
  * legacy aliases and the editor's draft marker. Taking one would be shadowed
  * by the built-in or collide with the root's data attributes.
  */
-export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
+const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   'system',
   'light',
   'dark',
