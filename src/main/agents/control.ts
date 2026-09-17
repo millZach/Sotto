@@ -8,7 +8,7 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, summarizeThread,
-  type AgentMessage, type AgentThreadDetail, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -24,6 +24,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { AttachmentPreviews } from './attachmentPreviews'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider } from '../../shared/requestDrafts'
+import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -112,10 +113,15 @@ export class AgentControl {
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
-  private readonly detailListeners = new Set<(detail: AgentThreadDetail) => void>()
+  private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
   /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
   private readonly publishedDetail = new Map<string, number>()
+  /**
+   * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
+   * the targets themselves: a thread that leaves the viewed set frees its snapshot on the next broadcast.
+   */
+  private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   private contextActivityAt = Date.now()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
@@ -267,14 +273,26 @@ export class AgentControl {
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     return state
   }
-  /** One thread's history — its messages and the activity beside them — for a window looking at it. */
+  /**
+   * One thread's history — its messages and the activity beside them — for a window looking at it.
+   * Handing out a whole detail also resets what the deltas that follow are measured from: a window that
+   * asked for this one holds exactly this revision, so the next delta is the one that follows it.
+   */
   threadDetail(threadId: string): AgentThreadDetail | null {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) return null
+    const revision = this.detailRevision(thread)
     const messages = structuredClone(thread.messages)
+    // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
+    // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
+    const activities = thread.activities === undefined ? undefined : structuredClone(thread.activities)
+    // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
+    // about the thread, and diffing decorated against live would report every image message as changed.
+    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone(thread.messages),
+      ...(activities === undefined ? {} : { activities }) })
+    this.publishedDetail.set(threadId, revision)
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
-    return { threadId, revision: this.detailRevision(thread), messages,
-      ...(thread.activities === undefined ? {} : { activities: structuredClone(thread.activities) }) }
+    return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }) }
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -293,14 +311,14 @@ export class AgentControl {
   private detailRevision(thread: AgentThread): number {
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${(thread.activities ?? []).map(record => `${record.id}:${record.status}:${record.sequence}:${record.completedAt ?? ''}:${record.output?.length ?? 0}:${record.changes?.length ?? 0}:${record.steps?.length ?? 0}:${record.agents?.length ?? 0}`).join(',')}`
+      + `|${(thread.activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? 0) + 1
     this.detailRevisions.set(thread.id, { signature, revision })
     return revision
   }
-  subscribeThreadDetail(listener: (detail: AgentThreadDetail) => void): () => void {
+  subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void {
     this.detailListeners.add(listener)
     return () => this.detailListeners.delete(listener)
   }
@@ -345,6 +363,10 @@ export class AgentControl {
   async privacyChanged(): Promise<void> {
     const revision = ++this.privacyRevision
     this.privacyCleanupPending = true
+    // Attachment previews are decoration, not history, so a thread's revision does not move when they go.
+    // Forget what every window holds: the next broadcast sends whole details, without the markers.
+    this.publishedDetail.clear()
+    this.detailSnapshots.clear()
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
     const cleanup = [
@@ -428,19 +450,44 @@ export class AgentControl {
    * Detail rides the shell's own coalescing window, one send per thread whose messages actually changed.
    * A thread nobody is looking at is never copied at all, and one whose revision the window already holds
    * is skipped, so a streaming burst costs one thread's history rather than every thread's.
+   *
+   * Once a window holds a revision, what follows is the difference from it: the chunk a message grew by
+   * and the activity records that moved, never the thread again. A record updated five times inside one
+   * window is diffed once, at the end, because the diff is taken here rather than as each event lands.
    */
   private broadcastDetail(): void {
     if (!this.detailListeners.size) return
     const targets = this.detailTargets()
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
+    for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
     for (const threadId of targets) {
       const thread = this.state.host.threads.find(item => item.id === threadId)!
       const revision = this.detailRevision(thread)
       if (this.publishedDetail.get(threadId) === revision) continue
-      this.publishedDetail.set(threadId, revision)
-      const detail = this.threadDetail(threadId)
-      if (detail) for (const listener of this.detailListeners) listener(detail)
+      const update = this.detailUpdate(thread, revision)
+      if (update) for (const listener of this.detailListeners) listener(update)
     }
+  }
+  /** The delta from what this thread's window already holds, or the whole detail when no delta can say it. */
+  private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
+    const held = this.detailSnapshots.get(thread.id)
+    if (held !== undefined) {
+      const delta = diffAgentThreadDetail(held, thread, revision)
+      const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
+      if (delta !== null && advanced !== null) {
+        this.detailSnapshots.set(thread.id, advanced)
+        this.publishedDetail.set(thread.id, revision)
+        return this.decorateDetailDelta(thread, delta)
+      }
+    }
+    return this.threadDetail(thread.id)
+  }
+  /** A delta's whole messages carry the same preview markers a full detail's would; its appends carry text alone. */
+  private decorateDetailDelta(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
+    const messageDeltas = delta.messageDeltas.map(item => 'appendText' in item ? item : { message: structuredClone(item.message) })
+    const messages = messageDeltas.flatMap(item => 'appendText' in item ? [] : [item.message])
+    if (messages.length > 0) this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
+    return { ...delta, messageDeltas }
   }
   private say(text: string, preview = false): void {
     this.attentionNarration = null
@@ -1958,6 +2005,7 @@ export class AgentControl {
     this.disconnect()
     this.listeners.clear()
     this.detailListeners.clear()
+    this.detailSnapshots.clear()
   }
 }
 
@@ -2019,33 +2067,47 @@ export function coalesceAgentStatePublishes(send: (state: AgentState) => void,
 }
 
 export interface CoalescedThreadDetailPublisher {
-  publish(detail: AgentThreadDetail): void
+  publish(update: AgentThreadDetailUpdate): void
   dispose(): void
 }
 /**
  * The same coalescing at the IPC boundary as the shell, but per thread: two threads streaming at once
  * must not hold each other's history back, and only the newest revision of each one reaches the window.
+ *
+ * A delta cannot simply be dropped the way a whole detail can — the window applies it to the revision it
+ * holds — so a lane folds what is waiting into one update where it can (two appends to one message become
+ * one) and keeps them in order where it cannot. Whole details still supersede everything before them.
  */
-export function coalesceAgentThreadDetailPublishes(send: (detail: AgentThreadDetail) => void,
+export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDetailUpdate) => void,
   options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedThreadDetailPublisher {
   const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
   const schedule = options.schedule ?? realPublishScheduler
-  const lanes = new Map<string, { cancel: (() => void) | null; pending: AgentThreadDetail | null }>()
+  const lanes = new Map<string, { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[] }>()
   let disposed = false
-  const sendNow = (detail: AgentThreadDetail): void => {
-    const lane = lanes.get(detail.threadId) ?? { cancel: null, pending: null }
-    lanes.set(detail.threadId, lane)
+  const flushLane = (threadId: string): void => {
+    const lane = lanes.get(threadId) ?? { cancel: null, pending: [] }
+    lanes.set(threadId, lane)
     lane.cancel?.()
-    lane.pending = null
-    send(detail)
-    lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending) sendNow(lane.pending) }, intervalMs)
+    const queued = lane.pending
+    lane.pending = []
+    for (const update of queued) send(update)
+    lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending.length > 0) flushLane(threadId) }, intervalMs)
   }
   return {
-    publish: detail => {
+    publish: update => {
       if (disposed) return
-      const lane = lanes.get(detail.threadId)
-      if (lane?.cancel) lane.pending = detail
-      else sendNow(detail)
+      const lane = lanes.get(update.threadId)
+      if (lane?.cancel) {
+        const held = lane.pending.at(-1)
+        const merged = held === undefined ? null : mergeAgentThreadDetailUpdates(held, update)
+        if (merged === null) lane.pending.push(update)
+        else lane.pending[lane.pending.length - 1] = merged
+        return
+      }
+      const open = lane ?? { cancel: null, pending: [] }
+      lanes.set(update.threadId, open)
+      open.pending.push(update)
+      flushLane(update.threadId)
     },
     dispose: () => { disposed = true; for (const lane of lanes.values()) lane.cancel?.(); lanes.clear() },
   }

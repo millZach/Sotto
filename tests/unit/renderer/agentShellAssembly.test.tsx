@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
-  type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail } from '../../../src/shared/agents'
+  type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail,
+  type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks() })
 
@@ -31,7 +32,7 @@ function fullState(threads: AgentThread[], activeThreadId: string | null = null)
 /** A bridge that carries only the shell, with the detail of each thread on request or on push. */
 function shellBridge(state: AgentState, options: { detail?: boolean } = {}) {
   const listeners = new Set<(state: AgentState) => void>()
-  const detailListeners = new Set<(detail: AgentThreadDetail) => void>()
+  const detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
   const revisions = new Map<string, number>()
   const detailOf = (threadId: string): AgentThreadDetail | null => {
     const found = state.host.threads.find(item => item.id === threadId)
@@ -49,7 +50,7 @@ function shellBridge(state: AgentState, options: { detail?: boolean } = {}) {
   }
   return {
     bridge, threadDetail,
-    emit: (detail: AgentThreadDetail) => { for (const listener of detailListeners) listener(detail) },
+    emit: (update: AgentThreadDetailUpdate) => { for (const listener of detailListeners) listener(update) },
     publish: (next: AgentState) => { state = next; for (const listener of listeners) listener(agentShell(next)) },
     push: (threadId: string) => {
       revisions.set(threadId, (revisions.get(threadId) ?? 0) + 1)
@@ -104,6 +105,33 @@ describe('assembling the window state from the shell', () => {
     await waitFor(() => expect(result.current.state!.host.threads[0]!.messages).toHaveLength(2))
     act(() => { wire.emit({ threadId: 'workshop', revision: 9, messages: [] }) })
     await waitFor(() => expect(result.current.state!.host.threads[0]!.messages).toHaveLength(0))
+  })
+})
+
+describe('the detail deltas that follow a history', () => {
+  it('applies an append by replacing only the message that grew', async () => {
+    const messages = [message('a', 'user', 'Pick the palette'), message('bb', 'assistant', 'Indigo')]
+    const wire = shellBridge(fullState([thread('workshop', messages)], 'workshop'))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state!.host.threads[0]!.messages).toHaveLength(2))
+    const before = result.current.state!.host.threads[0]!.messages
+    act(() => { wire.emit({ threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [{ id: 'bb', appendText: ' it is.' }], activityDeltas: [] }) })
+    await waitFor(() => expect(result.current.state!.host.threads[0]!.messages[1]!.text).toBe('Indigo it is.'))
+    const after = result.current.state!.host.threads[0]!.messages
+    expect(after[0]).toBe(before[0])
+    expect(after[1]).not.toBe(before[1])
+  })
+
+  it('asks for the whole history when a delta does not follow the revision it holds', async () => {
+    const messages = [message('a', 'assistant', 'Indigo')]
+    const wire = shellBridge(fullState([thread('workshop', messages)], 'workshop'))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state!.host.threads[0]!.messages).toHaveLength(1))
+    expect(wire.threadDetail).toHaveBeenCalledTimes(1)
+    act(() => { wire.emit({ threadId: 'workshop', baseRevision: 8, revision: 9, messageDeltas: [{ id: 'a', appendText: ' it is.' }], activityDeltas: [] }) })
+    await waitFor(() => expect(wire.threadDetail).toHaveBeenCalledTimes(2))
+    // The delta was not guessed at: the history on screen is still the one the window holds.
+    expect(result.current.state!.host.threads[0]!.messages[0]!.text).toBe('Indigo')
   })
 })
 

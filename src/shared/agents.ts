@@ -351,6 +351,32 @@ export const agentThreadDetailSchema = z.object({
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
 export const agentThreadDetailRequestSchema = id
+/**
+ * What changed in one viewed thread since the revision the window already holds, sent in place of the
+ * whole detail while an agent streams into it: a message that grew by a chunk costs the chunk, not the
+ * thread. A message delta is a whole message — new, or changed in a way an append cannot say — or the
+ * suffix a streaming message grew by; an activity delta is one record as it now stands, or its removal.
+ * The window applies one only when `baseRevision` is the revision it holds, and asks for the whole
+ * detail when it is not. The full form remains for first delivery and for that resync.
+ */
+export const agentMessageDeltaSchema = z.union([
+  z.object({ message: agentMessageSchema }).strict(),
+  z.object({ id, appendText: text }).strict(),
+])
+export type AgentMessageDelta = z.infer<typeof agentMessageDeltaSchema>
+export const agentActivityDeltaSchema = z.union([
+  z.object({ record: agentActivitySchema }).strict(),
+  z.object({ id: z.string(), removed: z.literal(true) }).strict(),
+])
+export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema>
+export const agentThreadDetailDeltaSchema = z.object({
+  threadId: id, baseRevision: z.number().int().nonnegative(), revision: z.number().int().nonnegative(),
+  messageDeltas: z.array(agentMessageDeltaSchema),
+  activityDeltas: z.array(agentActivityDeltaSchema).max(MAX_AGENT_ACTIVITIES),
+}).strict()
+export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema>
+export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
+export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
 
 /** The sidebar's facts about a thread's history, derived from the history itself. */
 export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
@@ -456,7 +482,8 @@ export interface AgentBridge {
   onState(listener: (state: AgentState) => void): () => void
   /** One viewed thread's messages, for a thread the window opened before main pushed them. */
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
-  onThreadDetail?(listener: (detail: AgentThreadDetail) => void): () => void
+  /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
+  onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
 }
 
 export const EMPTY_AGENT_HOST: AgentHostSnapshot = {
