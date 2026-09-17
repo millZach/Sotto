@@ -1,4 +1,5 @@
 import type { AgentSkillReference } from '../../shared/agentSkills'
+import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { FollowupStore, followupDigest } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
@@ -236,7 +237,7 @@ export class AgentControl {
     for (const item of this.outbox) {
       if ((item.type !== 'send' && item.type !== 'steer') || !item.threadId) continue
       item.draftId ??= this.state.threadDrafts?.find(draft => draft.threadId === item.threadId && (item.draftDigest
-        ? item.draftDigest === this.promptDigest(draft.text, draft.attachments, draft.skills) : draft.requestId === null))?.draftId ?? randomUUID()
+        ? item.draftDigest === this.promptDigest(draft.text, draft.attachments, draft.skills, draft.files) : draft.requestId === null))?.draftId ?? randomUUID()
       this.setDelivery(item.threadId, item.draftId, 'uncertain', { commandId: item.id, messageId: item.messageId })
     }
     // Redaction also reaches disk when control is disabled and no reconnect will run.
@@ -450,8 +451,8 @@ export class AgentControl {
     }
   }
   private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
-    return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, requestId }) => [threadId,
-      createHash('sha256').update(JSON.stringify({ draftId, text, attachments, skills, requestId })).digest('hex')]))
+    return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, files, requestId }) => [threadId,
+      createHash('sha256').update(JSON.stringify({ draftId, text, attachments, skills, files, requestId })).digest('hex')]))
   }
   /**
    * Records this moment's feedback evidence, then asks for a broadcast. A provider emits dozens of
@@ -630,7 +631,7 @@ export class AgentControl {
     }
     this.manualDraftId ??= randomUUID()
     this.putThreadDraft({ threadId: this.state.draftThreadId, draftId: this.manualDraftId, text: this.state.draft,
-      attachments, skills: previous?.draftId === this.manualDraftId ? previous.skills : undefined, requestId: this.state.draftRequestId, updatedAt: new Date().toISOString() })
+      attachments, skills: previous?.draftId === this.manualDraftId ? previous.skills : undefined, files: previous?.draftId === this.manualDraftId ? previous.files : undefined, requestId: this.state.draftRequestId, updatedAt: new Date().toISOString() })
   }
   private setDelivery(threadId: string, draftId: string, status: AgentDelivery['status'], patch: Partial<AgentDelivery> = {}): void {
     const previous = this.state.deliveries?.find(item => item.threadId === threadId && item.draftId === draftId)
@@ -651,7 +652,7 @@ export class AgentControl {
       if (submitted && submitted.status !== 'failed') throw new Error('Use a new draft revision when editing a submitted prompt.')
       const previous = this.state.threadDrafts?.find(item => item.threadId === draft.threadId)
       const sameRevision = previous ? previous.draftId === draft.draftId && previous.text === draft.text && previous.requestId === draft.requestId
-        && this.promptDigest(previous.text, previous.attachments, previous.skills) === this.promptDigest(draft.text, draft.attachments, draft.skills)
+        && this.promptDigest(previous.text, previous.attachments, previous.skills, previous.files) === this.promptDigest(draft.text, draft.attachments, draft.skills, draft.files)
         : this.emptyDraftRevisions.get(draft.threadId) === draft.draftId && !draft.text.length && !draft.attachments.length
       if (command.composer === 'manual' && !sameRevision && this.state.assignments.some(item => item.threadId === draft.threadId && item.mode === 'managed')) {
         throw new Error('This draft now belongs to the managed composer. Your manual edit was not saved over it. Stop managing before saving that edit.')
@@ -775,7 +776,7 @@ export class AgentControl {
         // An explicit answer retains its owner and request; manual prompt validation will reject it.
         if (!current?.requestId) {
           this.putThreadDraft({ threadId: command.threadId, draftId: command.draftId!, text: command.text,
-            attachments: command.attachments ?? [], skills: command.skills, requestId: null, updatedAt: new Date().toISOString() })
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, requestId: null, updatedAt: new Date().toISOString() })
           if (this.state.draftThreadId === command.threadId && !this.state.draftRequestId) {
             this.state.draft = command.text; this.state.draftAttachments = command.attachments ?? []; this.manualDraftId = command.draftId!
           }
@@ -901,9 +902,9 @@ export class AgentControl {
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
           await this.followupStore.enqueue({ threadId: thread.id, draftId: command.draftId, text: command.text,
-            attachments: command.attachments ?? [], skills: command.skills, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? 'unknown' } : {}) })
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? 'unknown' } : {}) })
         } else {
-          await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills })
+          await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
         }
       } else if (command.type === 'remove-followup') await this.followupStore.edit(thread.id, command.itemId)
       else if (command.type === 'reorder-followups') await this.followupStore.reorder(thread.id, command.itemIds)
@@ -975,7 +976,7 @@ export class AgentControl {
           }
           validate()
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
-          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}),
+          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: this.thread(threadId).messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validate, item.draftId)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
@@ -1025,7 +1026,7 @@ export class AgentControl {
     validate(); this.manualHandoff(command.threadId)
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: randomUUID(), text: command.text.trim(),
-      ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}),
+      ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
       expectedLastUserMessageId: this.thread(command.threadId).messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validate, command.draftId)
     this.say(`Steered ${this.thread(command.threadId).title}.`)
   }
@@ -1160,7 +1161,7 @@ export class AgentControl {
         this.state.draft = command.text
         this.manualDraftId = randomUUID()
         if (this.state.draftThreadId) this.putThreadDraft({ threadId: this.state.draftThreadId, draftId: this.manualDraftId, text: this.state.draft,
-          attachments: this.state.draftAttachments ?? [], skills: previous?.skills, requestId: this.state.draftRequestId, updatedAt: new Date().toISOString() })
+          attachments: this.state.draftAttachments ?? [], skills: previous?.skills, files: previous?.files, requestId: this.state.draftRequestId, updatedAt: new Date().toISOString() })
         return
       }
       case 'cancel-draft': this.clearDraft(); this.say('Draft cleared.'); return
@@ -1194,7 +1195,7 @@ export class AgentControl {
         return
       }
       case 'send': await this.sendDraft(turn, manualRetryId, selectionRevision); return
-      case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId, command.skills); return
+      case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId, command.skills, command.files); return
       case 'steer': await this.steer(command, turn); return
       case 'create-project': {
         const provider = command.provider ?? this.state.configuration.provider
@@ -1502,7 +1503,7 @@ export class AgentControl {
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command,
         ...(command.modelId !== undefined && command.reasoningEffort === undefined && this.state.host.models.find(model => model.id === command.modelId)?.defaultReasoningEffort
           ? { reasoningEffort: this.state.host.models.find(model => model.id === command.modelId)!.defaultReasoningEffort } : {}) }) } : {}),
-      ...((command.type === 'send' || command.type === 'steer') ? { draftDigest: this.promptDigest(command.text, command.attachments, command.skills), ...(draftId ? { draftId } : {}) } : {}),
+      ...((command.type === 'send' || command.type === 'steer') ? { draftDigest: this.promptDigest(command.text, command.attachments, command.skills, command.files), ...(draftId ? { draftId } : {}) } : {}),
       ...(command.type === 'create-project' ? { entityId: command.projectId } : command.type === 'create-thread' ? { entityId: command.threadId } : {}),
     })
     const answerIntent = command.type === 'answer' ? this.outbox.find(item => item.id === command.commandId) : undefined
@@ -1580,7 +1581,7 @@ export class AgentControl {
     if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
     this.acceptSnapshot(await this.readThread(threadId, provider))
   }
-  private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string, skills?: AgentSkillReference[]): Promise<void> {
+  private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[]): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId)?.id
     if (pendingId) {
@@ -1627,7 +1628,7 @@ export class AgentControl {
     const messageId = randomUUID()
     const assignment = this.state.assignments.find(a => a.threadId === threadId)
     assignment?.ownMessageIds.push(messageId)
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: thread.messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validate, draftId)
+    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: thread.messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validate, draftId)
     this.state.queue = this.state.queue.filter(item => item.threadId !== threadId || item.requestId)
     this.say(`Sent to ${thread.title}.`)
     this.observe()
@@ -1655,7 +1656,9 @@ export class AgentControl {
     const text = this.state.draft.trim()
     this.syncLegacyDraft()
     const draftId = this.manualDraftId ?? undefined
-    const skills = this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)?.skills
+    const savedDraft = this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
+    const skills = savedDraft?.skills
+    const files = savedDraft?.files
     if (this.state.draftRequestId) {
       if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
       const requestId = this.state.draftRequestId
@@ -1671,7 +1674,7 @@ export class AgentControl {
     assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
     assignment.stopReason = 'none'; assignment.stoppedAt = ''
     assignment.contextUpdatedAt = Date.now()
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: thread.messages.findLast(message => message.role === 'user')?.id ?? null }, turn, undefined, draftId)
+    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: thread.messages.findLast(message => message.role === 'user')?.id ?? null }, turn, undefined, draftId)
     if (this.manualDraftId === draftId) this.clearDraft()
     this.state.queue = this.state.queue.filter(q => q.threadId !== thread.id || q.kind === 'permission' || q.kind === 'question')
     this.say(`Sent to ${thread.title}.`)
@@ -1697,8 +1700,8 @@ export class AgentControl {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
-  private promptDigest(text: string, attachments: AgentAttachment[] = [], skills: AgentSkillReference[] = []): string {
-    return followupDigest({ text, attachments, skills })
+  private promptDigest(text: string, attachments: AgentAttachment[] = [], skills: AgentSkillReference[] = [], files: AgentFileReference[] = []): string {
+    return followupDigest({ text, attachments, skills, files })
   }
   private readPreferences(query: string, projectId: string | null, threadId: string | null, turn?: ActiveTurn): AgentPreference[] {
     if (!this.dependencies.preferences) return []
@@ -1869,7 +1872,7 @@ export class AgentControl {
         if (item.draftDigest) this.deliveredPromptDigests = [...this.deliveredPromptDigests.filter(r => r.threadId !== item.threadId || r.draftId !== item.draftId),
           { threadId: item.threadId, draftId: item.draftId, digest: item.draftDigest }].slice(-MAX_DELIVERED_DRAFTS)
         this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== item.threadId || draft.draftId !== item.draftId
-          || item.draftDigest !== this.promptDigest(draft.text, draft.attachments, draft.skills))
+          || item.draftDigest !== this.promptDigest(draft.text, draft.attachments, draft.skills, draft.files))
       }
       if (clearsLegacyDraft) {
         this.clearDraft()

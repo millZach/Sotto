@@ -63,10 +63,10 @@ export function liveAgentState(initial: AgentState, options: {
     const others = current.deliveries!.filter(item => item !== previous)
     return [...others, { threadId, draftId, createdAt: previous?.createdAt ?? now(), ...previous, ...patch, status: previous?.status === 'accepted' ? 'accepted' : status, updatedAt: now() }]
   }
-  const putDraft = (draft: { threadId: string; draftId: string; text: string; attachments?: AgentState['draftAttachments']; skills?: AgentFollowup['skills']; requestId?: string | null }): AgentState['threadDrafts'] => {
+  const putDraft = (draft: { threadId: string; draftId: string; text: string; attachments?: AgentState['draftAttachments']; skills?: AgentFollowup['skills']; files?: AgentFollowup['files']; requestId?: string | null }): AgentState['threadDrafts'] => {
     const others = current.threadDrafts!.filter(item => item.threadId !== draft.threadId)
     return draft.text.length || draft.attachments?.length
-      ? [...others, { threadId: draft.threadId, draftId: draft.draftId, text: draft.text, attachments: draft.attachments ?? [], ...(draft.skills ? { skills: draft.skills } : {}), requestId: draft.requestId ?? null, updatedAt: now() }]
+      ? [...others, { threadId: draft.threadId, draftId: draft.draftId, text: draft.text, attachments: draft.attachments ?? [], ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}), requestId: draft.requestId ?? null, updatedAt: now() }]
       : others
   }
   const saveDraft = (request: Extract<AgentCommand, { type: 'save-thread-draft' }>, persistError: string | null = null): AgentState => {

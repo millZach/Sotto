@@ -1,4 +1,6 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
+import { hasMentionToken } from '../../../shared/mentions'
+import { detectMentionTrigger } from './composerMentions'
 
 export type CatalogSkill = AgentSkillCatalog['skills'][number]
 
@@ -44,11 +46,8 @@ export function detectSkillTrigger(text: string, selectionStart: number, selecti
   const line = text.slice(lineStart, caret)
   const slash = /^\/(\S*)$/u.exec(line)
   if (slash) return { kind: 'slash', query: slash[1] ?? '', start: lineStart, end: caret }
-  let start = caret
-  while (start > 0 && !/\s/u.test(text[start - 1]!)) start -= 1
-  const token = text.slice(start, caret)
-  if (!token.startsWith('$') || token.slice(1).includes('$')) return null
-  return { kind: 'dollar', query: token.slice(1), start, end: caret }
+  const dollar = detectMentionTrigger(text, selectionStart, selectionEnd, '$')
+  return dollar === null ? null : { kind: 'dollar', ...dollar }
 }
 
 function matchScore(value: string, query: string, base: number): number | null {
@@ -72,17 +71,7 @@ export function searchSkills(skills: readonly CatalogSkill[], query: string): Ca
 
 /** A literal mention at token boundaries, the same check main makes before dispatch. */
 export function hasSkillMention(text: string, name: string, sigils: readonly SkillSigil[] = ['$']): boolean {
-  return sigils.some(sigil => {
-    const token = `${sigil}${name}`
-    let offset = text.indexOf(token)
-    while (offset !== -1) {
-      const before = text[offset - 1]
-      const after = text[offset + token.length]
-      if ((!before || /\s/u.test(before)) && (!after || /\s|[.,;!?()[\]{}]/u.test(after))) return true
-      offset = text.indexOf(token, offset + token.length)
-    }
-    return false
-  })
+  return sigils.some(sigil => hasMentionToken(text, `${sigil}${name}`))
 }
 
 /** Selected references whose mention is still written in the text; a deleted token takes its reference with it. */

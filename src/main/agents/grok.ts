@@ -10,6 +10,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
+import { filePromptText } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { grokActivities } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
@@ -361,7 +362,9 @@ export class GrokAcpHost implements AgentHost {
           if (previous) return previous.entryKey ? { accepted: true } : { accepted: false, uncertain: true }
           if (this.activePrompts.has(command.threadId) || thread.status === 'running') throw new Error('Grok is already running a prompt in this thread.')
           if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
-          const skillText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
+          // Mentioned files travel as the `@path` Grok already reads; main only verifies they are still written here.
+          const authored = filePromptText(command.text, command.files)
+          const skillText = command.skills?.length ? grokSkillPrompt(authored, command.skills, await this.listThreadSkills(command.threadId, true)) : authored
           // ACP has no per-turn developer-instruction field. Append context after the
           // leading native slash command so skills still expand; preserve authored text by origin.
           const nativeText = alias.kind === 'personal' ? `${skillText}\n\n<SottoPersonalContext>\n${this.personalContexts.get(command.threadId) ?? personalContext()}\n</SottoPersonalContext>` : skillText
