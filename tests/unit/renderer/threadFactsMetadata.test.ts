@@ -10,7 +10,7 @@ function stateFor(fields: Record<string, unknown> = {}) {
     configuration: defaultAgentConfiguration(), connection: 'connected',
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: '', status: 'idle', messages: [], requests: [], ...fields }] },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', busy: false, notice: '', error: null,
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, secure: true }, membership: { status: 'beta', label: 'Test', expiresAt: null },
   })

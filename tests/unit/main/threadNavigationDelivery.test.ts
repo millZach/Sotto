@@ -137,7 +137,7 @@ describe('navigation independent of action latency', () => {
     const gate = deferred<AgentHostSnapshot>()
     vi.spyOn(f.host, 'snapshot').mockReturnValueOnce(gate.promise)
     const refresh = f.control.command({ type: 'refresh' })
-    await vi.waitFor(() => expect(f.control.get().busy).toBe(true))
+    await vi.waitFor(() => expect(f.control.get().globalLaneBusy).toBe(true))
     const states: AgentState[] = []; f.control.subscribe(state => states.push(state))
     const select = f.control.command({ type: 'select-thread', threadId: 'docs' })
     try {

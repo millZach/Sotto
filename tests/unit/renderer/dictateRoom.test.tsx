@@ -13,7 +13,7 @@ import {
   transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import type { DictationState } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -149,6 +149,20 @@ describe('DictateRoom', () => {
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()
+  })
+
+  it('says no microphone is set up after a skip and points at the Settings test', async () => {
+    const user = userEvent.setup()
+    const onOpenSettings = vi.fn()
+    const onStart = vi.fn(async () => undefined)
+    render(<DictateRoom {...baseProps} settings={{ ...baseProps.settings, microphoneSkipped: true }} onOpenSettings={onOpenSettings} onStart={onStart} />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'No microphone is set up.' })).toBeVisible()
+    expect(screen.getByText(MICROPHONE_NOT_SET_UP_DETAIL)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Microphone needed' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Open Settings' }))
+    expect(onOpenSettings).toHaveBeenCalledOnce()
+    expect(onStart).not.toHaveBeenCalled()
   })
 
   it('shares the widget speaking gate and seven-bar animation, settling after silence', () => {

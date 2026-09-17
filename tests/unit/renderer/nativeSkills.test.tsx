@@ -82,7 +82,7 @@ describe('provider skill picker', () => {
     const { live, prompt } = mount(CLAUDE)
     type(prompt(), '/')
     const list = await screen.findByRole('listbox', { name: 'Skills' })
-    expect(within(list).getAllByRole('option').map(option => option.querySelector('.skill-picker__name')!.textContent)).toEqual(['/review', '/release-notes'])
+    expect(within(list).getAllByRole('option').map(option => option.querySelector('.composer-picker__name')!.textContent)).toEqual(['/review', '/release-notes'])
     expect(screen.getByText('Claude expands one slash invocation per message.')).toBeInTheDocument()
     fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })

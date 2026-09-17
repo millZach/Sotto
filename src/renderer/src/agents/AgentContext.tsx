@@ -323,8 +323,11 @@ export function AgentProvider({ children, settings, dictation }: {
     return () => { session.dispose(); speech.dispose(); voiceRef.current = null }
   }, [connection.command])
 
+  // Setup finished without a microphone leaves wake listening off; the threads
+  // themselves stay fully usable by typing.
   const voiceEnabled = connection.state?.configuration.enabled === true
     && settings?.onboardingComplete === true
+    && settings?.microphoneSkipped !== true
     && ['active', 'beta'].includes(connection.state?.membership.status ?? '')
   const dictationActive = dictation.status === 'requesting-permission'
     || dictation.status === 'listening' || dictation.status === 'processing'

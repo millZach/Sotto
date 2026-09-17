@@ -242,9 +242,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
-          onComplete={async () => {
+          onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
-            const saved = await app.actions.updateSettings({ onboardingComplete: true })
+            const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
             if (saved) app.actions.navigate('home')
             return saved
           }}

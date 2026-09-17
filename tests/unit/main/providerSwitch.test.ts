@@ -161,7 +161,7 @@ describe('independent thread providers', () => {
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     try {
       const sent = await control.command({ type: 'manual-send', threadId: thread.id, text: 'Healthy provider work' })
-      expect(sent.error).toBeNull(); expect(sent.busy).toBe(false)
+      expect(sent.error).toBeNull(); expect(sent.globalLaneBusy).toBe(false)
       expect(f.adapters.codex.commands.at(-1)).toMatchObject({ type: 'send', text: 'Healthy provider work' })
     } finally { release(); await pending }
   })
@@ -288,7 +288,7 @@ describe('independent thread providers', () => {
       vi.useRealTimers()
       await vi.waitFor(() => expect(release).toBeTypeOf('function'))
       const sent = await control.command({ type: 'manual-send', threadId: thread.id, text: 'Keep the healthy provider working.' })
-      expect(sent.error).toBeNull(); expect(sent.busy).toBe(false)
+      expect(sent.error).toBeNull(); expect(sent.globalLaneBusy).toBe(false)
       expect(f.adapters.codex.connectCalls).toBe(1)
       release()
       await vi.waitFor(() => expect(control.get().host.providers?.find(provider => provider.id === 'grok')?.connection).toBe('connected'))

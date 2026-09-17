@@ -69,7 +69,7 @@ describe('workspace manual prompt authority and durable dispatch', () => {
       await vi.waitFor(() => expect(intent).toHaveBeenCalled())
       mute = f.control.command({ type: 'configure', patch: { speak: false } })
       f.host.event({ type: 'manual', threadId: 'workshop', text: 'Direct takeover', status: 'idle' })
-      expect(f.control.get()).toMatchObject({ busy: true, configuration: { speak: false }, voice: { action: 'stop-speaking' } })
+      expect(f.control.get()).toMatchObject({ globalLaneBusy: true, configuration: { speak: false }, voice: { action: 'stop-speaking' } })
       await mute
       expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration.speak).toBe(false)
     } finally { release(); await pending; await mute }

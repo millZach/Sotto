@@ -35,8 +35,10 @@ class FixtureHost extends E2EAgentHost {
     const snapshot = await super.snapshot()
     return this.hideMessages ? { ...snapshot, threads: snapshot.threads.map(thread => ({ ...thread, messages: [] })) } : snapshot
   }
+  gate: Promise<void> | undefined
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     this.attempts.push(command)
+    await this.gate
     if (this.cosmetic) return { accepted: true }
     if (this.unknown) return { accepted: false, uncertain: true }
     return super.execute(command)
@@ -166,5 +168,27 @@ describe('coordinator images, authority and durable settings', () => {
     await f.control.command({ type: 'refresh' })
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
     expect(f.host.attempts).toHaveLength(3)
+  })
+  it('recovers a restart in the middle of a thread-scoped command from its durable intent alone', async () => {
+    const f = await controlFixture()
+    let release!: () => void
+    f.host.gate = new Promise<void>(done => { release = done })
+    const pending = f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
+    await vi.waitFor(() => expect(f.host.attempts).toHaveLength(1))
+    // The thread is marked busy in its own lane; the global lane still stands for global work alone.
+    expect(f.control.get()).toMatchObject({ busyThreadIds: ['workshop'], globalLaneBusy: false })
+    // Crash while that lane holds the command: only the dispatched intent reached the disk.
+    f.control.dispose()
+    release(); await pending
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox[0])
+      .toMatchObject({ type: 'configure-thread', threadId: 'workshop', options: { runtimeMode: 'full-access' } })
+    f.host.gate = undefined
+    await f.restart()
+    // A busy mark is as ephemeral as the global lane mark: nothing restores it, and reconciliation is unchanged.
+    expect(f.control.get()).toMatchObject({ globalLaneBusy: false })
+    expect(f.control.get().busyThreadIds).toBeUndefined()
+    await f.control.command({ type: 'refresh' })
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
+    expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.runtimeMode).toBe('full-access')
   })
 })

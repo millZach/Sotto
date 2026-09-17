@@ -1,5 +1,6 @@
 import {
   initialDictationState,
+  MICROPHONE_NOT_SET_UP_DETAIL,
   reduceDictation,
   TRANSCRIPTION_ERROR_DETAIL,
   type DictationEvent,
@@ -110,6 +111,7 @@ const ERROR_MESSAGES = Object.freeze({
   MIC_PERMISSION_DENIED: 'Microphone permission was denied.',
   MIC_DEVICE_NOT_FOUND: 'The selected microphone is unavailable.',
   MIC_START_FAILED: 'The microphone could not be started.',
+  MIC_NOT_SET_UP: MICROPHONE_NOT_SET_UP_DETAIL,
   RECORDING_FAILED: 'The recording could not be completed.',
   NO_SPEECH: 'No speech was detected.',
   ...TRANSCRIPTION_ERROR_DETAIL,
@@ -259,6 +261,12 @@ export class DictationController {
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
     if (!settingsAvailable) {
       this.fail(session, 'SETTINGS_UNAVAILABLE')
+      return Promise.resolve()
+    }
+    // Setup was finished without a microphone, so the shortcut says so instead
+    // of opening audio that cannot be there.
+    if (settings.microphoneSkipped) {
+      this.fail(session, 'MIC_NOT_SET_UP')
       return Promise.resolve()
     }
 

@@ -21,6 +21,21 @@ export type ReducedMotion = 'system' | 'on'
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
+/**
+ * The models offered for Sotto's short writing jobs: thread titles, commit
+ * message drafts and pull request drafts. They are the same cheap, fast
+ * OpenRouter models the cleanup tiers use, named here so the choice is one
+ * setting rather than one per job.
+ */
+export const WRITING_MODELS = [
+  { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite — fastest' },
+  { id: 'inception/mercury-2', label: 'Mercury 2' },
+  { id: 'amazon/nova-2-lite-v1', label: 'Nova 2 Lite' },
+  { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 — best writing' },
+] as const
+export type WritingModelId = (typeof WRITING_MODELS)[number]['id']
+export const WRITING_MODEL_IDS = WRITING_MODELS.map(model => model.id) as unknown as [WritingModelId, ...WritingModelId[]]
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -67,6 +82,12 @@ export interface AppSettings {
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
+  /**
+   * Set when setup was finished without a working microphone. The dictation
+   * surfaces say so instead of failing, and the microphone test in Settings
+   * clears it. Older settings files have no such field and load as `false`.
+   */
+  microphoneSkipped: boolean
   llmFormatting: boolean
   /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
@@ -74,6 +95,14 @@ export interface AppSettings {
   llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
+  /** The OpenRouter model that writes Sotto's short text, starting with thread titles. */
+  writingModel: WritingModelId
+  /** Off stops every title request; a thread keeps the name it was created with. */
+  threadTitles: boolean
+  /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
+  pullRequestText: boolean
+  /** Off stops every commit-message draft; the commit form opens empty. */
+  commitMessages: boolean
   streamingAsr: boolean
   autoUpdateCheck: boolean
 }
@@ -122,12 +151,17 @@ const fieldSchemas = {
     z.literal('unlimited'),
   ]),
   onboardingComplete: z.boolean(),
+  microphoneSkipped: z.boolean(),
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
   llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
+  writingModel: z.enum(WRITING_MODEL_IDS),
+  threadTitles: z.boolean(),
+  pullRequestText: z.boolean(),
+  commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
@@ -165,12 +199,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
+  microphoneSkipped: false,
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
   llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
+  writingModel: 'google/gemini-3.1-flash-lite',
+  // On by default, but nothing is ever requested without an OpenRouter key, so
+  // an install that never configures one keeps its stand-in names offline.
+  threadTitles: true,
+  pullRequestText: true,
+  // On by default for the same reason: with no OpenRouter key nothing is ever
+  // requested, and the commit form simply opens empty.
+  commitMessages: true,
   streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
@@ -238,12 +281,17 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),
+    microphoneSkipped: parseField(persisted, 'microphoneSkipped', defaults),
     llmFormatting: parseField(persisted, 'llmFormatting', defaults),
     llmApiKey: parseField(persisted, 'llmApiKey', defaults),
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
     llmQuality: parseField(persisted, 'llmQuality', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
+    writingModel: parseField(persisted, 'writingModel', defaults),
+    threadTitles: parseField(persisted, 'threadTitles', defaults),
+    pullRequestText: parseField(persisted, 'pullRequestText', defaults),
+    commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
   }

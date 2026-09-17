@@ -143,7 +143,12 @@ describe('Claude recovery and safety', () => {
     const command = { type: 'send' as const, commandId: 'command', messageId: 'message', threadId: id, text: 'Sensitive synthetic prompt' }
     expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
     await f.host.execute(command)
-    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+    // The fake CLI records what it was asked as it reads the line, which is not necessarily before the
+    // host gives up waiting for the acknowledgement. Wait for the first prompt's record, then read the
+    // count again: a resend would still fail, because the second send has already been refused.
+    const prompts = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'user').length
+    await expect.poll(prompts).toBe(1)
+    expect(await prompts()).toBe(1)
     expect(await readFile(join(f.root, 'claude-threads.json'), 'utf8')).not.toContain(command.text)
   })
   it('sends a native denial for malformed question control requests', async () => {

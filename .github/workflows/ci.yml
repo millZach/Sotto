@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same branch or pull request cancels the run it supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: Gates (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # Live provider suites stay opt-in; CI never holds provider credentials.
+      CI: 'true'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
+      # so a path a test builds from os.tmpdir() never equals the real path the
+      # code resolves. The runner's work temp folder is a long path.
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare runtime assets
+        run: npm run runtime:prepare
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Two workers keeps the jsdom and child-process heavy suites inside a
+      # two-core runner's memory; the whole suite still finishes in minutes.
+      - name: Unit and integration tests
+        run: npm test -- --maxWorkers=2
+
+      - name: Third-party notices
+        run: npm run notices:verify

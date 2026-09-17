@@ -1,5 +1,5 @@
 import React, { useState, type ReactNode } from 'react'
-import { capabilitiesForThread, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { ModelPicker } from './ModelPicker'
 
@@ -64,7 +64,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { models, locked } = threadModelChoices(state, thread)
-  const disabled = saving || state.busy || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
+  const disabled = saving || isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
   const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
     setSaving(true); setError(null)
     try {

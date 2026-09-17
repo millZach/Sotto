@@ -4,9 +4,10 @@ import { z } from 'zod'
 import { agentFollowupSchema, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, type AgentFollowup } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
-export function followupDigest(input: Pick<AgentFollowup, 'text' | 'attachments' | 'skills'>): string {
-  return createHash('sha256').update(JSON.stringify(input.skills?.length
-    ? [input.text.trim(), input.attachments, input.skills] : [input.text.trim(), input.attachments])).digest('hex')
+export function followupDigest(input: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): string {
+  const base = input.skills?.length ? [input.text.trim(), input.attachments, input.skills] : [input.text.trim(), input.attachments]
+  // Mentioned files join the digest only when there are any, so revisions without them keep their existing identity.
+  return createHash('sha256').update(JSON.stringify(input.files?.length ? [...base, input.files] : base)).digest('hex')
 }
 const schema = z.object({ items: z.array(agentFollowupSchema), receipts: z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS) })
 type State = z.infer<typeof schema>
@@ -36,7 +37,7 @@ export class FollowupStore {
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'resumeAfterTurnId'>): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'>): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -51,7 +52,7 @@ export class FollowupStore {
       state.receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }].slice(-MAX_DELIVERED_DRAFTS)
     })
   }
-  edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills'>): Promise<void> {
+  edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {
     return this.change(state => {
       const item = state.items.find(item => item.threadId === threadId && item.id === itemId)
       if (!item) throw new Error('That follow-up is no longer queued.')

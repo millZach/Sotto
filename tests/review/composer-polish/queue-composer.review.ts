@@ -132,7 +132,7 @@ test('queue composer: layout, copy and focus at typical, minimum, stress and zoo
     // Reduced motion: no animation on queue or composer.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await size(launched, 1280, 800)
-    record.reducedMotionAnimations = [...new Set(await page.evaluate(() => [...document.querySelectorAll('.thread-followups, .thread-followup, .thread-prompt, .skill-picker')].map(element => getComputedStyle(element).animationName)))]
+    record.reducedMotionAnimations = [...new Set(await page.evaluate(() => [...document.querySelectorAll('.thread-followups, .thread-followup, .thread-prompt, .composer-picker')].map(element => getComputedStyle(element).animationName)))]
     expect(record.reducedMotionAnimations).toEqual(['none'])
     await page.emulateMedia({ reducedMotion: 'no-preference' })
 

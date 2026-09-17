@@ -14,7 +14,7 @@ function fixture(projects: AgentState['host']['projects'] = [unrelated], activeP
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       projects, threads: [], models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', ready: true, reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'full-access'] }] },
     activeProjectId, activeThreadId: null, assignments: [], queue: [], draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
     voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [], membership: { status: 'beta', label: 'Test', expiresAt: null },
   }
@@ -47,7 +47,7 @@ describe('native folder project resolution', () => {
     fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
     await submit()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', reasoningEffort: 'high', runtimeMode: 'full-access' })
+    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', titleSource: 'user', reasoningEffort: 'high', runtimeMode: 'full-access' })
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 

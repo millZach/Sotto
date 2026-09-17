@@ -122,7 +122,7 @@ test('handoff keeps one saved draft, focuses the mounted composer and keeps the 
     await expect(page.locator(DOCS).locator('form.thread-prompt textarea')).toHaveValue(beforeReload)
     record.reload = { beforeReload, afterReload: await page.locator(DOCS).locator('form.thread-prompt textarea').inputValue(), followups: (await agents(page)).followups?.map(item => [item.text, item.status]) }
   } finally {
-    record.finalState = await agents(page).then(state => ({ error: state.error, busy: state.busy, assignments: state.assignments.map(item => item.threadId), activeThreadId: state.activeThreadId, drafts: state.threadDrafts })).catch(() => null)
+    record.finalState = await agents(page).then(state => ({ error: state.error, busy: state.globalLaneBusy, assignments: state.assignments.map(item => item.threadId), activeThreadId: state.activeThreadId, drafts: state.threadDrafts })).catch(() => null)
     await evidence('managed-handoff', record)
     await closeSotto(launched)
   }

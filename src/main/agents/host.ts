@@ -1,12 +1,13 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
+import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentAttachment, AgentHostSnapshot, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly workingDirectory?: string } & AgentThreadOptions)
+  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly workingDirectory?: string } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string } & AgentThreadOptions)
-  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly expectedLastUserMessageId?: string | null }
-  | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
@@ -28,6 +29,9 @@ export interface AgentHost {
   /** Local organization/history; available without a provider connection. */
   workspaceSnapshot?(): AgentHostSnapshot
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
+  /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
+   * `user` and outranks everything later. The provider is not told. */
+  renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   privacyChanged?(): Promise<void>

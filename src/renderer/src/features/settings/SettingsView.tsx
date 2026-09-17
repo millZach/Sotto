@@ -17,7 +17,9 @@ import type {
   LlmQuality,
   ReducedMotion,
   SettingsPatch,
+  WritingModelId,
 } from '../../../../shared/settings'
+import { WRITING_MODELS } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
@@ -31,6 +33,12 @@ import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { AppearanceSettings } from './AppearanceSettings'
+import { LevelMeter } from '../../components/LevelMeter'
+import {
+  BrowserMicrophoneTest,
+  type MicrophoneTestController,
+  type MicrophoneTestState,
+} from '../onboarding/microphoneTest'
 
 type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
@@ -47,6 +55,8 @@ export interface SettingsViewProps {
   /** Null until the main process answers; the section still renders. */
   readonly updateStatus: UpdateStatus | null
   readonly mediaDevices?: MediaDevicesAdapter | undefined
+  /** Injected in tests; production runs the same browser test onboarding uses. */
+  readonly createMicrophoneTest?: () => MicrophoneTestController
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
   readonly onSetStartup: (enabled: boolean) => Promise<StartupState | null>
@@ -108,6 +118,7 @@ export function SettingsView({
   platform,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
+  createMicrophoneTest = () => new BrowserMicrophoneTest(),
   onUpdateSettings,
   onReplaceHotkey,
   onSetStartup,
@@ -119,6 +130,9 @@ export function SettingsView({
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
   const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
+  const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
+  const [microphoneLevel, setMicrophoneLevel] = useState(0)
+  const microphoneTestRef = useRef<MicrophoneTestController | null>(null)
   const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [hotkeyDraft, setHotkeyDraft] = useState(() => formatAccelerator(settings.hotkey, platform, 'editing'))
   const [pasteDelayDraft, setPasteDelayDraft] = useState(String(settings.pasteDelayMs))
@@ -243,6 +257,44 @@ export function SettingsView({
       : { text: 'That setting could not be saved. Your previous setting is still active.', error: true })
     return saved
   }, [onUpdateSettings])
+
+  // The microphone opened here is released when Settings goes away.
+  useEffect(() => () => {
+    const controller = microphoneTestRef.current
+    microphoneTestRef.current = null
+    if (controller !== null) void Promise.resolve(controller.stop()).catch(() => undefined)
+  }, [])
+
+  /**
+   * The same level test onboarding runs. A microphone that reports ready is
+   * proof one is set up, so it retires a skip made during setup; any other
+   * outcome leaves the skip alone and says what went wrong.
+   */
+  const runMicrophoneTest = async (): Promise<void> => {
+    const previous = microphoneTestRef.current
+    microphoneTestRef.current = null
+    setMicrophoneLevel(0)
+    setMicrophoneState('requesting')
+    if (previous !== null) await Promise.resolve(previous.stop()).catch(() => undefined)
+    let controller: MicrophoneTestController
+    try { controller = createMicrophoneTest() } catch {
+      setMicrophoneState('error')
+      return
+    }
+    microphoneTestRef.current = controller
+    const outcome = await controller.start((level) => {
+      if (microphoneTestRef.current === controller) setMicrophoneLevel(level)
+    }).catch(() => 'error' as const)
+    if (microphoneTestRef.current !== controller) return
+    setMicrophoneState(outcome)
+    if (outcome !== 'ready') {
+      microphoneTestRef.current = null
+      setMicrophoneLevel(0)
+      await Promise.resolve(controller.stop()).catch(() => undefined)
+      return
+    }
+    if (settingsRef.current.microphoneSkipped) await onUpdateSettings({ microphoneSkipped: false }).catch(() => false)
+  }
 
   const savePasteDelay = async (): Promise<void> => {
     const value = parseBoundedInteger(pasteDelayDraftRef.current, 50, 1_000)
@@ -417,6 +469,26 @@ export function SettingsView({
                       {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
                     </Select>
                   </Field>
+                  <Field label="Microphone test" description="Check that Sotto can hear you. Access is asked for only while the test runs.">
+                    <div className="settings-microphone-test" data-state={microphoneState}>
+                      <LevelMeter value={microphoneLevel} label="Microphone level" />
+                      <p role="status">
+                        {microphoneState === 'ready' ? 'Microphone ready.' : null}
+                        {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
+                        {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
+                        {microphoneState === 'denied' ? copy.settingsMicrophoneUnavailable : null}
+                        {microphoneState === 'missing' ? 'No microphone was found.' : null}
+                        {microphoneState === 'error' ? 'The microphone test could not start.' : null}
+                      </p>
+                      <Button
+                        variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
+                        disabled={microphoneState === 'requesting'}
+                        onClick={() => void runMicrophoneTest()}
+                      >
+                        {microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
+                      </Button>
+                    </div>
+                  </Field>
                   <div className="settings-input-action">
                     <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
                       <input className="tt-input" value={hotkeyDraft} onBlur={() => void saveHotkey()} onChange={(event) => {
@@ -449,7 +521,7 @@ export function SettingsView({
               </Card>
 
               <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
-                <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting & vocabulary</p></div>
+                <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting, vocabulary & writing</p></div>
                 <div className="settings-rows">
                   <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
                   <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
@@ -459,6 +531,10 @@ export function SettingsView({
                     </Field>
 
                   </div>
+                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a thread from its first message and the first reply. Only those two are sent, and only while local history is kept. A name you type is never replaced." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
+                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
+                  <Field label="Writing model" description="Writes thread titles, and the commit and pull request text Sotto drafts."><Select disabled={!settings.threadTitles && !settings.commitMessages && !settings.pullRequestText} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
 
                 </div>
               </Card>

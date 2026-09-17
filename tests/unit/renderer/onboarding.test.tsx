@@ -129,6 +129,60 @@ describe('first-run onboarding', () => {
     expect(complete).toHaveBeenCalledOnce()
   })
 
+  it('offers Skip for now on the microphone step and finishes setup as skipped', async () => {
+    const user = userEvent.setup()
+    const complete = vi.fn()
+    render(
+      <Onboarding {...keyProps}
+        microphoneState="missing"
+        shortcut="Ctrl+Shift+Space"
+        platform="win32"
+        onRequestMicrophone={vi.fn()}
+        onComplete={complete}
+      />,
+    )
+    await goToStep(user, 2)
+
+    await user.click(screen.getByRole('button', { name: /skip for now/i }))
+    expect(screen.getByText(/microphone test skipped/i)).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: /finish setup/i }))
+    expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
+  })
+
+  it('drops the skip once the microphone tests ready', async () => {
+    const user = userEvent.setup()
+    const complete = vi.fn()
+    const { rerender } = render(
+      <Onboarding {...keyProps}
+        microphoneState="missing"
+        shortcut="Ctrl+Shift+Space"
+        platform="win32"
+        onRequestMicrophone={vi.fn()}
+        onComplete={complete}
+      />,
+    )
+    await goToStep(user, 2)
+    await user.click(screen.getByRole('button', { name: /skip for now/i }))
+
+    rerender(
+      <Onboarding {...keyProps}
+        microphoneState="ready"
+        shortcut="Ctrl+Shift+Space"
+        platform="win32"
+        onRequestMicrophone={vi.fn()}
+        onComplete={complete}
+      />,
+    )
+    expect(screen.queryByText(/microphone test skipped/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: /finish setup/i }))
+    expect(complete).toHaveBeenCalledWith({ microphoneSkipped: false })
+  })
+
   it('focuses each step heading and announces progress after keyboard navigation', async () => {
     const user = userEvent.setup()
     render(

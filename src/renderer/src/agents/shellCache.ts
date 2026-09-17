@@ -52,7 +52,8 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
     const state = JSON.parse(raw) as AgentState
     if (typeof state !== 'object' || state === null || !('host' in state)) return null
     return {
-      ...state, stale: true, busy: false, error: null, connection: 'disconnected',
+      // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
+      ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, error: null, connection: 'disconnected',
       host: { ...state.host, connected: false,
         providers: state.host.providers?.map(provider => ({ ...provider, connection: 'disconnected' as const })) },
     }

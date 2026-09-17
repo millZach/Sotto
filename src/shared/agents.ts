@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
+import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
@@ -146,6 +147,9 @@ export const agentWorktreeSchema = z.object({
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentThreadSchema = z.object({
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
+  /** Who named this thread: the user by hand, Sotto's writing model, or the stand-in/provider name.
+   * Absent on threads saved before Sotto recorded it, which counts as `default`. */
+  titleSource: z.enum(['user', 'default', 'generated']).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
@@ -281,12 +285,14 @@ export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
   threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  files: agentFileReferencesSchema.optional(),
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
 /** User-authored follow-ups; independent of attention and dispatched outbox intent. */
 export const agentFollowupSchema = z.object({
   id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema, skills: agentSkillReferencesSchema.optional(),
+  files: agentFileReferencesSchema.optional(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
   error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
@@ -324,7 +330,18 @@ export const agentStateSchema = z.object({
   followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
   pendingRequest: z.string().max(20_000),
-  busy: z.boolean(), notice: z.string(), error: z.string().nullable(),
+  /**
+   * The one global lane is occupied: a command with no thread, or one that moves assignment authority,
+   * the composer draft or a whole project. It says nothing about any thread's own lane — the provider
+   * and configuration surfaces are what read it.
+   */
+  globalLaneBusy: z.boolean(), notice: z.string(), error: z.string().nullable(),
+  /**
+   * The threads whose own lane is running a command right now. A command that names one thread waits
+   * only on that thread, so `globalLaneBusy` cannot say which threads are working: a thread's own
+   * surfaces read this instead. Absent when no thread lane is running.
+   */
+  busyThreadIds: z.array(id).max(1_000).optional(),
   speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
@@ -424,16 +441,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), text, attachments: agentAttachmentsSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
+    attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
   z.object({ type: z.literal('send') }).strict(),
-  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
-  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
-  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
-  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
   z.object({ type: z.literal('pause-draft') }).strict(),
   z.object({ type: z.literal('resume-draft'), threadId: id }).strict(),
@@ -444,7 +461,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
+  /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
+  z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
+  /** Ask the writing model for this thread's name again, replacing a generated or stand-in one. */
+  z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
+    /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
+    titleSource: z.enum(['user', 'default']).optional(),
     /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
@@ -517,6 +540,13 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
     ?? ready.find(model => model.providerId === configuration.provider)
     ?? ready[0]
   return chosen?.id ?? ''
+}
+/**
+ * Whether this thread's own lane is running a command right now. Every control that acts on one thread
+ * asks this about the thread it shows, so work on one thread never dims or locks another thread's pane.
+ */
+export function isThreadBusy(state: { readonly busyThreadIds?: readonly string[] | undefined }, threadId: string | null | undefined): boolean {
+  return threadId ? state.busyThreadIds?.includes(threadId) === true : false
 }
 export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {
   if (!host.providers || !thread.providerId) return host.connected

@@ -8,7 +8,7 @@ import type {
   SottoWidgetBridge,
   WidgetPresentation,
 } from '../../../src/shared/contracts'
-import type { WidgetErrorCode, WidgetSnapshot } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, type WidgetErrorCode, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
 import {
@@ -177,6 +177,7 @@ describe('WidgetApp', () => {
     ['MIC_PERMISSION_DENIED', 'Microphone blocked', win32Copy.widgetMicrophoneBlockedDetail],
     ['MIC_DEVICE_NOT_FOUND', 'No microphone found', 'Connect a microphone and try again.'],
     ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
+    ['MIC_NOT_SET_UP', 'No microphone set up', MICROPHONE_NOT_SET_UP_DETAIL],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
     ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Add your OpenRouter API key in Settings to transcribe.'],

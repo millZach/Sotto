@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { AgentSkillReference } from '../../../shared/agentSkills'
+import type { AgentFileReference } from '../../../shared/agentFiles'
 import { MAX_DELIVERED_DRAFTS, type AgentAttachment, type AgentCommand, type AgentDelivery, type AgentState } from '../../../shared/agents'
 import { gateOnCreation } from './draftThreads'
 
@@ -12,6 +13,8 @@ export interface ComposerDraft {
   readonly attachments: readonly AgentAttachment[]
   /** Skills the user picked whose `$name` is still in the text. */
   readonly skills: readonly AgentSkillReference[]
+  /** Files the user mentioned whose `@path` is still in the text. */
+  readonly files: readonly AgentFileReference[]
   readonly requestId: string | null
 }
 
@@ -43,6 +46,8 @@ export interface Submission {
   readonly text: string
   readonly attachments: readonly { readonly id: string; readonly name: string }[]
   readonly skills: readonly AgentSkillReference[]
+  /** Files this revision mentioned, when it mentioned any. */
+  readonly files?: readonly AgentFileReference[]
   /** performance.now() at the keydown or click that sent it. */
   readonly submittedAt: number
   /** The manual-send command promise settled; delivery truth still comes from state.deliveries. */
@@ -68,7 +73,7 @@ interface Entry {
   superseded: string[]
 }
 
-const EMPTY: ComposerDraft = { draftId: '', text: '', attachments: [], skills: [], requestId: null }
+const EMPTY: ComposerDraft = { draftId: '', text: '', attachments: [], skills: [], files: [], requestId: null }
 const SAVE_ERROR = 'Could not confirm this draft was saved. Keep your text and images and try Save again.'
 const key = (threadId: string, draftId: string): string => `${threadId}\n${draftId}`
 const isEmpty = (draft: ComposerDraft): boolean => draft.text === '' && draft.attachments.length === 0
@@ -179,7 +184,7 @@ export class ThreadDraftStore {
     for (const item of state.followups ?? []) this.markAccepted(item.threadId, item.draftId)
     for (const delivery of state.deliveries ?? []) if (delivery.status === 'accepted') this.markAccepted(delivery.threadId, delivery.draftId)
     const remote = new Map<string, ComposerDraft>()
-    for (const item of state.threadDrafts ?? []) remote.set(item.threadId, { draftId: item.draftId, text: item.text, attachments: item.attachments, skills: item.skills ?? [], requestId: item.requestId })
+    for (const item of state.threadDrafts ?? []) remote.set(item.threadId, { draftId: item.draftId, text: item.text, attachments: item.attachments, skills: item.skills ?? [], files: item.files ?? [], requestId: item.requestId })
     // Clears have no persisted content row, but still need exact-revision evidence
     // while a live controller is trying to remove the previous disk draft.
     for (const item of state.threadDraftPersistence ?? []) if (!remote.has(item.threadId)) remote.set(item.threadId, { ...EMPTY, draftId: item.draftId })
@@ -187,7 +192,7 @@ export class ThreadDraftStore {
       // Older state without per-thread drafts: the singleton belongs to its thread under a stable local revision.
       const legacy = key(state.draftThreadId, state.draft)
       if (!this.legacyIds.has(legacy)) this.legacyIds.set(legacy, this.uuid())
-      remote.set(state.draftThreadId, { draftId: this.legacyIds.get(legacy)!, text: state.draft, attachments: state.draftAttachments ?? [], skills: [], requestId: state.draftRequestId })
+      remote.set(state.draftThreadId, { draftId: this.legacyIds.get(legacy)!, text: state.draft, attachments: state.draftAttachments ?? [], skills: [], files: [], requestId: state.draftRequestId })
     }
     const changed = new Set<string>()
     for (const threadId of new Set([...this.entries.keys(), ...remote.keys()])) {
@@ -235,7 +240,7 @@ export class ThreadDraftStore {
   }
 
   /** A new revision of the thread's composer. */
-  edit(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachment[]; readonly skills?: readonly AgentSkillReference[]; readonly requestId?: string | null }): void {
+  edit(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachment[]; readonly skills?: readonly AgentSkillReference[]; readonly files?: readonly AgentFileReference[]; readonly requestId?: string | null }): void {
     const entry = this.entries.get(threadId) ?? { draft: EMPTY, observed: true, saved: true, saving: null, error: null, superseded: [] }
     this.entries.set(threadId, entry)
     if (entry.draft.draftId) entry.superseded = [...entry.superseded.slice(-15), entry.draft.draftId]
@@ -244,6 +249,7 @@ export class ThreadDraftStore {
       text: patch.text ?? entry.draft.text,
       attachments: patch.attachments ?? entry.draft.attachments,
       skills: patch.skills ?? entry.draft.skills,
+      files: patch.files ?? entry.draft.files,
       requestId: patch.requestId === undefined ? entry.draft.requestId : patch.requestId,
     }
     entry.observed = false
@@ -281,7 +287,7 @@ export class ThreadDraftStore {
     }
     let result: Promise<AgentState | null>
     try {
-      result = this.command({ type: 'save-thread-draft', composer: 'manual', threadId, draftId: draft.draftId, text: draft.text, attachments: [...draft.attachments], ...(draft.skills.length ? { skills: [...draft.skills] } : {}), requestId: draft.requestId })
+      result = this.command({ type: 'save-thread-draft', composer: 'manual', threadId, draftId: draft.draftId, text: draft.text, attachments: [...draft.attachments], ...(draft.skills.length ? { skills: [...draft.skills] } : {}), ...(draft.files.length ? { files: [...draft.files] } : {}), requestId: draft.requestId })
     } catch { result = Promise.resolve(null) }
     const task = result.then(settle, () => settle(null))
     const saves = this.pendingSaves.get(threadId) ?? new Set<Promise<void>>()
@@ -336,7 +342,7 @@ export class ThreadDraftStore {
     const draft = entry.draft
     const submission: Submission = {
       threadId, draftId: draft.draftId, mode, text: draft.text.trim(), submittedAt, resolved: false, error: null,
-      attachments: draft.attachments.map(({ id, name }) => ({ id, name })), skills: [...draft.skills],
+      attachments: draft.attachments.map(({ id, name }) => ({ id, name })), skills: [...draft.skills], files: [...draft.files],
     }
     this.submissionList = [...this.submissionList.filter(item => key(item.threadId, item.draftId) !== key(threadId, draft.draftId)), submission].slice(-MAX_DELIVERED_DRAFTS)
     this.emit(new Set())

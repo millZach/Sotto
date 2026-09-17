@@ -84,6 +84,11 @@
 :root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
+.thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
+.thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
+.thread-nav__rename { font-size: 14px; font-weight: 500; }
+.thread-workspace__rename { font-size: inherit; font-weight: inherit; }
+:is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
 .thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
 .thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }

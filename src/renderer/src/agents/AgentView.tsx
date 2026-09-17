@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { PROVIDER_LABELS, capabilitiesForThread, isThreadProviderConnected, threadSummaryOf, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, capabilitiesForThread, isThreadBusy, isThreadProviderConnected, threadSummaryOf, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -77,15 +77,15 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     const result = await command({ type: 'send' })
     if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
   }
-  const sendDisabled = Boolean(pausedDraft) || state.busy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
+  const sendDisabled = Boolean(pausedDraft) || state.globalLaneBusy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
   if ((target === undefined || !assigned) && !hasDraft && !pausedDraft) return null
   return <section className="agent-composer">
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
     {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}
-    {!assigned && !pausedDraft ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.busy || !isThreadProviderConnected(state.host, target) || !supportsAgentSupervision(capabilitiesForThread(state.host, target))} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
+    {!assigned && !pausedDraft ? <p className="agent-muted">This saved draft is paused. {target === undefined ? 'Its thread is unavailable.' : <Button variant="secondary" disabled={state.globalLaneBusy || !isThreadProviderConnected(state.host, target) || !supportsAgentSupervision(capabilitiesForThread(state.host, target))} onClick={() => void command({ type: 'assign', threadId: target.id })}>Manage draft thread</Button>}</p> : null}
     <ScreenshotInput key={target?.id ?? 'no-thread'} attachments={attachments} onChange={updateImages} onReadingChange={setReadingImages}
-      disabled={Boolean(pausedDraft) || state.busy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
+      disabled={Boolean(pausedDraft) || state.globalLaneBusy || target === undefined || !assigned} supported={!answering && state.host.models.some(model => model.id === target?.modelId && model.supportsImages === true)}>
     <textarea id={compact ? 'widget-agent-prompt' : 'agent-prompt'} value={draft} onChange={(event) => update(event.target.value)}
       rows={compact ? 3 : 5} placeholder={target === undefined ? 'Select a thread to start a prompt.' : answering ? 'Dictate or type your answer. It stays saved until you send or clear it.' : 'Dictate or type your prompt. Pauses won’t send it.'}
       disabled={target === undefined || (!assigned && !pausedDraft)} readOnly={Boolean(pausedDraft)} spellCheck
@@ -97,8 +97,8 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     </ScreenshotInput>
     <div className="agent-composer__footer">{pausedDraft ? <span>Saved draft</span> : footerControls ?? <span>Say “send it” when you’re ready.</span>}
       <div className="agent-actions">
-        {pausedDraft ? <Button disabled={state.busy || target === undefined} onClick={() => void command({ type: 'resume-draft', threadId: pausedDraft.threadId })}>Resume draft</Button> : <>
-        {hasDraft ? <Button variant="ghost" disabled={readingImages || state.busy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
+        {pausedDraft ? <Button disabled={state.globalLaneBusy || target === undefined} onClick={() => void command({ type: 'resume-draft', threadId: pausedDraft.threadId })}>Resume draft</Button> : <>
+        {hasDraft ? <Button variant="ghost" disabled={readingImages || state.globalLaneBusy} onClick={() => { void command({ type: 'cancel-draft' }).then((result) => { if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) } }) }}>Clear</Button> : null}
         <Button disabled={sendDisabled} onClick={() => void send()}>
           Send it <ArrowRight size={14} aria-hidden="true" />
         </Button>
@@ -140,6 +140,8 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
   const active = state.queue.find((entry) => entry.threadId === state.activeThreadId)
   const thread = state.host.threads.find((entry) => entry.id === active?.threadId)
   const request = thread?.requests.find((entry) => entry.id === active?.requestId)
+  // Answering runs in the waiting thread's own lane, so only that thread's answer waits.
+  const answering = isThreadBusy(state, active?.threadId)
   const reply = (value: string, approved?: boolean): void => {
     if (active?.requestId === undefined) return
     void command({ type: 'answer', threadId: active.threadId, requestId: active.requestId, answer: value,
@@ -148,7 +150,7 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
   return <section className="agent-queue" aria-label="Ready threads">
     <div className="agent-section-title"><h2>Needs your attention <span className="agent-count">{state.queue.length}</span></h2>
       <div className="agent-actions"><Button variant="ghost" disabled={state.queue.length === 0} onClick={() => { if (onLater) onLater(); else void command({ type: 'later' }) }}>Later</Button>
-        <Button variant="secondary" disabled={state.queue.length === 0 || Boolean(onNext && state.busy)} onClick={() => { if (onNext) onNext(); else void command({ type: 'next' }) }}>Next <ArrowRight size={13} aria-hidden="true" /></Button></div>
+        <Button variant="secondary" disabled={state.queue.length === 0 || Boolean(onNext && state.globalLaneBusy)} onClick={() => { if (onNext) onNext(); else void command({ type: 'next' }) }}>Next <ArrowRight size={13} aria-hidden="true" /></Button></div>
     </div>
     {state.queue.length === 0 ? <p className="agent-muted">Assigned threads will appear here when they need you.</p> : <>
       {!compact ? <div className="agent-queue__tabs">{state.queue.map((item) => {
@@ -162,9 +164,9 @@ export function AgentQueue({ state, command, compact = false, approvalLabel = 'A
         <span className="agent-eyebrow">{active.kind === 'permission' ? 'Permission requested' : active.kind === 'question' ? 'Your decision' : 'Ready for you'}</span>
         {active.kind === 'ready' ? <AgentReadyUpdate key={active.id} text={active.text} compact={compact} /> : <p>{active.text}</p>}
         {active.requestId === undefined ? null : request?.kind === 'permission' || active.kind === 'permission'
-          ? <div className="agent-actions"><Button variant="secondary" disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Denied', false)}>Deny</Button><Button disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Approved', true)}>{approvalLabel}</Button></div>
+          ? <div className="agent-actions"><Button variant="secondary" disabled={answering || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Denied', false)}>Deny</Button><Button disabled={answering || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply('Approved', true)}>{approvalLabel}</Button></div>
           : request?.options.length ? <div className="agent-actions">{request.options.map((option) =>
-            <Button key={option.id} variant="secondary" disabled={state.busy || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
+            <Button key={option.id} variant="secondary" disabled={answering || !thread || !isThreadProviderConnected(state.host, thread)} onClick={() => reply(option.id)}>{option.label}</Button>)}</div> : null}
       </div>}
     </>}
   </section>
@@ -249,7 +251,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       {subscription ? <div className="agent-field-wide agent-subscription-status" role="status">
         <div><strong>{checking ? 'Checking your subscription…' : account?.ready ? `${account.label} connected` : 'Subscription connection'}</strong>
           <p>{checking ? 'Checking the account in your installed provider app.' : account?.detail ?? 'Check the subscription signed into your provider app. No API key is needed.'}</p></div>
-        <Button variant="secondary" disabled={checking || state.busy} onClick={() => { if (isSubscriptionReasoning(configuration.reasoning)) void checkSubscription(configuration.reasoning) }}>Check connection</Button>
+        <Button variant="secondary" disabled={checking || state.globalLaneBusy} onClick={() => { if (isSubscriptionReasoning(configuration.reasoning)) void checkSubscription(configuration.reasoning) }}>Check connection</Button>
       </div> : null}
       {api ? <label className="agent-field-wide">Reasoning API key<input type="password" autoComplete="off" value={reasoningKey} onChange={(event) => { setReasoningKey(event.target.value); setSaved(false) }} placeholder={state.credentials.reasoning && configuration.reasoning === state.configuration.reasoning ? 'Saved securely · enter to replace' : 'Your provider API key'} /></label> : null}
       <p className="agent-field-wide agent-muted">Sotto uses this connection to understand voice commands and decide routine follow-ups. Subscription usage follows your provider’s allowance and any extra usage you enabled there. Sotto never switches accounts or enables paid overages for you.</p>
@@ -266,7 +268,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       {!state.credentials.secure ? <p role="alert">Secure credential storage is unavailable. Credentials cannot be saved on this system.</p> : null}
       <p>Assignment context expires after seven days without activity. Turning off history prevents saving that context. Unsent drafts stay on this desktop until sent or cleared so they survive a restart.</p>
     </div>
-    <div className="agent-actions"><Button onClick={() => void save()} disabled={state.busy || checking || (reasoningChanged && subscription && !account?.ready)}>Save connection settings</Button>{saved ? <span role="status">Settings saved</span> : null}</div>
+    <div className="agent-actions"><Button onClick={() => void save()} disabled={state.globalLaneBusy || checking || (reasoningChanged && subscription && !account?.ready)}>Save connection settings</Button>{saved ? <span role="status">Settings saved</span> : null}</div>
     <div className="agent-billing agent-membership"><p><strong>Sotto access</strong></p>
       <p>{state.membership.label}</p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>
       {state.membership.expiresAt ? <p>Current access ends {new Date(state.membership.expiresAt).toLocaleString()}.</p> : null}
@@ -299,7 +301,7 @@ function AgentNewProject({ state, command, onCreated }: { readonly state: AgentS
     <label>Project name<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Workshop" /></label>
     <label>Project folder<input value={path} onChange={(event) => setPath(event.target.value)} placeholder={state.configuration.projectsDirectory ? `Inside ${state.configuration.projectsDirectory}` : 'Choose a folder or set your projects directory'} /></label>
     <label className="agent-checkbox"><input type="checkbox" checked={existing} onChange={(event) => setExisting(event.target.checked)} />Use this folder if it already exists</label>
-    <Button type="submit" disabled={state.busy || submitting || !title.trim()}><FolderPlus size={14} aria-hidden="true" />Create project</Button>
+    <Button type="submit" disabled={state.globalLaneBusy || submitting || !title.trim()}><FolderPlus size={14} aria-hidden="true" />Create project</Button>
   </form>
 }
 
@@ -316,7 +318,9 @@ function AgentNewThread({ state, command, project, onCreated }: { readonly state
     if (submitting) return
     setSubmitting(true)
     try {
-      const result = await command({ type: 'create-thread', projectId: project.id, title: threadName.trim() || 'New thread', modelId })
+      // A name the user typed is theirs from the start; Sotto's stand-in name is not.
+      const result = await command({ type: 'create-thread', projectId: project.id, title: threadName.trim() || 'New thread', modelId,
+        titleSource: threadName.trim() ? 'user' : 'default' })
       if (result !== null && result.error === null) {
         setThreadName(''); setModelOverride('')
         if (details.current !== null) details.current.open = false
@@ -327,7 +331,7 @@ function AgentNewThread({ state, command, project, onCreated }: { readonly state
   return <details ref={details} className="agent-new-thread" open={onCreated === undefined ? undefined : true}><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
     <label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label>
     <label>Agent model<select aria-label="Agent model" value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
-    <Button type="submit" disabled={state.busy || submitting || !modelId || !available}><Plus size={14} aria-hidden="true" />Open thread</Button>
+    <Button type="submit" disabled={state.globalLaneBusy || submitting || !modelId || !available}><Plus size={14} aria-hidden="true" />Open thread</Button>
   </form></details>
 }
 
@@ -401,7 +405,7 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
               <button type="button" aria-label={`Select ${thread.title}`} onClick={() => void command({ type: 'select-thread', threadId: thread.id })}>
                 <i data-status={thread.status} /><span>{thread.title}<small>{managed?.mode === 'manual' ? 'Manual control' : managed?.paused ? 'Management paused' : managed ? 'Managed' : thread.status === 'running' ? 'Working' : 'Unassigned'}</small></span>
               </button>
-              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={state.busy || !isThreadProviderConnected(state.host, thread) || !supportsAgentSupervision(capabilitiesForThread(state.host, thread))} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
+              {managed === undefined ? <button type="button" className="agent-thread__manage" aria-label={`Manage ${thread.title}`} title={`Manage ${thread.title}`} disabled={state.globalLaneBusy || !isThreadProviderConnected(state.host, thread) || !supportsAgentSupervision(capabilitiesForThread(state.host, thread))} onClick={() => void command({ type: 'assign', threadId: thread.id })}><Plus size={14} /></button> : null}
             </div>
           })}
         </div>)}
@@ -412,11 +416,11 @@ export function AgentView({ onOpenThreads }: { /** Opens the Threads page, the r
         <AgentQueue state={state} command={command} />
         <AgentManualNotice state={state} command={command} />
         {active === undefined ? <section className="agent-empty"><Workflow size={28} aria-hidden="true" /><h2>Your agents, one conversation away</h2><p>Select a thread or open one in your selected project.</p></section> : <section className="agent-thread-heading"><div><span className="agent-eyebrow">{activeProject?.title}</span><h2>{active.title}</h2><p>{state.host.models.find((model) => model.id === active.modelId)?.name ?? active.modelId} · {active.status === 'running' ? 'Working' : assignment === undefined ? 'Unassigned · manage this thread to send prompts' : 'Ready for a prompt'}</p></div>
-          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.busy || !activeConnected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
+          <div className="agent-actions">{assignment === undefined ? <Button variant="secondary" disabled={state.globalLaneBusy || !activeConnected || !fullSupervision} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button> : <>
             <span>{assignment.followups}/{state.configuration.followupLimit} follow-ups</span>
             {assignment.mode === 'managed' ? <Button variant="ghost" onClick={() => void command({ type: assignment.paused ? 'resume' : 'pause', threadId: active.id })}>{assignment.paused ? 'Resume management' : 'Pause management'}</Button> : null}
             <Button variant="ghost" onClick={() => void command({ type: 'unassign', threadId: active.id })}>Stop managing</Button>
-          </>}{assignment !== undefined && active.status === 'running' && activeCapabilities.interrupt ? <Button variant="secondary" disabled={state.busy || !activeConnected} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
+          </>}{assignment !== undefined && active.status === 'running' && activeCapabilities.interrupt ? <Button variant="secondary" disabled={isThreadBusy(state, active.id) || !activeConnected} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
         </section>}
         <AgentLatestResponse thread={active} />
         <AgentComposer state={state} command={command} />
