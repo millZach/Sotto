@@ -122,12 +122,30 @@
 
 .thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
-.thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+/* Scroll anchoring is on because the containment below gives an offscreen message an estimated height: without it,
+   a message resolving to its true height as the reader scrolls back through the history moves the text under them
+   (3167px of jumping over 24 scroll steps, against 7px with it). The transcript's own scrolling is unaffected: it
+   sets scrollTop to an absolute value, which the browser's adjustment cannot compound. */
+.thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 14px; }
 .thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
+/*
+ * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
+ * reader scrolls near them, so opening a thread of hundreds of messages and scrolling it stays cheap. The
+ * remembered size (`auto`) keeps a message the reader has already passed at its true height, so the scrollbar
+ * does not move under them a second time.
+ */
+.thread-transcript__content > .thread-message,
+.thread-transcript__content > .thread-work,
+.thread-transcript__content > .thread-activity { content-visibility: auto; contain-intrinsic-size: auto 160px; }
+/*
+ * The end of the conversation is always laid out for real: following the stream, Jump to latest and the
+ * request card that steps the Jump button aside all measure it, and an estimate there would land short.
+ */
+.thread-transcript__content > :nth-last-child(-n + 12) { content-visibility: visible; }
 .thread-message { margin: 0 0 28px; }
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 13px; }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }

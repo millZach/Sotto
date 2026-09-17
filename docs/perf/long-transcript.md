@@ -53,3 +53,47 @@ Chromium, same 400 messages, no containment:
 
 So the cost that grows with length is the browser's, not React's: laying out and painting every message the
 reader has asked for, which is the whole history once they press *Show earlier messages*.
+
+## After
+
+Each message, each folded turn and each activity group in the transcript now carries `content-visibility: auto`
+with a remembered intrinsic size, so a message out of view skips layout and paint until the reader scrolls near
+it. Two things go with it:
+
+- The last twelve elements are forced back to `content-visibility: visible`. Everything that measures the end of
+  the transcript — following the stream, Jump to latest, and the request card that steps the Jump button aside —
+  needs the end laid out for real rather than estimated.
+- The scroller's `overflow-anchor` is back to `auto`. Without it, a message resolving from its estimate to its
+  true height as the reader scrolls back moves the text under them; that is what `driftPx` below measures.
+
+Chromium, 400 messages:
+
+| | plain | contained | contained, `overflow-anchor: none` | contained, 240px estimate |
+| --- | ---: | ---: | ---: | ---: |
+| Layout for the whole transcript | 73 ms | **26.6 ms** | 26.7 ms | 27.8 ms |
+| Off by, after scrolling to the end | 0 px | **0 px** | 0 px | 48 px |
+| Content jump scrolling 24 steps back | 0 px | **7 px** | 3167 px | 3892 px |
+| Worst single step | 0 px | **0.8 px** | 314 px | 455 px |
+| Scrolling 24 steps back | 792 ms | 790 ms | 791 ms | 794 ms |
+
+Laying out the transcript is 2.7x cheaper, the reader still lands exactly at the end, and the history stays
+still under them. Scrolling itself is unchanged, as it must be: content scrolled into view has to be laid out
+either way. The estimate is 160px rather than a truer average of 230px because an estimate that overshoots
+leaves `scrollHeight` longer than the transcript really is, and Jump to latest then stops 48px short — exactly
+the follow slack, so the transcript would think the reader had stopped following.
+
+React is untouched, as jsdom has no layout to skip: the mount stays at about 1.9x the real thread's
+(175 ms → 331 ms in a later, busier session where the real thread's own mount had gone from 139 ms to 175 ms —
+read the ratio, not the absolute).
+
+## Why not windowing
+
+Rendering only the turns near the viewport was not needed. The transcript already pages at `TRANSCRIPT_PAGE`
+(80 messages), so React never mounts 400 articles; the React cost that is left is the O(n) derivation over the
+whole history, which windowing does not remove. Containment takes the part that does grow — layout and paint —
+without touching folded turns, activity groups, pending messages, the composer's scroll anchoring, find-in-page
+or anchors, none of which a windowed list keeps for free.
+
+One caveat to watch: a `content-visibility: auto` subtree is skipped until it is relevant, so the very old part
+of a long thread is laid out only when it is scrolled near, found by find-in-page, or focused. The end of the
+conversation, which is what the app measures and what a reader arrives at, is always real.
