@@ -16,6 +16,11 @@ export function isThreadSettled(thread: ThreadLifecycle): boolean {
   return thread.settledOverride === 'settled' || hasTimestamp(thread.settledAt)
 }
 
+/** Archived work: kept for its history only. A settled thread is not archived. */
+export function isThreadArchived(thread: Pick<AgentThread, 'archivedAt'>): boolean {
+  return hasTimestamp(thread.archivedAt)
+}
+
 /** Excluded from attention/supervision: settled or archived, not merely idle. */
 export function isThreadClosed(thread: ThreadLifecycle): boolean {
   return hasTimestamp(thread.archivedAt) || isThreadSettled(thread)

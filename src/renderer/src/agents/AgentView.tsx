@@ -316,7 +316,9 @@ export function AgentNewThread({ state, command, project, onCreated }: { readonl
     if (submitting) return
     setSubmitting(true)
     try {
-      const result = await command({ type: 'create-thread', projectId: project.id, title: threadName.trim() || 'New thread', modelId })
+      // A name the user typed is theirs from the start; Sotto's stand-in name is not.
+      const result = await command({ type: 'create-thread', projectId: project.id, title: threadName.trim() || 'New thread', modelId,
+        titleSource: threadName.trim() ? 'user' : 'default' })
       if (result !== null && result.error === null) {
         setThreadName(''); setModelOverride('')
         if (details.current !== null) details.current.open = false

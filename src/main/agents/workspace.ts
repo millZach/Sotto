@@ -127,6 +127,8 @@ export class WorkspaceHost implements AgentHost {
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       threads.set(thread.id, { ...thread,
+        // A name the user set by hand outranks whatever the provider still calls the thread.
+        ...(old?.titleSource === 'user' ? { title: old.title, titleSource: 'user' as const } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
         ...(old?.activities || thread.activities ? { activities: old?.historyEpoch !== thread.historyEpoch ? thread.activities ?? [] : mergeAgentActivities(old?.activities, thread.activities) } : {}),
@@ -190,6 +192,21 @@ export class WorkspaceHost implements AgentHost {
       if (current) current.workspaceSettledAt = previous
       throw error
     }
+    this.publish(); return this.workspaceSnapshot()
+  }
+  /**
+   * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
+   * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
+   */
+  async renameThread(threadId: string, title: string): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    const previous = { title: thread.title, titleSource: thread.titleSource }
+    thread.title = title
+    thread.titleSource = 'user'
+    this.dirty = true
+    try { await this.flush() }
+    catch (error) { Object.assign(this.thread(threadId), previous); throw error }
     this.publish(); return this.workspaceSnapshot()
   }
   private thread(id: string): AgentThread {
@@ -299,6 +316,7 @@ export class WorkspaceHost implements AgentHost {
       const model = this.state.snapshot.models.find(model => model.id === command.modelId)!
       this.requireCreation(model.providerId)
       const thread: AgentThread = { id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+        titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),

@@ -1,6 +1,8 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, SquarePen } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, Pencil, SquarePen } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
+import { isThreadArchived } from '../../../shared/threadActivity'
+import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
 import { ProviderMark } from './ProviderMark'
 import { SidebarFrame, type SidebarMode } from './SidebarFrame'
@@ -92,6 +94,14 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
   const finished = unseen && label === 'Done'
   const status = finished ? 'Just finished' : label
   const besideAvailable = panes.currentThreadId !== null && !current
+  const [renaming, setRenaming] = useState(false)
+  const archived = isThreadArchived(row.thread)
+  if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+    <span className="thread-nav__item thread-nav__item--renaming">
+      <ThreadNameField title={title} label={`Rename ${title}`} className="thread-nav__rename tt-focusable"
+        onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={() => setRenaming(false)} />
+    </span>
+  </li>
   return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
@@ -106,6 +116,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
     </button>
     <span className="thread-nav__row-actions">
       {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(row.thread.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
+      {!archived ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Rename ${title}`} title="Rename thread" onClick={() => setRenaming(true)}><Pencil size={16} aria-hidden="true" /></button> : null}
       {row.settledBy === null
         ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle ${title}`} title="Settle thread" disabled={busy} onClick={() => void command({ type: 'settle-thread', threadId: row.thread.id })}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'

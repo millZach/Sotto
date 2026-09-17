@@ -6,6 +6,8 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. Threads are a core Sotto function: memory, goals, assignments and the attention queue refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 
+**Thread title.** The thread's name in every surface that names it: sidebar, pane header, attention queue, widget and spoken summaries. It is Sotto's own record, renamed at any time from the sidebar row or the pane header and never pushed to the provider. A thread records whether its title was set by hand (`titleSource`): a name the user typed, in the New thread dialog or a rename, is `user`; the stand-in "New thread" and any name a provider supplied are `default`. Anything that generates a title leaves a `user` one alone.
+
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
 **Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
