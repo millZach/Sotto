@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deserialize, serialize } from 'node:v8'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { agentShell, agentStateSchema, defaultAgentConfiguration, type AgentHostSnapshot, type AgentState } from '../../src/shared/agents'
+import { agentShell, agentStateSchema, defaultAgentConfiguration, type AgentHostSnapshot, type AgentState, type AgentThreadDetail } from '../../src/shared/agents'
+import { applyAgentThreadDetailDelta, diffAgentThreadDetail } from '../../src/shared/agentThreadDetail'
 import { AttachmentPreviews } from '../../src/main/agents/attachmentPreviews'
 
 const ITERATIONS = 20
@@ -127,6 +128,36 @@ describe('state pipeline cost', async () => {
     }
     console.info(`state pipeline (shell): ${JSON.stringify(shellReport)}`)
     expect(shellBytes).toBeLessThan(bare)
+
+    // One streaming chunk into that thread. Before: the whole detail again, copied, sent and taken back
+    // apart. After: the difference from the revision the window holds, diffed at the end of the window
+    // and applied against what it already has.
+    const held: AgentThreadDetail = { threadId: busiest.id, revision: 1, messages: detail.messages, activities: detail.activities }
+    const chunk = 'x'.repeat(40)
+    const last = held.messages.length - 1
+    const grown = { messages: held.messages.map((message, index) => index === last ? { ...message, text: message.text + chunk } : message),
+      activities: held.activities }
+    const fullSend = time(() => { serialize(detail) })
+    const fullWire = serialize(detail)
+    const fullReceive = time(() => { deserialize(fullWire) })
+    const diff = time(() => { diffAgentThreadDetail(held, grown, 2) })
+    const streamed = diffAgentThreadDetail(held, grown, 2)!
+    const streamedWire = serialize(streamed)
+    const streamedSend = time(() => { serialize(streamed) })
+    const streamedReceive = time(() => { deserialize(streamedWire) })
+    const apply = time(() => { applyAgentThreadDetailDelta(held, streamed) })
+
+    const streamingReport = {
+      thread: busiest.id.slice(0, 8), messages: held.messages.length, activities: held.activities!.length,
+      full: { payloadKB: Math.round(detailBytes / 1024), produceMs: round(detailClone), serializeMs: round(fullSend),
+        deserializeMs: round(fullReceive), totalMs: round(detailClone + fullSend + fullReceive) },
+      delta: { payloadBytes: streamedWire.byteLength, produceMs: round(diff), serializeMs: round(streamedSend),
+        deserializeMs: round(streamedReceive), applyMs: round(apply),
+        totalMs: round(diff + streamedSend + streamedReceive + apply) },
+    }
+    console.info(`state pipeline (streaming delta): ${JSON.stringify(streamingReport)}`)
+    expect(streamedWire.byteLength).toBeLessThan(detailBytes)
+    expect(applyAgentThreadDetailDelta(held, streamed)!.messages.at(-1)!.text.endsWith(chunk)).toBe(true)
   })
 })
 

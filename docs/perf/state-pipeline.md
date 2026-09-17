@@ -82,6 +82,42 @@ and 55 KB was messages. The busiest thread alone (31 messages, 202 records) is 9
 and that is now paid once per 16 ms for the one or two threads on screen, instead of for all five on every
 provider frame. A thread nobody has open is never copied at all.
 
+### Streaming deltas
+
+The detail above was still the whole thread on every flush: the busiest one, 936 KB, copied, serialised and
+taken apart again every 16 ms for as long as an agent streamed into it. Once a window holds a revision, what
+follows it is the difference.
+
+- Main keeps, per detail target, the history that window was last sent and the revision that stands for it,
+  and diffs the next one against it. A message that grew by a suffix is that suffix (`{ id, appendText }`);
+  a message that changed some other way, or a new one, is the message; an activity record is the record as
+  it now stands, or its id and `removed`. Anything no delta can say — a message removed or reordered, a
+  record that would land in the wrong place — falls back to the whole detail, as does first delivery and
+  every answer to `agents.threadDetail`. The snapshots are bounded by the detail targets: a thread that
+  leaves the viewed set frees its snapshot on the next broadcast.
+- The window applies a delta only when its `baseRevision` is the revision it holds, and asks for the whole
+  detail when it is not. Answering that request also resets what main measures from, so the two cannot
+  drift apart. Only the message that changed becomes a new object, so the structural sharing behind the
+  render still sees every other message as the same one.
+- Because the diff is taken once, at the end of the coalescing window, rather than as each provider event
+  lands, five updates to one activity record inside a window are one delta and several appends to one
+  message are one append.
+
+Same folder and the same busiest thread (31 messages, 202 activity records), one 40-character append,
+medians of 20, three runs:
+
+| | full detail per flush | streaming delta |
+| --- | ---: | ---: |
+| payload | 936 KB | 213 bytes |
+| produce in main | 2.5 ms (clone) | 0.4 ms (diff) |
+| serialise for IPC | 1.2 ms | 0.01 ms |
+| deserialise in the window | 0.6 ms | 0 ms |
+| apply in the window | — | 0.03 ms |
+| **total per flush** | **4.4 ms** | **0.44 ms** |
+
+The delta is measured against the whole activity of the thread every time — the diff walks 202 records and
+31 messages to find the one chunk that moved — which is the 0.4 ms, and it replaces a 936 KB copy.
+
 ### Painting before main answers
 
 The window keeps its newest shell in `localStorage` (at most one write every two seconds) and paints it on
