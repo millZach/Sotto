@@ -1,0 +1,26 @@
+/* Terminal mode: the sidebar's mode switch, the New terminal dialog's Runs box, and a terminal pane. */
+
+.thread-nav__mode { display: grid; grid-template-columns: 1fr 1fr; margin: 0 4px 12px; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: color-mix(in srgb, var(--tt-field) 55%, transparent); }
+.thread-nav__mode button { min-height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.thread-nav__mode button:hover { color: var(--tt-text-2); }
+.thread-nav__mode button[aria-checked='true'] { background: var(--threads-selected); color: var(--tt-text); box-shadow: inset 0 0 0 1px var(--threads-selected-border); }
+.thread-nav__mark[data-provider='shell'] { color: var(--tt-text-muted); }
+
+.new-terminal-dialog__options { gap: 12px 16px; }
+.new-terminal-dialog__options label > span, .new-terminal-dialog__options .thread-options__model > span { font-size: 12px; }
+.new-terminal-dialog__options select { max-width: none; min-height: 39px; padding: 8px 11px; border-radius: 8px; font-size: 13px; }
+.new-terminal-runs { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-code-bg, var(--tt-field)); }
+.new-terminal-runs small { color: var(--tt-text-muted); font-size: 12px; }
+.new-terminal-runs code { font: 13px var(--tt-font-mono, monospace); color: var(--tt-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.terminal-pane { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.terminal-pane__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.terminal-pane .terminal-view { flex: 1; min-height: 0; }
+.terminal-pane .thread-workspace__crumb > svg { flex: none; color: var(--tt-text-muted); }
+.terminal-pane__chip { position: absolute; right: 16px; bottom: 12px; margin: 0; padding: 6px 11px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-panel); color: var(--tt-text-2); font-size: 12px; box-shadow: 0 6px 20px var(--tt-shadow-color, rgb(0 0 0 / 25%)); }
+.terminal-status { display: flex; flex: none; align-items: center; gap: 14px; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.terminal-status__branch { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.terminal-status__branch > svg { flex: none; }
+.terminal-status__hints { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Side by side in a window under 1280px, the shortcut hints go before the branch does. */
+@media (max-width: 1280px) { .thread-panes[data-split] .terminal-status__hints { display: none; } }

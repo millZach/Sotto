@@ -26,6 +26,12 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
 
+**Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control under the header. Terminals open in the same pane grid as thread panes. Avoid: "terminal tab", "terminal page".
+
+**Terminal.** In Terminal mode, a shell or a provider CLI that Sotto starts in a project folder or in its own worktree, named by the user when it opens. It belongs to a project, never to a thread, and keeps running while its pane is hidden. Distinct from the Tools panel's terminal, which belongs to a thread's working copy. Its first line, printed by Sotto, names the folder and the command.
+
+**Closed.** Terminal mode's counterpart to Settled: the shelf of terminals ended this session, which can be reopened with the same command until Sotto quits.
+
 **Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
 
 **Provider retirement.** An upgrade that stops using an old thread provider while retaining recovery evidence and the user's draft. Old assignments, answers and uncertain actions are not transferred or replayed through a native client.
@@ -176,6 +182,7 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which aggregates independent provider connections and routes each thread to its bound adapter.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
 - `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state.
+- `src/renderer/src/terminals/TerminalWorkspace.tsx` — Terminal mode; `terminalFacts.ts` derives its rows and states; `src/main/terminals/service.ts` owns the terminals and their PTYs; `src/shared/terminalCommands/` maps a provider, model, reasoning and permission choice to the CLI command.
 - `docs/agent-control.md` — user-facing behaviour of agent control, including the Threads page.
 - `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.

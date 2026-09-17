@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
+import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
-import type { ThreadRow } from './threadFacts'
 import {
   DIVIDER_WIDTH, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, PANE_DRAG_TYPE, RESIZE_STEP, THREAD_DRAG_TYPE,
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
@@ -9,14 +9,23 @@ import {
 } from './splitLayout'
 import './splitWorkspace.css'
 
-type DropTarget = { readonly kind: 'side'; readonly side: 'start' | 'end' } | { readonly kind: 'pane'; readonly index: number } | { readonly kind: 'add' } | { readonly kind: 'open' }
+export type DropTarget = { readonly kind: 'side'; readonly side: 'start' | 'end' } | { readonly kind: 'pane'; readonly index: number } | { readonly kind: 'add' } | { readonly kind: 'open' }
+
+/** What the grid needs to know about a pane's content to name it in tabs, controls and announcements. */
+export interface PaneLabel {
+  readonly title: string
+  readonly providerId: ProviderId | undefined
+  readonly provider: string
+}
 
 export interface ThreadPanesProps {
   /** The arrangement on screen; panes whose thread is missing are already left out. */
   readonly layout: SplitLayout
-  /** Thread IDs in pane order. One ID is the single view. */
+  /** Pane content IDs (threads or terminals) in pane order. One ID is the single view. */
   readonly paneIds: readonly string[]
-  readonly rows: ReadonlyMap<string, ThreadRow>
+  readonly rows: ReadonlyMap<string, PaneLabel>
+  /** The group's name; "Thread panes" unless the panes hold something else. */
+  readonly label?: string | undefined
   readonly focusedId: string | null
   /** A sidebar thread is being dragged; drop targets appear for it. */
   readonly dragging: string | null
@@ -31,17 +40,16 @@ export interface ThreadPanesProps {
   readonly measuredWidth?: number | undefined
   readonly measuredHeight?: number | undefined
 }
-export type { DropTarget }
 
 const paneDomId = (threadId: string): string => `thread-pane-${threadId}`
 const tabDomId = (threadId: string): string => `thread-pane-tab-${threadId}`
 /** Clicking or focusing these acts on the layout, not on the pane's thread, so it does not move the selection. */
 const CHROME = '[data-pane-chrome]'
 
-/** Put keyboard focus inside a pane: its composer when it can take text, otherwise its transcript. */
+/** Put keyboard focus inside a pane: its composer when it can take text, its terminal, otherwise its transcript. */
 export function focusInPane(threadId: string): void {
   const pane = document.getElementById(paneDomId(threadId))
-  const target = pane?.querySelector<HTMLElement>('.thread-workspace__compose textarea:not(:disabled)') ?? pane?.querySelector<HTMLElement>('[role="log"]')
+  const target = pane?.querySelector<HTMLElement>('.thread-workspace__compose textarea:not(:disabled)') ?? pane?.querySelector<HTMLElement>('.terminal-view textarea, [role="log"]')
   target?.focus()
 }
 
@@ -208,7 +216,7 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  * Every pane stays mounted in a stable order, so moving, hiding or resizing never loses its scroll position,
  * keyboard focus or draft, and the retained arrangement returns when there is room.
  */
-export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
+export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
   const [moving, setMoving] = useState<string | null>(null)
@@ -225,7 +233,7 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
   const shown = shownLayout(layout, width, height)
   const [shownRows, shownColumns] = gridSizes(shown)
   const placed = split && !single ? placements(shape, shownRows, shownColumns) : null
-  const title = (id: string): string => rows.get(id)?.thread.title ?? 'Thread'
+  const title = (id: string): string => rows.get(id)?.title ?? 'Pane'
 
   useLayoutEffect(() => {
     const kept = preserved.current
@@ -324,7 +332,7 @@ export function ThreadPanes({ layout, paneIds, rows, focusedId, dragging, render
       layout={shown} size={divider.target.axis === 'columns' ? width : height} label={label} controls={before.map(paneDomId).join(' ')} area={area}
       onLayoutChange={next => change(next)} />])
   })
-  return <div className="thread-panes" ref={container} role="group" aria-label="Thread panes" data-split={split || undefined} data-narrow={single || undefined}
+  return <div className="thread-panes" ref={container} role="group" aria-label={label} data-split={split || undefined} data-narrow={single || undefined}
     data-zoomed={split && layout.zoomed || undefined} data-rows={multiRow || undefined} data-dragging={dragging !== null || moving !== null || undefined} onKeyDown={onAreaKey}>
     {single ? <div className="thread-panes__tabs" role="tablist" aria-label="Open panes">
       {paneIds.map((id, index) => {

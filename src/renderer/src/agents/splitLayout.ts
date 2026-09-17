@@ -317,7 +317,7 @@ function serialize(layout: SplitLayout): string {
   return JSON.stringify({ version: LAYOUT_VERSION, panes, arrangement, sizes, grid, zoomed, focused })
 }
 
-function browserStorage(): LayoutStorage | null {
+export function browserStorage(): LayoutStorage | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage
   } catch {

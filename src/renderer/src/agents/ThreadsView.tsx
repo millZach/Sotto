@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MessageSquare } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -9,12 +9,12 @@ import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
 import { hasDraftContent } from './threadDraftStore'
 import { ThreadPane } from './ThreadPane'
-import { ThreadPanes, focusInPane, type DropTarget } from './ThreadPanes'
+import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
+import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
-import {
-  closePane, isSplit, openBeside, prune, replacePane, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout,
-  type SplitLayoutStore,
-} from './splitLayout'
+import { useSidebarMode } from './SidebarFrame'
+import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
+import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
 
@@ -53,23 +53,16 @@ export interface ThreadsViewProps {
    */
   readonly onPaneThreadsChange?: ((threadIds: readonly string[]) => void) | undefined
   readonly layoutStore?: SplitLayoutStore | undefined
+  /** What Terminal mode is given beyond the state: its bridge, view and stores; tests pass stand-ins. */
+  readonly terminals?: Pick<TerminalWorkspaceProps, 'store' | 'bridge' | 'viewFactory' | 'layoutStore' | 'platform'> | undefined
   /** Test-only: the pane area's size where layout measurement is unavailable. */
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-function useClock(fixed: number | undefined): number {
-  const [tick, setTick] = useState(() => Date.now())
-  useEffect(() => {
-    if (fixed !== undefined) return
-    const timer = setInterval(() => setTick(Date.now()), 30_000)
-    return () => clearInterval(timer)
-  }, [fixed])
-  return fixed ?? tick
-}
-
-export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const now = useClock(fixedNow)
+  const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
@@ -83,6 +76,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
   const command = agents.command
   const rows = useMemo(() => state === null ? [] : describeThreads(state, now), [state, now])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
+  const labels = useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows])
   const organization = useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query])
   const stored = useSplitLayout(layoutStore)
   const activeId = state?.activeThreadId != null && rowsById.has(state.activeThreadId) ? state.activeThreadId : null
@@ -130,48 +124,15 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
     const settle = (): void => setPending(current => current?.threadId === threadId && current.settled === undefined ? { threadId, settled: stateRef.current } : current)
     void command({ type: 'select-thread', threadId }).then(settle, settle)
   }, [command, focusedId])
-  const focusPaneLater = (threadId: string): void => { window.setTimeout(() => focusInPane(threadId), 0) }
-
   if (state === null) return <div className="threads-view"><p role="status">{agents.error ?? 'Preparing agent controls...'}</p></div>
+  // Terminal mode keeps the same frame; the threads and their panes wait, unchanged, for the switch back.
+  if (mode === 'terminals') {
+    return <div className="management-view threads-view" data-mode="terminals">
+      <TerminalWorkspace state={state} command={command} mode={mode} onMode={setMode} now={fixedNow} {...terminals} paneAreaWidth={paneAreaWidth} paneAreaHeight={paneAreaHeight} />
+    </div>
+  }
 
-  const openBesideFocused = (threadId: string, side: 'start' | 'end' = 'end'): void => {
-    if (focusedId === null) { openThread(threadId); return }
-    if (threadId === focusedId) return
-    layoutStore.set(openBeside(layout, focusedId, threadId, side))
-    focusPane(threadId)
-  }
-  const onDrop = (threadId: string, target: DropTarget): void => {
-    setDragging(null)
-    if (!rowsById.has(threadId)) return
-    if (target.kind === 'open') openThread(threadId)
-    else if (target.kind === 'side') openBesideFocused(threadId, target.side)
-    else if (target.kind === 'add') openBesideFocused(threadId)
-    else {
-      if (!layout.panes.includes(threadId)) layoutStore.set(replacePane(layout, target.index, threadId))
-      focusPane(threadId)
-    }
-    focusPaneLater(threadId)
-  }
-  const close = (threadId: string): void => {
-    const others = layout.panes.filter(id => id !== threadId)
-    layoutStore.set(closePane(layout, threadId))
-    // Closing changes only the view. Focus goes to the neighbouring pane when the closed one had it.
-    const keep = threadId === focusedId ? others[Math.max(0, layout.panes.indexOf(threadId) - 1)] : focusedId
-    if (keep === undefined || keep === null) return
-    if (threadId === focusedId) focusPane(keep)
-    focusPaneLater(keep)
-  }
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    // F6 moves between panes, as it moves between the panes of other Windows apps.
-    if (event.key !== 'F6' || event.altKey || event.ctrlKey || event.metaKey || paneIds.length < 2) return
-    event.preventDefault()
-    const index = focusedId === null ? -1 : paneIds.indexOf(focusedId)
-    // From outside the panes (the sidebar), F6 enters the focused pane; inside, it moves to the next one.
-    const inside = (event.target as HTMLElement).closest('.thread-pane') !== null
-    const next = !inside && focusedId !== null ? focusedId : paneIds[(index + (event.shiftKey ? -1 : 1) + paneIds.length) % paneIds.length]!
-    focusPane(next)
-    focusPaneLater(next)
-  }
+  const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
 
   const connected = state.connection === 'connected'
   const localDraftPresent = focusedId !== null && hasDraftContent(store.draft(focusedId))
@@ -194,16 +155,16 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
       crumb={paneCrumb?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
   }
 
-  return <div className="management-view threads-view" onKeyDown={onKeyDown}>
+  return <div className="management-view threads-view" onKeyDown={grid.onKeyDown}>
     {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} onClose={() => setNewThread(null)} onCreated={() => { setNewThread(null); window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0) }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })}
-      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBesideFocused} onDragThread={setDragging} />
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={projectId => setNewThread({ projectId })}
+      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={grid.openBesideFocused} onDragThread={setDragging} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
       <div className="thread-workspace__body">
         {paneIds.length || dragging !== null
-          ? <ThreadPanes layout={layout} paneIds={paneIds} rows={rowsById} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
-            onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={onDrop} onClosePane={close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
+          ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
+            onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
         {!paneIds.length ? <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : 'Connect providers'}</Button> : <Button onClick={() => setNewThread({ projectId: state.activeProjectId ?? undefined })}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
