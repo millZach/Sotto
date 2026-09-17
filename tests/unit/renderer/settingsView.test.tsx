@@ -208,6 +208,26 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
   })
 
+  it('offers the writing model and the off switch for generated thread titles', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Cleanup')
+
+    const model = screen.getByRole('combobox', { name: 'Writing model' })
+    expect(model).toHaveValue('google/gemini-3.1-flash-lite')
+    await user.selectOptions(model, 'anthropic/claude-haiku-4.5')
+    expect(update).toHaveBeenCalledWith({ writingModel: 'anthropic/claude-haiku-4.5' })
+
+    // Turning generation off stops every title request, so the model choice has nothing left to pick for.
+    await user.click(screen.getByRole('switch', { name: 'Generated thread titles' }))
+    expect(update).toHaveBeenCalledWith({ threadTitles: false })
+    cleanup()
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, threadTitles: false } })} />)
+    await selectCategory('Cleanup')
+    expect(screen.getByRole('combobox', { name: 'Writing model' })).toBeDisabled()
+  })
+
   it('resynchronizes numeric drafts from authoritative settings', async () => {
     const user = userEvent.setup()
     const props = baseProps()

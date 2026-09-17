@@ -66,6 +66,8 @@ import {
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
+import { ShortTextWriter } from './llm/shortTextWriter'
+import { threadTitleWriter } from './llm/threadTitle'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
@@ -482,6 +484,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const settings = new SecureSettings(plainSettings, credentials)
   await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
   let agentHistoryEnabled = (await settings.get()).historyEnabled
+  // Sotto's own short writing: thread titles today, commit messages and pull request text next.
+  // E2E runs never reach the network, so every title there resolves to the stand-in name.
+  const shortTextWriter = new ShortTextWriter({
+    getSettings: () => settings.forFormatting(),
+    onFailure: failure => { console.error(`[Sotto] writing-model-failed ${failure.purpose} ${failure.reason}`) },
+    ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+  })
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -579,6 +588,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(authority === undefined ? {} : { authority }),
     ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
     historyEnabled: () => agentHistoryEnabled,
+    writeThreadTitle: threadTitleWriter(shortTextWriter, () => settings.forFormatting()),
+    logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     turns,
     reasoner: e2eConfiguration === null ? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {

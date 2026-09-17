@@ -127,8 +127,8 @@ export class WorkspaceHost implements AgentHost {
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       threads.set(thread.id, { ...thread,
-        // A name the user set by hand outranks whatever the provider still calls the thread.
-        ...(old?.titleSource === 'user' ? { title: old.title, titleSource: 'user' as const } : {}),
+        // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
+        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
         ...(old?.activities || thread.activities ? { activities: old?.historyEpoch !== thread.historyEpoch ? thread.activities ?? [] : mergeAgentActivities(old?.activities, thread.activities) } : {}),
@@ -198,12 +198,12 @@ export class WorkspaceHost implements AgentHost {
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
-  async renameThread(threadId: string, title: string): Promise<AgentHostSnapshot> {
+  async renameThread(threadId: string, title: string, source: 'user' | 'generated' = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
     const previous = { title: thread.title, titleSource: thread.titleSource }
     thread.title = title
-    thread.titleSource = 'user'
+    thread.titleSource = source
     this.dirty = true
     try { await this.flush() }
     catch (error) { Object.assign(this.thread(threadId), previous); throw error }

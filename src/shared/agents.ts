@@ -147,8 +147,9 @@ export const agentWorktreeSchema = z.object({
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentThreadSchema = z.object({
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
-  /** Whether the user named this thread by hand. Absent on threads saved before Sotto recorded it, which counts as `default`. */
-  titleSource: z.enum(['user', 'default']).optional(),
+  /** Who named this thread: the user by hand, Sotto's writing model, or the stand-in/provider name.
+   * Absent on threads saved before Sotto recorded it, which counts as `default`. */
+  titleSource: z.enum(['user', 'default', 'generated']).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
@@ -457,6 +458,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
+  /** Ask the writing model for this thread's name again, replacing a generated or stand-in one. */
+  z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
