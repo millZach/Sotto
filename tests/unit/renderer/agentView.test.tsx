@@ -30,7 +30,7 @@ function stateFixture(): AgentState {
     assignments: [{ threadId: 'thread', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: 0, startedAt: '', origin: 'unknown', stopReason: 'none', stoppedAt: '' }],
     queue: [], activeThreadId: 'thread', activeProjectId: 'project',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', busy: false, notice: '', error: null,
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: true },
     reasoningAccounts: [],

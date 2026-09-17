@@ -154,7 +154,7 @@ describe('persistent per-thread drafts', () => {
     const previous = f.control.get()
     vi.spyOn(f.host, 'snapshot').mockReturnValueOnce(gate.promise)
     const refresh = f.control.command({ type: 'refresh' })
-    await vi.waitFor(() => expect(f.control.get().busy).toBe(true))
+    await vi.waitFor(() => expect(f.control.get().globalLaneBusy).toBe(true))
     try {
       await f.control.command(save('docs', 'Saved during discovery', [image]))
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'docs', text: 'Saved during discovery', attachments: [image] }))

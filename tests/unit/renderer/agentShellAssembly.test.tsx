@@ -22,7 +22,7 @@ function fullState(threads: AgentThread[], activeThreadId: string | null = null)
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
     assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
     draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
     voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
     membership: { status: 'beta', label: 'Test', expiresAt: null }, historyEnabled: true,

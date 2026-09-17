@@ -25,7 +25,7 @@ function trackCommand<T>(command: Promise<T>): Promise<T> {
 }
 
 async function finishCommands(): Promise<void> {
-  // A published state (or busy=false) is not the command's persistence acknowledgement.
+  // A published state (or globalLaneBusy=false) is not the command's persistence acknowledgement.
   while (pendingCommands.size) await Promise.allSettled([...pendingCommands])
 }
 
@@ -92,7 +92,7 @@ describe('durable typed queue answers', () => {
     expect(mainUi.getAllByRole('textbox')).toHaveLength(1)
     fireEvent.change(input, { target: { value: 'Use the existing indigo palette.' } })
     await waitFor(() => expect(f.control.get()).toMatchObject({
-      draft: 'Use the existing indigo palette.', draftThreadId: 'workshop', draftRequestId: 'workshop-colors', composing: true, busy: false,
+      draft: 'Use the existing indigo palette.', draftThreadId: 'workshop', draftRequestId: 'workshop-colors', composing: true, globalLaneBusy: false,
     }))
     await waitFor(() => expect(widgetUi.getByLabelText('Your answer')).toHaveValue('Use the existing indigo palette.'))
     for (const name of ['Later', 'Next']) {
@@ -100,7 +100,7 @@ describe('durable typed queue answers', () => {
       await waitFor(() => expect(f.control.get().error).toMatch(/send or clear your draft/iu))
       expect(f.control.get().activeThreadId).toBe('workshop')
       expect(mainUi.getByLabelText('Your answer')).toHaveValue('Use the existing indigo palette.')
-      await waitFor(() => expect(f.control.get().busy).toBe(false))
+      await waitFor(() => expect(f.control.get().globalLaneBusy).toBe(false))
     }
     fireEvent.click(mainUi.getByRole('button', { name: 'Docs', exact: true }))
     await waitFor(() => expect(f.control.get().activeThreadId).toBe('docs'))
@@ -109,7 +109,7 @@ describe('durable typed queue answers', () => {
     fireEvent.change(widgetUi.getByLabelText('Your answer'), { target: { value: 'Use indigo with white text.' } })
     await waitFor(() => expect(mainUi.getByLabelText('Your answer')).toHaveValue('Use indigo with white text.'))
     expect(f.control.get()).toMatchObject({ draftThreadId: 'workshop', draftRequestId: 'workshop-colors' })
-    await waitFor(() => expect(f.control.get().busy).toBe(false))
+    await waitFor(() => expect(f.control.get().globalLaneBusy).toBe(false))
     main.unmount(); widget.unmount()
     await f.restart()
     const restored = render(<Surface bridge={f.bridge} />)
@@ -123,7 +123,7 @@ describe('durable typed queue answers', () => {
     const view = render(<Surface bridge={f.bridge} />)
     const ui = within(view.container)
     fireEvent.change(await ui.findByLabelText('Your answer'), { target: { value: 'Use indigo.' } })
-    await waitFor(() => expect(f.control.get()).toMatchObject({ draft: 'Use indigo.', busy: false }))
+    await waitFor(() => expect(f.control.get()).toMatchObject({ draft: 'Use indigo.', globalLaneBusy: false }))
     await waitFor(() => expect(ui.getByRole('button', { name: 'Send it' })).toBeEnabled())
     f.host.event({ type: 'reject', text: 'Fixture answer rejected' })
     fireEvent.click(ui.getByRole('button', { name: 'Send it' }))
@@ -131,7 +131,7 @@ describe('durable typed queue answers', () => {
     expect(ui.getByLabelText('Your answer')).toHaveValue('Use indigo.')
     await waitFor(() => expect(ui.getByRole('button', { name: 'Send it' })).toBeEnabled())
     fireEvent.click(ui.getByRole('button', { name: 'Send it' }))
-    await waitFor(() => expect(f.control.get()).toMatchObject({ draft: '', draftThreadId: null, draftRequestId: null, composing: false, busy: false }))
+    await waitFor(() => expect(f.control.get()).toMatchObject({ draft: '', draftThreadId: null, draftRequestId: null, composing: false, globalLaneBusy: false }))
     expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
     expect(f.control.get().host.threads.find(thread => thread.id === 'docs')?.requests).toHaveLength(1)
     await waitFor(() => expect(ui.getByLabelText('Your answer')).toHaveValue(''))

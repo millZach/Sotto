@@ -41,7 +41,7 @@ export function WidgetThreads({ state, command }: {
       {!isThreadClosed(active) && <>
         <AgentManualNotice state={visibleState} command={command} />
         {assignment === undefined && <button type="button" className="tt-button tt-button--secondary"
-          disabled={state.busy || !isThreadProviderConnected(state.host, active) || !supportsAgentSupervision(capabilitiesForThread(state.host, active))}
+          disabled={state.globalLaneBusy || !isThreadProviderConnected(state.host, active) || !supportsAgentSupervision(capabilitiesForThread(state.host, active))}
           onClick={() => { void command({ type: 'assign', threadId: active.id }) }}>Manage this thread</button>}
         <AgentComposer state={visibleState} command={command} compact />
       </>}

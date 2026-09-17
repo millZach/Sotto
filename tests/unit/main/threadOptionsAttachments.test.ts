@@ -175,8 +175,8 @@ describe('coordinator images, authority and durable settings', () => {
     f.host.gate = new Promise<void>(done => { release = done })
     const pending = f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
     await vi.waitFor(() => expect(f.host.attempts).toHaveLength(1))
-    // The thread is marked busy in its own lane; the global flag still stands for global work alone.
-    expect(f.control.get()).toMatchObject({ busyThreadIds: ['workshop'], busy: false })
+    // The thread is marked busy in its own lane; the global lane still stands for global work alone.
+    expect(f.control.get()).toMatchObject({ busyThreadIds: ['workshop'], globalLaneBusy: false })
     // Crash while that lane holds the command: only the dispatched intent reached the disk.
     f.control.dispose()
     release(); await pending
@@ -184,8 +184,8 @@ describe('coordinator images, authority and durable settings', () => {
       .toMatchObject({ type: 'configure-thread', threadId: 'workshop', options: { runtimeMode: 'full-access' } })
     f.host.gate = undefined
     await f.restart()
-    // A busy mark is as ephemeral as the global flag: nothing restores it, and reconciliation is unchanged.
-    expect(f.control.get()).toMatchObject({ busy: false })
+    // A busy mark is as ephemeral as the global lane mark: nothing restores it, and reconciliation is unchanged.
+    expect(f.control.get()).toMatchObject({ globalLaneBusy: false })
     expect(f.control.get().busyThreadIds).toBeUndefined()
     await f.control.command({ type: 'refresh' })
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])

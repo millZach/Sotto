@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, ListPlus, Square } from 'lucide-react'
-import { capabilitiesForThread, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
@@ -161,7 +161,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
-  const canStop = working && capabilities.interrupt === true && row.connected && !state.busy
+  const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
   const picker = useSkillPicker({ threadId, state, command, enabled: editable && !answering && capabilities.skills === true, text: draft.text })
   const sigils = skillSigils(picker.catalog?.providerId ?? row.providerId)
   // `@` browses the thread's working copy. A thread still waiting for its folder has nothing to list.

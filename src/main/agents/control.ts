@@ -93,7 +93,7 @@ export interface AgentMembership {
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly threadActions = new Map<string, Promise<unknown>>()
-  /** How many lanes of each thread's own work are running; ephemeral, like the global busy flag. */
+  /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
   /**
    * Threads with a prompt of their own — a manual send or a steer — admitted and not yet finished.
@@ -169,7 +169,7 @@ export class AgentControl {
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
       draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
       pendingRequest: '',
-      busy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
       voice: { status: 'off', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
@@ -288,7 +288,7 @@ export class AgentControl {
   /**
    * Counts one thread into a live set until the returned release is called. Releasing is idempotent,
    * so a lane can release when it finishes and its cleanup can release again for a lane that never
-   * reached that point. The global `busy` flag stands for the one global lane alone, so work running
+   * reached that point. `globalLaneBusy` stands for the one global lane alone, so work running
    * in a thread's own lane marks itself here instead.
    */
   private mark(counts: Map<string, number>, threadId: string): () => void {
@@ -816,7 +816,7 @@ export class AgentControl {
     let releaseThread = (): void => {}
     const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
-      else this.state.busy = true
+      else this.state.globalLaneBusy = true
       this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
@@ -844,7 +844,7 @@ export class AgentControl {
         }
       }
       if (independent) releaseThread()
-      else this.state.busy = false
+      else this.state.globalLaneBusy = false
       this.updateCredentials()
       await this.persist().catch(error => {
         // The user sees the fixed guidance; the raw storage error goes to the turn record only.

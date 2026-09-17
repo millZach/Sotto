@@ -203,14 +203,14 @@ describe('follow-up queue in the Threads composer', () => {
 
   it('keeps sending, queuing and steering on each thread lane while Sotto is busy with other work', () => {
     const running = manualState({ running: true, capabilities: { steer: true } })
-    running.busy = true
+    running.globalLaneBusy = true
     const { prompt, view } = mount(running)
     type(prompt(), 'Queue while busy')
     expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Steer now' })).toBeEnabled()
     view.unmount()
     const idle = manualState()
-    idle.busy = true
+    idle.globalLaneBusy = true
     const second = mount(idle)
     type(second.prompt(), 'Send while busy')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
