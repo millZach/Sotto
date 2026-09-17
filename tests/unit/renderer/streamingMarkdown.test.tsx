@@ -62,6 +62,12 @@ const DOCUMENTS: readonly { name: string; text: string }[] = [
   { name: 'an HTML comment and a script', text: ['Before', '', '<!-- a note', 'over two lines -->', '', 'After'].join('\n') },
   { name: 'an ordered list interrupted by a heading', text: ['1. one', '2. two', '', '## Then', '', 'Body text with `code`.'].join('\n') },
   { name: 'task items and a thematic break', text: ['- [x] done', '- [ ] todo', '', '---', '', 'Closing paragraph.'].join('\n') },
+  { name: 'a list that continues after a fence', text: ['- step one', '', '  ```sh', '  npm test', '  ```', '', '- step two', '', 'After the list.'].join('\n') },
+  { name: 'a fence opened inside a list item', text: ['Steps:', '', '1. run it', '', '   ```js', '   const a = 1', '', '   const b = 2', '   ```', '', '2. read the output', '', 'Done.'].join('\n') },
+  { name: 'a heading straight after a fence', text: ['Before', '', '```ts', 'const a = 1', '```', '## Then', 'Body without a blank line.'].join('\n') },
+  { name: 'tilde fences around a backtick fence', text: ['Look:', '', '~~~md', '```ts', 'const a = 1', '```', '~~~', '', 'That is the markdown.'].join('\n') },
+  { name: 'a tilde fence holding blank lines', text: ['Output:', '', '~~~', 'first', '', 'second', '~~~', '', 'End.'].join('\n') },
+  { name: 'a table straight after a fence', text: ['```sh', 'npm test', '```', '', '| File | Change |', '| --- | --- |', '| a.ts | edited |', '', 'Then prose.'].join('\n') },
 ]
 
 describe('splitting a message being written', () => {
@@ -74,8 +80,10 @@ describe('splitting a message being written', () => {
 
   it('renders the same text streamed as it does whole', () => {
     for (const { name, text } of DOCUMENTS) {
-      expect(markup(text, true), name).toBe(markup(text, false))
-      expect(streamed(text), name).toBe(markup(text, false))
+      const whole = markup(text, false)
+      expect(markup(text, true), name).toBe(whole)
+      // Chunk sizes that land the boundaries in different places, including one byte at a time.
+      for (const step of [1, 3, 7, 13]) expect(streamed(text, step), `${name} in ${step}-byte chunks`).toBe(whole)
     }
   })
 
@@ -94,6 +102,19 @@ describe('splitting a message being written', () => {
     expect(splitStreamingMarkdown('Heading\n\n=====')).toEqual(['Heading\n\n====='])
     expect(splitStreamingMarkdown('See [a].\n\n[a]: https://example.com')).toEqual(['See [a].\n\n[a]: https://example.com'])
     expect(splitStreamingMarkdown('Before\n\n<!-- note -->\n\nAfter')).toEqual(['Before\n\n<!-- note -->\n\nAfter'])
+  })
+
+  it('ends a finished block at the blank line after a top-level fence', () => {
+    // Nothing after the blank line can reach into a closed top-level fence, not even a list.
+    expect(splitStreamingMarkdown('```sh\nnpm test\n```\n\n- one\n- two')).toEqual(['```sh\nnpm test\n```\n\n', '- one\n- two'])
+    expect(splitStreamingMarkdown('Before\n\n```sh\nnpm test\n```\n\n> quoted')).toEqual(['Before\n\n', '```sh\nnpm test\n```\n\n', '> quoted'])
+    expect(splitStreamingMarkdown('~~~\nnpm test\n~~~\n\n  indented')).toEqual(['~~~\nnpm test\n~~~\n\n', '  indented'])
+    // An indented fence belongs to the list item above it, which the next item still continues.
+    expect(splitStreamingMarkdown('- one\n\n  ```sh\n  npm test\n  ```\n\n- two')).toEqual(['- one\n\n  ```sh\n  npm test\n  ```\n\n- two'])
+    // A fence that does not start its own block could be inside one.
+    expect(splitStreamingMarkdown('- one\n```sh\nnpm test\n```\n\n- two')).toEqual(['- one\n```sh\nnpm test\n```\n\n- two'])
+    // The fence has to be closed: a message that ends on one is all still being written.
+    expect(splitStreamingMarkdown('```sh\nnpm test\n\n- one')).toEqual(['```sh\nnpm test\n\n- one'])
   })
 
   it('separates plain finished blocks', () => {
