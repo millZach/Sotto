@@ -243,15 +243,14 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
     detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
-    } : {}),
+    // Thread history reaches the management window alone: the widget draws a thread's state from the shell.
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    onThreadDetail: (listener: (detail: import('../shared/agents').AgentThreadDetail) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
+      trustedState<import('../shared/agents').AgentThreadDetail>('messages'), listener),
+    } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
       trustedState<import('../shared/agents').AgentState>('host'), listener),
-    // One thread's history, by far the largest payload left on the bridge and pushed as often as a
-    // provider streams; the same structural guard the state channels use is what this side needs.
-    onThreadDetail: (listener: (detail: import('../shared/agents').AgentThreadDetail) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
-      trustedState<import('../shared/agents').AgentThreadDetail>('messages'), listener),
   })
 }
 

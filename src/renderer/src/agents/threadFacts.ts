@@ -172,9 +172,8 @@ function factsLine(assignment: AgentAssignment | undefined, model: AgentModel | 
 
 /** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
 function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
-  const turn = (thread.activities ?? []).filter(record => record.kind === 'turn' && record.status === 'running')
-    .sort((first, second) => first.sequence - second.sequence).at(-1)
-  const started = parse(turn?.startedAt)
+  // The shell stream carries the running turn's start in the summary; a full state still has the record.
+  const started = parse(threadSummaryOf(thread).runningTurnStartedAt)
   return Number.isFinite(started) ? started : Number.isFinite(lastUserAt) ? lastUserAt : activityAt
 }
 

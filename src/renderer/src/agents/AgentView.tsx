@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { PROVIDER_LABELS, capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, capabilitiesForThread, isThreadProviderConnected, threadSummaryOf, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -109,7 +109,8 @@ export function AgentComposer({ state, command, compact = false, footerControls,
 }
 
 export function AgentLatestResponse({ thread, compact = false }: { readonly thread: AgentThread | undefined; readonly compact?: boolean }): ReactNode {
-  const latest = thread?.messages.filter((message) => message.role === 'assistant').at(-1)
+  // The widget draws this from the shell alone, so the reply comes from the thread's summary.
+  const latest = thread === undefined ? undefined : threadSummaryOf(thread).lastAssistant
   const [expanded, setExpanded] = useState(false)
   useEffect(() => { setExpanded(false) }, [latest?.id, thread?.id])
   if (latest === undefined || !latest.text.trim()) return null

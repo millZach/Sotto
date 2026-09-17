@@ -132,6 +132,9 @@ export const agentThreadSummarySchema = z.object({
   lastMessageAt: z.string().optional(),
   lastUser: threadExcerptSchema.optional(),
   lastAssistant: threadExcerptSchema.optional(),
+  activityCount: z.number().int().nonnegative().default(0),
+  /** When the run on screen began, for a row that no longer carries the turn record itself. */
+  runningTurnStartedAt: z.string().optional(),
 }).strict()
 export type AgentThreadSummary = z.infer<typeof agentThreadSummarySchema>
 export const agentWorktreeSchema = z.object({
@@ -336,16 +339,22 @@ export const agentStateSchema = z.object({
   stale: z.boolean().optional(),
 })
 export type AgentState = z.infer<typeof agentStateSchema>
-/** One viewed thread's history, pushed and fetched apart from the shell stream. */
+/**
+ * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
+ * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
+ * records — and, like the messages, only the open pane draws it.
+ */
 export const agentThreadDetailSchema = z.object({
   threadId: id, revision: z.number().int().nonnegative(), messages: z.array(agentMessageSchema),
+  activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
 export const agentThreadDetailRequestSchema = id
 
-/** The sidebar's facts about a thread's history, from the summary the shell carries or the messages themselves. */
-export function summarizeThreadMessages(messages: readonly AgentMessage[]): AgentThreadSummary {
+/** The sidebar's facts about a thread's history, derived from the history itself. */
+export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
+  const { messages, activities = [] } = thread
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')
@@ -354,15 +363,21 @@ export function summarizeThreadMessages(messages: readonly AgentMessage[]): Agen
     const at = Date.parse(message.createdAt)
     return Number.isFinite(at) && (latest === undefined || at > Date.parse(latest)) ? message.createdAt : latest
   }, undefined)
-  return { messageCount: messages.length, ...(lastMessageAt === undefined ? {} : { lastMessageAt }),
-    ...(lastUser === undefined ? {} : { lastUser: cut(lastUser) }), ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }) }
+  const running = activities.filter(record => record.kind === 'turn' && record.status === 'running')
+    .sort((first, second) => first.sequence - second.sequence).at(-1)
+  return { messageCount: messages.length, activityCount: activities.length,
+    ...(lastMessageAt === undefined ? {} : { lastMessageAt }),
+    ...(lastUser === undefined ? {} : { lastUser: cut(lastUser) }),
+    ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
+    ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
-export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'summary'>): AgentThreadSummary {
-  return thread.summary ?? summarizeThreadMessages(thread.messages)
+/** The same facts, from the summary the shell carries or from the history a full state holds. */
+export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
+  return thread.summary ?? summarizeThread(thread)
 }
 /** One thread as the shell stream carries it: the sidebar's facts, none of its history. */
 export function threadShell(thread: AgentThread): AgentThread {
-  return { ...thread, messages: [], summary: threadSummaryOf(thread) }
+  return { ...thread, messages: [], ...(thread.activities === undefined ? {} : { activities: [] }), summary: threadSummaryOf(thread) }
 }
 /** The published state with every thread's history replaced by its summary. */
 export function agentShell(state: AgentState): AgentState {

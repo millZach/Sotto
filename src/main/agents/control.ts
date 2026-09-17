@@ -1,4 +1,5 @@
 import type { AgentSkillReference } from '../../shared/agentSkills'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { FollowupStore, followupDigest } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -6,7 +7,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, summarizeThreadMessages,
+  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, summarizeThread,
   type AgentMessage, type AgentThreadDetail, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -24,8 +25,9 @@ import { AttachmentPreviews } from './attachmentPreviews'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider } from '../../shared/requestDrafts'
 
-/** One frozen array stands in for every shell thread's history; the clone that follows copies nothing. */
+/** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
+const EMPTY_ACTIVITIES: AgentActivity[] = []
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
@@ -255,20 +257,24 @@ export class AgentControl {
    */
   shell(): AgentState {
     const threads = this.state.host.threads
-    const summaries = threads.map(thread => summarizeThreadMessages(thread.messages))
-    const bare = { ...this.state, host: { ...this.state.host, threads: threads.map((thread, index) => ({ ...thread, messages: EMPTY_MESSAGES, summary: summaries[index]! })) } }
+    const bare = { ...this.state, host: { ...this.state.host, threads: threads.map(thread => ({
+      ...thread, messages: EMPTY_MESSAGES,
+      ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
+      summary: summarizeThread(thread),
+    })) } }
     const state = structuredClone(bare)
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     return state
   }
-  /** One thread's history, for a window that is looking at it. */
+  /** One thread's history — its messages and the activity beside them — for a window looking at it. */
   threadDetail(threadId: string): AgentThreadDetail | null {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) return null
     const messages = structuredClone(thread.messages)
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
-    return { threadId, revision: this.detailRevision(thread), messages }
+    return { threadId, revision: this.detailRevision(thread), messages,
+      ...(thread.activities === undefined ? {} : { activities: structuredClone(thread.activities) }) }
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -287,6 +293,7 @@ export class AgentControl {
   private detailRevision(thread: AgentThread): number {
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
+      + `|${(thread.activities ?? []).map(record => `${record.id}:${record.status}:${record.sequence}:${record.completedAt ?? ''}:${record.output?.length ?? 0}:${record.changes?.length ?? 0}:${record.steps?.length ?? 0}:${record.agents?.length ?? 0}`).join(',')}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? 0) + 1

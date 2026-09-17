@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deserialize, serialize } from 'node:v8'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { agentStateSchema, defaultAgentConfiguration, type AgentHostSnapshot, type AgentState } from '../../src/shared/agents'
+import { agentShell, agentStateSchema, defaultAgentConfiguration, type AgentHostSnapshot, type AgentState } from '../../src/shared/agents'
 import { AttachmentPreviews } from '../../src/main/agents/attachmentPreviews'
 
 const ITERATIONS = 20
@@ -95,6 +95,38 @@ describe('state pipeline cost', async () => {
     }
     console.info(`state pipeline: ${JSON.stringify(report)}`)
     expect(report.threads).toBeGreaterThan(0)
+
+    // The shell alone: what every provider event now costs, with no thread's history in it and so
+    // nothing for the preview decoration to do.
+    const shellClone = time(() => { structuredClone(agentShell(state)) })
+    const shell = structuredClone(agentShell(state))
+    const shellBytes = serialize(shell).byteLength
+    const shellSend = time(() => { serialize(shell) })
+    const shellWire = serialize(shell)
+    const shellReceive = time(() => { deserialize(shellWire) })
+    const shellReceived = deserialize(shellWire) as unknown
+    const shellGuard = time(() => { void (typeof shellReceived === 'object' && shellReceived !== null && 'host' in shellReceived) })
+    const shellTotal = shellClone + shellSend + shellReceive + shellGuard
+
+    // One viewed thread's history, which is what a streaming burst actually moves now.
+    const weight = (thread: (typeof state.host.threads)[number]): number => thread.messages.length + (thread.activities?.length ?? 0)
+    const busiest = [...state.host.threads].sort((first, second) => weight(second) - weight(first))[0]!
+    const detail = { threadId: busiest.id, revision: 1, messages: structuredClone(busiest.messages), activities: structuredClone(busiest.activities ?? []) }
+    previews.decorate({ ...state.host, threads: [{ ...busiest, messages: detail.messages }] })
+    const detailClone = time(() => { structuredClone(detail) })
+    const detailBytes = serialize(detail).byteLength
+
+    const shellReport = {
+      threads: shell.host.threads.length, messages: 0,
+      payloadKB: Math.round(shellBytes / 1024),
+      detailThread: busiest.id.slice(0, 8), detailMessages: busiest.messages.length,
+      detailActivities: busiest.activities?.length ?? 0,
+      detailPayloadKB: Math.round(detailBytes / 1024), detailCloneMs: round(detailClone),
+      ms: { clone: round(shellClone), decorate: 0, serialize: round(shellSend), deserialize: round(shellReceive),
+        schemaParse: round(shellGuard), total: round(shellTotal) },
+    }
+    console.info(`state pipeline (shell): ${JSON.stringify(shellReport)}`)
+    expect(shellBytes).toBeLessThan(bare)
   })
 })
 

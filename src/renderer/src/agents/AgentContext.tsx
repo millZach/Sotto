@@ -58,11 +58,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       const held = detail.held.get(thread.id)
       if (held !== undefined) {
         detail.used.set(thread.id, ++detail.clock)
-        return { ...thread, messages: held.messages }
+        return { ...thread, messages: held.messages, ...(held.activities === undefined ? {} : { activities: held.activities }) }
       }
-      // A thread whose messages have not arrived is exactly what `historyStatus: 'loading'` already says;
+      // A thread whose history has not arrived is exactly what `historyStatus: 'loading'` already says;
       // a thread the provider itself could not load keeps its own error.
-      return thread.summary !== undefined && thread.summary.messageCount > 0 && wanted(thread) && thread.historyStatus !== 'error'
+      return thread.summary !== undefined && (thread.summary.messageCount > 0 || thread.summary.activityCount > 0) && wanted(thread) && thread.historyStatus !== 'error'
         ? { ...thread, historyStatus: 'loading' as const } : thread
     }
   }, [detail])

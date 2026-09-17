@@ -83,8 +83,9 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
     return control.shell()
   })
+  // Thread history is the management window's alone; the widget draws a thread's state from the shell.
   ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     return control.threadDetail(agentThreadDetailRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_ATTACHMENT_PREVIEW, (event, payload) => {

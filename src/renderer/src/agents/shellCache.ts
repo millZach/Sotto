@@ -37,6 +37,9 @@ export function cacheableShell(state: AgentState): AgentState {
     host: { ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [] })) },
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
+    // Attention is live: what needed the user last time is not what needs them now, and a restored
+    // queue would let the review narrate and navigate before main has said anything.
+    queue: [], pendingRequest: '', notice: '', speech: { id: 0, text: '' },
     stale: true,
   }
 }
