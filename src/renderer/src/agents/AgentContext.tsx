@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail } from '../../../shared/agents'
+import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
+import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import type { DictationState } from '../../../shared/dictation'
@@ -74,6 +75,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    * not change, and a state that changed nothing at all stops here instead of becoming a render.
    */
   const ask = useRef<(threadId: string) => void>(() => undefined)
+  const resync = useRef<(threadId: string) => void>(() => undefined)
   const receiveState = useCallback((next: AgentState): void => {
     arrived.current = performance.now()
     detail.shell = next
@@ -88,11 +90,22 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       return state === current.state ? current : { session, state }
     })
   }, [session, assemble, detail])
-  const receiveDetail = useRef<(next: AgentThreadDetail) => void>(() => undefined)
-  receiveDetail.current = (next: AgentThreadDetail): void => {
-    const held = detail.held.get(next.threadId)
-    // Detail coalesces per thread and a request can answer out of order; only newer history replaces held history.
-    if (held !== undefined && held.revision > next.revision) return
+  const receiveDetail = useRef<(update: AgentThreadDetailUpdate) => void>(() => undefined)
+  receiveDetail.current = (update: AgentThreadDetailUpdate): void => {
+    const held = detail.held.get(update.threadId)
+    // While a thread streams, main sends what changed rather than the thread. A delta applies only to the
+    // revision it was measured from; anything else — a dropped update, a window that has just opened —
+    // sends this thread back to the whole detail, which is also what resets main's own base.
+    let next: AgentThreadDetail
+    if (isAgentThreadDetailDelta(update)) {
+      const applied = held === undefined ? null : applyAgentThreadDetailDelta(held, update)
+      if (applied === null) { resync.current(update.threadId); return }
+      next = applied
+    } else {
+      // Detail coalesces per thread and a request can answer out of order; only newer history replaces held history.
+      if (held !== undefined && held.revision > update.revision) return
+      next = update
+    }
     detail.held.set(next.threadId, next)
     detail.used.set(next.threadId, ++detail.clock)
     if (detail.held.size > DETAIL_CACHE_LIMIT) {
@@ -102,9 +115,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     if (detail.shell !== null) receiveState(detail.shell)
   }
-  /** A thread's history the window does not hold, asked for once until it arrives. */
-  const requestDetail = useCallback((threadId: string): void => {
-    if (bridge?.threadDetail === undefined || detail.held.has(threadId) || detail.asked.has(threadId)) return
+  /**
+   * A thread's history the window does not hold, asked for once until it arrives. A resync asks for a
+   * history the window does hold but can no longer follow, and is deduplicated the same way, so a run of
+   * deltas the window cannot apply costs one request rather than one per delta.
+   */
+  const requestDetail = useCallback((threadId: string, options: { stale?: boolean } = {}): void => {
+    if (bridge?.threadDetail === undefined || detail.asked.has(threadId)) return
+    if (detail.held.has(threadId) && options.stale !== true) return
     detail.asked.add(threadId)
     void bridge.threadDetail(threadId).then(result => {
       detail.asked.delete(threadId)
@@ -112,6 +130,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }).catch(() => { detail.asked.delete(threadId) })
   }, [bridge, detail, session])
   ask.current = requestDetail
+  resync.current = threadId => requestDetail(threadId, { stale: true })
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {

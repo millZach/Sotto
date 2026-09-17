@@ -245,8 +245,9 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
     // Thread history reaches the management window alone: the widget draws a thread's state from the shell.
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
-    onThreadDetail: (listener: (detail: import('../shared/agents').AgentThreadDetail) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
-      trustedState<import('../shared/agents').AgentThreadDetail>('messages'), listener),
+    // Whole details and the deltas between them share this channel, so the shape they share is the guard.
+    onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
+      trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
