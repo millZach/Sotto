@@ -32,45 +32,6 @@ export const dictationCommandSchema = z
   .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel']) })
   .strict()
 
-export const dictationStateSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('idle') }).strict(),
-  z
-    .object({ status: z.literal('requesting-permission'), sessionId: boundedSessionId })
-    .strict(),
-  z
-    .object({
-      status: z.literal('listening'),
-      sessionId: boundedSessionId,
-      startedAt: z.number().finite().nonnegative(),
-      level: z.number().finite().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      status: z.literal('processing'),
-      sessionId: boundedSessionId,
-      startedAt: z.number().finite().nonnegative(),
-    })
-    .strict(),
-  z
-    .object({
-      status: z.literal('success'),
-      sessionId: boundedSessionId,
-      text: z.string().max(200_000),
-      output: z.enum(['pasted', 'copied']),
-    })
-    .strict(),
-  z.object({ status: z.literal('cancelled'), sessionId: boundedSessionId }).strict(),
-  z
-    .object({
-      status: z.literal('error'),
-      sessionId: boundedSessionId.optional(),
-      code: z.string().min(1).max(128),
-      message: z.string().min(1).max(1_000),
-    })
-    .strict(),
-])
-
 const widgetMetadataSchema = {
   theme: z.enum(['system', 'light', 'dark']),
   palette: widgetPaletteSchema,
@@ -138,7 +99,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
 ])
 
 /** Main-owned epoch attached to every widget visibility-bound renderer report. */
-export const widgetVisibilityGenerationSchema = z.number().int().nonnegative().safe()
+const widgetVisibilityGenerationSchema = z.number().int().nonnegative().safe()
 
 /** One main-to-renderer widget visibility transition. */
 export const widgetVisibilitySchema = z
@@ -169,7 +130,7 @@ export const widgetPresentationPayloadSchema = z
 export type WidgetPresentationPayload = z.infer<typeof widgetPresentationPayloadSchema>
 
 /** Renderer-generated identity for one drag gesture within a visibility generation. */
-export const widgetDragGestureIdSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+const widgetDragGestureIdSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 export type WidgetDragGestureId = z.infer<typeof widgetDragGestureIdSchema>
 
 /** One renderer-local phase before it is bound to a visibility generation. */

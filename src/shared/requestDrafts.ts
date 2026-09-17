@@ -6,7 +6,7 @@ export const requestDraftOwnerSchema = z.object({ kind: z.enum(['thread', 'perso
 export type RequestDraftOwner = z.infer<typeof requestDraftOwnerSchema>
 export const requestDraftTargetSchema = requestDraftOwnerSchema.extend({ requestId: id, questions: agentRequestSchema.shape.questions.unwrap().min(1) }).strict()
 export type RequestDraftTarget = z.infer<typeof requestDraftTargetSchema>
-export const questionSelectionSchema = z.object({ optionIds: z.array(id).max(100), other: z.boolean(), text: z.string().max(24_000) }).strict()
+const questionSelectionSchema = z.object({ optionIds: z.array(id).max(100), other: z.boolean(), text: z.string().max(24_000) }).strict()
 export type QuestionSelection = z.infer<typeof questionSelectionSchema>
 export const requestDraftSchema = z.object({
   target: requestDraftTargetSchema, revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),

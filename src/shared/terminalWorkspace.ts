@@ -10,7 +10,7 @@ export const TERMINALS_MAX = 64
 /** A pasted image on its way to a terminal's folder: PNG only, the same ceiling as an attachment. */
 export const TERMINAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
-export const terminalPermissionSchema = z.enum(['ask', 'edits', 'everything'])
+const terminalPermissionSchema = z.enum(['ask', 'edits', 'everything'])
 export const terminalLaunchSchema = z.object({
   provider: providerIdSchema.nullable(),
   /** Sotto's public model ID; the command mapping reads the CLI name out of it. */
@@ -20,7 +20,7 @@ export const terminalLaunchSchema = z.object({
 }).strict()
 export type TerminalLaunch = z.infer<typeof terminalLaunchSchema>
 
-export const workingCopyModeSchema = z.enum(['independent', 'shared'])
+const workingCopyModeSchema = z.enum(['independent', 'shared'])
 export const workspaceTerminalSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().max(512),
