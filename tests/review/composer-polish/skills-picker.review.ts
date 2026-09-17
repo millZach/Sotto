@@ -65,9 +65,9 @@ const show = (page: Page, scenario: Scenario): Promise<void> => page.evaluate(sc
 async function expectOverlay(page: Page, pane: Locator, scope: string, before: PaneMetrics): Promise<Record<string, unknown>> {
   const metrics = await paneMetrics(page, scope)
   const facts = await pane.evaluate(element => {
-    const picker = element.querySelector('.skill-picker')!.getBoundingClientRect()
+    const picker = element.querySelector('.composer-picker')!.getBoundingClientRect()
     const card = element.querySelector('.thread-prompt')!.getBoundingClientRect()
-    const list = element.querySelector('.skill-picker [role="listbox"]')
+    const list = element.querySelector('.composer-picker [role="listbox"]')
     const active = list?.querySelector('[aria-selected="true"]')
     return {
       pickerTop: Math.round(picker.top), pickerBottom: Math.round(picker.bottom), cardTop: Math.round(card.top), paneTop: Math.round(element.getBoundingClientRect().top),
@@ -170,7 +170,7 @@ test('skill picker overlays the transcript with a queue while Codex runs, inside
       await prompt.click()
       const closed = await paneMetrics(page, scope)
       await prompt.pressSequentially('$')
-      await expect(pane.locator('.skill-picker')).toBeVisible()
+      await expect(pane.locator('.composer-picker')).toBeVisible()
       await page.waitForTimeout(150)
       const metrics = await paneMetrics(page, scope)
       expect(metrics.cardFullyVisible).toBe(true)

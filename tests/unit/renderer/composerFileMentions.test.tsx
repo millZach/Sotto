@@ -8,9 +8,12 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
+import { agentFileReferenceSchema } from '../../../src/shared/agentFiles'
 import {
-  browseFolder, detectFileTrigger, fileQueryParts, insertFile, retainFileReferences, searchFileEntries, type FileEntry,
+  browseFolder, detectFileTrigger, fileLimitReached, fileQueryParts, insertFile, MAX_MENTIONED_FILES,
+  retainFileReferences, searchFileEntries, unmentionableCount, type FileEntry,
 } from '../../../src/renderer/src/agents/composerFiles'
+import { FilePicker, type FilePickerModel } from '../../../src/renderer/src/agents/FilePicker'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -26,6 +29,7 @@ const FOLDERS: Record<string, FileEntry[]> = {
     { name: 'README.md', path: 'README.md', kind: 'file' },
     { name: '.git', path: '.git', kind: 'directory' },
     { name: 'dangling', path: 'dangling', kind: 'unavailable' },
+    { name: 'release notes.md', path: 'release notes.md', kind: 'file' },
   ],
   src: [
     { name: 'app.ts', path: 'src/app.ts', kind: 'file' },
@@ -63,7 +67,7 @@ function type(prompt: HTMLTextAreaElement, value: string): void {
   fireEvent.select(prompt)
 }
 
-const optionNames = (list: HTMLElement): string[] => within(list).getAllByRole('option').map(option => option.querySelector('.skill-picker__name')!.textContent!)
+const optionNames = (list: HTMLElement): string[] => within(list).getAllByRole('option').map(option => option.querySelector('.composer-picker__name')!.textContent!)
 
 beforeEach(() => {
   vi.mocked(useAgents).mockReset()
@@ -80,10 +84,26 @@ describe('file mention tokens', () => {
     expect(fileQueryParts('READ')).toEqual({ directory: '', filter: 'READ' })
   })
 
-  it('never offers what the working copy boundary leaves out', () => {
+  it('never offers what the working copy boundary leaves out, nor a path no prompt can write', () => {
     expect(searchFileEntries(FOLDERS['']!, '').map(entry => entry.path)).toEqual(['src', 'README.md'])
     expect(searchFileEntries(FOLDERS['']!, 'git')).toEqual([])
     expect(searchFileEntries(FOLDERS.src!, 'app.c').map(entry => entry.path)).toEqual(['src/app.css'])
+    // A `@path` token ends at the first space, so a spaced name is left out here and refused in main.
+    expect(searchFileEntries(FOLDERS['']!, 'notes')).toEqual([])
+    expect(unmentionableCount(FOLDERS['']!)).toBe(1)
+    expect(agentFileReferenceSchema.safeParse({ path: 'release notes.md' }).success).toBe(false)
+    expect(agentFileReferenceSchema.safeParse({ path: 'README.md' }).success).toBe(true)
+  })
+
+  it('holds the per-prompt limit before inserting rather than dropping a mention later', () => {
+    const full = Array.from({ length: MAX_MENTIONED_FILES }, (_, index) => ({ path: `src/f${index}.ts` }))
+    expect(fileLimitReached(full, 'src/app.ts')).toBe(true)
+    // Mentioning a file the draft already holds is not a new mention, so it stays available.
+    expect(fileLimitReached(full, 'src/f0.ts')).toBe(false)
+    expect(fileLimitReached(full.slice(1), 'src/app.ts')).toBe(false)
+    const text = full.map(file => `@${file.path}`).join(' ')
+    const inserted = insertFile(`${text} @app`, detectFileTrigger(`${text} @app`, text.length + 5)!, 'src/f0.ts', full)
+    expect(inserted.files).toHaveLength(MAX_MENTIONED_FILES)
   })
 
   it('writes @path, keeps the reference only while the token is written, and browses a folder', () => {
@@ -142,6 +162,28 @@ describe('composer file picker', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(requests(live, 'manual-send')).toEqual([{ type: 'manual-send', threadId: THREAD, draftId: expect.any(String), text: 'Read the readme' }])
     act(() => undefined)
+  })
+
+  it('says why an entry is missing and why a full draft takes no more', () => {
+    const entries = FOLDERS['']!
+    const options = searchFileEntries(entries, '')
+    const onSelect = vi.fn()
+    const model = {
+      enabled: true, open: true, trigger: { query: '', start: 5, end: 6 }, directory: '', options, activeIndex: 0,
+      listing: { status: 'ready' as const, entries, truncated: false }, truncated: false,
+      move: vi.fn(), highlight: vi.fn(), close: vi.fn(), refresh: vi.fn(), track: vi.fn(), leave: vi.fn(),
+    } satisfies FilePickerModel
+    const full = Array.from({ length: MAX_MENTIONED_FILES }, (_, index) => ({ path: `src/f${index}.ts` }))
+    render(<FilePicker model={model} listId="files" selected={full} onSelect={onSelect} />)
+    expect(screen.getByText(/1 entry has a space in its name/u)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`at most ${MAX_MENTIONED_FILES} files`, 'u'))).toBeInTheDocument()
+    // A folder still browses at the limit; a file says no instead of being taken and silently dropped.
+    const [folder, file] = within(screen.getByRole('listbox', { name: 'Files' })).getAllByRole('option')
+    expect(file).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(file!)
+    expect(onSelect).not.toHaveBeenCalled()
+    fireEvent.click(folder!)
+    expect(onSelect).toHaveBeenCalledWith(options[0])
   })
 
   it('reloads a saved draft with its file mentions after a restart', async () => {

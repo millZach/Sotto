@@ -21,7 +21,7 @@
 /* The composer and the skill list that opens from it keep the field colour, so
    the prompt still reads as the place to type. */
 :root .thread-workspace__compose .agent-composer,
-:root .thread-prompt > .skill-picker {
+:root .thread-prompt > .composer-picker {
   background: var(--tt-glass-field);
   -webkit-backdrop-filter: var(--tt-glass-filter);
   backdrop-filter: var(--tt-glass-filter);
@@ -41,7 +41,7 @@
   }
 
   :root .thread-workspace__compose .agent-composer,
-  :root .thread-prompt > .skill-picker {
+  :root .thread-prompt > .composer-picker {
     background: var(--tt-field);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

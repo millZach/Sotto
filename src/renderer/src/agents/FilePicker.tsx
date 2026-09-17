@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { RotateCw } from 'lucide-react'
+import type { AgentFileReference } from '../../../shared/agentFiles'
 import type { FilesBridge } from '../../../shared/files'
-import { detectFileTrigger, fileQueryParts, searchFileEntries, type FileEntry, type FileTrigger } from './composerFiles'
+import { detectFileTrigger, fileLimitReached, fileQueryParts, MAX_MENTIONED_FILES, searchFileEntries, unmentionableCount, type FileEntry, type FileTrigger } from './composerFiles'
 
 type Listing =
   | { readonly status: 'loading' }
@@ -133,9 +134,11 @@ export const fileOptionId = (listId: string, index: number): string => `${listId
  * The working copy's files above the composer's text. It wears the composer menu's own styles;
  * it shows what the Files service listed and never filters the working copy on its own.
  */
-export function FilePicker({ model, listId, onSelect }: {
+export function FilePicker({ model, listId, selected = [], onSelect }: {
   readonly model: FilePickerModel
   readonly listId: string
+  /** Files already mentioned in this draft, for the per-prompt limit. */
+  readonly selected?: readonly AgentFileReference[]
   /** A folder continues browsing; a file is mentioned in the draft. */
   readonly onSelect: (entry: FileEntry) => void
 }): ReactNode {
@@ -148,26 +151,34 @@ export function FilePicker({ model, listId, onSelect }: {
   if (!model.open || trigger === null) return null
   const failed = listing?.status === 'error' ? listing.message : null
   const { filter } = fileQueryParts(trigger.query)
+  const spaced = listing?.status === 'ready' ? unmentionableCount(listing.entries) : 0
   const message = failed !== null ? failed
     : listing === undefined || listing.status !== 'ready' ? 'Loading files…'
       : listing.entries.length === 0 ? `${directory || 'This working copy'} has nothing to mention.`
         : options.length === 0 ? `No files match “${filter}”.` : null
-  return <div className="skill-picker file-picker" data-kind="file">
-    {message === null ? <ul ref={list} className="skill-picker__list" role="listbox" id={listId} aria-label="Files">
-      {options.map((entry, index) => <li key={entry.path} id={fileOptionId(listId, index)} role="option" aria-selected={index === activeIndex}
-        className="skill-picker__option" data-active={index === activeIndex || undefined}
-        onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== activeIndex) model.highlight(index) }} onClick={() => onSelect(entry)}>
-        <span className="skill-picker__name">{entry.kind === 'directory' ? `${entry.name}/` : entry.name}</span>
-        <span className="skill-picker__description">{entry.path}</span>
-      </li>)}
+  // The limit is the draft's, not this folder's: entries stay listed, and folders still browse.
+  const full = options.some(entry => entry.kind !== 'directory' && fileLimitReached(selected, entry.path))
+  return <div className="composer-picker file-picker" data-kind="file">
+    {message === null ? <ul ref={list} className="composer-picker__list" role="listbox" id={listId} aria-label="Files">
+      {options.map((entry, index) => {
+        const over = entry.kind !== 'directory' && fileLimitReached(selected, entry.path)
+        return <li key={entry.path} id={fileOptionId(listId, index)} role="option" aria-selected={index === activeIndex} aria-disabled={over || undefined}
+          className="composer-picker__option" data-active={index === activeIndex || undefined}
+          onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== activeIndex) model.highlight(index) }} onClick={() => { if (!over) onSelect(entry) }}>
+          <span className="composer-picker__name">{entry.kind === 'directory' ? `${entry.name}/` : entry.name}</span>
+          <span className="composer-picker__description">{entry.path}</span>
+        </li>
+      })}
     </ul> : null}
-    <div className="skill-picker__foot" data-message={message !== null || undefined}>
-      <span className="skill-picker__notes">
-        {message !== null ? <span className="skill-picker__message" role={failed !== null ? 'alert' : 'status'} data-tone={failed !== null ? 'warning' : undefined}>{message}</span> : null}
-        {message === null ? <span>{options[activeIndex ?? 0]?.kind === 'directory' ? 'Enter or Tab opens the folder' : 'Enter or Tab mentions the file'}</span> : null}
+    <div className="composer-picker__foot" data-message={message !== null || undefined}>
+      <span className="composer-picker__notes">
+        {message !== null ? <span className="composer-picker__message" role={failed !== null ? 'alert' : 'status'} data-tone={failed !== null ? 'warning' : undefined}>{message}</span> : null}
+        {full ? <span className="composer-picker__limit" role="status">{`A prompt mentions at most ${MAX_MENTIONED_FILES} files. Remove one to mention another.`}</span>
+          : message === null ? <span>{options[activeIndex ?? 0]?.kind === 'directory' ? 'Enter or Tab opens the folder' : 'Enter or Tab mentions the file'}</span> : null}
         {model.truncated ? <span data-tone="warning">Only the first entries of this folder are listed. Keep typing to narrow them.</span> : null}
+        {spaced > 0 ? <span data-tone="warning">{spaced === 1 ? '1 entry has a space in its name and cannot be mentioned' : `${spaced} entries have spaces in their names and cannot be mentioned`}</span> : null}
       </span>
-      <button type="button" className="skill-picker__refresh tt-focusable" data-loading={listing?.status === 'loading' || undefined} disabled={listing?.status === 'loading'}
+      <button type="button" className="composer-picker__refresh tt-focusable" data-loading={listing?.status === 'loading' || undefined} disabled={listing?.status === 'loading'}
         onMouseDown={event => event.preventDefault()} onClick={() => model.refresh()}>
         <RotateCw size={14} aria-hidden="true" />{listing?.status === 'loading' ? 'Refreshing' : failed !== null ? 'Try again' : 'Refresh'}
       </button>

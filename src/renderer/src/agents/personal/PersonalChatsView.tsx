@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, MessageSquare, SquarePen } from 'lucide-react'
 import type { AgentSkillCatalog } from '../../../../shared/agentSkills'
 import type { PersonalChat, PersonalChatBridge, PersonalChatState } from '../../../../shared/personalChats'
 import { Button } from '../../components/Button'
-import { composerEnterIntent, readComposerKey, skillMenuKeyAction } from '../composerKeys'
+import { composerEnterIntent, readComposerKey, runComposerMenuKey } from '../composerKeys'
 import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from '../composerSkills'
 import { MessageContent } from '../MessageContent'
 import { useOptionalAgents } from '../AgentContext'
@@ -312,17 +312,7 @@ function PersonalComposer({ bridge, state, chat, store, onSent }: {
       onSelect={event => picker.track(event.currentTarget)}
       onKeyDown={event => {
         const key = readComposerKey(event, !answering ? picker.open && picker.activeIndex !== null : undefined)
-        if (picker.open) {
-          const action = skillMenuKeyAction({ ...key, ctrlKey: event.ctrlKey, metaKey: event.metaKey }, { optionCount: picker.options.length, highlighted: picker.activeIndex !== null })
-          if (action !== 'none') {
-            event.preventDefault()
-            if (action === 'next') picker.move(1)
-            else if (action === 'previous') picker.move(-1)
-            else if (action === 'close') picker.close()
-            else selectSkill(picker.activeIndex ?? 0)
-            return
-          }
-        }
+        if (runComposerMenuKey(event, key, { open: picker.open, optionCount: picker.options.length, activeIndex: picker.activeIndex, move: picker.move, close: picker.close, select: selectSkill })) return
         if (composerEnterIntent(key) !== 'send') return
         event.preventDefault()
         send()
