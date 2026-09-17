@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
-export const codexMessageIdentitySchema = z.object({
+const codexMessageIdentitySchema = z.object({
   id: z.string(), nativeIds: z.array(z.string()), role: z.enum(['user', 'assistant']),
   digest: z.string(), createdAt: z.string(), complete: z.boolean(), clientId: z.string().optional(),
 })

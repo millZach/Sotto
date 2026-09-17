@@ -36,12 +36,12 @@ interface RuntimeManifest {
   readonly files: readonly RuntimeFileRecord[]
 }
 
-export class ModelPathDeniedError extends Error {
+class ModelPathDeniedError extends Error {
   readonly code = 'MODEL_PATH_DENIED'
   constructor() { super('Local asset request denied'); this.name = 'ModelPathDeniedError' }
 }
 
-export class ProtocolCleanupError extends Error {
+class ProtocolCleanupError extends Error {
   readonly code = 'PROTOCOL_CLEANUP_FAILED'
   constructor() { super('Local protocol cleanup failed'); this.name = 'ProtocolCleanupError' }
 }

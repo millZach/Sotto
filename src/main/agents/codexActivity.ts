@@ -39,7 +39,7 @@ export const codexItemSchema = z.preprocess(value => {
 type Item = z.infer<typeof codexItemSchema>
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
-export const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
+const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
 const iso = (ms: number | undefined): string | undefined => ms !== undefined && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : undefined
 const mappedStatus = (status: string | undefined, fallback: AgentActivity['status']): AgentActivity['status'] =>

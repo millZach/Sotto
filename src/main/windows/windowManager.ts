@@ -268,7 +268,7 @@ export class RendererLoadError extends Error {
   }
 }
 
-export class WindowManagerStoppedError extends Error {
+class WindowManagerStoppedError extends Error {
   readonly code = 'WINDOW_MANAGER_STOPPED'
 
   constructor() {
@@ -277,7 +277,7 @@ export class WindowManagerStoppedError extends Error {
   }
 }
 
-export class RendererProcessGoneError extends Error {
+class RendererProcessGoneError extends Error {
   readonly code = 'RENDERER_PROCESS_GONE'
 
   constructor(readonly windowKind: WindowKind) {
