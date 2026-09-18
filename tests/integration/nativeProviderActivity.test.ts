@@ -13,7 +13,7 @@ const tools = (thread: { activities?: readonly AgentActivity[] | undefined } | u
   (thread?.activities ?? []).filter(record => record.kind !== 'turn').map(record => ({ ...record, sequence: 0 }))
 
 it('Claude live tool-only message anchors survive log reload with no duplicate execution', async () => {
-  let f = await claudeFixture(undefined, 1000); const id = randomUUID()
+  let f = await claudeFixture(); const id = randomUUID()
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
@@ -25,7 +25,7 @@ it('Claude live tool-only message anchors survive log reload with no duplicate e
     await f.action(id, { type: 'raw', persist: true, frame: { type: 'user', uuid: 'result', timestamp: '2026-09-13T10:00:01.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 'tool', content: 'ok' }] } } })
     await expect.poll(async () => tools((await f.host.snapshot()).threads[0])[0]?.status).toBe('completed')
     const before = tools((await f.host.snapshot()).threads[0])
-    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root, 1000); await f.host.connect()
+    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root); await f.host.connect()
     expect(tools((await f.host.snapshot()).threads[0])).toEqual(before)
     expect((await f.driver.requests()).filter(r => r.method === 'user')).toHaveLength(1)
   } finally { await f.cleanup() }

@@ -56,7 +56,7 @@ describe('Claude recovery and safety', () => {
   })
   it.each([false, true])('waits for observed-thread initialization before sending (failed=%s)', async fail => {
     f.host.disconnect(); await f.adapter.closed()
-    f = await claudeFixture(f.root, 1000); await f.host.connect()
+    f = await claudeFixture(f.root); await f.host.connect()
     await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true, fail }))
     f.host.observeThreads?.([id])
     await expect.poll(async () => readFile(join(f.root, 'initialize-waiting'), 'utf8').catch(() => '')).not.toBe('')

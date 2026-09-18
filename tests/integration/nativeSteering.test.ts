@@ -16,8 +16,8 @@ async function selectedSkill(f: Awaited<ReturnType<typeof codexFixture>>) {
   await f.script({ skills: [{ ...skill, description: 'Synthetic review', enabled: true, scope: 'repo' }] })
   return skill
 }
-async function fixture(timeout = 1000) {
-  const f = await codexFixture(undefined, true, timeout); fixtures.push(f)
+async function fixture() {
+  const f = await codexFixture(undefined, true); fixtures.push(f)
   const threadId = randomUUID()
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, path: f.root, title: 'Fixture' })
@@ -41,8 +41,8 @@ it('uses installed turn/steer shape on the same active native turn and reconcile
   expect(thread.messages).toContainEqual(expect.objectContaining({ id: command.messageId, commandId: command.commandId }))
 })
 it('keeps lost steer acknowledgement uncertain and reconciles on resume without a second steer', async () => {
-  const { f, threadId } = await fixture(500)
-  await f.script({ delay: { method: 'turn/steer', ms: 1500 }, suppressNotifications: true })
+  const { f, threadId } = await fixture()
+  await f.script({ delay: { method: 'turn/steer', ms: 3000 }, suppressNotifications: true })
   const command = { type: 'steer' as const, commandId: randomUUID(), threadId, messageId: randomUUID(), text: 'A single correction' }
   expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
   await f.host.snapshot()

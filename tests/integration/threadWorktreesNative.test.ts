@@ -1,4 +1,4 @@
-﻿// @vitest-environment node
+// @vitest-environment node
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,7 +14,7 @@ import type { ProviderId } from '../../src/shared/agents'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
-const factories = { codex: () => codexFixture(undefined, false, 1000), claude: () => claudeFixture(undefined, 1000), grok: () => grokFixture(undefined, 1000) }
+const factories = { codex: () => codexFixture(), claude: () => claudeFixture(), grok: () => grokFixture() }
 async function fixture(provider: ProviderId, committed = true, nested = false) {
   const f = await factories[provider]()
   let project = join(f.root, 'project'); await mkdir(project)

@@ -14,7 +14,7 @@ const TEXT = 'Read @docs/plan.md and summarise it'
 // The composer's token is already the provider-facing form, so this proves the real dispatch keeps it
 // intact end to end and that a mention the user deleted never travels as a stale path.
 for (const provider of ['claude', 'grok'] as const) it(`${provider} receives a mentioned file as @docs/plan.md through a real send`, async () => {
-  const f = provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  const f = provider === 'claude' ? await claudeFixture() : await grokFixture()
   cleanups.push(() => f.cleanup())
   const threadId = randomUUID()
   await f.host.connect()

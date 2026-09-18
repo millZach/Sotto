@@ -10,7 +10,7 @@ import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 
 // Gate only the unrelated native history I/O; prompt transport and persistence stay real.
 it.each(['codex', 'claude', 'grok'] as const)('%s sends and confirms while another thread history read is blocked', async provider => {
-  const f = provider === 'codex' ? await codexFixture() : provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  const f = provider === 'codex' ? await codexFixture() : provider === 'claude' ? await claudeFixture() : await grokFixture()
   let release!: () => void
   let entered!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
@@ -48,7 +48,7 @@ it.each(['codex', 'claude', 'grok'] as const)('%s sends and confirms while anoth
 })
 
 it.each(['codex', 'claude', 'grok'] as const)('%s rechecks a permission arriving during its durable origin write', async provider => {
-  const f = provider === 'codex' ? await codexFixture() : provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  const f = provider === 'codex' ? await codexFixture() : provider === 'claude' ? await claudeFixture() : await grokFixture()
   const id = randomUUID()
   let permission = false
   const unsubscribe = f.host.subscribe(snapshot => { permission = Boolean(snapshot.threads.find(thread => thread.id === id)?.requests.length) })
@@ -100,13 +100,13 @@ it('Codex rejects a stale history completion after live text and turn completion
 })
 
 it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority read as an unsent prompt', async provider => {
-  const f = provider === 'codex' ? await codexFixture(undefined, false, 200) : await grokFixture(undefined, 200)
+  const f = provider === 'codex' ? await codexFixture() : await grokFixture()
   const id = randomUUID()
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
-    await f.script(provider === 'codex' ? { delay: { method: 'thread/read', ms: 500 } } : { ignoreHistory: true })
+    await f.script(provider === 'codex' ? { delay: { method: 'thread/read', ms: 3000 } } : { ignoreHistory: true })
     await expect(f.host.execute({ type: 'send', commandId: 'unsent-command', threadId: id, messageId: 'unsent-message', text: 'Must remain a draft', expectedLastUserMessageId: null })).rejects.toThrow(/verif|read|history/i)
     expect((await f.driver.requests()).filter(request => request.method === (provider === 'codex' ? 'turn/start' : 'session/prompt'))).toHaveLength(0)
   } finally { await f.script({}); await f.cleanup() }

@@ -11,7 +11,7 @@ import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const f of cleanup.splice(0).reverse()) await f() })
 async function fixture() {
-  const f = await codexFixture(undefined, true, 1500)
+  const f = await codexFixture(undefined, true)
   cleanup.push(f.cleanup)
   await f.host.connect()
   const threadId = randomUUID()

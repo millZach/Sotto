@@ -75,8 +75,8 @@ it('rejects concurrent prompts and deduplicates acknowledged command identities'
  expect(metadata).not.toContain('Synthetic prompt');expect(metadata).toContain('digest')
 })
 it('does not duplicate an uncertain creation, including after its late native response',async()=>{
- f=await grokFixture(undefined,200);await f.host.connect()
- await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({delayCreate:500})
+ f=await grokFixture();await f.host.connect()
+ await f.host.execute({type:'create-project',commandId:'project',projectId:'project',title:'Project',path:f.root});await f.script({delayCreate:3000})
  const command={type:'create-thread',commandId:'create',threadId:randomUUID(),projectId:'project',title:'Test',modelId:f.modelId} as const
  expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true});expect(await f.host.execute(command)).toEqual({accepted:false,uncertain:true})
  await expect.poll(async()=>(await f!.host.snapshot()).threads[0]?.modelId).toBe(f.modelId)

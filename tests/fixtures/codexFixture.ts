@@ -10,7 +10,8 @@ export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 1000) {
+// The deadline also covers the fake app server's process start; see the note on claudeFixture.
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
     args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15 })
@@ -48,7 +49,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }),
       raiseQuestion: (id: string, text: string) => action(id, { type: 'question', text }),
       raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
-      delayNextAck: (method: string) => script({ delay: { method, ms: 400 }, suppressNotifications: true }),
+      delayNextAck: (method: string) => script({ delay: { method, ms: requestTimeoutMs + 1000 }, suppressNotifications: true }),
       requests,
       restart: async () => { host.disconnect(); await adapter.closed(); return codexFixture(root, wrapped, requestTimeoutMs) },
     },

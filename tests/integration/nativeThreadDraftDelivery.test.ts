@@ -9,7 +9,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it('restores drafts and reconciles a lost native acknowledgement under the original Sotto binding without a duplicate turn', async () => {
-  const f = await codexFixture(undefined, true, 200)
+  const f = await codexFixture(undefined, true)
   const threadId = randomUUID(); const draftId = randomUUID(); const newerId = randomUUID()
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()

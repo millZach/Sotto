@@ -6,7 +6,7 @@ import { mkdir, readFile, rename, rmdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 it('Claude native rollback retains the exact earlier turn and its Sotto identity across restart', async () => {
-  let f = await claudeFixture(undefined, 1500)
+  let f = await claudeFixture()
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', path: f.root, title: 'Synthetic' })
@@ -26,7 +26,7 @@ it('Claude native rollback retains the exact earlier turn and its Sotto identity
     expect(before.historyEpoch).toBeTruthy()
     const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
     expect(before.historyEpoch).not.toBe(aliases.t.sessionId)
-    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root, 1500)
+    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root)
     await f.host.connect()
     const after = (await f.host.snapshot()).threads[0]!
     expect(after.messages).toEqual(before.messages); expect(after.historyEpoch).toBe(before.historyEpoch)
@@ -36,7 +36,7 @@ it('Claude native rollback retains the exact earlier turn and its Sotto identity
 }, 20000)
 
 it('Claude reconciles a completed native fork after its final alias write fails without repeating the rollback', async () => {
-  let f = await claudeFixture(undefined, 1500)
+  let f = await claudeFixture()
   const aliasPath = join(f.root, 'claude-threads.json'), savedPath = join(f.root, 'interrupted-alias.json')
   let blocked = false, blocking: Promise<void> | undefined
   let watcher: ReturnType<typeof watch> | undefined
@@ -64,7 +64,7 @@ it('Claude reconciles a completed native fork after its final alias write fails 
     expect(f.adapter.rollbackCapability('t').supported).toBe(false)
     await expect(f.adapter.rollbackThread('t', 1, ['first', 'second'])).rejects.toThrow('unconfirmed')
     await rmdir(aliasPath); await rename(savedPath, aliasPath); blocked = false
-    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root, 1500)
+    f.host.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root)
     await f.host.connect()
     const recovered = (await f.host.snapshot()).threads[0]!
     expect(recovered.messages.map(message => message.text)).toEqual(['first', 'first answer'])

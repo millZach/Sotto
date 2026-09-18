@@ -19,7 +19,7 @@ it('Grok confirms requested effort from native load state when its change event 
 })
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} catalog/send uses the owning native scope, validates stale selections and never resends on reconnect`, async () => {
-  let f: AdapterFixture = provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  let f: AdapterFixture = provider === 'claude' ? await claudeFixture() : await grokFixture()
   const id = randomUUID()
   try {
     const skillsPath = join(f.root, 'skills.json')

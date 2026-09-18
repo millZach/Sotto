@@ -10,7 +10,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 async function fixture() {
-  const f = await codexFixture(undefined, true, 1500)
+  const f = await codexFixture(undefined, true)
   await f.host.connect()
   const threadId = randomUUID()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, path: f.root, title: 'Synthetic' })
