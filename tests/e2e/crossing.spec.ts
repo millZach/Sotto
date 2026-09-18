@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { launchSotto, closeSotto } from './support/sottoLaunch'
+import { launchSottoWithVoice, openPage, openThreads, closeSotto } from './support/sottoLaunch'
 
 test('Crossing keeps dictation, history, settings and sessions usable', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   page.setDefaultTimeout(5_000)
   try {
@@ -12,6 +12,8 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await page.getByRole('button', { name: 'Continue' }).click()
     await page.getByRole('button', { name: 'Continue' }).click()
     await page.getByRole('button', { name: /finish setup/i }).click()
+    // Onboarding hands over to Threads now, so dictation is a deliberate stop.
+    await openPage(page, 'Dictate')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/dictate.png' })
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
@@ -73,7 +75,7 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Session transcript')).toContainText('Keep this draft until I explicitly send it.')
     await page.keyboard.press('Escape')
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/threads.png' })
     await page.getByRole('button', { name: 'New thread', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toBeVisible()
@@ -83,7 +85,8 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await page.getByRole('option', { name: 'Claude Test', exact: true }).click()
     await page.getByRole('button', { name: 'Create thread', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Design follow-up', exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeVisible()
+    // The page still names itself for assistive technology; the heading is no longer drawn.
+    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
   } catch (error) {
     await page.screenshot({ path: 'artifacts/crossing/failure.png' }).catch(() => undefined)
     throw error

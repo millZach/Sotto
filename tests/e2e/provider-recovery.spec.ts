@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 const draft = 'Review this synthetic recovered drawing before deciding what to send.'
 const attachment = { id: 'synthetic-image', name: 'recovered-drawing.png', mimeType: 'image/png',
@@ -40,8 +40,9 @@ async function capture(page: Page, name: string): Promise<void> {
   const send = page.getByRole('button', { name: 'Send prompt', exact: true })
   if (await send.count()) {
     const sendBounds = await send.boundingBox()
-    const footerBounds = await page.locator('.app-footer').boundingBox()
-    expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(footerBounds!.y)
+    // The Threads page owns the whole window, so Send has to end above the window's own bottom edge.
+    const bottom = await page.evaluate(() => window.innerHeight)
+    expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(bottom)
   }
   await page.setViewportSize({ width: 1080, height: 720 })
 }
@@ -53,7 +54,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
   const rendererErrors: string[] = []
   page.on('pageerror', error => rendererErrors.push(error.message))
   try {
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
     await expect(notice.getByRole('textbox', { name: 'Recovered draft' })).toHaveValue(draft)
     await expect(notice).toContainText(attachment.name)
@@ -69,10 +70,12 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await dialog.getByRole('button', { name: 'Create thread', exact: true }).click()
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Recovered work review', exact: true })).toBeVisible()
+    // Main learns the selection a beat after the popup closes; wait for it before reading the thread by id.
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toEqual(expect.any(String))
     state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state).toMatchObject({ draft, draftAttachments: [attachment], draftThreadId: null, assignments: [], composing: false })
     const threadId = state.activeThreadId!
-    expect(state.host.threads.find(thread => thread.id === threadId)?.messages).toHaveLength(0)
+    expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeEnabled()
     if (localDraft) {
@@ -96,7 +99,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toHaveCount(0)
     state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state).toMatchObject({ draft, draftAttachments: [attachment], draftThreadId: threadId, draftRequestId: null, assignments: [], composing: true })
-    expect(state.host.threads.find(thread => thread.id === threadId)?.messages).toHaveLength(0)
+    expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === threadId)?.requests).toHaveLength(0)
     await capture(page, localDraft ? 'bound-after-local-clear' : 'bound-for-review')
     const recovery = JSON.parse(await readFile(join(profile, 'provider-retirement-v1.json'), 'utf8'))
@@ -109,7 +112,7 @@ test('clear saved draft removes recovered text and images and stays cleared afte
   const profile = await seed()
   let launched = await launchSotto('success', profile)
   try {
-    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(launched.page)
     await launched.page.getByRole('button', { name: 'Clear saved draft', exact: true }).click()
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
     await expect(launched.page.getByText(attachment.name, { exact: true })).toHaveCount(0)
@@ -118,7 +121,7 @@ test('clear saved draft removes recovered text and images and stays cleared afte
     await capture(launched.page, 'cleared')
     await closeSotto(launched)
     launched = await launchSotto('success', profile)
-    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(launched.page)
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
     expect(await launched.page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null })
   } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }

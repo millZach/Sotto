@@ -125,10 +125,12 @@ describe('main-window appearance', () => {
     expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'ocean', darkTheme: custom.id, glassOpacity: 60 })
     expect(cached.customThemes.map(theme => theme.id)).toEqual([custom.id])
 
+    // A cache that cannot be trusted comes back as the shipped defaults, not as the chosen halves.
+    const restored = { ...base, appearance: DEFAULT_SETTINGS.appearance, lightTheme: DEFAULT_SETTINGS.lightTheme, darkTheme: DEFAULT_SETTINGS.darkTheme }
     localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ appearance: 'sepia', lightTheme: 'missing', darkTheme: 42, appearanceContrast: 999, customThemes: [{ id: 'x' }] }))
-    expect(readCachedAppearance()).toEqual({ ...base, appearance: DEFAULT_SETTINGS.appearance, appearanceContrast: 200 })
+    expect(readCachedAppearance()).toEqual({ ...restored, appearanceContrast: 200 })
     localStorage.setItem(APPEARANCE_CACHE_KEY, '{not json')
-    expect(readCachedAppearance()).toEqual({ ...base, appearance: DEFAULT_SETTINGS.appearance })
+    expect(readCachedAppearance()).toEqual(restored)
   })
 
   it('keeps each field of the newest pending choice, settles only matching saves, and drops a saved choice once settings catch up', () => {
@@ -136,7 +138,7 @@ describe('main-window appearance', () => {
     const persisted = { ...DEFAULT_SETTINGS }
     const light = preview.choose({ appearance: 'light' })
     const iris = preview.choose({ lightTheme: 'iris' })
-    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'iris', darkTheme: 'ocean' })
+    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'iris', darkTheme: DEFAULT_SETTINGS.darkTheme })
 
     // An older theme choice is superseded before its save answers.
     const ember = preview.choose({ lightTheme: 'ember' })
@@ -148,7 +150,7 @@ describe('main-window appearance', () => {
     expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'ember' })
 
     preview.settle(ember, false, caughtUp)
-    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'ocean' })
+    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: DEFAULT_SETTINGS.lightTheme })
   })
 
   it('previews a draft separately from pending choices, and a reset clears both', () => {

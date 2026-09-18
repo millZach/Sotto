@@ -410,7 +410,9 @@ export function AppProvider({
           return
         }
         commitSettings(loadedSettings)
-        setNavigation(loadedSettings.onboardingComplete ? 'home' : 'onboarding')
+        // Sotto opens on Threads: the work waiting for an answer is what a
+        // returning user came back for, and dictation is one tab away.
+        setNavigation(loadedSettings.onboardingComplete ? 'threads' : 'onboarding')
 
         let controller!: AppController
         const bindings: AppControllerFactoryBindings = {

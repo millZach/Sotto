@@ -6,7 +6,7 @@ import { claudePending } from '../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Two Spec review fixes in the complete app: the arrangement switch in a compact pane view, and a structured form's
 // native explanation and tool context. Providers are fixtures; the request payloads come from the real provider mappers.
@@ -63,7 +63,7 @@ const overlaps = (a: Rect, b: Rect | null): boolean => b !== null && Math.min(a.
 
 async function expectUncrowded(pane: Locator): Promise<void> {
   const layout = await controlsLayout(pane)
-  for (const button of layout.buttons) expect([button.right - button.left, button.bottom - button.top]).toEqual([32, 34])
+  for (const button of layout.buttons) expect([button.right - button.left, button.bottom - button.top]).toEqual([30, 30])
   expect(layout.controls.right).toBeLessThanOrEqual(layout.pane.right)
   expect(layout.controls.top).toBeGreaterThanOrEqual(layout.pane.top)
   const { title, crumb, actions, tabs, compose } = layout.others
@@ -87,7 +87,7 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
     const { page } = launched
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
@@ -212,7 +212,7 @@ test('threaded and personal structured forms show the native explanation and too
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const emit = (threadId: string, request: AgentRequest) => page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
     await emit('workshop', codexForm(nativeMessage))
     await emit('docs', claudeQuestions())

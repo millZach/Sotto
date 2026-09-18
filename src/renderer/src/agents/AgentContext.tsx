@@ -324,8 +324,11 @@ export function AgentProvider({ children, settings, dictation }: {
   }, [connection.command])
 
   // Setup finished without a microphone leaves wake listening off; the threads
-  // themselves stay fully usable by typing.
+  // themselves stay fully usable by typing. The coordinator is hidden for the
+  // beta, and a hidden coordinator must never open the microphone, so the
+  // wake session also waits on the setting rather than on its own controls.
   const voiceEnabled = connection.state?.configuration.enabled === true
+    && settings?.voiceCoordinatorEnabled === true
     && settings?.onboardingComplete === true
     && settings?.microphoneSkipped !== true
     && ['active', 'beta'].includes(connection.state?.membership.status ?? '')
@@ -365,6 +368,10 @@ export function AgentProvider({ children, settings, dictation }: {
     if (spoken.current === null) { spoken.current = state.speech.id; return }
     if (spoken.current === state.speech.id) return
     spoken.current = state.speech.id
+    // A hidden coordinator has no spoken hints, so an announcement is tracked
+    // but never voiced; the identifier still advances so switching voice on
+    // does not replay whatever was current while it was off.
+    if (settingsRef.current?.voiceCoordinatorEnabled !== true) return
     if (!personalAudioRef.current && (state.speech.preview || (state.configuration.enabled && state.configuration.speak))) {
       // Selection updates replace narration; they must not accumulate a backlog.
       voiceRef.current?.stopSpeaking()

@@ -96,11 +96,12 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   const pinned = chrome.pinnedThreadId
   const pinnedElsewhere = chrome.open && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
-  return <button ref={button} type="button" className="tt-button tt-focusable tt-button--ghost tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
+  // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
+  return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
     data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={pinnedTitle === null ? undefined : `Showing ${pinnedTitle}, pinned`}
-    title={pinnedTitle === null ? undefined : `Tools are pinned to ${pinnedTitle}`}
+    title={pinnedTitle === null ? 'Tools' : `Tools are pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
-    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}Tools
+    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">Tools</span>
   </button>
 }
 

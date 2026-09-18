@@ -1,11 +1,13 @@
 import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { Archive, ArchiveRestore, Columns2, Pencil, Plug, Shrink, Sparkles, Square, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import { Button } from '../components/Button'
+import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
+import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
@@ -18,7 +20,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
-import { compactionOffered, ThreadCompaction } from './ThreadCompaction'
+import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
 
@@ -29,11 +31,13 @@ type Command = AgentConnection['command']
 function ThreadRequests({ row, state, command, blocked, onAnswer }: {
   readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly blocked: string | null; readonly onAnswer: () => void
 }): ReactNode {
+  // Without the voice coordinator nothing is listening, so a request never says an answer can be spoken.
+  const spoken = useVoiceCoordinatorEnabled()
   const thread = row.thread
   const requests = thread.requests
   if (isThreadClosed(thread) || requests.length === 0) return null
   return <>{requests.map(request => {
-    const voice = state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
+    const voice = spoken && state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
     const mode = requestMode(request)
     return <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
       draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
@@ -67,13 +71,15 @@ export interface ThreadPaneProps {
   readonly actions?: ReactNode
   /** Placed directly above the composer. */
   readonly notice?: ReactNode
+  /** Opens this thread in a second pane. The More menu leaves the item out where the page cannot split. */
+  readonly onOpenBeside?: (() => void) | undefined
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, crumb, actions, notice }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, crumb, actions, notice }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -83,6 +89,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
   const handoff = useRef<{ readonly managed: boolean; readonly focused?: true; readonly until: number } | null>(null)
   const submissions = useSubmissions(store)
+  // Management is the voice coordinator's own work, so with it hidden a managed thread still composes by hand.
+  const coordinated = useVoiceCoordinatorEnabled()
   const thread = row.thread
   const closed = isThreadClosed(thread)
   const connected = state.connection === 'connected'
@@ -91,7 +99,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     id: `${thread.id}:${pending.id}`, threadId: thread.id, requestId: pending.id,
     kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
   } } : row
-  const assigned = row.assignment
+  const assigned = coordinated ? row.assignment : undefined
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
   const capabilities = capabilitiesForThread(state.host, thread)
@@ -133,38 +141,55 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     void request().then(result => { if ((result === null || result.error !== null) && handoff.current === pending) handoff.current = null },
       () => { if (handoff.current === pending) handoff.current = null }).finally(() => setHandingOff(false))
   }
+  /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
+  const naming: PaneMenuItem[] = [
+    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => setRenaming(true) }] : []),
+    // Sotto writes the name from the thread's first exchange; a name typed by hand is left alone and offers no rewrite.
+    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user'
+      ? [{ id: 'regenerate', label: 'Regenerate title', icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
+    ...(onOpenBeside ? [{ id: 'beside', label: 'Open beside', icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
+  ]
+  // Compaction is offered where it can run: the banner under the composer only ever recommends it.
+  const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy || handingOff)
+    ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
+  // While a handoff waits for its save, nothing else may act on this thread; other panes stay usable.
+  const shelf: PaneMenuItem[] = row.settledBy === null
+    ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy || handingOff, run: () => void command({ type: 'settle-thread', threadId: thread.id }) }]
+    : row.settledBy === 'thread'
+      ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy || handingOff, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
+  /* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */
+  const supervision: PaneMenuItem[] = !coordinated ? []
+    : [
+      ...(assigned && !closed
+        ? [{ id: 'manage', label: assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing', disabled: !canManage || handingOff,
+          run: () => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume')) : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id }) }]
+        : !assigned && !closed ? [{ id: 'manage', label: 'Manage', disabled: !canManage || handingOff, run: () => handOff(true, () => store.handoffToManagement(thread.id, 'assign')) }] : []),
+      ...(assigned ? [{ id: 'unassign', label: 'Stop managing', disabled: state.globalLaneBusy || !connected || handingOff, run: () => handOff(false, () => command({ type: 'unassign', threadId: thread.id })) }] : []),
+    ]
+  const recovery: PaneMenuItem[] = [
+    ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
+    // A thread's own composer carries Stop; Sotto's composer for a managed thread does not.
+    ...(thread.status === 'running' && managed
+      ? [{ id: 'interrupt', label: 'Stop agent', icon: <Square size={15} aria-hidden="true" />, disabled: threadBusy || !rowConnected || !capabilities.interrupt, run: () => void command({ type: 'interrupt', threadId: thread.id }) }] : []),
+  ]
   return <>
     <header className="thread-workspace__head" ref={head}>
       <div className="thread-workspace__title">
-        <span className="thread-workspace__crumb"><ProviderMark provider={row.providerId} name={row.provider} size={16} /><span>{row.project?.title ?? row.provider}</span>{crumb}
-          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
-          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
-        </span>
+        <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {renaming
           ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={() => setRenaming(false)} /></h2>
           : <h2>{thread.title}</h2>}
+        <span className="thread-workspace__crumb"><span>{row.project?.title ?? row.provider}</span>{crumb}
+          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
+          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
+        </span>
       </div>
       <div className="thread-workspace__actions">
-        {/* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */}
-        {!isThreadArchived(thread) && !renaming ? <Button variant="ghost" onClick={() => setRenaming(true)}>Rename</Button> : null}
-        {/* Sotto writes the name from the thread's first exchange; a name typed by hand is left alone and offers no rewrite. */}
-        {!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user'
-          ? <Button variant="ghost" disabled={threadBusy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: thread.id })}>Regenerate title</Button> : null}
-        {/* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */}
-        {assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => assigned.mode === 'manual' ? handOff(true, () => store.handoffToManagement(thread.id, 'resume'))
-          : void command({ type: assigned.paused ? 'resume' : 'pause', threadId: thread.id })}>{assigned.paused || assigned.mode === 'manual' ? 'Resume managing' : 'Pause managing'}</Button>
-          : !assigned && !closed ? <Button variant="ghost" disabled={!canManage || handingOff} onClick={() => handOff(true, () => store.handoffToManagement(thread.id, 'assign'))}>Manage</Button> : null}
-        {assigned ? <Button variant="ghost" disabled={state.globalLaneBusy || !connected || handingOff} onClick={() => handOff(false, () => command({ type: 'unassign', threadId: thread.id }))}>Stop managing</Button> : null}
-        {/* While a handoff waits for its save, nothing else may act on this thread; other panes stay usable. */}
-        {row.settledBy === null ? <Button variant="ghost" disabled={threadBusy || handingOff} onClick={() => void command({ type: 'settle-thread', threadId: thread.id })}>Settle</Button>
-          : row.settledBy === 'thread' ? <Button variant="ghost" disabled={threadBusy || handingOff} onClick={() => void command({ type: 'restore-thread', threadId: thread.id })}>Restore</Button> : null}
-        {!rowConnected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect', ...reconnect })}>Reconnect</Button> : null}
-        {/* A thread's own composer carries Stop; Sotto's composer for a managed thread does not. */}
-        {thread.status === 'running' && managed ? <Button variant="secondary" disabled={threadBusy || !rowConnected || !capabilities.interrupt} onClick={() => void command({ type: 'interrupt', threadId: thread.id })}>Stop agent</Button> : null}
         {actions}
+        <PaneMenu groups={[naming, context, shelf, supervision, recovery]} />
       </div>
-      {onClose ? <button type="button" className="thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
+      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>

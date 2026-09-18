@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import type { AgentCommand, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
@@ -36,11 +36,11 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Not now', exact: true }).click()
   await page.getByRole('button', { name: 'Connect providers' }).click()
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
 }
 
 test('creates real folders using configured and explicit locations, rejects conflicts and unavailable models', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   try {
     await onboard(launched.page)
     const directory = join(launched.userData, 'projects')
@@ -65,7 +65,7 @@ test('creates real folders using configured and explicit locations, rejects conf
 })
 
 test('limits automatic fixes, stops repeated failures, and never answers permissions or unassigned threads', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -74,16 +74,16 @@ test('limits automatic fixes, stops repeated failures, and never answers permiss
     await event(page, { type: 'failure', threadId: 'docs', text: 'fixable unassigned issue' })
     await event(page, { type: 'failure', threadId: 'workshop', text: 'fixable test one' })
     await expect.poll(async () => (await state(page)).assignments[0]?.followups).toBe(1)
-    await expect.poll(async () => (await state(page)).host.threads[0]?.messages.filter(m => m.role === 'user').length).toBe(1)
+    await expect.poll(async () => (await userMessageTexts(page, 'workshop')).length).toBe(1)
     await event(page, { type: 'failure', threadId: 'workshop', text: 'fixable test two' })
     await expect.poll(async () => (await state(page)).assignments[0]?.followups).toBe(2)
-    await expect.poll(async () => (await state(page)).host.threads[0]?.messages.filter(m => m.role === 'user').length).toBe(2)
+    await expect.poll(async () => (await userMessageTexts(page, 'workshop')).length).toBe(2)
     await event(page, { type: 'failure', threadId: 'workshop', text: 'fixable test three' })
     await expect.poll(async () => (await state(page)).assignments[0]?.paused).toBe(true)
-    expect((await state(page)).host.threads[1]?.messages.filter(m => m.role === 'user')).toHaveLength(0)
+    expect(await userMessageTexts(page, 'docs')).toHaveLength(0)
     await command(page, { type: 'resume', threadId: 'workshop' })
     await expect.poll(async () => (await state(page)).assignments[0]?.followups).toBe(1)
-    await expect.poll(async () => (await state(page)).host.threads[0]?.messages.filter(m => m.role === 'user').length).toBe(3)
+    await expect.poll(async () => (await userMessageTexts(page, 'workshop')).length).toBe(3)
     await event(page, { type: 'failure', threadId: 'workshop', text: 'fixable test three' })
     await expect.poll(async () => (await state(page)).queue.some(q => q.text.includes('repeating a failure'))).toBe(true)
     await event(page, { type: 'permission', threadId: 'workshop', text: 'Publish this project?' })
@@ -100,6 +100,7 @@ test('limits automatic fixes, stops repeated failures, and never answers permiss
 
 test('revokes an automatic reply while reasoning is in flight and retains manual ownership and drafts after restart', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
     await onboard(launched.page)
@@ -109,11 +110,11 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     await event(launched.page, { type: 'manual', threadId: 'workshop', text: 'I am handling this now.' })
     await event(launched.page, { type: 'reasoner-release', threadId: 'workshop', text: '' })
     await expect.poll(async () => (await state(launched.page)).assignments[0]?.mode).toBe('manual')
-    expect((await state(launched.page)).host.threads[0]?.messages.filter(m => m.role === 'user')).toHaveLength(1)
+    expect(await userMessageTexts(launched.page, 'workshop')).toHaveLength(1)
     await command(launched.page, { type: 'compose', text: 'A draft that must survive a restart.' })
     await closeSotto(launched)
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(launched.page)
     await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A draft that must survive a restart.')
     const snapshot = await state(launched.page)
     expect(snapshot.assignments[0]?.mode).toBe('manual')
@@ -123,7 +124,7 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
 })
 
 test('reconciles a lost acknowledgement without resubmitting, and keeps skipped approvals pending', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -137,9 +138,9 @@ test('reconciles a lost acknowledgement without resubmitting, and keeps skipped 
     expect(snapshot.draft).toBe('Execute exactly once.')
     snapshot = await command(page, { type: 'refresh' })
     expect(snapshot.draft).toBe('')
-    expect(snapshot.host.threads[0]?.messages).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await command(page, { type: 'send' })
-    expect((await state(page)).host.threads[0]?.messages).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await event(page, { type: 'permission', threadId: 'workshop', text: 'Delete project?' })
     await event(page, { type: 'ready', threadId: 'docs', text: 'Docs completed.' })
     await command(page, { type: 'later' })
@@ -153,7 +154,7 @@ test('reconciles a lost acknowledgement without resubmitting, and keeps skipped 
 })
 
 test('retains a rejected prompt and allows a deliberate retry after refreshing the host', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -163,19 +164,19 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('The provider rejected the request')
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Retry this only after I ask.')
-    expect((await state(page)).host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
 
     await command(page, { type: 'refresh' })
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
     const snapshot = await state(page)
     expect(snapshot.error).toBeNull()
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.messages.map(message => message.text)).toEqual(['Retry this only after I ask.'])
+    expect(await userMessageTexts(page, 'workshop')).toEqual(['Retry this only after I ask.'])
   } finally { await closeSotto(launched) }
 })
 
 test('keeps the explicitly selected queued thread across host refresh and another ready event', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -204,7 +205,7 @@ test('keeps the explicitly selected queued thread across host refresh and anothe
 })
 
 test('uses a folder clarification with the original spoken project request', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -225,7 +226,7 @@ test('uses a folder clarification with the original spoken project request', asy
 })
 
 test('redacts processed assignment context when local history is disabled while preserving the unsent draft', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   const assignmentText = 'Private assignment marker 67192.'
   const failureText = 'fixable private failure marker 67314'
@@ -237,7 +238,7 @@ test('redacts processed assignment context when local history is disabled while 
     await command(page, { type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'external-fixture' } })
     await command(page, { type: 'assign', threadId: 'workshop', instruction: assignmentText })
     await event(page, { type: 'failure', threadId: 'workshop', text: failureText })
-    await expect.poll(async () => (await state(page)).host.threads.find(thread => thread.id === 'workshop')?.messages.filter(message => message.role === 'user').length).toBe(1)
+    await expect.poll(async () => (await userMessageTexts(page, 'workshop')).length).toBe(1)
     await command(page, { type: 'pause', threadId: 'workshop' })
     await event(page, { type: 'permission', threadId: 'workshop', text: questionText })
     await command(page, { type: 'assign', threadId: 'docs' })
@@ -259,6 +260,7 @@ test('redacts processed assignment context when local history is disabled while 
 
 test('expires dormant context after seven days without forgetting manual ownership or follow-up counts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   const oldInstruction = 'Seven-day-old private assignment.'
   const recentInstruction = 'Recent assignment must remain recoverable.'
@@ -267,7 +269,7 @@ test('expires dormant context after seven days without forgetting manual ownersh
     await command(launched.page, { type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'external-fixture' } })
     await command(launched.page, { type: 'assign', threadId: 'workshop', instruction: oldInstruction })
     await event(launched.page, { type: 'failure', threadId: 'workshop', text: 'fixable dormant failure' })
-    await expect.poll(async () => (await state(launched.page)).host.threads.find(thread => thread.id === 'workshop')?.messages.filter(message => message.role === 'user').length).toBe(1)
+    await expect.poll(async () => (await userMessageTexts(launched.page, 'workshop')).length).toBe(1)
     await event(launched.page, { type: 'manual', threadId: 'workshop', text: 'I am taking control.' })
     await command(launched.page, { type: 'assign', threadId: 'docs', instruction: recentInstruction })
     await command(launched.page, { type: 'compose', text: 'A recoverable unsent draft.' })
@@ -280,7 +282,7 @@ test('expires dormant context after seven days without forgetting manual ownersh
     await writeFile(path, JSON.stringify(saved), 'utf8')
 
     launched = await launchSotto('success', directory)
-    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(launched.page)
     const snapshot = await state(launched.page)
     const dormant = snapshot.assignments.find(assignment => assignment.threadId === 'workshop')!
     expect(dormant.instruction).toBe('')

@@ -1,10 +1,9 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
-import { ProviderMark } from './ProviderMark'
 import { SidebarFrame, type SidebarMode } from './SidebarFrame'
 import { workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
@@ -16,9 +15,9 @@ type Section = 'open' | 'settled'
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 
-function Indicators({ working, needs }: { readonly working: number; readonly needs: number }): ReactNode {
+function Indicators({ working, needs, id }: { readonly working: number; readonly needs: number; readonly id?: string }): ReactNode {
   if (!working && !needs) return null
-  return <span className="thread-nav__indicators">
+  return <span id={id} className="thread-nav__indicators">
     {needs ? <span data-state="needs" title={`${needs} waiting on you`}><i aria-hidden="true" /><span className="tt-visually-hidden">{needs} waiting on you</span></span> : null}
     {working ? <span data-state="working" title={`${working} working`}><i aria-hidden="true" /><span className="tt-visually-hidden">{working} working</span></span> : null}
   </span>
@@ -97,6 +96,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
   const status = finished ? 'Just finished' : label
   const besideAvailable = panes.currentThreadId !== null && !current
   const [renaming, setRenaming] = useState(false)
+  // The button's name is the title alone; the state sentence is its description, or the label would swallow it.
+  const statusId = useId()
   const archived = isThreadArchived(row.thread)
   if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
@@ -105,16 +106,19 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
     </span>
   </li>
   return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
-    <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-current={current ? 'page' : undefined} draggable
+    <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-describedby={statusId} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
       onKeyDown={event => { if (besideAvailable && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); panes.onOpenBeside(row.thread.id) } }}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
-      <span className="thread-nav__mark" data-provider={row.providerId ?? 'other'} title={row.provider}><ProviderMark provider={row.providerId} name={row.provider} /></span>
+      <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
       <span className="thread-nav__title">{title}</span>
-      <RowTime row={row} live={liveClock} />
-      <span className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true}><i aria-hidden="true" /><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
+      {/* The right slot speaks only when the thread is at work or wants you; the sentence below carries the rest. */}
+      {row.state === 'working'
+        ? <RowTime row={row} live={liveClock} />
+        : row.state === 'needs' ? <span className="thread-nav__needs" aria-hidden="true">needs you</span> : null}
+      <span id={statusId} className="thread-nav__status tt-visually-hidden" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true}><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}{row.state === 'working' ? null : <> <RowTime row={row} live={false} /></>}</span>
     </button>
     <span className="thread-nav__row-actions">
       {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(row.thread.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
@@ -147,14 +151,16 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   readonly busyThreadIds: readonly string[] | undefined
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
+  const indicatorsId = `${listId}-indicators`
   const project = folder.project
   return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
     <div className="thread-folder__head">
-      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))} title={project?.path}>
-        <ChevronRight size={14} aria-hidden="true" className="thread-folder__chevron" /><Folder size={16} aria-hidden="true" />
+      {/* The count is no longer drawn, so the toggle says it instead; the title still comes first for the tests and for AT. */}
+      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))}
+        aria-label={`${folder.title} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
+        <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
         <span className="thread-folder__title">{folder.title}</span>
-        {!expanded ? <Indicators working={folder.working} needs={folder.needs} /> : null}
-        <span className="thread-folder__count" aria-label={`${folder.rows.length} ${folder.rows.length === 1 ? 'thread' : 'threads'}`}>{folder.rows.length}</span>
+        {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
         {section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`New thread in ${folder.title}`} title="New thread here" onClick={() => onNewThread(folder.id)}><SquarePen size={16} aria-hidden="true" /></button> : null}
@@ -213,17 +219,15 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen}>
       <section aria-label="Projects">
-        <h2 className="thread-nav__label">Projects <span title={plural(open.length, 'project')}>{open.length} <span className="tt-visually-hidden">{open.length === 1 ? 'project' : 'projects'}</span></span></h2>
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open threads.' : state.host.projects.length ? 'All caught up.' : 'Add a project folder to start.'}</p> : null}
       </section>
       <section aria-label="Settled" className="thread-nav__shelf">
         <button className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}
           aria-label={[`Settled ${plural(settledThreads, 'thread')}`, settledNeeds ? `${settledNeeds} waiting on you` : '', settledWorking ? `${settledWorking} working` : ''].filter(Boolean).join(', ')}>
-          <ChevronRight size={14} aria-hidden="true" className="thread-folder__chevron" />
+          <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span>Settled</span>
           {!settledShown ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
-          <small title={plural(settledThreads, 'thread')}>{settledThreads}</small>
         </button>
         {settledShown ? <div>{settled.map(folderView('settled'))}{!settled.length ? <p className="thread-nav__empty">No settled threads.</p> : null}</div> : null}
       </section>

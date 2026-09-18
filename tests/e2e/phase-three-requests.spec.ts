@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentCommand, AgentRequest, AgentState } from '../../src/shared/agents'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 
 // #52 in the complete app: AppShell, Threads page, main controller, IPC and preload are real. Only the provider
 // effects come from the explicit unpackaged E2E host, and requests arrive through window.sottoE2E.agentEvent.
@@ -55,7 +55,7 @@ async function prepare(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
   // Observe (and optionally hold) answer commands as they cross into main; the real handler still answers them.
   await launched.app.evaluate(({ ipcMain }, channel) => {
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, (event: unknown, payload: unknown) => unknown> })._invokeHandlers
@@ -196,7 +196,7 @@ test('answers every native question in the thread that asked, keeping simultaneo
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'workshop', text: '' }))
     await expect(form.getByText(/^Reconnect .+ to answer\.$/u)).toBeVisible()
     await expect(form.getByRole('radio', { name: /Sidebar/u })).toBeDisabled()
-    await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
+    await paneMenuAction(page, 'Reconnect')
     await expect(form.getByRole('radio', { name: /Sidebar/u })).toBeEnabled()
     expect(await pending(page, 'workshop')).toEqual(['layout-form'])
     await expect(form.getByRole('checkbox', { name: 'Unit tests' })).toBeChecked()

@@ -3,11 +3,12 @@ import { join, resolve } from 'node:path'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto } from './support/sottoLaunch'
 
 for (const mode of ['resting', 'hidden', 'expanded', 'expanded-hidden'] as const) test(`dictation hotkey preserves the native text target and caret from ${mode}`, async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-focus-'))
   await writeFile(join(profile, 'widget-placement.json'), JSON.stringify({ version: 3, placement: { edge: 'right' } }))
+  await enableVoiceCoordinator(profile)
   const launched = await launchSotto('success', profile)
   const { app, page } = launched
   let targetApp: ElectronApplication | undefined

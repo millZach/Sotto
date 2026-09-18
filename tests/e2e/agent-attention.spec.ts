@@ -5,13 +5,14 @@ import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 test('saved attention does not cover the room while its provider is disconnected', async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-attention-'))
   const savedQueue = [{ id: 'old-update', threadId: 'missing-thread', kind: 'ready', text: 'Saved update from a previous connection.', createdAt: new Date().toISOString(), deferred: false }]
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+  await enableVoiceCoordinator(profile)
   await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), assignments: [], queue: savedQueue, activeThreadId: 'missing-thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [] }))
   const launched = await launchSotto('success', profile)
   try {
@@ -27,7 +28,7 @@ test('saved attention does not cover the room while its provider is disconnected
 })
 
 test('Later returns to the orb without answering a pending permission', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await completeVoiceJourneySetup(page)
@@ -47,7 +48,7 @@ test('Later returns to the orb without answering a pending permission', async ()
     await expect(page.locator('canvas.agent-orb')).not.toHaveAttribute('data-orb-colors', orbColors!)
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     await page.getByRole('link', { name: 'History', exact: true }).click()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Mode' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'workshop')!.requests)).toEqual(pending)
     await page.screenshot({ path: 'artifacts/crossing/attention-later.png' })
@@ -64,7 +65,7 @@ test('Later returns to the orb without answering a pending permission', async ()
 })
 
 test('Next finishes a review instead of cycling through the same requests', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await completeVoiceJourneySetup(page)

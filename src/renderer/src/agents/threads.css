@@ -13,117 +13,48 @@
   --threads-attention: var(--tt-attention, var(--tt-warning, #f0b45c));
   --threads-warning-text: var(--tt-warning-text, var(--tt-warning, #f0b45c));
   --threads-on-accent: var(--tt-on-accent, #000);
-  flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 288px minmax(0, 1fr); overflow: hidden;
+  flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden;
 }
-
-/* Sidebar */
-.thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
-.thread-nav__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 12px 8px; }
-.thread-nav__head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.45px; }
-.thread-nav__head-actions { display: flex; gap: 2px; }
-.thread-nav__head .tt-button { width: 36px; min-height: 36px; padding: 0; }
-.thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px 10px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
-.threads-search { position: relative; display: block; margin: 0 4px 10px; color: var(--tt-text-muted); }
-.threads-search > svg { position: absolute; top: 12px; left: 11px; pointer-events: none; }
-.threads-search .tt-input { width: 100%; min-height: 40px; padding: 0 34px 0 35px; border: 1px solid var(--tt-hairline); border-radius: 9px; font-size: 14px; font-weight: 400; background: transparent; }
-.threads-search .tt-input::-webkit-search-cancel-button { display: none; }
-.threads-search__clear { position: absolute; top: 6px; right: 5px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
-.thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 18px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
-.thread-nav__label span, .thread-nav__settled small { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.thread-nav__settled { width: 100%; min-height: 40px; margin-top: 14px; border: 0; border-top: 1px solid var(--tt-hairline); border-radius: 0; background: transparent; text-align: left; cursor: pointer; font-size: 14px; }
-.thread-nav__settled > span { color: var(--tt-text-2); }
-.thread-nav__settled small { margin-left: auto; }
-.thread-folder__chevron { flex: none; transition: transform .16s ease; }
-[aria-expanded='true'] > .thread-folder__chevron { transform: rotate(90deg); }
-.thread-nav__indicators { display: inline-flex; gap: 4px; align-items: center; }
-.thread-nav__indicators > span { display: inline-flex; }
-.thread-nav__indicators i { display: block; width: 7px; height: 7px; border-radius: 50%; }
-.thread-nav__indicators [data-state='needs'] i { background: var(--threads-attention); }
-.thread-nav__indicators [data-state='working'] i { background: var(--tt-activity); }
-.thread-nav__empty { margin: 4px 8px 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; list-style: none; }
-
-.thread-folder { margin: 2px 0 6px; }
-.thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 8px; }
-.thread-folder__head:hover { background: var(--threads-hover); }
-.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 7px; min-width: 0; min-height: 36px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
-.thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
-.thread-folder__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-folder__count { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
-.thread-folder__actions, .thread-nav__row-actions { display: flex; gap: 2px; padding-right: 4px; }
-.thread-folder__rows { margin: 0; padding: 0 0 0 14px; list-style: none; }
-.thread-nav__action { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
-.thread-nav__action:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
-.thread-nav__action:disabled { opacity: .45; cursor: not-allowed; }
-/* Row and folder actions stay reachable by keyboard and appear on hover, focus and the open row. */
-.thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
-.thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
-.thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
-/* With a pointer, folder actions overlay the count instead of taking width from the name. */
-@media (hover: hover) {
-  .thread-folder__actions { position: absolute; top: 3px; right: 0; border-radius: 8px; background: var(--threads-hover); }
-  /* Fade (not hide) the count and indicators under the actions: they stay in the toggle's accessible name. */
-  .thread-folder__head:has(.thread-folder__actions):is(:hover, :focus-within) :is(.thread-folder__count, .thread-nav__indicators) { opacity: 0; }
-}
-@media (hover: none) { .thread-folder__actions, .thread-nav__row-actions { opacity: 1; } }
-
-.thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 8px; }
-.thread-nav__row:hover { background: var(--threads-hover); }
-.thread-nav__row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
-.thread-nav__row-actions { position: absolute; top: 5px; right: 0; }
-.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
-.thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
-/* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
-   fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
-   against the sidebar and selected row) while keeping the provider hue. */
-.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, #d7dbe1); }
-.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
-.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
-:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
-:root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
-.thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
-.thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
-.thread-nav__rename { font-size: 14px; font-weight: 500; }
-.thread-workspace__rename { font-size: inherit; font-weight: inherit; }
-:is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
-.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
-.thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
-.thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.thread-nav__row:hover .thread-nav__time, .thread-nav__row:focus-within .thread-nav__time, .thread-nav__row[data-current] .thread-nav__time { visibility: hidden; }
-.thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
-.thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.thread-nav__status[data-state='working'] { color: var(--tt-activity); }
-.thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected] { color: var(--threads-warning-text); }
-.thread-nav__status[data-state='working'] i, .thread-nav__status[data-state='needs'] i, .thread-nav__status[data-unseen] i { display: block; }
-/* An answer is yours to write, so its dot is an open ring; a permission holds the agent still, so its dot stays filled. */
-.thread-nav__status[data-waiting='question'] i { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
-/* Finished while you were elsewhere: a quiet dot in the working colour, since the row's own text is muted. */
-.thread-nav__status[data-unseen] { color: var(--tt-text-2); }
-.thread-nav__status[data-unseen] i { background: var(--tt-activity); }
-@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__status[data-state='working']:not([data-disconnected]) i { animation: thread-working 1.6s ease-in-out infinite; } }
-@keyframes thread-working { 50% { opacity: .35; } }
-
-.provider-mark { display: block; flex: none; fill: currentColor; }
-.provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; }
 
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
 .threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
-.thread-workspace__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; min-height: 72px; padding: 12px 24px; border-bottom: 1px solid var(--tt-hairline); }
-.thread-workspace__title { min-width: 0; }
-.thread-workspace__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 13px; }
+/* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
+   The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
+.thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
+.thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
+.thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
+.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.35px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The name keeps the row; the project crumb is what gives way as the pane narrows. */
+.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 12px; }
 .thread-workspace__tag[data-tone='warning'] { border-color: color-mix(in srgb, var(--threads-warning-text) 45%, transparent); color: var(--threads-warning-text); }
-.thread-workspace__head h2 { margin: 3px 0 0; font-size: 18px; font-weight: 500; letter-spacing: -.35px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-workspace__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.thread-workspace__actions .tt-button { min-height: 34px; padding: 0 12px; font-size: 14px; }
+/* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
+.thread-workspace__head h2:has(input) { flex: 1 1 220px; }
+.thread-workspace__head h2 > input { width: 100%; }
+.thread-workspace__actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .thread-workspace__error { margin: 12px 24px 0; }
+
+/* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-action:disabled { opacity: .5; cursor: default; }
+
+/* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
+.pane-menu { position: relative; display: flex; }
+.pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
+.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; text-align: left; white-space: nowrap; cursor: pointer; }
+.pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
+.pane-menu__item:hover:not(:disabled), .pane-menu__item:focus-visible { background: var(--tt-hover); outline: none; }
+.pane-menu__item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.pane-menu__item:disabled { color: var(--tt-text-muted); cursor: default; }
+.pane-menu__item:disabled > svg { opacity: .55; }
 
 .thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
@@ -187,7 +118,7 @@
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
-.thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: start; margin: 10px 2px 0 -8px; }
+.thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
@@ -197,23 +128,34 @@
 .thread-prompt textarea:disabled { cursor: not-allowed; }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
 .thread-prompt__notice .tt-button { min-height: 32px; font-size: 14px; }
-.thread-prompt__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 10px; }
-.thread-prompt__meta { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
-.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; color: var(--tt-text-2); font-size: 14px; }
+/* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
+   need words of its own wraps below the pill rather than squeezing either end of the row. */
+.thread-prompt__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.thread-prompt__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px; color: var(--tt-text-muted); font-size: 13.5px; }
 .thread-prompt__model small { color: var(--tt-text-muted); font-size: 12px; }
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
-.thread-prompt__actions > .tt-button--icon { flex: none; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
-.thread-prompt__actions > .thread-prompt__stop[data-beside] { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-2); }
+.thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
+/* The send key names the action and shows which key does it, so Enter and the pointer read as the same thing. */
+.thread-prompt__actions > .thread-prompt__send { display: inline-flex; align-items: center; gap: 8px; flex: none; height: 30px; min-height: 30px; padding: 0 6px 0 12px; border: 0; border-radius: 8px; background: var(--tt-activity); color: var(--threads-on-accent); font-size: 13.5px; font-weight: 500; }
+.thread-prompt__actions > .thread-prompt__send:disabled { opacity: .5; }
+.thread-prompt__send kbd { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--threads-on-accent) 30%, transparent); border-bottom-width: 2px; border-radius: 4px; background: color-mix(in srgb, var(--threads-on-accent) 18%, transparent); color: inherit; font: inherit; font-size: 11px; line-height: 1.3; }
+.thread-prompt__actions > .tt-button--icon { flex: none; width: 30px; min-height: 30px; padding: 0; border-radius: 8px; border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-2); }
+/* With nothing to send, Stop holds the send key's place, and its look with it. */
+.thread-prompt__actions > .thread-prompt__stop:not([data-beside]) { border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
-/* Model and option controls inside the Threads composer read at control size. */
-.threads-view .thread-options-bar { flex: 0 1 auto; }
-.threads-view .thread-options-bar .model-picker__trigger, .threads-view .thread-options-bar .thread-options select { min-height: 32px; font-size: 14px; }
-.threads-view .thread-options-bar > small { margin-top: 4px; font-size: 12px; }
+/* The thread's model, reasoning and permissions read as one pill, and open as the three controls themselves. */
+.threads-view .thread-options-bar { position: relative; flex: 0 1 auto; min-width: 0; }
+.thread-options__pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.thread-options__pill > svg { flex: none; }
+.thread-options__pill:hover, .thread-options__pill[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.thread-options__popover { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; display: grid; gap: 10px; width: max-content; min-width: 240px; max-width: min(320px, 90vw); padding: 12px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.thread-options__popover > small { color: var(--tt-text-muted); font-size: 12px; }
 .threads-view .screenshot-previews figcaption, .threads-view .screenshot-input__tools small { font-size: 12px; }
-.threads-view .screenshot-input__tools .tt-button { width: 32px; min-height: 32px; }
+.threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 
 /* The managed composer has the manual prompt's shape: text that grows with what is written, attach beside the controls. */
 .thread-workspace__compose .agent-composer { display: grid; grid-template-columns: auto minmax(0, 1fr); margin: 0; padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
@@ -245,31 +187,24 @@
 .thread-history-skeleton i { display: block; height: 56px; width: 72%; border-radius: 10px; background: linear-gradient(110deg, var(--tt-skeleton-a, #111713), var(--tt-skeleton-b, #19201c), var(--tt-skeleton-a, #111713)); }
 .thread-history-skeleton i:nth-child(2) { margin-left: auto; width: 55%; }
 
-/* Narrow windows (the 760px minimum): a slimmer sidebar and a stacked header, same type sizes. */
+/* Narrow windows (the 760px minimum): a slimmer sidebar, the same 44px header, same type sizes. */
 @media (max-width: 980px) {
   .threads-view { grid-template-columns: 244px minmax(0, 1fr); }
-  .thread-workspace__head { flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 10px 18px; }
-  .thread-workspace__actions { justify-content: flex-start; margin-left: -8px; }
+  .thread-workspace__head { padding-left: 14px; }
+  /* The project crumb is the first thing a narrow row gives up; the thread's name is what identifies the pane. */
+  .thread-workspace__crumb { display: none; }
   .thread-workspace__transcript { padding: 22px 18px; }
   .thread-workspace__compose { padding: 8px 16px 16px; }
   .thread-message[data-role='user'] { margin-left: 24px; }
 }
 @media (max-width: 820px) {
   .threads-view { grid-template-columns: 224px minmax(0, 1fr); }
-  .thread-nav { padding-inline: 6px; }
-  .thread-folder__rows { padding-left: 8px; }
-  .thread-nav__item { grid-template-columns: 18px minmax(0, 1fr); }
-  .thread-nav__time { display: none; }
 }
 /* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
 @media (max-height: 760px) {
   .thread-workspace__transcript { padding-block: 18px; }
   .thread-workspace__compose { padding-block: 6px 12px; }
-  /* The pane header gives its height to the composer: the title and its project crumb share one row, the actions sit close. */
-  .threads-view .thread-pane > header.thread-workspace__head { gap: 2px; padding-block: 6px; }
-  .threads-view .thread-pane > header .thread-workspace__title { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; gap: 12px; }
-  .threads-view .thread-pane > header .thread-workspace__title h2 { flex: 0 1 auto; min-width: 4em; margin: 0; }
-  .threads-view .thread-pane > header .thread-workspace__crumb { flex: 0 100 auto; }
+  /* The header is already one row at its smallest; the transcript and composer share what is left. */
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
   .thread-prompt textarea { min-height: 50px; max-height: 150px; }
@@ -292,5 +227,3 @@
   .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
   .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 }
-@media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__status[data-state='working'] i { animation: none; } }
-:root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto } from '../../e2e/support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from '../../e2e/support/sottoLaunch'
 import { appTheme, evidence, focusedLabel, paneMetrics, shot, size, unreachable, windowShot, zoom, type PaneMetrics } from './support'
 
 // Real production Electron with the E2E fixture provider (no native calls): the critic's queue journey, now asserting
@@ -38,7 +38,7 @@ test('queue composer: layout, copy and focus at typical, minimum, stress and zoo
   try {
     await start(page)
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).first().click()
     const pane = page.locator(PANE)
     const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })

@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNod
 import { MessageSquare } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
+import { WindowControls } from '../components/WindowControls'
+import { useOptionalApp } from '../state/AppContext'
+import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
@@ -13,7 +16,7 @@ import { ThreadPane } from './ThreadPane'
 import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
-import { useSidebarMode } from './SidebarFrame'
+import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
@@ -23,6 +26,18 @@ type Command = AgentConnection['command']
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
   window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0)
+}
+
+/**
+ * The window's own controls, seated once at the page's top-right corner rather than in any pane's header:
+ * the Threads page has no app strip above it. macOS paints its traffic lights itself and gets none.
+ */
+function PageWindowControls(): ReactNode {
+  const app = useOptionalApp()
+  if (app === null || app.platform === 'darwin') return null
+  return <div className="threads-view__winctl">
+    <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
+  </div>
 }
 
 /** What a shared tools surface beside the panes receives. It follows the focused thread unless it pins its own. */
@@ -46,6 +61,8 @@ export type ThreadPaneSlot = (props: ThreadPaneSlotProps) => ReactNode
 export interface ThreadsViewProps {
   readonly onOpenAgents: () => void
   readonly now?: number | undefined
+  /** The update control, seated at the end of the sidebar's foot where the app footer used to carry it. */
+  readonly updateControl?: ReactNode
   /** One shared tools panel, rendered beside the thread panes. */
   readonly tools?: ThreadToolsSlot | undefined
   /** Once, at the end of the focused pane's header actions (the tools panel's toggle). */
@@ -66,8 +83,11 @@ export interface ThreadsViewProps {
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
+  const app = useOptionalApp()
+  // Voice is hidden for the beta, and the Agents room is a voice surface: without it the page offers only a new thread.
+  const voice = useVoiceCoordinatorEnabled()
   const now = useClock(fixedNow)
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
@@ -146,12 +166,21 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
     const settle = (): void => setPending(current => current?.threadId === threadId && current.settled === undefined ? { threadId, settled: stateRef.current } : current)
     void command({ type: 'select-thread', threadId }).then(settle, settle)
   }, [command, focusedId])
-  if (state === null) return <div className="threads-view"><p role="status">{agents.error ?? 'Preparing agent controls...'}</p></div>
+  // macOS paints its own window controls, so the page keeps no room for ours at its right edge.
+  const mac = app?.platform === 'darwin'
+  const page = `management-view threads-view${mac ? ' threads-view--mac' : ''}`
+  if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
+    <p role="status">{agents.error ?? 'Preparing agent controls...'}</p>
+    {/* An error can stand for good, and this page has no sidebar to leave by. */}
+    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
+    <PageWindowControls />
+  </div>
   // Terminal mode keeps the same frame; the threads and their panes wait, unchanged, for the switch back.
   if (mode === 'terminals') {
-    return <div className="management-view threads-view" data-mode="terminals">
+    return <SidebarChromeProvider updateControl={updateControl}><div className={page} data-mode="terminals">
       <TerminalWorkspace state={state} command={command} mode={mode} onMode={setMode} now={fixedNow} {...terminals} paneAreaWidth={paneAreaWidth} paneAreaHeight={paneAreaHeight} />
-    </div>
+      <PageWindowControls />
+    </div></SidebarChromeProvider>
   }
 
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
@@ -174,11 +203,11 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
     const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenThread={openThread}
-      onFocusPane={() => focusPane(threadId)}
+      onFocusPane={() => focusPane(threadId)} onOpenBeside={() => openBeside(threadId)}
       crumb={paneCrumb?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
   }
 
-  return <div className="management-view threads-view" onKeyDown={grid.onKeyDown}>
+  return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
     {newThread && <NewThreadDialog state={state} command={command} initialProjectId={newThread.projectId} initialChoices={newThread.choices} initialError={newThread.error}
       onClose={() => setNewThread(null)}
       onCreating={start => {
@@ -199,9 +228,10 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, tools, focusedPaneAct
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
-        {!paneIds.length ? <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : 'Connect providers'}</Button> : <Button onClick={() => setNewThread({ projectId: state.activeProjectId ?? undefined })}>New thread</Button>}<Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button></div> : null}
+        {!paneIds.length ? <div className="thread-workspace__empty"><MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" /><h2>{savedDraft ? 'Your draft is saved.' : rows.length ? 'Choose a thread.' : 'No threads yet.'}</h2><p>{savedDraft ? 'Reconnect to continue your saved draft.' : rows.length ? 'Select a thread to read its messages and continue working.' : 'Start a thread to begin working with your agent.'}</p>{savedDraft ? <div className="thread-prompt thread-prompt--saved"><label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Prompt</label><textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly /></div> : null}{!connected ? <Button disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting...' : 'Connect providers'}</Button> : <Button onClick={() => setNewThread({ projectId: state.activeProjectId ?? undefined })}>New thread</Button>}{voice ? <Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button> : null}</div> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
       </div>
     </section>
-  </div>
+    <PageWindowControls />
+  </div></SidebarChromeProvider>
 }

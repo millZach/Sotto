@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts } from './support/sottoLaunch'
 
 async function setup(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -12,12 +12,12 @@ async function setup(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await page.getByRole('tablist', { name: 'Mode', exact: true }).getByRole('tab', { name: 'Agents', exact: true }).click()
+  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Not now', exact: true }).click()
 }
 
 test('selects each native subscription with its available model and reasoning effort without an API key', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
@@ -47,7 +47,7 @@ test('selects each native subscription with its available model and reasoning ef
     await expect(page.getByLabel('Reasoning model')).toHaveValue('')
     await expect(page.getByLabel('Reasoning effort')).toHaveValue('')
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.configuration.reasoning))).toBe('codex')
-    await page.getByRole('tablist', { name: 'Mode', exact: true }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Mode' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByLabel('Reasoning account', { exact: true })).toHaveCount(0)
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
@@ -58,7 +58,7 @@ test('selects each native subscription with its available model and reasoning ef
 })
 
 test('chooses and previews a natural voice without changing subscription reasoning', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
@@ -79,7 +79,7 @@ test('chooses and previews a natural voice without changing subscription reasoni
 })
 
 test('configures Grok API speech, recovers from a rejected key, and previews a custom voice with agents off', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
@@ -122,7 +122,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
 })
 
 test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRouter key', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
@@ -158,32 +158,34 @@ test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRout
 })
 
 test('collects an explicit prompt, queues ready threads, and yields only the directly controlled thread', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
     await page.getByRole('button', { name: 'Connect providers' }).click()
     await expect(page.getByRole('status')).toHaveText('Codex connected')
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(page, 'Manage')
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(page, 'Manage')
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
     await page.getByLabel('Prompt', { exact: true }).fill('Build the requested feature and run its checks.')
     await expect(page.getByRole('button', { name: 'Send it', exact: true })).toBeEnabled()
-    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.host.threads.find(t => t.title === 'Workshop')?.messages.length))).toBe(0)
+    await expect.poll(() => userMessageTexts(page, 'workshop').then(texts => texts.length)).toBe(0)
     await page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.host.threads.find(t => t.title === 'Workshop')?.messages.length))).toBe(1)
+    await expect.poll(() => userMessageTexts(page, 'workshop').then(texts => texts.length)).toBe(1)
     await page.evaluate(() => (globalThis as unknown as { sottoE2E: SottoE2EBridge }).sottoE2E?.agentEvent?.({ type: 'ready', threadId: 'workshop', text: 'Feature is ready.' }))
     await page.evaluate(() => (globalThis as unknown as { sottoE2E: SottoE2EBridge }).sottoE2E?.agentEvent?.({ type: 'ready', threadId: 'docs', text: 'Docs are ready.' }))
     await expect(page.getByText('Feature is ready.', { exact: true }).first()).toBeVisible()
     await page.getByLabel('Prompt', { exact: true }).fill('Inspect the result before proceeding.')
     await page.evaluate(() => (globalThis as unknown as { sottoE2E: SottoE2EBridge }).sottoE2E?.agentEvent?.({ type: 'manual', threadId: 'workshop', text: 'I will handle the review.' }))
-    await expect(page.getByRole('button', { name: 'Resume managing', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Resume managing', exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.assignments.find(assignment => assignment.threadId === 'workshop')?.mode))).toBe('manual')
     await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-manual-e2e.png' })
     const widget = launched.app.windows().find((window) => window.url().endsWith('/widget.html'))
@@ -194,7 +196,7 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
     await widget!.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-e2e.png' })
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Inspect the result before proceeding.')
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.assignments.find(a => a.threadId === 'docs')?.mode))).toBe('managed')
-    await page.getByRole('button', { name: 'Resume managing', exact: true }).first().click()
+    await paneMenuAction(page, 'Resume managing')
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.assignments.find(a => a.threadId === 'workshop')?.mode))).toBe('managed')
     await page.getByRole('main').evaluate((element) => { element.scrollTop = 0 })
     await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-e2e.png' })
@@ -204,7 +206,7 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
 })
 
 test('keeps agent settings and widget prompts usable at the minimum window size', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await setup(page)
@@ -218,11 +220,11 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
       main.setBounds({ ...main.getBounds(), width: 820, height: 560 })
     })
     await page.getByRole('button', { name: 'Connect providers' }).click()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Manage', exact: true }).click()
-    await page.getByRole('tablist', { name: 'Mode', exact: true }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await paneMenuAction(page, 'Manage')
+    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await page.getByLabel('Default projects directory').fill('D:\\Builder projects')
@@ -232,7 +234,7 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
     await page.getByLabel('Default projects directory').scrollIntoViewIfNeeded()
     await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-settings-dark-minimum.png' })
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByLabel('Prompt', { exact: true }).fill('Review this small-screen prompt.')
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
     await widget.getByTestId('widget-sliver').hover()

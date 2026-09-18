@@ -81,10 +81,11 @@ describe('a working row counts up', () => {
     act(() => { vi.advanceTimersByTime(2_000) })
     expect(clock('Footer links')).toHaveTextContent('7s')
     expect(vi.mocked(useAgents).mock.calls.length).toBe(renders)
-    // An idle row keeps the clock of its last activity, whatever the second is.
-    const idle = clock('Grok voice previews').textContent
-    act(() => { vi.advanceTimersByTime(3_000) })
-    expect(clock('Grok voice previews').textContent).toBe(idle)
+    // A row that is not working says nothing at its right end: the clock belongs to the run in progress. Its
+    // last-activity time is still there for assistive technology, inside the hidden status sentence.
+    const idle = screen.getByRole('button', { name: 'Grok voice previews' })
+    expect(idle.querySelector(':scope > .thread-nav__time')).toBeNull()
+    expect(idle.querySelector('.thread-nav__status .thread-nav__time')).toHaveAttribute('datetime')
   })
 
   it('reads the run from the provider’s running turn when it reported one, otherwise from your prompt', () => {

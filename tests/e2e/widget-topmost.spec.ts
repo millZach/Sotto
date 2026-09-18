@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 test.skip(process.platform !== 'win32', 'WS_EX_TOPMOST probe is Windows-only')
 test.describe.configure({ timeout: 120_000 })
@@ -126,6 +126,7 @@ test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () =>
   try {
     await reachFinalOnboardingStep(launched.page)
     await launched.page.getByRole('button', { name: /finish setup/i }).click()
+    await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByRole('button', { name: 'Start dictation', exact: true })).toBeVisible()
 
     const idleWidget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))

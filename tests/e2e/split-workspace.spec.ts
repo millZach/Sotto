@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 async function size(launched: LaunchedSotto, width: number, height = 1000): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
@@ -42,7 +42,7 @@ test('two threads split the workspace and stay independent through resize, narro
   try {
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     await size(launched, 1600)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     const panes = page.getByRole('group', { name: 'Thread panes' })
     // Panes are regions side by side and tab panels in narrow focus, so select them by thread.
@@ -69,8 +69,9 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(divider).toHaveAttribute('aria-valuenow', '50')
     const [left, right] = [(await previews.boundingBox())!, (await footer.boundingBox())!]
     expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(1)
-    await expect(footer.getByText('sotto-site', { exact: true })).toBeVisible()
-    await expect(previews.getByText('workshop', { exact: true })).toBeVisible()
+    // A pane this narrow gives up its project crumb; the project still names the pane for assistive technology.
+    await expect(footer.locator('.thread-workspace__crumb')).toContainText('sotto-site')
+    await expect(previews.locator('.thread-workspace__crumb')).toContainText('workshop')
 
     // Each pane writes to its own thread; a send in one leaves the other's draft where it was.
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'Footer links are ready for review.' }))
@@ -86,8 +87,8 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
     await expect(footerPrompt).toHaveValue('')
     const afterSend = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(afterSend.host.threads.find(thread => thread.id === 'footer-links')!.messages.filter(message => message.text === 'Check the footer link targets.')).toHaveLength(1)
-    expect(afterSend.host.threads.find(thread => thread.id === 'grok-previews')!.messages.some(message => message.text.includes('footer link targets'))).toBe(false)
+    expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
+    expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
     expect(afterSend.assignments).toHaveLength(0)
     await expect.poll(() => threadStatus(page, 'footer-links')).toBe('running')
     await footerPrompt.fill('Next: compare the mobile footer.')

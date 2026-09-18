@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
 test('failed connection leaves one actionable error and allows a successful retry', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await page.getByRole('button', { name: 'Continue' }).click()

@@ -151,6 +151,10 @@ describe('assignment facts', () => {
     f.host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
     await expect.poll(() => f.control.get().host.threads[0]?.status).toBe('running')
     expect(f.control.get().assignments[0]?.followups).toBe(1)
+    // A thread whose lane is still deciding ignores a new observation, so the limit must be the next
+    // thing this assignment meets: the first follow-up's own save would otherwise fail below and claim
+    // the stop as an error. Submitting the follow-up is not the end of that lane's work.
+    await expect.poll(() => (f.control as unknown as { deciding: Set<string> }).deciding.size).toBe(0)
     await f.control.privacyChanged()
 
     const path = join(f.root, 'agents.json')

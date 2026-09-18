@@ -18,9 +18,9 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
+  SOTTO_DARK_THEME_COLORS,
+  SOTTO_LIGHT_THEME_COLORS,
   T3_CHAT_THEME,
-  T3_CODE_DARK_THEME_COLORS,
-  T3_CODE_LIGHT_THEME_COLORS,
   THEME_COLOR_ROLES,
   type ThemeAppearance,
   type ThemeCollection,
@@ -35,10 +35,10 @@ export type { ThemeAppearance, ThemeCollection, ThemeColorRole, ThemeColors, The
 
 export const THEME_FILE_VERSION = 1 as const
 /**
- * Both halves start on Tide (id `ocean`, T3's Ocean), the theme selected in the T3 Code reference the
- * user chose from; it is also where a half lands when its theme is removed.
+ * Both halves start on Sotto (id `t3-code`), the look the Threads redesign was
+ * approved in; it is also where a half lands when its theme is removed.
  */
-export const DEFAULT_THEME_ID = 'ocean'
+export const DEFAULT_THEME_ID = 't3-code'
 /** How many saved themes settings.json keeps; an Open VSX pack may add up to 40 at once. */
 export const MAX_CUSTOM_THEMES = 64
 export const APPEARANCE_CONTRAST = { min: 50, max: 200, step: 5, default: 100 } as const
@@ -54,13 +54,17 @@ function decodeThemeColors(colors: Readonly<Record<ThemeColorRole, string>>): Th
   })) as Record<ThemeColorRole, string>
 }
 
-/** The standard T3 Code look, as T3 Code wears it with no theme installed. */
+/**
+ * Sotto's own look, and the theme a new install wears. The id stays `t3-code`,
+ * the id the card shipped under, so a selection saved before the palette was
+ * repainted still resolves to this card.
+ */
 export const T3_CODE_THEME: ThemeDefinition = {
   id: 't3-code',
   label: 'Sotto',
   appearance: 'light',
-  colors: decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS),
-  variants: { dark: decodeThemeColors(T3_CODE_DARK_THEME_COLORS) },
+  colors: decodeThemeColors(SOTTO_LIGHT_THEME_COLORS),
+  variants: { dark: decodeThemeColors(SOTTO_DARK_THEME_COLORS) },
 }
 
 /**
@@ -232,8 +236,8 @@ export interface ThemeSelection {
 
 export function resolveThemeFor(selection: ThemeSelection, appearance: ThemeAppearance): { theme: ThemeDefinition; colors: ThemeColors } {
   const id = resolveThemeHalfId(appearance === 'dark' ? selection.darkTheme : selection.lightTheme, appearance, selection.customThemes)
-  const theme = findTheme(id, selection.customThemes) ?? OCEAN_THEME
-  return { theme, colors: getThemeColorsForMode(theme, appearance) ?? getThemeColorsForMode(OCEAN_THEME, appearance)! }
+  const theme = findTheme(id, selection.customThemes) ?? T3_CODE_THEME
+  return { theme, colors: getThemeColorsForMode(theme, appearance) ?? getThemeColorsForMode(T3_CODE_THEME, appearance)! }
 }
 
 // ---------------------------------------------------------------------------

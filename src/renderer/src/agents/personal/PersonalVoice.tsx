@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Mic, MicOff, VolumeX } from 'lucide-react'
 import type { PersonalChat, PersonalChatBridge, PersonalChatState } from '../../../../shared/personalChats'
 import { useOptionalApp } from '../../state/AppContext'
+import { useVoiceCoordinatorEnabled } from '../../state/voiceCoordinator'
 import { registerDictationDestination } from '../../features/dictation/dictationDestination'
 import { Button } from '../../components/Button'
 import { useOptionalAgents } from '../AgentContext'
@@ -17,6 +18,10 @@ export function PersonalVoice({ bridge, chat, state, store }: {
 }): ReactNode {
   const app = useOptionalApp()
   const agents = useOptionalAgents()
+  // Voice is hidden for the beta, so this chat keeps only its dictation
+  // controls; no speech session is built and the microphone is never opened
+  // except by a dictation the user starts.
+  const voiceCoordinator = useVoiceCoordinatorEnabled()
   const current = useRef({ chat, state, app, agents })
   current.current = { chat, state, app, agents }
   const session = useRef<AgentVoiceSession | null>(null)
@@ -44,7 +49,7 @@ export function PersonalVoice({ bridge, chat, state, store }: {
 
   useEffect(() => {
     const agentBridge = window.sotto?.agents
-    if (!agentBridge || !app) return
+    if (!agentBridge || !app || !voiceCoordinator) return
     const speech = createConfiguredSpeech(agentBridge, () => current.current.agents?.state?.configuration)
     const voiceSession = new AgentVoiceSession({
       transcriptionBridge: window.sotto!,
@@ -102,7 +107,7 @@ export function PersonalVoice({ bridge, chat, state, store }: {
       session.current = null
     }
   // App/agent state is read at activation; rerenders must never recreate a live capture.
-  }, [bridge, chat.id, store, Boolean(app)])
+  }, [bridge, chat.id, store, Boolean(app), voiceCoordinator])
 
   useEffect(() => {
     if (dictating || processing) { ++generation.current; awaiting.current = null; setWaiting(false); void session.current?.stop() }
@@ -133,20 +138,22 @@ export function PersonalVoice({ bridge, chat, state, store }: {
     <div className="personal-voice__controls">
       <Button variant="ghost" disabled={processing || active} onClick={() => void (dictating ? app.actions.stop() : app.actions.start())}>
         <Mic size={16} aria-hidden="true" />{dictating ? 'Finish dictation' : 'Dictate'}</Button>
-      <Button variant="ghost" disabled={dictating || processing || !state.connected} onClick={active ? end : start}>{active ? 'End voice' : 'Talk'}</Button>
-      {active ? <>
-        <Button variant="ghost" iconOnly aria-label={voice.status === 'muted' ? 'Unmute chat microphone' : 'Mute chat microphone'} onClick={() => {
-          ++generation.current; awaiting.current = null; setWaiting(false)
-          if (voice.status === 'muted') void session.current?.startConversation()
-          else void session.current?.setMuted(true)
-        }}><MicOff size={16} /></Button>
-        {voice.status === 'speaking' ? <Button variant="ghost" iconOnly aria-label="Stop spoken reply" onClick={() => session.current?.stopSpeaking()}><VolumeX size={16} /></Button> : null}
+      {voiceCoordinator ? <>
+        <Button variant="ghost" disabled={dictating || processing || !state.connected} onClick={active ? end : start}>{active ? 'End voice' : 'Talk'}</Button>
+        {active ? <>
+          <Button variant="ghost" iconOnly aria-label={voice.status === 'muted' ? 'Unmute chat microphone' : 'Mute chat microphone'} onClick={() => {
+            ++generation.current; awaiting.current = null; setWaiting(false)
+            if (voice.status === 'muted') void session.current?.startConversation()
+            else void session.current?.setMuted(true)
+          }}><MicOff size={16} /></Button>
+          {voice.status === 'speaking' ? <Button variant="ghost" iconOnly aria-label="Stop spoken reply" onClick={() => session.current?.stopSpeaking()}><VolumeX size={16} /></Button> : null}
+        </> : null}
+        <select className="tt-focusable personal-voice__provider" aria-label="Chat reply voice" value={agents.state?.configuration.speechProvider ?? 'grok'} disabled={active}
+          onChange={event => void agents.command({ type: 'configure', patch: { speechProvider: event.target.value as 'grok' | 'kokoro' } })}>
+          <option value="grok">Grok voice</option><option value="kokoro">Kokoro voice</option>
+          {agents.state?.configuration.speechProvider !== 'grok' && agents.state?.configuration.speechProvider !== 'kokoro' ? <option value={agents.state?.configuration.speechProvider}>Current voice</option> : null}
+        </select>
       </> : null}
-      <select className="tt-focusable personal-voice__provider" aria-label="Chat reply voice" value={agents.state?.configuration.speechProvider ?? 'grok'} disabled={active}
-        onChange={event => void agents.command({ type: 'configure', patch: { speechProvider: event.target.value as 'grok' | 'kokoro' } })}>
-        <option value="grok">Grok voice</option><option value="kokoro">Kokoro voice</option>
-        {agents.state?.configuration.speechProvider !== 'grok' && agents.state?.configuration.speechProvider !== 'kokoro' ? <option value={agents.state?.configuration.speechProvider}>Current voice</option> : null}
-      </select>
     </div>
     {label || notice || voice.error ? <span className="personal-voice__status" role={notice || voice.error ? 'alert' : 'status'}>{voice.error ?? notice ?? label}</span> : null}
   </div>

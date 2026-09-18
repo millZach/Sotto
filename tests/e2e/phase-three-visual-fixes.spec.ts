@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Two visual review findings in the complete app: the native browser page beside a minimized theme editor, and a personal
 // message Codex did not take. AppShell, renderer, preload, IPC, the theme editor and the production browser and personal
@@ -108,7 +108,7 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     const windowsBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
 
     await resize(launched, 820, 560)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools' })
@@ -129,11 +129,16 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     const editor = page.getByRole('dialog', { name: 'Create theme' })
     const viewportLocator = panel.locator('.browser-viewport')
     const openMinimizedEditor = async (): Promise<void> => {
-      await page.getByRole('link', { name: 'Settings', exact: true }).click()
+      // At the minimum width an open Tools panel has the sidebar's place, and with it the page links: Tools steps
+      // aside for the trip to Settings and comes back with the editor.
+      const toolsHidSidebar = !(await page.locator('.thread-nav').isVisible())
+      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await openPage(page, 'Settings')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       await page.getByRole('button', { name: 'Create theme', exact: true }).click()
       await expect(editor).toBeVisible()
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
+      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
       await expect(viewportLocator).toBeVisible()
       // Expanded, the editor sends the page aside as any dialog does.
       await expect.poll(async () => (await hostViews(app)).length).toBe(0)

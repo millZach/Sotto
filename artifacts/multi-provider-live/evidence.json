@@ -1,9 +1,9 @@
 {
-  "root": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-Jjp1xU",
-  "project": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-Jjp1xU\\project",
+  "root": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-AMdDSo",
+  "project": "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-native-AMdDSo\\project",
   "syntheticOnly": true,
   "restoreOnly": false,
-  "startedAt": "2026-09-12T19:56:02.821Z",
+  "startedAt": "2026-09-14T23:05:22.487Z",
   "submittedProviders": [
     "codex",
     "claude",
@@ -11,25 +11,25 @@
   ],
   "created": [
     {
-      "id": "28746658-a723-4af9-82d1-954d73dfacee",
+      "id": "0d71e12a-1dc9-413f-bf8c-e7e0b6af1c2e",
       "title": "Independent Claude Code acceptance",
       "providerId": "claude",
-      "projectId": "native:claude:project:61f910efba6b85e72bb03e5f0a160aab235936cda12d6c9279d73f7cc8b131c2",
-      "modelId": "native:claude:model:default"
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
+      "modelId": "native:claude:model:haiku"
     },
     {
-      "id": "3a9e72ed-6039-4c61-b74e-31ec268901a6",
+      "id": "cf91d815-8e5d-42f0-a392-b8cfc4194acb",
       "title": "Independent Grok Build acceptance",
       "providerId": "grok",
-      "projectId": "native:grok:project:282a13b9d35fc84abdda31d053410f11e992058c9e884144013a3f824c1b101b",
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
       "modelId": "native:grok:model:grok-4.6"
     },
     {
-      "id": "830601cb-79bb-45ea-b4fc-0577bf228f6f",
+      "id": "d8a76f4a-421a-481a-b4de-7027166f45f8",
       "title": "Independent Codex acceptance",
       "providerId": "codex",
-      "projectId": "native:codex:project:878bc8bd-bdb7-4428-8820-321c1d4be51c",
-      "modelId": "native:codex:model:gpt-6-astra"
+      "projectId": "a282af42-7d5f-4592-865d-9ec76b6efaeb",
+      "modelId": "native:codex:model:gpt-5.6-luna"
     }
   ],
   "connected": [
@@ -46,13 +46,15 @@
       "connection": "connected"
     }
   ],
+  "coordinatorOffPreservesProviders": true,
   "disconnectIsolation": true,
   "restored": {
     "sameBindings": true,
     "sameNativeSessions": true,
     "sameModels": true,
     "noAdditionalTurns": true,
-    "noProjectFiles": true
+    "noProjectFiles": true,
+    "coordinatorStillOff": true
   },
   "passed": true
 }

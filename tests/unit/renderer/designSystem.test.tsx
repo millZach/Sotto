@@ -183,6 +183,11 @@ describe('Sotto design-system primitives', () => {
             expect(contrast(color(ink), color(surface)), `${mode}/${themeId} ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
           }
         }
+        // The finished thread's ring is the success colour, and it is drawn on
+        // the sidebar as often as on the page.
+        for (const surface of ['canvas', 'sidebar'] as const) {
+          expect(contrast(color('success'), color(surface)), `${mode}/${themeId} success on ${surface}`).toBeGreaterThanOrEqual(3)
+        }
       }
     }
   })

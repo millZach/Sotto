@@ -156,7 +156,7 @@ describe('speech interruption from the renderer', () => {
     vi.stubGlobal('sotto', { agents: { get: async () => state, onState: (listener: typeof receive) => { receive = listener; return () => undefined }, command: async () => state } })
     let controls!: ReturnType<typeof useAgents>
     function Controls() { controls = useAgents(); return null }
-    render(<AgentProvider settings={{ ...DEFAULT_SETTINGS, onboardingComplete: true }} dictation={{ status: 'idle' }}><Controls /></AgentProvider>)
+    render(<AgentProvider settings={{ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true }} dictation={{ status: 'idle' }}><Controls /></AgentProvider>)
     await waitFor(() => expect(controls.state).not.toBeNull())
     async function announce(id: number, text: string) { await act(async () => { state = { ...state, speech: { id, text } }; receive(state) }) }
     await announce(1, 'First update')
@@ -172,5 +172,27 @@ describe('speech interruption from the renderer', () => {
     const beforeMute = stop.mock.calls.length
     await act(async () => { state = { ...state, configuration: { ...state.configuration, speak: false } }; receive(state) })
     expect(stop.mock.calls.length).toBeGreaterThan(beforeMute)
+  })
+
+  it('neither listens nor speaks while the voice coordinator is hidden for the beta', async () => {
+    let state = stateFixture()
+    let receive!: (state: AgentState) => void
+    const speak = vi.fn(async () => undefined)
+    const start = vi.fn(async () => undefined)
+    external.dependencies = {
+      createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: false, endSeconds: 0 }), dispose() {} }),
+      createCapture: () => ({ start, stop: async () => undefined, setSuppressed() {} }),
+      createTranscriber: () => ({ load: async () => undefined, transcribe: async () => ({ text: '', language: 'en' }), cancel() {}, dispose() {} }),
+      speech: { speak, stop: vi.fn() }, createId: () => 'test', setTimer: (callback, delay) => setTimeout(callback, delay), clearTimer: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    }
+    vi.stubGlobal('sottoE2E', {})
+    vi.stubGlobal('sotto', { agents: { get: async () => state, onState: (listener: typeof receive) => { receive = listener; return () => undefined }, command: async () => state } })
+    let controls!: ReturnType<typeof useAgents>
+    function Controls() { controls = useAgents(); return null }
+    render(<AgentProvider settings={{ ...DEFAULT_SETTINGS, onboardingComplete: true }} dictation={{ status: 'idle' }}><Controls /></AgentProvider>)
+    await waitFor(() => expect(controls.state).not.toBeNull())
+    await act(async () => { state = { ...state, speech: { id: 1, text: 'An announcement nobody asked to hear' } }; receive(state) })
+    expect(speak).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
   })
 })

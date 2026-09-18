@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 // The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through usage, Write here and a
 // refused Manage. Holds and refusals are injected at main's IPC handler in-process; no product code is changed for it.
@@ -33,19 +33,23 @@ async function open(page: Page, title: string): Promise<void> {
   await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
 }
 
-/** The card with its prompt, image and submit action sits above the app footer, and the pane itself does not scroll. */
+/**
+ * The card with its prompt, image and submit action sits above the window's
+ * bottom edge, and the pane itself does not scroll. The Threads page owns the
+ * whole window now, so the bottom edge is the limit the composer has to respect.
+ */
 async function expectCardWhole(page: Page, threadId: string, submit: RegExp, withImage = true): Promise<void> {
   // The text can arrive before its image when a composer mounts; measure once both are shown.
   if (withImage) await expect(pane(page, threadId).locator('.thread-prompt .screenshot-previews img, .agent-composer .screenshot-previews img')).toBeVisible()
   await page.waitForTimeout(100)
   const facts = await pane(page, threadId).evaluate((element, source) => {
-    const footer = document.querySelector('.app-footer')!.getBoundingClientRect().top
+    const limit = window.innerHeight
     const card = element.querySelector('.thread-prompt, .agent-composer')!
     const image = card.querySelector('.screenshot-previews img')
     const action = [...card.querySelectorAll('button')].find(button => new RegExp(source, 'u').test(button.getAttribute('aria-label') ?? button.textContent ?? ''))
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
-      footer: Math.round(footer), card: bottom(card), image: bottom(image), action: bottom(action), usage: bottom(element.querySelector('.thread-usage')),
+      limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), usage: bottom(element.querySelector('.thread-usage')),
       promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
       controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
@@ -54,11 +58,11 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
   const context = JSON.stringify(facts)
   if (withImage) expect(facts.image, context).not.toBeNull()
   expect(facts.action, context).not.toBeNull()
-  expect(facts.card!, context).toBeLessThanOrEqual(facts.footer)
-  expect(facts.action!, context).toBeLessThanOrEqual(facts.footer)
+  expect(facts.card!, context).toBeLessThanOrEqual(facts.limit)
+  expect(facts.action!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.paneScroll, context).toBeLessThanOrEqual(1)
   expect(facts.transcript, context).toBeGreaterThanOrEqual(90)
-  expect(facts.usage!, context).toBeLessThanOrEqual(facts.footer)
+  expect(facts.usage!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.promptFont).toBe('16px')
   for (const control of facts.controls) { expect(Math.round(control.height)).toBeGreaterThanOrEqual(34); expect(control.font).toBe('14px') }
   const name = await page.evaluate(() => `${innerWidth}x${innerHeight}`)
@@ -72,14 +76,14 @@ async function attachDraft(thread: Locator, prompt: Locator): Promise<void> {
   await expect(thread.getByRole('img', { name: 'draft-image.png' })).toBeVisible()
 }
 
-test('one attached image keeps the prompt and its action above the footer at 820x560 and in a short split', async () => {
+test('one attached image keeps the prompt and its action above the window edge at 820x560 and in a short split', async () => {
   test.setTimeout(180_000)
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await start(launched)
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await open(page, 'Docs')
     const docs = pane(page, 'docs')
     const docsManual = docs.locator('form.thread-prompt textarea')
@@ -98,20 +102,20 @@ test('one attached image keeps the prompt and its action above the footer at 820
     const workshop = pane(page, 'workshop')
     await attachDraft(workshop, workshop.locator('form.thread-prompt textarea'))
     await expectCardWhole(page, 'workshop', /^Send prompt$/u)
-    await workshop.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(workshop, 'Manage')
     await expect(workshop.locator('#agent-prompt')).toHaveValue(DRAFT)
     await expectCardWhole(page, 'workshop', /Send it/u)
     // One saved draft is Sotto's at a time; clear this one so Docs' managed composer can hold its own.
     await workshop.getByRole('button', { name: 'Clear', exact: true }).click()
     await expect(workshop.locator('#agent-prompt')).toHaveValue('')
-    await workshop.getByRole('button', { name: 'Stop managing', exact: true }).click()
+    await paneMenuAction(workshop, 'Stop managing')
     await expect(workshop.locator('form.thread-prompt textarea')).toBeVisible()
 
     // With two queued rows: manual, then managed.
     await open(page, 'Docs')
     await attachDraft(docs, docsManual)
     await expectCardWhole(page, 'docs', /^Queue prompt$/u)
-    await docs.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(docs, 'Manage')
     await expect(docs.locator('#agent-prompt')).toHaveValue(DRAFT)
     await expectCardWhole(page, 'docs', /Send it/u)
 
@@ -147,15 +151,15 @@ const bodyFrames = (page: Page) => page.evaluate(() => { const probe = (window a
 
 test('keyboard focus stays put through usage details, Write here, and a refused Manage', async () => {
   test.setTimeout(180_000)
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await start(launched)
     await size(launched, 1600, 900)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await open(page, 'Docs')
     const docs = pane(page, 'docs')
-    await docs.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(docs, 'Manage')
     await expect(docs.locator('#agent-prompt')).toBeFocused()
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: 'Workshop', exact: true }).hover()
@@ -165,16 +169,18 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     await workshopPrompt.click()
     await expect(workshop).toHaveAttribute('data-focused')
 
-    // Usage details follow the composer now. Shift+Tab from the divider reaches them and keeps focus there.
-    const messages = (await agents(page)).host.threads.find(thread => thread.id === 'docs')!.messages.length
+    // The usage line is plain text now, so Shift+Tab from the divider lands on the docs pane's own last control and
+    // stays there rather than dropping focus to the body.
+    const messages = (await userMessageTexts(page, 'docs')).length
     await page.getByRole('separator', { name: 'Resize panes' }).focus()
     await armProbe(page)
     await page.keyboard.press('Shift+Tab')
     await expect(docs).toHaveAttribute('data-focused')
-    await expect(docs.locator('.thread-usage summary')).toBeFocused()
+    await expect.poll(() => docs.evaluate(element => element.contains(document.activeElement))).toBe(true)
     expect(await bodyFrames(page)).toBe(0)
-    // Keyboard entry into the managed pane selects it, so its composer is already in place of Write here.
-    await expect(docs.locator('#agent-prompt')).toBeVisible()
+    // With nothing after it, that last control is Write here itself, which holds until Enter: the composer is not
+    // swapped in under a focus that only passed through.
+    await expect(docs.getByRole('button', { name: 'Write here', exact: true })).toBeFocused()
     // Focusing Write here from the other pane must also hold that button through pane activation until Enter is pressed.
     await workshopPrompt.click()
     const writeHere = docs.getByRole('button', { name: 'Write here', exact: true })
@@ -185,7 +191,7 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     await page.keyboard.press('Enter')
     await expect(docs.locator('#agent-prompt')).toBeFocused()
     expect(await bodyFrames(page)).toBe(0)
-    expect((await agents(page)).host.threads.find(thread => thread.id === 'docs')!.messages.length).toBe(messages)
+    expect((await userMessageTexts(page, 'docs')).length).toBe(messages)
 
     // Keyboard Manage on Workshop while main holds the assign and then refuses it.
     await workshopPrompt.click()
@@ -201,23 +207,27 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
         return original(event, payload)
       })
     })
-    const manage = workshop.getByRole('button', { name: 'Manage', exact: true })
+    // Manage lives in the header's More menu now: Enter on its row closes the menu, and the handoff moves focus from
+    // the header to this pane's composer so it has somewhere to stay when the assign is refused.
+    await workshop.getByRole('button', { name: 'More actions', exact: true }).click()
+    const manage = workshop.getByRole('menu', { name: 'More actions' }).getByRole('menuitem', { name: 'Manage', exact: true })
     await manage.focus()
     await armProbe(page)
     await page.keyboard.press('Enter')
-    await expect(manage).toBeDisabled()
+    await expect(manage).toHaveCount(0)
     await expect(workshopPrompt).toBeFocused()
-    await expect(workshop.getByRole('button', { name: 'Settle', exact: true })).toBeDisabled()
+    // Settle sits in the header's More menu now, and opening a menu would move the focus this test is measuring, so
+    // the composer's own submit stands for "nothing else can act on the thread while the assign is in flight".
     await expect(workshop.locator('.thread-prompt__actions button[type="submit"]')).toBeDisabled()
     await page.keyboard.press('Enter')
     await launched.app.evaluate(() => (globalThis as unknown as { __releaseAssign: () => void }).__releaseAssign())
-    await expect(manage).toBeEnabled({ timeout: 10_000 })
+    await expect(workshop.locator('.thread-prompt__actions button[type="submit"]')).toBeEnabled({ timeout: 10_000 })
     await page.waitForTimeout(300)
     await expect(workshopPrompt).toBeFocused()
     await expect(workshopPrompt).toHaveValue('Workshop draft kept through a refusal.')
     expect(await bodyFrames(page)).toBe(0)
     expect((await agents(page)).assignments.map(item => item.threadId)).not.toContain('workshop')
-    expect((await agents(page)).host.threads.find(thread => thread.id === 'workshop')!.messages.some(message => message.text.includes('kept through a refusal'))).toBe(false)
+    expect((await userMessageTexts(page, 'workshop')).some(text => text.includes('kept through a refusal'))).toBe(false)
   } finally {
     await closeSotto(launched)
   }

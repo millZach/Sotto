@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
 
 // Real Electron shell, native browser, PTY, files and Git. Only coding providers use E2E fixtures.
@@ -118,7 +118,7 @@ test('Sidecar preserves native tools while giving the browser, terminal, files a
     // The onboarding decision is taken at app mount; reload the owned profile after completing fixture setup.
     await page.reload()
     await resize(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })

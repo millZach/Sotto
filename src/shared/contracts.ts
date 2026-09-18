@@ -38,6 +38,8 @@ const widgetMetadataSchema = {
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
+  // Absent where the publisher predates the beta's voice gate, which reads as off.
+  voiceCoordinator: z.boolean().optional(),
 } as const
 
 export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [

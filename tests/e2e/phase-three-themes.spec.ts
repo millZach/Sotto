@@ -7,7 +7,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * The T3-style themes journey on the real Windows Electron app: colour scheme
@@ -324,7 +324,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
         await setWindowSize(launched, size.width, size.height)
         await openAppearance(page)
         await shot(page, `themes-${size.name}-${scheme}`)
-        await page.getByRole('link', { name: 'Threads', exact: true }).click()
+        await openThreads(page)
         await shot(page, `threads-${size.name}-${scheme}`)
       }
     }
@@ -397,7 +397,7 @@ test('themes: a spotlight over a drawn diagram goes quiet, and still follows new
     await openAppearance(page)
     await page.locator('#settings-appearance').getByRole('button', { name: 'Create theme' }).click()
     const editor = page.getByRole('dialog', { name: 'Create theme' })
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await expect(page.locator('.rich-diagram').last()).toHaveAttribute('data-state', 'drawn')
     await editor.getByRole('button', { name: 'Show where Background is used', exact: true }).click()
     await expect(page.locator('#theme-inspector-spotlight')).toHaveCount(1)
@@ -423,7 +423,7 @@ test('themes: a spotlight over a drawn diagram goes quiet, and still follows new
   }
 })
 
-test('themes: a minimized editor is one row that leaves Send and the footer links reachable', async () => {
+test('themes: a minimized editor is one row that leaves Send and the page links reachable', async () => {
   test.setTimeout(120_000)
   const profile = await createProfile()
   let launched: LaunchedSotto | undefined
@@ -434,7 +434,7 @@ test('themes: a minimized editor is one row that leaves Send and the footer link
     await openAppearance(page)
     await page.locator('#settings-appearance').getByRole('button', { name: 'Create theme' }).click()
     const editor = page.getByRole('dialog', { name: 'Create theme' })
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.locator('.thread-prompt textarea').first().fill('Checking the theme editor stays clear')
     await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
     await expect(editor).toHaveAttribute('data-minimized', 'true')
@@ -443,8 +443,9 @@ test('themes: a minimized editor is one row that leaves Send and the footer link
     for (const size of [{ name: '820x560', width: 820, height: 560 }, { name: '1280', width: 1280, height: 860 }]) {
       await setWindowSize(launched, size.width, size.height)
       await settled(page)
-      // The bar rests in the footer once the shell has laid out at the new size.
-      await expect.poll(async () => { const box = (await editor.boundingBox())!; return box.y + box.height <= size.height && box.y >= size.height - 44 }, { message: size.name }).toBe(true)
+      // The bar rests in the window's bottom row once the page has laid out at the new size. The Threads page has no
+      // footer to dock into any more, so the bar keeps to the bottom edge on its own.
+      await expect.poll(async () => { const box = (await editor.boundingBox())!; return box.y + box.height <= size.height && box.y >= size.height - 88 }, { message: size.name }).toBe(true)
       const bar = (await editor.boundingBox())!
       const title = (await editor.getByRole('heading', { name: 'Create theme' }).boundingBox())!
       const expand = (await editor.getByRole('button', { name: 'Expand the theme editor' }).boundingBox())!
@@ -455,13 +456,14 @@ test('themes: a minimized editor is one row that leaves Send and the footer link
 
       const send = page.getByRole('button', { name: 'Send prompt' })
       const sendBox = (await send.boundingBox())!
-      const links = (await page.locator('.app-footer nav').boundingBox())!
+      // The page links moved into the sidebar's foot when the Threads page took over the window.
+      const links = (await page.locator('.thread-nav__foot').boundingBox())!
       const overlaps = (a: typeof bar, b: typeof bar) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
       expect(overlaps(bar, sendBox), `${size.name} Send`).toBe(false)
-      expect(overlaps(bar, links), `${size.name} footer links`).toBe(false)
-      // The pointer really lands on Send and on every footer link, not on the bar.
+      expect(overlaps(bar, links), `${size.name} page links`).toBe(false)
+      // The pointer really lands on Send and on every page link, not on the bar.
       await send.click({ trial: true, timeout: 2000 })
-      for (const link of await page.locator('.app-footer nav a').all()) await link.click({ trial: true, timeout: 2000 })
+      for (const link of await page.locator('.thread-nav__foot a').all()) await link.click({ trial: true, timeout: 2000 })
       await shot(page, `editor-minimized-threads-${size.name}-dark`)
     }
 

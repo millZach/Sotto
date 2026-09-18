@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // The shared Files panel beside a real split: a Git worktree thread and a shared-folder thread on real temporary
 // folders, real Git and Files IPC; only providers are fixtures. Captures are the inspected review evidence.
@@ -100,7 +100,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
 
     await page.reload()
     await resize(launched, 1600, 900)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: 'Worktree checkout', exact: true }).click()
     await sidebar.getByRole('button', { name: 'Field notes', exact: true }).hover()

@@ -8,8 +8,11 @@ import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
 import {
   AppProvider,
+  useApp,
   type AppControllerFactory,
+  type AppNavigation,
 } from '../../../src/renderer/src/state/AppContext'
+import { threadsStateFixture } from './liveAgentState'
 import {
   type SottoBridge,
   type UpdateStatus,
@@ -78,6 +81,29 @@ const createController: AppControllerFactory = () => ({
   dispose: vi.fn(),
 })
 
+/**
+ * Sotto opens on Threads, so a test about one of the pages under the strip
+ * says which page it is about. The probe reads the navigation the provider
+ * settled on and hands back the action that changes it, which is what the
+ * Threads page's own switch calls.
+ */
+const shell = {
+  navigation: null as AppNavigation | null,
+  navigate: ((): void => undefined) as (destination: AppNavigation) => void,
+}
+
+function NavigationProbe(): null {
+  const app = useApp()
+  shell.navigation = app.navigation
+  shell.navigate = app.actions.navigate
+  return null
+}
+
+async function openPage(destination: AppNavigation): Promise<void> {
+  await waitFor(() => expect(shell.navigation).toBe('threads'))
+  act(() => shell.navigate(destination))
+}
+
 function renderApp(
   bridge: SottoBridge,
   createMicrophoneTest: () => MicrophoneTestController = () => ({
@@ -88,6 +114,7 @@ function renderApp(
 ) {
   const content = (
     <AppProvider bridge={bridge} createController={createController}>
+      <NavigationProbe />
       <App createMicrophoneTest={createMicrophoneTest} />
     </AppProvider>
   )
@@ -111,6 +138,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
 
 afterEach(() => {
   cleanup()
+  shell.navigation = null
   delete document.documentElement.dataset.theme
   delete document.documentElement.dataset.themeId
   document.documentElement.removeAttribute('style')
@@ -140,13 +168,6 @@ describe('shared main-window frame', () => {
       createStateBridge: () => createBridge(),
       stateText: /dictation, ready when you are/i,
     },
-    {
-      name: 'ready',
-      createStateBridge: () => createBridge({
-        getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
-      }),
-      stateText: /ready when you are/i,
-    },
   ])('renders exactly one strip and both window controls in the $name state', async ({
     createStateBridge,
     stateText,
@@ -159,6 +180,44 @@ describe('shared main-window frame', () => {
     expect(container.querySelectorAll('.app-titlebar, .app-navigation, .dictation-strip')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
+  })
+
+  it('keeps one strip and both window controls on a page under the strip', async () => {
+    const { container } = renderApp(createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    }))
+    await openPage('home')
+
+    await waitFor(() => expect(document.body).toHaveTextContent(/ready when you are/i))
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
+    expect(container.querySelectorAll('.app-titlebar, .app-navigation, .dictation-strip')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
+  })
+
+  it('opens on Threads, which owns the whole window and carries the window controls once', async () => {
+    const bridge = createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })) })
+    const state = threadsStateFixture()
+    window.sotto = {
+      ...bridge,
+      agents: { get: async () => state, command: async () => state, onState: () => () => undefined },
+    }
+    try {
+      const { container } = renderApp(bridge)
+
+      const sidebar = await screen.findByRole('complementary', { name: 'Thread sidebar' })
+      expect(sidebar).toBeVisible()
+      expect(shell.navigation).toBe('threads')
+      expect(container.querySelector('.app-shell')).toHaveClass('app-shell--page')
+      expect(container.querySelectorAll('.app-strip')).toHaveLength(0)
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+      expect(screen.getAllByRole('main')).toHaveLength(1)
+      expect(container.querySelectorAll('.app-controls')).toHaveLength(1)
+      expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
+    } finally {
+      delete window.sotto
+    }
   })
 })
 
@@ -177,6 +236,7 @@ describe('Sotto application onboarding integration', () => {
       }),
     })
     renderApp(bridge)
+    await openPage('home')
     act(() => recoveryListener?.({ code: 'SETTINGS_RECOVERED' }))
 
     await waitFor(() => expect(screen.getAllByRole('status').filter((node) =>
@@ -239,7 +299,7 @@ describe('Sotto application onboarding integration', () => {
     applyDocumentPreferences({ ...DEFAULT_SETTINGS, reducedMotion: 'system' })
     expect(document.documentElement).not.toHaveAttribute('data-reduced-motion')
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
-    expect(document.documentElement).toHaveAttribute('data-theme-id', 'ocean')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 't3-code')
   })
 
   it.each(['light', 'dark', 'system'] as const)('paints an upgraded install dark whatever its persisted %s widget theme says', (theme) => {
@@ -282,6 +342,7 @@ describe('Sotto application onboarding integration', () => {
       }),
     })
     renderApp(bridge)
+    await openPage('home')
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
@@ -294,8 +355,8 @@ describe('Sotto application onboarding integration', () => {
     expect(root).toHaveAttribute('data-theme-id', 'iris')
     expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
-    // Only the light half moved: the dark half still belongs to Tide.
-    expect(screen.getByRole('button', { name: 'Use Tide dark mode' })).toHaveAttribute('aria-pressed', 'true')
+    // Only the light half moved: the dark half still belongs to Sotto.
+    expect(screen.getByRole('button', { name: 'Use Sotto dark mode' })).toHaveAttribute('aria-pressed', 'true')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]!.patch).toEqual({ appearance: 'light' })
@@ -325,7 +386,8 @@ describe('Sotto application onboarding integration', () => {
         return result.promise
       }),
     }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'ocean'))
+    await openPage('home')
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 't3-code'))
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     const root = document.documentElement
 
@@ -341,9 +403,9 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(saves).toHaveLength(2))
     await act(async () => { saves[1]!.reject(new Error('disk full')) })
 
-    await waitFor(() => expect(root).toHaveAttribute('data-theme-id', 'ocean'))
+    await waitFor(() => expect(root).toHaveAttribute('data-theme-id', 't3-code'))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(screen.getByRole('button', { name: 'Use Tide theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use Sotto theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
     expect(document.body).toHaveTextContent(/could not be saved/i)
   })
 
@@ -352,22 +414,24 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'grove'))
     expect(document.documentElement.style.getPropertyValue('--theme-glass-opacity')).toBe('55%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 'ocean', glassOpacity: 55 })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 't3-code', glassOpacity: 55 })
     localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"grove","accent":"green"}')
     expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'grove' })
     expect(readCachedAppearance()).not.toHaveProperty('accent')
     localStorage.setItem('sotto.appearance', 'not json')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code' })
   })
 
   it('shows the complete management dashboard after onboarding is already complete', async () => {
     renderApp(createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
+    await openPage('home')
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
     expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
     expect(screen.getByRole('contentinfo')).toHaveTextContent(/add your openrouter api key in settings/i)
   })
@@ -399,6 +463,7 @@ describe('Sotto application onboarding integration', () => {
     // The toast's "Read more" link opens through the window bridge, as every external link does.
     window.sotto = bridge
     renderApp(bridge)
+    await openPage('home')
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     const offer = await screen.findByRole('button', { name: 'Update 3.5.0 ready to download' })
@@ -447,6 +512,7 @@ describe('Sotto application onboarding integration', () => {
       }),
       downloadUpdate,
     }))
+    await openPage('home')
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(await screen.findByRole('button', { name: 'Update 3.5.0 ready to download' }))
@@ -480,6 +546,7 @@ describe('Sotto application onboarding integration', () => {
       }),
       checkForUpdates,
     }))
+    await openPage('home')
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(await screen.findByRole('button', { name: 'Check for updates' }))
@@ -499,6 +566,7 @@ describe('Sotto application onboarding integration', () => {
         checkedAt: null,
       })),
     }))
+    await openPage('home')
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     const control = await screen.findByRole('button', { name: 'Update checks run only in the installed Windows app.' })
@@ -514,6 +582,7 @@ describe('Sotto application onboarding integration', () => {
       deliverOutput,
     })
     renderApp(bridge)
+    await openPage('home')
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(screen.getByRole('link', { name: 'History' }))
     await user.click(screen.getAllByRole('button', { name: 'Copy transcript' })[0]!)
@@ -531,6 +600,7 @@ describe('Sotto application onboarding integration', () => {
       hideApp,
       quitApp,
     }))
+    await openPage('home')
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     await user.click(screen.getByRole('button', { name: /minimize sotto/i }))
     await user.click(screen.getByRole('button', { name: /close sotto to tray/i }))
@@ -539,15 +609,19 @@ describe('Sotto application onboarding integration', () => {
     expect(quitApp).not.toHaveBeenCalled()
   })
 
-  it('persists onboarding through AppContext before navigating to the ready shell', async () => {
+  it('persists onboarding through AppContext before opening Threads', async () => {
     const user = userEvent.setup()
     const updateSettings = vi.fn(async (patch) => ({ ...DEFAULT_SETTINGS, ...patch }))
     const bridge = createBridge({ updateSettings })
-    renderApp(bridge)
+    const { container } = renderApp(bridge)
 
     await completeReadySetup(user)
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true, microphoneSkipped: false }))
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
+    // Setup hands over to the page the returning user will always land on.
+    await waitFor(() => expect(shell.navigation).toBe('threads'))
+    expect(container.querySelector('.app-shell')).toHaveClass('app-shell--page')
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(0)
+    expect(screen.queryByRole('heading', { level: 1, name: /ready when you are/i })).not.toBeInTheDocument()
   })
 
   it('finishes setup without a microphone and lands in a working shell', async () => {
@@ -567,9 +641,13 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /finish setup/i }))
 
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true, microphoneSkipped: true }))
+    await waitFor(() => expect(shell.navigation).toBe('threads'))
+    act(() => shell.navigate('home'))
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /no microphone is set up/i })).toBeVisible())
-    // Everything that is not voice is still one click away.
-    expect(screen.getByRole('tab', { name: /agents/i })).toBeVisible()
+    // Everything that is not voice is still one click away. The beta hides the
+    // voice coordinator, so the switch offers Dictate and Threads only.
+    expect(screen.getByRole('tab', { name: 'Threads' })).toBeVisible()
+    expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     for (const destination of ['Threads', 'Chats', 'History', 'Settings']) {
       expect(screen.getByRole('link', { name: destination })).toBeVisible()
     }
@@ -802,6 +880,7 @@ describe('transcription pipeline prewarm', () => {
       platform: 'darwin',
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
+    await openPage('home')
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeInTheDocument())
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Add your OpenRouter API key in Settings')

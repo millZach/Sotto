@@ -317,7 +317,10 @@ export function WidgetApp({
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const orientation = useWidgetOrientation()
-  const agentState = agents?.state?.configuration.enabled ? agents.state : null
+  // The coordinator is hidden for the beta, and with it every control on the
+  // widget that speaks, listens or hands a thread to Sotto. Dictation is what
+  // remains, so the pill keeps its own stop and cancel affordances.
+  const agentState = snapshot.voiceCoordinator === true && agents?.state?.configuration.enabled ? agents.state : null
   const dictationUsesMicrophone = snapshot.status === 'listening' || snapshot.status === 'requesting-permission'
   const microphoneMuted = agentState?.voice.status === 'muted' && !dictationUsesMicrophone
   const [threadsExpanded, setThreadsExpanded] = useState(false)

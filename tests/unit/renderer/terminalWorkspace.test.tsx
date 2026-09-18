@@ -13,6 +13,7 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
 import type { TerminalViewFactory, TerminalViewHandlers } from '../../../src/renderer/src/tools/terminalStore'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { paneMenuItem } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -172,7 +173,7 @@ describe('Terminal mode', () => {
     expect(within(pane).getByRole('heading', { level: 2, name: 'Build' })).toBeInTheDocument()
     expect(within(pane).getByText('workshop · Worktree')).toBeInTheDocument()
     expect(within(pane).getByText('Starting…')).toBeInTheDocument()
-    expect(within(pane).getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    expect(paneMenuItem(pane, 'Stop')).toBeInTheDocument()
     expect(within(pane).queryByText('Could not start.')).toBeNull()
     expect(within(pane).getByText(/Ctrl\+C copies a selection or interrupts · Ctrl\+V pastes/)).toBeInTheDocument()
     expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Starting')
@@ -238,5 +239,23 @@ describe('Terminal mode', () => {
     mount([], { bridge: false })
     expect(await screen.findByRole('heading', { level: 2, name: 'Terminal is not available in this window.' })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Terminal workspace' })).getByRole('button', { name: 'New terminal' })).toBeDisabled()
+  })
+})
+
+describe('Sidebar foot', () => {
+  it('walks the room switch with the arrow keys and lists no Memory page for the beta', () => {
+    mount([], { mode: 'threads' })
+    const rooms = within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab')
+    // Voice and memory are both off: Dictate and Threads are the rooms, and Memory is not among the pages.
+    expect(rooms.map(tab => tab.textContent)).toEqual(['Dictate', 'Threads'])
+    expect(rooms.map(tab => tab.tabIndex)).toEqual([-1, 0])
+    expect(within(screen.getByRole('navigation', { name: 'Pages' })).queryByRole('link', { name: 'Memory' })).toBeNull()
+    rooms[1]!.focus()
+    fireEvent.keyDown(rooms[1]!, { key: 'ArrowLeft' })
+    expect(rooms[0]).toHaveFocus()
+    fireEvent.keyDown(rooms[0]!, { key: 'End' })
+    expect(rooms[1]).toHaveFocus()
+    fireEvent.keyDown(rooms[1]!, { key: 'ArrowRight' })
+    expect(rooms[0]).toHaveFocus()
   })
 })

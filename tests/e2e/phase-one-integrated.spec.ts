@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
 
 const screenshot = {
   name: 'phase-one-reference.png', mimeType: 'image/png',
@@ -18,12 +18,18 @@ async function prepare(page: Page): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
 }
 
 async function selectThread(page: Page, title: string): Promise<void> {
   await page.getByRole('button', { name: title, exact: true }).click()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+}
+
+/** Rename, Regenerate title and Settle live behind the pane header's More menu now, so it has to be opened first. */
+async function headerAction(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: 'More actions', exact: true }).first().click()
+  await page.getByRole('menuitem', { name, exact: true }).click()
 }
 
 async function captureModes(launched: LaunchedSotto, name: string, width = 820): Promise<void> {
@@ -56,7 +62,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
     await selectThread(page, 'Docs')
     await prompt.fill('Docs draft is independently owned.')
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await selectThread(page, 'Docs')
     await expect(prompt).toHaveValue('Docs draft is independently owned.')
     await selectThread(page, 'Workshop')
@@ -66,7 +72,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
     await closeSotto(launched)
     launched = await launchSotto('success', profile)
     page = launched.page
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await selectThread(page, 'Workshop')
     prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     await expect(prompt).toHaveValue('Workshop draft with a reference image.')
@@ -83,7 +89,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
     })).toBe(true)
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toEqual([])
-    expect(state.host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('Docs draft is independently owned.')
     await selectThread(page, 'Docs')
     await expect(prompt).toHaveValue('Docs draft is independently owned.')
@@ -144,6 +150,8 @@ test('rich answers remain safe and readable without pulling the reader away from
     })
     await expect(transcript).toContainText('History message 99.')
     await transcript.evaluate(node => { node.scrollTop = 120; node.dispatchEvent(new Event('scroll')) })
+    // Messages scrolled into view render on the next frames (content-visibility: auto); measure the anchor once they have.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const readingTop = await transcript.evaluate(node => node.scrollTop)
     const readingAnchor = await transcript.locator('article').evaluateAll(nodes => {
       const scroller = document.querySelector('[aria-label="Thread transcript"]')!.getBoundingClientRect()
@@ -184,7 +192,7 @@ test('project settlement preserves individual choices, drafts and running work i
     await prepare(page)
     await selectThread(page, 'Docs')
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Keep this document draft while the project is settled.')
-    await page.getByRole('button', { name: 'Settle', exact: true }).click()
+    await headerAction(page, 'Settle')
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: /^Settled / }).click()
     await expect(sidebar.getByRole('button', { name: 'Restore Docs', exact: true })).toBeVisible()
@@ -250,12 +258,18 @@ test('light provider controls remain readable and uncertain delivery can be chec
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await dialog.getByRole('button', { name: 'Close new thread dialog', exact: true }).click()
     await selectThread(page, 'Docs')
+    // The model, reasoning and permission controls sit behind the pane's Thread options pill now.
+    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
     const model = page.getByRole('combobox', { name: 'Thread model', exact: true })
     await model.click()
     await expect(page.getByRole('listbox')).toBeVisible()
     await page.screenshot({ path: 'artifacts/crossing/phase-one-model-picker-light.png', animations: 'disabled' })
+    // Escape closes the picker alone and hands focus back to the model control; a second Escape closes the options.
     await page.keyboard.press('Escape')
     await expect(model).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(model).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Thread options', exact: true })).toBeFocused()
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId: 'docs', text: '' }))
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('A prompt with an uncertain acknowledgement.')
@@ -264,11 +278,11 @@ test('light provider controls remain readable and uncertain delivery can be chec
     await captureModes(launched, 'uncertain-submission', 820)
     await prompt.fill('A newer draft while confirmation is pending.')
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await expect(prompt).toHaveValue('A newer draft while confirmation is pending.')
     await expect(page.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await selectThread(page, 'Docs')
     await expect(prompt).toHaveValue('A newer draft while confirmation is pending.')
     await expect(page.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
@@ -279,7 +293,7 @@ test('light provider controls remain readable and uncertain delivery can be chec
     await page.getByRole('button', { name: 'Check again', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text)).toEqual(['A prompt with an uncertain acknowledgement.'])
+    expect(await userMessageTexts(page, 'docs')).toEqual(['A prompt with an uncertain acknowledgement.'])
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('A newer draft while confirmation is pending.')
     expect(state.assignments).toEqual([])
   } finally { await closeSotto(launched) }
@@ -326,7 +340,6 @@ test('keyboard navigation exposes folder actions, rich scrollers and truthful fa
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0)
     await expect(prompt).toHaveValue('A newer draft after a rejected prompt.')
     await captureModes(launched, 'failed-newer-draft', 760)
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user')).toEqual([])
+    expect(await userMessageTexts(page, 'docs')).toEqual([])
   } finally { await closeSotto(launched) }
 })

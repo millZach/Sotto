@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
 
 // Recovery states of the Phase 3 tools and Chats in the complete app. AppShell, renderer, preload, IPC and the production
@@ -63,7 +63,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   })
   expect(folder.startsWith(launched.userData)).toBe(true)
   await resize(launched, 1280, 860)
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
   await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
   await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Tools', exact: true }).click()

@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { designThreadsFixture } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
@@ -20,7 +20,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
       await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
@@ -39,7 +39,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-foreign-draft.png' })
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: 'workshop', assignments: [] })
-    expect(state.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     expect(state.followups).toEqual([expect.objectContaining({ threadId: 'docs', text: 'Prepare the next message while Docs runs.', status: 'queued' })])
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(prompt).toHaveValue('Keep this saved draft in Workshop.')
@@ -53,8 +53,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Prepare the next message while Docs runs.')
     await expect(queue).toHaveCount(0)
-    const sent = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(sent.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text))
+    expect(await userMessageTexts(page, 'docs'))
       .toEqual(['A separate manual message.', 'Prepare the next message while Docs runs.'])
   } finally { await closeSotto(launched) }
 })
@@ -71,7 +70,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('Start the long job.')
@@ -83,7 +82,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
       await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'docs', draftId: crypto.randomUUID(), text: 'Then run $deploy for staging.', skills: [reference], requestId: null })
     }, skill)
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(prompt).toHaveValue('Then run $deploy for staging.')
     await prompt.press('Enter')
@@ -97,11 +96,11 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
     const queued = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(queued.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
-    expect(queued.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-queue.png' })
 
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
     const reloaded = await page.evaluate(async () => window.sotto!.agents!.get())
@@ -118,7 +117,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await expect(queue).toContainText('Not sent')
     await expect(queue).toContainText('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
     const done = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(done.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text))
+    expect(await userMessageTexts(page, 'docs'))
       .toEqual(['Start the long job.', 'Then post the preview link.'])
     expect(done.followups).toEqual([expect.objectContaining({ text: 'Then run $deploy for staging.', skills: [skill], status: 'failed' })])
   } finally { await closeSotto(launched) }
@@ -134,7 +133,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Explain the next small change.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
@@ -143,7 +142,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toHaveLength(0)
-    expect(state.host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'workshop')!.status)).toBe('idle')
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
@@ -173,6 +172,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],
     activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }))
+  await enableVoiceCoordinator(profile)
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
   try {
@@ -189,7 +189,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     const speak = page.getByRole('button', { name: 'Mute spoken replies', exact: true })
     await expect(speak.locator('svg')).toHaveClass(/lucide-volume-2/)
     await speak.click()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await expect(sidebar.getByRole('region', { name: 'Projects', exact: true }).locator('.thread-nav__row')).toHaveCount(5)
     await expect(sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })).toHaveCount(0)

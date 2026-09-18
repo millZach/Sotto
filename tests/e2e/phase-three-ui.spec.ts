@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
 
 // Phase 3 UI in the complete app: AppShell, renderer, preload, IPC and the production tools and personal chat services
@@ -117,7 +117,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await page.evaluate(async url => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', status: 'idle',
       text: `The greeting is friendlier now. The dev server is at [the Atlas preview](${url}), and the change is ready to review.` }), url)
     await resize(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
 
@@ -255,6 +255,8 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
 test('starts, continues and resumes a project-free chat, by keyboard, across disconnect, restart and changed defaults', async () => {
   test.setTimeout(240_000)
   const profile = await ownedProfile('sotto-e2e-phase3-ui-chats-')
+  // Coordinator settings open the Agents room, a voice surface the beta hides behind the coordinator setting.
+  await enableVoiceCoordinator(profile)
   let launched = await launchSotto('success', profile)
   try {
     let page = launched.page
@@ -267,7 +269,8 @@ test('starts, continues and resumes a project-free chat, by keyboard, across dis
     await resize(launched, 1280, 860)
     await page.getByRole('link', { name: 'Chats', exact: true }).click()
     await expect(page.getByRole('link', { name: 'Chats', exact: true })).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
+    // Chats are conversations with Sotto, so the switch's Threads half lights for them.
+    await expect(page.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Talk it through with Sotto' })).toBeVisible()
     await expectContained(page, ['.personal-chats .thread-nav', '.personal-chat'])
     await shoot(page, 'chats-empty-1280')
@@ -342,7 +345,7 @@ test('starts, continues and resumes a project-free chat, by keyboard, across dis
 
     // A different coordinator: saved chats stay readable and stay with Codex; new chats explain where to change it.
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'changed-default' } }))
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('link', { name: 'Chats', exact: true }).click()
     await expect(page.getByRole('navigation', { name: 'Chats' }).getByRole('button', { name: 'New chat' })).toBeDisabled()
     await expect(page.getByText(/Select Codex, Claude or Grok in coordinator settings for new chats/u)).toBeVisible()

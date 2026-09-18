@@ -8,8 +8,12 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { openPaneMenu } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+// Management belongs to the voice coordinator, which the beta hides; these tests are about the lanes, so it is on.
+const voice = vi.hoisted(() => ({ enabled: true }))
+vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 const BUSY = { id: 'grok-previews', title: 'Grok voice previews' }
@@ -41,15 +45,15 @@ afterEach(cleanup)
 describe('a busy thread beside an idle one in the same window', () => {
   it('locks only the busy thread’s pane and leaves the other pane’s controls live', () => {
     const { live, busyPane, idlePane } = mountBothPanes()
-    // Both panes start live: nothing is running in either lane.
-    expect(within(busyPane()).getByRole('button', { name: 'Settle' })).toBeEnabled()
-    expect(within(idlePane()).getByRole('button', { name: 'Settle' })).toBeEnabled()
+    // Both panes start live: nothing is running in either lane. Each pane's menu stays open across the publish.
+    expect(within(openPaneMenu(busyPane())).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
+    expect(within(openPaneMenu(idlePane())).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
 
     act(() => { live.publish({ busyThreadIds: [BUSY.id] }) })
 
-    expect(within(busyPane()).getByRole('button', { name: 'Settle' })).toBeDisabled()
+    expect(within(busyPane()).getByRole('menuitem', { name: 'Settle' })).toBeDisabled()
     const idle = within(idlePane())
-    expect(idle.getByRole('button', { name: 'Settle' })).toBeEnabled()
+    expect(idle.getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
     const prompt = idle.getByRole('textbox', { name: 'Prompt', exact: true })
     expect(prompt).toBeEnabled()
     fireEvent.change(prompt, { target: { value: 'Keep working here' } })
@@ -69,9 +73,9 @@ describe('a busy thread beside an idle one in the same window', () => {
     // Settling a whole project moves every thread of it at once, so it waits on the global lane.
     expect(screen.getByRole('button', { name: 'Settle project workshop' })).toBeDisabled()
     // Management moves assignment authority and the single composer draft: also global-lane work.
-    expect(within(busyPane()).getByRole('button', { name: 'Manage' })).toBeDisabled()
+    expect(within(openPaneMenu(busyPane())).getByRole('menuitem', { name: 'Manage' })).toBeDisabled()
     // A thread's own actions are untouched by the global lane.
-    expect(within(idlePane()).getByRole('button', { name: 'Settle' })).toBeEnabled()
+    expect(within(openPaneMenu(idlePane())).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
     expect(screen.getByRole('button', { name: `Settle ${IDLE.title}` })).toBeEnabled()
   })
 })

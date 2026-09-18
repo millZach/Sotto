@@ -5,7 +5,7 @@ import { ThreadsView, type ThreadsViewProps } from './ThreadsView'
 import { ThreadWorkingCopy, ThreadWorkingCopyNotice } from './ThreadWorkingCopy'
 
 /** Connect the shared tools surface and each pane's actual working copy to the workspace. */
-export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'onOpenAgents' | 'now'>): ReactNode {
+export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'onOpenAgents' | 'now' | 'updateControl'>): ReactNode {
   const { command } = useAgents()
   const observe = useCallback((threadIds: readonly string[]): void => {
     void command({ type: 'observe-threads', threadIds: [...threadIds] })

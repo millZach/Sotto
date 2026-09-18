@@ -105,6 +105,18 @@ export interface AppSettings {
   commitMessages: boolean
   streamingAsr: boolean
   autoUpdateCheck: boolean
+  /**
+   * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
+   * widget's voice controls and assignment) is hidden for the beta. Off keeps
+   * every one of those surfaces out of the window; dictation is unaffected.
+   */
+  voiceCoordinatorEnabled: boolean
+  /**
+   * Whether memory (the Memory page, the questionnaire that greets the Agents
+   * room and the preferences retrieved for a turn) is shown at all. Off for
+   * the beta; the store and its code stay in place.
+   */
+  memoryEnabled: boolean
 }
 
 export type SettingsPatch = Partial<
@@ -164,6 +176,8 @@ const fieldSchemas = {
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  voiceCoordinatorEnabled: z.boolean(),
+  memoryEnabled: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
 export const settingsSchema = z.object(fieldSchemas)
@@ -219,6 +233,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // Off for the beta: the voice coordinator is not ready to ship, so nothing
+  // voice-shaped is shown until it is turned on here.
+  voiceCoordinatorEnabled: false,
+  // Off for the beta: memory does not ship in the first one.
+  memoryEnabled: false,
 }
 
 /**
@@ -294,5 +313,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
+    memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
   }
 }

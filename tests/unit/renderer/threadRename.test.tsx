@@ -7,6 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { openPaneMenu } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -78,7 +79,7 @@ describe('renaming a thread from the pane header', () => {
     const live = mount()
     const title = within(header()).getByRole('heading', { level: 2 })
     expect(title).toHaveTextContent('Visual gate flake')
-    fireEvent.click(within(header()).getByRole('button', { name: 'Rename' }))
+    fireEvent.click(within(openPaneMenu(header())).getByRole('menuitem', { name: 'Rename' }))
     const field = within(header()).getByRole('textbox', { name: 'Rename Visual gate flake' })
     fireEvent.change(field, { target: { value: 'Flaky visual gate' } })
     fireEvent.keyDown(field, { key: 'Enter' })
@@ -87,10 +88,10 @@ describe('renaming a thread from the pane header', () => {
 
   it('cancels with Escape and refuses a blank name', () => {
     const live = mount()
-    fireEvent.click(within(header()).getByRole('button', { name: 'Rename' }))
+    fireEvent.click(within(openPaneMenu(header())).getByRole('menuitem', { name: 'Rename' }))
     fireEvent.keyDown(within(header()).getByRole('textbox', { name: 'Rename Visual gate flake' }), { key: 'Escape' })
     expect(within(header()).queryByRole('textbox')).toBeNull()
-    fireEvent.click(within(header()).getByRole('button', { name: 'Rename' }))
+    fireEvent.click(within(openPaneMenu(header())).getByRole('menuitem', { name: 'Rename' }))
     const field = within(header()).getByRole('textbox', { name: 'Rename Visual gate flake' })
     fireEvent.change(field, { target: { value: ' ' } })
     fireEvent.keyDown(field, { key: 'Enter' })

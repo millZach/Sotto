@@ -11,6 +11,7 @@ import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/ag
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { openPaneMenu, paneMenuItem } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -104,10 +105,10 @@ describe('Threads manual composer', () => {
     expect(prompt()).toHaveValue('')
     expect(check()).toBeEnabled()
     act(() => live.publish({ host: { ...live.state.host, providers: live.state.host.providers!.map(provider => provider.id === 'claude' ? { ...provider, connection: 'disconnected' } : provider) } }))
-    // Disconnected, the pending line points to the one Reconnect in the thread header.
+    // Disconnected, the pending line points to the one Reconnect the pane's More menu offers.
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Reconnect to check it.')
     expect(within(screen.getByLabelText('Pending message')).queryByRole('button')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+    fireEvent.click(paneMenuItem(document.body, 'Reconnect'))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'connect', provider: 'claude' })
     expect(live.manualSends()).toBe(0)
     act(() => live.publish({ deliveredDrafts: [{ threadId: thread.id, draftId }] }))
@@ -220,8 +221,9 @@ describe('Threads manual composer', () => {
     act(() => { live.publish({ error: 'Could not save the spoken reply setting.' }) })
     expect(screen.getByRole('alert')).toHaveTextContent('Could not save the spoken reply setting.')
     act(() => { live.publish({ error: null, host: { ...live.state.host, connected: false } }) })
-    expect(screen.getAllByRole('button', { name: 'Reconnect' })).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+    const menu = openPaneMenu(document.body)
+    expect(within(menu).getAllByRole('menuitem', { name: 'Reconnect' })).toHaveLength(1)
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Reconnect' }))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'connect' })
     expect(live.manualSends()).toBe(1)
     expect(prompt()).toHaveValue('A new prompt')
@@ -270,6 +272,7 @@ describe('Threads manual composer', () => {
     state.host.threads.find(item => item.id === 'grok-previews')!.status = 'running'
     state.host.capabilities = { ...state.host.capabilities, configureThread: true }
     mount(state)
+    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeInTheDocument()
     expect(screen.queryByText(/Enter to queue/u)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
@@ -322,11 +325,10 @@ describe('Threads project folders', () => {
     ])
     mount(threadsStateFixture())
     const projects = screen.getByRole('region', { name: 'Projects' })
-    // The heading counts project folders; thread counts are labelled as threads.
-    expect(within(projects).getByRole('heading', { name: 'Projects 3 projects' })).toBeVisible()
-    expect(within(projects).getByRole('button', { name: /^workshop/ })).toHaveAttribute('aria-expanded', 'true')
+    // Neither count is drawn any more: a group says how many threads it holds in its own name, and so does the shelf.
+    expect(within(projects).getByRole('button', { name: 'workshop 3 threads' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: /^Settled 4 threads/ })).toBeVisible()
-    expect(within(projects).getByRole('button', { name: 'Visual gate flake' }).querySelector('[data-provider]')).not.toBeNull()
+    expect(within(projects).getByRole('button', { name: 'Visual gate flake' }).querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
     fireEvent.click(within(projects).getByRole('button', { name: /^workshop/ }))
     expect(within(projects).queryByRole('button', { name: 'Visual gate flake' })).not.toBeInTheDocument()
     expect(within(projects).getByRole('button', { name: /^workshop/ })).toHaveTextContent('1 waiting on you')
@@ -407,6 +409,7 @@ describe('Thread provider choice', () => {
 
   it('lets an unstarted thread choose any ready provider that can create threads', async () => {
     const { live } = mount(providerState(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     expect(screen.queryByRole('button', { name: 'Grok', exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
@@ -419,6 +422,7 @@ describe('Thread provider choice', () => {
       const state = providerState(started)
       state.host.providers![0] = { ...state.host.providers![0]!, connection: 'connected', capabilities: ALL }
       mount(state)
+      fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
       expect(screen.queryByRole('button', { name: 'Codex', exact: true })).not.toBeInTheDocument()
       expect(screen.queryByText('This conversation stays with Claude.')).not.toBeInTheDocument()

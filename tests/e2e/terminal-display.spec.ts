@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 const SHOTS = resolve('artifacts/terminal-display')
 
@@ -60,7 +60,7 @@ process.stdin.setRawMode(true);process.stdin.resume();
 process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
 `)
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })

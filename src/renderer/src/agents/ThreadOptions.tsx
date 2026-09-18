@@ -1,4 +1,5 @@
-import React, { useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { ModelPicker } from './ModelPicker'
@@ -56,6 +57,19 @@ function threadModelChoices(state: AgentState, thread: AgentThread): { readonly 
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
 }
 
+/** How the composer's pill reads: the model, its reasoning effort and what the thread may do without asking. */
+function optionSummary(models: AgentModel[], thread: AgentThread): string {
+  const model = models.find(item => item.id === thread.modelId)
+  const reasoning = thread.reasoningEffort ?? model?.defaultReasoningEffort ?? ''
+  return [model?.name ?? thread.modelId, reasoning && reasoning.charAt(0).toUpperCase() + reasoning.slice(1),
+    thread.runtimeMode ? RUNTIME_LABELS[thread.runtimeMode] : ''].filter(Boolean).join(' · ')
+}
+
+/**
+ * The composer's one option control: a pill saying what this thread is set to, which opens the model,
+ * reasoning and permission controls themselves. Escape or a pointer outside closes it and returns focus
+ * to the pill. New thread and New terminal show the same three controls laid out in full.
+ */
 export function ThreadOptions({ thread, state, command, turnNote = true }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
@@ -63,7 +77,20 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
 }): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const popover = useRef<HTMLDivElement>(null)
   const { models, locked } = threadModelChoices(state, thread)
+  useEffect(() => {
+    if (!open) return
+    const dismiss = (event: PointerEvent): void => {
+      const target = event.target as Node
+      // The model picker opens its own dialog above this popover, and a choice there must not close it underneath.
+      if (!popover.current?.contains(target) && !trigger.current?.contains(target) && !(target as Element)?.closest?.('.model-picker__dialog')) setOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    return () => { document.removeEventListener('pointerdown', dismiss, true) }
+  }, [open])
   const disabled = saving || isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
   const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
     setSaving(true); setError(null)
@@ -74,12 +101,22 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
   }
   const capabilities = capabilitiesForThread(state.host, thread)
   if (locked && !capabilities.configureThread) return null
-  return <div className="thread-options-bar" data-provider-locked={locked}>
-    <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
-      disabled={disabled} modelDisabled={locked && capabilities.configureThreadModel === false} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
-    {saving ? <small role="status">Saving...</small>
-      : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
-        : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
+  return <div className="thread-options-bar" data-provider-locked={locked}
+    onKeyDown={event => {
+      // Escape closes the open popover from its trigger or from inside it; inside the model picker it closes the picker alone.
+      if (!open || event.key !== 'Escape' || (event.target as Element).closest('.model-picker__dialog') !== null) return
+      event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
+    }}>
+    <button ref={trigger} type="button" className="thread-options__pill tt-focusable" aria-label="Thread options" aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => setOpen(value => !value)}>{optionSummary(models, thread)}<ChevronDown size={14} aria-hidden="true" /></button>
+    {open ? <div ref={popover} className="thread-options__popover" role="dialog" aria-label="Thread options">
+      <ThreadOptionFields models={models} modelId={thread.modelId} reasoningEffort={thread.reasoningEffort} runtimeMode={thread.runtimeMode}
+        disabled={disabled} modelDisabled={locked && capabilities.configureThreadModel === false} onModel={modelId => void save({ modelId })} onReasoning={reasoningEffort => void save({ reasoningEffort })} onRuntime={runtimeMode => void save({ runtimeMode })} />
+      {saving ? <small role="status">Saving...</small>
+        : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small>
+          : !locked && new Set(models.map(model => model.provider)).size > 1 ? <small className="thread-options__lock">Any provider until your first message.</small> : null}
+    </div> : null}
+    {/* A refused change is told whether or not the popover is still open: closing it must not take the news away. */}
     {error && <p className="agent-error" role="alert">{error}</p>}
   </div>
 }

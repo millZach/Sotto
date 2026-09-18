@@ -13,13 +13,15 @@
 .thread-options select { max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-field); color: var(--tt-text-2); font: inherit; font-size: 11.5px; }
 .thread-options select:disabled { opacity: .55; }
 .thread-options-bar { flex: 1; min-width: 0; }
-.thread-options-bar .thread-options { gap: 4px; }
-.thread-options-bar .thread-options label > span { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.thread-options-bar .thread-options select { max-width: 180px; padding: 4px 6px; border-color: transparent; background: transparent; }
-.thread-options-bar .thread-options select:hover:not(:disabled) { background: var(--tt-hover-strong); border-color: var(--tt-field-border); }
-.thread-options-bar .thread-options option { background: var(--tt-field); color: var(--tt-text-2); }
+/* Inside the composer's pill popover the three controls stand in a column, each named, with room to read. */
+.thread-options__popover .thread-options { display: grid; gap: 10px; }
+.thread-options__popover .thread-options label { gap: 4px; }
+.thread-options__popover .thread-options label > span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--tt-text-muted); font-size: 11px; }
+.thread-options__popover .thread-options select { width: 100%; max-width: none; min-height: 30px; padding: 5px 8px; border-color: var(--tt-field-border); background: var(--tt-field); font-size: 12.5px; }
+.thread-options__popover .thread-options option { background: var(--tt-field); color: var(--tt-text-2); }
 .thread-prompt__footer > .tt-button, .thread-workspace__compose .agent-composer__footer > .agent-actions { flex-shrink: 0; align-self: flex-end; }
 .thread-options-bar > small { display: block; margin-top: 7px; color: var(--tt-text-muted); font-size: 10.5px; }
+.thread-options__popover > small { margin-top: 0; }
 .new-thread-dialog .thread-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
 .new-thread-dialog .thread-options label:first-child { grid-column: 1 / -1; }
 .new-thread-dialog .thread-options select { max-width: none; width: 100%; }
