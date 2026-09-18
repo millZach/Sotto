@@ -1,0 +1,34 @@
+/* The Threads page owns the whole window: there is no app strip over it and no app footer under it. What
+   those two carried lives here instead — the window's own controls at the page's top-right corner, and the
+   room switch, the page links and the update control at the sidebar's foot. */
+
+.threads-view { position: relative; }
+/* Rendered once per page, not once per pane, and outside the panes' stacking so a split never covers it. */
+.threads-view__winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; height: 44px; padding-right: 6px; -webkit-app-region: no-drag; }
+/* The strip's controls are as tall as the strip; here they are three keys inside a 44px row. */
+.threads-view__winctl .app-controls { align-self: center; }
+.threads-view__winctl .tt-button, .threads-view__winctl .app-controls__maximize { width: 34px; min-height: 30px; height: 30px; border-radius: 6px; }
+/* How much of the pane header's right end the controls take. The header reads this to pad itself, so the
+   thread title never runs under them; macOS paints its own controls beside the sidebar and needs no inset. */
+.threads-view:not(.threads-view--mac) { --threads-winctl-inset: 116px; }
+/* With the tools panel open it, not the last pane, meets the window's corner: its title row keeps the controls'
+   room and the pane it displaced takes its own back. An overlay panel covers that pane rather than displacing it,
+   so the pane keeps its inset for the moment the overlay closes. */
+.threads-view:not(.threads-view--mac) .thread-workspace__tools > .tools-panel .tools-panel__context { padding-right: calc(10px + var(--threads-winctl-inset, 0px)); }
+.threads-view:has(.thread-workspace__tools > .tools-panel:not([data-mode='overlay'])) .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
+
+/* Before agent state arrives, and for as long as an agent error stands, the page is one sentence. It is still a
+   window that has to move, and one that needs a way to Settings. */
+.threads-view--bare { display: grid; place-content: center; justify-items: center; gap: 12px; -webkit-app-region: drag; }
+.threads-view--bare :is(button, a) { -webkit-app-region: no-drag; }
+
+/* Five page links, the room switch and the update control do not fit across a 264px sidebar in one line, so
+   the switch takes the first line at full width and the icons sit under it, the update control last. */
+.thread-nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin-top: auto; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
+.thread-nav__foot .thread-nav__seg { display: flex; flex: 1 0 100%; }
+.thread-nav__foot .thread-nav__seg button { flex: 1; padding: 0 9px; }
+.thread-nav__pages { display: flex; align-items: center; }
+.thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; }
+.thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }
+.thread-nav__page > svg { flex: none; }
+.thread-nav__foot .update-control { margin-left: auto; }

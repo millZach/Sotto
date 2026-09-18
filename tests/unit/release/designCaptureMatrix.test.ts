@@ -59,7 +59,7 @@ describe('design capture matrix', () => {
     expect(DESIGN_CAPTURE_DEFAULT_THEME).toBe(DEFAULT_SETTINGS.darkTheme)
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     for (const theme of ['dark', 'light']) {
-      // Tide (ocean) is the default every other application tuple already shows.
+      // Sotto (t3-code) is the default every other application tuple already shows.
       for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter(candidate => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) expect(keys).toContain(`appearance|theme-${builtIn}|${theme}|100|normal|none`)
       expect(keys).toContain(`appearance|system-settings|${theme}|100|normal|none`)
       for (const state of ['dictate-ready', 'agents-overview', 'settings-full']) expect(keys).toContain(`width|${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}|${theme}|100|normal|none`)

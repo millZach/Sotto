@@ -12,7 +12,7 @@ import { parseThemeRgb, rgbToOklch } from '../../src/shared/themes/color'
 import { createVividThemeColors } from '../../src/shared/themes/engine'
 import { parseThemeFile } from '../../src/shared/themes/library'
 import type { ThemeAppearance } from '../../src/shared/themes/palettes'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * Rendered evidence that the selected theme colours the app mark, the Agents
@@ -158,6 +158,7 @@ test.describe('theme branding evidence', () => {
     const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-theme-branding-'))
     let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean', customThemes: [saffron] }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
+    await enableVoiceCoordinator(profile)
     let launched: LaunchedSotto | undefined
     try {
       launched = await launchSotto('success', profile)

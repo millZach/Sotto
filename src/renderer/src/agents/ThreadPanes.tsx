@@ -322,6 +322,13 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
 
   const areaStyle = placed ? boxVariables(shape, shownRows, shownColumns) as CSSProperties : undefined
   const multiRow = placed !== null && shape.length > 1
+  /**
+   * Which pane the window controls sit over, so only it keeps their corner clear: the last pane of the
+   * first row in a grid, the shown pane when one pane fills the area, and the only pane otherwise.
+   */
+  const underControls = placed !== null
+    ? placed.panes.find(pane => pane.row === 0 && pane.column === shape[0]! - 1)?.index ?? 0
+    : single ? Math.max(0, paneIds.indexOf(shownId ?? '')) : paneIds.length - 1
   // Each divider follows the pane before it in the page, so the tab order runs pane, divider, pane, row by row.
   const dividersAfter = new Map<number, ReactNode[]>()
   placed?.dividers.forEach((divider, position) => {
@@ -354,7 +361,8 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
         const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
         const zooms = !narrow || layout.zoomed
         return <React.Fragment key={id}><section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
-          data-placed={placed !== null || undefined} aria-label={title(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
+          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined}
+          aria-label={title(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}

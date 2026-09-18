@@ -8,6 +8,9 @@
 .thread-options-bar .thread-options__model > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .thread-options-bar .model-picker__trigger { max-width: 180px; padding: 4px 6px; border-color: transparent; background: transparent; }
 .thread-options-bar .model-picker__trigger:hover:not(:disabled) { background: var(--tt-hover-strong); border-color: var(--tt-field-border); }
+/* In the composer's pill popover the model reads like the two selects beside it: named, full width, in a field. */
+.thread-options__popover .thread-options__model > span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--tt-text-muted); font-size: 11px; }
+.thread-options__popover .model-picker__trigger { max-width: none; min-height: 30px; padding: 5px 8px; border-color: var(--tt-field-border); background: var(--tt-field); font-size: 12.5px; }
 .new-thread-dialog .thread-options__model { grid-column: 1 / -1; }
 .new-thread-dialog .model-picker__trigger { max-width: none; min-height: 39px; padding: 8px 11px; background: var(--tt-field); font-size: 13px; }
 .model-picker__dialog { position: fixed; width: min(540px, calc(100vw - 32px)); height: min(390px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-panel-border); border-radius: 14px; background: var(--tt-panel); color: var(--tt-text); box-shadow: 0 16px 60px var(--tt-shadow-color); }

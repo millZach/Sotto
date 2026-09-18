@@ -5,7 +5,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import type { AgentState, ProviderId } from '../../src/shared/agents'
 import { PROVIDER_LABELS } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { firstSottoWindow } from './support/sottoLaunch'
+import { enableVoiceCoordinator, firstSottoWindow, openThreads } from './support/sottoLaunch'
 
 // Opt in separately from the single-provider smoke. Exactly three native turns;
 // restore-only mode never creates a thread or sends another prompt.
@@ -101,6 +101,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await mkdir(profile); await mkdir(project)
     // Prevent legacy-profile migration; all provider connections use the real UI.
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
+    await enableVoiceCoordinator(profile)
   }
   const artifacts = resolve('artifacts/multi-provider-live')
   await mkdir(artifacts, { recursive: true })
@@ -142,7 +143,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       }
       await expect.poll(async () => connections(await state(page!))).toEqual(allConnected)
       expect([...((await state(page)).configuration.enabledProviders ?? [])].sort()).toEqual([...providers].sort())
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       for (const [index, provider] of providers.entries()) {
         const ready = (await state(page)).host.models.filter(model => model.providerId === provider && model.ready)
         const model = ready.find(model => /luna|mini|haiku/iu.test(`${model.id} ${model.name}`)) ?? ready[0]
@@ -182,7 +183,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       }
     } else {
       await expect.poll(async () => connections(await state(page!)), { timeout: 45_000 }).toEqual(allConnected)
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       for (const provider of providers) await expectCompleted(page, provider)
       expect(await registry(profile)).toEqual(restoredRegistry)
       expect(await aliases(profile)).toEqual(restoredAliases)
@@ -233,7 +234,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     }
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
 
-    await page.getByRole('tablist', { name: 'Mode', exact: true }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     const agentControl = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
@@ -257,7 +258,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await captureProviders(page, join(artifacts, 'disabled-claude-configuration.png'))
     expect((await state(page)).configuration.enabled).toBe(false)
     expect(connections(await state(page))).toEqual(providers.map(id => ({ id, connection: id === 'claude' ? 'disconnected' : 'connected' })))
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await expectAllRows(page)
     for (const provider of providers) await expectCompleted(page, provider)
     expect(identities(await state(page))).toEqual(expectedIdentities)
@@ -272,7 +273,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await app!.close(); app = undefined
     page = await launch()
     await expect.poll(async () => connections(await state(page!)), { timeout: 45_000 }).toEqual(allConnected)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await expectAllRows(page)
     for (const provider of providers) await expectCompleted(page, provider)
     const restored = await state(page)

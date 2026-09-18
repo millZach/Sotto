@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
 test('one pill keeps dictation, mute controls, and explicit thread expansion together', async () => {
-  const launched = await launchSotto('design-threads')
+  const launched = await launchSottoWithVoice('design-threads')
   const { page, app } = launched
   try {
     await page.evaluate(async () => {

@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
@@ -7,13 +7,19 @@ import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { describeThreads, groupThreads, listThreads, lookingAfterSentence, providerKey } from '../../../src/renderer/src/agents/threadFacts'
+import { describeThreads, groupThreads, listThreads, providerKey } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState } from './liveAgentState'
+import { paneMenuItem } from './paneMenu'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { draftThreads } from '../../../src/renderer/src/agents/draftThreads'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+
+// The coordinator is hidden for the beta (ADR-0012), and ThreadsView is rendered here without an
+// AppProvider, so the flag is stated per test: off is the beta, on is what a managed thread needs.
+const voice = vi.hoisted(() => ({ enabled: false }))
+vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 
@@ -56,7 +62,7 @@ function renderThreads(state: AgentState | null, command = vi.fn(async () => sta
 }
 
 beforeEach(() => {
-  vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap()
+  vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap(); voice.enabled = false
   for (const thread of stateFixture().host.threads) requestAnswerStore.prune(thread.id, [])
 })
 afterEach(cleanup)
@@ -128,14 +134,6 @@ describe('thread grouping and states from Sotto state', () => {
     expect(titles(listThreads(rows, 'deploy').matching)).toEqual([])
     expect(titles(listThreads(rows, 'deploy').listed)).toEqual(['Visual gate flake'])
     expect(listThreads(rows, '  ').listed).toHaveLength(9)
-  })
-
-  it('says in the footer how many threads Sotto is looking after and how to talk to them', () => {
-    expect(lookingAfterSentence(3)).toBe('Sotto is looking after 3 threads. Say “Hey Sotto” to talk to any of them.')
-    expect(lookingAfterSentence(1)).toBe('Sotto is looking after 1 thread. Say “Hey Sotto” to talk to it.')
-    expect(lookingAfterSentence(0)).toBe('Nothing is running. Say “Hey Sotto” to start a thread.')
-    const running = stateFixture().host.threads.filter(thread => thread.status === 'running').length
-    expect(lookingAfterSentence(running)).toMatch(/^Sotto is looking after 3 threads\./u)
   })
 
   it('treats a blocked queue item as needing you and a user pause as paused, and a manual assignment as yours', () => {
@@ -293,6 +291,7 @@ describe('ThreadsView workspace', () => {
     state.host.capabilities.configureThread = true
     state.host.models = [{ id: thread.modelId, provider: 'Grok', name: 'Current', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }, { id: 'alternate', name: 'Alternate', provider: 'Codex', ready: true }]
     const { command } = renderThreads(state)
+    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
     fireEvent.click(screen.getByRole('option', { name: 'Alternate' }))
@@ -322,6 +321,7 @@ describe('ThreadsView workspace', () => {
   })
 
   it('follows the coordinator selection and protects a saved draft from another thread', () => {
+    voice.enabled = true
     const state = stateFixture()
     const view = renderThreads(state)
     state.activeThreadId = 'footer-links'
@@ -374,6 +374,8 @@ describe('ThreadsView workspace', () => {
     ['Allow', 'Approved', true],
     ['Deny', 'Denied', false],
   ] as const)('sends %s once and keeps permission decisions disabled while busy', async (choice, answer, approved) => {
+    // With the coordinator on, the busy lane must also hold the pane menu's management item.
+    voice.enabled = true
     const state = stateFixture()
     const { command, rerender } = renderThreads(state)
     fireEvent.click(screen.getByRole('button', { name: choice, exact: true }))
@@ -386,7 +388,7 @@ describe('ThreadsView workspace', () => {
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, globalLaneBusy: true }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(screen.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Pause managing', exact: true })).toBeDisabled()
+    expect(paneMenuItem(document.body, 'Pause managing')).toBeDisabled()
   })
 
   it('writes an answer in the selected workspace without changing pages', () => {
@@ -482,5 +484,16 @@ describe('Agents room link', () => {
     render(<AgentView onOpenThreads={onOpenThreads} />)
     fireEvent.click(screen.getByRole('button', { name: 'All threads' }))
     expect(onOpenThreads).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('sidebar foot rooms', () => {
+  it('offers Dictate and Threads for the beta, and Agents only with the voice coordinator on', () => {
+    const view = renderThreads(stateFixture())
+    const rooms = () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab').map(tab => tab.textContent)
+    expect(rooms()).toEqual(['Dictate', 'Threads'])
+    voice.enabled = true
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(rooms()).toEqual(['Dictate', 'Agents', 'Threads'])
   })
 })

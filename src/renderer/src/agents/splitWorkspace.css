@@ -13,16 +13,24 @@
 /* Out of view but still laid out, so its transcript keeps its place and its composer its draft. */
 .threads-view .thread-pane[data-hidden] { visibility: hidden; }
 
+/* The window controls sit once at the page's top-right corner, over one pane's header: the last pane of the top
+   row, which ThreadPanes marks. Only that pane keeps their room clear, and only it moves its layout controls out
+   from under them; --threads-winctl-inset is 0 on macOS, where the traffic lights are inset into the sidebar. */
+.threads-view .thread-pane { --threads-pane-inset: 0px; }
+.threads-view .thread-pane[data-under-controls] { --threads-pane-inset: var(--threads-winctl-inset, 0px); }
+.threads-view .thread-pane[data-under-controls] .thread-workspace__head { padding-right: calc(24px + var(--threads-pane-inset, 0px)); }
+
 /* The focused pane carries the accent along its top edge; the other panes' titles step back. */
-.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: 96px; }
-.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) > .thread-workspace__head { padding-right: 130px; }
-.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) > .thread-workspace__head { padding-right: 164px; }
+.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: calc(96px + var(--threads-pane-inset, 0px)); }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) > .thread-workspace__head { padding-right: calc(130px + var(--threads-pane-inset, 0px)); }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) > .thread-workspace__head { padding-right: calc(164px + var(--threads-pane-inset, 0px)); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] > .thread-workspace__head { box-shadow: inset 0 2px 0 var(--tt-activity); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
 
-/* Layout controls sit at the header's end, beside the title they act on. */
-.threads-view .thread-pane__controls { position: absolute; top: 19px; right: 12px; z-index: 1; display: flex; gap: 2px; }
-.threads-view .thread-pane__control { display: grid; place-items: center; width: 32px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+/* Layout controls sit at the header's end, beside the title they act on. They float over the header, which is the
+   window's drag handle, so they opt out of dragging themselves. */
+.threads-view .thread-pane__controls { position: absolute; top: 7px; right: calc(12px + var(--threads-pane-inset, 0px)); z-index: 1; display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.threads-view .thread-pane__control { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .threads-view .thread-pane__control:hover, .threads-view .thread-pane__control[aria-pressed='true'] { background: var(--threads-hover); color: var(--tt-text); }
 .threads-view .thread-pane__grip { cursor: grab; }
 .threads-view .thread-pane__grip:active { cursor: grabbing; }
@@ -42,6 +50,10 @@
 
 /* One pane at a time: the open panes as tabs, the shown one underlined with the accent. */
 .threads-view .thread-panes__tabs { display: flex; flex: none; gap: 2px; padding: 6px 12px 0; overflow-x: auto; border-bottom: 1px solid var(--tt-hairline); scrollbar-width: none; }
+/* In tab mode the strip, not a pane header, meets the window's corner: it keeps the controls' room and the shown pane
+   takes its own back. A docked tools panel takes the corner instead and reserves the room itself. */
+.threads-view:not(:has(.thread-workspace__tools > .tools-panel:not([data-mode='overlay']))) .thread-panes[data-narrow] .thread-panes__tabs { padding-right: calc(12px + var(--threads-winctl-inset, 0px)); }
+.threads-view .thread-panes[data-narrow] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
 .threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
@@ -68,14 +80,9 @@
    actions no longer fit beside the title, so panes of an even split stack the same way and start their transcripts level.
    A short pane stacks up to 1000px too: its title shares a row with the crumb, and the actions and layout controls would wrap beside it. */
 @container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
-  .threads-view .thread-pane .thread-workspace__head { flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 10px 18px; }
-  .threads-view .thread-pane .thread-workspace__actions { justify-content: flex-start; margin-left: -8px; }
-  .threads-view .thread-pane .thread-pane__controls { top: 8px; right: 8px; }
-  /* The layout controls sit beside the crumb and title, so only they make room; the actions keep the full row. */
-  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count]) > .thread-workspace__head { padding-right: 18px; }
-  .threads-view .thread-panes[data-split] .thread-pane .thread-workspace__title { padding-right: 62px; }
-  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) .thread-workspace__title { padding-right: 96px; }
-  .threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) .thread-workspace__title { padding-right: 130px; }
+  .threads-view .thread-pane .thread-workspace__head { padding-left: 14px; }
+  /* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. */
+  .threads-view .thread-pane .thread-workspace__crumb { display: none; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px; }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
@@ -89,12 +96,8 @@
   /* The composer keeps its actions whole; the transcript above gives way. */
   .threads-view .thread-pane .thread-workspace__compose { flex: none; padding-block: 4px 10px; }
   .threads-view .thread-pane > .thread-transcript { min-height: min(96px, 24%); }
-  .threads-view .thread-pane > header.thread-workspace__head { gap: 2px; min-height: 0; padding-block: 6px; }
-  .threads-view .thread-pane > header .thread-workspace__title { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: baseline; gap: 12px; }
-  /* The title keeps its name up to most of the row; the crumb gives way first. */
-  .threads-view .thread-pane > header .thread-workspace__title h2 { flex: none; max-width: 70%; margin: 0; }
-  .threads-view .thread-pane > header .thread-workspace__crumb { flex: 0 1 auto; }
-  .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 4px; }
+  /* The header is already one row at its smallest, so a short pane gives its height to the transcript and composer. */
+  .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 7px; }
   .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) { padding: 10px 14px 8px; }
   .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) textarea { min-height: 50px; max-height: 120px; }
   .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt__footer, .agent-composer__footer) { margin-top: 4px; }
@@ -117,10 +120,6 @@
 }
 :root[data-reduced-motion='on'] .threads-view .thread-panes__divider::before, :root[data-reduced-motion='on'] .threads-view :is(.thread-panes__drop::before, .thread-panes__drop-label) { transition: none; }
 
-/* Short desktop splits retain every header action without giving Tools a row of its own. */
-@container thread-pane (max-height: 600px) and (max-width: 600px) {
-  .threads-view .thread-pane .thread-workspace__actions .tt-button { padding-inline: 4px; }
-}
 /* The tab strip and usage footer also share the minimum window's height budget. Keep the same type and
    34px action targets; tighten surrounding space so an image draft and its queue stay wholly visible. */
 @media (max-height: 600px) {
@@ -129,6 +128,5 @@
 }
 @container thread-pane (max-height: 450px) {
   .threads-view .thread-pane .thread-workspace__compose { padding-block: 2px 4px; }
-  .threads-view .thread-panes .thread-pane > header.thread-workspace__head { padding-block: 4px; }
   .threads-view .thread-pane .thread-usage { padding-block: 0; }
 }

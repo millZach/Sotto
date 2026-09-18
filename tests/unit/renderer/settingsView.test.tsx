@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
+import { useVoiceCoordinatorEnabled } from '../../../src/renderer/src/state/voiceCoordinator'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import {
@@ -21,11 +22,18 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal =>
   useOptionalAgents: vi.fn(),
 }))
 
+// Settings is rendered without the app provider the real hook reads, so the
+// beta's voice gate is stated here rather than inferred from a context.
+vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({
+  useVoiceCoordinatorEnabled: vi.fn(() => false),
+}))
+
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
   appearancePreview.reset()
   vi.mocked(useOptionalAgents).mockReset()
+  vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(false)
 })
 
 function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'> {
@@ -794,5 +802,34 @@ describe('SettingsView', () => {
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
     expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
     expect(screen.queryByRole('dialog', { name: 'Agent configuration' })).toBeNull()
+  })
+
+  it('leaves the reasoning account in Agents but no voice or wake settings while the coordinator is hidden', async () => {
+    const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
+    const state: AgentState = {
+      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
+      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      voice: { status: 'off', error: null, action: 'none', revision: 0 },
+      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+      membership: { status: 'beta', label: 'Test', expiresAt: null },
+    }
+    vi.mocked(useOptionalAgents).mockReturnValue({
+      state, command: vi.fn(async () => state), error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(),
+      attention: { items: [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) },
+    })
+    const { container, rerender } = render(<SettingsView {...baseProps()} />)
+    await selectCategory('Agents')
+    const agents = container.querySelector('#settings-agents') as HTMLElement
+    expect(within(agents).getByText('Reasoning & projects')).toBeInTheDocument()
+    expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
+    expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
+    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
+    // Nothing is deleted: turning the coordinator on brings the same controls back.
+    vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(true)
+    rerender(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true } })} />)
+    expect(within(agents).getByText('Reasoning, voice & projects')).toBeInTheDocument()
+    expect(within(agents).getByText('Advanced wake settings')).toBeInTheDocument()
   })
 })

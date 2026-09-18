@@ -9,8 +9,12 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { openPaneMenu, paneMenuItem } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+// Management is the voice coordinator's own work, which the beta hides; this file is about the handoff, so it is on.
+const voice = vi.hoisted(() => ({ enabled: true }))
+vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 const THREAD = 'grok-previews'
@@ -69,7 +73,7 @@ describe('management handoff focus', () => {
     const view = mount()
     const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })
     fireEvent.change(prompt, { target: { value: 'My unsent manual draft.' } })
-    const manage = within(view.pane()).getByRole('button', { name: 'Manage', exact: true })
+    const manage = paneMenuItem(view.pane(), 'Manage')
     manage.focus()
     await act(async () => { fireEvent.click(manage) })
     // The debounced save is flushed and answered before the handoff reads the saved draft.
@@ -83,7 +87,8 @@ describe('management handoff focus', () => {
     await waitFor(() => expect(managed).toHaveFocus())
     expect(managed).toHaveValue('My unsent manual draft.')
 
-    await act(async () => { fireEvent.click(within(view.pane()).getByRole('button', { name: 'Stop managing', exact: true })) })
+    const stopManaging = paneMenuItem(view.pane(), 'Stop managing')
+    await act(async () => { fireEvent.click(stopManaging) })
     const manual = within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })
     expect(manual).not.toHaveAttribute('id', 'agent-prompt')
     await waitFor(() => expect(manual).toHaveFocus())
@@ -98,12 +103,16 @@ describe('management handoff focus', () => {
     await act(async () => { prompt.focus() })
     await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
     fireEvent.change(prompt, { target: { value: 'Held manual draft.' } })
-    await act(async () => { fireEvent.click(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })) })
+    const held = paneMenuItem(view.pane(), 'Manage')
+    await act(async () => { fireEvent.click(held) })
     await waitFor(() => expect(view.live.heldSaves.some(item => item.command.text === 'Held manual draft.')).toBe(true))
 
+    // While the handoff waits for its save, every menu action on this thread is refused.
+    const holding = openPaneMenu(view.pane())
+    expect(within(holding).getByRole('menuitem', { name: 'Manage' })).toBeDisabled()
+    expect(within(holding).getByRole('menuitem', { name: 'Settle' })).toBeDisabled()
+    fireEvent.keyDown(holding, { key: 'Escape' })
     const pane = within(view.pane())
-    expect(pane.getByRole('button', { name: 'Manage', exact: true })).toBeDisabled()
-    expect(pane.getByRole('button', { name: 'Settle', exact: true })).toBeDisabled()
     expect(pane.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
     expect(pane.getByText('Handing this draft to Sotto…')).toBeInTheDocument()
     await act(async () => { fireEvent.keyDown(prompt, { key: 'Enter' }) })
@@ -114,15 +123,16 @@ describe('management handoff focus', () => {
     const other = within(screen.getByRole('region', { name: 'Streaming WAV stall' }))
     fireEvent.change(other.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'Other pane prompt.' } })
     expect(other.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
-    expect(other.getByRole('button', { name: 'Settle', exact: true })).toBeEnabled()
+    expect(within(openPaneMenu(screen.getByRole('region', { name: 'Streaming WAV stall' }))).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
 
-    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
-    await waitFor(() => expect(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })).toBeEnabled())
+    await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(view.command.mock.calls.map(([request]) => request.type)).not.toContain('assign')
     expect(view.live.state.assignments).toEqual([])
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Held manual draft.')
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).not.toHaveAttribute('id', 'agent-prompt')
-    expect(within(view.pane()).getByRole('button', { name: 'Settle', exact: true })).toBeEnabled()
+    const released = openPaneMenu(view.pane())
+    expect(within(released).getByRole('menuitem', { name: 'Manage' })).toBeEnabled()
+    expect(within(released).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
   })
 
   it('keyboard Manage keeps focus in the prompt while the save is held and after it fails, unless the user moved to another pane', async () => {
@@ -134,36 +144,33 @@ describe('management handoff focus', () => {
     await act(async () => { prompt.focus() })
     await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
     fireEvent.change(prompt, { target: { value: 'Keyboard manual draft.' } })
-    const manage = within(view.pane()).getByRole('button', { name: 'Manage', exact: true })
-
-    // Held, then refused: the button disables under the keyboard, and focus is in this thread's prompt throughout.
+    // Held, then refused: choosing Manage with the keyboard leaves focus in this thread's prompt throughout.
+    const manage = paneMenuItem(view.pane(), 'Manage')
     await act(async () => { manage.focus() })
     await user.keyboard('{Enter}')
     await waitFor(() => expect(view.live.heldSaves.some(item => item.command.text === 'Keyboard manual draft.')).toBe(true))
-    expect(manage).toBeDisabled()
     expect(document.activeElement).toBe(prompt)
     await user.keyboard('{Enter}')
     expect(view.live.manualSends()).toBe(0)
-    expect(within(view.pane()).getByRole('button', { name: 'Settle', exact: true })).toBeDisabled()
-    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
-    await waitFor(() => expect(manage).toBeEnabled())
+    await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(document.activeElement).toBe(prompt)
     expect(prompt).toHaveValue('Keyboard manual draft.')
     expect(view.live.state.assignments).toEqual([])
 
     // Held again, but the user moves to the other pane before the failure: focus stays where they went.
-    await act(async () => { manage.focus() })
+    const again = paneMenuItem(view.pane(), 'Manage')
+    await act(async () => { again.focus() })
     await user.keyboard('{Enter}')
     await waitFor(() => expect(view.live.heldSaves.length).toBeGreaterThan(0))
     expect(document.activeElement).toBe(prompt)
     const other = within(screen.getByRole('region', { name: 'Streaming WAV stall' })).getByRole('textbox', { name: 'Prompt', exact: true })
     await user.click(other)
     await user.keyboard('Other pane typing')
-    await act(async () => { for (const held of view.live.heldSaves.splice(0)) held.finish('Could not write the draft.') })
-    await waitFor(() => expect(within(view.pane()).getByRole('button', { name: 'Manage', exact: true })).toBeEnabled())
+    await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(document.activeElement).toBe(other)
     expect(other).toHaveValue('Other pane typing')
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keyboard manual draft.')
+    expect(within(openPaneMenu(view.pane())).getByRole('menuitem', { name: 'Manage' })).toBeEnabled()
   })
 
   it('Write here in an unfocused managed pane focuses that pane’s managed composer once it holds the selection', async () => {

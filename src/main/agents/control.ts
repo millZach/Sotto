@@ -174,6 +174,8 @@ export class AgentControl {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     bindRequestDraftDecision?: BindRequestDraftDecision
     historyEnabled?: () => boolean
+    /** Whether the voice coordinator ships. Off, no thread stays managed across a start (ADR-0012). */
+    coordinatorEnabled?: () => boolean
     turns?: TurnRecorder
     authority?: Authority
     preferences?: Pick<MemoryProfile, 'retrieve'>
@@ -239,6 +241,13 @@ export class AgentControl {
         assignment.instruction = ''
       }
       if (!/^[a-f0-9]{64}$/u.test(assignment.lastFailure)) assignment.lastFailure = ''
+    }
+    // With the coordinator hidden nothing can stop management, so a thread an earlier build left managed would refuse
+    // every draft and send while Sotto kept supervising it. Management ends here instead, queue rows and all.
+    if (this.dependencies.coordinatorEnabled?.() === false && this.state.assignments.length > 0) {
+      const managed = new Set(this.state.assignments.map(assignment => assignment.threadId))
+      this.state.assignments = []
+      this.state.queue = this.state.queue.filter(item => !managed.has(item.threadId))
     }
     if (contextSavedAt < cutoff || historyDisabled) {
       this.state.pendingRequest = ''

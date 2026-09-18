@@ -1,0 +1,145 @@
+/* The Threads page sidebar: the 44px top row, search, project folders, 32px rows and the Settled/Closed shelf.
+   Terminal mode reuses every class here (terminals/TerminalSidebar.tsx). The Chats page borrows the frame's
+   older shape (agents/personal/PersonalChatsView.tsx), so everything the redesign moved is scoped to the
+   [data-mode] the Threads and Terminal sidebars carry and Chats does not. */
+/* Sidebar */
+.thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
+.thread-nav[data-mode] { padding: 0; }
+.thread-nav__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 12px 8px; }
+.thread-nav__head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.45px; }
+.thread-nav__head-actions { display: flex; gap: 2px; }
+.thread-nav__head .tt-button { width: 36px; min-height: 36px; padding: 0; }
+
+/* The top row carries the mark, the mode switch and the two new actions, and it is the frameless window's
+   drag region: every control in it opts back out. macOS keeps room at the left for the traffic lights. */
+.thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; user-select: none; }
+.thread-nav--mac .thread-nav__top { padding-left: 78px; }
+.thread-nav__glyph { flex: none; width: 18px; height: 18px; margin-right: auto; }
+.thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }
+.thread-nav__top .tt-button > svg { flex: none; }
+
+/* One segmented control drawn twice: the Threads | Terminal switch in the top row, the room switch in the foot. */
+.thread-nav__seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken, var(--tt-hover)); -webkit-app-region: no-drag; }
+.thread-nav__seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.thread-nav__seg button:hover { color: var(--tt-text); }
+.thread-nav__seg button[aria-checked='true'], .thread-nav__seg button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color, rgb(0 0 0 / 25%)); }
+.thread-nav__seg--icons button { padding: 0 7px; }
+
+.thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px 10px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
+.threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
+.threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--threads-field); font-size: 13px; font-weight: 400; }
+.threads-search .tt-input::-webkit-search-cancel-button { display: none; }
+.threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; translate: 0 -50%; }
+.thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
+.thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+.thread-nav__label span { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+/* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
+.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 12.5px; text-align: left; cursor: pointer; }
+.thread-nav__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
+.thread-nav__settled > span { color: var(--tt-text-2); }
+.thread-folder__chevron { flex: none; transition: transform .16s ease; }
+[aria-expanded='true'] > .thread-folder__chevron { transform: rotate(90deg); }
+.thread-nav__indicators { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
+.thread-nav__indicators > span { display: inline-flex; }
+.thread-nav__indicators i { display: block; width: 6px; height: 6px; border-radius: 50%; }
+.thread-nav__indicators [data-state='needs'] i { background: var(--tt-attention); }
+.thread-nav__indicators [data-state='working'] i { background: var(--tt-activity); }
+.thread-nav__empty { margin: 4px 10px 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; list-style: none; }
+
+/* A project group: a bold title with its actions on hover, then its rows flush under it. */
+.thread-folder { margin: 0 0 14px; }
+.thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.thread-folder__head:hover { background: var(--threads-hover); }
+.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; }
+.thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
+/* Expanded, the rows themselves say the group is open; collapsed, the chevron is the only sign left. */
+.thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: none; }
+.thread-folder__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
+.thread-folder__actions, .thread-nav__row-actions { display: flex; gap: 2px; padding-right: 2px; }
+.thread-folder__rows { margin: 0; padding: 0; list-style: none; }
+.thread-nav__action { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.thread-nav__action:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
+.thread-nav__action:disabled { opacity: .45; cursor: not-allowed; }
+.thread-folder__actions .thread-nav__action { width: 22px; height: 22px; }
+/* Row and folder actions stay reachable by keyboard and appear on hover, focus and the open row. */
+.thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
+.thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
+.thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
+/* With a pointer, folder actions overlay the indicators instead of taking width from the name. */
+@media (hover: hover) {
+  .thread-folder__actions { position: absolute; top: 2px; right: 0; border-radius: 7px; background: var(--threads-hover); }
+  /* Fade (not hide) the indicators under the actions: the counts stay in the toggle's accessible name. */
+  .thread-folder__head:has(.thread-folder__actions):is(:hover, :focus-within) .thread-nav__indicators { opacity: 0; }
+}
+@media (hover: none) { .thread-folder__actions, .thread-nav__row-actions { opacity: 1; } }
+
+.thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.thread-nav__row:hover { background: var(--threads-hover); }
+.thread-nav__row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
+/* Hidden actions take no pointer; shown, they take their own width so the row button (and a click on
+   its centre) never lies under them. */
+.thread-nav__row-actions { position: absolute; top: 1px; right: 0; pointer-events: none; }
+.thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; }
+@media (hover: none) { .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; } }
+.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
+.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 32px; padding: 0 8px 0 10px; border-radius: 7px; }
+.thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
+/* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
+   fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
+   against the sidebar and selected row) while keeping the provider hue. */
+.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, #d7dbe1); }
+.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
+.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
+:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
+.thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
+.thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
+.thread-nav__rename { font-size: 14px; font-weight: 500; }
+.thread-workspace__rename { font-size: inherit; font-weight: inherit; }
+:is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
+/* 14px is the floor for a row title: the 760px window recomposes around it and never shrinks the type. */
+.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
+.thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* What a row that wants you says where the clock would be; the whole sentence is the row's accessible description. */
+.thread-nav__needs { max-width: 96px; overflow: hidden; color: var(--tt-attention); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
+
+/* The status ring: an outline while the thread is idle, a ring that turns while it works, amber when it wants
+   you, and green with a filled centre for a run that finished while you were looking somewhere else. */
+.thread-nav__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline, var(--tt-border)); border-radius: 50%; }
+.thread-nav__ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.thread-nav__ring[data-state='needs'] { border: 2px solid var(--tt-attention); }
+.thread-nav__ring[data-unseen] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); mask: none; }
+/* A thread whose provider is unreachable is not turning, whatever its last state said. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-nav__ring[data-state='working']:not([data-disconnected], [data-unseen]) { animation: thread-ring 1.5s linear infinite; }
+}
+@keyframes thread-ring { to { rotate: 360deg; } }
+
+/* The Threads sidebar hides this sentence and rings instead; the Chats page still draws it, dot and all. */
+.thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.thread-nav__status[data-state='working'] { color: var(--tt-activity); }
+.thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected] { color: var(--threads-warning-text); }
+.thread-nav__status[data-state='working'] i, .thread-nav__status[data-state='needs'] i, .thread-nav__status[data-unseen] i { display: block; }
+/* An answer is yours to write, so its dot is an open ring; a permission holds the agent still, so its dot stays filled. */
+.thread-nav__status[data-waiting='question'] i { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.thread-nav__status[data-unseen] { color: var(--tt-text-2); }
+.thread-nav__status[data-unseen] i { background: var(--tt-activity); }
+
+.provider-mark { display: block; flex: none; fill: currentColor; }
+.provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; }
+
+@media (max-width: 820px) {
+  .thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr); }
+  .thread-nav__time, .thread-nav__needs { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__ring { animation: none; } }
+:root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }
+:root[data-reduced-motion='on'] .thread-nav__ring { animation: none; }

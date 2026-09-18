@@ -64,7 +64,9 @@ it.each(['listening', 'wake', 'muted'] as const)('reveals prompt dictation and t
 })
 
 describe('one pill with agent controls', () => {
-  const idle = { status: 'idle', theme: 'dark', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false } as const
+  // Voice is hidden for the beta, so a pill only carries agent controls where
+  // the snapshot says the coordinator is shown.
+  const idle = { status: 'idle', theme: 'dark', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'on', shortcut: 'Ctrl+Shift+Space', cancellable: false, voiceCoordinator: true } as const
   it('keeps the idle pill and expands threads only on request, across attention and voice changes', () => {
     let state = stateFixture()
     state.configuration.enabled = true
@@ -123,6 +125,26 @@ describe('one pill with agent controls', () => {
     expect(screen.getByText('00:05')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument()
     expect(onPresentationChange).toHaveBeenLastCalledWith('pill-controls')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('carries no voice or management controls while the coordinator is hidden', () => {
+    const state = stateFixture()
+    state.configuration.enabled = true
+    state.configuration.speak = true
+    const command = vi.fn(async () => state)
+    const onStop = vi.fn()
+    const hidden = { ...idle, voiceCoordinator: false }
+    const { rerender } = render(<WidgetApp snapshot={hidden} platform="win32" now={0} agents={{ state, command, error: null }} />)
+    fireEvent.mouseEnter(screen.getByTestId('widget-sliver'))
+    expect(screen.queryByRole('button', { name: 'Mute microphone' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mute voice' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Expand threads' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Threads' })).toBeNull()
+    // Dictation is what the widget is for, so its own controls must survive.
+    rerender(<WidgetApp snapshot={{ ...hidden, status: 'listening', sessionId: 'test', startedAt: 0, level: 0.6, cancellable: true }} platform="win32" now={5000} agents={{ state, command, error: null }} onStop={onStop} />)
+    expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
     expect(onStop).toHaveBeenCalledTimes(1)
   })

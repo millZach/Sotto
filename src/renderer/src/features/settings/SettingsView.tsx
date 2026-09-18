@@ -549,7 +549,7 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
 
-              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>Reasoning, voice & projects</p></div><AgentSetupFields /></Card>
+              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>{settings.voiceCoordinatorEnabled ? 'Reasoning, voice & projects' : 'Reasoning & projects'}</p></div><AgentSetupFields /></Card>
 
               <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>

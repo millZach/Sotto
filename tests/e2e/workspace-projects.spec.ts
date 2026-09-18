@@ -5,7 +5,7 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, firstSottoWindow, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, firstSottoWindow, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
 
 const ARTIFACTS = 'artifacts/phase1-workspace'
 // A 1x1 PNG: enough for the real attachment validation path.
@@ -24,7 +24,7 @@ async function connectAndOpenThreads(page: Page): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
 }
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
@@ -147,7 +147,11 @@ test('project folders hold several threads, settle and restore threads and proje
     await expect(page.getByRole('heading', { name: 'Plan the release', exact: true })).toBeVisible()
     const unstarted = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Plan the release')!)
     expect(unstarted.nativeSessionStarted).toBe(false)
+    // An unstarted thread can still change its model, behind the pane's Thread options pill.
+    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
     await expect(page.getByRole('combobox', { name: 'Thread model' })).toBeEnabled()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('combobox', { name: 'Thread model' })).toHaveCount(0)
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Outline the release steps.')
     await page.keyboard.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Outline the release steps.')
@@ -202,7 +206,7 @@ test('project folders hold several threads, settle and restore threads and proje
     launched = await launchSotto('success', profile)
     page = launched.page
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const reopened = page.getByRole('complementary', { name: 'Thread sidebar' })
     await reopened.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Docs draft kept across a restart.')
@@ -214,13 +218,21 @@ test('project folders hold several threads, settle and restore threads and proje
     // The 760 px minimum recomposes the same page without shrinking type or clipping status and navigation.
     await resize(launched, 760, 740)
     await expectNoHorizontalOverflow(page)
-    const sizes = await page.evaluate(() => ({
-      message: getComputedStyle(document.querySelector('#thread-workspace-prompt')!).fontSize,
-      row: getComputedStyle(document.querySelector('.thread-nav__title')!).fontSize,
-      status: getComputedStyle(document.querySelector('.thread-nav__status')!).fontSize,
-    }))
-    expect(sizes).toEqual({ message: '16px', row: '14px', status: '12px' })
-    await expect(page.getByRole('link', { name: 'Threads', exact: true })).toBeVisible()
+    const sizes = await page.evaluate(() => {
+      // The status sentence is read-only text for assistive technology now. What a row still shows on its right is the
+      // working clock or the words "needs you", and only while the thread is working or waiting.
+      const slot = document.querySelector('.thread-nav__time, .thread-nav__attention')
+      return {
+        message: getComputedStyle(document.querySelector('#thread-workspace-prompt')!).fontSize,
+        row: getComputedStyle(document.querySelector('.thread-nav__title')!).fontSize,
+        slot: slot === null ? null : getComputedStyle(slot).fontSize,
+      }
+    })
+    expect(sizes.message).toBe('16px')
+    expect(sizes.row).toBe('14px')
+    if (sizes.slot !== null) expect(sizes.slot).toBe('12px')
+    // The page switch keeps its place in the sidebar foot at the minimum width.
+    await expect(page.getByRole('tab', { name: 'Threads', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeInViewport()
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'projects-760.png') })
   } finally {
@@ -241,6 +253,8 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await page.keyboard.press('Enter')
     await expect(prompt).toHaveValue('')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Delivered reply.' }))
+    // The reply has to reach the window before the next prompt, or Enter queues it behind the turn instead of sending.
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId: 'docs', text: '' }))
     await prompt.fill('Maybe delivered.')
     await page.keyboard.press('Enter')
@@ -258,7 +272,7 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     const afterEnter = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(afterEnter.deliveries!.filter(delivery => delivery.threadId === 'docs').map(delivery => delivery.status).sort()).toEqual(['accepted', 'uncertain'])
     expect(afterEnter.followups ?? []).toEqual([])
-    expect(afterEnter.host.threads.find(thread => thread.id === 'docs')!.messages.filter(message => message.role === 'user').map(message => message.text)).toEqual(['First, delivered.'])
+    expect(await userMessageTexts(page, 'docs')).toEqual(['First, delivered.'])
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts ?? [])).find(draft => draft.threadId === 'docs')?.text).toBe('Edited while unconfirmed.')
 
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'docs', text: '' }))
@@ -283,8 +297,12 @@ async function designProfile(prefix: string, settings: Record<string, unknown> =
   return profile
 }
 
-/** WCAG contrast of every provider glyph against the painted sidebar and selected-row backgrounds. */
-async function providerMarkContrast(page: Page): Promise<{ provider: string; background: string; ratio: number }[]> {
+/**
+ * WCAG contrast of the status ring's own colours against the painted sidebar and selected-row backgrounds. The row no
+ * longer carries a provider glyph, so the ring is the only mark a reader has to be able to pick out. Each colour is
+ * resolved through a throwaway span inside the row so a token written as a colour mix arrives as plain rgb.
+ */
+async function statusRingContrast(page: Page): Promise<{ role: string; background: string; ratio: number }[]> {
   return page.evaluate(() => {
     const probe = document.createElement('canvas').getContext('2d')!
     const rgb = (color: string): number[] => { probe.clearRect(0, 0, 1, 1); probe.fillStyle = '#000'; probe.fillStyle = color; probe.fillRect(0, 0, 1, 1); return [...probe.getImageData(0, 0, 1, 1).data.slice(0, 3)] }
@@ -293,31 +311,49 @@ async function providerMarkContrast(page: Page): Promise<{ provider: string; bac
       for (let node = element; node; node = node.parentElement) { const background = getComputedStyle(node).backgroundColor; if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') return background }
       return getComputedStyle(document.body).backgroundColor
     }
-    return [...document.querySelectorAll<HTMLElement>('.thread-nav__mark[data-provider]')].filter(mark => ['codex', 'claude', 'grok'].includes(mark.dataset.provider!)).map(mark => {
-      const [light, dark] = [luminance(rgb(getComputedStyle(mark).color)), luminance(rgb(painted(mark.closest('.thread-nav__row'))))].sort((first, second) => second - first)
-      return { provider: mark.dataset.provider!, background: mark.closest('.thread-nav__row')?.hasAttribute('data-current') ? 'selected' : 'sidebar', ratio: Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100 }
-    })
+    const resolved = (row: Element, token: string): string => {
+      const span = document.createElement('span')
+      span.style.color = `var(${token})`
+      row.appendChild(span)
+      const color = getComputedStyle(span).color
+      span.remove()
+      return color
+    }
+    const rows = new Map<Element, string>()
+    for (const ring of document.querySelectorAll<HTMLElement>('.thread-nav__ring')) {
+      const row = ring.closest('.thread-nav__row')
+      if (row !== null) rows.set(row, row.hasAttribute('data-current') ? 'selected' : 'sidebar')
+    }
+    const readings: { role: string; background: string; ratio: number }[] = []
+    for (const [row, background] of rows) {
+      const behind = luminance(rgb(painted(row)))
+      for (const role of ['--tt-activity', '--tt-attention']) {
+        const [light, dark] = [luminance(rgb(resolved(row, role))), behind].sort((first, second) => second - first)
+        readings.push({ role, background, ratio: Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100 })
+      }
+    }
+    return readings
   })
 }
 
-test('provider marks stay recognizable at 3:1 or more on the dark and light sidebars', async () => {
+test('status rings stay recognizable at 3:1 or more on the dark and light sidebars', async () => {
   const profile = await designProfile('sotto-e2e-workspace-marks-')
   const launched = await launchSotto('design-threads', profile)
   try {
     const { page } = launched
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
-    const dark = await providerMarkContrast(page)
-    // Light values from the appearance lane's tokens (Revision 1); this tree does not ship the light theme yet.
-    await page.addStyleTag({ content: `:root[data-theme='light'] { --tt-sidebar: #eef0ec; --tt-canvas: #f5f6f3; --tt-text: #141816; --tt-text-2: #3a423e; --tt-accent: #146e63;
-      --tt-provider-codex: #c9ced6; --tt-provider-claude: #e2ad80; --tt-provider-grok: #bfaefc; --tt-selected: color-mix(in srgb, var(--tt-accent) 9%, var(--tt-canvas)); }` })
-    await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
-    const light = await providerMarkContrast(page)
+    const dark = await statusRingContrast(page)
+    // The real light appearance, so the rings are measured against the tokens the light theme ships.
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    const light = await statusRingContrast(page)
     await mkdir(ARTIFACTS, { recursive: true })
     await writeFile(join(ARTIFACTS, 'provider-mark-contrast.json'), `${JSON.stringify({ dark, light }, null, 2)}
 `)
-    expect(new Set(dark.map(item => item.provider))).toEqual(new Set(['codex', 'claude', 'grok']))
-    for (const item of [...dark, ...light]) expect(item.ratio, `${item.provider} on ${item.background}`).toBeGreaterThanOrEqual(3)
+    // Both backgrounds a ring is ever drawn on: the plain sidebar and the selected row.
+    expect(new Set(dark.map(item => item.background))).toEqual(new Set(['selected', 'sidebar']))
+    for (const item of [...dark, ...light]) expect(item.ratio, `${item.role} on ${item.background}`).toBeGreaterThanOrEqual(3)
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'provider-marks-light-probe.png') })
   } finally {
     await closeSotto(launched)
@@ -338,14 +374,15 @@ for (const scale of [125, 150]) {
       const { page } = launched
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await expect.poll(() => page.evaluate<number>('devicePixelRatio')).toBeCloseTo(scale / 100, 2)
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       await resize(launched, 760, 700)
       const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
       await expect(sidebar.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
       await sidebar.getByRole('button', { name: /^Settled/ }).click()
       await expect(sidebar.getByRole('region', { name: 'Settled' }).getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
       await expectNoHorizontalOverflow(page)
-      expect(await page.evaluate(() => [...new Set([...document.querySelectorAll('.thread-nav__status i')].map(node => getComputedStyle(node).animationName))])).toEqual(['none'])
+      // The working ring spins; under reduced motion it must rest.
+      expect(await page.evaluate(() => [...new Set([...document.querySelectorAll('.thread-nav__ring')].map(node => getComputedStyle(node).animationName))])).toEqual(['none'])
       await mkdir(ARTIFACTS, { recursive: true })
       await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, `design-threads-760-${scale}.png`) })
     } finally {

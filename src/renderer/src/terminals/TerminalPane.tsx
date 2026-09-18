@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
-import { GitBranch, RotateCcw, SquareTerminal } from 'lucide-react'
+import { GitBranch, RotateCcw, Square, SquareTerminal } from 'lucide-react'
 import type { TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
+import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { ProviderMark } from '../agents/ProviderMark'
-import { Button } from '../components/Button'
 import type { TerminalViewFactory } from '../tools/terminalStore'
 import { exitLabel, exitNote, type TerminalRow } from './terminalFacts'
 import type { TerminalWorkspaceStore } from './terminalWorkspaceStore'
@@ -64,20 +64,21 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
   const running = terminal.status === 'running' || starting
   const workingCopy = terminal.workingCopy === 'independent' ? 'Worktree' : 'Project folder'
   const modifier = platform === 'darwin' ? '⌘' : 'Ctrl'
+  const actions: PaneMenuItem[] = [
+    { id: 'restart', label: 'Restart', icon: <RotateCcw size={15} aria-hidden="true" />, disabled: busy || !bridge, run: () => { focusNext.current = id; void store.restart(bridge, id) } },
+    ...(running ? [{ id: 'stop', label: 'Stop', icon: <Square size={15} aria-hidden="true" />, disabled: !bridge, run: () => void store.stop(bridge, id) }] : []),
+  ]
   return <div className="terminal-pane" data-focused={focused || undefined}>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
+        {row.providerId ? <ProviderMark provider={row.providerId} name={row.provider} size={16} /> : <SquareTerminal size={16} aria-hidden="true" />}
+        <h2>{terminal.title}</h2>
         <span className="thread-workspace__crumb">
-          {row.providerId ? <ProviderMark provider={row.providerId} name={row.provider} size={16} /> : <SquareTerminal size={16} aria-hidden="true" />}
           <span>{row.project?.title ?? row.provider} · {workingCopy}</span>
           {!running ? <span className="thread-workspace__tag">{exitLabel(terminal)}</span> : null}
         </span>
-        <h2>{terminal.title}</h2>
       </div>
-      <div className="thread-workspace__actions">
-        <Button variant="ghost" disabled={busy || !bridge} onClick={() => { focusNext.current = id; void store.restart(bridge, id) }}>Restart</Button>
-        {running ? <Button variant="secondary" disabled={!bridge} onClick={() => void store.stop(bridge, id)}>Stop</Button> : null}
-      </div>
+      <div className="thread-workspace__actions"><PaneMenu groups={[actions]} /></div>
     </header>
     <div className="terminal-pane__body" data-ended={!running || undefined}>
       {!running ? <div className="terminal-ended" role="status">

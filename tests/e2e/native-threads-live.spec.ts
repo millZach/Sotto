@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { firstSottoWindow } from './support/sottoLaunch'
+import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
@@ -69,7 +69,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       page = await launch()
       if (restoreRoot) {
         await expect.poll(async () => (await page!.evaluate(async () => window.sotto!.agents!.get())).connection, { timeout: 30_000 }).toBe('connected')
-        await page.getByRole('link', { name: 'Threads', exact: true }).click()
+        await openThreads(page)
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
         await waitForIdle(page)
@@ -89,7 +89,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       const connection = await configure(page, provider)
       evidence.connection = connection
       await page.reload()
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
       const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
       await dialog.getByRole('button', { name: /Local folder/ }).click()
@@ -150,7 +150,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
         return current.connection === 'connected' ? current : window.sotto!.agents!.command({ type: 'connect' })
       })
       expect(state.configuration.provider).toBe(provider)
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
       await waitForIdle(page)

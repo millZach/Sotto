@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
 test('provider configuration and coordinator choices have separate settings', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))

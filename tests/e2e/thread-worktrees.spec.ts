@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', windowsHide: true })
@@ -81,7 +81,7 @@ test('creates independent, shared, non-Git and recoverable worktree threads from
       for (const [title, path] of folders) await window.sotto!.agents!.command({ type: 'create-project', title, path, useExisting: true })
     }, [['repo-app', repo], ['app-package', join(repo, 'packages', 'app')], ['plain-notes', plain], ['fresh-repo', fresh]] as const)
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await resize(launched, 1280)
 
     // An existing thread keeps its folder and gains no setup notice.

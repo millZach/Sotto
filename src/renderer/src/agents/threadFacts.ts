@@ -293,17 +293,6 @@ export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadG
   return groups
 }
 
-/**
- * The footer's one sentence on the Threads page and in the Agents room, from
- * the number of threads Sotto is looking after: "Sotto is looking after 3
- * threads. Say “Hey Sotto” to talk to any of them."
- */
-export function lookingAfterSentence(count: number): string {
-  if (count <= 0) return 'Nothing is running. Say “Hey Sotto” to start a thread.'
-  if (count === 1) return 'Sotto is looking after 1 thread. Say “Hey Sotto” to talk to it.'
-  return `Sotto is looking after ${count} threads. Say “Hey Sotto” to talk to any of them.`
-}
-
 /** "3 active, 11 this week": active is needs you plus running; this week is any activity in the last seven days. */
 export function threadCounts(rows: readonly ThreadRow[], now: number): { readonly active: number; readonly week: number } {
   return {

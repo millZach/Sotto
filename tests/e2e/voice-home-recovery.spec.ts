@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 test('reveals voice drafting, pauses without loss, answers conversation and explicitly resumes saved text', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page, app } = launched
   try {
     await completeVoiceJourneySetup(page)

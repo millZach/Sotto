@@ -742,6 +742,11 @@ textarea.tt-input {
   grid-row: 1 / span 2;
 }
 
+/* Skip for now sits under the test button rather than on top of it. */
+.onboarding-microphone-test .tt-button--ghost {
+  grid-row: 3;
+}
+
 .onboarding-recovery,
 .onboarding-completion-error {
   border-left: 2px solid var(--tt-warning);
@@ -932,6 +937,13 @@ textarea.tt-input {
   grid-template-rows: 60px minmax(0, 1fr);
 }
 
+/* The Threads page is handed the whole window: it carries its own navigation,
+   window controls and drag regions, so the shell keeps nothing back for a
+   strip or a footer. */
+.app-shell--page {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .app-strip {
   -webkit-app-region: drag;
   display: grid;
@@ -1071,6 +1083,13 @@ textarea.tt-input {
   flex-direction: column;
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+/* A page that owns the window scrolls its own columns, so the room must not
+   scroll underneath it or add a gutter beside it. */
+.app-room--page {
+  overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
 .management-view {

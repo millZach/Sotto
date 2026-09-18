@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 test('inspects a completed checkpoint and explicitly rewinds files and the same conversation', async () => {
   test.setTimeout(120000)
@@ -38,7 +38,7 @@ test('inspects a completed checkpoint and explicitly rewinds files and the same 
       return result.ok ? result.value.checkpoints[0]?.status : result.error.message
     }, threadId)).toBe('ready')
     await writeFile(join(repo, 'notes.txt'), 'My unrelated later notes\n')
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Checkpoint review', exact: true }).first().click()
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools' })

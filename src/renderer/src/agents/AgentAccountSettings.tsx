@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { isSubscriptionReasoning, type AgentConfiguration, type AgentCommand } from '../../../shared/agents'
 import { Button } from '../components/Button'
+import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import { useOptionalAgents } from './AgentContext'
 import { VoiceSettings } from './VoiceSettings'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
@@ -48,6 +49,9 @@ function AgentAccountSettings(): ReactNode {
 
 export function AgentSetupFields(): ReactNode {
   const agents = useOptionalAgents()
+  // Voice is hidden for the beta, so the wake phrase and the voices it speaks
+  // with have nothing to configure; the reasoning account and projects do.
+  const voiceCoordinator = useVoiceCoordinatorEnabled()
   const state = agents?.state
   const command = agents?.command
   if (!state || !command) return <p>Preparing agent configuration…</p>
@@ -58,14 +62,14 @@ export function AgentSetupFields(): ReactNode {
     <ProviderUpgradeNotice state={state} command={command} />
     <SavedField label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />
     <SavedField label="Automatic follow-up limit" value={String(configuration.followupLimit)} onSave={value => /^\d+$/.test(value) && Number(value) <= 100 ? save({ followupLimit: Number(value) }) : Promise.resolve(false)} />
-  </div><VoiceSettings configuration={configuration} command={command} change={(key, value) => { void save({ [key]: value }) }} grokKeySaved={state.credentials.grokSpeech} voiceError={state.voice.error} />
+  </div>{voiceCoordinator ? <><VoiceSettings configuration={configuration} command={command} change={(key, value) => { void save({ [key]: value }) }} grokKeySaved={state.credentials.grokSpeech} voiceError={state.voice.error} />
   <details className="agent-wake-advanced">
     <summary>Advanced wake settings</summary>
     <div className="account-rows">
       <SavedField label="Wake model directory" value={configuration.wakeModelDirectory} onSave={wakeModelDirectory => save({ wakeModelDirectory })} />
       <SavedField label="Wake runtime directory" value={configuration.wakeRuntimeDirectory} onSave={wakeRuntimeDirectory => save({ wakeRuntimeDirectory })} />
     </div>
-  </details>
+  </details></> : null}
   <div className="agent-billing"><p><b>{state.membership.label}</b></p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>{configuration.membershipEndpoint ? <div className="agent-actions"><Button variant="secondary" onClick={() => void command({ type: 'membership', action: 'signin' })}>Sign in to Sotto</Button><Button variant="secondary" onClick={() => void command({ type: 'membership', action: state.membership.status === 'active' ? 'portal' : 'checkout' })}>{state.membership.status === 'active' ? 'Manage subscription' : 'Get Sotto Pro'}</Button><Button variant="ghost" onClick={() => void command({ type: 'membership', action: 'refresh' })}>Refresh membership</Button></div> : <p>Hosted sign-in and checkout are not available in this private development beta.</p>}</div>
   </div>
 }

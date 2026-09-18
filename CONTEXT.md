@@ -107,6 +107,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Wake phrase.** "Hey Sotto". Bare "Sotto" is not a wake phrase.
 
+**Voice coordinator (hidden).** Everything that speaks, listens for the wake phrase or hands a thread to Sotto: the wake session, the Agents room, spoken hints, the widget's microphone and speech controls, the voice settings, a personal chat's Talk controls, and Manage, Pause managing, Resume managing and Stop managing. All of it is hidden for the beta behind `voiceCoordinatorEnabled` in settings, which defaults to false; the renderer asks `useVoiceCoordinatorEnabled()` and the floating widget is told through the snapshot's `voiceCoordinator` field. Nothing is deleted, and dictation never depended on it (ADR-0012).
+
 **Utterance.** One transcribed spoken command handled by the coordinator.
 
 **Transcription.** Turning dictated audio into text. Since ADR-0006 there is exactly one route: each segment is encoded as a 16 kHz mono PCM16 WAV and sent from the main process to Microsoft MAI-Transcribe-2 through OpenRouter's transcription endpoint with the user's OpenRouter key. Nothing is transcribed on this computer and there is no fallback route; a failed request is reported with its reason. Avoid: "local model", "preset", "transcription server", "remote ASR".
@@ -132,6 +134,8 @@ Answering a question or permission request and creating a project are also part 
 **Retrieved preferences.** Current explicit memories relevant to the coordinator's question, drawn from the current thread, its project and global scope in that order. Irrelevant memories are omitted; retrieved preferences provide context, never authority.
 
 **Memory inspector.** The Memory page where the user sees remembered content, its provenance and history, and can correct, supersede or delete it. Corrections retain earlier versions; deleting a memory removes its full chain of versions.
+
+**Memory (hidden).** The Memory page and its link, the questionnaire that greets the Agents room, and the preferences a turn would retrieve from the store are all hidden for the beta behind `memoryEnabled` in settings, which defaults to false; the renderer asks `useMemoryEnabled()` and the main process reads the setting once at start and hands neither the agent control nor the personal chats a preferences source. The store still opens and its IPC stays registered, and nothing is deleted (ADR-0013).
 
 **Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in a probe mode that opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and prints its evidence. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
 
@@ -159,29 +163,32 @@ Answering a question or permission request and creating a project are also part 
 
 **Appearance.** The main window's mode setting: System, Light or Dark. Dark is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is the floating widget's mode, not a Theme. Avoid: "theme" for the mode.
 
-**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (Sotto, Rose, Fern, Tide, Copper, Dusk; T3 Code's palettes under Sotto's own names) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
+**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (Sotto, Rose, Fern, Tide, Copper, Dusk; five of them T3 Code's palettes under Sotto's own names, and Sotto's own look on the sixth) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
 
-**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Tide.
+**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Sotto.
 
 **Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
 
 **Theme editor.** The floating panel that creates or edits a custom theme and paints it live over the saved look until Save or Cancel. Pick app color (the inspector) chooses a colour role by pointing at the page; a role's label spotlights everywhere it is used.
 
-**Strip.** The top bar of the main window: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region.
+**Strip.** The top bar of the main window on every page except Threads: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region. The Threads page has no strip; it owns the whole window, its drag regions are the sidebar's top row and the pane header, and the window controls sit once at the page's top right. On macOS the sidebar's top row is inset instead, to leave the traffic lights their place.
 
-**Switch.** The two-state control in the strip that flips the room between Dictate and Agents. It is a tablist; arrow keys move between the two. Avoid: "tabs" in prose.
+**Switch.** The two-state control that flips the room between Dictate and Threads. It is a tablist; arrow keys move between the two. Threads is lit for the threads, chats and memory pages. On non-Threads pages it sits in the strip; on the Threads page it sits in the sidebar foot beside the page links. Both places offer the same rooms: while the voice coordinator setting is on, Agents joins as a third state in each. The room keeps its place in the shell tree across the two layouts, so switching pages never remounts what is inside it. Avoid: "tabs" in prose; "Agents" for the second state.
 
-**Room.** The single content area under the strip. The switch chooses the Dictate room or the Agents room; the footer links open the other pages (Threads, History, Dictionary, Settings, Help) in the same area.
+**Room.** The single content area under the strip. The switch chooses the Dictate room or the Threads page, and Threads is the page the application opens on; the page links open the others (Chats, History, Settings, Help, and Memory while memory is switched on) in the same area. On the Threads page those links are icons in the sidebar foot rather than a footer.
 
 **Dictate room.** The Dictate side of the switch: the large seven-bar wave, one sentence for the current state, one button with the shortcut, then the last transcript at reading size with Copy.
 
-**Footer status.** The one-line status text on the right of the footer links, supplied by whichever page is open (for example the model and paste mode in the Dictate room, the thread count on the Threads page).
+**Footer status.** The one-line status text on the right of the footer links, supplied by whichever page is open (for example the model and paste mode in the Dictate room). The Threads page has no footer and no footer status; a thread says what it is doing in its own row and pane.
 
-**Update control.** The small round button at the far right of the footer, the one place the updater shows itself in the window. Idle it offers a check; when a release is found it wears a download glyph, a progress ring while the installer downloads, and a restart glyph once the installer is on disk. Its accessible name says exactly what a press does. A press that downloads or fails gets a toast; a press that installs asks first, because the restart interrupts dictation and agent work. Automatic checks run fifteen seconds after launch and every four minutes, only on the installed Windows app and only while the setting allows, and never install anything on quit. "Check for Updates…" in the tray menu (and the macOS application menu) presses the control from outside the window.
+**Update control.** The small round button at the far right of the footer, or beside the page links in the sidebar foot on the Threads page, the one place the updater shows itself in the window. Idle it offers a check; when a release is found it wears a download glyph, a progress ring while the installer downloads, and a restart glyph once the installer is on disk. Its accessible name says exactly what a press does. A press that downloads or fails gets a toast; a press that installs asks first, because the restart interrupts dictation and agent work. Automatic checks run fifteen seconds after launch and every four minutes, only on the installed Windows app and only while the setting allows, and never install anything on quit. "Check for Updates…" in the tray menu (and the macOS application menu) presses the control from outside the window.
 
 ## Where things live
 
 - `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links, footer status and the update control slot.
+- `src/renderer/src/components/WindowControls.tsx` — the minimize, maximize and close-to-tray buttons, used by the strip and by the Threads page's top right.
+- `src/renderer/src/state/voiceCoordinator.ts` — `useVoiceCoordinatorEnabled()`, the one answer to whether voice is shown at all (ADR-0012).
+- `src/renderer/src/state/memoryFeature.ts` — `useMemoryEnabled()`, the one answer to whether memory is shown at all (ADR-0013).
 - `src/renderer/src/features/updates/` — the update control, its wording (`updateControlLogic.ts`) and the press-to-toast flow (`useUpdateFlow.ts`); `src/main/updates/updateService.ts` owns the cadence and phases behind it.
 - `src/renderer/src/features/dictate/DictateRoom.tsx` — the Dictate room.
 - `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
@@ -198,10 +205,10 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/agents/codex.ts` — the Codex App Server provider adapter and its provider session aliases; `codexRequests.ts` normalises Codex permission and question requests and their answers; `codexSessionLog.ts` reads the Codex session log for takeover detection.
 - `src/main/agents/providerSwitch.ts` — `ConfiguredProviderHost`, which aggregates independent provider connections and routes each thread to its bound adapter.
 - `tests/integration/adapterContract.ts` — the shared behavioural contract every provider adapter must pass; `tests/fixtures/fakeCodexAppServer.mjs` is the scripted fake Codex App Server it runs against.
-- `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state.
+- `src/renderer/src/agents/ThreadsView.tsx` — the Threads page; `threadFacts.ts` derives rows, groups, states and sentences from agent state; `threadSidebar.css` paints the sidebar, `threadsChrome.css` the page's own window chrome, and `threads.css` the page grid, workspace, pane header, transcript and composer.
 - `src/renderer/src/terminals/TerminalWorkspace.tsx` — Terminal mode; `terminalFacts.ts` derives its rows and states; `src/main/terminals/service.ts` owns the terminals and their PTYs; `src/shared/terminalCommands/` maps a provider, model, reasoning and permission choice to the CLI command.
 - `docs/agent-control.md` — user-facing behaviour of agent control, including the Threads page.
 - `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter and ADR-0006 on hosted transcription through OpenRouter.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter and ADR-0012 and ADR-0013 on the voice coordinator and memory being hidden for the beta.

@@ -6,7 +6,7 @@ import type { AgentCommand, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
@@ -59,7 +59,7 @@ const docsQuestion: HostEvent = {
 }
 
 test('composes a spoken answer across pauses and advances only after explicit submission', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -83,7 +83,7 @@ test('composes a spoken answer across pauses and advances only after explicit su
     snapshot = await command(page, { type: 'utterance', text: 'send it' })
     expect(snapshot.error).toBeNull()
     expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
     expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
     expect(snapshot.activeThreadId).toBe('docs')
     await expect(page.locator('.agent-composer textarea')).toHaveValue('')
@@ -94,6 +94,7 @@ test('composes a spoken answer across pauses and advances only after explicit su
 
 test('restores the pending question binding with its draft after an application restart', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
     await onboard(launched.page)
@@ -116,7 +117,7 @@ test('restores the pending question binding with its draft after an application 
     const snapshot = await command(launched.page, { type: 'utterance', text: 'send it' })
     expect(snapshot.error).toBeNull()
     expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
+    expect(await userMessageTexts(launched.page, 'workshop')).toHaveLength(0)
     expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
     expect(snapshot.activeThreadId).toBe('docs')
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
@@ -127,7 +128,7 @@ test('restores the pending question binding with its draft after an application 
 })
 
 test('keeps permission decisions explicit while allowing an exact spoken denial immediately', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await onboard(page)
@@ -144,6 +145,7 @@ test('keeps permission decisions explicit while allowing an exact spoken denial 
 
 test('retains a typed question answer across queue navigation, widget edits, and restart', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
     await onboard(launched.page)

@@ -486,7 +486,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const kokoroSpeech = new KokoroSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eKokoroSpeechFetch }) })
   const settings = new SecureSettings(plainSettings, credentials)
   await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
-  let agentHistoryEnabled = (await settings.get()).historyEnabled
+  const startupSettings = await settings.get()
+  let agentHistoryEnabled = startupSettings.historyEnabled
+  // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
+  // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
+  let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
+  const agentMemoryEnabled = startupSettings.memoryEnabled
   // Sotto's own short writing: thread titles, commit message drafts and pull request drafts.
   // E2E runs never reach the network, so every title there resolves to the stand-in name.
   const shortTextWriter = new ShortTextWriter({
@@ -589,8 +594,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     directory: userDataPath, host: agentHost, credentials, membership,
     ...(authority === undefined ? {} : { authority }),
-    ...(memoryProfile === undefined ? {} : { preferences: memoryProfile }),
-    historyEnabled: () => agentHistoryEnabled,
+    ...(memoryProfile === undefined || !agentMemoryEnabled ? {} : { preferences: memoryProfile }),
+    historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
     writeThreadTitle: threadTitleWriter(shortTextWriter, () => settings.forFormatting()),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
@@ -606,7 +611,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
   } : undefined
   const personalChats = new PersonalChatService({ userDataPath, bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.configuration(),
-    ...(memoryProfile ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
+    ...(memoryProfile && agentMemoryEnabled ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
     ...(testPersonalChatHosts ? { hosts: testPersonalChatHosts } : {}) })
   await personalChats.start()
   const promptSubscriptions = {
@@ -841,6 +846,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     async onSettingsChanged(settings): Promise<void> {
       agentHistoryEnabled = settings.historyEnabled
+      agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()
       await personalChats.privacyChanged()
       showWidgetWhenIdle = settings.showWidgetWhenIdle

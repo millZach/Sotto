@@ -18,13 +18,14 @@ import {
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
+import { useMemoryEnabled } from './state/memoryFeature'
+import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
-import { AgentProvider, useAgents } from './agents/AgentContext'
+import { AgentProvider } from './agents/AgentContext'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { PersonalChatsView } from './agents/personal/PersonalChatsView'
-import { lookingAfterSentence } from './agents/threadFacts'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
@@ -58,16 +59,16 @@ export function applyDocumentPreferences(
   else delete root.dataset.reducedMotion
 }
 
-/** The footer's one sentence: what this page keeps, or what the machine is looking after. */
+/**
+ * The footer's one sentence: what this page keeps. Threads has no footer of its
+ * own any more, so it says nothing here.
+ */
 function FooterStatus({ navigation, settings }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   readonly settings: AppSettings
 }): ReactNode {
-  const agents = useAgents()
   switch (navigation) {
     case 'agents': return <AgentAppearance />
-    case 'threads':
-      return lookingAfterSentence(agents.state?.host.threads.filter((thread) => thread.status === 'running').length ?? 0)
     case 'chats': return 'Chats are saved on this computer.'
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
@@ -81,6 +82,8 @@ function FooterStatus({ navigation, settings }: {
 
 export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
+  const voiceCoordinator = useVoiceCoordinatorEnabled()
+  const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
@@ -287,7 +290,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
-            if (saved) app.actions.navigate('home')
+            if (saved) app.actions.navigate('threads')
             return saved
           }}
         />
@@ -296,23 +299,41 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     )
   } else {
     const navigation = app.navigation
+    const updateControl = <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
+    // With the voice coordinator off there is no Agents room to open, so the
+    // page that would have shown it shows Threads, and the controls that led
+    // into its settings lead to Settings instead.
+    // The same goes for Memory while memory is hidden.
+    const threadsPage = navigation === 'threads' || (navigation === 'agents' && !voiceCoordinator) || (navigation === 'memory' && !memoryEnabled)
+    const threadWorkspace = (
+      <ThreadWorkspace
+        onOpenAgents={voiceCoordinator
+          ? () => { setAgentSheet('session'); app.actions.navigate('agents') }
+          : () => app.actions.navigate('settings')}
+        updateControl={updateControl}
+        now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
+      />
+    )
 
     let view: ReactNode
     switch (navigation) {
       case 'memory':
-        view = null
+        view = memoryEnabled ? null : threadWorkspace
         break
       case 'agents':
-        view = <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
+        view = voiceCoordinator
+          ? <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
+          : threadWorkspace
         break
       case 'threads':
-        view = <ThreadWorkspace
-          onOpenAgents={() => { setAgentSheet('session'); app.actions.navigate('agents') }}
-          now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
-        />
+        view = threadWorkspace
         break
       case 'chats':
-        view = <PersonalChatsView onOpenCoordinatorSettings={() => { setAgentSheet('settings'); app.actions.navigate('agents') }} />
+        view = <PersonalChatsView onOpenCoordinatorSettings={() => {
+          if (!voiceCoordinator) { app.actions.navigate('settings'); return }
+          setAgentSheet('settings')
+          app.actions.navigate('agents')
+        }} />
         break
       case 'history':
         view = <HistoryView
@@ -372,15 +393,19 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         <AppShell
           navigation={navigation}
           platform={app.platform}
+          layout={threadsPage ? 'page' : 'strip'}
           statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
-          updateControl={<UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />}
+          updateControl={updateControl}
           onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
           onMinimize={app.actions.minimizeApp}
           onMaximize={app.actions.toggleMaximizeApp}
           maximized={app.windowMaximized}
           onClose={app.actions.hideApp}
         >
-          <MemorySurface navigation={navigation}>{view}</MemorySurface>
+          {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
+              page is the Threads page, which must not be replaced by a questionnaire; Memory still
+              offers it on request. */}
+          {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
         </AppShell>
         {pendingInstall !== null ? (
           <ConfirmationDialog

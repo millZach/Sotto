@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * A native client may close pending questions when it shuts down. After a full process restart the provider does NOT
@@ -49,7 +49,8 @@ async function emit(page: Page, owner: Owner, id: string, request: AgentRequest)
   }, { owner, id, request })
 }
 async function open(page: Page, owner: Owner): Promise<void> {
-  await page.getByRole('link', { name: owner === 'personal' ? 'Chats' : 'Threads', exact: true }).click()
+  if (owner === 'personal') await openPage(page, 'Chats')
+  else await openThreads(page)
   if (owner === 'thread') await page.getByRole('button', { name: 'Workshop', exact: true }).click()
 }
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {

@@ -4,22 +4,22 @@
     {
       "provider": "codex",
       "boundary": "injected text through production voice state machine to fixture saved chat",
-      "elapsedMs": 95,
-      "ownerId": "da07ff98-5e25-4104-88c4-9e783e0abe76",
+      "elapsedMs": 128,
+      "ownerId": "5f756aad-bbb1-4c46-8c16-ab40bfe46e90",
       "messages": 2
     },
     {
       "provider": "claude",
       "boundary": "injected text through production voice state machine to fixture saved chat",
-      "elapsedMs": 97,
-      "ownerId": "ee9159cd-c623-4ae4-83f6-75963061a507",
+      "elapsedMs": 163,
+      "ownerId": "bde1c024-2185-4c16-9c6c-85b003afb47d",
       "messages": 2
     },
     {
       "provider": "grok",
       "boundary": "injected text through production voice state machine to fixture saved chat",
-      "elapsedMs": 104,
-      "ownerId": "6b50a42f-8510-41a2-ba21-cd3f6fa86a2f",
+      "elapsedMs": 176,
+      "ownerId": "a03c06da-d498-49a2-b7ff-a93dc8001d0a",
       "messages": 2
     }
   ]

@@ -54,7 +54,7 @@ describe('wake acknowledgement in the real application voice session', () => {
     const command = vi.fn(async () => state)
     vi.stubGlobal('sotto', { agents: { get: async () => state, onState: () => () => undefined, command } })
     vi.stubGlobal('sottoE2E', {})
-    render(<AgentProvider settings={{ ...defaultSettings('Control+Shift+Space'), onboardingComplete: true }} dictation={{ status: 'idle' }}><div /></AgentProvider>)
+    render(<AgentProvider settings={{ ...defaultSettings('Control+Shift+Space'), onboardingComplete: true, voiceCoordinatorEnabled: true }} dictation={{ status: 'idle' }}><div /></AgentProvider>)
     await waitFor(() => expect(capture.start).toHaveBeenCalledOnce())
     async function emit() {
       await act(async () => {

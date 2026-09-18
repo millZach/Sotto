@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Only the OS browser activation is recorded. Settings persistence, link routing,
 // the thread's working copy and its embedded WebContentsView are production paths.
@@ -23,7 +23,7 @@ async function openThreadWithLink(page: Page, url: string): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
     await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: `[Preference preview](${target})` })
   }, url)
-  await page.getByRole('link', { name: 'Threads', exact: true }).click()
+  await openThreads(page)
   await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
 }
 

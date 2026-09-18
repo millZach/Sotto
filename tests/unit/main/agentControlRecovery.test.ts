@@ -54,7 +54,7 @@ class DispatchEventHost extends E2EAgentHost {
   }
 }
 
-async function fixture(host = new E2EAgentHost()) {
+async function fixture(host = new E2EAgentHost(), options: { coordinatorEnabled?: () => boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-control-recovery-'))
   roots.push(root)
   const credentialsDirectory = join(root, 'vault')
@@ -79,7 +79,7 @@ async function fixture(host = new E2EAgentHost()) {
   let control: AgentControl
   const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials)
   const create = async (): Promise<void> => {
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
+    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, ...options,
       membership: {
         status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
         action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
@@ -524,6 +524,25 @@ describe('composition navigation and explicit spoken controls', () => {
     const ambiguous = await f.control.command({ type: 'utterance', text: 'Select Docs' })
     expect(ambiguous.error).toMatch(/more than one thread/iu)
     expect(f.requests).toEqual([])
+  })
+})
+
+describe('the hidden coordinator', () => {
+  it('releases every managed thread, queue rows included, when it starts with the coordinator switched off', async () => {
+    let enabled = true
+    const f = await fixture(new E2EAgentHost(), { coordinatorEnabled: () => enabled })
+    await f.account()
+    f.service.decision = { decision: 'done', text: 'The assigned change is complete.' }
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'The implementation is complete.' })
+    await expect.poll(() => f.control.get().queue[0]?.text).toBe(f.service.decision.text)
+    expect(f.control.get().assignments).toMatchObject([{ threadId: 'workshop' }])
+    await f.restart()
+    expect(f.control.get().assignments).toMatchObject([{ threadId: 'workshop' }])
+    enabled = false
+    await f.restart()
+    expect(f.control.get().assignments).toEqual([])
+    expect(f.control.get().queue).toEqual([])
   })
 })
 

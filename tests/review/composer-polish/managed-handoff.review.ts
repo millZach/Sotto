@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto } from '../../e2e/support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads } from '../../e2e/support/sottoLaunch'
 import { appTheme, evidence, focusedLabel, paneMetrics, shot, size, type PaneMetrics } from './support'
 
 // Real production Electron with the E2E fixture provider: a manual draft and queue through Manage, typing while
@@ -9,7 +9,7 @@ const agents = (page: Page) => page.evaluate(async () => window.sotto!.agents!.g
 const DOCS = 'section.thread-pane[data-thread-id="docs"]'
 
 test('handoff keeps one saved draft, focuses the mounted composer and keeps the managed card whole', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   const record: Record<string, unknown> = {}
   try {
@@ -20,7 +20,7 @@ test('handoff keeps one saved draft, focuses the mounted composer and keeps the 
     })
     await page.reload()
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).first().click()
     const pane = page.locator(DOCS)
     const manual = pane.locator('form.thread-prompt textarea')
@@ -117,7 +117,7 @@ test('handoff keeps one saved draft, focuses the mounted composer and keeps the 
     const beforeReload = await manual.inputValue()
     await page.waitForTimeout(600)
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).first().click()
     await expect(page.locator(DOCS).locator('form.thread-prompt textarea')).toHaveValue(beforeReload)
     record.reload = { beforeReload, afterReload: await page.locator(DOCS).locator('form.thread-prompt textarea').inputValue(), followups: (await agents(page)).followups?.map(item => [item.text, item.status]) }

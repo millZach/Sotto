@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native restart fixture', options: [], questions: [
   { id: 'place', question: 'Where should we go?', multiSelect: false, allowFreeText: true, options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] },
@@ -38,7 +38,8 @@ async function emit(page: Page, owner: Owner, id: string): Promise<void> {
   }, { owner, id, request })
 }
 async function open(page: Page, owner: Owner): Promise<void> {
-  await page.getByRole('link', { name: owner === 'personal' ? 'Chats' : 'Threads', exact: true }).click()
+  if (owner === 'personal') await openPage(page, 'Chats')
+  else await openThreads(page)
   if (owner === 'thread') await page.getByRole('button', { name: 'Workshop', exact: true }).click()
 }
 

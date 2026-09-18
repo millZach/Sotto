@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus, release, totalmem } from 'node:os'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 const THREADS = ['grok-previews', 'footer-links', 'weekly-note', 'visual-gate']
 const TITLES = ['Grok voice previews', 'Footer links', 'Weekly note', 'Visual gate flake']
@@ -140,7 +140,7 @@ test('long histories retain local send, streaming and four-pane responsiveness i
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       window.setContentSize(1600, 1000)
     })
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: TITLES[0]!, exact: true }).click()
     for (const title of TITLES.slice(1)) {

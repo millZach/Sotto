@@ -5,7 +5,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Three, four and five thread panes across projects on the real app: snapping, row arrangement, dividers by pointer
 // and keyboard, moving panes, zoom, compact windows, and restoring the arrangement after a restart. Providers are fixtures.
@@ -76,7 +76,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     let page = launched.page
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     await size(launched, 1600, 1000)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
     const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
@@ -94,7 +94,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     expect(placed[2]!.y).toBeGreaterThan(placed[0]!.y + placed[0]!.height)
     expect(Math.abs(placed[2]!.width - (placed[0]!.width + placed[1]!.width + 9))).toBeLessThanOrEqual(2)
     await expect(pane('weekly-note').getByText('notes', { exact: true })).toBeVisible()
-    await expect(pane('footer-links').getByText('sotto-site', { exact: true })).toBeVisible()
+    await expect(pane('footer-links').locator('.thread-workspace__crumb')).toContainText('sotto-site')
     await prompt('grok-previews').fill('Grok draft stays with its pane.')
     await prompt('footer-links').fill('Footer draft stays with its pane.')
     await prompt('weekly-note').fill('Weekly draft stays with its pane.')
@@ -304,7 +304,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     page = launched.page
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     await size(launched, 1600, 1000)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const restored = page.getByRole('group', { name: 'Thread panes' })
     await expect(restored.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(4)
     expect((await boxes(page)).map(box => box.id)).toEqual(order)

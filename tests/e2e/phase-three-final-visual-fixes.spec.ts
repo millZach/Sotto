@@ -7,10 +7,10 @@ import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode, type ThemeDefinition } from '../../src/shared/themes/library'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // The four findings of the Phase 3 final visual review, in the complete app: custom theme names in the gallery, the
-// light and dark preview circles, the footer status beside a minimized theme editor, and the composer beside a pending
+// light and dark preview circles, a minimized theme editor beside the page links, and the composer beside a pending
 // permission. AppShell, renderer, preload, IPC, the theme editor and the browser service are real; providers are the
 // E2E fixtures. Profiles and the local page are owned temporaries. Images land in artifacts/phase-three-final-visual-fixes.
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-final-visual-fixes')
@@ -123,7 +123,7 @@ test('custom names read in full beside their actions, and each preview circle ke
   try {
     const { page } = launched
     await page.emulateMedia({ colorScheme: 'dark' })
-    await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
     const section = page.locator('#settings-appearance')
     const grid = section.locator('.theme-grid')
@@ -221,9 +221,9 @@ test('custom names read in full beside their actions, and each preview circle ke
 })
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 3: the footer status beside a minimized editor
+// 3: a minimized editor beside the sidebar foot's page links
 
-test('the footer status ends before a minimized editor docked in the footer, beside the links, Send and the live page', async () => {
+test('a minimized editor rests at the window edge, clear of the sidebar foot links, Send and the live page', async () => {
   test.setTimeout(300_000)
   await mkdir(SHOTS, { recursive: true })
   const server = createServer((_request, response) => {
@@ -247,12 +247,13 @@ test('the footer status ends before a minimized editor docked in the footer, bes
     })
     await mkdir(folder, { recursive: true })
     const editor = page.getByRole('dialog', { name: 'Create theme' })
-    const footer = page.locator('.app-footer')
-    const status = footer.locator('.app-footer__status')
+    // The Threads page owns the whole window now, so there is no footer to dock into: the minimized bar rests at the
+    // window's own bottom-right, and what it has to stay clear of is the sidebar foot's page links and the composer's Send.
+    const pageLinks = page.locator('.thread-nav__foot')
     const panel = page.getByRole('complementary', { name: 'Tools' })
 
     await size(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await panel.getByRole('tab', { name: 'Browser' }).click()
@@ -263,39 +264,35 @@ test('the footer status ends before a minimized editor docked in the footer, bes
     await expect.poll(async () => (await hostViews(app)).length).toBe(1)
 
     const openMinimized = async (): Promise<void> => {
-      await page.getByRole('link', { name: 'Settings', exact: true }).click()
+      // At the minimum width an open Tools panel has the sidebar's place, and with it the page links: Tools steps
+      // aside for the trip to Settings and comes back with the editor.
+      const toolsHidSidebar = !(await page.locator('.thread-nav').isVisible())
+      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await openPage(page, 'Settings')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       await page.getByRole('button', { name: 'Create theme', exact: true }).click()
       await expect(editor).toBeVisible()
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
+      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await expect(panel.locator('.browser-viewport')).toBeVisible()
       await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
       await expect(editor).toHaveAttribute('data-minimized', 'true')
     }
 
-    /** Docked in the footer: the status's text ends 12px before the bar, the links and Send are uncovered, the page is shown. */
+    /** Resting at the window's bottom-right: the sidebar foot's page links and Send are uncovered, and the page is shown. */
     const expectDocked = async (label: string): Promise<Record<string, unknown>> => {
-      await expect.poll(() => footer.evaluate(element => element.style.getPropertyValue('--theme-editor-reserve'))).not.toBe('')
-      const [bar, box, links, text] = [await rect(editor), await rect(footer), await rect(footer.locator('nav')), await status.evaluate(element => {
-        const range = document.createRange()
-        range.selectNodeContents(element)
-        const words = range.getBoundingClientRect()
-        const own = element.getBoundingClientRect()
-        const padding = parseFloat(getComputedStyle(element.parentElement!).paddingRight)
-        return { right: Math.min(words.right, own.right), ownRight: own.right, ellipsized: element.scrollWidth > element.clientWidth, title: element.getAttribute('title'), full: element.textContent!, padding }
-      })]
-      const where = `${label}: ${JSON.stringify({ bar, box, links, text })}`
-      expect(bar.top >= box.top - 0.5 && bar.bottom <= box.bottom + 0.5, where).toBe(true)
-      expect(text.ownRight, where).toBeLessThanOrEqual(bar.left - 11.5)
-      expect(links.right, where).toBeLessThan(bar.left)
-      // An ellipsized status keeps its whole sentence for the pointer and for assistive technology.
-      if (text.ellipsized) expect(text.title, where).toBe(text.full)
+      const [bar, links, box] = [await rect(editor), await rect(pageLinks), await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))]
+      const where = `${label}: ${JSON.stringify({ bar, links, box })}`
+      // Inside the window, hugging the bottom-right corner it docks to.
+      expect(bar.bottom <= box.height && bar.right <= box.width && bar.bottom >= box.height - 88, where).toBe(true)
+      expect(intersects(bar, links), where).toBe(false)
       // Send stays reachable, not under the bar.
       const send = page.getByRole('button', { name: /^(Send|Queue) prompt$/u }).first()
       expect(intersects(await rect(send), bar), where).toBe(false)
       // The live page is shown whenever the bar is clear of it (main reattaches it a moment after a resize).
       const viewport = await rect(panel.locator('.browser-viewport'))
       await expect.poll(async () => (await hostViews(app)).length, where).toBe(intersects(bar, viewport) ? 0 : 1)
-      return { bar: Math.round(bar.left), statusRight: Math.round(text.ownRight), ellipsized: text.ellipsized, reserve: text.padding }
+      return { bar: Math.round(bar.left), bottomGap: Math.round(box.height - bar.bottom), rightGap: Math.round(box.width - bar.right) }
     }
 
     const geometry: Record<string, unknown> = {}
@@ -305,37 +302,34 @@ test('the footer status ends before a minimized editor docked in the footer, bes
       geometry[`${width}`] = await expectDocked(`${width}x${height} dark`)
       await composed(launched, `footer-status-beside-minimized-editor-${width}-dark`)
     }
-    // At the minimum size the sentence ends in an ellipsis where it once ran under the bar mid-word.
-    expect((geometry['820'] as { ellipsized: boolean }).ellipsized).toBe(true)
 
-    // Dragged away, the bar no longer reserves the footer: the status gets its full width back.
+    // Dragged away, the bar leaves its resting place and stays a working bar.
     const header = editor.locator('.theme-editor__header h2')
     const grip = await rect(header)
     await page.mouse.move(grip.left + 12, grip.top + grip.height / 2)
     await page.mouse.down()
     for (let step = 1; step <= 10; step++) await page.mouse.move(grip.left + 12 - step * 30, grip.top + grip.height / 2 - step * 25)
     await page.mouse.up()
-    await expect.poll(() => footer.evaluate(element => element.style.getPropertyValue('--theme-editor-reserve'))).toBe('')
-    await expect.poll(() => footer.evaluate(element => getComputedStyle(element).paddingRight)).toBe('22px')
+    await expect.poll(async () => (await rect(editor)).top).toBeLessThan(grip.top - 100)
     await composed(launched, 'footer-status-after-bar-dragged-820-dark')
-    // Expanded and closed: nothing is left reserved.
+    // Expanded and closed: nothing is left behind.
     await editor.getByRole('button', { name: 'Expand the theme editor' }).click()
     await editor.getByRole('button', { name: 'Close the theme editor' }).click()
     await expect(editor).toHaveCount(0)
-    await expect.poll(() => footer.evaluate(element => getComputedStyle(element).paddingRight)).toBe('22px')
 
     await appearance(page, 'light')
     await openMinimized()
     geometry['820-light'] = await expectDocked('820x560 light')
     await composed(launched, 'footer-status-beside-minimized-editor-820-light')
-    // Keyboard: from the footer's last link, Tab still reaches the bar's buttons, and Close restores the footer.
-    await footer.getByRole('link', { name: 'Help', exact: true }).focus()
+    // Keyboard: from the sidebar foot's last page link, Tab still reaches the bar's buttons, and Close puts it away.
+    // (At 820 with Tools open the sidebar has stepped aside, foot and all, so the walk starts at the bar.)
+    const help = pageLinks.getByRole('link', { name: 'Help', exact: true })
+    if (await help.isVisible()) await help.focus()
     await editor.getByRole('button', { name: 'Expand the theme editor' }).focus()
     await page.keyboard.press('Tab')
     await expect(editor.getByRole('button', { name: 'Close the theme editor' })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(editor).toHaveCount(0)
-    await expect.poll(() => footer.evaluate(element => getComputedStyle(element).paddingRight)).toBe('22px')
     test.info().annotations.push({ type: 'footer', description: JSON.stringify(geometry) })
   } finally {
     await closeSotto(launched)
@@ -389,7 +383,7 @@ test('the composer beside a pending permission says to allow or deny once, throu
     const { page } = launched
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     await size(launched, 1600, 1000)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })

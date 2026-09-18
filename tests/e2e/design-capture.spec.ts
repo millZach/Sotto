@@ -24,6 +24,8 @@ import {
   closeSotto,
   firstSottoWindow,
   launchSotto,
+  openPage,
+  openThreads,
   type LaunchedSotto,
   type LaunchDependencies,
 } from './support/sottoLaunch'
@@ -143,6 +145,7 @@ async function createProfile(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
+    readonly voice?: boolean
   },
 ): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
@@ -154,6 +157,9 @@ async function createProfile(
     appearance: options.appearance ?? DEFAULT_SETTINGS.appearance,
     lightTheme: options.lightTheme ?? DEFAULT_SETTINGS.lightTheme,
     darkTheme: options.darkTheme ?? DEFAULT_SETTINGS.darkTheme,
+    // The Agents room, the wake phrase and the orb are hidden for the beta, so the captures that record them ask for
+    // the coordinator by name. Everything else is captured the way an install ships.
+    voiceCoordinatorEnabled: options.voice === true,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
@@ -172,6 +178,7 @@ async function withSotto(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
+    readonly voice?: boolean
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -254,10 +261,20 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
     if (documentRoot.scrollWidth > documentRoot.clientWidth + tolerance) problems.push('document-horizontal-overflow')
     if (document.body.scrollWidth > document.body.clientWidth + tolerance) problems.push('body-horizontal-overflow')
 
-    const content = document.querySelector('.app-room')
-    if (content !== null && content.scrollWidth > content.clientWidth + tolerance) problems.push('room-horizontal-overflow')
+    for (const selector of ['.app-room', '.thread-workspace']) {
+      const content = document.querySelector(selector)
+      if (content !== null && content.scrollWidth > content.clientWidth + tolerance) problems.push('room-horizontal-overflow')
+    }
 
-    for (const selector of ['.app-shell', '.app-strip', '.app-room', '.app-footer', '.onboarding-shell']) {
+    // The Threads page owns the whole window, so it has neither strip nor footer. Its own chrome takes their place and
+    // has to be there: a missing sidebar or workspace would otherwise leave this check with nothing to measure.
+    if (document.querySelector('.threads-view') !== null) {
+      for (const selector of ['.thread-nav', '.thread-workspace']) {
+        if (document.querySelector(selector) === null) problems.push(selector + '-missing')
+      }
+    }
+
+    for (const selector of ['.app-shell', '.app-strip', '.app-room', '.app-footer', '.onboarding-shell', '.threads-view', '.thread-nav', '.thread-workspace', '.threads-view__winctl']) {
       const element = document.querySelector(selector)
       if (element === null) continue
       const bounds = element.getBoundingClientRect()
@@ -719,7 +736,8 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-4-shortcut.png', { category: 'onboarding', state: 'shortcut-paste' })
     })
 
-    await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       await expect(page.locator('.app-strip')).toHaveCount(1)
       await expect(page.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
@@ -742,6 +760,7 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await assertDictateState(page, 'processing', /turning speech into text/i)
@@ -749,6 +768,7 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, scenario: 'transcription-failure' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await assertDictateState(page, 'error', /dictation needs attention/i)
@@ -756,13 +776,14 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, motion: 'reduced' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-reduced-motion.png', { category: 'dictate', state: 'listening-reduced-motion', reducedMotion: true })
     })
 
-    await withSotto({ onboardingComplete: true }, async ({ page }) => {
+    await withSotto({ voice: true, onboardingComplete: true }, async ({ page }) => {
       await page.getByRole('tab', { name: 'Agents' }).click()
       await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toBeVisible()
@@ -850,9 +871,9 @@ test.describe('authoritative design-review captures', () => {
   for (const appearance of ['dark', 'light'] as const) test(`threads page states in ${appearance}`, async () => {
     const suffix = appearance === 'light' ? '-light' : ''
     await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async ({ page }) => {
-      await page.getByRole('link', { name: 'Threads' }).click()
-      await expect(page.getByRole('heading', { name: 'Threads' })).toBeVisible()
-      await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
+      await openThreads(page)
+      // The page still names itself for assistive technology; the heading is no longer drawn.
+      await expect(page.getByRole('heading', { name: 'Threads' })).toBeAttached()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       // The coordinator queues the fixture's permission request once it has connected.
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
@@ -864,7 +885,9 @@ test.describe('authoritative design-review captures', () => {
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
-      await expect(page.getByRole('button', { name: 'Pause managing' })).toBeVisible()
+      // The fixture still hands these threads to the coordinator, but the beta hides every managing control, so the
+      // captures must show a thread that reads the same whether or not Sotto is managing it.
+      await expect(page.getByRole('button', { name: 'Pause managing' })).toHaveCount(0)
       await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 
       await open('Footer links')
@@ -873,7 +896,7 @@ test.describe('authoritative design-review captures', () => {
 
       await open('Streaming WAV stall')
       await expect(page.getByLabel('Thread transcript')).toContainText('The length marker fix still fails')
-      await expect(page.getByRole('button', { name: 'Resume managing' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Resume managing' })).toHaveCount(0)
       await capturePage(page, `threads-stopped${suffix}.png`, { theme: appearance, category: 'threads', state: 'stopped-open' })
 
       await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
@@ -882,12 +905,12 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Weekly note', exact: true })).toHaveCount(0)
-      await page.evaluate("document.querySelector('.app-room')?.scrollTo(0, 0)")
+      await page.evaluate("document.querySelector('.thread-nav__scroll')?.scrollTo(0, 0)")
       await capturePage(page, `threads-search${suffix}.png`, { theme: appearance, category: 'threads', state: 'search' })
     })
 
     await withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async ({ page }) => {
-      await page.getByRole('link', { name: 'Threads' }).click()
+      await openThreads(page)
       await expect(page.getByRole('heading', { name: /No threads yet|Nothing here yet/i })).toBeVisible()
       await capturePage(page, `threads-empty${suffix}.png`, { theme: appearance, category: 'threads', state: 'empty' })
     })
@@ -902,7 +925,7 @@ test.describe('authoritative design-review captures', () => {
         }, width)
         await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
       }
-      await page.getByRole('link', { name: 'Threads', exact: true }).click()
+      await openThreads(page)
       await page.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
       await resize(1600)
       await page.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
@@ -937,7 +960,8 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-3-openrouter-light.png', { theme: 'light' })
     })
 
-    await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       await assertRenderedRoom(page, 'light')
       await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
@@ -954,6 +978,7 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, scenario: 'transcription-failure', appearance: 'light' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await assertDictateState(page, 'error', /dictation needs attention/i)
@@ -961,12 +986,13 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, motion: 'reduced', appearance: 'light' }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-reduced-motion-light.png', { reducedMotion: true, theme: 'light' })
     })
 
-    await withSotto({ onboardingComplete: true, appearance: 'light' }, async ({ page }) => {
+    await withSotto({ voice: true, onboardingComplete: true, appearance: 'light' }, async ({ page }) => {
       await page.getByRole('tab', { name: 'Agents' }).click()
       await page.getByRole('button', { name: 'Not now', exact: true }).click()
       await expect(page.locator('.agent-orb')).toBeVisible()
@@ -1018,6 +1044,7 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+      await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       for (const theme of appThemes) {
         for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter(candidate => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) {
@@ -1042,8 +1069,9 @@ test.describe('authoritative design-review captures', () => {
       }
     })
 
-    await withSotto({ onboardingComplete: true, history: populatedHistory }, async (launched) => {
+    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async (launched) => {
       const { page } = launched
+      await openPage(page, 'Dictate')
       await setMainWindowWidth(launched, DESIGN_CAPTURE_MINIMUM_WIDTH)
       for (const theme of appThemes) {
         if (theme === 'light') await setAppearance(page, { appearance: 'light' }, 'light')
@@ -1062,7 +1090,7 @@ test.describe('authoritative design-review captures', () => {
   })
 
   test('orb and session states follow the voice and permission journeys', async () => {
-    await withSotto({ onboardingComplete: true }, async ({ page }) => {
+    await withSotto({ voice: true, onboardingComplete: true }, async ({ page }) => {
       await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
       await page.getByRole('tab', { name: 'Agents', exact: true }).click()
       await page.getByRole('button', { name: 'Not now', exact: true }).click()
@@ -1102,6 +1130,7 @@ test.describe('authoritative design-review captures', () => {
 
       await withSotto({ onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {
         const { page } = launched
+        await openPage(page, 'Dictate')
         await assertDictateState(page, 'idle', /ready when you are/i)
         await capturePage(page, `scale-${scalePercent}-dictate.png`)
 
@@ -1137,6 +1166,7 @@ test.describe('authoritative design-review captures', () => {
   for (const theme of widgetThemes) {
     test(`${theme} widget states missing from the established widget baseline are captured`, async () => {
       await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+        await openPage(launched.page, 'Dictate')
         // Bootstrap seeds the idle snapshot after showing both windows. Wait
         // for that seed so it cannot overwrite the first recording snapshot.
         const widget = await widgetPage(launched, theme, 'reduced')
@@ -1155,6 +1185,7 @@ test.describe('authoritative design-review captures', () => {
       })
 
       await withSotto({ onboardingComplete: true, motion: 'reduced', scenario: 'design-permission' }, async (launched) => {
+        await openPage(launched.page, 'Dictate')
         const widget = await widgetPage(launched, theme, 'reduced')
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
@@ -1163,6 +1194,7 @@ test.describe('authoritative design-review captures', () => {
       })
 
       await withSotto({ onboardingComplete: true, motion: 'reduced' }, async (launched) => {
+        await openPage(launched.page, 'Dictate')
         const widget = await widgetPage(launched, theme, 'reduced')
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()

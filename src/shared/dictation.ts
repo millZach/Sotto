@@ -62,6 +62,12 @@ interface WidgetSnapshotMetadata {
   readonly reducedMotion: ReducedMotion
   readonly shortcut: string
   readonly cancellable: boolean
+  /**
+   * Whether the voice coordinator is shown at all. The widget runs in its own
+   * renderer and never reads settings, so the snapshot has to carry the answer;
+   * an absent field means off, which is the beta's default.
+   */
+  readonly voiceCoordinator?: boolean | undefined
 }
 
 /**

@@ -109,6 +109,8 @@ const settingKeys = [
   'autoUpdateCheck',
   'webLinkDestination',
   'responseStreaming',
+  'voiceCoordinatorEnabled',
+  'memoryEnabled',
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema

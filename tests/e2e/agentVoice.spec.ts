@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import type { AgentCommand, AgentState } from '../../src/shared/agents'
 import type { SottoBridge, SottoWidgetBridge } from '../../src/shared/contracts'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 async function command(page: Page, request: AgentCommand): Promise<AgentState> {
@@ -29,7 +29,7 @@ async function speak(page: Page, text: string): Promise<void> {
 }
 
 test('routes activated voice through the real controller, retains paused prompts, and preserves widget dictation', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await completeVoiceJourneySetup(page)
@@ -54,12 +54,11 @@ test('routes activated voice through the real controller, retains paused prompts
     await page.screenshot({ animations: 'disabled', path: 'artifacts/voice-journey/paused-prompt.png' })
     await speak(page, 'stop listening')
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
-    expect((await state(page)).host.threads[0]?.messages).toHaveLength(0)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
     await speak(page, 'Hey Sotto')
     await expect.poll(async () => (await state(page)).voice.status).toBe('listening')
     await speak(page, 'send it')
-    await expect.poll(async () => (await state(page)).host.threads[0]?.messages.length).toBe(1)
-    expect((await state(page)).host.threads[0]?.messages[0]?.text).toBe('Build a small engineering tool. Keep the existing controls.')
+    await expect.poll(() => userMessageTexts(page, 'workshop')).toEqual(['Build a small engineering tool. Keep the existing controls.'])
     await expect(page.getByLabel('Prompt')).toHaveValue('')
 
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
@@ -79,13 +78,13 @@ test('routes activated voice through the real controller, retains paused prompts
     await speak(page, 'Hey Sotto send it')
     await widget.getByRole('button', { name: 'Unmute microphone', exact: true }).click()
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
-    expect((await state(page)).host.threads[0]?.messages).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await widget.getByTestId('widget-sliver').click()
     await expect.poll(async () => (await state(page)).voice.status).toBe('dictation')
     await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await widget.getByRole('button', { name: 'Stop dictation', exact: true }).click()
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
-    expect((await state(page)).host.threads[0]?.messages).toHaveLength(1)
+    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await widget.getByTestId('widget-sliver').hover()
     await widget.getByRole('button', { name: 'Expand threads', exact: true }).click()
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toBeVisible()

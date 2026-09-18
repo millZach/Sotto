@@ -2,7 +2,7 @@
  * The main window has a dark room (the default every existing install keeps)
  * and a light room, each painted by the theme chosen for that half (ADR-0009,
  * ADR-0011). Application tuples carry the resolved mode, `dark` or `light`;
- * the dense matrix is captured in the dark Tide default (id `ocean`) and the light tuples
+ * the dense matrix is captured in the dark Sotto default (id `t3-code`) and the light tuples
  * repeat the surfaces a mode change can break. Theme and System captures name
  * their choice in the state. The
  * floating widget is untouched and still follows the system scheme, so widget
@@ -10,9 +10,9 @@
  */
 export const DESIGN_CAPTURE_THEME = 'dark'
 export const DESIGN_CAPTURE_APP_THEMES = Object.freeze(['dark', 'light'])
-/** The built-in themes, in the order Settings shows them; Tide (`ocean`) is the default. */
+/** The built-in themes, in the order Settings shows them; Sotto (`t3-code`) is the default. */
 export const DESIGN_CAPTURE_BUILT_IN_THEMES = Object.freeze(['t3-code', 't3-chat', 'grove', 'ocean', 'ember', 'iris'])
-export const DESIGN_CAPTURE_DEFAULT_THEME = 'ocean'
+export const DESIGN_CAPTURE_DEFAULT_THEME = 't3-code'
 /** The narrowest main window the Phase 1 surfaces are reviewed at. */
 export const DESIGN_CAPTURE_MINIMUM_WIDTH = 760
 export const DESIGN_CAPTURE_WIDGET_THEMES = Object.freeze(['light', 'dark'])

@@ -13,7 +13,7 @@ import {
 } from '../../../src/shared/themeBranding'
 import { contrastRatio, parseThemeRgb, rgbToOklch } from '../../../src/shared/themes/color'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
-import { BUILT_IN_THEMES, getThemeColorsForMode, parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, DEFAULT_THEME_ID, getThemeColorsForMode, parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
 
 const BLACK = { r: 0, g: 0, b: 0 }
 
@@ -50,16 +50,21 @@ describe('widget palette projection', () => {
   })
 
   it('lands a half on the default theme when its theme is gone, exactly as the main window does', () => {
-    expect(widgetPaletteFor({ lightTheme: 'deleted-theme', darkTheme: 'ocean', customThemes: [] })).toEqual(DEFAULT_WIDGET_PALETTE)
+    expect(widgetPaletteFor({ lightTheme: 'deleted-theme', darkTheme: DEFAULT_THEME_ID, customThemes: [] })).toEqual(DEFAULT_WIDGET_PALETTE)
   })
 
   it('projects presentation from settings without leaking unrelated fields', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'ember', llmApiKey: 'secret' }
     const presentation = widgetPresentationFor(settings)
-    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme'])
+    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme', 'voiceCoordinator'])
     expect(presentation.theme).toBe('light')
     expect(presentation.reducedMotion).toBe('on')
     expect(JSON.stringify(presentation)).not.toContain('secret')
+  })
+
+  it('tells the widget whether the voice coordinator is shown, since the widget cannot read settings', () => {
+    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS }).voiceCoordinator).toBe(false)
+    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true }).voiceCoordinator).toBe(true)
   })
 
   it('rejects palettes with extra roles, missing halves, or colours that are not canonical literals', () => {
@@ -78,6 +83,8 @@ describe('widget palette projection', () => {
     const withoutPalette: Partial<typeof idle> = { ...idle }
     delete withoutPalette.palette
     expect(() => widgetSnapshotSchema.parse(withoutPalette)).toThrow()
+    // The widget only hides its voice controls if the flag survives the boundary.
+    expect(widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toMatchObject({ voiceCoordinator: true })
   })
 })
 

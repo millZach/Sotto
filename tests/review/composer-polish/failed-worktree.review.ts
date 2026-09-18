@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto } from '../../e2e/support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from '../../e2e/support/sottoLaunch'
 import { evidence, focusedLabel, paneMetrics, shot, size } from './support'
 
 // Real production Electron with the E2E fixture provider and real Git: an independent working copy of a repository
@@ -33,7 +33,7 @@ test('a thread whose working folder failed keeps its draft and cannot submit', a
     expect(id).not.toBeNull()
     await page.reload()
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Fresh repository', exact: true }).click()
     const pane = page.locator(`section.thread-pane[data-thread-id="${id}"]`)
     const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })

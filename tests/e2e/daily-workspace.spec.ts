@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
@@ -87,7 +87,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const first = implementation!.id, second = review!.id, working = implementation!.worktree!.path!, other = review!.worktree!.path!
     expect(working).not.toBe(other)
     await size(launched)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Daily implementation', exact: true }).first().click()
     await beside(page, 'Daily review')
     const pane = (id: string) => page.locator(`section.thread-pane[data-thread-id="${id}"]`)
@@ -197,7 +197,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
   try {
     let page = launched.page
     await connect(page); await size(launched)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
     await beside(page, 'Footer links')
@@ -239,7 +239,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     // The synthetic provider starts from its seeded history again. Only actual Sotto-owned recovery is claimed here.
     launched = await launchSotto('phase3-workspace', directory); page = launched.page
     await connect(page); await size(launched)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await focusThread(page, 'grok-previews', 'Grok voice previews')
     await expect(prompt('grok-previews')).toHaveValue('Unsent Claude draft for tomorrow.')
     await focusThread(page, 'footer-links', 'Footer links')
@@ -252,16 +252,18 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 'ocean', webLinkDestination: 'embedded' })
     const restored = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(restored.followups).toEqual([expect.objectContaining({ threadId: 'footer-links', text: 'Queued Codex follow-up after this turn.' })])
-    expect(restored.host.threads.flatMap(thread => thread.messages).some(message => message.text === 'Queued Codex follow-up after this turn.')).toBe(false)
+    expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)
     expect(restored.assignments).toEqual([])
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'The original Codex turn is complete.' }))
     const queue = pane('footer-links').getByRole('region', { name: 'Queued messages' })
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'footer-links')!.messages.filter(message => message.text === 'Queued Codex follow-up after this turn.').length)).toBe(1)
+    await expect.poll(() => userMessageTexts(page, 'footer-links').then(texts => texts.filter(text => text === 'Queued Codex follow-up after this turn.').length)).toBe(1)
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
     const delivered = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(delivered.host.threads.find(thread => thread.id === 'footer-links')!.messages.filter(message => message.text === 'Queued Codex follow-up after this turn.')).toHaveLength(1)
-    expect(delivered.host.threads.filter(thread => thread.id !== 'footer-links').flatMap(thread => thread.messages).some(message => message.text === 'Queued Codex follow-up after this turn.')).toBe(false)
+    expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Queued Codex follow-up after this turn.')).toHaveLength(1)
+    for (const thread of delivered.host.threads.filter(thread => thread.id !== 'footer-links')) {
+      expect((await userMessageTexts(page, thread.id)).some(text => text === 'Queued Codex follow-up after this turn.'), thread.id).toBe(false)
+    }
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     await page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Close tools panel', exact: true }).click()
     await size(launched, 820, 560)

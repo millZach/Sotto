@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import type { AgentCommand, AgentState, AgentThread } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { firstSottoWindow } from './support/sottoLaunch'
+import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 
 // Real installed subscription work. Two new turns (including queue), one steer;
 // never retry this test after dispatch. No fixture provider or auth/config copying.
@@ -181,7 +181,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     const activityAnchors = completed.activities!.map(({ id, afterMessageId }) => ({ id, afterMessageId }))
     const bindings = await readFile(join(profile, 'threads.json'), 'utf8')
     const aliases = JSON.parse(await readFile(join(profile, 'codex-threads.json'), 'utf8'))
-    await page!.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page!)
     await page!.screenshot({ path: join(root, 'completed.png') })
     await app!.close(); app = undefined
     await launch()
@@ -206,7 +206,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     expect(afterWire.filter(value => value.direction === 'request' && value.method === 'thread/start')).toHaveLength(1)
     expect(afterWire.some(value => value.direction === 'response' && value.method === 'thread/resume' && value.accepted)).toBe(true)
     expect(await readFile(join(cwd, proofName), 'utf8')).toBe(JSON.stringify(proof))
-    await page!.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page!)
     await page!.screenshot({ path: join(root, 'restored.png') })
     evidence.reconnect = { sameNativeSession: true, sameMessagesAndActivities: true, sameCwd: true, noReplay: true }
     evidence.passed = true

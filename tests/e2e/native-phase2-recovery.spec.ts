@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { firstSottoWindow } from './support/sottoLaunch'
+import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 
 // Continue ONLY the owned synthetic profile from native-phase2-live. Never send a
 // replacement prompt. Reviewed resume is separately opted in and attempted once.
@@ -75,7 +75,7 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
     const live = await current()
     expect(live.activities?.some(value => value.kind === 'command' && value.status === 'completed' && value.exitCode === 0 && value.output?.includes('SYNTHETIC_WAIT_FINISHED'))).toBe(true)
     evidence.actualToolRestored = true
-    await page!.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page!)
     await page!.screenshot({ path: join(root, 'recovery-before.png') })
     if (resume) {
       expect(starts(before)).toHaveLength(1)
@@ -123,7 +123,7 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
     expect((await current()).messages).toEqual(completed.messages)
     expect(mutations(await wire())).toEqual(mutations(beforeRestart))
     expect((await wire()).filter(value => value.direction === 'request' && value.method === 'thread/start')).toHaveLength(1)
-    await page!.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page!)
     await page!.screenshot({ path: join(root, 'recovery-after.png') })
     evidence.finalReconnect = { sameMessageIds: JSON.stringify(final.messages) === JSON.stringify(previous.messages), sameActivitiesCwdAndTurn: true, noReplay: true }
     evidence.passed = test.info().errors.length === 0

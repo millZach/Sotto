@@ -16,7 +16,6 @@ import {
   BUILT_IN_THEMES,
   DEFAULT_THEME_ID,
   MAX_CUSTOM_THEMES,
-  T3_CODE_THEME,
   THEME_FILE_VERSION,
   canonicalizeTheme,
   getThemeColorsForMode,
@@ -47,17 +46,7 @@ export interface ThemeCardPreview {
   readonly colors: ThemePreviewColors
 }
 
-/**
- * T3 Code draws its standard card from these fixed swatches rather than from
- * the palette (T3's ThemePreviewCircles.tsx and packages/shared themePreview.ts).
- */
-const STANDARD_THEME_PREVIEW_COLORS: Readonly<Record<ThemeAppearance, ThemePreviewColors>> = {
-  light: { sidebar: '#fafafa', surface: '#ffffff', accentSurface: '#f4f4f5', messageSurface: '#e4e4e7', canvas: '#fcfcfc', accent: '#f4f4f5', messageAction: '#4f46e5' },
-  dark: { sidebar: '#0f0f10', surface: '#121212', accentSurface: '#27272a', messageSurface: '#27272a', canvas: '#0a0a0a', accent: '#1c1c1f', messageAction: '#8b9cff' },
-}
-
 export function themeCardPreviews(theme: ThemeDefinition): ThemeCardPreview[] {
-  if (theme.id === T3_CODE_THEME.id) return (['light', 'dark'] as const).map(mode => ({ mode, colors: STANDARD_THEME_PREVIEW_COLORS[mode] }))
   return getThemeModes(theme).map(mode => {
     const colors = getThemeColorsForMode(theme, mode) ?? theme.colors
     return { mode, colors: Object.fromEntries(THEME_PREVIEW_ROLES.map(role => [role, colors[role]])) as unknown as ThemePreviewColors }

@@ -11,7 +11,7 @@ import {
 } from '../../src/shared/e2e'
 import type { SottoBridge } from '../../src/shared/contracts'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
-import { closeSotto, e2eEnvironment, launchSotto } from './support/sottoLaunch'
+import { closeSotto, e2eEnvironment, launchSotto, openPage } from './support/sottoLaunch'
 
 async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -22,14 +22,18 @@ async function reachFinalOnboardingStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click()
 }
 
+/** Finishing onboarding hands the window over to Threads, which is where Sotto opens from now on. */
 async function finishOnboarding(page: Page): Promise<void> {
   await page.getByRole('button', { name: /finish setup/i }).click()
-  await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
 }
 
+/** Onboarding, and then the Dictate page the dictation tests work on. */
 async function completeOnboarding(page: Page): Promise<void> {
   await reachFinalOnboardingStep(page)
   await finishOnboarding(page)
+  await openPage(page, 'Dictate')
+  await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
 }
 
 async function dictateWithButton(page: Page): Promise<void> {
@@ -162,10 +166,12 @@ test('keeps the widget theme apart from the main window and applies a persisted 
       await bridge.updateSettings({ theme: 'light' })
     })
     await launched.page.reload()
+    // A reload lands on Threads the same way a cold start does, so Dictate is a deliberate stop again.
+    await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
     // The widget theme never reaches the main window, which keeps the dark default.
     await expect(html).toHaveAttribute('data-theme', 'dark')
-    await expect(html).toHaveAttribute('data-theme-id', 'ocean')
+    await expect(html).toHaveAttribute('data-theme-id', 't3-code')
     const darkCanvas = await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
     await launched.page.evaluate(async () => {
@@ -174,6 +180,8 @@ test('keeps the widget theme apart from the main window and applies a persisted 
     })
     await expect(html).toHaveAttribute('data-theme', 'light')
     await launched.page.reload()
+    // A reload lands on Threads the same way a cold start does, so Dictate is a deliberate stop again.
+    await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
     await expect(html).toHaveAttribute('data-theme', 'light')
     await expect(html).toHaveAttribute('data-theme-id', 'ember')
@@ -275,7 +283,7 @@ test('persists settings through reload', async () => {
   }
 })
 
-test('keeps the real main window frameless with one app strip before and after onboarding', async () => {
+test('keeps the real main window frameless, with a strip while onboarding and the Threads page after it', async () => {
   const launched = await launchSotto()
   try {
     const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
@@ -293,9 +301,14 @@ test('keeps the real main window frameless with one app strip before and after o
     expect(geometry?.contentBounds).toEqual(geometry?.bounds)
     await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
 
-    await completeOnboarding(launched.page)
+    await reachFinalOnboardingStep(launched.page)
+    await finishOnboarding(launched.page)
 
-    await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
+    // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
+    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours.
+    await expect(launched.page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+    await expect(launched.page.locator('header.app-strip')).toHaveCount(0)
+    await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'darwin' ? 0 : 1)
   } finally {
     await closeSotto(launched)
   }

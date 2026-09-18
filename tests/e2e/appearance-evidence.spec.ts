@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, enableVoiceCoordinator, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * Rendered evidence for ticket #73 that the pixel gate does not hold: the
@@ -24,10 +24,12 @@ const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/phase-1-appe
 async function withProfile(
   settings: Partial<AppSettings>,
   run: (launched: LaunchedSotto) => Promise<void>,
-  options: { readonly scenario?: E2EScenario; readonly threads?: boolean } = {},
+  options: { readonly scenario?: E2EScenario; readonly threads?: boolean; readonly voice?: boolean } = {},
 ): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-appearance-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
+  // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
+  if (options.voice === true) await enableVoiceCoordinator(profile)
   if (options.threads === true) {
     const fixture = designThreadsFixture()
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -154,6 +156,7 @@ test.describe('appearance rendered evidence', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await widget.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await expect.poll(() => widget.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(scheme === 'dark')
+        await openPage(launched.page, 'Dictate')
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.screenshot({ path: resolve(evidenceRoot, `widget-listening-system-${scheme}-room-light.png`), animations: 'disabled' })
@@ -181,10 +184,10 @@ test.describe('appearance rendered evidence', () => {
       await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
       await expect(page.getByRole('dialog', { name: 'Workshop' })).toBeVisible()
       await shot(page, 'agents-session-light')
-    })
+    }, { voice: true })
 
     await withProfile({ appearance: 'light' }, async ({ page }) => {
-      await page.getByRole('link', { name: 'Threads' }).click()
+      await openThreads(page)
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await page.keyboard.press('Escape')
       await page.getByRole('button', { name: 'Footer links', exact: true }).click()

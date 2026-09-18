@@ -53,7 +53,7 @@ describe('theme library changes', () => {
     expect(() => installThemesPatch(full, [night])).toThrow(/up to 64/u)
   })
 
-  it('duplicates as a numbered copy and removes with the selected half falling back to Tide', () => {
+  it('duplicates as a numbered copy and removes with the selected half falling back to Sotto', () => {
     const night = theme('Night', 'dark')
     const state: LibraryState = { lightTheme: 'iris', darkTheme: 'night', customThemes: [night] }
     const copy = versionedCopy(night, state)
@@ -61,7 +61,7 @@ describe('theme library changes', () => {
     expect(versionedCopy(night, { ...state, customThemes: [night, copy] }).label).toBe('Night (2)')
     expect(versionedCopy(night, state, 'Night Owl').label).toBe('Night Owl')
 
-    expect(removeThemesPatch(state, ['night'])).toEqual({ customThemes: [], darkTheme: 'ocean' })
+    expect(removeThemesPatch(state, ['night'])).toEqual({ customThemes: [], darkTheme: 't3-code' })
     // Removing a theme no half uses leaves both halves alone.
     expect(removeThemesPatch({ ...state, darkTheme: 'grove', customThemes: [night, copy] }, ['night-1'])).toEqual({ customThemes: [night] })
   })
@@ -75,7 +75,7 @@ describe('theme library changes', () => {
     const updatedLight = { ...oldLight, label: 'Pack Light 2' }
     const patch = replaceCollectionPatch(state, collection.id, [updatedLight])
     expect(patch.customThemes!.map(entry => entry.label)).toEqual(['Solo', 'Pack Light 2'])
-    expect(patch).toMatchObject({ darkTheme: 'ocean' })
+    expect(patch).toMatchObject({ darkTheme: 't3-code' })
     expect(patch.lightTheme).toBeUndefined()
   })
 })
@@ -228,7 +228,7 @@ describe('appearance settings', () => {
     return { save }
   }
 
-  it('asks before removing a theme, and the half it owned falls back to Tide', async () => {
+  it('asks before removing a theme, and the half it owned falls back to Sotto', async () => {
     const user = userEvent.setup()
     const night = theme('Night', 'dark')
     const { save } = renderSettings({ appearance: 'dark', darkTheme: 'night', customThemes: [night] })
@@ -240,7 +240,7 @@ describe('appearance settings', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove Night' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove theme' }))
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ customThemes: [], darkTheme: 'ocean' }, expect.anything()))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ customThemes: [], darkTheme: 't3-code' }, expect.anything()))
   })
 
   it('duplicates a built-in into the editor under a copy name', async () => {

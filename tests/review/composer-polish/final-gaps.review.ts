@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from '../../e2e/support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads, type LaunchedSotto } from '../../e2e/support/sottoLaunch'
 import { appTheme, focusedLabel, paneMetrics, size, type PaneMetrics } from './support'
 
 // Real production Electron with the E2E fixture provider and an owned temporary profile (no native or paid calls):
@@ -112,7 +112,7 @@ async function expectManagedWhole(page: Page, pane: Locator, scope: string, mini
 }
 
 test('keyboard Manage keeps focus through a held and a refused handoff; the managed draft with an image stays whole', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   const record: Record<string, unknown> = {}
   try {
@@ -124,7 +124,7 @@ test('keyboard Manage keeps focus through a held and a refused handoff; the mana
     await page.reload()
     await installDoubles(launched)
     await size(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).first().click()
     const pane = page.locator(DOCS)
     const manual = pane.locator('form.thread-prompt textarea')
@@ -160,15 +160,16 @@ test('keyboard Manage keeps focus through a held and a refused handoff; the mana
     const followupsBefore = (await agents(page)).followups?.length ?? 0
     await page.keyboard.press('Enter')
     await page.waitForTimeout(200)
+    // Settle moved into the header's More menu, and opening a menu would move the focus this record is about, so the
+    // composer's own submit stands for "nothing else can act on the thread while the assign is in flight".
     const pending = {
       focus: await focusedLabel(page), manageDisabled: await manage.isDisabled(),
-      settleDisabled: await pane.getByRole('button', { name: 'Settle', exact: true }).isDisabled(),
       submitDisabled: await pane.locator('.thread-prompt__actions button[type="submit"]').isDisabled(),
       enterSentNothing: ((await agents(page)).followups?.length ?? 0) === followupsBefore, value: await manual.inputValue(),
     }
     await shot(page, 'gaps-1-keyboard-manage-pending-1280-dark')
     record.pending = pending
-    expect(pending).toMatchObject({ manageDisabled: true, settleDisabled: true, submitDisabled: true, enterSentNothing: true, value: DRAFT })
+    expect(pending).toMatchObject({ manageDisabled: true, submitDisabled: true, enterSentNothing: true, value: DRAFT })
     expect(pending.focus).toMatch(/^textarea:/u)
     await expect(manual).toBeFocused()
     const hits = await release(launched, 'assign-held-refused')

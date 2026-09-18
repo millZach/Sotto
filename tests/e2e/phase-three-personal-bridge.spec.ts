@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 
 test('an unreadable personal cache leaves the app usable and its original bytes unchanged', async () => {
@@ -27,7 +27,7 @@ test('an unreadable personal cache leaves the app usable and its original bytes 
       return { connected: connected.connected, rejected }
     })
     expect(result).toEqual({ connected: false, rejected: true })
-    await launched.page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(launched.page)
     await expect(launched.page.getByRole('link', { name: 'Chats', exact: true })).toBeVisible()
     expect(await readFile(cache, 'utf8')).toBe(damaged)
     await closeSotto(launched)

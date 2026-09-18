@@ -7,6 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { openPaneMenu, paneMenuItems } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -31,9 +32,11 @@ describe('asking Sotto to name a thread again', () => {
     expect(regenerations(live)).toEqual([{ type: 'regenerate-thread-title', threadId: 'weekly-note' }])
   })
 
-  it('offers the action in the pane header beside Rename', () => {
+  it('offers the action in the pane header’s menu beside Rename', () => {
     const live = mount()
-    fireEvent.click(within(header()).getByRole('button', { name: 'Regenerate title' }))
+    const menu = openPaneMenu(header())
+    expect(paneMenuItems(menu).slice(0, 2)).toEqual(['Rename', 'Regenerate title'])
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Regenerate title' }))
     expect(regenerations(live)).toEqual([{ type: 'regenerate-thread-title', threadId: 'visual-gate' }])
   })
 
@@ -43,9 +46,10 @@ describe('asking Sotto to name a thread again', () => {
     state.host.threads.find(thread => thread.id === 'visual-gate')!.titleSource = 'user'
     mount(state)
     expect(within(row('Weekly note')).queryByRole('button', { name: 'Regenerate title for Weekly note' })).toBeNull()
-    expect(within(header()).queryByRole('button', { name: 'Regenerate title' })).toBeNull()
+    const menu = openPaneMenu(header())
+    expect(within(menu).queryByRole('menuitem', { name: 'Regenerate title' })).toBeNull()
     // Renaming by hand is still offered, so the name is never stuck.
-    expect(within(header()).getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
   })
 
   it('offers nothing for an archived thread', () => {

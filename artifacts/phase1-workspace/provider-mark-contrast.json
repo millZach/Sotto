@@ -1,56 +1,106 @@
 {
   "dark": [
     {
-      "provider": "claude",
+      "role": "--tt-activity",
       "background": "selected",
-      "ratio": 10.29
+      "ratio": 7.54
     },
     {
-      "provider": "claude",
-      "background": "sidebar",
-      "ratio": 10.84
+      "role": "--tt-attention",
+      "background": "selected",
+      "ratio": 6.55
     },
     {
-      "provider": "codex",
+      "role": "--tt-activity",
       "background": "sidebar",
-      "ratio": 14.54
+      "ratio": 12.02
     },
     {
-      "provider": "codex",
+      "role": "--tt-attention",
       "background": "sidebar",
-      "ratio": 14.54
+      "ratio": 10.44
     },
     {
-      "provider": "grok",
+      "role": "--tt-activity",
       "background": "sidebar",
-      "ratio": 11.5
+      "ratio": 12.02
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 10.44
+    },
+    {
+      "role": "--tt-activity",
+      "background": "sidebar",
+      "ratio": 12.02
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 10.44
+    },
+    {
+      "role": "--tt-activity",
+      "background": "sidebar",
+      "ratio": 12.02
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 10.44
     }
   ],
   "light": [
     {
-      "provider": "claude",
+      "role": "--tt-activity",
       "background": "selected",
-      "ratio": 4.59
+      "ratio": 5.86
     },
     {
-      "provider": "claude",
-      "background": "sidebar",
-      "ratio": 4.91
+      "role": "--tt-attention",
+      "background": "selected",
+      "ratio": 3.74
     },
     {
-      "provider": "codex",
+      "role": "--tt-activity",
       "background": "sidebar",
-      "ratio": 4.18
+      "ratio": 7.21
     },
     {
-      "provider": "codex",
+      "role": "--tt-attention",
       "background": "sidebar",
-      "ratio": 4.18
+      "ratio": 4.61
     },
     {
-      "provider": "grok",
+      "role": "--tt-activity",
       "background": "sidebar",
-      "ratio": 4.89
+      "ratio": 7.21
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 4.61
+    },
+    {
+      "role": "--tt-activity",
+      "background": "sidebar",
+      "ratio": 7.21
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 4.61
+    },
+    {
+      "role": "--tt-activity",
+      "background": "sidebar",
+      "ratio": 7.21
+    },
+    {
+      "role": "--tt-attention",
+      "background": "sidebar",
+      "ratio": 4.61
     }
   ]
 }

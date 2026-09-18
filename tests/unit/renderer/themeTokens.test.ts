@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
+import { DEFAULT_THEME_ID, THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 import {
   MODES,
@@ -39,6 +39,11 @@ describe('main-window theme tokens', () => {
     for (const surface of ['canvas', 'surface', 'field', 'surface-elevated', 'sidebar'] as const) {
       expect(contrast(color('text-muted'), color(surface)), `muted text on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+    // Faint text is still text: placeholders, ghost buttons and instrument labels read at 4.5:1 on the surfaces
+    // they sit on. (The sidebar sets its own text roles.)
+    for (const surface of ['canvas', 'surface', 'field', 'surface-elevated'] as const) {
+      expect(contrast(color('text-faint'), color(surface)), `faint text on ${surface}`).toBeGreaterThanOrEqual(4.5)
+    }
     expect(contrast(color('sidebar-text'), color('sidebar'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('sidebar-text-muted'), color('sidebar'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('bubble-text'), color('bubble'))).toBeGreaterThanOrEqual(4.5)
@@ -57,6 +62,11 @@ describe('main-window theme tokens', () => {
       for (const status of ['warning', 'error'] as const) {
         expect(contrast(color(status), color(surface)), `${status} on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
+    }
+    // The finished ring is drawn in the success colour on the sidebar as well
+    // as in the transcript, so it has to read on both rooms.
+    for (const surface of ['canvas', 'sidebar'] as const) {
+      expect(contrast(color('success'), color(surface)), `finished mark on ${surface}`).toBeGreaterThanOrEqual(3)
     }
     expect(contrast(color('on-accent'), color('accent')), 'on-accent on accent').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('primary-contrast'), color('primary')), 'primary action').toBeGreaterThanOrEqual(4.5)
@@ -102,13 +112,13 @@ describe('main-window theme tokens', () => {
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])
   })
 
-  it('declares Tide (ocean) as the first-frame palette for both modes, with every role present', () => {
+  it('declares the default theme (Sotto) as the first-frame palette for both modes, with every role present', () => {
     const blocks = parseTokenBlocks()
     const base = blocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--theme-canvas'))!
     const light = blocks.find(block => block.selectors.includes(":root[data-theme='light']") && block.declarations.has('--theme-canvas'))!
     for (const role of THEME_COLOR_ROLES) {
-      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', 'ocean').get(themeColorVariable(role)))
-      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', 'ocean').get(themeColorVariable(role)))
+      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', DEFAULT_THEME_ID).get(themeColorVariable(role)))
+      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', DEFAULT_THEME_ID).get(themeColorVariable(role)))
     }
   })
 

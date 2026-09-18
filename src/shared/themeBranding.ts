@@ -133,6 +133,8 @@ export function themeBrand(roles: ThemeBrandRoles, appearance: ThemeAppearance):
 export interface WidgetPresentationSettings extends ThemeSelection {
   readonly theme: 'system' | 'light' | 'dark'
   readonly reducedMotion: 'system' | 'on'
+  /** Off for the beta, which is why the widget has to be told: it cannot read settings itself. */
+  readonly voiceCoordinatorEnabled: boolean
 }
 
 /** Every presentation field a widget snapshot carries, from settings. */
@@ -140,6 +142,12 @@ export function widgetPresentationFor(settings: WidgetPresentationSettings): {
   readonly theme: WidgetPresentationSettings['theme']
   readonly palette: WidgetPalette
   readonly reducedMotion: WidgetPresentationSettings['reducedMotion']
+  readonly voiceCoordinator: boolean
 } {
-  return { theme: settings.theme, palette: widgetPaletteFor(settings), reducedMotion: settings.reducedMotion }
+  return {
+    theme: settings.theme,
+    palette: widgetPaletteFor(settings),
+    reducedMotion: settings.reducedMotion,
+    voiceCoordinator: settings.voiceCoordinatorEnabled,
+  }
 }

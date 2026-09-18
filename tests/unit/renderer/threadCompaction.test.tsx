@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { compactionOffered, ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
+import { compactionBusy, compactionOffered, ThreadCompaction } from '../../../src/renderer/src/agents/ThreadCompaction'
 import type { AgentThread } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear() })
@@ -60,16 +60,23 @@ it('retains every dismissed snapshot for this renderer session and ignores dismi
   render(<ThreadCompaction thread={owner} supported connected command={command} />)
   expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
 })
-it('keeps compaction feedback truthful and routes one explicit manual request', () => {
+it('keeps compaction feedback truthful, and leaves running one to the pane menu', () => {
   const command = vi.fn()
   const view = render(<ThreadCompaction thread={{ ...thread, providerId: 'codex' }} supported connected command={command} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Compact context' }))
-  expect(command).toHaveBeenCalledWith({ type: 'compact-thread', threadId: 'thread' })
+  // Compact context itself is an item in the pane header's More menu; nothing here offers it a second time.
+  expect(screen.queryByRole('button', { name: 'Compact context' })).not.toBeInTheDocument()
   view.rerender(<ThreadCompaction thread={{ ...thread, compaction: { commandId: 'c', status: 'uncertain' } }} supported connected command={command} />)
   expect(screen.getByRole('status')).toHaveTextContent(/unconfirmed/i)
-  expect(screen.getByRole('button', { name: 'Compact context' })).toBeDisabled()
   view.rerender(<ThreadCompaction thread={{ ...thread, compaction: { commandId: 'c', status: 'completed' } }} supported connected command={command} />)
   expect(screen.getByRole('status')).toHaveTextContent('Context compacted')
+})
+it('holds compaction while the thread has work of its own, or nothing but /compact to fold', () => {
+  expect(compactionBusy(thread)).toBe(false)
+  expect(compactionBusy(thread, true)).toBe(true)
+  expect(compactionBusy({ ...thread, status: 'running' })).toBe(true)
+  expect(compactionBusy({ ...thread, requests: [{ id: 'q', kind: 'question', text: 'Continue?', options: [] }] })).toBe(true)
+  expect(compactionBusy({ ...thread, compaction: { commandId: 'c', status: 'running' } })).toBe(true)
+  expect(compactionBusy({ ...thread, messages: [{ ...thread.messages[0]!, text: '/compact' }] })).toBe(true)
 })
 it('offers compaction before Claude has reported support, but not once it reports none or before a native session exists', () => {
   const compact = { compact: true }

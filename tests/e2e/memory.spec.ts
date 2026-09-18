@@ -1,15 +1,17 @@
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, launchSottoWithVoice, openPage } from './support/sottoLaunch'
 
 async function snapshot(page: Page) { return page.evaluate(() => window.sotto!.memory!.get()) }
 
 test('remembers working preferences across restart, retains supersession history and keeps policies separate', async () => {
-  const original = await launchSotto()
+  const original = await launchSottoWithVoice()
   let launched = original
   try {
     let page = launched.page
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
     await page.reload()
+    // Sotto opens on Threads now, so Dictate is a deliberate stop; the questionnaire belongs to the Agents room alone.
+    await openPage(page, 'Dictate')
     await expect(page.getByRole('tab', { name: 'Dictate', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
@@ -82,7 +84,7 @@ test('remembers working preferences across restart, retains supersession history
 })
 
 test('keeps an unsaved correction when another edit supersedes its memory', async () => {
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     const originalId = await page.evaluate(async () => {

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Requires the shared tools slot to be mounted (ThreadsView `tools={props => <ToolsPanel {...props} />}` and one
 // ToolsPanelToggle in the focused pane header). Real Files IPC reads real temporary folders; only providers are fixtures.
@@ -98,7 +98,7 @@ test('browses real working folders in the shared tools panel, following focus or
     }, [workshop, docs])
     expect(ids).toHaveLength(2)
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await resize(launched, 1280)
     await page.getByRole('button', { name: 'Workshop files', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Workshop files', exact: true })).toBeVisible()

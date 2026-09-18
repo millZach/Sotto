@@ -6,6 +6,9 @@ export default tseslint.config(
     ignores: [
       '.worktrees/**',
       '.claude/tmp/**',
+      // Agent worktrees are whole checkouts of this repository, so linting them would lint
+      // every file twice and confuse the parser about which tsconfig root it is under.
+      '.claude/worktrees/**',
       'coverage/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/natural-voice-qa/**',

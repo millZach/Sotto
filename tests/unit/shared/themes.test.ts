@@ -6,6 +6,7 @@ import {
   BUILT_IN_THEMES,
   DEFAULT_THEME_ID,
   MAX_CUSTOM_THEMES,
+  T3_CODE_THEME,
   THEME_COLOR_ROLES,
   canonicalizeTheme,
   customThemeSchema,
@@ -16,7 +17,6 @@ import {
   serializeThemeFile,
   uniqueThemeId,
 } from '../../../src/shared/themes/library'
-import { OCEAN_THEME } from '../../../src/shared/themes/palettes'
 import { isVsCodeThemeFile, pairVsCodeThemes, parseVsCodeThemeFile, resolveThemeLabelCollisions } from '../../../src/shared/themes/vscodeImport'
 
 describe('theme colours', () => {
@@ -54,9 +54,9 @@ describe('theme colours', () => {
 })
 
 describe('built-in themes', () => {
-  it('ships the six T3 Code themes with every role, T3 Code carrying both palettes', () => {
+  it('ships the six built-in themes with every role, Sotto the default and carrying both palettes', () => {
     expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 't3-chat', 'grove', 'ocean', 'ember', 'iris'])
-    expect(DEFAULT_THEME_ID).toBe('ocean')
+    expect(DEFAULT_THEME_ID).toBe('t3-code')
     for (const theme of BUILT_IN_THEMES) {
       for (const mode of ['light', 'dark'] as const) {
         const colors = mode === theme.appearance ? theme.colors : theme.variants?.[mode]
@@ -66,7 +66,7 @@ describe('built-in themes', () => {
     }
   })
 
-  it('gives the built-ins Sotto names, once each, on the T3 ids and palettes', () => {
+  it('gives the built-ins Sotto names, once each, on the ids they shipped under', () => {
     expect(BUILT_IN_THEMES.map(theme => [theme.id, theme.label])).toEqual([
       ['t3-code', 'Sotto'], ['t3-chat', 'Rose'], ['grove', 'Fern'], ['ocean', 'Tide'], ['ember', 'Copper'], ['iris', 'Dusk'],
     ])
@@ -75,12 +75,12 @@ describe('built-in themes', () => {
     for (const t3Name of ['t3 code', 't3 chat', 'grove', 'ocean', 'ember', 'iris']) expect(labels).not.toContain(t3Name)
   })
 
-  it('paints each half from the theme that can render it, falling back to Tide', () => {
+  it('paints each half from the theme that can render it, falling back to Sotto', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffaf0' } })
     const selection = { lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] }
     expect(resolveThemeFor(selection, 'light').theme.id).toBe(lightOnly.id)
-    expect(resolveThemeFor(selection, 'dark').theme.id).toBe('ocean')
-    expect(resolveThemeFor({ lightTheme: 'missing', darkTheme: 'iris', customThemes: [] }, 'light').colors).toEqual(OCEAN_THEME.variants?.light ?? OCEAN_THEME.colors)
+    expect(resolveThemeFor(selection, 'dark').theme.id).toBe('t3-code')
+    expect(resolveThemeFor({ lightTheme: 'missing', darkTheme: 'iris', customThemes: [] }, 'light').colors).toEqual(T3_CODE_THEME.variants?.light ?? T3_CODE_THEME.colors)
   })
 })
 

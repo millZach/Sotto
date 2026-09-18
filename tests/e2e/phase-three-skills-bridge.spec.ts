@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 test('the full workspace inserts provider-native skills and retains selections without submitting work', async () => {
   test.setTimeout(60_000)
@@ -18,7 +18,7 @@ test('the full workspace inserts provider-native skills and retains selections w
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' })
     })
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     const before = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => [thread.id, thread.messages.length]))
     for (const [threadId, token] of [['grok-previews', '/review'], ['release-notes', '$review'], ['benchmark', '/review']] as const) {
       await page.evaluate(async threadId => window.sotto!.agents!.command({ type: 'select-thread', threadId }), threadId)

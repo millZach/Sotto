@@ -9,7 +9,7 @@ import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 test('personal dictation and spoken exchange retain each provider chat, support mute/interrupt and stop on navigation', async () => {
   test.setTimeout(120_000)
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-phase5-voice-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: true }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: true, voiceCoordinatorEnabled: true }))
   const launched = await launchSotto('success', profile)
   const { page, app } = launched
   await mkdir('artifacts/phase-five-personal-voice', { recursive: true })

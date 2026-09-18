@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction } from './support/sottoLaunch'
 
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 
 test('creates a thread in a centered popup, configures it, and sends file and pasted screenshots', async () => {
   const previousFolder = process.env.SOTTO_E2E_PROJECT_DIRECTORY
   process.env.SOTTO_E2E_PROJECT_DIRECTORY = process.cwd()
-  const launched = await launchSotto()
+  const launched = await launchSottoWithVoice()
   const { page } = launched
   try {
     await page.evaluate(async () => {
@@ -15,11 +15,11 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Threads', exact: true }).click()
+    await openThreads(page)
     await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
     const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
     await expect(dialog).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
     const centered = await dialog.evaluate(node => {
       const rect = node.getBoundingClientRect()
       return Math.abs(rect.x + rect.width / 2 - innerWidth / 2) < 2 && Math.abs(rect.y + rect.height / 2 - innerHeight / 2) < 2
@@ -44,8 +44,9 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await dialog.getByRole('button', { name: 'Create thread' }).click()
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Screenshot review', exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
     await page.getByRole('combobox', { name: 'Thread model' }).click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/composer-provider-models.png' })
@@ -54,6 +55,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('combobox', { name: 'Thread reasoning' })).toHaveValue('low')
     await page.getByRole('combobox', { name: 'Thread permissions' }).selectOption('auto-accept-edits')
     await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveValue('auto-accept-edits')
+    await page.keyboard.press('Escape')
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: screenshot })
     await expect(page.getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Review this screenshot.')
@@ -80,12 +82,13 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'pasted.png' })).toHaveCount(0)
     await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'pasted.png' })).toBeVisible()
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    const created = state.host.threads.find(thread => thread.id === state.activeThreadId)!
+    // The shell summarises histories; the detail bridge carries the messages themselves.
+    const created = (await page.evaluate(async id => window.sotto!.agents!.threadDetail!(id), state.activeThreadId!))!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)
     expect(created.messages.at(-1)).toMatchObject({ text: '', attachments: [{ name: 'pasted.png' }] })
     expect(state.assignments).toHaveLength(0)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
-    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await paneMenuAction(page, 'Manage')
     await expect(page.getByRole('button', { name: 'Send it', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'managed.png', mimeType: 'image/png', buffer: screenshot })
