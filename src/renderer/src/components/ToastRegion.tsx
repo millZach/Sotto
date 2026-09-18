@@ -2,8 +2,8 @@ import React, { type ReactNode } from 'react'
 
 export interface ToastMessage {
   readonly id: string
-  readonly message: string
-  readonly tone?: 'info' | 'error'
+  readonly message: ReactNode
+  readonly tone?: 'info' | 'success' | 'error'
 }
 
 export interface ToastRegionProps {

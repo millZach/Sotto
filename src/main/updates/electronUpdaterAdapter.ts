@@ -11,8 +11,9 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
  *
  * - `autoDownload = false` — an update is offered, never taken. Sotto asks
  *   before spending someone's bandwidth.
- * - `autoInstallOnAppQuit = true` — a download the user already accepted
- *   installs the next time the app closes, so nobody has to restart on demand.
+ * - `autoInstallOnAppQuit = false` — a downloaded update installs only when
+ *   the user chooses to restart into it. Closing Sotto never runs an installer
+ *   behind the window.
  * - `allowPrerelease = false` — this repository marks superseded releases as
  *   pre-releases, so the updater must only ever see the newest stable one.
  *
@@ -22,7 +23,7 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
 export function createElectronUpdaterAdapter(): UpdaterAdapter {
   const updater = autoUpdater
   updater.autoDownload = false
-  updater.autoInstallOnAppQuit = true
+  updater.autoInstallOnAppQuit = false
   updater.allowPrerelease = false
   updater.logger = null
 
@@ -35,7 +36,7 @@ export function createElectronUpdaterAdapter(): UpdaterAdapter {
       updater.on('update-downloaded', (event) => listener({ type: 'downloaded', version: event.version }))
       // Without a listener an EventEmitter turns 'error' into a thrown
       // exception, which is exactly the crash this feature must never cause.
-      updater.on('error', () => listener({ type: 'error' }))
+      updater.on('error', (error) => listener({ type: 'error', message: error?.message }))
     },
     async check(): Promise<void> {
       await updater.checkForUpdates()
@@ -44,8 +45,10 @@ export function createElectronUpdaterAdapter(): UpdaterAdapter {
       await updater.downloadUpdate()
     },
     quitAndInstall(): void {
-      // Defaults run the assisted NSIS installer and relaunch Sotto afterwards.
-      updater.quitAndInstall()
+      // Silent install, then relaunch: the user already confirmed the restart,
+      // so the NSIS wizard has nothing left to ask. `app.quit()` runs Sotto's
+      // ordinary before-quit path, which lets the tray-hidden window close.
+      updater.quitAndInstall(true, true)
     },
   }
 }

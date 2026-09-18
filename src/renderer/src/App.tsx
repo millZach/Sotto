@@ -7,8 +7,11 @@ import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryFooter, HistoryView } from './features/history/HistoryView'
 import { Onboarding } from './features/onboarding/Onboarding'
-import { UpdateBanner } from './features/updates/UpdateBanner'
-import { updatePromptKey } from './features/updates/updatePrompt'
+import { UpdateControl } from './features/updates/UpdateControl'
+import { installConfirmation } from './features/updates/updateControlLogic'
+import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFlow'
+import { releaseUrl } from '../../shared/releases'
+import { ConfirmationDialog } from './components/ConfirmationDialog'
 import {
   BrowserMicrophoneTest,
   type MicrophoneTestController,
@@ -102,6 +105,45 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     const timer = setTimeout(() => setThemeNotice(current => (current === themeNotice ? null : current)), 4_000)
     return () => clearTimeout(timer)
   }, [themeNotice])
+
+  // Update toasts: each one leaves by itself after a while, and a fresh one
+  // about the same subject replaces the earlier one rather than stacking.
+  const [updateToasts, setUpdateToasts] = useState<readonly ToastMessage[]>([])
+  const updateToastSerial = useRef(0)
+  const updateToastTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const timers = updateToastTimers.current
+    return () => { for (const timer of timers) clearTimeout(timer) }
+  }, [])
+  const notifyUpdate = useCallback((notice: UpdateNotice): void => {
+    const id = `update-${++updateToastSerial.current}`
+    const link = notice.version === undefined ? null : releaseUrl(notice.version)
+    const open = window.sotto?.openExternalLink
+    const message = (
+      <>
+        <strong>{notice.title}</strong>
+        {notice.detail === null ? null : <> {notice.detail}</>}
+        {link !== null && open !== undefined
+          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}>Read more</button></>
+          : null}
+      </>
+    )
+    setUpdateToasts(current => [...current.filter(toast => toast.tone !== notice.tone), { id, message, tone: notice.tone }])
+    const timer = setTimeout(() => {
+      updateToastTimers.current.delete(timer)
+      setUpdateToasts(current => current.filter(toast => toast.id !== id))
+    }, notice.tone === 'error' ? 9_000 : 7_000)
+    updateToastTimers.current.add(timer)
+  }, [])
+
+  const updateFlow = useUpdateFlow({
+    status: app.update,
+    checkRequest: app.updateCheckRequest,
+    check: app.actions.checkForUpdates,
+    download: app.actions.downloadUpdate,
+    install: app.actions.installUpdate,
+    notify: notifyUpdate,
+  })
 
   // Layout effect: a new appearance is on the root before the browser paints
   // the render that selected it, so the choice and the room never disagree.
@@ -299,9 +341,11 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
-          onCheckForUpdates={app.actions.checkForUpdates}
-          onDownloadUpdate={app.actions.downloadUpdate}
-          onInstallUpdate={app.actions.installUpdate}
+          onCheckForUpdates={updateFlow.check}
+          onDownloadUpdate={updateFlow.download}
+          // The press opens the same confirmation the footer control uses; the
+          // install itself happens only once that is answered.
+          onInstallUpdate={async () => { updateFlow.activate('install'); return true }}
         />
         break
       case 'help':
@@ -321,15 +365,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         />
     }
 
-    const promptKey = updatePromptKey(app.update)
-    const updatePrompt = app.update !== null && promptKey !== null && !app.dismissedUpdates.includes(promptKey)
-      ? <UpdateBanner
-          status={app.update}
-          onDownload={app.actions.downloadUpdate}
-          onInstall={app.actions.installUpdate}
-          onDismiss={app.actions.dismissUpdate}
-        />
-      : null
+    const pendingInstall = updateFlow.pendingInstall === null ? null : installConfirmation(updateFlow.pendingInstall)
 
     content = (
       <>
@@ -337,15 +373,26 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           navigation={navigation}
           platform={app.platform}
           statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
+          updateControl={<UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />}
           onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
           onMinimize={app.actions.minimizeApp}
           onMaximize={app.actions.toggleMaximizeApp}
           maximized={app.windowMaximized}
           onClose={app.actions.hideApp}
         >
-          {updatePrompt}
           <MemorySurface navigation={navigation}>{view}</MemorySurface>
         </AppShell>
+        {pendingInstall !== null ? (
+          <ConfirmationDialog
+            title={pendingInstall.title}
+            description={pendingInstall.description}
+            confirmLabel="Restart and install"
+            cancelLabel="Not now"
+            danger={false}
+            onConfirm={async () => { await updateFlow.confirmInstall(); return true }}
+            onCancel={updateFlow.cancelInstall}
+          />
+        ) : null}
         <ThemeEditorHost
           settings={app.settings}
           onSave={app.actions.updateSettings}
@@ -358,6 +405,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
             message: recoveryMessages[notice.code],
           })),
           ...(themeNotice === null ? [] : [themeNotice]),
+          ...updateToasts,
         ]} />
       </>
     )

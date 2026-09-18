@@ -247,19 +247,24 @@ export type TranscriptionKeyCheck = z.infer<typeof transcriptionKeyCheckSchema>
 export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.' as const
 
 const updateVersionSchema = z.string().min(1).max(64)
+/** One sentence from the updater, already trimmed to something a tooltip can hold. */
+const updateProblemSchema = z.string().min(1).max(240)
 
 /**
  * One observable step of the update lifecycle. `unsupported` is the honest
  * answer for a development run, an E2E run, and the macOS build, none of which
- * ship an update feed; `failed` covers every offline or malformed-feed path,
- * which the app treats as "try again later" and never as an error worth
- * interrupting dictation for.
+ * ship an update feed. `failed` is a check that could not be completed; a
+ * download or install that fails keeps its phase and carries the failure as
+ * `problem`, so the offer (or the installer already on disk) is never lost and
+ * the same control simply offers to try again.
  */
 export const updatePhaseSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('idle') }).strict(),
   z.object({ phase: z.literal('checking') }).strict(),
   z.object({ phase: z.literal('up-to-date') }).strict(),
-  z.object({ phase: z.literal('available'), version: updateVersionSchema }).strict(),
+  z
+    .object({ phase: z.literal('available'), version: updateVersionSchema, problem: updateProblemSchema.nullable() })
+    .strict(),
   z
     .object({
       phase: z.literal('downloading'),
@@ -267,13 +272,20 @@ export const updatePhaseSchema = z.discriminatedUnion('phase', [
       percent: z.number().int().min(0).max(100),
     })
     .strict(),
-  z.object({ phase: z.literal('downloaded'), version: updateVersionSchema }).strict(),
-  z.object({ phase: z.literal('failed') }).strict(),
+  z
+    .object({ phase: z.literal('downloaded'), version: updateVersionSchema, problem: updateProblemSchema.nullable() })
+    .strict(),
+  z.object({ phase: z.literal('failed'), problem: updateProblemSchema.nullable() }).strict(),
   z.object({ phase: z.literal('unsupported') }).strict(),
 ])
 
 export const updateStatusSchema = z
-  .object({ currentVersion: updateVersionSchema, phase: updatePhaseSchema })
+  .object({
+    currentVersion: updateVersionSchema,
+    phase: updatePhaseSchema,
+    /** When the last check started, as epoch milliseconds; null before the first. */
+    checkedAt: z.number().int().nonnegative().nullable(),
+  })
   .strict()
 
 export type UpdatePhase = z.infer<typeof updatePhaseSchema>
@@ -347,6 +359,8 @@ export interface SottoBridge {
   downloadUpdate(): Promise<CommandResult>
   installUpdate(): Promise<CommandResult>
   onUpdateStatus(listener: (status: UpdateStatus) => void): Unsubscribe
+  /** The application menu's "Check for Updates…": the window runs the same check its own control would. */
+  onUpdateCheckRequested(listener: () => void): Unsubscribe
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

@@ -108,6 +108,7 @@ import {
   DICTATION_COMMAND,
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
+  UPDATE_CHECK_REQUESTED,
   UPDATE_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
@@ -662,6 +663,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       console.log(`[Sotto] ${(await turns.recent(20)).length} recent turn records`)
     })().catch(() => console.error('[Sotto] turn-records-unavailable'))
   }
+  // The window runs the check itself, so the macOS app menu and the tray share
+  // the footer control's spinner, toasts, and offer rather than growing a
+  // second path.
+  const requestUpdateCheck = (): void => {
+    void windows.showMain()
+      .then(() => { windows.sendToMain(UPDATE_CHECK_REQUESTED, null) })
+      .catch(() => logOperational('native-main-show-failed'))
+  }
   const applicationMenuTemplate = buildApplicationMenuTemplate({
     platform,
     appName: APP_NAME,
@@ -669,6 +678,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
+    onCheckForUpdates: requestUpdateCheck,
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -859,6 +869,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     show(): void {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
+    // Only where a check can answer: the tray is the one menu Windows has.
+    ...(updatesSupported ? { checkForUpdates: requestUpdateCheck } : {}),
     quit(): void {
       app.quit()
     },

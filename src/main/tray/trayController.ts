@@ -14,6 +14,8 @@ export interface TrayActions {
   toggleDictation(): void
   setAutoPaste(enabled: boolean): void
   show(): void
+  /** Windows has no application menu, so the tray carries "Check for Updates…". */
+  checkForUpdates?: () => void
   showTurnRecords?: () => void
   quit(): void
 }
@@ -43,6 +45,9 @@ export class TrayController {
         click: this.actions.toggleDictation,
       },
       { type: 'normal', label: 'Show Sotto', click: this.actions.show },
+      ...(this.actions.checkForUpdates
+        ? [{ type: 'normal' as const, label: 'Check for Updates…', click: this.actions.checkForUpdates }]
+        : []),
       ...(this.actions.showTurnRecords
         ? [{ label: 'Show recent turn records', click: this.actions.showTurnRecords }]
         : []),
