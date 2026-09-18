@@ -478,6 +478,10 @@ textarea.tt-input {
   border-left-color: var(--tt-error);
 }
 
+.tt-toast[data-tone='success'] {
+  border-left-color: var(--tt-success);
+}
+
 /* ---- the voice wave ----
 
    The widget's seven bars, reproduced exactly: 3px wide, 3px apart, 5px at
@@ -1265,82 +1269,130 @@ textarea.tt-input {
   align-self: start;
 }
 
-/* ---- update prompt ---- */
+/* ---- update control ----
 
-/* A strip of signage above whatever view is open: one hairline, one accent
-   rule, one action. Never a modal, never on the floating widget. */
-.update-banner {
+   One round button at the footer's end. Idle it is a faint refresh glyph;
+   with something to say it takes a plate and the accent colour: the download
+   glyph with a dot for an offer, a ring for the download, the restart glyph
+   with a tick once the installer is on disk. */
+.update-control {
+  position: relative;
   display: grid;
   flex: none;
-  align-items: center;
-  margin: 16px 24px 0;
-  border: 1px solid var(--tt-hairline);
-  border-left: 2px solid var(--tt-activity);
-  border-radius: var(--tt-radius-sm);
-  background: color-mix(in srgb, var(--tt-activity) 6%, var(--tt-surface));
-  gap: 14px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  padding: 11px 12px 11px 16px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tt-text-faint);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+  -webkit-app-region: no-drag;
 }
 
-.update-banner[data-tone='ready'] {
-  border-left-color: var(--tt-success);
-  background: color-mix(in srgb, var(--tt-success) 7%, var(--tt-surface));
+.update-control:hover:not([aria-disabled='true']) {
+  background: var(--tt-hover);
+  color: var(--tt-text);
 }
 
-.update-banner__mark {
+.update-control[aria-disabled='true'] {
+  cursor: default;
+}
+
+.update-control[data-state='available'],
+.update-control[data-state='downloading'],
+.update-control[data-state='downloaded'] {
+  background: var(--tt-activity-wash);
+  color: var(--tt-activity);
+}
+
+.update-control[data-state='downloaded'] {
+  color: var(--tt-success);
+  background: color-mix(in srgb, var(--tt-success) 12%, transparent);
+}
+
+.update-control__glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.update-control[data-state='checking'] .update-control__glyph > svg {
+  animation: update-control-spin 900ms linear infinite;
+}
+
+@keyframes update-control-spin {
+  to { transform: rotate(360deg); }
+}
+
+.update-control__dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--tt-activity);
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--tt-surface);
 }
 
-.update-banner[data-tone='ready'] .update-banner__mark {
-  background: var(--tt-success);
-}
-
-.update-banner__body {
+.update-control__badge {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
   display: grid;
-  min-width: 0;
-  gap: 2px;
+  width: 10px;
+  height: 10px;
+  place-items: center;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--tt-surface);
 }
 
-.update-banner__title,
-.update-banner__detail {
-  margin: 0;
+.update-control__badge > svg {
+  color: var(--tt-surface);
 }
 
-.update-banner__title {
-  color: var(--tt-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.update-banner__detail {
-  color: var(--tt-text-muted);
-  font-size: 12.5px;
-}
-
-.update-banner__progress {
-  height: 3px;
-  margin-top: 7px;
-  border-radius: 2px;
-  background: var(--tt-surface-sunken);
-  overflow: hidden;
-}
-
-.update-banner__progress > span {
-  display: block;
+.update-control__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  border-radius: 2px;
-  background: var(--tt-activity);
-  transition: width 220ms ease;
+  transform: rotate(-90deg);
+  pointer-events: none;
 }
 
-.update-banner__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.update-control__ring circle {
+  fill: none;
+  stroke-width: 1.75;
+}
+
+.update-control__ring-track {
+  stroke: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.update-control__ring-value {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 300ms ease-out;
+}
+
+/* A sentence in a toast may carry one link out to the release page. */
+.tt-toast__link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--tt-text-muted);
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.tt-toast__link:hover {
+  color: var(--tt-text);
 }
 
 /* ---- panels ---- */
@@ -2282,16 +2334,6 @@ textarea.tt-input {
 
   .history-meta > div:last-child {
     border-bottom: 0;
-  }
-
-  .update-banner {
-    align-items: start;
-    gap: 10px 12px;
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .update-banner__actions {
-    grid-column: 2;
   }
 }
 

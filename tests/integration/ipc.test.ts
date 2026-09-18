@@ -382,6 +382,7 @@ describe('typed preload bridge', () => {
         'onDictationCommand',
         'onRecoveryNotice',
         'onSettingsChanged',
+        'onUpdateCheckRequested',
         'onUpdateStatus',
         'onWindowMaximized',
         'openExternalLink',
@@ -934,7 +935,7 @@ describe('IPC validation and lifecycle', () => {
   it('forwards every update operation and rejects a payload on any of them', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
-    const status = { currentVersion: '3.4.0', phase: { phase: 'available' as const, version: '3.5.0' } }
+    const status = { currentVersion: '3.4.0', phase: { phase: 'available' as const, version: '3.5.0', problem: null }, checkedAt: 1_000 }
     const updates = {
       status: vi.fn(() => status),
       check: vi.fn(async () => status),
@@ -2248,6 +2249,32 @@ describe('TrayController', () => {
     controller.dispose()
     controller.dispose()
     expect(destroy).toHaveBeenCalledOnce()
+  })
+
+  it('offers an update check from the tray only when the build can answer one', () => {
+    const setMenu = vi.fn<(items: readonly TrayMenuItem[]) => void>()
+    const checkForUpdates = vi.fn()
+    const controller = new TrayController({ setMenu, destroy: vi.fn() }, {
+      toggleDictation: vi.fn(),
+      setAutoPaste: vi.fn(),
+      show: vi.fn(),
+      checkForUpdates,
+      quit: vi.fn(),
+    })
+
+    controller.update({ dictating: false, autoPaste: true })
+    const menu = setMenu.mock.calls.at(-1)?.[0]
+    expect(menu?.map((item) => item.label ?? item.type)).toEqual([
+      'Start Dictation',
+      'Show Sotto',
+      'Check for Updates…',
+      'separator',
+      'Auto-paste',
+      'separator',
+      'Quit',
+    ])
+    menu?.[2]?.click?.()
+    expect(checkForUpdates).toHaveBeenCalledOnce()
   })
 })
 

@@ -177,9 +177,12 @@ Answering a question or permission request and creating a project are also part 
 
 **Footer status.** The one-line status text on the right of the footer links, supplied by whichever page is open (for example the model and paste mode in the Dictate room, the thread count on the Threads page).
 
+**Update control.** The small round button at the far right of the footer, the one place the updater shows itself in the window. Idle it offers a check; when a release is found it wears a download glyph, a progress ring while the installer downloads, and a restart glyph once the installer is on disk. Its accessible name says exactly what a press does. A press that downloads or fails gets a toast; a press that installs asks first, because the restart interrupts dictation and agent work. Automatic checks run fifteen seconds after launch and every four minutes, only on the installed Windows app and only while the setting allows, and never install anything on quit. "Check for Updates…" in the tray menu (and the macOS application menu) presses the control from outside the window.
+
 ## Where things live
 
-- `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links and footer status.
+- `src/renderer/src/components/AppShell.tsx` — the Crossing shell: strip, switch, room, footer links, footer status and the update control slot.
+- `src/renderer/src/features/updates/` — the update control, its wording (`updateControlLogic.ts`) and the press-to-toast flow (`useUpdateFlow.ts`); `src/main/updates/updateService.ts` owns the cadence and phases behind it.
 - `src/renderer/src/features/dictate/DictateRoom.tsx` — the Dictate room.
 - `src/main/asr/openRouterTranscriptionService.ts` — the transcription request to OpenRouter (MAI-Transcribe-2, phrase list, key check); `src/renderer/src/transcription/openRouterTranscriber.ts` encodes the WAV and calls it over IPC.
 - `src/main/llm/transcriptPolishService.ts` — the cleanup pass.

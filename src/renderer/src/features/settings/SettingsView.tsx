@@ -20,6 +20,7 @@ import type {
   WritingModelId,
 } from '../../../../shared/settings'
 import { WRITING_MODELS } from '../../../../shared/settings'
+import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
@@ -83,14 +84,21 @@ type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
 
 function updateStatusCopy(status: UpdateStatus | null): string {
   if (status === null) return 'Update status is unavailable.'
-  switch (status.phase.phase) {
+  const phase = status.phase
+  switch (phase.phase) {
     case 'checking': return 'Asking GitHub...'
     case 'up-to-date': return 'You are on the newest release.'
-    case 'available': return `Sotto ${status.phase.version} is available.`
-    case 'downloading': return `Downloading ${status.phase.version} - ${status.phase.percent}%`
-    case 'downloaded': return `Sotto ${status.phase.version} is downloaded. It installs when you restart.`
-    case 'failed': return 'Sotto could not reach GitHub. It will try again later.'
-    case 'unsupported': return 'Update checks run only in the installed Windows app.'
+    case 'available': return phase.problem === null
+      ? `Sotto ${phase.version} is available.`
+      : `Sotto ${phase.version} could not be downloaded: ${phase.problem}`
+    case 'downloading': return `Downloading ${phase.version} - ${phase.percent}%`
+    case 'downloaded': return phase.problem === null
+      ? `Sotto ${phase.version} is downloaded. Restart to install it.`
+      : `Sotto ${phase.version} could not be installed: ${phase.problem}`
+    case 'failed': return phase.problem === null
+      ? 'Sotto could not reach GitHub. It will try again in a few minutes.'
+      : `Sotto could not check for updates: ${phase.problem}`
+    case 'unsupported': return UPDATES_UNSUPPORTED_MESSAGE
     default: return 'Not checked yet.'
   }
 }
@@ -580,7 +588,7 @@ export function SettingsView({
                     </div>
                     <div className="settings-update-actions">
                       {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
-                      {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart to update</Button> : null}
+                      {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart and install</Button> : null}
                       <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
                     </div>
                   </div>

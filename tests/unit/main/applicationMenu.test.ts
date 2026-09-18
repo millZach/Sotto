@@ -14,6 +14,7 @@ function template(
     appName: 'Sotto',
     includeDeveloperTools: false,
     onShowSettings: () => undefined,
+    onCheckForUpdates: () => undefined,
     ...overrides,
   })
 }
@@ -52,9 +53,10 @@ describe('buildApplicationMenuTemplate', () => {
     ])
   })
 
-  it('offers settings, hiding and quitting from the app menu', () => {
+  it('offers updates, settings, hiding and quitting from the app menu', () => {
     expect(entries(submenu(darwinTemplate(), 'Sotto'))).toEqual([
       'about',
+      'Check for Updates…',
       'separator',
       'Settings…',
       'separator',
@@ -78,6 +80,15 @@ describe('buildApplicationMenuTemplate', () => {
     settings?.click?.()
 
     expect(onShowSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for an update check from the app menu', () => {
+    const onCheckForUpdates = vi.fn()
+    submenu(darwinTemplate({ onCheckForUpdates }), 'Sotto')
+      .find((item) => item.label === 'Check for Updates…')
+      ?.click?.()
+
+    expect(onCheckForUpdates).toHaveBeenCalledTimes(1)
   })
 
   it('carries the edit roles that drive clipboard shortcuts in text fields', () => {
@@ -122,8 +133,9 @@ describe('buildApplicationMenuTemplate', () => {
 
   it('builds an independent template on every call', () => {
     const onShowSettings = vi.fn()
-    const first = darwinTemplate({ onShowSettings })
-    const second = darwinTemplate({ onShowSettings })
+    const onCheckForUpdates = vi.fn()
+    const first = darwinTemplate({ onShowSettings, onCheckForUpdates })
+    const second = darwinTemplate({ onShowSettings, onCheckForUpdates })
 
     expect(first).not.toBe(second)
     expect(first[0]).not.toBe(second[0])

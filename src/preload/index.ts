@@ -46,6 +46,7 @@ import {
   UPDATE_CHECK,
   UPDATE_DOWNLOAD,
   UPDATE_GET_STATUS,
+  UPDATE_CHECK_REQUESTED,
   UPDATE_INSTALL,
   UPDATE_STATUS,
   WIDGET_DRAG,
@@ -353,6 +354,7 @@ export function createSottoBridge(
     downloadUpdate: () => invokeParsed(renderer, UPDATE_DOWNLOAD, commandResultSchema),
     installUpdate: () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
     onUpdateStatus,
+    onUpdateCheckRequested: listener => subscribe(renderer, UPDATE_CHECK_REQUESTED, z.null(), () => listener()),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),

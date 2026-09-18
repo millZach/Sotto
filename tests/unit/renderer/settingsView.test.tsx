@@ -56,7 +56,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     onResetSettings: vi.fn(async () => true),
     onClearHistory: vi.fn(async () => true),
     onCheckTranscriptionKey: vi.fn(async () => ({ ok: true } as const)),
-    updateStatus: { currentVersion: '3.4.0', phase: { phase: 'up-to-date' } },
+    updateStatus: { currentVersion: '3.4.0', phase: { phase: 'up-to-date' }, checkedAt: null },
     onCheckForUpdates: vi.fn(async () => null),
     onDownloadUpdate: vi.fn(async () => true),
     onInstallUpdate: vi.fn(async () => true),
@@ -716,7 +716,7 @@ describe('SettingsView', () => {
     unmount()
 
     render(<SettingsView {...baseProps({
-      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'available', version: '3.5.0' } },
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'available', version: '3.5.0', problem: null }, checkedAt: 1 },
       onDownloadUpdate: download,
     })} />)
     await selectCategory('Application')
@@ -726,17 +726,17 @@ describe('SettingsView', () => {
     cleanup()
 
     render(<SettingsView {...baseProps({
-      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'downloaded', version: '3.5.0' } },
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'downloaded', version: '3.5.0', problem: null }, checkedAt: 1 },
       onInstallUpdate: install,
     })} />)
     await selectCategory('Application')
-    await user.click(screen.getByRole('button', { name: 'Restart to update' }))
+    await user.click(screen.getByRole('button', { name: 'Restart and install' }))
     expect(install).toHaveBeenCalledOnce()
   })
 
   it('says plainly when this build has no update feed at all', async () => {
     render(<SettingsView {...baseProps({
-      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'unsupported' } },
+      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'unsupported' }, checkedAt: null },
     })} />)
     await selectCategory('Application')
 

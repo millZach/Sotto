@@ -43,6 +43,7 @@ export interface ApplicationMenuTemplateOptions {
   readonly appName: string
   readonly includeDeveloperTools: boolean
   readonly onShowSettings: () => void
+  readonly onCheckForUpdates: () => void
   readonly onShowTurnRecords?: () => void
 }
 
@@ -53,11 +54,13 @@ function separator(): ApplicationMenuItem {
 function appMenu(
   appName: string,
   onShowSettings: () => void,
+  onCheckForUpdates: () => void,
 ): ApplicationMenuItem {
   return {
     label: appName,
     submenu: [
       { role: 'about' },
+      { label: 'Check for Updates…', click: onCheckForUpdates },
       separator(),
       { label: 'Settings…', accelerator: 'Command+,', click: onShowSettings },
       separator(),
@@ -126,7 +129,7 @@ export function buildApplicationMenuTemplate(
   }
 
   return [
-    appMenu(options.appName, options.onShowSettings),
+    appMenu(options.appName, options.onShowSettings, options.onCheckForUpdates),
     editMenu(),
     ...(options.includeDeveloperTools ? [viewMenu(options.onShowTurnRecords)] : []),
     windowMenu(),

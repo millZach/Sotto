@@ -18,6 +18,8 @@ export interface AppShellProps {
   readonly platform: SottoPlatform
   /** One sentence for the footer's right-hand end. */
   readonly statusText?: ReactNode
+  /** The update control, seated at the footer's far end after the status sentence. */
+  readonly updateControl?: ReactNode
   readonly onNavigate?: ((destination: ManagementNavigation) => void) | undefined
   readonly maximized?: boolean
   readonly onMaximize: () => Promise<void> | void
@@ -58,6 +60,7 @@ export function AppShell({
   navigation,
   platform,
   statusText,
+  updateControl,
   onNavigate,
   onMinimize,
   maximized = false,
@@ -150,6 +153,7 @@ export function AppShell({
             ))}
           </nav>
           <FooterStatus>{statusText}</FooterStatus>
+          {updateControl}
         </footer>
       ) : null}
     </div>

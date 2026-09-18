@@ -35,7 +35,6 @@ import {
 } from '../features/dictation/dictationController'
 import { captureDictationDestination } from '../features/dictation/dictationDestination'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
-import { updatePromptKey } from '../features/updates/updatePrompt'
 import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
@@ -139,7 +138,6 @@ export interface AppActions {
   checkForUpdates(): Promise<UpdateStatus | null>
   downloadUpdate(): Promise<boolean>
   installUpdate(): Promise<boolean>
-  dismissUpdate(): void
   showApp(): Promise<void>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
@@ -161,8 +159,8 @@ export interface AppContextValue {
   readonly recoveryNotices: readonly RecoveryNotice[]
   /** Null until the main process answers, and on any build without a feed. */
   readonly update: UpdateStatus | null
-  /** Prompt keys the user waved away for the rest of this session. */
-  readonly dismissedUpdates: readonly string[]
+  /** How many times the application menu asked for a check; each rise is one press. */
+  readonly updateCheckRequest: number
   readonly actions: AppActions
 }
 
@@ -202,7 +200,7 @@ export function AppProvider({
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
-  const [dismissedUpdates, setDismissedUpdates] = useState<readonly string[]>([])
+  const [updateCheckRequest, setUpdateCheckRequest] = useState(0)
 
   // The main process resolved the platform once and carried it across the
   // bridge; an absent bridge is already the unavailable path, so it reads as
@@ -211,7 +209,6 @@ export function AppProvider({
   const copy = platformCopy(platform)
 
   const settingsRef = useRef<AppSettings | null>(null)
-  const updateRef = useRef<UpdateStatus | null>(null)
   const controllerRef = useRef<AppController | null>(null)
   const lifecycleGenerationRef = useRef(0)
   const activeGenerationRef = useRef(0)
@@ -229,8 +226,6 @@ export function AppProvider({
   }, [])
 
   const commitUpdate = useCallback((next: UpdateStatus): void => {
-
-    updateRef.current = next
     setUpdate(next)
   }, [])
 
@@ -329,6 +324,7 @@ export function AppProvider({
     let unsubscribeSettings: (() => void) | null = null
     let unsubscribeRecoveryNotices: (() => void) | null = null
     let unsubscribeUpdateStatus: (() => void) | null = null
+    let unsubscribeUpdateCheckRequests: (() => void) | null = null
     setStatus('loading')
     setHistoryStatus('loading')
     setFailure(null)
@@ -338,8 +334,6 @@ export function AppProvider({
     setDictation(initialDictationState)
     setRecoveryNotices([])
     setUpdate(null)
-    updateRef.current = null
-    setDismissedUpdates([])
 
     if (bridge === undefined) {
       setStatus('unavailable')
@@ -371,6 +365,13 @@ export function AppProvider({
       })
     } catch {
       // Updating is optional everywhere; a feed that cannot be watched stays quiet.
+    }
+    try {
+      unsubscribeUpdateCheckRequests = bridge.onUpdateCheckRequested(() => {
+        if (isCurrentGeneration(generation)) setUpdateCheckRequest((count) => count + 1)
+      })
+    } catch {
+      // Without the menu's request the footer control still offers the same check.
     }
     void bridge.getUpdateStatus().then(
       (result) => {
@@ -512,6 +513,8 @@ export function AppProvider({
       unsubscribeRecoveryNotices = null
       try { unsubscribeUpdateStatus?.() } catch { /* listener is already unreachable */ }
       unsubscribeUpdateStatus = null
+      try { unsubscribeUpdateCheckRequests?.() } catch { /* listener is already unreachable */ }
+      unsubscribeUpdateCheckRequests = null
       if (controllerRef.current === localController) controllerRef.current = null
       try { localController?.dispose() } catch { /* resources are independently guarded */ }
       localController = null
@@ -618,11 +621,6 @@ export function AppProvider({
       if (bridge === undefined) return false
       try { return (await bridge.installUpdate()).ok } catch { return false }
     },
-    dismissUpdate: () => {
-      const key = updatePromptKey(updateRef.current)
-      if (key === null) return
-      setDismissedUpdates((current) => (current.includes(key) ? current : [...current, key]))
-    },
     showApp: async () => {
       const generation = activeGenerationRef.current
       try { await bridge?.showApp() } catch {
@@ -668,9 +666,9 @@ export function AppProvider({
     navigation,
     recoveryNotices,
     update,
-    dismissedUpdates,
+    updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dismissedUpdates, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update])
+  }), [windowMaximized, actions, copy, dictation, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }
