@@ -8,8 +8,8 @@ import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
-async function fixture(timeout = 1000) {
-  const f = await codexFixture(undefined, true, timeout)
+async function fixture() {
+  const f = await codexFixture(undefined, true)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => 'codex',
     threadProvider: id => f.registry.byThread(id)?.provider,
     hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost() } })
@@ -49,7 +49,7 @@ describe('workspace over native Codex transport', () => {
   })
 
   it('preserves native prompt uncertainty and reconciles a late acknowledgement without replay', async () => {
-    const { f, workspace } = await fixture(200)
+    const { f, workspace } = await fixture()
     await f.driver.delayNextAck('turn/start')
     expect(await workspace.execute({ type: 'send', commandId: 'delayed-prompt', threadId: 'sotto-task', messageId: 'late-message', text: 'Synthetic uncertain prompt' })).toEqual({ accepted: false, uncertain: true })
     await workspace.setWorkspaceSettled('project', 'scope', true)

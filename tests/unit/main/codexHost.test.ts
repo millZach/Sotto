@@ -14,8 +14,8 @@ afterEach(async () => {
   for (const control of controls.splice(0)) control.dispose()
   for (const fixture of fixtures.splice(0).reverse()) await fixture.cleanup()
 })
-async function fixture(wrapped = false, timeout = 1000) {
-  const f = await codexFixture(undefined, wrapped, timeout); fixtures.push(f)
+async function fixture(wrapped = false) {
+  const f = await codexFixture(undefined, wrapped); fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   return f
@@ -93,9 +93,9 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
   })
   it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
-    // Leave child initialization headroom while still forcing the settings acknowledgement to time out.
-    const f = await fixture(false, 500); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'thread/resume', ms: 1500 } })
+    // The settings acknowledgement arrives after the deadline; child initialization keeps its full headroom.
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'thread/resume', ms: 3000 } })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     f.host.disconnect(); await f.adapter.closed()
     await f.host.connect()
@@ -123,7 +123,7 @@ describe('Codex App Server provider adapter', () => {
     expect((await create(f)).result).toEqual({ accepted: true })
   })
   it.each(['answer again', 'interrupt', 'disconnect'] as const)('writes only one accept when its write callback times out before %s', async next => {
-    const f = await fixture(false, 200); const { threadId } = await create(f)
+    const f = await fixture(); const { threadId } = await create(f)
     await f.driver.raisePermission(threadId, 'Synthetic permission')
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
     const requestId = (await f.host.snapshot()).threads[0]!.requests[0]!.id
@@ -227,7 +227,7 @@ describe('Codex App Server provider adapter', () => {
     await expect(f.host.execute({ type: 'create-project', commandId: 'bad', projectId: 'bad', title: 'Bad', path: 'relative' })).rejects.toThrow('absolute')
   })
   it('persists a late creation acknowledgement and never repeats thread/start', async () => {
-    const f = await fixture(false, 200); await f.driver.delayNextAck('thread/start')
+    const f = await fixture(); await f.driver.delayNextAck('thread/start')
     const { threadId, result } = await create(f)
     expect(result).toEqual({ accepted: false, uncertain: true })
     expect((await create(f, threadId)).result).toEqual({ accepted: false, uncertain: true })
@@ -236,8 +236,8 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).filter(r => r.method === 'thread/start')).toHaveLength(1)
   })
   it.each([false, true])('reconciles delayed send acknowledgements with item notifications suppressed=%s', async suppressNotifications => {
-    const f = await fixture(false, 200); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'turn/start', ms: 450 }, suppressNotifications })
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'turn/start', ms: 3000 }, suppressNotifications })
     const command = { type: 'send' as const, commandId: 'send', messageId: 'own-message', threadId, text: 'Synthetic input' }
     expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.messages.filter(m => m.id === command.messageId).length).toBe(1)
@@ -246,7 +246,7 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
   })
   it('clears the durable coordinator outbox and draft after a late send acknowledgement without retrying', async () => {
-    const f = await fixture(true, 200); const { threadId } = await create(f); const control = await startControl(f)
+    const f = await fixture(true); const { threadId } = await create(f); const control = await startControl(f)
     await control.command({ type: 'assign', threadId }); await control.command({ type: 'select-thread', threadId })
     await control.command({ type: 'compose', text: 'Retained draft' })
     await f.driver.delayNextAck('turn/start')
@@ -259,8 +259,8 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
   })
   it('keeps a completed turn idle after its delayed start response and preserves the reply across restart', async () => {
-    const f = await fixture(false, 200); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'turn/start', ms: 400 }, reply: 'Finished already' })
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'turn/start', ms: 3000 }, reply: 'Finished already' })
     expect(await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Synthetic input' })).toEqual({ accepted: false, uncertain: true })
     await expect.poll(async () => (await f.host.snapshot()).threads[0]!.status).toBe('idle')
     await f.script({})
@@ -285,8 +285,8 @@ describe('Codex App Server provider adapter', () => {
     expect(await f.host.execute(command)).toEqual({ accepted: true })
   })
   it('removes a rejected origin even when the rejection arrives after the deadline', async () => {
-    const f = await fixture(false, 200); const { threadId } = await create(f)
-    await f.script({ reject: 'turn/start', delay: { method: 'turn/start', ms: 400 } })
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ reject: 'turn/start', delay: { method: 'turn/start', ms: 3000 } })
     expect(await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Rejected input' })).toEqual({ accepted: false, uncertain: true })
     await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))[threadId].origins.length).toBe(0)
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })

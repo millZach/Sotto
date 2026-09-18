@@ -61,7 +61,7 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} personal cha
 }, 20000)
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} keeps saved history and drafts when its native connection fails`, async () => {
-  const f = provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  const f = provider === 'claude' ? await claudeFixture() : await grokFixture()
   const configuration = () => ({ reasoning: provider, reasoningModel: f.modelId, reasoningEffort: '' })
   let service = new PersonalChatService({ userDataPath: f.root, hosts: { [provider]: f.adapter }, configuration })
   try {

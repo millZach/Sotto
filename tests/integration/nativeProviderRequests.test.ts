@@ -6,7 +6,7 @@ import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AdapterFixture } from './adapterContract'
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} does not replay an already dispatched native request after reconnect`, async () => {
-  let f: AdapterFixture = provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  let f: AdapterFixture = provider === 'claude' ? await claudeFixture() : await grokFixture()
   const threadId = randomUUID()
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
@@ -28,7 +28,7 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} does not rep
 })
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} pins structured answers and reserves concurrent decisions once`, async () => {
-  const f = provider === 'claude' ? await claudeFixture(undefined, 1000) : await grokFixture()
+  const f = provider === 'claude' ? await claudeFixture() : await grokFixture()
   const first = randomUUID(); const second = randomUUID()
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })

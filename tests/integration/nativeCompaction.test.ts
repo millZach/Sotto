@@ -10,7 +10,7 @@ import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 it('Grok does not claim to accept unsupported manual compaction', async () => {
-  const f = await grokFixture(undefined, 1000); cleanup.push(f.cleanup)
+  const f = await grokFixture(); cleanup.push(f.cleanup)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'project', title: 'Project', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: 't', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
@@ -30,7 +30,7 @@ it('Codex acknowledges native compaction without claiming completion, prevents d
   expect((await f.driver.requests()).filter(row => row.method === 'thread/compact/start')).toHaveLength(1)
 })
 it.each([['Compact and continue', 'compact'], ['Keep full history', 'continue'], ["Don't ask again", 'never']])('Claude returns the native resume choice %s without submitting a prompt', async (label, result) => {
-  const f = await claudeFixture(undefined, 1000); cleanup.push(f.cleanup)
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
@@ -51,7 +51,7 @@ it.each([['Compact and continue', 'compact'], ['Keep full history', 'continue'],
   }
 })
 it('Claude uses an advertised native slash command, requires a boundary, excludes native metadata and reports native failure', async () => {
-  const f = await claudeFixture(undefined, 1000); cleanup.push(f.cleanup)
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
@@ -80,7 +80,7 @@ it('Claude uses an advertised native slash command, requires a boundary, exclude
 })
 it('preserves explicit native Claude compaction environment overrides instead of supplying Sotto defaults', async () => {
   const overrides = { DISABLE_AUTO_COMPACT: '1', CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '50', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '150000' }
-  const f = await claudeFixture(undefined, 1000, { ...process.env, ...overrides }); cleanup.push(f.cleanup)
+  const f = await claudeFixture(undefined, 2000, { ...process.env, ...overrides }); cleanup.push(f.cleanup)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
@@ -88,7 +88,7 @@ it('preserves explicit native Claude compaction environment overrides instead of
   await expect(f.host.execute({ type: 'compact-thread', commandId: 'unsupported', threadId: 'thread' })).rejects.toThrow(/does not expose/i)
 })
 it('reconciles Claude compaction from a missed persisted native boundary after restart without replaying it', async () => {
-  const f = await claudeFixture(undefined, 1000); cleanup.push(f.cleanup)
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact' }]))
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'project', title: 'Project', path: f.root })

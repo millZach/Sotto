@@ -7,7 +7,7 @@ import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { codexFixture, type RecordedRpc } from '../fixtures/codexFixture'
 import { describeAdapterContract, type AdapterFixture } from './adapterContract'
 
-describeAdapterContract('Codex App Server', () => codexFixture(undefined, false, 200))
+describeAdapterContract('Codex App Server', () => codexFixture())
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-contract-'))
   const host = new FakeProviderHost()

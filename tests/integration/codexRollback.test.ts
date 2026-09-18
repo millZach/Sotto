@@ -4,8 +4,8 @@ import { codexFixture } from '../fixtures/codexFixture'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 afterEach(async () => { for (const fixture of fixtures.splice(0)) await fixture.cleanup() })
-async function setup(timeout = 1000) {
-  const f = await codexFixture(undefined, true, timeout); fixtures.push(f)
+async function setup() {
+  const f = await codexFixture(undefined, true); fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Owned fixture', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'sotto-thread', projectId: 'project', title: 'Rewind', modelId: f.modelId })
@@ -37,7 +37,7 @@ it('rewinds exact native history through the stable Sotto binding and retains th
 })
 
 it('reconciles a lost native acknowledgement through history without replaying rollback', async () => {
-  const { f } = await setup(150)
+  const { f } = await setup()
   await f.script({ dropRollbackReply: true })
   expect(await f.host.rollbackThread!('sotto-thread', 1, ['first', 'second'])).toEqual({ accepted: false, uncertain: true })
   const after = (await f.host.refreshThread!('sotto-thread')).threads[0]!

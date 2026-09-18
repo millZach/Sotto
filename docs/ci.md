@@ -21,7 +21,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
-- **Perf benchmarks.** `tests/perf/*` skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing.
+- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it compares incremental rendering against re-parsing the same reply, both measured in the same process, and logs the numbers, so a slow runner slows both sides alike.
 - **Wall-clock budgets.** See below.
 - **Packaging and publishing.** Releases are still cut by hand on the Windows PC and the Apple silicon Mac.
 
@@ -67,6 +67,31 @@ comparison in `tests/unit/renderer/streamingMarkdown.test.tsx` each allow 60 s.
 is not the assertion: a runner takes several times longer over a provider round trip or a child process
 start than a developer machine, and a deadline that expires there describes the machine. Something that
 is genuinely wrong still fails, a few seconds later.
+
+The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
+`tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline
+covers every native round trip, including the first one after the fake CLI is spawned, so it also has
+to absorb a Node process start: about 80 ms on a developer machine, up to 220 ms on an idle two-core
+box, and 400–1200 ms when the runner's second worker is busy; creating a Claude thread starts two
+children in a row. The fixtures default to 2000 ms and no test passes less. A test that needs a *lost*
+acknowledgement scripts one — `driver.delayNextAck()` delays the fake's reply to one second past the
+deadline, and explicit `script({ delay })` calls use 3000 ms — rather than shortening the deadline,
+because a short deadline turns the fixture's own start-up into "Codex did not acknowledge the operation
+in time" / "Claude did not acknowledge the request" on a loaded runner. That was the cause of the red
+*Gates (Windows)* runs on PRs #100 and #103: `claudeFixture` defaulted to 150 ms and several Codex and
+Grok tests passed 150–500 ms.
+
+To reproduce runner load locally, pin the run to two cores and give it a competitor on the same cores:
+
+```powershell
+$busy = Start-Process node -ArgumentList '-e', 'for(;;){}' -PassThru -WindowStyle Hidden
+$busy.ProcessorAffinity = 3
+cmd /c 'start "" /affinity 3 /b /wait cmd /c "npx vitest run --maxWorkers=2 tests/integration/adapterContract.test.ts"'
+Stop-Process -Id $busy.Id
+```
+
+Before the deadline change, that loop failed seven or eight of the adapter tests on every run. Three
+busy loops instead of one is beyond what the runner does, and the suite is not expected to pass there.
 
 `tests/setup.ts` holds the two things every test run needs on Windows: web storage is emptied after each
 test, so no test paints the cached agent shell a previous test left behind, and a recursive `fs.rm`
