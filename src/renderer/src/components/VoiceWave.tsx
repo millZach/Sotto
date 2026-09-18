@@ -29,8 +29,8 @@ const PROFILE: readonly number[] = [0.45, 0.7, 0.9, 1, 0.9, 0.7, 0.45]
 const PROCESSING_LEVEL = 0.4
 
 /**
- * At hero size a flat line reads as "off", so the resting wave keeps a low
- * hump: the middle bars lifted a little, the outer ones on the floor.
+ * At hero and deck size a flat line reads as "off", so the resting wave keeps
+ * a low hump: the middle bars lifted a little, the outer ones on the floor.
  */
 const RESTING_PROFILE: readonly number[] = [0, 0.1, 0.2, 0.28, 0.2, 0.1, 0]
 
@@ -73,7 +73,7 @@ export function VoiceWave({ stage, value, label, size = 'widget' }: VoiceWavePro
   return (
     <div className="voice-wave" data-stage={stage} style={style} {...liveProps}>
       {Array.from({ length: BAR_COUNT }, (_, index) => {
-        const resting = stage === 'idle' && size === 'hero' ? (RESTING_PROFILE[index] ?? 0) : 0
+        const resting = stage === 'idle' && (size === 'hero' || size === 'deck') ? (RESTING_PROFILE[index] ?? 0) : 0
         const swing = Math.max(resting, level * (PROFILE[index] ?? 1))
         const height = Math.round((geometry.rest + swing * (geometry.peak - geometry.rest)) * 10) / 10
         return (

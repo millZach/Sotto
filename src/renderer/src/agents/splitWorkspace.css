@@ -20,11 +20,16 @@
 .threads-view .thread-pane[data-under-controls] { --threads-pane-inset: var(--threads-winctl-inset, 0px); }
 .threads-view .thread-pane[data-under-controls] .thread-workspace__head { padding-right: calc(24px + var(--threads-pane-inset, 0px)); }
 
-/* The focused pane carries the accent along its top edge; the other panes' titles step back. */
-.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: calc(96px + var(--threads-pane-inset, 0px)); }
-.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) > .thread-workspace__head { padding-right: calc(130px + var(--threads-pane-inset, 0px)); }
-.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) > .thread-workspace__head { padding-right: calc(164px + var(--threads-pane-inset, 0px)); }
-.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] > .thread-workspace__head { box-shadow: inset 0 2px 0 var(--tt-activity); }
+/* In a split the header stops short of the layout controls: a margin, not padding. The header is the window's drag
+   handle and Chromium builds the drag region in tree order, so a no-drag box that comes earlier in the DOM (the controls
+   do, for the Tab order) is covered again by a drag box that comes later; a real click on them would move the window.
+   Leaving the header's box out from under them keeps the drag region off them. */
+.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: 6px; margin-right: calc(90px + var(--threads-pane-inset, 0px)); }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='3']) > .thread-workspace__head { margin-right: calc(124px + var(--threads-pane-inset, 0px)); }
+.threads-view .thread-panes[data-split] .thread-pane:has(> .thread-pane__controls[data-count='4']) > .thread-workspace__head { margin-right: calc(158px + var(--threads-pane-inset, 0px)); }
+/* The focused pane carries the accent along its whole top edge (the pane's, since its header now stops short of the
+   controls); the other panes' titles step back. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] { box-shadow: inset 0 2px 0 var(--tt-activity); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
 
 /* Layout controls sit at the header's end, beside the title they act on. They float over the header, which is the
