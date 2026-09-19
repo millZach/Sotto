@@ -34,7 +34,7 @@ import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { AppearanceSettings } from './AppearanceSettings'
-import { LevelMeter } from '../../components/LevelMeter'
+import { VoiceWave } from '../../components/VoiceWave'
 import {
   BrowserMicrophoneTest,
   type MicrophoneTestController,
@@ -479,7 +479,8 @@ export function SettingsView({
                   </Field>
                   <Field label="Microphone test" description="Check that Sotto can hear you. Access is asked for only while the test runs.">
                     <div className="settings-microphone-test" data-state={microphoneState}>
-                      <LevelMeter value={microphoneLevel} label="Microphone level" />
+                      {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
+                      <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" />
                       <p role="status">
                         {microphoneState === 'ready' ? 'Microphone ready.' : null}
                         {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}

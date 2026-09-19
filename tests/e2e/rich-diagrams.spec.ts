@@ -185,7 +185,7 @@ test('sequence, flow and state diagrams draw in place with readable names, in da
     expect(svgText(decodedSvg(await state.getAttribute('src') ?? ''))).toContain('provider failed')
     for (const image of [flow, state]) expect(nodesInsideViewBox(decodedSvg(await image.getAttribute('src') ?? ''))).toBe(true)
     // Labels render in the Sotto face embedded in the image, not a fallback.
-    expect(svg).toContain('Bricolage Grotesque')
+    expect(svg).toContain('Figtree')
     expect(svg).toContain('@font-face')
     expect(await page.locator('[data-diagram-stage]').count()).toBe(0)
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0)

@@ -45,7 +45,7 @@ describe('first-run onboarding', () => {
   it('requests microphone access, displays live level, and provides Windows recovery guidance', async () => {
     const user = userEvent.setup()
     const request = vi.fn()
-    render(
+    const view = render(
       <Onboarding {...keyProps}
         microphoneState="denied"
         microphoneLevel={0.42}
@@ -59,11 +59,24 @@ describe('first-run onboarding', () => {
 
     await user.click(screen.getByRole('button', { name: /try microphone again/i }))
     expect(request).toHaveBeenCalledOnce()
+    // Denied, there is no stream to report: the wave rests and is not a live meter.
+    expect(screen.queryByRole('meter', { name: /microphone level/i })).toBeNull()
+    expect(screen.getByText(platformCopy('win32').onboardingMicrophoneDenied)).toBeVisible()
+    // Once the test's stream runs the same wave the widget shows reports the level.
+    view.rerender(
+      <Onboarding {...keyProps}
+        microphoneState="ready"
+        microphoneLevel={0.42}
+        shortcut="Ctrl+Shift+Space"
+        platform="win32"
+        onRequestMicrophone={request}
+        onComplete={vi.fn()}
+      />,
+    )
     expect(screen.getByRole('meter', { name: /microphone level/i })).toHaveAttribute(
       'aria-valuenow',
       '0.42',
     )
-    expect(screen.getByText(platformCopy('win32').onboardingMicrophoneDenied)).toBeVisible()
   })
 
   it('offers the key step and can advance and finish without a key', async () => {

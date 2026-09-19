@@ -183,7 +183,7 @@ describe('diagram renderer', () => {
     if (!result.ok) return
     expect(result).toMatchObject({ title: 'Login', description: 'Two people exchange a token.' })
     const svg = decode(result.dataUrl)
-    expect(svg).toContain('font-family:"Bricolage Grotesque"')
+    expect(svg).toContain('font-family:"Figtree"')
     expect(svg).not.toMatch(/<script|onload|t\.example/u)
     expect(document.querySelector('[data-diagram-stage]')).toBeNull()
     const config = mermaid.initialize.mock.calls[0]![0]

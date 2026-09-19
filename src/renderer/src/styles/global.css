@@ -7,7 +7,7 @@
    One room between a thin top strip and a footer line, dark or light as the
    user chose. A switch in the strip flips the room between Dictate and
    Agents; Threads, History, Settings and Help are plain links in the footer.
-   Type is Bricolage Grotesque, the only colour is the accent, and the one
+   Type is Figtree, the only colour is the accent, and the one
    action on a page is a neutral pill. Colours come from tokens.css only.
    The floating widget is deliberately excluded — it carries its own frozen
    tokens in widget/widget-tokens.css. */
@@ -711,40 +711,62 @@ textarea.tt-input {
   color: var(--tt-success);
 }
 
+/* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */
 .onboarding-microphone-test,
 .settings-microphone-test {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px 20px;
+  gap: 12px 16px;
   border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
   background: var(--tt-surface-sunken);
-  padding: 20px;
+  padding: 14px 16px;
 }
 
-.onboarding-microphone-test .tt-level-meter,
-.settings-microphone-test .tt-level-meter {
-  grid-column: 1;
+/* The same wave the widget and the Dictate room show, resting until the test hears something. */
+.onboarding-microphone-test .voice-wave,
+.settings-microphone-test .voice-wave {
+  flex: none;
 }
 
 .onboarding-microphone-test p,
 .settings-microphone-test p {
-  grid-column: 1;
+  flex: 1 1 180px;
+  min-width: 0;
   margin: 0;
   color: var(--tt-text-muted);
   font-size: 13px;
+  line-height: 1.45;
 }
 
 .onboarding-microphone-test .tt-button,
 .settings-microphone-test .tt-button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+  flex: none;
+  margin-left: auto;
 }
 
-/* Skip for now sits under the test button rather than on top of it. */
+/* Skip for now follows the test button on the same row. */
 .onboarding-microphone-test .tt-button--ghost {
-  grid-row: 3;
+  margin-left: 0;
+}
+
+/* The settings card sits in a control column about 240px wide, where the wave, the sentence and the button never
+   share a line: they stack, left-aligned, and the button takes the card's width. */
+.settings-microphone-test {
+  grid-template-columns: minmax(0, 1fr);
+  display: grid;
+  gap: 10px;
+}
+
+.settings-microphone-test .voice-wave {
+  justify-self: start;
+}
+
+.settings-microphone-test .tt-button {
+  width: 100%;
+  margin-left: 0;
+  justify-content: center;
 }
 
 .onboarding-recovery,
@@ -895,16 +917,8 @@ textarea.tt-input {
     min-height: 0;
   }
 
-  .onboarding-microphone-test,
-  .settings-microphone-test,
   .onboarding-model-list {
     grid-template-columns: 1fr;
-  }
-
-  .onboarding-microphone-test .tt-button,
-  .settings-microphone-test .tt-button {
-    grid-column: 1;
-    grid-row: auto;
   }
 
   .onboarding-shortcut {

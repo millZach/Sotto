@@ -1,7 +1,7 @@
 /* Queue and skills around the Threads composer. Same field, ink and accent as the prompt; nothing new competes with it. */
 
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 8px; }
-.thread-prompt__steer.tt-button { min-height: 36px; padding: 0 14px; font-size: 14px; }
+.thread-prompt__steer.tt-button { height: 28px; min-height: 28px; padding: 0 11px; font-size: 13px; }
 
 /* Follow-up queue: a short ordered ledger resting on the composer it came from. It is the one part of the
    compose area that gives up height: its rows scroll under a head that stays put, never the prompt below it. */
@@ -18,14 +18,14 @@
 .thread-followups__next::before { content: '·'; margin-right: 6px; color: var(--tt-text-muted); }
 .thread-followups__next-label { margin-right: 6px; color: var(--tt-text-muted); }
 .thread-followups__next[data-added] .thread-followups__next-label { color: var(--tt-activity); }
-.thread-followups__head .tt-button { flex: none; min-height: 32px; font-size: 14px; }
+.thread-followups__head .tt-button { flex: none; min-height: 30px; font-size: 13px; }
 .thread-followups__note { margin: 0 8px 6px 27px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .thread-followups__error { margin: 2px 8px 6px 27px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
 .thread-followups__list { margin: 0; padding: 0; list-style: none; }
 .thread-followup { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 27px; border-radius: 10px; }
 .thread-followup:hover, .thread-followup:focus-within { background: var(--threads-hover); }
 .thread-followup + .thread-followup { margin-top: 2px; }
-.thread-followup__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.thread-followup__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .thread-followup__extra { color: var(--tt-text-muted); }
 .thread-followup__state { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
 .thread-followup__state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -38,7 +38,7 @@
 .thread-followup__tools .tt-button[aria-disabled='true']:hover { background: transparent; }
 .thread-followup__detail { display: flex; flex-wrap: wrap; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 4px 10px; padding-bottom: 4px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .thread-followup__actions { display: inline-flex; gap: 6px; }
-.thread-followup__actions .tt-button { min-height: 32px; font-size: 14px; }
+.thread-followup__actions .tt-button { min-height: 30px; font-size: 13px; }
 
 /* Editing a queued message: a focused editor over the workspace, the same field as the prompt. */
 .followup-editor { width: min(560px, calc(100vw - 48px)); max-height: calc(100vh - 48px); margin: auto; padding: 18px 20px 16px; overflow: auto; border: 1px solid var(--tt-panel-border); border-radius: 18px; background: var(--tt-panel); box-shadow: 0 28px 90px var(--tt-shadow-color); color: var(--tt-text); }

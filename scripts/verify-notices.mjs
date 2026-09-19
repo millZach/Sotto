@@ -186,7 +186,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('uuid', '14.0.2', 'MIT', 'Robert Kieffer and other contributors'),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
   Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
-  Object.freeze({ name: 'Bricolage Grotesque', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Bricolage Grotesque Project Authors' }),
+  Object.freeze({ name: 'Figtree', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Figtree Project Authors' }),
   Object.freeze({ name: 'T3 Code', nameSuffix: ' (provider icon paths adapted in ProviderMark.tsx)', version: 'd1d15c67 (apps/web/src/components/Icons.tsx)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
   Object.freeze({ name: 'T3 Code', nameSuffix: ' (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes)', version: 'd1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
 ])
@@ -314,7 +314,7 @@ export async function verifyThirdPartyNotices(options = {}) {
     'https://blueoakcouncil.org/license/1.0.0',
     '## Manrope SIL Open Font License 1.1',
     '## Spline Sans Mono SIL Open Font License 1.1',
-    '## Bricolage Grotesque SIL Open Font License 1.1',
+    '## Figtree SIL Open Font License 1.1',
     '## Markdown rendering MIT licenses',
     'Copyright (c) Espen Hovlandsdal',
     '## Markdown rendering ISC license',
@@ -333,7 +333,7 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Copyright (c) 2016, Daniel Imms',
     'Copyright (c) 2017 [Node.js API collaborators]',
     'Copyright (c) 2026 T3 Tools Inc.',
-    'Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)',
+    'Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 
   if (options.licenseRoot) {

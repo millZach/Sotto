@@ -177,7 +177,7 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `uuid` | `14.0.2` | MIT | Robert Kieffer and other contributors |
 | `Manrope` (font, latin + latin-ext woff2 subsets) | `v20 (Google Fonts static serving)` | OFL-1.1 | The Manrope Project Authors |
 | `Spline Sans Mono` (font, latin woff2 subset) | `v13 (Google Fonts static serving)` | OFL-1.1 | The Spline Sans Mono Project Authors |
-| `Bricolage Grotesque` (font, latin + latin-ext woff2 subsets) | `v9 (Google Fonts static serving)` | OFL-1.1 | The Bricolage Grotesque Project Authors |
+| `Figtree` (font, latin + latin-ext woff2 subsets) | `v9 (Google Fonts static serving)` | OFL-1.1 | The Figtree Project Authors |
 | `T3 Code` (provider icon paths adapted in ProviderMark.tsx) | `d1d15c67 (apps/web/src/components/Icons.tsx)` | MIT | T3 Tools Inc. |
 | `T3 Code` (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes) | `d1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)` | MIT | T3 Tools Inc. |
 
@@ -2022,10 +2022,10 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## Bricolage Grotesque SIL Open Font License 1.1
+## Figtree SIL Open Font License 1.1
 
 ```text
-Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)
+Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

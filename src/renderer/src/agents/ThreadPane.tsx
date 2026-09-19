@@ -218,9 +218,13 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
             : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
-      <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
-      <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
-        connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
+      {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
+          so panes side by side keep their composers at the same height whether or not one has been compacted. */}
+      <div className="thread-pane__meta">
+        <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
+          connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
+        <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
+      </div>
     </div>
   </>
 }

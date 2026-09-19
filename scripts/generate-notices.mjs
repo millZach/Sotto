@@ -141,7 +141,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.`
 // Bundled faces share the OFL 1.1 body with their own copyright line.
 const manropeOfl = ofl('Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)')
 const splineSansMonoOfl = ofl('Copyright 2022 The Spline Sans Mono Project Authors (https://github.com/SorkinType/SplineSansMono)')
-const bricolageGrotesqueOfl = ofl('Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)')
+const figtreeOfl = ofl('Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)')
 
 // Markdown rendering and highlighting packages bundled into the renderer, grouped by copyright line.
 const markdownMit = microsoftMit.replace(
@@ -421,7 +421,7 @@ ${await read('node_modules/marked/LICENSE.md')}`],
   ['T3 Code MIT license', t3CodeMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],
   ['Spline Sans Mono SIL Open Font License 1.1', splineSansMonoOfl],
-  ['Bricolage Grotesque SIL Open Font License 1.1', bricolageGrotesqueOfl],
+  ['Figtree SIL Open Font License 1.1', figtreeOfl],
 ]
 
 const table = NOTICE_COMPONENTS.map((component) =>

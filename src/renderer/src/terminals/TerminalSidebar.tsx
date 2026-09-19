@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Columns2, RotateCcw, SquareTerminal, X } from 'lucide-react'
+import { ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { SidebarFrame, type SidebarMode } from '../agents/SidebarFrame'
@@ -89,7 +89,7 @@ function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onTo
         {!expanded && folder.running ? <span className="thread-nav__indicators"><span data-state="working" title={`${folder.running} running`}><i aria-hidden="true" /><span className="tt-visually-hidden">{folder.running} running</span></span></span> : null}
       </button>
       {folder.project !== undefined && section === 'open' ? <span className="thread-folder__actions">
-        <button type="button" className="thread-nav__action tt-focusable" aria-label={`New terminal in ${folder.title}`} title="New terminal here" onClick={() => onNewTerminal(folder.id)}><SquareTerminal size={16} aria-hidden="true" /></button>
+        <button type="button" className="thread-nav__action tt-focusable" aria-label={`New terminal in ${folder.title}`} title="New terminal here" onClick={() => onNewTerminal(folder.id)}><SquarePlus size={16} aria-hidden="true" /></button>
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
@@ -132,7 +132,8 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
   const closedCount = closed.reduce((count, folder) => count + folder.rows.length, 0)
   const closedShown = closedOpen || searching
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Terminal sidebar" query={query} searchPlaceholder="Search terminals" onQuery={onQuery}
-    onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquareTerminal}>
+    // A plus, not a second terminal glyph beside the room switch's: the same relation New thread's pen has to Threads.
+    onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquarePlus}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open terminals.' : state.host.projects.length ? 'No terminals open.' : 'Add a project folder to start.'}</p> : null}
