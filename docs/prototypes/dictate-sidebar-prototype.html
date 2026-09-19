@@ -19,6 +19,11 @@
              Threads | Terminal switch, and so no strip and no footer either.
    Chats     the same: the chat list sits in the sidebar's frame between its top row and its foot.
 
+  The sidebar rows show the four ring states side by side: an outline while idle, a turning accent ring while
+  the thread works, an amber ring when it wants you, and a green ring with a filled centre for a run that
+  finished while you were looking somewhere else (the app draws this today, but only for a thread that is not
+  open in a pane; the mock adds a "done" word beside the time slot, the way "needs you" sits there).
+
   The bar at the bottom switches everything. Page picks the page. On Dictate, Look picks a, b or c (left and
   right arrows too). On Settings and Chats, Shell picks the own-column-with-foot layout the ask describes, today's
   strip-and-footer layout (Footer then picks icons or words for its links), or the Threads sidebar beside the
@@ -220,6 +225,10 @@ svg.i.xs { width: 12px; height: 12px; }
 .row__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--border); border-radius: 50%; }
 .row__ring[data-state='working'] { border: 0; background: conic-gradient(var(--accent-text) 0 32%, color-mix(in srgb, var(--accent-text) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
 .row__ring[data-state='needs'] { border: 2px solid var(--warning); }
+/* Finished while you were looking somewhere else: green, with a filled centre. Opening the thread clears it. */
+.row__ring[data-unseen] { border: 1.5px solid var(--success); background: radial-gradient(circle, var(--success) 0 28%, transparent 30%); }
+.row__done { color: var(--success); font-size: 12px; white-space: nowrap; }
+.row:hover .row__done { visibility: hidden; }
 .row__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .row__time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .row__needs { color: var(--warning); font-size: 12px; white-space: nowrap; }
@@ -494,6 +503,8 @@ svg.i.xs { width: 12px; height: 12px; }
         </div>
         <ul class="rows">
           <li class="row"><button class="row__item"><span class="row__ring" data-state="working"></span><span class="row__title">UI Improvements</span><span class="row__time">4m</span></button>
+            <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
+          <li class="row"><button class="row__item"><span class="row__ring" data-state="idle" data-unseen></span><span class="row__title">Sidebar on every page</span><span class="row__done">done</span></button>
             <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
           <li class="row"><button class="row__item"><span class="row__ring" data-state="needs"></span><span class="row__title">Release 0.1.4 notes</span><span class="row__needs">needs you</span></button>
             <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
