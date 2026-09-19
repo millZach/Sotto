@@ -28,8 +28,8 @@
 .history-empty { padding: 50px 0; text-align: center; }
 .history-empty h2 { margin: 0 0 8px; font-size: 26px; font-weight: 500; letter-spacing: -.6px; }
 .history-empty p { margin: 0 auto 20px; max-width: 400px; color: var(--tt-text-muted); }
-.history-footer { display: inline-flex; align-items: center; gap: 20px; }
-.history-footer__clear { border: 0; padding: 0; color: var(--tt-text-2); background: none; font: inherit; white-space: nowrap; cursor: pointer; }
+/* Clear history sits in the head beside the search, now that the page has no footer to carry it. */
+.history-head__clear { flex: none; }
 @media (max-width: 760px) {
   .history-head { flex-wrap: wrap; }
   .history-find { width: 100%; margin-left: 0; }

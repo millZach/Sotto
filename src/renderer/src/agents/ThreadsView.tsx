@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNod
 import { MessageSquare } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import { WindowControls } from '../components/WindowControls'
+import { PageWindowControls } from '../components/WindowControls'
 import { useOptionalApp } from '../state/AppContext'
 import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import { useAgents, type AgentConnection } from './AgentContext'
@@ -18,6 +18,7 @@ import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
+import { takeNewThreadIntent } from './threadIntent'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
 import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
@@ -26,18 +27,6 @@ type Command = AgentConnection['command']
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
   window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0)
-}
-
-/**
- * The window's own controls, seated once at the page's top-right corner rather than in any pane's header:
- * the Threads page has no app strip above it. macOS paints its traffic lights itself and gets none.
- */
-function PageWindowControls(): ReactNode {
-  const app = useOptionalApp()
-  if (app === null || app.platform === 'darwin') return null
-  return <div className="threads-view__winctl">
-    <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
-  </div>
 }
 
 /** What a shared tools surface beside the panes receives. It follows the focused thread unless it pins its own. */
@@ -93,6 +82,8 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const [query, setQuery] = useState('')
   // Reopened with `choices` and `error` when main refuses a creation this view was already showing.
   const [newThread, setNewThread] = useState<{ readonly projectId?: string | undefined; readonly choices?: NewThreadChoices | undefined; readonly error?: string | undefined } | null>(null)
+  // A New thread pressed in the sidebar beside another page opens the dialog here, once.
+  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) setNewThread(intent) }, [])
   const [dragging, setDragging] = useState<string | null>(null)
   // The pane the user just focused, shown at once while main confirms the selection. Once the command
   // settles, the next published state is the truth, so an older echo cannot pull focus back meanwhile.
@@ -170,7 +161,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const mac = app?.platform === 'darwin'
   const page = `management-view threads-view${mac ? ' threads-view--mac' : ''}`
   if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
-    <p role="status">{agents.error ?? 'Preparing agent controls...'}</p>
+    <p role="status">{agents.error ?? 'Preparing agent controls…'}</p>
     {/* An error can stand for good, and this page has no sidebar to leave by. */}
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
     <PageWindowControls />

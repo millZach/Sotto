@@ -174,8 +174,14 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).focus()
     await page.keyboard.press('Home')
     await expect(page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true })).toBeFocused()
-    await page.keyboard.press('Tab')
-    const focusedPanel = await page.evaluate(() => document.activeElement?.closest('[role="tabpanel"]')?.getAttribute('aria-labelledby'))
+    // The column continues into the sidebar foot (the room switch, the page links, the update control) and only
+    // then reaches the open panel; no hidden form takes a stop on the way.
+    let focusedPanel: string | null | undefined = null
+    for (let step = 0; step < 8 && !focusedPanel; step += 1) {
+      await page.keyboard.press('Tab')
+      focusedPanel = await page.evaluate(() => document.activeElement?.closest('[role="tabpanel"]')?.getAttribute('aria-labelledby'))
+      if (!focusedPanel) expect(await page.evaluate(() => document.activeElement?.closest('.thread-nav__foot') !== null)).toBe(true)
+    }
     expect(focusedPanel).toContain('capture')
 
     await page.reload()

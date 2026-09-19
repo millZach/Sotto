@@ -225,6 +225,14 @@ describe('Terminal mode', () => {
     expect(await screen.findByRole('region', { name: 'Build' })).toBeInTheDocument()
   })
 
+  it('settles a project from its folder head so a finished project can leave the list', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build' })])
+    const folder = await within(sidebar()).findByRole('button', { name: /^workshop / })
+    expect(folder).toBeInTheDocument()
+    await act(async () => { fireEvent.click(within(sidebar()).getByRole('button', { name: 'Settle project workshop' })) })
+    expect(view.command).toHaveBeenCalledWith({ type: 'settle-project', projectId: 'workshop' })
+  })
+
   it('saves a pasted image through main and shows where it went', async () => {
     const view = mount([terminal(ID_1, { title: 'Build' })])
     fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))

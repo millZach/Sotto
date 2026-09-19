@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ChevronRight, Columns2, Pencil, Sparkles, SquarePen } from 'lucide-react'
-import { isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
+import { isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
-import { SidebarFrame, type SidebarMode } from './SidebarFrame'
+import { showThreads, useFinishedUnseen } from './finishedThreads'
+import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
 import { workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 
@@ -39,30 +40,6 @@ function RowTime({ row, live }: { readonly row: ThreadRow; readonly live: boolea
   }, [since])
   const at = Number.isFinite(row.activityAt) ? new Date(row.activityAt) : null
   return <time ref={ref} className="thread-nav__time" title={at === null ? 'Last activity unavailable' : at.toLocaleString()} dateTime={at?.toISOString()}>{row.when}</time>
-}
-
-/**
- * Threads that finished while you were looking somewhere else. It is about what you have seen, not about the
- * thread itself, so it stays here: opening the thread clears it and a restart forgets it.
- */
-function useFinishedUnseen(threads: readonly AgentThread[], onScreen: readonly string[]): ReadonlySet<string> {
-  const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => new Set())
-  const working = useRef<ReadonlySet<string>>(new Set())
-  // A thread ID is opaque, so the key joins on a character one cannot contain.
-  const onScreenKey = [...onScreen].sort().join('\n')
-  const seen = useMemo(() => new Set(onScreenKey === '' ? [] : onScreenKey.split('\n')), [onScreenKey])
-  useEffect(() => {
-    const live = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
-    const stopped = [...working.current].filter(id => !live.has(id))
-    working.current = live
-    // The mark lasts only while the thread is still finished, still known, and still out of sight.
-    const finished = (id: string): boolean => !seen.has(id) && threads.some(thread => thread.id === id && thread.status === 'idle')
-    setUnseen(current => {
-      const next = new Set([...current, ...stopped].filter(finished))
-      return next.size === current.size && [...next].every(id => current.has(id)) ? current : next
-    })
-  }, [threads, seen])
-  return unseen
 }
 
 /** What the workspace offers a sidebar row beyond opening it: a place beside the focused thread. */
@@ -164,9 +141,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
         {section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`New thread in ${folder.title}`} title="New thread here" onClick={() => onNewThread(folder.id)}><SquarePen size={16} aria-hidden="true" /></button> : null}
-        {folder.settled
-          ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Restore project ${folder.title}`} title="Restore project" disabled={globalLaneBusy} onClick={() => void command({ type: 'restore-project', projectId: folder.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
-          : section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle project ${folder.title}`} title="Settle project" disabled={globalLaneBusy} onClick={() => void command({ type: 'settle-project', projectId: folder.id })}><Archive size={16} aria-hidden="true" /></button> : null}
+        {folder.settled || section === 'open' ? <ProjectSettleAction projectId={folder.id} title={folder.title} settled={folder.settled} disabled={globalLaneBusy} command={command} /> : null}
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
@@ -179,11 +154,13 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
 export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
-  currentThreadId, openThreadIds, onOpenBeside, onDragThread }: PaneActions & {
+  currentThreadId, openThreadIds, onOpenBeside, onDragThread, title }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
   readonly query: string
+  /** The hidden page heading the frame carries; `null` beside a page that has its own. */
+  readonly title?: string | null
   /** Which mode the sidebar's switch shows as current, and where the other one leads. */
   readonly mode?: SidebarMode
   readonly onMode?: (mode: SidebarMode) => void
@@ -198,8 +175,11 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   // One object for the whole list, rebuilt only when a pane action actually changes: every row compares it.
   const panes = useMemo<PaneActions>(() => ({ currentThreadId, openThreadIds, onOpenBeside, onDragThread }),
     [currentThreadId, openThreadIds, onOpenBeside, onDragThread])
-  const onScreen = currentThreadId === null ? openThreadIds : [...openThreadIds, currentThreadId]
-  const unseen = useFinishedUnseen(state.host.threads, onScreen)
+  // What this list shows is what you have seen, and once the list is gone nothing is. A thread ID is opaque, so
+  // the key joins on a character one cannot contain.
+  const onScreenKey = (currentThreadId === null ? openThreadIds : [...openThreadIds, currentThreadId]).join('\n')
+  useEffect(() => { showThreads(onScreenKey === '' ? [] : onScreenKey.split('\n')); return () => showThreads([]) }, [onScreenKey])
+  const unseen = useFinishedUnseen()
   const searching = query.trim() !== ''
   const toggle = useCallback((key: string): void => setCollapsed(previous => {
     const next = new Set(previous)
@@ -217,7 +197,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledNeeds = settled.reduce((count, folder) => count + folder.needs, 0)
   const settledShown = settledOpen || searching
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
-    onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen}>
+    onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} title={title}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open threads.' : state.host.projects.length ? 'All caught up.' : 'Add a project folder to start.'}</p> : null}

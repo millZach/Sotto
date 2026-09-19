@@ -160,6 +160,9 @@ async function createProfile(
     // The Agents room, the wake phrase and the orb are hidden for the beta, so the captures that record them ask for
     // the coordinator by name. Everything else is captured the way an install ships.
     voiceCoordinatorEnabled: options.voice === true,
+    // Memory comes on with the coordinator, as `enableVoiceCoordinator` does: the Agents room's questionnaire is
+    // the memory feature's, and the captures that greet it with Not now need it there (ADR-0013).
+    memoryEnabled: options.voice === true,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
@@ -323,7 +326,7 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
 
     // The Dictate room's last-transcript row must sit inside the room, not scroll away.
     const lastTranscript = document.querySelector('.dictate__last')
-    const contentBounds = content?.getBoundingClientRect()
+    const contentBounds = document.querySelector('.app-room')?.getBoundingClientRect()
     if (lastTranscript !== null && contentBounds !== undefined) {
       const rowBounds = lastTranscript.getBoundingClientRect()
       if (rowBounds.bottom > contentBounds.bottom + tolerance || rowBounds.top < contentBounds.top - tolerance) {
@@ -365,13 +368,28 @@ async function setAppearance(page: Page, patch: { readonly appearance?: Appearan
 async function assertRenderedRoom(page: Page, theme: AppTheme): Promise<void> {
   const painted = await page.evaluate(() => {
     const select = document.querySelector('select')
+    // Paint the root's canvas token on a probe so the token and the body compare as the same computed colour,
+    // whatever notation the palette wrote it in (the canvases are oklch colours), and rasterise it to judge
+    // its lightness: every dark theme paints a dark canvas and every light theme a light one, not one literal.
+    const probe = document.createElement('div')
+    probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--tt-canvas').trim()
+    document.body.append(probe)
+    const token = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    const context = document.createElement('canvas').getContext('2d')!
+    context.fillStyle = token
+    context.fillRect(0, 0, 1, 1)
+    const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
     return {
       canvas: getComputedStyle(document.body).backgroundColor,
+      token,
+      luminance: (0.2126 * red! + 0.7152 * green! + 0.0722 * blue!) / 255,
       scheme: getComputedStyle(document.documentElement).colorScheme,
       selectScheme: select === null ? null : getComputedStyle(select).colorScheme,
     }
   })
-  expect(painted.canvas).toBe(theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(245, 246, 243)')
+  expect(painted.canvas).toBe(painted.token)
+  expect(painted.luminance < 0.5).toBe(theme === 'dark')
   expect(painted.scheme).toBe(theme)
   if (painted.selectScheme !== null) expect(painted.selectScheme).toBe(theme)
 }
@@ -739,7 +757,9 @@ test.describe('authoritative design-review captures', () => {
     await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
       await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
-      await expect(page.locator('.app-strip')).toHaveCount(1)
+      // Dictate seats the Threads sidebar beside the room; the switch lives in the sidebar foot, not a strip.
+      await expect(page.locator('.app-strip')).toHaveCount(0)
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'dictate-ready.png', { category: 'dictate', state: 'ready' })
 
@@ -825,7 +845,8 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'focus-switch.png', { focusTarget: 'switch', focus: true })
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByRole('switch', { name: 'Sound cues' }).click()
-      await expect(page.getByRole('status')).toHaveText('Setting saved.')
+      // The microphone test card carries a status of its own on this section, so the notice is named by its class.
+      await expect(page.locator('.settings-notice')).toHaveText('Setting saved.')
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
       const settingsSections = [
@@ -875,9 +896,6 @@ test.describe('authoritative design-review captures', () => {
       // The page still names itself for assistive technology; the heading is no longer drawn.
       await expect(page.getByRole('heading', { name: 'Threads' })).toBeAttached()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
-      // The coordinator queues the fixture's permission request once it has connected.
-      await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
-      await expect(page.getByText('Needs your approval')).toBeVisible()
       const open = async (title: string): Promise<void> => {
         const toggle = page.getByRole('button', { name: title, exact: true })
         await toggle.click()
@@ -885,6 +903,9 @@ test.describe('authoritative design-review captures', () => {
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
+      // The coordinator queues the fixture's permission request once it has connected; the beta answers it in the
+      // thread's own pane rather than in a queue of its own on the page.
+      await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
       // The fixture still hands these threads to the coordinator, but the beta hides every managing control, so the
       // captures must show a thread that reads the same whether or not Sotto is managing it.
       await expect(page.getByRole('button', { name: 'Pause managing' })).toHaveCount(0)
@@ -928,6 +949,8 @@ test.describe('authoritative design-review captures', () => {
       await openThreads(page)
       await page.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
       await resize(1600)
+      // A row's actions take their place only while the row is hovered or focused.
+      await page.getByRole('button', { name: 'Footer links', exact: true }).hover()
       await page.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
       await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
       await capturePage(page, `threads-split-workspace-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-workspace' })
@@ -1021,7 +1044,8 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'focus-switch-light.png', { focusTarget: 'switch', focus: true, theme: 'light' })
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByRole('switch', { name: 'Sound cues' }).click()
-      await expect(page.getByRole('status')).toHaveText('Setting saved.')
+      // The microphone test card carries a status of its own on this section, so the notice is named by its class.
+      await expect(page.locator('.settings-notice')).toHaveText('Setting saved.')
       await capturePage(page, 'settings-feedback-light.png', { theme: 'light' })
       for (const [heading, state] of [
         ['Providers', 'providers'],

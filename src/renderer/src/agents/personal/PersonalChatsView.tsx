@@ -3,11 +3,13 @@ import { ArrowDown, ArrowUp, MessageSquare, SquarePen } from 'lucide-react'
 import type { AgentSkillCatalog } from '../../../../shared/agentSkills'
 import type { PersonalChat, PersonalChatBridge, PersonalChatState } from '../../../../shared/personalChats'
 import { Button } from '../../components/Button'
+import { PageWindowControls } from '../../components/WindowControls'
 import { composerEnterIntent, readComposerKey, runComposerMenuKey } from '../composerKeys'
 import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from '../composerSkills'
 import { MessageContent } from '../MessageContent'
 import { useOptionalAgents } from '../AgentContext'
 import { ProviderMark } from '../ProviderMark'
+import { SidebarFoot, SidebarTop } from '../SidebarFrame'
 import { AgentRequestCard } from '../requests/AgentRequestCard'
 import { requestMode } from '../requests/requestAnswers'
 import { RequestDraftRecovery } from '../requests/RequestDraftRecovery'
@@ -336,6 +338,20 @@ export interface PersonalChatsViewProps {
   /** Where the coordinator is chosen, for when new chats are unavailable. */
   readonly onOpenCoordinatorSettings?: (() => void) | undefined
   readonly now?: number | undefined
+  /** The page's sentence, seated at the room's bottom right. */
+  readonly statusText?: ReactNode
+}
+
+/**
+ * The page before it has chats to show: the chat list's frame stands empty beside the message, so the foot
+ * still leads off the page and the window still has its controls.
+ */
+function EmptyChatsFrame({ children }: { readonly children: ReactNode }): ReactNode {
+  return <div className="threads-view personal-chats">
+    <nav className="thread-nav personal-chats__nav" aria-label="Chats"><SidebarTop /><div className="thread-nav__scroll" /><SidebarFoot /></nav>
+    <div className="personal-chats--unavailable">{children}</div>
+    <PageWindowControls />
+  </div>
 }
 
 /**
@@ -343,7 +359,7 @@ export interface PersonalChatsViewProps {
  * their drafts and every delivery; this view shows its snapshots and asks it to act.
  * Leaving the view only unsubscribes: the connection, drafts and running replies carry on.
  */
-export function PersonalChatsView({ bridge = bridgePersonalChats(), store = personalDraftStore, onOpenCoordinatorSettings, now }: PersonalChatsViewProps): ReactNode {
+export function PersonalChatsView({ bridge = bridgePersonalChats(), store = personalDraftStore, onOpenCoordinatorSettings, now, statusText }: PersonalChatsViewProps): ReactNode {
   const [state, setState] = useState<PersonalChatState | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -382,13 +398,13 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
   }, [])
 
   if (!bridge) {
-    return <div className="personal-chats personal-chats--unavailable"><div className="thread-workspace__empty"><h2>Chats are unavailable</h2><p>Reopen Sotto to use chats.</p></div></div>
+    return <EmptyChatsFrame><div className="thread-workspace__empty"><h2>Chats are unavailable</h2><p>Reopen Sotto to use chats.</p></div></EmptyChatsFrame>
   }
   if (state === null) {
-    return <div className="personal-chats personal-chats--unavailable">
+    return <EmptyChatsFrame>
       {loadError ? <div className="thread-workspace__empty" role="alert"><h2>Your chats did not open</h2><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(null); setAttempt(value => value + 1) }}>Try again</Button></div>
         : <div className="thread-workspace__empty" role="status"><p>Opening your chats…</p></div>}
-    </div>
+    </EmptyChatsFrame>
   }
 
   const PROVIDER = providerLabel(selected?.providerId ?? state.availability.provider)
@@ -412,7 +428,9 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
     disabled={newChatBlocked} onClick={() => void create()}><SquarePen size={17} /></Button>
 
   return <div className="threads-view personal-chats">
+    {/* The chat list wears the Threads sidebar's frame: its top row above the list, its foot below it. */}
     <nav className="thread-nav personal-chats__nav" aria-label="Chats">
+      <SidebarTop />
       <div className="thread-nav__head"><h1>Chats</h1><div className="thread-nav__head-actions">{newChat}</div></div>
       {!availability.supported ? <div className="thread-nav__error personal-chats__availability" role="status">
         <span>{availability.reason ?? 'New chats are unavailable with the current coordinator.'}</span>
@@ -433,6 +451,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
           })}
         </ul> : <p className="thread-nav__empty">No chats yet.</p>}
       </div>
+      <SidebarFoot />
     </nav>
     <section className="thread-workspace personal-chat" aria-label={selected ? selected.title : 'Chat'}>
       {selected ? <>
@@ -472,5 +491,7 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
         </div>
       </>}
     </section>
+    <PageWindowControls />
+    {statusText ? <p className="page-status">{statusText}</p> : null}
   </div>
 }
