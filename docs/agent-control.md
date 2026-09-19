@@ -15,6 +15,8 @@ Sotto creates and manages coding threads through the installed Codex, Claude Cod
 
 The **Threads** page lists threads across providers. Create a thread with its project, model and available options; open one to read messages, type a prompt or answer an outstanding request. Native adapters recover threads created by Sotto; they do not import unrelated conversations from your coding clients.
 
+Creating a manual thread leaves any saved coordinator prompt or answer with its original thread. That draft does not block **New thread**, including while the voice coordinator is hidden. Creating a managed thread still requires sending or clearing the current coordinator draft first.
+
 Connecting a provider does not start a session for every thread it knows. Saved threads appear in the list straight away, idle, and a thread's provider session starts when you open it or act on it: the first prompt, answer, interrupt or settings change starts it before the action goes out. A session left alone for half an hour is stopped again, which you cannot see from the app: the thread keeps its place and its messages, and the next thing you do starts it again. A thread that is on screen, assigned or waiting on a queued prompt is the watched set, and its session is kept; one running a turn or holding an unanswered question is never stopped.
 
 Disconnecting one provider leaves other providers usable and keeps its thread identities, saved draft and assignments. Its thread controls wait until that provider reconnects. Turning off agent control stops coordination and voice control while leaving native thread connections available. Connecting a provider does not turn the coordinator back on.

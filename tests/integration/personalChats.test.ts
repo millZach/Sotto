@@ -233,5 +233,6 @@ it.runIf('permissionChoices' in agentRequestSchema.shape)('rejects invented nati
   await expect(service.answer({ chatId: chat.id, requestId: request.id, answer: '', approved: true, permissionChoice: 'acceptForSession' } as Parameters<PersonalChatService['answer']>[0])).rejects.toThrow('not offered')
   expect((await f.driver.requests()).filter(r => r.result?.decision)).toHaveLength(0)
   await service.answer({ chatId: chat.id, requestId: request.id, answer: '', approved: false, permissionChoice: 'decline' } as Parameters<PersonalChatService['answer']>[0])
-  expect((await f.driver.requests()).findLast(r => r.result?.decision)?.result).toEqual({ decision: 'decline' })
+  // Pipe delivery completes before the provider process records the answer.
+  await expect.poll(async () => (await f.driver.requests()).findLast(r => r.result?.decision)?.result).toEqual({ decision: 'decline' })
 })

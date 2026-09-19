@@ -76,6 +76,41 @@ async function fixture(receiptIds: string[] = []) {
 }
 
 describe('navigation independent of action latency', () => {
+  it.each(['prompt', 'image', 'answer'] as const)('creates a manual thread without consuming a saved coordinator %s', async kind => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    if (kind === 'answer') f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })
+    const text = kind === 'image' ? '' : 'Keep A'
+    const attachments = kind === 'answer' ? [] : [image]
+    await f.control.command({ type: 'compose', text, attachments })
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    const before = f.control.get()
+    if (kind === 'answer') expect(before.draftRequestId).toBe('question-a')
+    const threadId = randomUUID()
+    const result = await f.control.command({ type: 'create-thread', threadId, projectId: 'project', title: 'New manual thread', modelId: 'claude:test', managed: false })
+    expect(result.error).toBeNull()
+    expect(result.host.threads).toContainEqual(expect.objectContaining({ id: threadId }))
+    expect(result).toMatchObject({ activeThreadId: threadId, draft: before.draft, draftThreadId: before.draftThreadId,
+      draftAttachments: before.draftAttachments, draftRequestId: before.draftRequestId, threadDrafts: before.threadDrafts,
+      pendingRequest: before.pendingRequest, composing: before.composing, assignments: before.assignments })
+    expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'create-thread', threadId })])
+    await f.restart()
+    expect(f.control.get()).toMatchObject({ draft: text, draftThreadId: 'workshop', draftAttachments: attachments, draftRequestId: before.draftRequestId })
+  })
+
+  it('keeps managed creation from replacing an unfinished coordinator draft', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'compose', text: 'Keep A' })
+    for (const managed of [true, undefined]) {
+      const result = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Managed thread', modelId: 'claude:test',
+        ...(managed === undefined ? {} : { managed }) })
+      expect(result.error).toBe('Send or clear your draft before creating another thread.')
+      expect(result).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop' })
+    }
+    expect(f.host.attempts).toEqual([])
+  })
+
   it('keeps both open panes observed through refresh without moving focus or granting authority', async () => {
     const f = await fixture()
     await f.control.command({ type: 'select-thread', threadId: 'docs' })

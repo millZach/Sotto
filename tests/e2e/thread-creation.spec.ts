@@ -1,7 +1,43 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, paneMenuAction, resizeWindow } from './support/sottoLaunch'
 
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
+
+test('creates a project thread while the hidden coordinator retains another thread draft', async () => {
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
+      await window.sotto!.agents!.command({ type: 'compose', text: 'Keep the other thread draft' })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
+    })
+    await page.reload()
+    await openThreads(page)
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
+    await page.getByRole('button', { name: 'New thread in Sotto test', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
+    await dialog.getByRole('textbox', { name: 'Thread name' }).fill('New project thread')
+    await dialog.getByRole('button', { name: 'Create thread' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'New project thread', exact: true })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    expect(state.error).toBeNull()
+    expect(state.host.threads).toContainEqual(expect.objectContaining({ id: state.activeThreadId, title: 'New project thread' }))
+    expect(state).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: 'workshop', assignments: [] })
+    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Only send this new prompt')
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
+    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: 'workshop' })
+    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-saved-draft/created-and-sent.png' })
+  } finally { await closeSotto(launched) }
+})
 
 test('creates a thread in a centered popup, configures it, and sends file and pasted screenshots', async () => {
   const previousFolder = process.env.SOTTO_E2E_PROJECT_DIRECTORY

@@ -14,6 +14,7 @@ export default tseslint.config(
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
       'artifacts/voice-perf/**',
+      'artifacts/new-thread-saved-draft/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',
