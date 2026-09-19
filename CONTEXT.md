@@ -24,7 +24,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
-**Thread working copy.** The folder in which a thread's provider works, either a separate Git worktree or a deliberately shared folder. Separate working copies can belong to the same project and share its project memory scope. A separate worktree starts on its own `sotto/thread-<id>` branch and then follows whatever branch is checked out in it: Sotto records the branch it sees, none for a detached HEAD, and never switches one itself (ADR-0014). A send is refused only when the folder is no longer the thread's registered worktree.
+**Thread working copy.** The folder in which a thread's provider works, either a separate Git worktree or a deliberately shared folder. Separate working copies can belong to the same project and share its project memory scope. A separate worktree starts on its own `sotto/thread-<id>` branch and then follows whatever branch is checked out in it: Sotto records the branch it sees, none for a detached HEAD, and never switches one itself (ADR-0014). A folder that was deleted is put back on the branch Sotto recorded, before the turn and without touching anything else; a send is refused only when the folder is no longer the thread's registered worktree and cannot be put back, or when its branch is checked out in another folder.
 
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
 

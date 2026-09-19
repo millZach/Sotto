@@ -1,6 +1,6 @@
 # A thread follows its worktree's branch
 
-Accepted September 18, 2026 after the second thread in one evening stopped accepting messages. Sotto no longer compares the branch checked out in a thread's worktree with the branch it recorded at creation. It records what it sees.
+Accepted September 18, 2026, amended September 19, 2026 after the second thread in one evening stopped accepting messages. Sotto no longer compares the branch checked out in a thread's worktree with the branch it recorded at creation. It records what it sees.
 
 ## Context
 
@@ -16,13 +16,15 @@ The send path in `WorkspaceHost.threadWorkingDirectory` adopts the inspected rec
 
 `ensure`, the creation and repair path behind Retry setup, reuses a registered checkout on whatever branch it has, the same way, so the two paths cannot contradict each other. It still creates only with `-b` on the reserved name, never resets a branch with `-B`, and never removes anything.
 
+Amended September 19, 2026: a folder that is simply gone is put back rather than refused. `ThreadWorktrees.restore` runs before the send path's `inspect` and inside `ensure` for a checkout Sotto had already made. When the folder is missing and Sotto recorded a branch that still exists, it runs `git worktree prune` and then `git worktree add -- <path> <branch>`, and the turn continues on the branch's own commits. It is best effort in one direction only: a folder that is still there, a thread with no recorded branch and a branch that no longer exists are all left to `inspect` to report. It refuses, naming the other folder, when that branch is checked out somewhere else, and it says so in the same terms when Git cannot put the folder back. It never resets a branch, never removes a checkout, and never adds anything outside Sotto's reserved worktree folder. `inspect` still creates nothing.
+
 ## Considered options
 
 - **Keep refusing and improve the message.** The message already said what to do. The problem was that doing it discarded the user's own branch choice and stranded uncommitted work behind a git command.
 - **Restore the recorded branch automatically.** A checkout Sotto performs on its own can fail on conflicting changes and, when it succeeds, silently moves the user off a branch they made on purpose. Sotto never switches a branch it did not create.
-- **Recreate a missing worktree from the recorded branch before a turn**, as T3 does. Worth doing, but separate: it is a creation path with its own failure cases, and today's `ensure` refuses a branch that is checked out elsewhere. Not part of this decision.
+- **Recreate a missing worktree from the recorded branch before a turn**, as T3 does. Deferred when this was first written, then taken in the September 19 amendment above: the failure cases it worried about are handled by refusing, in plain words, when the branch is checked out elsewhere or Git will not put the folder back.
 - **Follow the worktree.** Chosen. The `sotto/thread-<id>` branch is a starting point that keeps threads apart; once the user or agent has moved on, the folder's own branch is the truth, and it is what commits, pushes and pull requests from the Changes panel already read.
 
 ## Consequences
 
-The recorded branch is descriptive from now on, not a constraint. Anything that renders it must tolerate it changing between sends and being absent for a detached HEAD, which `ThreadWorkingCopy` and the Tools panel already did. Two threads can end up on branches with unrelated names and nothing in Sotto minds. The one guarantee that remains is the folder: a send never goes to a directory that is not the thread's own registered worktree.
+The recorded branch is descriptive from now on, not a constraint. Anything that renders it must tolerate it changing between sends and being absent for a detached HEAD, which `ThreadWorkingCopy` and the Tools panel already did. Two threads can end up on branches with unrelated names and nothing in Sotto minds. The one guarantee that remains is the folder: a send never goes to a directory that is not the thread's own registered worktree. Since the amendment, a folder that vanished is put back there first, so the guarantee is met by recreating the checkout rather than by refusing the message; a user who deletes a thread's folder loses only what was never committed.

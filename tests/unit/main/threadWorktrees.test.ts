@@ -24,6 +24,11 @@ async function fixture(commit = true) {
   }
   return { root, project, service: new ThreadWorktrees(root) }
 }
+/** Removes only a test-owned checkout under the fixture root; the production implementation has no removal path. */
+async function removeTestCheckout(root: string, path: string) {
+  expect(resolve(path).startsWith(resolve(root) + '\\') || resolve(path).startsWith(resolve(root) + '/')).toBe(true)
+  await rm(path, { recursive: true })
+}
 describe('independent working-copy allocation', () => {
   it('isolates concurrent allocations from a dirty source and retains user edits on reuse', async () => {
     const f = await fixture()
@@ -103,11 +108,43 @@ describe('independent working-copy allocation', () => {
   })
   it('inspection does not replace a missing checkout', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
-    // Remove only this test-owned checkout; the production implementation has no removal path.
-    expect(resolve(a.path!).startsWith(resolve(f.root) + '\\') || resolve(a.path!).startsWith(resolve(f.root) + '/')).toBe(true)
-    await rm(a.path!, { recursive: true })
+    await removeTestCheckout(f.root, a.path!)
     await expect(f.service.inspect(a)).rejects.toThrow()
-    await expect(f.service.ensure(a)).rejects.toThrow()
+    // A detached checkout records no branch, so there is nothing to recreate it from.
+    await expect(f.service.restore({ ...a, branch: undefined })).resolves.toMatchObject({ path: a.path })
+    await expect(f.service.ensure({ ...a, branch: undefined })).rejects.toThrow()
+  })
+  it('recreates a deleted checkout from the branch it recorded, without resetting the branch', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await git(a.path!, ['checkout', '-b', 'user-chosen-branch'])
+    await writeFile(join(a.path!, 'tracked.txt'), 'work on the user branch')
+    await git(a.path!, ['add', '.'])
+    await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Work'])
+    const recorded = await f.service.inspect(a)
+    expect(recorded.branch).toBe('user-chosen-branch')
+    const tip = (await git(f.project, ['rev-parse', 'user-chosen-branch'])).trim()
+    await removeTestCheckout(f.root, a.path!)
+    expect(await f.service.ensure(recorded)).toMatchObject({ status: 'ready', branch: 'user-chosen-branch' })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('work on the user branch')
+    expect((await git(f.project, ['rev-parse', 'user-chosen-branch'])).trim()).toBe(tip)
+    expect(await readFile(join(f.project, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
+  })
+  it('refuses to recreate a checkout whose branch is checked out in another folder and removes nothing', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await git(a.path!, ['checkout', '-b', 'user-chosen-branch'])
+    const recorded = await f.service.inspect(a)
+    await removeTestCheckout(f.root, a.path!)
+    await git(f.project, ['worktree', 'prune'])
+    const elsewhere = join(f.root, 'elsewhere')
+    await git(f.project, ['worktree', 'add', '--', elsewhere, 'user-chosen-branch'])
+    await writeFile(join(elsewhere, 'other.txt'), 'other folder work')
+    await expect(f.service.restore(recorded)).rejects.toThrow('elsewhere')
+    await expect(f.service.ensure(recorded)).rejects.toThrow('elsewhere')
+    expect(await readFile(join(elsewhere, 'other.txt'), 'utf8')).toBe('other folder work')
+    expect(await readFile(join(elsewhere, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    expect((await git(f.project, ['rev-parse', 'user-chosen-branch'])).trim()).toBe((await git(elsewhere, ['rev-parse', 'HEAD'])).trim())
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
   })
   it('does not reuse a checkout while Git reports it locked', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))

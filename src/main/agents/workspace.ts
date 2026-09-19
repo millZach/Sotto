@@ -320,7 +320,8 @@ export class WorkspaceHost implements AgentHost {
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     const thread = this.thread(threadId)
     if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') {
-      const inspected = await this.worktrees.inspect(thread.worktree)
+      // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014).
+      const inspected = await this.worktrees.inspect(await this.worktrees.restore(thread.worktree))
       // A branch switched inside the worktree is adopted, so the pane's label follows it (ADR-0014).
       if (inspected.branch !== thread.worktree.branch) {
         this.thread(threadId).worktree = inspected; this.dirty = true
