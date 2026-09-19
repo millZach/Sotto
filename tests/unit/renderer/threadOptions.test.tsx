@@ -49,6 +49,33 @@ describe('composer option chips', () => {
     expect(chip).toHaveFocus()
   })
 
+  it('closes an open list when focus leaves it by Tab', () => {
+    mount()
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    fireEvent.click(chip)
+    const option = screen.getByRole('option', { name: 'High' })
+    fireEvent.blur(option, { relatedTarget: screen.getByRole('combobox', { name: 'Thread permissions' }) })
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('puts focus back on the chip once a choice is confirmed, since the chip was fixed while saving', async () => {
+    let release!: () => void
+    const state = fixture()
+    const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
+    const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
+    await waitFor(() => expect(chip).toBeDisabled())
+    // Chromium drops focus from a control the moment it is disabled; jsdom keeps it, so the drop is made explicit.
+    const elsewhere = document.createElement('button')
+    document.body.append(elsewhere); elsewhere.focus(); elsewhere.remove()
+    expect(chip).not.toHaveFocus()
+    release()
+    await waitFor(() => expect(chip).toBeEnabled())
+    expect(chip).toHaveFocus()
+  })
+
   it('closes an open list on Escape and hands focus back to its chip without saving', () => {
     const { command } = mount()
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
@@ -63,7 +90,7 @@ describe('composer option chips', () => {
   })
 
   it('names the setting on a chip the provider has not set and lists the default as unchoosable', () => {
-    const state = fixture({ runtimeMode: undefined, reasoningEffort: undefined })
+    const state = fixture()
     delete state.host.threads[0]!.runtimeMode
     delete state.host.threads[0]!.reasoningEffort
     mount(state)
@@ -87,7 +114,7 @@ describe('composer option chips', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const started = screen.getByRole('dialog', { name: 'Choose model' })
     expect(within(started).queryByRole('navigation')).toBeNull()
-    expect(within(started).queryByText('Any provider until your first message.')).toBeNull()
+    expect(within(started).getByText('This thread stays with Claude Code.')).toBeVisible()
     expect(within(started).getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Code model'])
   })
 })

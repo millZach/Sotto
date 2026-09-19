@@ -78,6 +78,15 @@ export async function launchSotto(
   }
 }
 
+/** Resize the main window and wait for the page to see the new width; fractional display scaling rounds it by a pixel or two. */
+export async function resizeWindow(launched: LaunchedSotto, width: number, height: number): Promise<void> {
+  await launched.app.evaluate(({ BrowserWindow }, size) => {
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
+    window.setSize(size.width, size.height)
+  }, { width, height })
+  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
+}
+
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
   if (launched.ownsUserData) await removeOwnedProfile(launched.userData)

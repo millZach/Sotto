@@ -1,24 +1,9 @@
-/* The composer's chips: the model with its provider's mark, the reasoning effort and the permissions. Each is one
-   bordered pill that opens its own list above the composer, so the typed text and the send disc stay where they were. */
+/* The model control: a chip (threadChips.css) carrying the provider's mark, and the menu it opens. */
 .model-picker { min-width: 0; }
-.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
-.thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
-.thread-chip > svg { flex: none; }
-.thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
-.thread-chip:disabled { opacity: .55; cursor: default; }
 .model-picker__trigger { color: var(--tt-text-2); }
-.provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
-.thread-options--chips { gap: 6px; }
-
-/* The effort and permission lists. */
-.thread-chip-menu { position: relative; min-width: 0; }
-.thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.thread-chip-menu__list > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
-.thread-chip-menu__list > button:hover:not(:disabled), .thread-chip-menu__list > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
-.thread-chip-menu__list > button[aria-selected='true'] { color: var(--tt-activity); }
-.thread-chip-menu__list > button:disabled { opacity: .45; cursor: default; }
+.model-picker__trigger .provider-mark[data-provider='codex'], .model-picker__tabs .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.model-picker__trigger .provider-mark[data-provider='claude'], .model-picker__tabs .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.model-picker__trigger .provider-mark[data-provider='grok'], .model-picker__tabs .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
 
 /* Where the model control is a named field rather than a chip: the New thread and New terminal dialogs. */
 .thread-options__model { display: grid; gap: 5px; min-width: 0; }
@@ -48,9 +33,3 @@
 .model-picker__models > button > span > small { color: var(--tt-text-muted); font-size: 11.5px; }
 .model-picker__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
 .model-picker__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
-
-/* One motion: a list rises 6px as it opens, on the easing the follow-up ledger uses. */
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) :is(.model-picker__dialog, .thread-chip-menu__list) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
-}
-@keyframes thread-chip-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

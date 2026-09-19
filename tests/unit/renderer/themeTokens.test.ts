@@ -146,6 +146,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/styles/glass.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
+      'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/newThread.css',
       'src/renderer/src/agents/providerRecovery.css',
       'src/renderer/src/agents/providers.css',

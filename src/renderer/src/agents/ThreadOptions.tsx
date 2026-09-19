@@ -1,8 +1,10 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
+import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker } from './ModelPicker'
+import './threadChips.css'
 
 const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   'approval-required': 'Ask for approval',
@@ -11,6 +13,25 @@ const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   'full-access': 'Full access',
 }
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
+
+interface ChoiceOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
+
+/** The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. */
+function effortChoices(model: AgentModel | undefined, reasoning: string): ChoiceOption[] {
+  const efforts = model?.reasoningEfforts ?? []
+  if (efforts.length === 0) return []
+  const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : 'Provider default', disabled: true }]
+  return [...lead, ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]
+}
+
+/** The permission modes a model offers, led by "Provider default" or an unoffered current mode as unchoosable. */
+function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined): ChoiceOption[] {
+  const modes = model?.runtimeModes ?? []
+  if (modes.length === 0) return []
+  const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
+    : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
+  return [...lead, ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
+}
 
 /** The three controls laid out in full, as New thread and New terminal show them. */
 export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, onModel, onReasoning, onRuntime, disabled = false, modelDisabled = false }: {
@@ -27,16 +48,15 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
 }): ReactNode {
   const model = models.find(item => item.id === modelId)
   const reasoning = reasoningEffort ?? model?.defaultReasoningEffort ?? ''
+  const efforts = effortChoices(model, reasoning)
+  const modes = modeChoices(model, runtimeMode)
   return <div className="thread-options">
     <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={disabled || modelDisabled} onChange={onModel} /></div>
-    {!!model?.reasoningEfforts?.length && <label><span>Reasoning</span><select aria-label="Thread reasoning" title="Reasoning" value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
-      {!model.reasoningEfforts.includes(reasoning) && <option value={reasoning} disabled>{reasoning || 'Provider default'}</option>}
-      {model.reasoningEfforts.map(effort => <option key={effort} value={effort}>{capitalise(effort)}</option>)}
+    {efforts.length > 0 && <label><span>Reasoning</span><select aria-label="Thread reasoning" title="Reasoning" value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
+      {efforts.map(option => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}</option>)}
     </select></label>}
-    {!!model?.runtimeModes?.length && <label><span>Permissions</span><select aria-label="Thread permissions" title="Permissions" value={runtimeMode ?? ''} disabled={disabled} onChange={event => onRuntime(event.target.value as AgentRuntimeMode)}>
-      {!runtimeMode && <option value="" disabled>Provider default</option>}
-      {runtimeMode && !model.runtimeModes.includes(runtimeMode) && <option value={runtimeMode} disabled>{RUNTIME_LABELS[runtimeMode]}</option>}
-      {model.runtimeModes.map(mode => <option key={mode} value={mode}>{RUNTIME_LABELS[mode]}</option>)}
+    {modes.length > 0 && <label><span>Permissions</span><select aria-label="Thread permissions" title="Permissions" value={runtimeMode ?? ''} disabled={disabled} onChange={event => onRuntime(event.target.value as AgentRuntimeMode)}>
+      {modes.map(option => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}</option>)}
     </select></label>}
   </div>
 }
@@ -60,12 +80,10 @@ function threadModelChoices(state: AgentState, thread: AgentThread): { readonly 
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
 }
 
-interface ChoiceOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
-
 /**
  * A chip that opens a short list above itself: the reasoning effort or the permissions. The chip reads the
  * current choice, or the setting's own name while the provider has not said. Arrow keys move through the
- * list; Escape or a pointer outside closes it and returns focus to the chip.
+ * list; Escape, Tab or a pointer outside closes it, and Escape returns focus to the chip.
  */
 function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly options: readonly ChoiceOption[]
@@ -88,20 +106,17 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
   }, [open])
   const current = options.find(option => option.id === value && !option.disabled)
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
-  return <div className="thread-chip-menu" onKeyDown={event => {
-    if (!open || event.key !== 'Escape') return
-    event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
-  }}>
+  return <div className="thread-chip-menu"
+    onKeyDown={event => {
+      if (!open || event.key !== 'Escape') return
+      event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
+    }}
+    onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
     <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={label} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} disabled={disabled} onClick={() => setOpen(value => !value)}>
       <span>{current?.label ?? (value ? capitalise(value) : placeholder)}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open ? <div ref={list} id={listId} role="listbox" aria-label={label} className="thread-chip-menu__list" onKeyDown={event => {
-      const items = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
-      const index = items.indexOf(document.activeElement as HTMLButtonElement)
-      const next = event.key === 'ArrowDown' ? (index + 1) % items.length : event.key === 'ArrowUp' ? (index - 1 + items.length) % items.length : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : -1
-      if (next >= 0) { event.preventDefault(); items[next]?.focus() }
-    }}>
+    {open ? <div ref={list} id={listId} role="listbox" aria-label={label} className="thread-chip-menu__list" onKeyDown={event => moveListboxFocus(event, list.current)}>
       {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
         <span>{option.label}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
     </div> : null}
@@ -111,7 +126,9 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
 /**
  * The composer's option controls: three chips saying what this thread is set to, the model with its
  * provider's mark, the reasoning effort and what the thread may do without asking. Each opens its own
- * list. New thread and New terminal show the same three controls laid out in full.
+ * list. While a change is being confirmed the chips are fixed; once it is, focus comes back to the chip
+ * the choice was made from unless the user has moved on. New thread and New terminal show the same three
+ * controls laid out in full.
  */
 export function ThreadOptions({ thread, state, command, turnNote = true }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
@@ -120,32 +137,39 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
 }): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const refocus = useRef<HTMLButtonElement | null>(null)
   const { models, locked } = threadModelChoices(state, thread)
   const disabled = saving || isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
   const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
+    // The choice was made inside a chip's list; the chip is fixed while saving, so focus is put back afterwards.
+    refocus.current = (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
     setSaving(true); setError(null)
     try {
       const result = await command({ type: 'configure-thread', threadId: thread.id, ...patch })
       if (!result || result.error) setError(result?.error ?? 'Could not confirm this change. Try again.')
     } finally { setSaving(false) }
   }
+  useEffect(() => {
+    if (saving || refocus.current === null) return
+    const chip = refocus.current
+    refocus.current = null
+    if (chip.isConnected && (document.activeElement === null || document.activeElement === document.body)) chip.focus()
+  }, [saving])
   const capabilities = capabilitiesForThread(state.host, thread)
   if (locked && !capabilities.configureThread) return null
   const modelDisabled = locked && capabilities.configureThreadModel === false
   const model = models.find(item => item.id === thread.modelId)
   const reasoning = thread.reasoningEffort ?? model?.defaultReasoningEffort ?? ''
-  const efforts = model?.reasoningEfforts ?? []
-  const modes = model?.runtimeModes ?? []
-  const runtimeMode = thread.runtimeMode
+  const efforts = effortChoices(model, reasoning)
+  const modes = modeChoices(model, thread.runtimeMode)
   const providers = new Set(models.map(item => item.provider)).size
+  const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
+  const note = locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
   return <div className="thread-options-bar" data-provider-locked={locked}>
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={models} modelId={thread.modelId} disabled={disabled || modelDisabled} onChange={modelId => void save({ modelId })}
-        note={!locked && providers > 1 ? 'Any provider until your first message.' : undefined} />
-      {efforts.length > 0 && <ChoiceChip label="Thread reasoning" placeholder="Effort" value={reasoning} disabled={disabled || modelDisabled} onChange={reasoningEffort => void save({ reasoningEffort })}
-        options={[...(efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : 'Provider default', disabled: true }]), ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]} />}
-      {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={runtimeMode ?? ''} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })}
-        options={[...(runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }] : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]), ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]} />}
+      <ModelPicker models={models} modelId={thread.modelId} disabled={disabled || modelDisabled} onChange={modelId => void save({ modelId })} note={note} />
+      {efforts.length > 0 && <ChoiceChip label="Thread reasoning" placeholder="Effort" value={reasoning} options={efforts} disabled={disabled || modelDisabled} onChange={reasoningEffort => void save({ reasoningEffort })} />}
+      {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={thread.runtimeMode ?? ''} options={modes} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })} />}
     </div>
     {saving ? <small role="status">Saving...</small> : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}

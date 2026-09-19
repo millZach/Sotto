@@ -1,0 +1,22 @@
+/* The composer's option chips: the model with its provider's mark, the reasoning effort and the permissions. Each is one
+   bordered pill that opens its own list above the composer, so the typed text and the send disc stay where they were. */
+.thread-options--chips { gap: 6px; }
+.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.thread-chip > svg { flex: none; }
+.thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.thread-chip:disabled { opacity: .55; cursor: default; }
+
+/* The effort and permission lists. */
+.thread-chip-menu { position: relative; min-width: 0; }
+.thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.thread-chip-menu__list > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.thread-chip-menu__list > button:hover:not(:disabled), .thread-chip-menu__list > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.thread-chip-menu__list > button[aria-selected='true'] { color: var(--tt-activity); }
+.thread-chip-menu__list > button:disabled { opacity: .45; cursor: default; }
+
+/* One motion: a list rises 6px as it opens, on the easing the follow-up ledger uses. The model menu shares it. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) :is(.thread-chip-menu__list, .model-picker__dialog) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
+}
+@keyframes thread-chip-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

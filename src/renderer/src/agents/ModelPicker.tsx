@@ -1,7 +1,9 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import type { AgentModel } from '../../../shared/agents'
+import { moveListboxFocus } from './listboxKeys'
 import { ProviderMark } from './ProviderMark'
+import './threadChips.css'
 import './modelPicker.css'
 
 export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
@@ -22,7 +24,7 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * anchored over it. Providers are tabs across the top of the menu (only when there is more than one), a
  * search line filters the tab's models, and `note` is the one line under the list, such as the reminder
  * that a new thread may still change provider. Escape or a click outside closes the menu and returns
- * focus to the chip.
+ * focus to the chip; after a choice the owner restores focus once the change is confirmed.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -50,8 +52,10 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
     if (!element) return
     element.showModal?.()
     if (!element.open) element.setAttribute('open', '')
-    const anchor = trigger.current?.getBoundingClientRect()
-    if (anchor) {
+    // Anchored over the chip, below it only when there is room, and kept inside the window as it resizes.
+    const place = (): void => {
+      const anchor = trigger.current?.getBoundingClientRect()
+      if (!anchor) return
       const width = element.offsetWidth || 300
       const height = element.offsetHeight || 360
       const below = innerHeight - anchor.bottom - 16
@@ -59,8 +63,10 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
       element.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - width - 16))}px`
       element.style.top = `${Math.max(16, Math.min(top, innerHeight - height - 16))}px`
     }
+    place()
+    addEventListener('resize', place)
     search.current?.focus()
-    return () => { element.close?.(); trigger.current?.focus() }
+    return () => { removeEventListener('resize', place); element.close?.(); trigger.current?.focus() }
   }, [open])
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
@@ -73,20 +79,16 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
       onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
       {groups.length > 1 && <nav className="model-picker__tabs" aria-label="Model providers">{groups.map(group => <button type="button" key={group.name} aria-label={group.name} aria-pressed={selectedProvider?.name === group.name} onClick={() => { setProvider(group.name); search.current?.focus() }}>
         <ProviderMark provider={group.providerId} name={group.name} size={13} /><span>{group.name}</span></button>)}</nav>}
-      <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label="Search models" placeholder={`Search ${selectedProvider?.name ?? ''} models`.replace('  ', ' ')} value={query} onChange={event => setQuery(event.target.value)}
+      <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label="Search models" placeholder={selectedProvider ? `Search ${selectedProvider.name} models` : 'Search models'} value={query} onChange={event => setQuery(event.target.value)}
         onKeyDown={event => {
           if (event.key === 'Enter') event.preventDefault()
           if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
         }} />
         <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
       </header>
-      <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => {
-        const options = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
-        const index = options.indexOf(document.activeElement as HTMLButtonElement)
-        const next = event.key === 'ArrowDown' ? (index + 1) % options.length : event.key === 'ArrowUp' ? (index - 1 + options.length) % options.length : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : -1
-        if (next >= 0) { event.preventDefault(); options[next]?.focus() }
-      }}>{filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === modelId} disabled={disabled || !model.ready}
-        onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === modelId && <Check size={14} aria-hidden="true" />}</button>)}
+      <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        {filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === modelId} disabled={disabled || !model.ready}
+          onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === modelId && <Check size={14} aria-hidden="true" />}</button>)}
         {!filtered.length && <p className="model-picker__empty">No matching models.</p>}
       </div>
       {note ? <p className="model-picker__note">{note}</p> : null}
