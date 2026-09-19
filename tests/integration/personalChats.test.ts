@@ -188,7 +188,8 @@ it.runIf('questions' in agentRequestSchema.shape)('forwards the shared structure
   const structured = request as typeof request & { questions: { id: string; options: { id: string }[] }[] }
   const question = structured.questions[0]!
   await service.answer({ chatId: chat.id, requestId: request.id, answer: '', questionAnswers: { [question.id]: { optionIds: [question.options[0]!.id] } } } as Parameters<PersonalChatService['answer']>[0])
-  expect((await f.driver.requests()).findLast(r => r.result?.answers)?.result?.answers).toEqual({ choice: { answers: ['Blue'] } })
+  // The answer reaches the fixture's log a moment after the call returns; on a loaded runner that moment is real.
+  await expect.poll(async () => (await f.driver.requests()).findLast(r => r.result?.answers)?.result?.answers).toEqual({ choice: { answers: ['Blue'] } })
 })
 
 it('lists native skills in the neutral cwd and dispatches explicit references through normal native input', async () => {
