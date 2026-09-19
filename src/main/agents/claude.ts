@@ -10,7 +10,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory } from './host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -25,10 +25,17 @@ import { markTurnActivity } from './turnActivity'
 import type { AgentActivity } from '../../shared/agentActivity'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
+/**
+ * Transcript cursor: how far a thread's native transcript had been read when Sotto last stopped, whose
+ * file that was, and what the reader had already matched there. Reconnecting seeks to it instead of
+ * reading the whole file again, and it is only trusted alongside the messages it accounted for.
+ */
+const cursorSchema = z.object({ sessionId: z.string().uuid(), offset: z.number().int().nonnegative(), size: z.number().int().nonnegative(),
+  ino: z.string().optional(), birthtimeMs: z.number().optional(), consumedOriginIds: z.array(z.string()).default([]), lastDigest: z.string().optional() })
 const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
   compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
-  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
+  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 // Native CLI permission modes. Aliases without a stored mode keep the original
 // approval-required behaviour. Prompts still route to Sotto (--permission-prompts host).
@@ -64,6 +71,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly assistantBlocks = new Map<string, Map<string, string>>()
   private readonly observed = new Set<string>()
   private readonly activity = new Map<string, ClaudeActivity>()
+  private readonly restoredHistory = new Map<string, readonly AgentMessage[]>()
+  private cursorTimer: ReturnType<typeof setTimeout> | undefined
   private executable = ''
   private generation = 0
   private pollTimer: ReturnType<typeof setInterval> | undefined
@@ -86,6 +95,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
+    // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
+    const held = new Map([...this.threads].map(([id, thread]) => [id, thread.messages as readonly AgentMessage[]]))
     this.threads.clear(); this.logs.clear(); this.activity.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       let alias = stored
@@ -94,6 +105,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         catch { this.state.error = 'Claude rollback could not be reconciled. Review its native sessions; it will not be replayed.' }
       }
       this.ensureThread(id, alias)
+      this.seedHistory(id, alias, held.get(id) ?? this.restoredHistory.get(id))
       if (alias.kind === 'personal' && alias.origins.length && !await this.log(id).exists()) {
         this.threads.get(id)!.historyStatus = 'error'; this.threads.get(id)!.historyError = 'Claude native history is unavailable. Cached messages are retained; restore its session before continuing.'
       }
@@ -379,8 +391,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     throw new Error('Unsupported Claude command.')
   }
   async pollSessionLogs(): Promise<void> { for (const log of this.logs.values()) await log.poll() }
+  /** Messages the workspace still holds; a thread whose history is handed back may resume its cursor. */
+  restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
+    for (const thread of threads) if (thread.messages.length) this.restoredHistory.set(thread.threadId, thread.messages)
+    return Promise.resolve()
+  }
   disconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.state.connected = false
+    if (this.cursorTimer) { clearTimeout(this.cursorTimer); this.cursorTimer = undefined; this.closures.push(this.persist().catch(() => undefined)) }
     for (const [id, runtime] of this.runtimes) {
       const closure = this.denyPending(id, runtime).catch(() => undefined).then(() => { runtime.protocol.stop(); return runtime.protocol.closed })
       this.closures.push(closure)
@@ -526,10 +544,40 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const current = (): boolean => generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId
       log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
         if (current()) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, frame, true) }
-      }, () => { if (current()) this.emit() })
+      }, () => { if (current()) { this.noteCursor(id); this.emit() } })
       this.logs.set(id, log)
     }
     return log
+  }
+  /**
+   * A stored cursor stands for the entries behind it, so it is only usable when those messages are back
+   * in hand. Without them the transcript is read from its first byte, as it always was.
+   */
+  private seedHistory(id: string, alias: Alias, restored: readonly AgentMessage[] | undefined): void {
+    const cursor = alias.transcriptCursor
+    if (!cursor || cursor.sessionId !== alias.sessionId || !restored?.length) { delete alias.transcriptCursor; return }
+    this.threads.get(id)!.messages = structuredClone(restored) as AgentMessage[]
+    // A later block of an assistant message already projected must add to its text, not replace it.
+    for (const message of restored) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
+    this.logOrigins.set(id, new Set(cursor.consumedOriginIds))
+    if (cursor.lastDigest) this.lastLogDigest.set(id, cursor.lastDigest)
+    this.log(id).resume(cursor)
+  }
+  /** Record where this thread's transcript has been read to; the write itself waits for the cadence below. */
+  private noteCursor(id: string): void {
+    const alias = this.aliases[id]; const cursor = this.logs.get(id)?.cursor()
+    if (!alias || !cursor) return
+    const lastDigest = this.lastLogDigest.get(id)
+    alias.transcriptCursor = { sessionId: alias.sessionId, offset: cursor.offset, size: cursor.size, ...(cursor.ino ? { ino: cursor.ino } : {}),
+      ...(cursor.birthtimeMs === undefined ? {} : { birthtimeMs: cursor.birthtimeMs }),
+      consumedOriginIds: [...(this.logOrigins.get(id) ?? [])], ...(lastDigest ? { lastDigest } : {}) }
+    this.saveCursors()
+  }
+  /** Cursors ride a slow shared write, never one per line, so reading a transcript stays a read. */
+  private saveCursors(): void {
+    if (this.cursorTimer) return
+    this.cursorTimer = setTimeout(() => { this.cursorTimer = undefined; void this.persist().catch(() => undefined) }, 5000)
+    this.cursorTimer.unref()
   }
   private ensureThread(id: string, alias: Alias): void {
     this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [] })

@@ -90,6 +90,10 @@ export class WorkspaceHost implements AgentHost {
       // Cached running activity is evidence of an unfinished observation, not a live process.
       for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
       await this.inner.initialize?.()
+      // The cache below is what a provider's own transcript would otherwise be re-read to rebuild.
+      // Handing it back before the first connection is what lets an adapter resume where it stopped.
+      await this.inner.restoreThreadHistory?.(snapshot.threads.filter(thread => thread.messages.length)
+        .map(thread => ({ threadId: thread.id, messages: thread.messages })))
       this.ready = true
       await this.privacyChanged()
     })().catch(error => { this.loading = undefined; throw error })

@@ -21,9 +21,24 @@ export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   return !/^(?:<local-command-stdout>|<session-start-hook>|<task-notification>|<tick>|<goal>|\[Request interrupted by user|\s*<ide_opened_file>[\s\S]*<\/ide_opened_file>\s*$|\s*<ide_selection>[\s\S]*<\/ide_selection>\s*$)/u.test(claudeText(content))
 }
 
+/**
+ * Where a transcript had been read to when the reader last stopped, with the identity of the file it
+ * was read from. `offset` sits on a line boundary, so resuming from it never splits an entry.
+ */
+export interface ClaudeTranscriptCursor { readonly offset: number; readonly size: number; readonly ino?: string | undefined; readonly birthtimeMs?: number | undefined }
+
+function sameFile(cursor: ClaudeTranscriptCursor, identity: { ino?: string | undefined; birthtimeMs?: number | undefined }): boolean {
+  if (cursor.ino || identity.ino) return Boolean(cursor.ino && identity.ino && cursor.ino === identity.ino)
+  return cursor.birthtimeMs !== undefined && identity.birthtimeMs !== undefined && Math.abs(cursor.birthtimeMs - identity.birthtimeMs) < 1
+}
+
 /** Reads only a Sotto-created UUID in its known project; never discovers foreign history. */
 export class ClaudeSessionLog {
   private offset = 0
+  /** Bytes through the last complete line delivered: the only offset that is safe to store. */
+  private line = 0
+  private identity: { size: number; ino?: string | undefined; birthtimeMs?: number | undefined } | undefined
+  private resumeFrom: ClaudeTranscriptCursor | undefined
   private remainder = ''
   private decoder = new StringDecoder('utf8')
   private pending: Promise<void> = Promise.resolve()
@@ -31,6 +46,12 @@ export class ClaudeSessionLog {
   /** `onSettled` runs once after each read that delivered entries, so a long catch-up costs one publish, not one per line. */
   constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void, private readonly onSettled?: () => void) {}
   async exists(): Promise<boolean> { const path = await this.resolve(); return Boolean(path && (await stat(path).catch(() => undefined))?.isFile()) }
+  /** Start the next read at a stored cursor instead of byte zero, while nothing has been read yet. */
+  resume(cursor: ClaudeTranscriptCursor): void { if (!this.offset && !this.line) this.resumeFrom = cursor }
+  /** The cursor to store for the next run, or nothing while no file has been read. */
+  cursor(): ClaudeTranscriptCursor | undefined {
+    return this.identity ? { offset: this.line, size: this.identity.size, ...(this.identity.ino ? { ino: this.identity.ino } : {}), ...(this.identity.birthtimeMs === undefined ? {} : { birthtimeMs: this.identity.birthtimeMs }) } : undefined
+  }
   poll(): Promise<void> {
     const work = this.pending.then(() => this.read())
     this.pending = work.catch(() => undefined)
@@ -51,8 +72,13 @@ export class ClaudeSessionLog {
     const handle = await open(path, 'r').catch(() => undefined); if (!handle) return
     let delivered = false
     try {
-      const size = (await handle.stat()).size
-      if (size < this.offset) { this.offset = 0; this.remainder = ''; this.decoder = new StringDecoder('utf8') }
+      const stats = await handle.stat()
+      const size = stats.size
+      // Some Windows filesystems report no inode; the creation time is then the only identity on offer.
+      this.identity = { size, ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
+      const resume = this.resumeFrom; this.resumeFrom = undefined
+      if (resume && resume.offset <= size && size >= resume.size && sameFile(resume, this.identity)) { this.offset = resume.offset; this.line = resume.offset }
+      if (size < this.offset) { this.offset = 0; this.line = 0; this.remainder = ''; this.decoder = new StringDecoder('utf8') }
       while (this.offset < size) {
         const bytes = Buffer.alloc(Math.min(64 * 1024, size - this.offset))
         const { bytesRead } = await handle.read(bytes, 0, bytes.length, this.offset)
@@ -61,6 +87,7 @@ export class ClaudeSessionLog {
         let newline: number
         while ((newline = this.remainder.indexOf('\n')) >= 0) {
           const line = this.remainder.slice(0, newline); this.remainder = this.remainder.slice(newline + 1)
+          this.line += Buffer.byteLength(line) + 1
           if (Buffer.byteLength(line) > CLAUDE_MAX_FRAME_BYTES) continue
           try {
             const entry = object(JSON.parse(line))

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory } from './host'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -136,6 +136,16 @@ export class SottoThreadHost implements AgentHost {
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider || !this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable for this thread.')
     return this.inner.rollbackThread(binding.sessionId, removedUserMessages, expectedUserMessageIds)
+  }
+  /** Cached history reaches the adapter under the provider's own session ID, the way every read does. */
+  async restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
+    if (!this.inner.restoreThreadHistory) return
+    await this.registry.load()
+    const mine = threads.flatMap(thread => {
+      const binding = this.registry.byThread(thread.threadId)
+      return binding?.provider === this.provider ? [{ threadId: binding.sessionId, messages: thread.messages }] : []
+    })
+    if (mine.length) await this.inner.restoreThreadHistory(mine)
   }
   async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
     await this.registry.load()

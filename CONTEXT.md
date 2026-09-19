@@ -67,6 +67,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Codex session log.** Codex's own persisted transcript of a provider session (`rollout-*.jsonl` under `$CODEX_HOME/sessions`). Sotto reads only its user-authored entries to tell its own dispatched messages from text typed directly in Codex: a dispatched message's digest suppresses every consecutive log entry with the same digest, and any other authored entry is a takeover. Sotto never copies or logs the log's content.
 
+**Transcript cursor.** How far a thread's provider transcript had been read when Sotto last stopped, stored by the adapter beside the thread's alias: the byte after the last complete line, the identity of the file it was read from, and what the reader had already matched there. Reconnecting seeks to it instead of reading the file again, and it is only trusted beside the messages it accounts for, which `WorkspaceHost` hands back through `restoreThreadHistory` before anything connects (ADR-0015). Claude has one; a thread whose history is not handed back is read from its first byte. Avoid: "bookmark", "watermark".
+
 **Takeover.** The user sends a message to an assigned thread directly through the provider (for example `codex resume` in the Codex CLI). The adapter reports that message as a user message with no command ID, so the coordinator switches the assignment to manual mode and keeps watching. Opening or reading a thread is not a takeover.
 
 ## Personal conversations
