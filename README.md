@@ -72,6 +72,8 @@ This is an unreleased development feature. Native clients retain their own subsc
 
 Read the [agent setup and behavior guide](docs/agent-control.md), [implementation evidence and remaining gates](docs/verification/issue-9-implementation.md), and [membership service contract](docs/verification/issue-9-membership-service.md) before using or distributing this feature.
 
+You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.
+
 ## Install and first run
 
 ### Windows
