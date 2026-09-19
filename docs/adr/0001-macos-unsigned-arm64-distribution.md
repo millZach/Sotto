@@ -4,6 +4,8 @@
 
 Accepted — 2026-08-03.
 
+Amended 2026-09-18: two constraints below have since changed. Windows has an in-app updater (#103) and a hosted Windows runner runs the gates (#90, `docs/ci.md`). The macOS decisions stand: dmg only, no `latest-mac.yml`, no updater, no macOS CI.
+
 ## Context
 
 Sotto shipped as a Windows-only app. Adding macOS support raised distribution questions that packaging configuration alone does not explain, and several of the answers look wrong without their reasoning.
@@ -25,7 +27,7 @@ Constraints at the time of the decision:
 
 **DMG only — no zip, no `latest-mac.yml`, no updater.** A zip target exists in electron-builder mainly to feed `electron-updater`. Sotto has no updater on Windows either, so a zip would be an unverified second artifact for every release with no consumer.
 
-**Manual builds on the owner's Apple silicon Mac; no CI.** The release ritual is already two machines and hand-run verification scripts (see the Release artifacts section of `CLAUDE.md`). Adding hosted macOS CI would require uploading a signing identity that does not exist yet and would not remove the manual functional pass that unsigned Gatekeeper flows demand.
+**Manual builds on the owner's Apple silicon Mac; no CI.** The release ritual is already two machines and hand-run verification scripts (see `docs/release/releasing.md`). Adding hosted macOS CI would require uploading a signing identity that does not exist yet and would not remove the manual functional pass that unsigned Gatekeeper flows demand.
 
 **Electron's license files are re-added through `mac.extraResources`.** electron-builder deletes `LICENSE` and `LICENSES.chromium.html` from the macOS output tree. Shipping without them would break the license-compliance guarantee that `THIRD_PARTY_NOTICES.md` and `scripts/verify-notices.mjs` enforce, so the mac configuration copies `node_modules/electron/dist/LICENSE` back as `LICENSE.electron.txt` and re-adds `LICENSES.chromium.html`, both landing in `Sotto.app/Contents/Resources` rather than beside the executable as on Windows.
 

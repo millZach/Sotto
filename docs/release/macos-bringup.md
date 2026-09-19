@@ -92,4 +92,4 @@ gh release upload v<version> Sotto-<version>-arm64.dmg Sotto-<version>-arm64.dmg
 # SHA256SUMS.txt is uploaded LAST, after BOTH machines (Windows + Mac) have appended their lines.
 ```
 
-Release notes must carry: "Apple silicon (arm64) only", "not signed or notarized", the Gatekeeper instructions from the README, and the DMG's SHA-256. See CLAUDE.md "Release artifacts" for the two-machine ritual.
+Release notes must carry: "Apple silicon (arm64) only", "not signed or notarized", the Gatekeeper instructions from the README, and the DMG's SHA-256. See `releasing.md` for the two-machine ritual.
