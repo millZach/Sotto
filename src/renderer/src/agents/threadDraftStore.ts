@@ -111,7 +111,10 @@ export function deliveryFor(state: AgentState, threadId: string, draftId: string
 export function submissionStatus(submission: Submission, state: AgentState): { readonly status: SubmissionStatus; readonly visible: boolean } {
   // A queued revision is echoed in the transcript from the press, until the durable queue owns it and echoes it itself.
   if (submission.mode === 'queue' || queuedRevision(state, submission.threadId, submission.draftId)) {
-    return { status: submission.notSent || (submission.resolved && submission.error !== null) ? 'failed' : 'queued',
+    // A queue admission main never answered proves nothing either way, so it is unconfirmed rather than
+    // refused: refused is what puts the prompt back in the composer, and main may already own this one.
+    const unconfirmed = submission.resolved && submission.error === UNCONFIRMED_SUBMISSION.queue && !submission.notSent
+    return { status: submission.notSent || (submission.resolved && submission.error !== null && !unconfirmed) ? 'failed' : unconfirmed ? 'uncertain' : 'queued',
       visible: !queuedRevision(state, submission.threadId, submission.draftId) }
   }
   const delivery = deliveryFor(state, submission.threadId, submission.draftId)

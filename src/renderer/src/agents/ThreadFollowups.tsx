@@ -112,9 +112,10 @@ function AdmissionRow({ submission, state, restored, replaces, onRetry, onRestor
   readonly replaces: boolean
   readonly onRetry: () => void; readonly onRestore: () => void; readonly onDismiss: () => void
 }): ReactNode {
-  const failed = submissionStatus(submission, state).status === 'failed'
+  const status = submissionStatus(submission, state).status
   // No answer from main is not a refusal: the queue may own it, and asking again cannot add it twice.
-  const unconfirmed = submission.error === UNCONFIRMED_SUBMISSION.queue
+  const unconfirmed = status === 'uncertain'
+  const failed = status === 'failed' || unconfirmed
   return <li className="thread-followup" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : 'admitting'}>
     <p className="thread-followup__text">{submission.text || submission.attachments.map(item => item.name).join(', ')}</p>
     <span className="thread-followup__state" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : undefined} role="status">{failed ? (unconfirmed ? 'Unconfirmed' : 'Not queued') : 'Queuing…'}</span>

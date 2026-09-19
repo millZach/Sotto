@@ -249,6 +249,22 @@ describe('ThreadDraftStore sending', () => {
     expect(store.submissions()[0]!.restoredAs).toBeUndefined()
   })
 
+  it('leaves an unanswered queue admission in its row rather than writing it back over the composer', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    store.edit('thread', { text: 'May be queued' })
+    const queued = store.submit('thread', 0, 'queue')!
+    store.resolve('thread', queued.draftId, UNCONFIRMED_SUBMISSION.queue)
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'uncertain', visible: true })
+    // The next published state re-derives every status; an unconfirmed admission is still not a refusal.
+    store.receive(baseState())
+    expect(store.draft('thread').text).toBe('')
+    expect(store.submissions()[0]).toMatchObject({ resolved: true, text: 'May be queued' })
+    expect(store.submissions()[0]!.restoredAs).toBeUndefined()
+    // A refusal main did answer is what brings the prompt back.
+    store.resolve('thread', queued.draftId, 'The queue is closed.')
+    expect(store.draft('thread').text).toBe('May be queued')
+  })
+
   it('derives pending message status from the delivery record, not from the command result', () => {
     const submission = { threadId: 'thread', draftId: '33333333-3333-4333-8333-333333333333', text: 'hi', attachments: [], skills: [], mode: 'send' as const, submittedAt: 0, startedAt: new Date().toISOString(), resolved: false, error: null }
     const at = new Date().toISOString()
