@@ -38,7 +38,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
 
-**Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control in the sidebar's top row. Terminals open in the same pane grid as thread panes, so turning the control to Terminal from another page leads to the Threads page. Avoid: "terminal tab", "terminal page".
+**Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control in the sidebar's top row. Terminals open in the same pane grid as thread panes, so turning the control to Terminal from another page leads to the Threads page. A project's folder head in Terminal mode offers Settle project, the same as in the thread list; a settled project leaves the list once its terminals close. Avoid: "terminal tab", "terminal page".
 
 **Terminal.** In Terminal mode, a shell or a provider CLI that Sotto starts in a project folder or in its own worktree, named by the user when it opens. It belongs to a project, never to a thread, and keeps running while its pane is hidden. Distinct from the Tools panel's terminal, which belongs to a thread's working copy. Its first line, printed by Sotto, names the folder and the command.
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { SidebarFrame, type SidebarMode } from '../agents/SidebarFrame'
@@ -73,12 +73,14 @@ function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, pa
   </li>
 }
 
-function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onToggle, onOpen, onNewTerminal, busy }: {
+function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onToggle, onOpen, onNewTerminal, busy, command, globalLaneBusy }: {
   readonly folder: TerminalFolder; readonly section: Section; readonly panes: TerminalPaneActions; readonly stateOf: (id: string) => TerminalRowState
   readonly expanded: boolean; readonly liveClock: boolean; readonly onToggle: () => void; readonly onOpen: (id: string) => void
   readonly onNewTerminal: (projectId: string) => void; readonly busy: boolean
+  readonly command: AgentConnection['command']; readonly globalLaneBusy: boolean
 }): ReactNode {
   const listId = `terminal-folder-${section}-${folder.id}`
+  const settled = Boolean(folder.project?.workspaceSettledAt)
   return <div className="thread-folder" data-section={section}>
     <div className="thread-folder__head">
       {/* As in the Threads sidebar, the count moves into the toggle's name now that the row no longer draws it. */}
@@ -90,6 +92,10 @@ function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onTo
       </button>
       {folder.project !== undefined && section === 'open' ? <span className="thread-folder__actions">
         <button type="button" className="thread-nav__action tt-focusable" aria-label={`New terminal in ${folder.title}`} title="New terminal here" onClick={() => onNewTerminal(folder.id)}><SquarePlus size={16} aria-hidden="true" /></button>
+        {/* The same Settle project the Threads sidebar offers: a settled project leaves this list once its terminals close. */}
+        {settled
+          ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Restore project ${folder.title}`} title="Restore project" disabled={globalLaneBusy} onClick={() => void command({ type: 'restore-project', projectId: folder.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
+          : <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle project ${folder.title}`} title="Settle project" disabled={globalLaneBusy} onClick={() => void command({ type: 'settle-project', projectId: folder.id })}><Archive size={16} aria-hidden="true" /></button>}
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
@@ -126,7 +132,7 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
   const folderView = (section: Section) => (folder: TerminalFolder): ReactNode => {
     const key = `${section}:${folder.id}`
     return <FolderView key={key} folder={folder} section={section} panes={panes} stateOf={stateOf} liveClock={liveClock}
-      expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewTerminal={onNewTerminal} busy={busy} />
+      expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewTerminal={onNewTerminal} busy={busy} command={command} globalLaneBusy={state.globalLaneBusy} />
   }
   const { open, closed } = organization
   const closedCount = closed.reduce((count, folder) => count + folder.rows.length, 0)
