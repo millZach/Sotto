@@ -24,12 +24,20 @@ export const threadEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('message-replaced'), at, message: agentMessageSchema }).strict(),
   /** A confirmed rewind: everything projected for this thread is dropped and the new epoch recorded. */
   z.object({ kind: z.literal('messages-reset'), at, historyEpoch: z.string().max(512).optional() }).strict(),
-  z.object({ kind: z.literal('answer-given'), at, requestId: z.string().min(1).max(512), answer: z.string().max(100_000),
+  /**
+   * An answer to a permission request or a question, and who gave it. The answer's own words are not
+   * here: an answer can read like a prompt, and the log says what happened rather than what was said.
+   * A question's chosen options are recorded by their ids alone, for the same reason.
+   */
+  z.object({ kind: z.literal('answer-given'), at, requestId: z.string().min(1).max(512), answer: z.string().max(100_000).optional(),
     approved: z.boolean().optional(), permissionChoice: z.string().max(512).optional(),
+    questionOptionIds: z.array(z.string().min(1).max(512)).max(1_000).optional(),
     attribution: threadEventAttributionSchema }).strict(),
 ])
 export type ThreadEvent = z.infer<typeof threadEventSchema>
 export type ThreadEventKind = ThreadEvent['kind']
+/** The recorded answer, named because the host and the coordinator both hand one around. */
+export type AnswerGivenEvent = Extract<ThreadEvent, { kind: 'answer-given' }>
 
 /** An event as the log holds it: its sequence number and the thread it belongs to. */
 export interface StoredThreadEvent {

@@ -26,8 +26,16 @@ export const memoryItemSchema = z.object({
   authority: z.enum(['preference', 'policy', 'permission']),
 })
 export type MemoryItem = z.infer<typeof memoryItemSchema>
+/** The four risky classes a permission request is classified into, and the only ones the questionnaire offers. */
+export const riskBoundaryActionSchema = z.enum(['spend', 'publish', 'destroy', 'relax-verification'])
+/**
+ * Every action a policy record can be written about. `remote-answer` is not a risky class: it is the
+ * record that a named client, scoped `client:<clientId>`, may have its answers counted as grants
+ * (ADR-0004, ADR-0016). Only the user writes one, and only on this PC.
+ */
+export const memoryPolicyActionSchema = z.enum([...riskBoundaryActionSchema.options, 'remote-answer'])
 export const memoryPolicySchema = z.object({
-  id: z.string().min(1), action: z.enum(['spend', 'publish', 'destroy', 'relax-verification']),
+  id: z.string().min(1), action: memoryPolicyActionSchema,
   resource: z.string().min(1), scope: z.string().min(1),
   effect: z.enum(['allow', 'always-confirm']), source: z.enum(['user', 'questionnaire']),
   note: z.string(), grantedAt: z.iso.datetime(),
@@ -40,7 +48,7 @@ export const memoryCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('complete-questionnaire'),
     answers: z.array(z.object({ topic: memoryTopicSchema, content: contentSchema }).strict()).length(7)
       .refine(answers => new Set(answers.map(answer => answer.topic)).size === 7, 'Answer each topic once'),
-    boundaries: z.array(memoryPolicySchema.shape.action).max(4)
+    boundaries: z.array(riskBoundaryActionSchema).max(4)
       .refine(boundaries => new Set(boundaries).size === boundaries.length, 'Choose each boundary once'),
   }).strict(),
   z.object({ type: z.literal('edit'), id: z.string().min(1), content: contentSchema }).strict(),

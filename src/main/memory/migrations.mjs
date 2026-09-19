@@ -64,6 +64,28 @@ export const migrations = [{
       questionnaireCompletedAt TEXT NOT NULL
     );
   `,
+}, {
+  // A policy record can now say that a paired client's answers may count as grants, scoped to the one
+  // client it names. SQLite cannot widen a CHECK in place, so the table is rebuilt and copied across.
+  version: 4,
+  sql: `
+    CREATE TABLE policies_v4 (
+      id TEXT PRIMARY KEY NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('spend', 'publish', 'destroy', 'relax-verification', 'remote-answer')),
+      resource TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      effect TEXT NOT NULL CHECK (effect IN ('allow', 'always-confirm')),
+      source TEXT NOT NULL CHECK (source IN ('user', 'questionnaire')),
+      note TEXT NOT NULL,
+      grantedAt TEXT NOT NULL,
+      expiresAt TEXT,
+      revokedAt TEXT
+    );
+    INSERT INTO policies_v4 SELECT id, action, resource, scope, effect, source, note, grantedAt, expiresAt, revokedAt FROM policies;
+    DROP TABLE policies;
+    ALTER TABLE policies_v4 RENAME TO policies;
+    CREATE INDEX policies_action_scope ON policies(action, scope);
+  `,
 }]
 
 export const latestMigrationVersion = migrations.at(-1).version

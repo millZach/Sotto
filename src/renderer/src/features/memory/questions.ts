@@ -16,3 +16,9 @@ export const boundaryLabels = {
   destroy: 'Deleting or making irreversible changes',
   'relax-verification': 'Skipping or weakening verification',
 } as const
+
+/** Every action a saved policy can name, including the ones the questionnaire never offers. */
+export const policyActionLabels = {
+  ...boundaryLabels,
+  'remote-answer': 'Answering permissions from a paired client',
+} as const

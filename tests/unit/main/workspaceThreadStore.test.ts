@@ -187,4 +187,23 @@ describe('thread messages in the store rather than the workspace cache', () => {
     expect(rewound.messages.map(message => message.id)).toEqual(['before-u0', 'before-a0'])
     expect(rewound.summary?.messageCount).toBe(2)
   })
+
+  it('records who answered a request, and never the words of the answer', async () => {
+    const directory = await root()
+    const adapter = new FakeProviderHost()
+    const host = await opened(directory, adapter)
+    await host.connect()
+    host.recordAnswer('session-workshop', {
+      kind: 'answer-given', at: at(0), requestId: 'request-1', approved: true, permissionChoice: 'allow-once',
+      attribution: { clientId: 'desktop-window', user: 'tester', transport: 'ipc' },
+    })
+    // Nothing is projected from an answer, so the thread's messages are untouched by one.
+    host.observeThreads(['session-workshop'])
+    expect(host.workspaceSnapshot().threads.find(item => item.id === 'session-workshop')?.messages).toEqual([])
+    const written = await onDisk(directory)
+    expect(written).toContain('answer-given')
+    expect(written).toContain('desktop-window')
+    // The event has no answer field at all: an answer can read like a prompt, so it is never written.
+    expect(written).not.toContain('"answer"')
+  })
 })

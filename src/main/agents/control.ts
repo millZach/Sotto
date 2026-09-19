@@ -14,7 +14,8 @@ import {
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
 import type { AgentCredentials } from './credentials'
-import { approvalWords, classifyRiskyAction, denialWords, type Authority } from './authority'
+import { approvalWords, classifyRiskyAction, denialWords, mayGrantLocally, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
+import { desktopWindowClient, supervisionClient, type ClientIdentity } from './hostService'
 import type { AgentHost, AgentHostCommand } from './host'
 import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
@@ -173,6 +174,10 @@ export class AgentControl {
   private contextActivityAt = Date.now()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
+  /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
+  private readonly localClient: ClientIdentity = desktopWindowClient()
+  /** Sotto's own supervision, so a recorded answer shows it came from Sotto and not from the user. */
+  private readonly supervisionClient: ClientIdentity = supervisionClient(this.localClient.user)
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner; membership: AgentMembership
     bindRequestDraftDecision?: BindRequestDraftDecision
@@ -805,8 +810,13 @@ export class AgentControl {
     this.publish()
     return this.get()
   }
-  command(command: AgentCommand): Promise<AgentState> {
-    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command)
+  /**
+   * One client's command. `client` says who sent it, for the record an answer leaves and for the
+   * policy check that decides whether a remote client's answer counts as a grant. Absent means the
+   * desktop window on this machine, which is the only client that exists today.
+   */
+  command(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
+    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
     const { threadId, draftId } = prompt
     const key = JSON.stringify([threadId, draftId])
@@ -833,11 +843,11 @@ export class AgentControl {
     const task = new Promise<AgentState>((done, fail) => { resolve = done; reject = fail })
     // Reserve before publishing feedback or starting any asynchronous persistence.
     this.promptAdmissions.set(key, { digest, task })
-    try { this.commandUnreserved(prompt).then(resolve, reject) } catch (error) { reject(error) }
+    try { this.commandUnreserved(prompt, client).then(resolve, reject) } catch (error) { reject(error) }
     void task.finally(() => this.promptAdmissions.delete(key)).catch(() => undefined)
     return task
   }
-  private commandUnreserved(command: AgentCommand): Promise<AgentState> {
+  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -928,7 +938,7 @@ export class AgentControl {
       try {
         const admissionError = admission ? await admission : undefined
         if (admissionError instanceof Error) throw admissionError
-        await this.execute(command, turn, manualRetryId, selectionRevision)
+        await this.execute(command, turn, manualRetryId, selectionRevision, client)
       } catch (error) {
         failure = error instanceof Error ? error.message : 'Sotto could not complete this action.'
         this.state.error = failure
@@ -1176,7 +1186,8 @@ export class AgentControl {
     this.observe()
     this.state.pendingRequest = ''
   }
-  private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision): Promise<void> {
+  private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
+    client: ClientIdentity = this.localClient): Promise<void> {
     // Explicit targets survive host observations and queue-driven selection changes.
     if (turn && 'threadId' in command) {
       turn.threadId = command.threadId
@@ -1511,6 +1522,7 @@ export class AgentControl {
       }
       case 'answer': {
         this.canAct()
+        this.guardClientGrant(client)
         const assignment = this.state.assignments.find(item => item.threadId === command.threadId)
         const thread = this.thread(command.threadId)
         if (isThreadClosed(thread)) throw new Error('This thread is settled or archived. Reopen it before answering an old request.')
@@ -1520,7 +1532,7 @@ export class AgentControl {
         const answerDraft = this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
           && draft.text.trim() === command.answer.trim() && !draft.attachments.length)
         if (request.delivery === 'uncertain') throw new Error('This answer may already have arrived. Refresh the original request; it will not be resent.')
-        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn)
+        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, undefined, undefined, client)
         assignment?.handledRequestIds.push(command.requestId)
         this.state.queue = this.state.queue.filter(q => q.requestId !== command.requestId)
         if (answerDraft) {
@@ -1565,6 +1577,38 @@ export class AgentControl {
       throw new Error('Save the current thread draft before handing it to management.')
     }
   }
+  /**
+   * Whether this client's answer may count as a grant at all. The desktop window on this machine
+   * always may; a remote client may only while a policy record names it (ADR-0004). The pairing token
+   * says which client is speaking and nothing more, so this asks policy rather than the token.
+   */
+  private guardClientGrant(client: ClientIdentity): void {
+    const verdict = this.dependencies.authority?.mayGrant(client) ?? mayGrantLocally(client)
+    if (!verdict.allowed) throw new Error(UNPAIRED_CLIENT_ERROR)
+  }
+  /**
+   * Writes who answered into the thread's own log. The answer's words are deliberately left out — an
+   * answer can read like a prompt — so the record is the request, the choice and the client. A failed
+   * write costs the record alone; the answer itself already reached the provider.
+   */
+  private recordAnswerAttribution(command: Extract<AgentHostCommand, { type: 'answer' }>, client: ClientIdentity): void {
+    const record = this.dependencies.host.recordAnswer
+    if (!record) return
+    const optionIds = command.questionAnswers === undefined ? []
+      : [...new Set(Object.values(command.questionAnswers).flatMap(answer => answer.optionIds))]
+    try {
+      record.call(this.dependencies.host, command.threadId, {
+        kind: 'answer-given', at: new Date().toISOString(), requestId: command.requestId,
+        ...(command.approved === undefined ? {} : { approved: command.approved }),
+        ...(command.permissionChoice === undefined ? {} : { permissionChoice: command.permissionChoice }),
+        ...(optionIds.length === 0 ? {} : { questionOptionIds: optionIds }),
+        attribution: { clientId: client.clientId, ...(client.user ? { user: client.user } : {}), transport: client.transport },
+      })
+    } catch {
+      // Never the user's problem and never a lost answer; the log says so by a stable name alone.
+      this.dependencies.logFailure?.('thread-answer-attribution-failed', command.threadId)
+    }
+  }
   private guardAuthority(command: AgentHostCommand, turn?: ActiveTurn): void {
     if (command.type !== 'answer') return
     const thread = this.thread(command.threadId)
@@ -1581,13 +1625,17 @@ export class AgentControl {
     const host = this.dependencies.host
     return threadId && host.refreshThread ? host.refreshThread(threadId) : provider ? host.snapshot(provider) : host.snapshot()
   }
-  private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
+  private async dispatch(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
+    client: ClientIdentity = this.localClient): Promise<void> {
     if (turn) this.dispatchTurns.set(command.commandId, turn)
-    try { await this.dispatchPending(command, turn, validate, draftId) }
+    try { await this.dispatchPending(command, turn, validate, draftId, client) }
     finally { this.dispatchTurns.delete(command.commandId) }
   }
-  private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string): Promise<void> {
+  private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
+    client: ClientIdentity = this.localClient): Promise<void> {
     this.canAct()
+    // Refused here, before an outbox entry exists and long before the provider hears anything.
+    if (command.type === 'answer') this.guardClientGrant(client)
     const threadId = 'threadId' in command ? command.threadId : undefined
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
@@ -1685,6 +1733,7 @@ export class AgentControl {
     }
     if (command.type === 'answer' && result.accepted && !result.uncertain) {
       if (answerIntent) this.recordAnsweredRequest(answerIntent)
+      this.recordAnswerAttribution(command, client)
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
@@ -2129,7 +2178,10 @@ export class AgentControl {
       }
       validate()
       if (requestId) {
-        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: thread.id, requestId, answer: decision.text }, turn, validate)
+        // Supervision answers questions only — never a permission, which `guardAuthority` refuses — and the
+        // record says Sotto sent it rather than the user. Bookkeeping, not a grant.
+        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: thread.id, requestId, answer: decision.text },
+          turn, validate, undefined, this.supervisionClient)
         assignment.handledRequestIds.push(requestId)
       } else {
         const messageId = randomUUID(); assignment.ownMessageIds.push(messageId)

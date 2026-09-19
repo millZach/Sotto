@@ -1,5 +1,6 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
+import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 
 export type AgentHostCommand =
@@ -45,6 +46,11 @@ export interface AgentHost {
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
    */
   threadMessages?(threadId: string): readonly AgentMessage[]
+  /**
+   * Record that a request was answered and which client answered it. Absent on hosts that keep no
+   * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
+   */
+  recordAnswer?(threadId: string, event: AnswerGivenEvent): void
   /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
   loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
