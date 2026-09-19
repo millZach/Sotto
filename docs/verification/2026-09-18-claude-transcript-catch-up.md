@@ -66,5 +66,6 @@ entry still arrives. It reported 1,500 before the fix.
 - Typecheck and eslint clean.
 - Fixed unpackaged build against the real profile: alive at 45 s, main-process working set peak 469 MB.
 
-Not covered here: the Codex rollout reader, which tails rather than replays and did not appear in the
-profile.
+Not covered here: the Codex rollout reader. It also starts at the first byte, but a background poll reads
+at most 1 MB per thread and a thread that is not live buffers its messages instead of publishing, and it
+did not appear in the profile.

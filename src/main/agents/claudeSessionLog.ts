@@ -70,8 +70,7 @@ export class ClaudeSessionLog {
         if (Buffer.byteLength(this.remainder) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
       }
     } finally {
-      await handle.close()
-      if (delivered) this.onSettled?.()
+      try { await handle.close() } finally { if (delivered) this.onSettled?.() }
     }
   }
 }

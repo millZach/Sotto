@@ -33,6 +33,7 @@ describe('Claude transcript catch-up', () => {
     const thread = (await f.host.snapshot()).threads.find(t => t.id === id)!
     expect(thread.messages.filter(message => message.role === 'user').at(-1)?.text).toBe(`Typed in Claude ${entries - 1}`)
     // The interval poll may see the file before the explicit poll does, so allow a poll or two, never one per entry.
+    expect(published).toBeGreaterThanOrEqual(1)
     expect(published).toBeLessThanOrEqual(4)
   })
 })
