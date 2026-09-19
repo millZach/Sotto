@@ -21,3 +21,10 @@
 .working-copy-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
 .working-copy-notice > .working-copy-notice__result { flex-basis: 100%; font-size: 12px; }
 .working-copy .tt-button[aria-disabled='true'], .working-copy-notice .tt-button[aria-disabled='true'] { cursor: progress; opacity: .6; }
+
+.branch-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); }
+.branch-notice > p { flex: 1 1 260px; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.branch-notice strong { color: var(--tt-text); font-weight: 500; }
+.branch-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.branch-notice > .branch-notice__result { flex-basis: 100%; color: var(--tt-error-text); font-size: 12px; }
+.branch-notice .tt-button[aria-disabled='true'] { cursor: progress; opacity: .6; }

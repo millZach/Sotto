@@ -41,6 +41,7 @@ export interface AgentHost {
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
+  restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string

@@ -1,9 +1,10 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw } from 'lucide-react'
+import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
 import type { AgentProject, AgentThread } from '../../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
+import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
 import './workingCopy.css'
 
@@ -50,18 +51,18 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   return { ...common, status: 'ready', directory, label }
 }
 
-type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder'
+type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder' | 'restore-thread-branch'
 function useWorkingCopyAction(threadId: string, command: AgentConnection['command']) {
   // Busy buttons use aria-disabled, not disabled: a disabled button would drop keyboard focus to the page.
   const [running, setRunning] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inFlight = useRef(false)
-  const run = async (type: Action): Promise<boolean> => {
+  const run = async (type: Action, withUncommittedChanges?: boolean): Promise<boolean> => {
     if (inFlight.current) return false
     inFlight.current = true
     setRunning(type); setError(null)
     try {
-      const result = await command({ type, threadId })
+      const result = await command(type === 'restore-thread-branch' ? { type, threadId, withUncommittedChanges } : { type, threadId })
       if (!result || result.error) { setError(result?.error ?? 'Could not confirm this action. Try again.'); return false }
       return true
     } catch { setError('Could not confirm this action. Try again.'); return false }
@@ -141,5 +142,48 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
       <RefreshCw size={15} aria-hidden="true" />{running ? (retry ? 'Retrying...' : 'Checking...') : retry ? 'Retry setup' : 'Check again'}
     </Button>
     {error && error !== facts.error ? <p className="working-copy-notice__result">{error}</p> : null}
+  </div>
+}
+
+/**
+ * Above the pane composer: the thread's worktree is on a different branch from the one its last send went
+ * to. It is information, not a refusal: the next send goes to the branch the folder is on either way, so
+ * the notice waits until there is something to send and can be dismissed. Restore branch switches back,
+ * and asks first when the folder has uncommitted work to carry along.
+ */
+export function ThreadBranchNotice({ thread, project, command, composing }: ThreadWorkingCopyProps & { readonly composing: boolean }): ReactNode {
+  const facts = describeWorkingCopy(thread, project)
+  const sent = thread.worktree?.sentBranch
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const { running, error, run } = useWorkingCopyAction(thread.id, command)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const changed = facts.status === 'ready' && facts.mode === 'independent' && sent !== undefined && sent !== facts.branch
+  // A later switch is a new thing to say, so dismissal is remembered for this pair of branches alone.
+  const change = `${thread.id}
+${sent ?? ''}
+${facts.branch ?? ''}`
+  if (!changed || !composing || dismissed === change) return null
+  const restore = (withUncommittedChanges?: boolean): void => {
+    if (running) return
+    void run('restore-thread-branch', withUncommittedChanges)
+  }
+  return <div className="branch-notice" role="status"
+    onKeyDown={event => { if (event.key === 'Escape' && !confirming) { event.stopPropagation(); setDismissed(change) } }}>
+    <p><strong>Branch changed, was {sent}.</strong> {facts.branch
+      ? <>Sending will continue on {facts.branch}.</>
+      : <>This folder has no branch checked out; sending will continue there.</>}</p>
+    <Button ref={trigger} variant="secondary" aria-disabled={running !== null} aria-label={`Restore branch ${sent}`}
+      onClick={() => { if (facts.dirty) setConfirming(true); else restore() }}>
+      <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? 'Switching...' : 'Restore branch'}
+    </Button>
+    <Button variant="ghost" aria-label="Dismiss the branch notice" onClick={() => setDismissed(change)}>Dismiss</Button>
+    {error ? <p className="branch-notice__result" role="alert">{error}</p> : null}
+    {confirming ? <ConfirmationDialog title={`Switch back to ${sent}?`} danger={false}
+      description={<>This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict.</>}
+      confirmLabel="Switch branch" cancelLabel="Keep this branch" fallbackFocusRef={trigger}
+      failureMessage="The branch could not be switched. Nothing was changed."
+      onConfirm={async () => run('restore-thread-branch', true)}
+      onCancel={() => setConfirming(false)} /> : null}
   </div>
 }

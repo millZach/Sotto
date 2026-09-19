@@ -2,13 +2,22 @@ import { randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
-import { mergeAgentActivities } from '../../shared/agentActivity'
+import { isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+
+/** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
+const WORKTREE_REFRESH_DELAY_MS = 1_500
+/** Work that can leave the worktree on another branch: a finished turn, a shell command it ran, or files it changed. */
+const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', 'command', 'file-change', 'tool'])
+/** The finished records that could have moved HEAD, by ID, so only new ones ask for a re-read. */
+function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
+  return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
+}
 
 const workspaceSchema = z.object({
   snapshot: agentHostSnapshotSchema,
@@ -44,6 +53,8 @@ export class WorkspaceHost implements AgentHost {
   private readonly preparations = new Map<string, Promise<void>>()
   private readonly worktrees: ThreadWorktrees
   private checkpointHooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
+  /** One pending worktree re-read per thread, so a busy turn asks for a single read rather than one per record. */
+  private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
 
   setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
   rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
@@ -57,7 +68,8 @@ export class WorkspaceHost implements AgentHost {
     return pending
   }
 
-  constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true) {
+  constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.worktrees = new ThreadWorktrees(directory)
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
@@ -176,7 +188,43 @@ export class WorkspaceHost implements AgentHost {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = { ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }
+    // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
+    for (const thread of this.state.snapshot.threads) {
+      const old = previous.threads.find(item => item.id === thread.id)
+      if (!old) continue
+      const before = settledHeadMovers(old.activities)
+      if (old.status === 'running' && thread.status !== 'running'
+        || [...settledHeadMovers(thread.activities)].some(id => !before.has(id))) this.scheduleWorktreeRefresh(thread.id)
+    }
     this.dirty = true
+  }
+  /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
+  private scheduleWorktreeRefresh(threadId: string): void {
+    const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
+    if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
+    const timer = setTimeout(() => { this.worktreeRefreshes.delete(threadId); void this.refreshWorktreeRecord(threadId) }, this.worktreeRefreshDelayMs)
+    timer.unref?.()
+    this.worktreeRefreshes.set(threadId, timer)
+  }
+  /** Reads the folder on the thread's own lane and publishes only a record that actually changed.
+   * A folder problem found here is left for the next send to report: a background read refuses nothing. */
+  private refreshWorktreeRecord(threadId: string): Promise<void> {
+    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
+      if (worktree?.mode !== 'independent' || worktree.status !== 'ready') return
+      let inspected: AgentWorktree
+      try { inspected = await this.worktrees.inspect(worktree) } catch { return }
+      const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
+      if (current?.worktree?.status !== 'ready') return
+      if (inspected.branch === current.worktree.branch && inspected.dirty === current.worktree.dirty) return
+      current.worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
+      this.dirty = true
+      try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+      this.publish()
+    })
+    this.lanes.set(threadId, pending)
+    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
+    return pending
   }
   private flush(): Promise<void> {
     // This write covers whatever a waiting one would have written, so it takes its place.
@@ -314,6 +362,45 @@ export class WorkspaceHost implements AgentHost {
     this.lanes.set(threadId, pending)
     void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
     return pending
+  }
+  /**
+   * Switches this thread's worktree back to the branch of its last send, because the user pressed Restore
+   * branch. `withUncommittedChanges` is their answer to the confirmation; without it a worktree with
+   * uncommitted work is left exactly as it is.
+   */
+  async restoreThreadBranch(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot> {
+    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      await this.initialize()
+      const worktree = this.thread(threadId).worktree
+      if (worktree?.mode !== 'independent' || worktree.status !== 'ready') throw new Error('This thread has no working copy of its own to switch.')
+      const target = worktree.sentBranch
+      if (!target) throw new Error('Sotto has not sent to this thread yet, so there is no earlier branch to restore.')
+      const inspected = await this.worktrees.inspect(worktree)
+      if (inspected.dirty && !withUncommittedChanges && inspected.branch !== target) {
+        this.thread(threadId).worktree = { ...inspected, sentBranch: target }
+        this.dirty = true; await this.flush().catch(() => undefined); this.publish()
+        throw new Error(`This folder has uncommitted changes. They move with the switch to ${target}. Confirm to switch.`)
+      }
+      this.thread(threadId).worktree = { ...(await this.worktrees.switchBranch(inspected, target)), sentBranch: target }
+      this.dirty = true
+      try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+      this.publish()
+      return this.workspaceSnapshot()
+    })
+    this.lanes.set(threadId, pending)
+    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
+    return pending
+  }
+  /** The branch this thread's work went to, so the pane can say what changed under it afterwards. */
+  private async recordSentBranch(threadId: string): Promise<void> {
+    const worktree = this.thread(threadId).worktree
+    if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || worktree.sentBranch === worktree.branch) return
+    if (worktree.branch === undefined) return // A detached HEAD has no branch to remember.
+    worktree.sentBranch = worktree.branch
+    this.dirty = true
+    // The prompt is about to go out; a cache write that fails must not refuse the send.
+    try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+    this.publish()
   }
   async threadWorkingDirectory(threadId: string): Promise<string> {
     await this.initialize()
@@ -463,7 +550,11 @@ export class WorkspaceHost implements AgentHost {
     // Native command uncertainty belongs to the existing outbox; do not add a failing
     // history read after dispatch that could turn unknown delivery into a rejection.
     // Never send into a deleted/failed working copy, even if the native client is still live.
-    if (command.type === 'send' || command.type === 'steer') await this.threadWorkingDirectory(thread.id)
+    if (command.type === 'send' || command.type === 'steer') {
+      await this.threadWorkingDirectory(thread.id)
+      // The folder was just read, so this is the branch the prompt goes to; the pane compares against it afterwards.
+      await this.recordSentBranch(thread.id)
+    }
     if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
     return this.inner.execute(command)
   }

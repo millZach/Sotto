@@ -141,6 +141,24 @@ export class ThreadWorktrees {
     return { ...metadata, status: 'ready', error: undefined }
   }
 
+  /**
+   * Switches the thread's own worktree back to `branch`, which the user asked for by hand: Sotto never
+   * switches a branch on its own (ADR-0014). The folder is verified first, the branch must already exist,
+   * and uncommitted work is left where it is for Git to carry across or refuse.
+   */
+  async switchBranch(metadata: AgentWorktree, branch: string): Promise<AgentWorktree> {
+    if (metadata.mode !== 'independent') throw new Error('A shared working copy keeps the branch its folder is on. Switch it where you opened it.')
+    // The name came from Git itself; refuse anything that could read as an option or a path.
+    if (!/^(?!-)(?!.*\.\.)[^\s:?*~^[\]\\]+$/u.test(branch)) throw new Error('That branch name cannot be restored. Switch it in the folder itself.')
+    const inspected = await this.inspect(metadata)
+    if (inspected.branch === branch) return inspected
+    try { await this.git(inspected.path!, ['rev-parse', '--verify', `refs/heads/${branch}`]) }
+    catch { throw new Error(`The branch ${branch} no longer exists in this repository. Nothing was changed.`) }
+    // --no-guess never creates a branch from a remote; a conflicting change makes Git refuse and nothing moves.
+    await this.git(inspected.path!, ['switch', '--no-guess', branch])
+    return this.inspect(inspected)
+  }
+
   async inspect(metadata: AgentWorktree): Promise<AgentWorktree> {
     if (!metadata.path) throw new Error('The working folder is not allocated. Retry setup.')
     const path = await existingWorkingDirectory(metadata.path)

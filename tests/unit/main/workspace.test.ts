@@ -10,8 +10,8 @@ import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
-async function fixture() {
-  const f = await workspaceFixture()
+async function fixture(options?: { worktreeRefreshDelayMs?: number }) {
+  const f = await workspaceFixture(undefined, options)
   cleanup.push(async () => { await f.stop(); await f.remove() })
   return f
 }
@@ -239,6 +239,61 @@ describe('durable project/thread organization', () => {
     await f.host.threadWorkingDirectory('local')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ status: 'ready', branch: 'feat/user-chosen' })
     expect(published.at(-1)?.threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('feat/user-chosen')
+  })
+
+  it('re-reads the worktree after finished work moved HEAD, and remembers the branch each send went to', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 5 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let checkedOut = 'sotto/thread-fixture'
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    const inspect = vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: checkedOut }))
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree)
+      .toMatchObject({ branch: 'sotto/thread-fixture', sentBranch: 'sotto/thread-fixture' })
+    // The agent switched branches inside the folder mid-turn: no send, only a finished command.
+    checkedOut = 'feat/agent-chose'
+    const reads = inspect.mock.calls.length
+    const session = f.adapters.codex.state.threads.at(-1)!
+    session.activities = [{ id: 'command-1', turnId: 'turn-1', sequence: 0, kind: 'command', status: 'completed', title: 'Ran a command' }]
+    f.adapters.codex.emit()
+    session.activities = [...session.activities, { id: 'command-2', turnId: 'turn-1', sequence: 1, kind: 'file-change', status: 'completed', title: 'Edited files' }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('feat/agent-chose'))
+    expect(inspect.mock.calls.length - reads).toBe(1) // one re-read for the burst, not one per record
+    // The branch of the last send is what the pane compares against, so it stays where it was.
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.sentBranch).toBe('sotto/thread-fixture')
+  })
+
+  it('restores the branch of the last send by hand, and leaves uncommitted work alone until it is confirmed', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let checkedOut = 'sotto/thread-fixture'
+    let dirty = true
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: checkedOut, dirty }))
+    const switched = vi.spyOn(ThreadWorktrees.prototype, 'switchBranch').mockImplementation(async (metadata, branch) => { checkedOut = branch; return { ...metadata, status: 'ready', branch, dirty } })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    checkedOut = 'feat/agent-chose'
+    await expect(f.host.restoreThreadBranch('local', false)).rejects.toThrow('uncommitted changes')
+    expect(switched).not.toHaveBeenCalled()
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'feat/agent-chose', sentBranch: 'sotto/thread-fixture' })
+    const restored = await f.host.restoreThreadBranch('local', true)
+    expect(switched).toHaveBeenCalledWith(expect.objectContaining({ branch: 'feat/agent-chose' }), 'sotto/thread-fixture')
+    expect(restored.threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'sotto/thread-fixture', sentBranch: 'sotto/thread-fixture' })
+    // A clean folder needs no confirmation.
+    dirty = false; checkedOut = 'feat/agent-chose'
+    expect((await f.host.restoreThreadBranch('local', false)).threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('sotto/thread-fixture')
+    await expect(f.host.restoreThreadBranch('other', false)).rejects.toThrow('not known to Sotto')
   })
 
   it('marks the working copy error when its preparation fails, without turning creation into a rejection', async () => {

@@ -1,6 +1,6 @@
 # A thread follows its worktree's branch
 
-Accepted September 18, 2026, amended September 19, 2026 after the second thread in one evening stopped accepting messages. Sotto no longer compares the branch checked out in a thread's worktree with the branch it recorded at creation. It records what it sees.
+Accepted September 18, 2026, amended twice on September 19, 2026 (a missing folder is put back; a branch switch is said in the pane) after the second thread in one evening stopped accepting messages. Sotto no longer compares the branch checked out in a thread's worktree with the branch it recorded at creation. It records what it sees.
 
 ## Context
 
@@ -27,4 +27,10 @@ Amended September 19, 2026: a folder that is simply gone is put back rather than
 
 ## Consequences
 
-The recorded branch is descriptive from now on, not a constraint. Anything that renders it must tolerate it changing between sends and being absent for a detached HEAD, which `ThreadWorkingCopy` and the Tools panel already did. Two threads can end up on branches with unrelated names and nothing in Sotto minds. The one guarantee that remains is the folder: a send never goes to a directory that is not the thread's own registered worktree. Since the amendment, a folder that vanished is put back there first, so the guarantee is met by recreating the checkout rather than by refusing the message; a user who deletes a thread's folder loses only what was never committed.
+The recorded branch is descriptive from now on, not a constraint. Anything that renders it must tolerate it changing between sends and being absent for a detached HEAD, which `ThreadWorkingCopy` and the Tools panel already did. Two threads can end up on branches with unrelated names and nothing in Sotto minds. The one guarantee that remains is the folder: a send never goes to a directory that is not the thread's own registered worktree. Since the first amendment, a folder that vanished is put back there first, so the guarantee is met by recreating the checkout rather than by refusing the message; a user who deletes a thread's folder loses only what was never committed.
+
+## Amendment, September 19, 2026: the pane says when the branch moved
+
+Following the branch silently left the user with no way back. The thread pane now says so and offers the way: Sotto records the branch each send went to on the thread's working-copy record, re-reads the worktree after work that could have moved HEAD as well as on send, and shows a dismissible **Branch changed** notice above the composer once there is a draft to continue. Its **Restore branch** runs `git switch --no-guess` back to the branch of the last send, and only after the user answers a confirmation when the folder has uncommitted changes.
+
+This does not reopen "restore the recorded branch automatically", which stays rejected. The decision above is about what Sotto does on its own: it still never switches a branch unasked, still never resets or removes anything, and a send still adopts whatever branch the folder is on. The switch here is one the user pressed, with the uncommitted work named before it happens.

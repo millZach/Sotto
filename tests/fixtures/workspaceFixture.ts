@@ -6,7 +6,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { FakeProviderHost } from './fakeProviderHost'
 
-export async function workspaceFixture(root?: string) {
+export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number }) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-workspace-'))
   const registry = new ThreadRegistry(root)
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
@@ -22,7 +22,7 @@ export async function workspaceFixture(root?: string) {
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry) } })
-  const host = new WorkspaceHost(native, root, () => history)
+  const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs)
   await host.initialize()
   return { root, registry, adapters, host, native, setHistory: (value: boolean) => { history = value },
     stop: async () => { host.disconnect(); await host.privacyChanged(); await registry.flush() },

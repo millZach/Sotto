@@ -78,6 +78,20 @@ describe('independent working-copy allocation', () => {
     const elsewhere = join(f.root, 'elsewhere'); await mkdir(elsewhere)
     await expect(f.service.inspect({ ...a, path: elsewhere })).rejects.toThrow('no longer this thread')
   })
+  it('switches back to a named branch when the user asks, carrying uncommitted work and refusing anything else', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const started = a.branch!
+    await git(a.path!, ['checkout', '-b', 'feat/agent-chose'])
+    await writeFile(join(a.path!, 'tracked.txt'), 'work in progress')
+    const restored = await f.service.switchBranch(a, started)
+    expect(restored).toMatchObject({ status: 'ready', branch: started, dirty: true })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('work in progress')
+    expect(await f.service.switchBranch(restored, started)).toMatchObject({ branch: started })
+    await expect(f.service.switchBranch(a, 'never-made')).rejects.toThrow('no longer exists')
+    await expect(f.service.switchBranch(a, '--orphan')).rejects.toThrow('cannot be restored')
+    await expect(f.service.switchBranch({ mode: 'shared', status: 'ready', path: f.project }, started)).rejects.toThrow('shared working copy')
+    expect((await f.service.inspect(a)).branch).toBe(started)
+  })
   it('requires an initial Git commit but permits a deliberate shared empty or non-Git folder', async () => {
     const f = await fixture(false)
     await expect(f.service.allocate(f.project, 'independent')).rejects.toThrow('no commit')
