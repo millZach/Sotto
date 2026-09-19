@@ -5,16 +5,17 @@ import { dirname, join, resolve } from 'node:path'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AgentHost } from '../../src/main/agents/host'
+import type { AdapterSessionOptions } from '../integration/adapterContract'
 
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000) {
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
-    args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15 })
+    args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...session })
   const registry = new ThreadRegistry(root)
   const host: AgentHost = wrapped ? new SottoThreadHost('codex', adapter, registry) : adapter
   const script = (value: unknown) => writeFile(join(root, 'script.json'), JSON.stringify(value))
@@ -51,7 +52,15 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
       delayNextAck: (method: string) => script({ delay: { method, ms: requestTimeoutMs + 1000 }, suppressNotifications: true }),
       requests,
-      restart: async () => { host.disconnect(); await adapter.closed(); return codexFixture(root, wrapped, requestTimeoutMs) },
+      restart: async () => { host.disconnect(); await adapter.closed(); return codexFixture(root, wrapped, requestTimeoutMs, session) },
+    },
+    sessions: {
+      // One app-server child serves every thread; a session start is this thread's own resume.
+      starts: async (id: string) => {
+        const codexThreadId = await realId(id)
+        return (await requests()).filter(record => record.method === 'thread/resume' && record.params?.threadId === codexThreadId).length
+      },
+      stopped: async (id: string) => !adapter.resumedThreads().includes(wrapped ? registry.byThread(id)!.sessionId : id),
     },
     action,
     cleanup: async () => {
