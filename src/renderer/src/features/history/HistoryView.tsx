@@ -86,29 +86,6 @@ export function transcriptFacts(entry: HistoryEntry): { lead: string; rest: stri
   return { lead, rest: `${languageLabel(entry.language)}, ${modelLabel(entry.modelPreset)}. Kept on this computer only.` }
 }
 
-export interface HistoryFooterProps {
-  readonly enabled: boolean
-  readonly status: HistoryStatus
-  readonly count: number
-  readonly onClear: () => void
-}
-
-/**
- * The footer's sentence for the History page, with Clear history beside it
- * whenever there is something to clear.
- */
-export function HistoryFooter({ enabled, status, count, onClear }: HistoryFooterProps): ReactNode {
-  const clearable = status === 'ready' && count > 0
-  let sentence = 'Kept on this computer only.'
-  if (!enabled) sentence = clearable ? 'History is off. Older transcripts are still here.' : 'History is off.'
-  return (
-    <span className="history-footer">
-      {sentence}
-      {clearable ? <button type="button" className="history-footer__clear tt-focusable" onClick={onClear}>Clear history</button> : null}
-    </span>
-  )
-}
-
 interface DayGroup {
   readonly label: string
   readonly entries: HistoryEntry[]
@@ -117,8 +94,8 @@ interface DayGroup {
 /**
  * History as the Dictate room's last-transcript row, continued: one reading
  * column, day labels, and every transcript a row that opens in place with its
- * facts, Copy and Delete. Search lives in the head; Clear history in the
- * footer (HistoryFooter), which opens the confirmation this view renders.
+ * facts, Copy and Delete. Search and Clear history live in the head, and
+ * Clear history opens the confirmation this view renders.
  */
 export function HistoryView({
   entries,
@@ -258,6 +235,7 @@ export function HistoryView({
                   </button>
                 ) : null}
               </label>
+              {status === 'ready' && entries.length > 0 ? <Button variant="ghost" className="history-head__clear" onClick={() => setClearOpen(true)}>Clear history</Button> : null}
             </>
           ) : null}
         </div>

@@ -1,5 +1,5 @@
 import React, { StrictMode } from 'react'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -182,17 +182,21 @@ describe('shared main-window frame', () => {
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
   })
 
-  it('keeps one strip and both window controls on a page under the strip', async () => {
+  it('seats the Threads sidebar beside Dictate, with the window controls above the room and no strip', async () => {
     const { container } = renderApp(createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
     }))
     await openPage('home')
 
     await waitFor(() => expect(document.body).toHaveTextContent(/ready when you are/i))
-    expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(0)
     expect(container.querySelectorAll('.app-titlebar, .app-navigation, .dictation-strip')).toHaveLength(0)
-    expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
+    const sidebar = screen.getByRole('complementary', { name: 'Thread sidebar' })
+    expect(within(sidebar).getByText('Sotto')).toBeInTheDocument()
+    expect(within(sidebar).getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
+    expect(container.querySelector('.app-room__top')).toContainElement(screen.getByRole('button', { name: 'Minimize Sotto' }))
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Add your OpenRouter API key in Settings')
   })
 
   it('opens on Threads, which owns the whole window and carries the window controls once', async () => {
@@ -436,7 +440,7 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent(/add your openrouter api key in settings/i)
   })
 
-  it('carries a release offer through the footer control: download, a toast when it lands, then a confirmed restart', async () => {
+  it('carries a release offer through the update control: download, a toast when it lands, then a confirmed restart', async () => {
     const user = userEvent.setup()
     let publish: ((status: UpdateStatus) => void) | null = null
     const downloadUpdate = vi.fn(async () => {
@@ -467,7 +471,7 @@ describe('Sotto application onboarding integration', () => {
 
     await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
     const offer = await screen.findByRole('button', { name: 'Update 3.5.0 ready to download' })
-    expect(screen.getByRole('contentinfo')).toContainElement(offer)
+    expect(screen.getByRole('complementary', { name: 'Thread sidebar' })).toContainElement(offer)
     expect(document.querySelector('.update-banner')).toBeNull()
     await user.click(offer)
     expect(downloadUpdate).toHaveBeenCalledOnce()
@@ -648,7 +652,8 @@ describe('Sotto application onboarding integration', () => {
     // voice coordinator, so the switch offers Dictate and Threads only.
     expect(screen.getByRole('tab', { name: 'Threads' })).toBeVisible()
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
-    for (const destination of ['Threads', 'Chats', 'History', 'Settings']) {
+    // The sidebar's foot carries the other pages as icon links; Threads is the switch's own tab.
+    for (const destination of ['Chats', 'History', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name: destination })).toBeVisible()
     }
     await user.click(screen.getByRole('link', { name: 'Chats' }))

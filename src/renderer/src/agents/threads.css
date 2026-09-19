@@ -1,6 +1,8 @@
 /* Project folders beside a full conversation workspace.
-   Type: message and composer text 16px, controls 14px, secondary text 12px. Narrow windows recompose, never shrink type. */
-.threads-view {
+   Type: message and composer text 16px, controls 14px, secondary text 12px. Narrow windows recompose, never shrink type.
+   The sidebar colours are set on the sidebar as well as on the page, since the sidebar (and the columns that wear
+   its frame) now stand beside every page, not only this one. */
+.threads-view, .thread-nav {
   --threads-sidebar: var(--tt-sidebar, #050706);
   --threads-selected: var(--tt-selected, #101916);
   --threads-selected-border: var(--tt-selected-border, #253d36);
@@ -13,8 +15,8 @@
   --threads-attention: var(--tt-attention, var(--tt-warning, #f0b45c));
   --threads-warning-text: var(--tt-warning-text, var(--tt-warning, #f0b45c));
   --threads-on-accent: var(--tt-on-accent, #000);
-  flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden;
 }
+.threads-view { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden; }
 
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }

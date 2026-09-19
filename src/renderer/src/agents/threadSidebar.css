@@ -14,7 +14,13 @@
    drag region: every control in it opts back out. macOS keeps room at the left for the traffic lights. */
 .thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; user-select: none; }
 .thread-nav--mac .thread-nav__top { padding-left: 78px; }
-.thread-nav__glyph { flex: none; width: 18px; height: 18px; margin-right: auto; }
+/* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
+   down). On macOS the traffic lights take the left end of the row, and what is left of the 264px does not hold
+   the wordmark beside the mode switch and the two actions: the mark stands alone. */
+.thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
+.thread-nav__glyph { flex: none; width: 18px; height: 18px; }
+.thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav--mac .thread-nav__wordmark { display: none; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
 

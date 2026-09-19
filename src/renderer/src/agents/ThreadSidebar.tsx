@@ -42,24 +42,33 @@ function RowTime({ row, live }: { readonly row: ThreadRow; readonly live: boolea
 }
 
 /**
+ * What the last sidebar knew: which threads were running and which have finished unseen. The sidebar is mounted
+ * afresh on every page, so this lives outside it, or the mark would fall each time you changed page.
+ */
+const finished = { working: new Set<string>() as ReadonlySet<string>, unseen: new Set<string>() as ReadonlySet<string> }
+/** Test-only: forget what the sidebar has seen, as a restart does. */
+export function forgetFinishedUnseen(): void { finished.working = new Set(); finished.unseen = new Set() }
+
+/**
  * Threads that finished while you were looking somewhere else. It is about what you have seen, not about the
- * thread itself, so it stays here: opening the thread clears it and a restart forgets it.
+ * thread itself, so it stays here: opening the thread clears it and a restart forgets it. Beside another page no
+ * thread is on screen, so a thread left open on Threads earns the mark too, and loses it when you return.
  */
 function useFinishedUnseen(threads: readonly AgentThread[], onScreen: readonly string[]): ReadonlySet<string> {
-  const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => new Set())
-  const working = useRef<ReadonlySet<string>>(new Set())
+  const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => finished.unseen)
   // A thread ID is opaque, so the key joins on a character one cannot contain.
   const onScreenKey = [...onScreen].sort().join('\n')
   const seen = useMemo(() => new Set(onScreenKey === '' ? [] : onScreenKey.split('\n')), [onScreenKey])
   useEffect(() => {
     const live = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
-    const stopped = [...working.current].filter(id => !live.has(id))
-    working.current = live
+    const stopped = [...finished.working].filter(id => !live.has(id))
+    finished.working = live
     // The mark lasts only while the thread is still finished, still known, and still out of sight.
-    const finished = (id: string): boolean => !seen.has(id) && threads.some(thread => thread.id === id && thread.status === 'idle')
+    const finishedUnseen = (id: string): boolean => !seen.has(id) && threads.some(thread => thread.id === id && thread.status === 'idle')
     setUnseen(current => {
-      const next = new Set([...current, ...stopped].filter(finished))
-      return next.size === current.size && [...next].every(id => current.has(id)) ? current : next
+      const next = new Set([...current, ...stopped].filter(finishedUnseen))
+      finished.unseen = next.size === current.size && [...next].every(id => current.has(id)) ? current : next
+      return finished.unseen
     })
   }, [threads, seen])
   return unseen
@@ -179,11 +188,13 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
 export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
-  currentThreadId, openThreadIds, onOpenBeside, onDragThread }: PaneActions & {
+  currentThreadId, openThreadIds, onOpenBeside, onDragThread, title }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
   readonly query: string
+  /** The hidden page heading the frame carries; `null` beside a page that has its own. */
+  readonly title?: string | null
   /** Which mode the sidebar's switch shows as current, and where the other one leads. */
   readonly mode?: SidebarMode
   readonly onMode?: (mode: SidebarMode) => void
@@ -217,7 +228,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledNeeds = settled.reduce((count, folder) => count + folder.needs, 0)
   const settledShown = settledOpen || searching
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
-    onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen}>
+    onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} title={title}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open threads.' : state.host.projects.length ? 'All caught up.' : 'Add a project folder to start.'}</p> : null}

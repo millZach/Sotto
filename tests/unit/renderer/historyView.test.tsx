@@ -3,12 +3,12 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HistoryView as HistoryContent, HistoryFooter, transcriptFacts, type HistoryViewProps } from '../../../src/renderer/src/features/history/HistoryView'
+import { HistoryView as HistoryContent, transcriptFacts, type HistoryViewProps } from '../../../src/renderer/src/features/history/HistoryView'
 import type { HistoryEntry } from '../../../src/shared/history'
 
 function HistoryView(props: HistoryViewProps): ReactNode {
   const [clearOpen, setClearOpen] = useState(false)
-  return <><HistoryContent {...props} clearOpen={clearOpen} onClearOpenChange={setClearOpen} /><HistoryFooter enabled={props.enabled} status={props.status} count={props.entries.length} onClear={() => setClearOpen(true)} /></>
+  return <HistoryContent {...props} clearOpen={clearOpen} onClearOpenChange={setClearOpen} />
 }
 
 afterEach(cleanup)
@@ -162,7 +162,6 @@ describe('HistoryView', () => {
 
   it('keeps existing local entries visible and clearable after new history is disabled', () => {
     render(<HistoryView {...baseProps} enabled={false} />)
-    expect(screen.getByText(/older transcripts are still here/i)).toBeVisible()
     expect(screen.getAllByText('Alpha note')[0]).toBeVisible()
     expect(screen.getByRole('button', { name: /clear history/i })).toBeEnabled()
   })

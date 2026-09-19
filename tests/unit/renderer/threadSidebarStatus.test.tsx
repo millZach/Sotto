@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { forgetFinishedUnseen } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, workingLabel } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
@@ -35,7 +36,7 @@ function mount(state: AgentState, now: number | undefined) {
   return live
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); forgetFinishedUnseen() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('a row that needs you says what it needs', () => {
