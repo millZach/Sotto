@@ -38,7 +38,7 @@ async function longHistory() {
 
 it('reads a long Grok history from a cursor: a bounded catch-up, then one page per poll', async () => {
   const { id } = await longHistory()
-  await f!.host.connect()
+  f!.host.observeThreads?.([id]); await f!.host.connect()
   // Connecting reads what one poll is allowed to read rather than the whole history.
   const afterConnect = await historyReads()
   expect(afterConnect).toBeGreaterThan(0)
@@ -60,8 +60,8 @@ it('reads a long Grok history from a cursor: a bounded catch-up, then one page p
 })
 
 it('reads a shortened Grok history again from its start', async () => {
-  await longHistory()
-  await f!.host.connect()
+  const { id } = await longHistory()
+  f!.host.observeThreads?.([id]); await f!.host.connect()
   await caughtUp()
   // A rewind or a durable coalesce leaves fewer updates than Sotto has already read.
   await f!.script({ historyVisibleCount: 100 })

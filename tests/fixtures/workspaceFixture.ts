@@ -25,7 +25,7 @@ export async function workspaceFixture(root?: string, options?: { worktreeRefres
   const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs)
   await host.initialize()
   return { root, registry, adapters, host, native, setHistory: (value: boolean) => { history = value },
-    stop: async () => { host.disconnect(); await host.privacyChanged(); await registry.flush() },
+    stop: async () => { host.disconnect(); await host.privacyChanged(); await registry.flush(); host.dispose() },
     remove: async () => {
       if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-workspace-')) throw new Error('Unexpected test directory')
       await rm(root, { recursive: true, force: true })

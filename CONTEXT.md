@@ -73,6 +73,34 @@ Answering a question or permission request and creating a project are also part 
 
 **Takeover.** The user sends a message to an assigned thread directly through the provider (for example `codex resume` in the Codex CLI). The adapter reports that message as a user message with no command ID, so the coordinator switches the assignment to manual mode and keeps watching. Opening or reading a thread is not a takeover.
 
+## History and the host
+
+**Event store.** The SQLite database `threads.sqlite` in the user data folder, opened by `node:sqlite` behind `ThreadStore`, and the source of truth for what was said in every thread. Providers are read to append to it and never asked to rebuild it; their transcripts are read on demand for rewind, takeover detection and a capped import (ADR-0016). It is a second database beside the memory store, which keeps memories and policy records and is not touched by history. Avoid: "message cache", "transcript backup".
+
+**Thread event.** One append-only row in the event store's `events` table: a sequence number, the Sotto thread ID, a kind, a time and a JSON payload. The kinds are `message-added`, `message-text-appended` (a streaming message grew by a suffix), `message-replaced` (a whole message changed in a way an append cannot say), `messages-reset` (a confirmed rewind, carrying the new history epoch) and `answer-given` (a permission or question answer, with its attribution). Nothing is edited or deleted to change what happened; a correction is another event. Avoid: "log line", "record" for one of these.
+
+**Sequence number.** The event store's own counter, one per thread event across all threads, and the thing a client resumes from: "everything after N" is the whole catch-up protocol. Distinct from a thread detail's `revision`, which is what one window holds for one thread, and from a message's position in the projection. Avoid: "offset", "version".
+
+**Projection.** A table derived from the event log for reading, currently `messages`: one row per message of a thread, keyed by position, which is what a thread pane draws. A projection is rebuilt from the log when it is missing or when the schema version moves, and is never written to by hand. Avoid: "view", "cache".
+
+**History window.** How much of a thread's history a pane holds: the newest ten turns when it opens, then twenty more each time the user presses **Show earlier messages**. A turn here is a user message and the assistant messages that follow it. The detail says whether anything older exists (`earlierAvailable`), so opening a long thread costs the same as opening a short one.
+
+**Watched set.** The threads the host keeps in memory and keeps a provider session for: the threads on screen, plus assigned or queued ones. It is what `observeThreads` names. A thread outside it carries its summary alone, so startup and publish cost follow the open panes rather than the whole archive. Avoid: "active threads", "open threads".
+
+**Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
+
+**Host.** The process that owns the providers, the worktrees and the event store. Today it is Electron main, and the word is also the suffix of the interfaces inside it (`AgentHost`, `WorkspaceHost`); in the host-and-client sense it means the whole owning side, whichever machine it runs on. Avoid: "server", "backend".
+
+**Host service.** The interface the host offers a client and nothing more: the event stream after a sequence number, the shell, one thread's detail, and commands. `HostService` in `src/main/agents/hostService.ts`, with `LocalHostService` over `AgentControl` as the only implementation today; the window's commands go through it, so a second transport is a new client rather than a rewrite. Distinct from `AgentHost`, which is the interface a provider adapter implements on the other side of the coordinator. Avoid: "API", "server interface".
+
+**Client identity.** Who is speaking to the host service, carried on every command: `{ clientId, user, transport }`. The desktop window is `desktop-window` over `ipc`; Sotto's own supervision is `sotto-supervision`, so a record shows an answer that came from Sotto rather than the user; a paired remote client would be its pairing ID over `socket`. It becomes the attribution on an `answer-given` event, and `Authority.mayGrant` is where it is asked whether that client's answer may count as a grant. The user name is recorded locally and never logged or sent. Avoid: "session", "caller".
+
+**Client.** The side that draws threads and sends commands, speaking only the event stream and the thread interface and holding no provider identity of its own. Today it is the app's window over IPC; a paired remote client would speak the same two things over a socket (ADR-0016). Avoid: "frontend", "UI" when the split is what is meant.
+
+**Attribution.** Who gave an answer, carried on every `answer-given` event: `{ clientId, user, transport }`, where transport is `ipc` for the desktop window on this machine or `socket` for a paired remote client. It is evidence of who answered and never authority in itself; policy records decide whether an answer counts as a grant (ADR-0004), and the local desktop window always may answer. Avoid: "identity", "actor".
+
+**Pairing.** How a client beyond loopback is admitted: a flow that issues that client a token, signed sessions over it and TLS through Tailscale Serve. `PairedClients` in `src/main/agents/pairing.ts` holds the records — a short-lived single-use code, then a client ID and a token kept only as a hash — and a per-install secret signs the sessions. Being paired is admission and not authority: a `remote-answer` policy record scoped `client:<clientId>` is what lets a client's answers count as grants (ADR-0004). Which remote path ships first, and what pairing looks like to the user, are open decisions (ADR-0016); no listening socket exists until one is made, and the first that does changes the README's "Privacy and cost" section.
+
 ## Personal conversations
 
 **Personal chat.** A saved, project-free conversation with Sotto's configured coordinator, distinct from a project-bound thread. A started personal chat stays with its original provider; changing coordinator defaults affects new chats only. Avoid: "project thread", "global project".
@@ -224,4 +252,4 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/memory/` — the memory store, its migrations, the policy store, the runtime opener and the packaged probe.
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter and ADR-0012 and ADR-0013 on the voice coordinator and memory being hidden for the beta.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter, ADR-0012 and ADR-0013 on the voice coordinator and memory being hidden for the beta, and ADR-0016 on Sotto-owned history in an event store with a host and client split.

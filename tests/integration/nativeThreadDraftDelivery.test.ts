@@ -33,10 +33,17 @@ it('restores drafts and reconciles a lost native acknowledgement under the origi
     await control.command({ type: 'save-thread-draft', threadId, draftId: newerId, text: 'Next draft remains here' })
     control.dispose(); await control.privacyChanged()
     control = create(); await control.start(); await control.command({ type: 'connect' })
+    // Lazy provider sessions: the thread is read once it is on screen again.
+    await control.command({ type: 'observe-threads', threadIds: [threadId] })
     await expect.poll(async () => {
       await control.command({ type: 'refresh' })
       return control.get().deliveries?.find(item => item.draftId === draftId)?.status
     }).toBe('accepted')
+    // Opening the thread resumes its provider session and reads its history.
+    await expect.poll(async () => {
+      await control.command({ type: 'refresh' })
+      return control.get().host.threads.find(thread => thread.id === threadId)?.messages.filter(message => message.role === 'user').length
+    }).toBe(1)
     await control.command(command)
     expect(control.get().threadDrafts).toEqual([expect.objectContaining({ threadId, draftId: newerId, text: 'Next draft remains here' })])
     expect(control.get().host.threads.find(thread => thread.id === threadId)?.messages.filter(message => message.role === 'user')).toHaveLength(1)

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { classifyRiskyAction, type Authority, type RiskyAction } from '../../../src/main/agents/authority'
+import { classifyRiskyAction, mayGrantLocally, type Authority, type RiskyAction } from '../../../src/main/agents/authority'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
@@ -38,7 +38,11 @@ class RecordingHost extends E2EAgentHost {
   }
 }
 
-async function fixture(authority?: Authority, recordTurns = true) {
+async function fixture(partialAuthority?: Pick<Authority, 'authorizes'> & Partial<Authority>, recordTurns = true) {
+  // A PolicyStore is handed through whole; a plain mock gets the local-only `mayGrant` beside it.
+  const authority: Authority | undefined = partialAuthority === undefined ? undefined
+    : 'mayGrant' in partialAuthority ? partialAuthority as Authority
+      : { mayGrant: mayGrantLocally, authorizes: query => partialAuthority.authorizes(query) }
   const root = await mkdtemp(join(tmpdir(), 'sotto-agent-authority-'))
   roots.push(root)
   const credentials = new AgentCredentials(join(root, 'vault'), encryption)

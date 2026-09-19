@@ -168,6 +168,8 @@ export const agentThreadSchema = z.object({
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
   /** Present on the shell stream, where `messages` is empty; absent when the messages themselves are here. */
   summary: agentThreadSummarySchema.optional(),
+  /** True when the thread store holds messages older than the window `messages` carries (issue #119). */
+  earlierAvailable: z.boolean().optional(),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   usage: threadUsageSchema.optional(),
   compaction: compactionSchema.optional(),
@@ -370,6 +372,8 @@ export type AgentState = z.infer<typeof agentStateSchema>
 export const agentThreadDetailSchema = z.object({
   threadId: id, revision: z.number().int().nonnegative(), messages: z.array(agentMessageSchema),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+  /** True when older messages are still in the thread store; the pane offers Show earlier messages. */
+  earlierAvailable: z.boolean().optional(),
 }).strict()
 export type AgentThreadDetail = z.infer<typeof agentThreadDetailSchema>
 export const agentThreadDetailResultSchema = agentThreadDetailSchema.nullable()
@@ -486,6 +490,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
+  z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
   z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
   z.object({ type: z.literal('unassign'), threadId: id }).strict(),

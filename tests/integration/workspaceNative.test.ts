@@ -14,7 +14,7 @@ async function fixture() {
     threadProvider: id => f.registry.byThread(id)?.provider,
     hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost() } })
   const workspace = new WorkspaceHost(native, f.root)
-  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); await f.cleanup() })
+  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await f.cleanup() })
   await workspace.connect('codex')
   await workspace.execute({ type: 'create-project', commandId: 'project', projectId: 'scope', title: 'Project', path: f.root, provider: 'codex' })
   const snapshot = await workspace.snapshot()

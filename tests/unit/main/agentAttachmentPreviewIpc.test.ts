@@ -22,7 +22,7 @@ function fixture() {
   const stranger = sender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
   const attachmentPreview = vi.fn<AgentControl['attachmentPreview']>(() => ({ dataUrl: PNG }))
   const control = { get: () => ({} as AgentState), shell: () => ({} as AgentState), threadDetail: () => null, command: vi.fn<AgentControl['command']>(), attachmentPreview }
-  disposables.push(registerAgentIpc(ipc, control, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() },
+  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() },
     { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }))
   const invoke = async (payload: unknown, source = main) =>
     listeners.get(AGENT_ATTACHMENT_PREVIEW)!({ sender: source.webContents, senderFrame: source.webContents.mainFrame }, payload)

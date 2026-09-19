@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { type AuthorizationQuery, type AuthorizationResult } from '../agents/authority'
+import { remoteAnswerScope, type AuthorizationQuery, type AuthorizationResult, type ClientGrantResult } from '../agents/authority'
+import type { ClientIdentity } from '../agents/hostService'
 import { memoryPolicySchema } from '../../shared/memory'
 import { policyInsertSql } from './migrations.mjs'
 import type { MemoryStore } from './store'
@@ -61,6 +62,36 @@ export class PolicyStore {
     if (!matches[0]) return { allowed: false, reason: 'no-policy' }
     const revoked = matches.some(record => record.revokedAt !== null && Date.parse(record.revokedAt) <= Date.parse(at))
     return { allowed: false, reason: revoked ? 'revoked' : 'expired', policyId: matches[0].id }
+  }
+
+  /**
+   * Records that the user paired this client on this PC and will let its answers count as grants. The
+   * record is the authority; the pairing token only says which client is speaking (ADR-0004).
+   */
+  grantRemoteAnswers(clientId: string, note: string, expiresAt: string | null = null): PolicyRecord {
+    return this.grant({ action: 'remote-answer', resource: clientId, scope: remoteAnswerScope(clientId), note, expiresAt })
+  }
+
+  /**
+   * Whether this client's answer may count as a grant. The local window always may; a remote client
+   * may only while a record names it, and nothing else ever may. A record scoped `global` or to some
+   * other client is not an answer about this one, which is why this does not go through `authorizes`.
+   */
+  mayGrant(client: ClientIdentity, at = new Date().toISOString()): ClientGrantResult {
+    if (client.transport === 'ipc') return { allowed: true, reason: 'local-window' }
+    z.iso.datetime().parse(at)
+    // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
+    const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
+      WHERE action = 'remote-answer' AND scope = ? AND resource = ?
+      ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(client.clientId), client.clientId)
+    const records = rows.map(row => policyRecordSchema.parse(row))
+    if (records.length === 0) return { allowed: false, reason: 'no-policy' }
+    const active = records.filter(record => !isInactiveAt(record, at))
+    const boundary = active.find(record => record.effect === 'always-confirm')
+    if (boundary) return { allowed: false, reason: 'unpaired', policyId: boundary.id }
+    const allow = active.find(record => record.effect === 'allow')
+    return allow ? { allowed: true, reason: 'paired-client', policyId: allow.id }
+      : { allowed: false, reason: 'unpaired', policyId: records[0]!.id }
   }
 
   recordRiskBoundaries(

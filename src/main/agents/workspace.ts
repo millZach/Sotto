@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentHostSnapshot, type AgentThread, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
@@ -21,6 +23,27 @@ function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Se
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
+/** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
+const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
+/** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
+const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
+
+/** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
+interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string }
+/** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
+const TAIL = 24
+const markOf = (message: AgentMessage): MessageMark =>
+  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL) })
+
+/**
+ * One thread as `workspace.json` keeps it: no messages, and no summary either, because the summary
+ * quotes them. Both are read back from the thread store, which is what the history switch governs.
+ */
+function organizationOnly(thread: AgentThread): AgentThread {
+  const { summary, earlierAvailable, ...rest } = thread
+  void summary; void earlierAvailable
+  return { ...rest, messages: [] }
+}
 
 const workspaceSchema = z.object({
   snapshot: agentHostSnapshotSchema,
@@ -60,6 +83,24 @@ export class WorkspaceHost implements AgentHost {
   private checkpointHooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
   /** One pending worktree re-read per thread, so a busy turn asks for a single read rather than one per record. */
   private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
+  /** A thread's own history: the log and the message projection every window reads (issue #119). */
+  private readonly threadStore: ThreadStore
+  /** True once opening the history database failed; this run then keeps its messages in memory alone. */
+  private storeUnavailable = false
+  /** What the store already holds for a thread, so a publish appends the difference rather than the history. */
+  private readonly known = new Map<string, { epoch: string | undefined; messages: MessageMark[] }>()
+  /** The threads a window is looking at, each with how many turns of its history it has been given. */
+  private readonly watched = new Map<string, number>()
+  /** False until a window has said what it is looking at. Until then no thread's history is put away. */
+  private declared = false
+  /** How many of a watched thread's messages sit before the window loaded into memory. */
+  private readonly hidden = new Map<string, number>()
+  /** True when the provider host says what changed rather than publishing a whole history to compare. */
+  private readonly eventSourced: boolean
+  /** Events waiting to be written, so a streamed reply costs one transaction per publish, not per word. */
+  private readonly pendingEvents = new Map<string, ThreadEvent[]>()
+  /** The threads whose window and summary the next publish has to read again. */
+  private readonly eventChanged = new Set<string>()
 
   setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
   rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
@@ -74,6 +115,7 @@ export class WorkspaceHost implements AgentHost {
     private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.worktrees = new ThreadWorktrees(directory)
+    this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
     inner.subscribe(snapshot => {
       if (!this.ready) return
@@ -81,6 +123,10 @@ export class WorkspaceHost implements AgentHost {
       this.writeSoon()
       this.publishSoon()
     })
+    // A host that says what changed is believed: its events are this thread's history, and the array
+    // comparison below is left for a host that publishes whole histories and nothing else.
+    this.eventSourced = typeof inner.subscribeEvents === 'function'
+    inner.subscribeEvents?.(({ threadId, event }) => this.recordEvent(threadId, event))
   }
 
   initialize(): Promise<void> {
@@ -94,6 +140,8 @@ export class WorkspaceHost implements AgentHost {
       for (const name of names) if (/^workspace\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
         await unlink(join(this.directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
       }
+      try { this.threadStore.open({ ephemeral: !this.historyEnabled() }) }
+      catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
       this.state = await this.store.peek()
       const snapshot = this.state.snapshot
       snapshot.connected = false
@@ -103,16 +151,219 @@ export class WorkspaceHost implements AgentHost {
       if (!this.historyEnabled()) for (const thread of snapshot.threads) { thread.messages = []; thread.requests = []; delete thread.activities }
       // Cached running activity is evidence of an unfinished observation, not a live process.
       for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
+      this.adoptSavedMessages(snapshot)
+      if (!this.storeUnavailable) this.inner.useThreadHistory?.(this)
       await this.inner.initialize?.()
-      // The cache below is what a provider's own transcript would otherwise be re-read to rebuild.
+      // The store below is what a provider's own transcript would otherwise be re-read to rebuild.
       // Handing it back before the first connection is what lets an adapter resume where it stopped.
-      await this.inner.restoreThreadHistory?.(snapshot.threads.filter(thread => thread.messages.length)
-        .map(thread => ({ threadId: thread.id, messages: thread.messages })))
+      // A host that publishes events asks the store itself, one thread at a time, rather than being
+      // handed every thread's whole history before it has read anything.
+      if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.flatMap(thread => {
+        const messages = this.readWindow(thread.id)?.messages ?? []
+        return messages.length ? [{ threadId: thread.id, messages }] : []
+      }))
       this.ready = true
       await this.privacyChanged()
     })().catch(error => { this.loading = undefined; throw error })
     return this.loading
   }
+
+  /**
+   * The one-time move of every thread's messages out of `workspace.json` and into the store (issue #119).
+   * `workspace.json` keeps organization from here on. A store that refuses the write leaves the file
+   * exactly as it was, so the next start can try again with nothing lost.
+   */
+  private adoptSavedMessages(snapshot: AgentHostSnapshot): void {
+    if (this.storeUnavailable) return
+    const carrying = snapshot.threads.filter(thread => thread.messages.length)
+    if (carrying.length) {
+      try { for (const thread of carrying) this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch) }
+      catch { this.saveError = HISTORY_SAVE_ERROR; return }
+      this.dirty = true
+    }
+    // Nothing has said what it is looking at yet, so every thread starts with the window the store holds;
+    // the first observation puts away the ones no pane wants. A host that publishes no events is compared
+    // against its own arrays instead, and starts from its summary alone until one arrives.
+    for (const thread of snapshot.threads) {
+      if (this.eventSourced) { this.loadWindow(thread.id); continue }
+      this.known.set(thread.id, { epoch: thread.historyEpoch, messages: this.readWindow(thread.id)?.messages.map(markOf) ?? [] })
+      thread.messages = []
+      delete thread.earlierAvailable
+      thread.summary = this.threadSummary(thread)
+    }
+  }
+  /** One window of a thread's messages, or nothing when the store cannot answer. */
+  private readWindow(threadId: string, turns?: number) {
+    if (this.storeUnavailable) return undefined
+    this.writeEvents()
+    try { return this.threadStore.readMessages(threadId, turns === undefined ? {} : { turns }) }
+    catch { this.saveError = HISTORY_SAVE_ERROR; return undefined }
+  }
+  /**
+   * The sidebar's facts about a thread. With the history in hand they come from it; without it they come
+   * from the store's projection, with the activity counted from the records the thread still carries.
+   */
+  private threadSummary(thread: AgentThread, messages?: readonly AgentMessage[]): AgentThreadSummary {
+    const beside = summarizeThread({ messages: [], activities: thread.activities })
+    if (messages !== undefined) return summarizeThread({ messages: [...messages], activities: thread.activities })
+    if (this.storeUnavailable) return beside
+    this.writeEvents()
+    try { return { ...this.threadStore.summary(thread.id), activityCount: beside.activityCount,
+      ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) } }
+    catch { return beside }
+  }
+  /**
+   * What changed between the history the store holds for a thread and the one its provider just published.
+   * A message that grew is an append, an id that is new is an addition, anything else about a known message
+   * is a replacement, and a history that no longer starts the same way — a rewind, a compaction — is a reset.
+   */
+  private differences(threadId: string, messages: readonly AgentMessage[], epoch: string | undefined, previousEpoch: string | undefined): ThreadEvent[] {
+    const at = new Date().toISOString()
+    const added = (message: AgentMessage): ThreadEvent => ({ kind: 'message-added', at: message.createdAt || at, message })
+    const reset = (): ThreadEvent[] => [{ kind: 'messages-reset', at, ...(epoch === undefined ? {} : { historyEpoch: epoch }) }, ...messages.map(added)]
+    let known = this.known.get(threadId)
+    if (known === undefined) {
+      known = { epoch: previousEpoch, messages: this.readWindow(threadId)?.messages.map(markOf) ?? [] }
+      this.known.set(threadId, known)
+    }
+    if (known.epoch !== epoch) return reset()
+    if (messages.length < known.messages.length) return reset()
+    const events: ThreadEvent[] = []
+    for (const [index, message] of messages.entries()) {
+      const mark = known.messages[index]
+      if (mark === undefined) { events.push(added(message)); continue }
+      if (mark.id !== message.id) return reset()
+      const attachments = message.attachments?.length ?? 0
+      if (mark.length === message.text.length && mark.attachments === attachments && mark.tail === message.text.slice(-TAIL)) continue
+      // A true append leaves the characters the store already holds exactly where they were.
+      if (message.text.length > mark.length && mark.attachments === attachments
+        && message.text.slice(Math.max(0, mark.length - TAIL), mark.length) === mark.tail) {
+        events.push({ kind: 'message-text-appended', at, messageId: message.id, appendText: message.text.slice(mark.length) })
+      } else events.push({ kind: 'message-replaced', at, message })
+    }
+    return events
+  }
+  /**
+   * One change a provider host reported. Events are the record from an adapter that publishes them, so
+   * they are written whole and in order; the window a pane holds and the sidebar's facts are read again
+   * at the next publish rather than per event, which keeps a streamed reply at one publish per window.
+   */
+  private recordEvent(threadId: string, event: ThreadEvent): void {
+    const waiting = this.pendingEvents.get(threadId)
+    if (waiting) waiting.push(event)
+    else this.pendingEvents.set(threadId, [event])
+    this.eventChanged.add(threadId)
+    if (this.ready) this.publishSoon()
+  }
+  /** Write what the events said. Called before anything reads the store, and at every publish. */
+  private writeEvents(): void {
+    if (this.pendingEvents.size === 0 || !this.ready || this.storeUnavailable) return
+    const waiting = [...this.pendingEvents]
+    this.pendingEvents.clear()
+    for (const [threadId, events] of waiting) {
+      try { this.threadStore.appendMany(threadId, events) }
+      catch { this.saveError = HISTORY_SAVE_ERROR }
+      // The store, not the published array, is now what this thread's history is compared against.
+      this.known.delete(threadId)
+      if (events.some(event => event.kind === 'messages-reset')) this.hidden.delete(threadId)
+    }
+    this.dirty = true
+  }
+  /** Give every thread an event touched its window again, and its summary from the projection. */
+  private applyEvents(): void {
+    this.writeEvents()
+    if (this.eventChanged.size === 0) return
+    const changed = [...this.eventChanged]
+    this.eventChanged.clear()
+    for (const id of changed) {
+      const thread = this.state.snapshot.threads.find(item => item.id === id)
+      if (!thread) continue
+      if (this.watched.has(id) || !this.declared) this.loadWindow(id)
+      else { thread.messages = []; delete thread.earlierAvailable; thread.summary = this.threadSummary(thread) }
+    }
+  }
+  /** Every message the store holds for a thread, for an adapter about to read its provider's history. */
+  messageIdentities(threadId: string): readonly StoredMessageIdentity[] {
+    if (this.storeUnavailable) return []
+    this.writeEvents()
+    try { return this.threadStore.messageIdentities(threadId) }
+    catch { return [] }
+  }
+  /**
+   * Records what a provider published and answers with the messages this thread keeps in memory: the
+   * loaded window while a pane is looking at it, nothing at all while none is.
+   */
+  private record(thread: AgentThread, messages: readonly AgentMessage[], previousEpoch: string | undefined): AgentMessage[] {
+    if (this.storeUnavailable) return [...messages]
+    const events = this.differences(thread.id, messages, thread.historyEpoch, previousEpoch)
+    if (events.length) {
+      try { this.threadStore.appendMany(thread.id, events) }
+      catch { this.saveError = HISTORY_SAVE_ERROR; return [...messages] }
+      if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
+      this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
+    }
+    if (!this.watched.has(thread.id)) return this.declared ? [] : [...messages]
+    const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
+    if (hidden > 0) thread.earlierAvailable = true
+    return hidden > 0 ? messages.slice(hidden) : [...messages]
+  }
+  /** Puts this thread's current window into memory: what the pane draws, and how much sits before it. */
+  private loadWindow(threadId: string): void {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread) return
+    const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
+    if (!window) return
+    this.hidden.set(threadId, Math.max(0, window.firstPosition))
+    thread.messages = window.messages
+    if (window.earlierAvailable) thread.earlierAvailable = true
+    else delete thread.earlierAvailable
+    thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
+  }
+  /** A thread no pane is looking at goes back to its summary alone. */
+  private unloadWindow(threadId: string): void {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread) return
+    thread.summary = this.threadSummary(thread, thread.earlierAvailable ? undefined : thread.messages)
+    thread.messages = []
+    delete thread.earlierAvailable
+  }
+  /**
+   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages.
+   * The store holds the whole history; only how much of it is in memory changes here.
+   */
+  async loadEarlierMessages(threadId: string): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    this.watched.set(threadId, (this.watched.get(threadId) ?? FIRST_WINDOW_TURNS) + LATER_WINDOW_TURNS)
+    this.loadWindow(threadId)
+    this.publish()
+    return this.workspaceSnapshot()
+  }
+  /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
+  threadMessages(threadId: string): readonly AgentMessage[] {
+    this.writeEvents()
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (this.storeUnavailable) return thread?.messages ?? []
+    if (thread && thread.messages.length > 0 && !thread.earlierAvailable) return thread.messages
+    return this.readWindow(threadId)?.messages ?? thread?.messages ?? []
+  }
+  /**
+   * Records that a request was answered, and by which client, in the thread's own log (ADR-0016). The
+   * answer's words are never written: an answer can read like a prompt, and the log says what happened
+   * rather than what was said. Nothing is projected from it, so a failed write costs the record alone.
+   */
+  recordAnswer(threadId: string, event: AnswerGivenEvent): void {
+    if (this.storeUnavailable) return
+    try { this.threadStore.append(threadId, event) }
+    catch { this.saveError = HISTORY_SAVE_ERROR }
+  }
+  /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */
+  eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
+    if (this.storeUnavailable) return []
+    this.writeEvents()
+    return this.threadStore.eventsAfter(seq, threadId)
+  }
+  /** Closes the history store. Called when the app quits, after the last flush. */
+  dispose(): void { this.writeEvents(); this.threadStore.close() }
 
   async listThreadSkills(threadId: string, forceReload = false) {
     await this.initialize()
@@ -128,6 +379,7 @@ export class WorkspaceHost implements AgentHost {
     return this.inner.listThreadSkills(threadId, forceReload)
   }
   workspaceSnapshot(): AgentHostSnapshot {
+    this.applyEvents()
     const snapshot = structuredClone(this.state.snapshot)
     if (this.saveError) snapshot.error = this.saveError
     return snapshot
@@ -178,14 +430,31 @@ export class WorkspaceHost implements AgentHost {
       if (creation) creation.phase = 'started'
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
-      threads.set(thread.id, { ...thread,
+      const merged: AgentThread = { ...thread,
         // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
-        messages: (thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length ? old?.messages ?? [] : thread.messages,
+        messages: [],
         ...(old?.activities || thread.activities ? { activities: old?.historyEpoch !== thread.historyEpoch ? thread.activities ?? [] : mergeAgentActivities(old?.activities, thread.activities) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
-        workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true })
+        workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
+      // A provider that is still loading a thread's history has published no history yet, so the
+      // store keeps what it already holds and the pane keeps the window it was given.
+      if (this.eventSourced) {
+        // The events already said what this thread's history is. What the snapshot carries beside them
+        // is the window this host loaded, which only an event or an observation changes.
+        merged.messages = old?.messages ?? []
+        if (old?.earlierAvailable) merged.earlierAvailable = true
+        merged.summary = old?.summary ?? this.threadSummary(merged)
+        if (!old) this.eventChanged.add(thread.id)
+      } else if ((thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length) {
+        merged.messages = old?.messages ?? []
+        merged.summary = old?.summary ?? this.threadSummary(merged)
+      } else {
+        merged.messages = this.record(merged, thread.messages, old?.historyEpoch)
+        merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : thread.messages)
+      }
+      threads.set(thread.id, merged)
     }
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
@@ -233,6 +502,7 @@ export class WorkspaceHost implements AgentHost {
     return pending
   }
   private flush(): Promise<void> {
+    this.writeEvents()
     // This write covers whatever a waiting one would have written, so it takes its place.
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = undefined }
     this.flushWanted = true
@@ -245,9 +515,11 @@ export class WorkspaceHost implements AgentHost {
         while (this.dirty && this.flushWanted) {
           this.flushWanted = false
           this.dirty = false
-          const saved = structuredClone(this.state)
+          // Messages live in the thread store, never here: `workspace.json` keeps organization alone,
+          // so what it costs to write follows the number of threads rather than what they said (#119).
+          const saved = structuredClone({ ...this.state,
+            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(organizationOnly) } })
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
-            thread.messages = []
             thread.requests = []
             delete thread.activities
             if (thread.nativeSessionStarted) {
@@ -263,7 +535,28 @@ export class WorkspaceHost implements AgentHost {
     })
     return this.saving
   }
-  async privacyChanged(): Promise<void> { this.dirty = true; await this.flush() }
+  /**
+   * Keep local history changed. Turning it off takes the words out of `threads.sqlite` and moves this run
+   * into memory, so the state on screen stays right while nothing said reaches the file again; turning it
+   * back on hands the file over from here, and what was not kept is gone.
+   */
+  async privacyChanged(): Promise<void> {
+    if (!this.storeUnavailable) {
+      const wanted = this.historyEnabled()
+      if (wanted === this.threadStore.ephemeral) {
+        try {
+          if (wanted) this.threadStore.becomeDurable()
+          else this.threadStore.becomeEphemeral()
+        } catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
+        // The switch emptied the store either way, so what mirrored it is no longer true.
+        this.known.clear()
+        this.hidden.clear()
+        for (const thread of this.state.snapshot.threads) delete thread.earlierAvailable
+      }
+    }
+    this.dirty = true
+    await this.flush()
+  }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
     await this.initialize(); this.accept(await this.inner.connect(provider)); await this.flush(); return this.workspaceSnapshot()
   }
@@ -578,7 +871,33 @@ export class WorkspaceHost implements AgentHost {
   resolveProjectId(id: string): string { return this.inner.resolveProjectId?.(id) ?? id }
   resolveModelId(id: string): string { return this.inner.resolveModelId?.(id) ?? id }
   providerForThread(id: string): ProviderId | undefined { return this.state.snapshot.threads.find(thread => thread.id === id)?.providerId ?? this.inner.providerForThread?.(id) }
-  observeThreads(ids: readonly string[]): void { this.inner.observeThreads?.(ids.filter(id => this.state.snapshot.threads.find(thread => thread.id === id)?.nativeSessionStarted !== false)) }
+  /**
+   * The threads a window says it is looking at. Only those hold their messages in memory: one leaving the
+   * set drops to its summary, one joining it is given the first window of its history from the store.
+   */
+  observeThreads(ids: readonly string[]): void {
+    this.inner.observeThreads?.(ids.filter(id => this.state.snapshot.threads.find(thread => thread.id === id)?.nativeSessionStarted !== false))
+    if (!this.ready) return
+    const wanted = new Set(ids)
+    let changed = !this.declared
+    if (!this.declared) {
+      this.declared = true
+      // Everything held only because nobody had said otherwise goes back to its summary now.
+      for (const thread of this.state.snapshot.threads) if (!wanted.has(thread.id) && thread.messages.length) this.unloadWindow(thread.id)
+    }
+    for (const id of [...this.watched.keys()]) if (!wanted.has(id)) {
+      this.watched.delete(id)
+      this.hidden.delete(id)
+      this.unloadWindow(id)
+      changed = true
+    }
+    for (const id of wanted) if (!this.watched.has(id) && this.state.snapshot.threads.some(thread => thread.id === id)) {
+      this.watched.set(id, FIRST_WINDOW_TURNS)
+      this.loadWindow(id)
+      changed = true
+    }
+    if (changed) this.publish()
+  }
   disconnect(provider?: ProviderId): void {
     this.inner.disconnect(provider)
     const snapshot = this.state.snapshot
