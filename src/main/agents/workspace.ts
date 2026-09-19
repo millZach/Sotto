@@ -3,7 +3,7 @@ import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
-import type { ThreadEvent } from '../../shared/threadEvents'
+import type { AnswerGivenEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
@@ -280,6 +280,16 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) return thread?.messages ?? []
     if (thread && thread.messages.length > 0 && !thread.earlierAvailable) return thread.messages
     return this.readWindow(threadId)?.messages ?? thread?.messages ?? []
+  }
+  /**
+   * Records that a request was answered, and by which client, in the thread's own log (ADR-0016). The
+   * answer's words are never written: an answer can read like a prompt, and the log says what happened
+   * rather than what was said. Nothing is projected from it, so a failed write costs the record alone.
+   */
+  recordAnswer(threadId: string, event: AnswerGivenEvent): void {
+    if (this.storeUnavailable) return
+    try { this.threadStore.append(threadId, event) }
+    catch { this.saveError = HISTORY_SAVE_ERROR }
   }
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void { this.threadStore.close() }

@@ -27,6 +27,8 @@ Choose **Manage** to authorize supervision. **Pause managing** suspends automati
 
 Questions and permissions enter the attention queue with their project and thread. **Next** and **Later** defer attention without answering. A composed answer stays bound to its question. Explicit **Allow** or **Deny** returns that decision to the native provider; skipping never approves. Unsupported interactive forms must be handled in the native client. Native hooks and permission settings still apply.
 
+Every answered request leaves a record in the thread's own history saying which client answered it, and whether a follow-up came from Sotto's supervision rather than from you. The record holds the request, the choice and the client; it never holds the words of the answer, because an answer can read like a prompt. Today the only client is this app's window on this computer. Sotto listens on no port and a client on another machine cannot reach it, so there is nothing yet to pair.
+
 Sending directly through the same native provider session transfers that thread to manual control when its authored message is observed. Sotto continues monitoring and stops automatic replies. Reading or opening the native session is not takeover. Say “resume managing Workshop” or choose **Resume management** to authorize supervision again. Missing or locked native history can delay detection.
 
 Model, effort, image and permission-mode controls reflect the adapter's verified capabilities. Unsupported controls are unavailable. Grok currently selects model and effort at thread creation and does not advertise image attachments or existing-thread configuration.

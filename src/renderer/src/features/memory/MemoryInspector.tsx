@@ -1,7 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { MAX_MEMORY_CONTENT_CHARACTERS, memoryTopicSchema, type MemoryItem } from '../../../../shared/memory'
 import { Button } from '../../components/Button'
-import { boundaryLabels } from './questions'
+import { policyActionLabels } from './questions'
 import type { MemoryController } from './useMemory'
 
 function date(value: string | null): string { return value === null ? 'Not recorded' : new Date(value).toLocaleString() }
@@ -100,7 +100,7 @@ export function MemoryInspector({ controller, onQuestionnaire }: { controller: M
         <h2>Permission boundaries</h2>
         <p className="memory-description">Policies are separate from memory. Editing a preference does not change a permission.</p>
         {snapshot.policies.length ? <ul>{snapshot.policies.map(policy => <li key={policy.id}>
-          <p>{policy.effect === 'always-confirm' ? 'Always confirm' : 'Allowed'}: {boundaryLabels[policy.action].toLowerCase()}</p>
+          <p>{policy.effect === 'always-confirm' ? 'Always confirm' : 'Allowed'}: {policyActionLabels[policy.action].toLowerCase()}</p>
           <p className="memory-meta">{policy.source === 'questionnaire' ? 'You chose this in working preferences' : 'You set this policy'} · {date(policy.grantedAt)}{policy.revokedAt ? ' · Revoked' : policy.expiresAt && new Date(policy.expiresAt).getTime() <= Date.now() ? ' · Expired' : ''}</p>
           <details className="memory-details"><summary>Policy details</summary><dl>
             <dt>Resource</dt><dd>{policy.resource}</dd><dt>Scope</dt><dd>{policy.scope}</dd>
