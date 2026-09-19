@@ -8,7 +8,7 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { agentAttachmentReferenceSchema, attachmentSizeBytes, agentProjectSchema, agentRuntimeModeSchema, type AgentAttachment, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
@@ -25,6 +25,10 @@ import { SessionReaper } from './sessionReaper'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type IdentityItem } from './codexMessageIdentity'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
+// Legacy history and completed turns can echo multiple screenshot batches. Keep a
+// separate history budget rather than limiting a frame to one submitted prompt.
+const MAX_FRAME_BYTES = 128 * 1024 * 1024
+const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
 // Codex's previous policy is auto-accept-edits; preserve it for old aliases and
 // creation without an explicit selection. Shapes verified with generated 0.154 schemas.
@@ -35,7 +39,7 @@ function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
 }
 const configArguments = Object.entries({ model_provider: 'openai', approval_policy: threadPolicy.approvalPolicy,
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional() })
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
   compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
   historyMode: z.enum(['legacy', 'paginated']).optional(), historyEpoch: z.string().optional(),
@@ -207,7 +211,7 @@ export class CodexAppServerHost implements AgentHost {
       cwd: this.options.userDataPath, env: { ...nativeEnvironment(), CODEX_HOME: codexHome }, windowsHide: true, shell: false, stdio: 'pipe',
     })
     this.child = child
-    let buffer = ''; let stderrBytes = 0; let queuedBytes = 0
+    let buffer: string[] = []; let bufferedBytes = 0; let stderrBytes = 0; let queuedBytes = 0
     const ended = new Promise<void>(resolve => child.once('close', () => { if (this.child === child) this.lostChild(); resolve() }))
     this.stopping = ended
     child.on('error', () => { if (this.child === child) this.lostChild() })
@@ -215,15 +219,19 @@ export class CodexAppServerHost implements AgentHost {
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       if (this.child !== child) return
-      buffer += chunk
-      if (Buffer.byteLength(buffer) > MAX_OUTPUT_BYTES) { this.lostChild(); return }
-      let newline: number
-      while ((newline = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1)
+      let start = 0
+      while (start < chunk.length) {
+        const newline = chunk.indexOf('\n', start)
+        const part = chunk.slice(start, newline < 0 ? undefined : newline)
+        buffer.push(part); bufferedBytes += Buffer.byteLength(part)
+        if (bufferedBytes > MAX_FRAME_BYTES) { this.lostChild(); return }
+        if (newline < 0) break
+        // Count each chunk once; repeatedly measuring an accumulating base64 frame is quadratic.
+        const line = buffer.join(''); const bytes = bufferedBytes
+        buffer = []; bufferedBytes = 0; start = newline + 1
         if (!line.trim()) continue
-        const bytes = Buffer.byteLength(line)
         queuedBytes += bytes
-        if (queuedBytes > MAX_OUTPUT_BYTES) { this.lostChild(); return }
+        if (queuedBytes > MAX_QUEUED_BYTES) { this.lostChild(); return }
         this.frames = this.frames.then(async () => {
           try { if (this.child === child) await this.frame(rpcSchema.parse(JSON.parse(line))) }
           finally { queuedBytes -= bytes }
@@ -238,17 +246,29 @@ export class CodexAppServerHost implements AgentHost {
       })
       this.write({ method: 'initialized' })
       this.state.models = []; delete this.state.error
-      await this.rpc('model/list', { limit: 100, includeHidden: false }, value => {
-        const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
-          supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(),
-        })) }).parse(value)
-        const models = result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true,
-          reasoningEfforts: m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? [],
-          ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
-          runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: false,
-        }))
-        this.state.models = models; delete this.state.error
-      }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
+      try {
+        const models: AgentHostSnapshot['models'] = []
+        const cursors = new Set<string>()
+        let cursor: string | undefined
+        do {
+          await this.rpc('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }, value => {
+            const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
+              supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(), inputModalities: z.array(z.string()).default(['text', 'image']),
+            })), nextCursor: z.string().nullish() }).parse(value)
+            models.push(...result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true,
+              reasoningEfforts: m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? [],
+              ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
+              runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: m.inputModalities.includes('image'),
+            })))
+            cursor = result.nextCursor ?? undefined
+          })
+          if (cursor) {
+            if (cursors.has(cursor)) throw new Error('Codex repeated a model catalog page.')
+            cursors.add(cursor)
+          }
+        } while (cursor)
+        this.state.models = models
+      } catch { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' }
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
       this.reaper.start()
@@ -289,10 +309,10 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   /** Send and steer share native reference validation and input mapping. */
-  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = []) {
+  async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = [], attachments: readonly AgentAttachment[] = []) {
     verifyFileMentions(text, files)
-    if (!skills.length) return [{ type: 'text' as const, text }]
-    return codexSkillInput(text, skills, await this.listThreadSkills(threadId, true))
+    const input = skills.length ? codexSkillInput(text, skills, await this.listThreadSkills(threadId, true)) : [{ type: 'text' as const, text }]
+    return [...input, ...attachments.map(image => ({ type: 'image' as const, url: image.dataUrl }))]
   }
   private ensureThread(id: string): NativeConversation {
     const alias = this.aliases[id]!
@@ -529,7 +549,7 @@ export class CodexAppServerHost implements AgentHost {
       origin.itemId ??= item.id; origin.turnId = turnId
     }
     this.addMessage(id, { id: record?.id ?? origin?.messageId ?? item.id, role: input.role, text,
-      createdAt: record?.createdAt ?? origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+      createdAt: record?.createdAt ?? origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
     if (item.type === 'userMessage' && turnId) this.activity.anchor(thread, turnId, record?.id ?? item.id)
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
@@ -770,11 +790,12 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
           try {
-            input = await this.prepareSkillInput(id, command.text, command.skills, command.files)
+            input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
             skillsRevision = this.skillsRevision
             validate()
           } catch (error) { this.dispatching.delete(id); throw error }
-          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId!, clientIdentity: true }
+          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId!, clientIdentity: true,
+            ...(command.attachments?.length ? { attachments: command.attachments.map(image => ({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: attachmentSizeBytes(image.dataUrl) })) } : {}) }
           alias.origins.push(origin)
           try {
             try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
@@ -783,7 +804,7 @@ export class CodexAppServerHost implements AgentHost {
             await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, async value => {
               const response = z.object({ turnId: z.string() }).parse(value)
               if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt })
+              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
               this.unconfirmedDispatchSessionIds.delete(id); this.emit(); await this.persist()
             }, async () => {
               alias.origins = alias.origins.filter(o => o !== origin)
@@ -807,8 +828,6 @@ export class CodexAppServerHost implements AgentHost {
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           })
         } else {
-          // Image rollout origins need a separate authority-safe reconciliation
-          // contract. Until supported, reject explicitly rather than drop images.
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           try { await this.refreshThread(id) }
           catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
@@ -821,10 +840,11 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           const generation = this.generation
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
-          try { input = await this.prepareSkillInput(id, command.text, command.skills, command.files) }
+          try { input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments) }
           catch (error) { this.dispatching.delete(id); throw error }
           const skillsRevision = this.skillsRevision
-          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true }
+          const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true,
+            ...(command.attachments?.length ? { attachments: command.attachments.map(image => ({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: attachmentSizeBytes(image.dataUrl) })) } : {}) }
           alias.origins.push(origin)
           try {
             await this.persist()
@@ -848,7 +868,7 @@ export class CodexAppServerHost implements AgentHost {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
               origin.turnId = turn.id
               this.applyTurn(id, turn)
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt })
+              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
               this.unconfirmedDispatchSessionIds.delete(id); this.emit()
               return this.persist()
             }, () => {
