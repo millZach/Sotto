@@ -111,7 +111,8 @@ describe('integrated Phase 1 workspace persistence', () => {
     await f.command({ type: 'assign', threadId: thread.id, instruction: 'PRIVATE ASSIGNMENT CONTEXT' })
     await f.command({ type: 'compose', text: 'PRIVATE SENT TRANSCRIPT', attachments: [image] })
     await f.command({ type: 'send' })
-    expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
+    // The message reaches the workspace on the provider's own publish, whose write is gathered rather than immediate.
+    await vi.waitFor(async () => expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT'))
     expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
     f.setHistory(false)
     const write = AtomicJsonStore.prototype.write
