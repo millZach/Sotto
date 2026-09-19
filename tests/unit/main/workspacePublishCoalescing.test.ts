@@ -53,10 +53,9 @@ describe('workspace publish coalescing', () => {
     expectWithinBudget(elapsed, 1_500, '2,000 adapter snapshots through the workspace host')
 
     // The settled state is the last one, written once.
-    await expect.poll(() => write.mock.calls.length).toBeGreaterThan(0)
+    await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title).toBe('Working 1999')
     expect(write).toHaveBeenCalledTimes(1)
     expect(f.host.workspaceSnapshot().threads[0]?.title).toBe('Working 1999')
-    expect(JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title).toBe('Working 1999')
   })
 
   it('still writes and publishes a user command before that command returns', async () => {
