@@ -347,8 +347,9 @@ describe('thread navigation through the real renderer connection and controller'
       await screen.findByRole('button', { name: 'Queue prompt' })
       fireEvent.keyDown(prompt, { key: 'Enter' })
       const queue = await screen.findByRole('region', { name: 'Queued messages' })
-      await waitFor(() => expect(prompt).toHaveValue(''))
-      expect(f.control.get().followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill], status: 'queued' })])
+      // The composer empties on the press; the durable queue taking the revision is what the test waits for.
+      expect(prompt).toHaveValue('')
+      await waitFor(() => expect(f.control.get().followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill], status: 'queued' })]))
       expect((await f.followupsOnDisk()).items).toEqual([expect.objectContaining({ text: 'Then run $deploy', skills: [skill] })])
       await waitFor(async () => expect((await f.disk()).threadDrafts).toEqual([]))
       // Queue ownership is not a delivery: nothing reached the provider and the transcript tells no pending send.

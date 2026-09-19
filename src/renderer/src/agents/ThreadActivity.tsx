@@ -277,22 +277,28 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
  * One line at the end of a running turn: how long it has run and what it is doing now. The current
  * action is left out when it is the row directly above, so the line never repeats it.
  */
-export function LiveActivity({ thread, connected, adjacentRecordId }: {
+export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince }: {
   readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>; readonly connected: boolean
   /** The last activity row rendered immediately before this line, if any. */
   readonly adjacentRecordId?: string | undefined
+  /**
+   * When the user pressed Send, while that prompt is still on its way. The wait starts being shown
+   * there rather than at the provider's first word; its own running turn takes the line over as soon as it arrives.
+   */
+  readonly sendingSince?: string | undefined
 }): ReactNode {
   const turnId = liveTurnId(thread)
-  if (turnId === null) return null
-  const turn = thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
-  const action = currentAction(thread, turnId)
+  if (turnId === null && sendingSince === undefined) return null
+  const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
+  const action = turnId === null ? undefined : currentAction(thread, turnId)
   const label = action && action.id !== adjacentRecordId ? activityLabel(action) : null
+  const startedAt = turn?.startedAt ?? sendingSince
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">
       {/* With an action to name, the line says what is happening; without one, the words carry the wait. */}
       {connected ? label ? 'Working' : <WorkingWord /> : 'Last seen working'}
-      {connected && turn?.startedAt ? <> for <Elapsed startedAt={turn.startedAt} /></> : null}
+      {connected && startedAt ? <> for <Elapsed startedAt={startedAt} /></> : null}
     </span>
     {label ? <span className="thread-activity-live__action">
       {label.lead ? `${label.lead} ` : null}<span className={label.mono ? 'thread-activity__subject--mono' : undefined}>{label.subject}</span>

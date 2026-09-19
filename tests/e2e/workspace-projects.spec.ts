@@ -258,7 +258,9 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     const pending = page.getByLabel('Pending message')
     await expect(pending).toContainText('Unconfirmed')
     await expect(pending.getByRole('button', { name: 'Check again' })).toBeVisible()
-    await expect(prompt).toHaveValue('Maybe delivered.')
+    // The prompt left the composer on the press and is read in its own message while it is unconfirmed.
+    await expect(pending).toContainText('Maybe delivered.')
+    await expect(prompt).toHaveValue('')
     await prompt.fill('Edited while unconfirmed.')
     // Sending or queuing: nothing new leaves while the earlier prompt is unconfirmed.
     await expect(page.getByRole('button', { name: /^(Send|Queue) prompt$/ })).toBeDisabled()

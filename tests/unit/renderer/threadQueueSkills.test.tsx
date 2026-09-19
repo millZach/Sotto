@@ -62,16 +62,20 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup() })
 
 describe('follow-up queue in the Threads composer', () => {
-  it('queues with Enter while a turn runs, shows the row at once and clears only the revision the queue took', async () => {
+  it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
     const { live, prompt } = mount(manualState({ running: true }), { holdQueue: true })
     type(prompt(), 'Then run the visual gate')
     const started = performance.now()
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
-    // Local feedback is the queue row, before main answers; the transcript does not repeat it.
+    // The press is the feedback: an empty composer, the queue row, and the message where it will be read.
+    expect(prompt()).toHaveValue('')
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
     expect(within(queue).getByText('Queuing…')).toBeInTheDocument()
-    expectWithinBudget(performance.now() - started, 100, 'queueing a follow-up and painting its row')
+    const echo = screen.getByLabelText('Queued message')
+    expect(echo).toHaveTextContent('Then run the visual gate')
+    expect(echo).toHaveTextContent('Queued')
+    expectWithinBudget(performance.now() - started, 100, 'queueing a follow-up, emptying the composer and painting its row')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
     expect(requests(live, 'queue-followup')).toEqual([{ type: 'queue-followup', threadId: THREAD, draftId: expect.any(String), text: 'Then run the visual gate' }])
     expect(requests(live, 'manual-send')).toHaveLength(0)
@@ -80,15 +84,18 @@ describe('follow-up queue in the Threads composer', () => {
     act(() => live.heldQueue[0]!.finish())
     await waitFor(() => expect(within(queue).queryByText('Queuing…')).not.toBeInTheDocument())
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
+    // The queue owns it now, and its own echo replaces the one this window was showing: never two.
+    expect(screen.getAllByLabelText('Queued message')).toHaveLength(1)
     expect(prompt()).toHaveValue('A newer thought')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
   })
 
-  it('clears the composer when the queue owns its exact unchanged revision and keeps later sends behind the queue', async () => {
+  it('empties the composer on the press and keeps later sends behind the queue', async () => {
     const { live, prompt } = mount(manualState({ running: true }))
     type(prompt(), 'Queued prompt')
     fireEvent.click(screen.getByRole('button', { name: 'Queue prompt' }))
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    expect(prompt()).toHaveValue('')
+    await waitFor(() => expect(live.state.followups?.map(item => item.text)).toEqual(['Queued prompt']))
     // The turn finishes, but a message typed now still lines up behind the queued one.
     act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'idle' as const } : thread) } }) })
     type(prompt(), 'Second prompt')
@@ -243,6 +250,48 @@ describe('follow-up queue in the Threads composer', () => {
     expect(screen.getByText('Waiting for your last prompt to be confirmed.')).toBeInTheDocument()
     fireEvent.keyDown(second.prompt(), { key: 'Enter' })
     expect(requests(second.live, 'queue-followup')).toEqual([])
+  })
+})
+
+describe('sending a prompt', () => {
+  it('shows the message, empties the composer and starts the working line on the press', () => {
+    const { live, prompt } = mount(manualState())
+    type(prompt(), 'Start the cold thread')
+    const started = performance.now()
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    // Nothing here waits for the provider: a cold thread and a warm one look the same until the reply starts.
+    expect(prompt()).toHaveValue('')
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Start the cold thread')
+    expect(screen.getByTestId('thread-activity-live')).toBeInTheDocument()
+    expectWithinBudget(performance.now() - started, 100, 'sending a prompt, emptying the composer and painting its message')
+    expect(requests(live, 'manual-send')).toEqual([{ type: 'manual-send', threadId: THREAD, draftId: expect.any(String), text: 'Start the cold thread' }])
+  })
+
+  it('brings a refused prompt back to the composer, and offers it back when something newer is written', async () => {
+    const { live, prompt } = mount(manualState())
+    type(prompt(), 'Refuse me')
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    act(() => live.deliver(THREAD, 'failed'))
+    await waitFor(() => expect(prompt()).toHaveValue('Refuse me'))
+    const message = screen.getByLabelText('Pending message')
+    expect(message).toHaveTextContent('It is back in the composer.')
+    expect(within(message).queryByRole('button', { name: 'Restore prompt' })).not.toBeInTheDocument()
+    fireEvent.click(within(message).getByRole('button', { name: 'Dismiss' }))
+
+    type(prompt(), 'A different prompt')
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    type(prompt(), 'Written while it was sending')
+    act(() => live.deliver(THREAD, 'failed'))
+    const refused = await screen.findByLabelText('Pending message')
+    expect(prompt()).toHaveValue('Written while it was sending')
+    expect(refused).toHaveTextContent('Restoring it replaces the draft in the composer.')
+    fireEvent.click(within(refused).getByRole('button', { name: 'Restore prompt' }))
+    expect(prompt()).toHaveValue('A different prompt')
+    // Sending it again is the same revision, so the provider can never take it twice.
+    fireEvent.click(within(refused).getByRole('button', { name: 'Retry' }))
+    const sends = requests(live, 'manual-send')
+    expect(sends.at(-1)!.draftId).toBe(sends.at(-2)!.draftId)
+    expect(prompt()).toHaveValue('')
   })
 })
 

@@ -91,7 +91,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
-**Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart; accepting one submitted revision does not clear a newer revision.
+**Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart. Sending ends a draft: the press starts a fresh empty revision, and what was sent is a sent message from then on. Accepting one submitted revision never clears a newer revision.
+
+**Sent message.** What the user sent from this window, drawn in the transcript where it will be read from the press onwards, with the state of its delivery beside it: queued, sending, unconfirmed or not sent. It becomes an ordinary message when the provider's own history carries it. A refused one comes back to an empty composer, or is offered back when something newer is written there; an unconfirmed one stays in its message, because Sotto will not send it twice. Avoid: "optimistic message", "ghost message".
 
 **Answer draft.** Saved choices and text for a particular provider question in its original conversation, recoverable even if the provider closes or changes that question. Retaining or copying an answer does not recreate the question, confirm delivery, or grant authority to send it.
 

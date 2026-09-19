@@ -224,7 +224,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
-        onRetryAdmission={() => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue') }} /> : null}
+        onRetryAdmission={draftId => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue', draftId) }} /> : null}
       {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
         // The pane takes the selection in the capture pass of pointerdown or focus, and that update lands before the event
         // reaches this button, which it would replace. So both are handled in the same capture pass: a pointer arms the

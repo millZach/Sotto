@@ -225,7 +225,11 @@ describe('truthful durable draft delivery', () => {
     try {
       await vi.waitFor(() => expect(f.host.attempts).toHaveLength(1))
       expect((await f.disk()).deliveries).toEqual([expect.objectContaining({ draftId: draft.draftId, status: 'submitting' })])
-      expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: draft.draftId }))
+      // The composer empties on the press and saves that empty revision while the send is still on its way.
+      // It supersedes the sent draft: what was sent is the send's own business from here.
+      await f.control.command(save('workshop', ''))
+      expect(f.control.get().threadDrafts).toEqual([])
+      expect(f.control.get().deliveries![0]!.status).toBe('submitting')
     } finally { gate.resolve(); await pending }
     const delivery = f.control.get().deliveries![0]!
     expect(delivery.status).toBe('accepted')

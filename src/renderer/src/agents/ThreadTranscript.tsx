@@ -1,11 +1,12 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ChevronRight, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
-import { isThreadBusy, type AgentMessage, type AgentState } from '../../../shared/agents'
+import { isThreadBusy, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
-import { deliveryFor, deliveryPending, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
+import { followupsFor } from './ThreadFollowups'
+import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
@@ -159,28 +160,38 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   </>
 })
 
+/**
+ * A message the user sent from this window, drawn where it will sit in the conversation from the press
+ * onwards. A direct send says how the delivery went and offers the prompt back when it was refused;
+ * a queued one is an echo alone, because the queue below the composer holds its controls.
+ */
 function PendingMessage({ draftId, submission, status, row, state, command, store }: {
   readonly draftId: string; readonly submission?: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
   const { draft } = useThreadComposer(store, row.thread.id)
-  const holdsRevision = draft.draftId === draftId
+  const queued = submission?.mode === 'queue'
+  const restored = submission?.restoredAs !== undefined && draft.draftId === submission.restoredAs
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // The provider's history can show the exact message before Sotto has its confirmation.
   // Repeating the text would read as a second send, so only the delivery state stays here.
   const messageId = deliveryFor(state, row.thread.id, draftId)?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
   if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
-  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{STATUS_LABELS[status]}</span>
+  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{queued && status === 'queued' ? 'Queued' : STATUS_LABELS[status]}</span>
   const unresolved = status === 'uncertain' || submission === undefined && deliveryPending(status)
+  // A queued prompt is told by the queue, which is also where it is edited, moved or removed.
   // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
-  const detail = status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${holdsRevision ? '' : ' Your newer draft is in the composer.'}`
-    : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
-      : null
+  const detail = queued ? null
+    : status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${submission === undefined ? '' : restored ? ' It is back in the composer.' : hasDraftContent(draft) ? ' Restoring it replaces the draft in the composer.' : ''}`
+      : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
+        : null
   const delivery = detail === null ? null : <div className="thread-message__delivery">
     <span>{detail}</span>
     <div className="thread-message__delivery-actions">
-      {status === 'failed' && holdsRevision ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)} onClick={() => void sendThreadRevision(store, row, command, performance.now())}>Retry</Button> : null}
+      {status === 'failed' && submission !== undefined ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)}
+        onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)}>Retry</Button> : null}
+      {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
       {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
       {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
@@ -191,10 +202,30 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   if (inHistory || submission === undefined) {
     return <div className="thread-delivery" role="group" aria-label="Pending message" data-status={status} data-in-history={inHistory || undefined}>{label}{delivery}</div>
   }
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label="Pending message">
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label={queued ? 'Queued message' : 'Pending message'}>
     <header><span className="thread-message__who">You</span>{label}</header>
     <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
     {delivery}
+  </article>
+}
+
+/** Follow-up statuses in the transcript's own words, each with the state it is already coloured by there. */
+const QUEUED_ECHO: Record<AgentFollowup['status'], { readonly label: string; readonly status: SubmissionStatus }> = {
+  queued: { label: 'Queued', status: 'queued' }, dispatching: { label: 'Sending', status: 'submitting' },
+  uncertain: { label: 'Unconfirmed', status: 'uncertain' }, failed: { label: 'Not sent', status: 'failed' },
+  paused: { label: 'Paused', status: 'uncertain' },
+}
+
+/**
+ * A message the thread's queue holds, in the place it will take in the conversation. It repeats what the
+ * user wrote and nothing else: the queue under the composer is where it is edited, moved or removed.
+ */
+function QueuedMessage({ item }: { readonly item: AgentFollowup }): ReactNode {
+  const echo = QUEUED_ECHO[item.status]
+  return <article className="thread-message thread-message--pending" data-role="user" data-status={echo.status} aria-label="Queued message">
+    <header><span className="thread-message__who">You</span>
+      <span className="thread-message__status" data-status={echo.status}><i aria-hidden="true" />{echo.label}</span></header>
+    <MessageContent text={item.text} /><AttachmentPreviews attachments={item.attachments} />
   </article>
 }
 
@@ -247,6 +278,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     && !queuedRevision(state, thread.id, item.draftId) && !submissions.some(local => local.threadId === thread.id && local.draftId === item.draftId && local.mode === 'queue')
     && !pending.some(local => local.item.draftId === item.draftId)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === thread.id && receipt.draftId === item.draftId))
+  // What the queue holds is echoed here in dispatch order, until the provider's own history carries it.
+  const queuedEchoes = followupsFor(state, thread.id).filter(item => item.messageId === undefined || !thread.messages.some(message => message.id === item.messageId))
+  // Sending starts the working line on the press; the provider's own running turn takes it over when it arrives.
+  const sendingSince = pending.find(item => item.item.mode !== 'queue' && (item.status === 'queued' || item.status === 'submitting'))?.item.startedAt
+  // A direct send belongs to the turn starting now; one bound for the queue lines up after it.
+  const sending = pending.filter(item => item.item.mode !== 'queue')
+  const admissions = pending.filter(item => item.item.mode === 'queue')
   const sameThread = firstRendered.current?.threadId === thread.id
   const retainedStart = sameThread ? thread.messages.findIndex(message => message.id === firstRendered.current?.messageId) : -1
   // While reading earlier history, retain the first rendered message. A sliding
@@ -260,7 +298,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading'),
     [thread.messages, messages, thread.activities, thread.historyStatus]))
   const liveTurn = liveTurnId(thread)
-  const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
+  const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...queuedEchoes.map(item => `${item.id}:${item.status}`),
+    ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
@@ -348,7 +387,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
-  const empty = !thread.messages.length && !pending.length && !recovery.length && !showsActivity
+  const empty = !thread.messages.length && !pending.length && !queuedEchoes.length && !recovery.length && !showsActivity
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
@@ -360,8 +399,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
-        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} />
-        {pending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
+        {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
+        {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
+        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} sendingSince={sendingSince} />
+        {queuedEchoes.map(item => <QueuedMessage key={item.id} item={item} />)}
+        {admissions.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </div>
