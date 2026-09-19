@@ -349,8 +349,9 @@ export class GrokAcpHost implements AgentHost {
         const page = historySchema.parse(value)
         if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
         // Grok rewrites history behind the cursor when a turn is rewound or streamed chunks are coalesced.
-        // A history shorter than the one already read is read again from its start, once per read.
-        if (page.totalCount < history.total && !restarted) { restarted = true; freshHistory(history); more = true; return }
+        // A history shorter than the one already read is read again from its start, once per read. That
+        // shortening is the one signal that words were taken back, so it is the one place the log resets.
+        if (page.totalCount < history.total && !restarted) { restarted = true; freshHistory(history); this.log.reset(id); more = true; return }
         history.total = page.totalCount
         more = page.hasMore
         for (const entry of page.updates) {

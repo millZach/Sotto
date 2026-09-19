@@ -13,15 +13,17 @@ export const threadEventAttributionSchema = z.object({
 export type ThreadEventAttribution = z.infer<typeof threadEventAttributionSchema>
 
 const at = z.string().min(1).max(64)
+/** Set when Keep local history off took the words out of this event; a rebuilt projection leaves it out. */
+const redacted = z.literal(true).optional()
 
 /**
  * One entry in a thread's append-only log. The message projection is rebuilt from these alone, so a
  * kind added here is a kind the projection must know how to apply.
  */
 export const threadEventSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('message-added'), at, message: agentMessageSchema }).strict(),
-  z.object({ kind: z.literal('message-text-appended'), at, messageId: z.string().min(1).max(512), appendText: z.string().max(100_000) }).strict(),
-  z.object({ kind: z.literal('message-replaced'), at, message: agentMessageSchema }).strict(),
+  z.object({ kind: z.literal('message-added'), at, message: agentMessageSchema, redacted }).strict(),
+  z.object({ kind: z.literal('message-text-appended'), at, messageId: z.string().min(1).max(512), appendText: z.string().max(100_000), redacted }).strict(),
+  z.object({ kind: z.literal('message-replaced'), at, message: agentMessageSchema, redacted }).strict(),
   /** A confirmed rewind: everything projected for this thread is dropped and the new epoch recorded. */
   z.object({ kind: z.literal('messages-reset'), at, historyEpoch: z.string().max(512).optional() }).strict(),
   /**

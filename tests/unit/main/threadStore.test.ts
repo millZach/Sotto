@@ -110,6 +110,10 @@ describe('thread store', () => {
     const reopened = await store(f.root)
     expect(reopened.store.eventsAfter(0).some(item => item.event.kind === 'message-added')).toBe(true)
     expect(reopened.store.readMessages('kept').messages).toEqual([])
+    // A rebuilt projection does not bring the redacted shapes back as messages.
+    reopened.store.rebuild()
+    expect(reopened.store.readMessages('kept').messages).toEqual([])
+    expect(reopened.store.messageCount('kept')).toBe(0)
   })
 
   it('keeps an ephemeral run out of the file and hands the file back when history returns', async () => {

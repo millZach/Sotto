@@ -1731,8 +1731,9 @@ export class AgentControl {
     if ((command.type === 'send' || command.type === 'steer') && !result.accepted && !result.uncertain && command.attachments?.length) {
       await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
     }
-    if (command.type === 'answer' && result.accepted && !result.uncertain) {
-      if (answerIntent) this.recordAnsweredRequest(answerIntent)
+    if (command.type === 'answer' && result.accepted) {
+      if (!result.uncertain && answerIntent) this.recordAnsweredRequest(answerIntent)
+      // The user gave this answer whether or not the provider confirmed taking it, so who gave it is recorded either way.
       this.recordAnswerAttribution(command, client)
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)

@@ -320,10 +320,10 @@ function redactedPayload(payload: string): string | undefined {
   switch (event.kind) {
     case 'message-added':
     case 'message-replaced':
-      return JSON.stringify({ kind: event.kind, at: event.at,
+      return JSON.stringify({ kind: event.kind, at: event.at, redacted: true,
         message: { id: event.message.id, role: event.message.role, createdAt: event.message.createdAt, text: '' } })
     case 'message-text-appended':
-      return JSON.stringify({ kind: event.kind, at: event.at, messageId: event.messageId, appendText: '' })
+      return JSON.stringify({ kind: event.kind, at: event.at, redacted: true, messageId: event.messageId, appendText: '' })
     case 'answer-given':
       return JSON.stringify({ ...event, answer: '' })
     default:
@@ -358,6 +358,8 @@ function rebuildProjection(db: DatabaseSync): void {
     for (const row of db.prepare('SELECT thread_id, payload FROM events ORDER BY seq').all()) {
       let event: ThreadEvent
       try { event = JSON.parse(String(row.payload)) as ThreadEvent } catch { continue }
+      // Words that were taken out stay out: a redacted event is history's shape, not a message to draw.
+      if ('redacted' in event && event.redacted) continue
       applyEvent(db, String(row.thread_id), event)
     }
     db.exec('COMMIT')

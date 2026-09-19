@@ -255,18 +255,18 @@ export class ThreadMessageLog {
   }
 
   /**
-   * This thread's messages are now exactly these. An adapter that recomputes a whole array — a durable
-   * history rail merged with a live tail, a reordering the provider's own identities asked for — says so
-   * here, and the log works out what is new. A list that only grew at the end costs the additions alone.
+   * What this thread's provider currently shows. An adapter that recomputes a whole array — a durable
+   * history rail merged with a live tail — hands it here, and the log works out what is new: an unseen
+   * message is added, a message that grew is appended to. A list that is shorter than what the log
+   * already knows is a partial read (a capped poll, a session read afresh after a reap), never a rewind:
+   * providers are read to append and never to rebuild (ADR-0016), and only `reset` takes words back.
    */
-  set(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
-    const track = this.track(threadId)
-    const same = track.order.length <= messages.length && track.order.every((id, index) => messages[index]?.id === id)
-    if (!same) this.reset(threadId, historyEpoch)
+  set(threadId: string, messages: readonly AgentMessage[]): void {
     for (const message of messages) this.add(threadId, message)
-    // The list given is the whole history, so it is also exactly what the window should hold.
+    // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
-    current.messages = this.wanted(threadId) ? messages.map(message => ({ ...message })) : undefined
+    if (!this.wanted(threadId)) { current.messages = undefined; return }
+    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...message }))
   }
 
   /**
