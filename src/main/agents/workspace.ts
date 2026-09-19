@@ -46,6 +46,8 @@ export class WorkspaceHost implements AgentHost {
   private ready = false
   private dirty = false
   private saving: Promise<void> | undefined
+  /** Someone asked for the state to be on disk before they continue, so a write in flight is followed by another. */
+  private flushWanted = false
   private saveError: string | undefined
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
@@ -233,10 +235,15 @@ export class WorkspaceHost implements AgentHost {
   private flush(): Promise<void> {
     // This write covers whatever a waiting one would have written, so it takes its place.
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = undefined }
+    this.flushWanted = true
     if (this.saving) return this.saving
     this.saving = Promise.resolve().then(async () => {
       try {
-        while (this.dirty) {
+        // A state dirtied again while a write was in flight is written again only for a caller who asked; a
+        // provider that kept publishing during a slow write waits for the window like any other burst, so a
+        // slow disk cannot turn one flush into a run of back-to-back writes.
+        while (this.dirty && this.flushWanted) {
+          this.flushWanted = false
           this.dirty = false
           const saved = structuredClone(this.state)
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
@@ -251,6 +258,7 @@ export class WorkspaceHost implements AgentHost {
           try { await this.store.write(saved); this.saveError = undefined }
           catch (error) { this.dirty = true; throw error }
         }
+        if (this.dirty) this.writeSoon()
       } finally { this.saving = undefined }
     })
     return this.saving

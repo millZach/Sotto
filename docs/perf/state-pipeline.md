@@ -150,5 +150,10 @@ long enough for the 250 ms write window to fire forty times, so the test asserts
 most one publish per 16 ms window and one write per 250 ms window of the time the burst actually took) and
 the absolute counts only under `SOTTO_PERF_ASSERT=1`, as `docs/ci.md` describes for stopwatch budgets.
 
+The runner also showed a second cost the first measurement missed: a state dirtied again during a slow write
+was written again as soon as that write finished, so a flood over a slow disk became a run of back-to-back
+writes with no window between them. A write in flight is now followed at once only for a caller who asked
+for the state to be on disk; a provider that kept publishing during it waits for the next window.
+
 A user command is unchanged: it writes through `flush()`, which takes over any waiting provider write, and
 publishes directly, so the command still returns after its own write.

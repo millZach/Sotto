@@ -65,6 +65,31 @@ describe('workspace publish coalescing', () => {
     expect(f.host.workspaceSnapshot().threads[0]?.title).toBe('Working 1999')
   })
 
+  it('keeps one write per window when the disk is slow and the provider keeps publishing', async () => {
+    const f = await fixture()
+    const write = AtomicJsonStore.prototype.write
+    // A write that takes longer than the burst between two of them, the way a loaded runner's disk does.
+    const slow = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      await new Promise<void>(resolve => { setTimeout(resolve, 30) })
+      return write.call(this, value)
+    })
+    // The provider keeps publishing for longer than a window and a write together, so writes overlap the flood.
+    const started = performance.now()
+    let index = 0
+    while (performance.now() - started < 700) {
+      f.adapter.state.threads[0]!.title = `Working ${index}`
+      f.adapter.emit()
+      index += 1
+      await tick()
+    }
+    const last = `Working ${index - 1}`
+    await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title, { timeout: 5_000 }).toBe(last)
+    const elapsed = performance.now() - started
+    // Before the flush loop was paced, a state dirtied during a slow write was written again at once, so a
+    // flood met a slow disk with a write per write's length rather than one per window.
+    expect(slow.mock.calls.length).toBeLessThanOrEqual(Math.ceil(elapsed / 250) + 2)
+  })
+
   it('still writes and publishes a user command before that command returns', async () => {
     const f = await fixture()
     const write = vi.spyOn(AtomicJsonStore.prototype, 'write')
