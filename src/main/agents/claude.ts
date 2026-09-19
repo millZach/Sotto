@@ -1,4 +1,5 @@
 import { ClaudeHistory } from './claudeHistory'
+import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -66,6 +67,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly starting = new Map<string, Promise<Runtime>>()
   private readonly logs = new Map<string, ClaudeSessionLog>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly publisher = new ProviderSnapshotPublisher(() => {
+    const snapshot = this.view()
+    for (const listener of this.listeners) listener(snapshot)
+  })
   private readonly acknowledgements = new Map<string, () => void>()
   private readonly dispatching = new Set<string>()
   private readonly logOrigins = new Map<string, Set<string>>()
@@ -528,7 +533,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
     this.projectActivity(id, frame)
-    if (frame.parent_tool_use_id) { this.emit(); return }
+    if (frame.parent_tool_use_id) { this.emit(true); return }
     this.observeCompaction(id, frame, false)
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
       this.message(id, frame, false)
@@ -577,7 +582,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       thread.status = frame.is_error === true ? 'error' : 'idle'; runtime.requests.clear(); thread.requests = []
       if (frame.is_error === true) this.state.error = 'Claude could not complete this turn. Check its native subscription, model and usage limits.'
     }
-    this.emit()
+    this.emit(frame.type === 'stream_event' || frame.type === 'assistant'
+      || frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)))
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return
@@ -727,6 +733,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return structuredClone({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) })
   }
-  private emit(): void { const snapshot = this.view(); for (const listener of this.listeners) listener(snapshot) }
+  private emit(streaming = false): void { this.publisher.publish(streaming) }
 }
 

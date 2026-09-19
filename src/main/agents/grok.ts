@@ -1,5 +1,6 @@
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -123,6 +124,9 @@ export class GrokAcpHost implements AgentHost {
   private readonly selections = new Map<string, { model: string; effort: string | undefined }>()
   private readonly seenUpdates = new Set<string>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly publisher = new ProviderSnapshotPublisher(() => {
+    for (const listener of this.listeners) listener(this.current())
+  })
   private rpc: GrokRpc | undefined
   private stopping = Promise.resolve()
   private writing = Promise.resolve()
@@ -202,7 +206,7 @@ export class GrokAcpHost implements AgentHost {
     return structuredClone({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) })
   }
-  private emit(): void { for (const listener of this.listeners) listener(this.current()) }
+  private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
@@ -646,7 +650,7 @@ export class GrokAcpHost implements AgentHost {
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
       this.record(id, thread.status)
-      this.emit()
+      this.emit(!['user_message_chunk', 'turn_completed', 'interaction_resolved'].includes(update.sessionUpdate))
     }
   }
   /**

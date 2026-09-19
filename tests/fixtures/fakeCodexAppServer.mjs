@@ -186,6 +186,9 @@ setInterval(() => {
   if (action.type === 'exit') process.exit(0)
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
+  else if (action.type === 'notify-burst') {
+    process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join(''))
+  }
   else if (action.type === 'notify') {
     if (action.persist && action.params?.item) {
       const turn = thread.turns.find(turn => turn.id === action.params.turnId)
