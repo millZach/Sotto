@@ -215,9 +215,7 @@ test('project folders hold several threads, settle and restore threads and proje
     await expect(reopened.getByRole('button', { name: new RegExp(`^${title}`) })).toBeVisible()
 
     // The 760 px minimum recomposes the same page without shrinking type or clipping status and navigation.
-    await resize(launched, 760, 740)
-    await expectNoHorizontalOverflow(page)
-    const sizes = await page.evaluate(() => {
+    const typeSizes = () => page.evaluate(() => {
       // The status sentence is read-only text for assistive technology now. What a row still shows on its right is the
       // working clock or the words "needs you", and only while the thread is working or waiting.
       const slot = document.querySelector('.thread-nav__time, .thread-nav__attention')
@@ -227,9 +225,11 @@ test('project folders hold several threads, settle and restore threads and proje
         slot: slot === null ? null : getComputedStyle(slot).fontSize,
       }
     })
-    expect(sizes.message).toBe('16px')
-    expect(sizes.row).toBe('14px')
-    if (sizes.slot !== null) expect(sizes.slot).toBe('12px')
+    const wide = await typeSizes()
+    await resize(launched, 760, 740)
+    await expectNoHorizontalOverflow(page)
+    // The scale is the theme's business (ADR-0011); what the minimum width must not do is shrink it.
+    expect(await typeSizes()).toEqual(wide)
     // The page switch keeps its place in the sidebar foot at the minimum width.
     await expect(page.getByRole('tab', { name: 'Threads', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeInViewport()
