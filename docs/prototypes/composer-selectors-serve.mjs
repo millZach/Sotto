@@ -8,6 +8,8 @@ createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
   const file = resolve(root, '.' + path)
   if (!file.startsWith(root)) { res.writeHead(403); return res.end() }
-  try { res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' }); res.end(await readFile(file)) }
-  catch { res.writeHead(404); res.end('not found') }
+  let body
+  try { body = await readFile(file) } catch { res.writeHead(404); return res.end('not found') }
+  res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' })
+  res.end(body)
 }).listen(4173, '127.0.0.1', () => console.log('serving on http://127.0.0.1:4173'))
