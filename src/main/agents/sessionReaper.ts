@@ -2,7 +2,8 @@
  * Session reaper: stops a provider session that has sat idle past a threshold, so a run holds only the
  * sessions it is using. A session in the watched set is never stopped, and neither is one running a turn
  * or holding a request the user has not answered. Stopping is meant to be invisible: the thread keeps its
- * place in the snapshot with its messages, and the next action starts its session again.
+ * place in the snapshot and its messages are answered for by the event store, and the next action starts
+ * its session again.
  */
 export interface SessionReaperOptions {
   /** How often to look for idle sessions. */

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -26,9 +26,13 @@ export class ConfiguredProviderHost implements AgentHost {
   private readonly registrations = new Set<string>()
   private readonly registrationStore: AtomicJsonStore<string[]> | undefined
   private registrationLoad: Promise<void> | undefined
-  private observed: readonly string[] = []
+  /** Undefined until something says what it is looking at; a connection never invents a watched set. */
+  private observed: readonly string[] | undefined
   private readonly slots = new Map<ProviderId, Slot>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
+  /** Thread events from whichever provider owns the thread. Absent when no provider publishes any. */
+  readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
   constructor(private readonly options: {
     hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
     directory?: string
@@ -45,7 +49,16 @@ export class ConfiguredProviderHost implements AgentHost {
         this.accept(id, snapshot)
         this.publish()
       })
+      // A thread is owned by one provider, so its events pass straight through under its own thread ID.
+      options.hosts[id].subscribeEvents?.(event => { if (this.slots.get(id)!.wanted) for (const listener of this.eventListeners) listener(event) })
     }
+    if (providerIdSchema.options.some(id => options.hosts[id].subscribeEvents)) {
+      this.subscribeEvents = listener => { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener) }
+    }
+  }
+  /** Each provider asks the store about the threads it owns; a thread it does not own answers nothing. */
+  useThreadHistory(source: ThreadHistorySource): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
   }
   /** Capture the restored legacy project scope before UI configuration can change the default. */
   initialize(): Promise<void> {
@@ -120,7 +133,7 @@ export class ConfiguredProviderHost implements AgentHost {
     slot.wanted = true; const epoch = ++slot.epoch
     slot.status = { ...slot.status, connection: 'connecting' }; delete slot.status.error
     this.publish()
-    this.options.hosts[id].observeThreads?.(this.observed)
+    if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
     const pending = (async () => {
       try {
         const snapshot = await this.options.hosts[id].connect()
