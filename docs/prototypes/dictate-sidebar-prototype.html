@@ -2,17 +2,26 @@
 <!--
   PROTOTYPE. Throwaway. Not shipped, not tested, not wired to anything. Open the file in a browser.
 
-  The question: the thread sidebar stays up on the Dictate page too, and the top row says "Sotto" beside the
-  mark. What does the Dictate page become once the sidebar is there?
+  The question: the thread sidebar stays up on more pages than Threads, and the top row says "Sotto" beside the
+  mark. What does each page become once the sidebar is there, and what happens to the strip and the footer?
 
-  Today, Dictate wears the strip (mark + wordmark, the room switch, window controls) and the footer (page links,
-  one status sentence, the update control). Threads owns the whole window instead: the sidebar carries the switch,
-  the page links and the update control in its foot, and the window controls sit once at the page's top right.
-  Giving Dictate the sidebar means giving it the Threads layout, so the strip and the footer go, and everything
-  they carried has to land somewhere. The three looks differ in where.
+  Today only Threads owns the whole window: the sidebar carries the room switch, the page links and the update
+  control in its foot, and the window controls sit once at the page's top right. Every other page wears the strip
+  (mark + wordmark, the room switch, window controls) and the footer (page links as words, one status sentence,
+  the update control).
 
-  ?look=a|b|c, or the bar at the bottom (left and right arrow keys too). L flips light and dark, M shows the
-  macOS top row, 1 2 3 0 set the window to 1600x1000, 1280x800, the 820x560 minimum, or the browser.
+  The asks, page by page:
+   Dictate   the sidebar, with three looks for what it lists (a, b, c below).
+   History   the sidebar, in the empty left third.
+   Help      the sidebar, in the empty left third.
+   Settings  keep its own left column; the footer's five word links take the sidebar foot's icons.
+   Chats     keep its own chat list; the footer's five word links take the sidebar foot's icons.
+
+  The bar at the bottom switches everything. Page picks the page. On Dictate, Look picks a, b or c (left and
+  right arrows too). On Settings and Chats, Shell picks the strip-and-footer layout the ask describes, or the
+  sidebar layout for comparison (two left columns; look at it at 820 before choosing it). Footer picks the icons
+  the ask describes or today's words. L flips light and dark, M shows the macOS top row, 1 2 3 0 set the window
+  to 1600x1000, 1280x800, the 820x560 minimum, or the browser.
 
    a  Same sidebar.        The Threads sidebar exactly as it is, Dictate lit in the foot. The room is the
                            Dictate room as it stands, and the footer's one sentence sits faint at the room's
@@ -25,28 +34,33 @@
                            its title and branch. The two rooms then look like siblings; the header is the drag
                            region, as a pane's is.
 
+  Where the footer's contents land on a page that takes the sidebar: the page links and the update control are
+  already in the sidebar foot; the status sentence rests faint at the room's bottom right; History's Clear
+  history moves up into the page head beside search, where the count and search already are.
+
   Assumption stated: the target is the desktop app (Windows first, macOS second); no phone review.
 
-  Tastify checks for this task (scoped edit of two existing surfaces):
-   - Concept: "the same window, a different room": the sidebar does not move or change shape when the switch
-     flips. Verified by flipping Dictate | Threads in each look and watching the sidebar's top row, search and foot.
-   - Composition: the wave and the sentence stay the room's one dominant element; the sidebar reads as furniture.
-     Squint test at 1600x1000 and 820x560.
+  Tastify checks for this task (scoped edits of existing surfaces):
+   - Concept: "the same window, a different room": the sidebar does not move or change shape when the page
+     changes. Verified by walking Dictate, History and Help and watching the sidebar's top row, search and foot.
+   - Composition: each room keeps its one dominant element (the wave, the History head, the Help title); the
+     sidebar reads as furniture. Squint test at 1600x1000 and 820x560.
    - Type: no new sizes. The wordmark is the strip's (600 weight, -0.1px tracking) set at the sidebar's 14px scale.
-     Nothing in the room shrinks at the minimum window.
+     Nothing in any room shrinks at the minimum window.
    - Colour: every colour is a theme role; light and dark both checked; text on the sidebar at 4.5:1 or better.
-   - Copy: no line repeats its neighbour. The word "Dictate" appears once (the lit tab), which is why look c's
-     header carries facts rather than a title. First-screen budget in the room: headline, action, the hotkey hint
-     (an operating instruction), the last transcript row, and in a/b one status line.
+   - Copy: no line repeats its neighbour. "Dictate" appears once on the Dictate page (the lit tab), which is why
+     look c's header carries facts rather than a title. A footer icon carries its name as a tooltip and for
+     assistive technology, the way the sidebar foot's icons do.
    - Motion: none added. The wave rests still; the only motion is the folder chevron the sidebar already has.
-   - Keyboard: the sidebar's order is unchanged (top row, search, list, foot); the room's is button, then Copy.
+   - Keyboard: the sidebar's order is unchanged (top row, search, list, foot). Footer icons keep the footer's tab
+     order and gain 30px targets in place of 13px words.
    - macOS: the top row is inset 78px for the traffic lights. With the wordmark the row no longer fits in 264px,
      so this mock drops the wordmark on macOS and keeps the mark. That is the one open question the mock raises.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Sotto: the Dictate page with the sidebar</title>
+<title>Sotto: the sidebar on every page</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 @font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
@@ -56,6 +70,7 @@
   color-scheme: dark;
   --canvas: oklch(0.235 0.018 280);
   --sidebar: oklch(0.205 0.016 282);
+  --surface: oklch(0.26 0.019 280);
   --surface-raised: oklch(0.305 0.021 280);
   --sunken: oklch(0.265 0.02 280);
   --text: oklch(0.985 0.005 280);
@@ -72,6 +87,7 @@
   --row-selected: oklch(0.35 0.04 262);
   --row-selected-border: color-mix(in srgb, var(--accent) 30%, var(--border));
   --field: oklch(0.215 0.017 281);
+  --track: color-mix(in srgb, var(--text) 4%, transparent);
   --warning: oklch(0.829017 0.171221 81.038);
   --success: oklch(0.79 0.13 165);
   --error: oklch(0.702184 0.189226 22.228);
@@ -82,6 +98,7 @@
   color-scheme: light;
   --canvas: oklch(0.978 0.004 85);
   --sidebar: oklch(0.955 0.008 85);
+  --surface: oklch(0.99 0.003 85);
   --surface-raised: oklch(0.99 0.003 85);
   --sunken: oklch(0.93 0.01 85);
   --text: oklch(0.235 0.014 75);
@@ -104,20 +121,50 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { display: grid; place-items: center; overflow: hidden; background: #111; color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
 kbd { padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--surface-raised); color: var(--text-2); font: 12px var(--font-ui); }
 svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 svg.i.sm { width: 15px; height: 15px; }
 svg.i.xs { width: 12px; height: 12px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .drag { -webkit-app-region: drag; user-select: none; }
+[hidden] { display: none !important; }
 
 /* The window. Sized by the bar; scaled down to fit the browser when it must. */
-.window { position: relative; display: grid; grid-template-columns: 264px minmax(0, 1fr); width: 100vw; height: 100vh; overflow: hidden; background: var(--canvas); transform-origin: center; }
+.window { position: relative; display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; background: var(--canvas); transform-origin: center; }
 .window[data-size='1600'] { width: 1600px; height: 1000px; outline: 1px solid #333; }
 .window[data-size='1280'] { width: 1280px; height: 800px; outline: 1px solid #333; }
 .window[data-size='820'] { width: 820px; height: 560px; outline: 1px solid #333; }
+.body { display: grid; flex: 1; min-height: 0; grid-template-columns: 264px minmax(0, 1fr); }
+.window[data-shell='strip'] .body { grid-template-columns: minmax(0, 1fr); }
+.window[data-shell='strip'] :is(.nav, .room > .winctl, .room__drag, .room > .status) { display: none; }
+.window[data-shell='sidebar'] :is(.strip, .footer) { display: none; }
+
+/* ---- The strip and the footer, as global.css draws them for every page but Threads ---- */
+.strip { display: grid; flex: none; grid-template-columns: 1fr auto 1fr; align-items: center; height: 60px; padding-left: 20px; }
+[data-mac] .strip { padding-left: 78px; }
+.strip .mark { font-size: 15px; }
+.strip .mark svg { width: 20px; height: 20px; }
+.strip .mark b { display: inline; }
+.switch { display: inline-flex; justify-self: center; padding: 4px; border: 1px solid var(--hairline); border-radius: 99px; background: var(--track); -webkit-app-region: no-drag; }
+.switch button { display: inline-flex; align-items: center; gap: 9px; height: 34px; padding: 0 16px 0 12px; border-radius: 99px; color: var(--text-2); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.switch button:hover:not([aria-selected='true']) { color: var(--text); }
+.switch button[aria-selected='true'] { background: var(--text); color: var(--canvas); }
+.switch .mini { display: inline-flex; align-items: center; gap: 2px; height: 16px; }
+.switch .mini i { display: block; width: 2px; height: 5px; border-radius: 99px; background: currentColor; }
+.strip .winctl { position: static; justify-self: end; height: 60px; }
+.footer { display: flex; flex: none; align-items: center; gap: 22px; height: 44px; padding: 0 22px; border-top: 1px solid var(--hairline); color: var(--text-faint); font-size: 13px; user-select: none; }
+.footer nav { display: flex; flex: none; gap: 22px; }
+.footer nav a { border-radius: 3px; color: var(--text-2); }
+.footer nav a:hover, .footer nav a[aria-current='page'] { color: var(--text); }
+/* The ask: the same five pages as icons, in the sidebar foot's own 30px squares. */
+.footer nav.pages { gap: 2px; margin-left: -8px; }
+.footer nav.pages a { color: var(--text-muted); }
+.footer[data-footer='icons'] nav.words, .footer[data-footer='words'] nav.pages { display: none; }
+.footer__status { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer .update { margin-left: 0; }
 
 /* ---- Sidebar: threadSidebar.css and threadsChrome.css, at the sizes they set ---- */
 .nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--hairline); background: var(--sidebar); }
@@ -127,7 +174,7 @@ svg.i.xs { width: 12px; height: 12px; }
 .mark { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-right: auto; color: var(--text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
 .mark svg { flex: none; width: 18px; height: 18px; }
 .mark b { overflow: hidden; font-weight: inherit; text-overflow: ellipsis; white-space: nowrap; }
-[data-mac] .mark b { display: none; }
+[data-mac] .nav .mark b { display: none; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; color: var(--text-muted); -webkit-app-region: no-drag; }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--sunken); -webkit-app-region: no-drag; }
@@ -189,7 +236,7 @@ svg.i.xs { width: 12px; height: 12px; }
 .nav__foot .seg button { flex: 1; padding: 0 9px; }
 .pages { display: flex; align-items: center; }
 .page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--text-muted); }
-.page:hover { background: var(--hover); color: var(--text); }
+.page:hover, .page[aria-current='page'] { background: var(--hover); color: var(--text); }
 .update { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border-radius: 50%; color: var(--text-faint); }
 .update:hover { background: var(--hover); color: var(--text); }
 
@@ -200,18 +247,23 @@ svg.i.xs { width: 12px; height: 12px; }
 .winctl button:hover { background: var(--hover); color: var(--text); }
 .winctl button:last-child:hover { background: var(--error); color: #fff; }
 [data-mac] .winctl { display: none; }
-.lights { position: absolute; top: 14px; left: 16px; display: none; gap: 8px; }
+.lights { position: absolute; top: 14px; left: 16px; z-index: 7; display: none; gap: 8px; }
 .lights i { width: 12px; height: 12px; border-radius: 50%; background: #fe5f57; }
 .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
-[data-mac] .lights { display: flex; }
-/* Looks a and b: the room's top 44px is the drag region, drawn as nothing. Look c: the pane header is. */
+[data-mac][data-shell='sidebar'] .room .lights { display: flex; }
+[data-mac][data-shell='strip'] .strip .lights { display: flex; position: static; }
+/* On a page that takes the sidebar the room's top 44px is the drag region, drawn as nothing. Look c's pane header is instead. */
 .room__drag { flex: none; height: 44px; }
 .pane-head { display: flex; flex: none; align-items: center; gap: 10px; height: 44px; padding: 0 116px 0 16px; border-bottom: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; white-space: nowrap; }
 [data-mac] .pane-head { padding-right: 16px; }
 .pane-head b { color: var(--text); font-weight: 500; }
 .pane-head .sep { color: var(--text-faint); }
 .pane-head svg { color: var(--text-muted); }
+.pg { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+/* The footer's sentence, at rest where Threads keeps its context line. */
+.status { position: absolute; right: 16px; bottom: 8px; color: var(--text-faint); font-size: 12px; }
 
+/* Dictate */
 .dictate { display: grid; flex: 1 0 auto; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; padding: 0 24px 8px; }
 .hero { display: grid; align-content: center; justify-items: center; gap: 22px; padding-bottom: 36px; text-align: center; }
 .wave { display: inline-flex; align-items: center; gap: 9px; height: 54px; margin-bottom: -10px; }
@@ -225,25 +277,120 @@ svg.i.xs { width: 12px; height: 12px; }
 .when { padding-top: 4px; color: var(--text-faint); font-size: 13px; line-height: 1.4; }
 .when b { display: block; color: var(--text-2); font-weight: 500; }
 .text { display: -webkit-box; margin: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 17px; letter-spacing: -0.1px; line-height: 1.5; }
-.secondary { display: inline-flex; align-items: center; align-self: start; min-height: 36px; padding: 0 16px; border: 1px solid var(--border); border-radius: 99px; color: var(--text); font-size: 13.5px; font-weight: 500; }
+.secondary { display: inline-flex; align-items: center; align-self: start; min-height: 36px; padding: 0 16px; border: 1px solid var(--border); border-radius: 99px; color: var(--text); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
 .secondary:hover { background: var(--hover); }
-/* The footer's sentence, at rest where Threads keeps its context line. */
-.status { position: absolute; right: 16px; bottom: 8px; color: var(--text-faint); font-size: 12px; }
-/* At the minimum window the transcript row stacks its stamp above the text, as the app does at 820px. */
+.ghost { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 99px; color: var(--text-muted); font-size: 13.5px; font-weight: 500; }
+.ghost:hover { color: var(--text); background: var(--hover); }
 .window[data-size='820'] .last { grid-template-columns: minmax(0, 1fr) auto; }
 .window[data-size='820'] .when { grid-column: 1 / -1; padding: 0 0 6px; }
 .window[data-size='820'] .when b { display: inline; margin-right: 8px; }
-
-/* Which pieces each look shows. */
 [data-look='b'] .not-b, [data-look='c'] .not-c, .window:not([data-look='b']) .only-b, .window:not([data-look='c']) .only-c { display: none !important; }
+
+/* History: the roll, centred in whatever width the room has. Clear history sits in the head with search. */
+.column { flex: 1; min-height: 0; overflow-y: auto; padding: 0 24px 28px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.inner { width: min(720px, 100%); margin: 0 auto; }
+.window[data-shell='strip'] .column { padding-top: 32px; }
+.head { display: flex; align-items: center; gap: 12px; padding: 4px 0 18px; }
+.head h1 { margin: 0; font-size: 28px; font-weight: 500; letter-spacing: -.5px; }
+.head small { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.head .spring { flex: 1; }
+.head .ghost { white-space: nowrap; }
+.find { position: relative; display: flex; flex: 0 1 280px; align-items: center; min-width: 150px; height: 40px; color: var(--text-muted); }
+.find > svg { position: absolute; left: 14px; top: 50%; translate: 0 -50%; }
+.find input { width: 100%; height: 100%; padding: 0 14px 0 38px; border: 1px solid var(--border); border-radius: 99px; background: transparent; font-size: 14px; outline: none; }
+.find input::placeholder { color: var(--text-faint); }
+.hday { margin: 0; padding: 14px 0 6px; border-bottom: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; font-weight: 400; }
+.hlist { margin: 0; padding: 0; list-style: none; }
+.entry { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 0 0; padding: 18px 0; border-bottom: 1px solid var(--hairline); }
+.entry .when { padding-top: 2px; }
+.entry p { display: -webkit-box; margin: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 15.5px; line-height: 1.55; }
+
+/* Help */
+.help h1 { margin: 0 0 22px; font-size: 28px; font-weight: 500; letter-spacing: -.5px; }
+.hgroup { margin: 0; padding: 12px 16px 12px; border: 1px solid var(--hairline); border-bottom: 0; color: var(--text-muted); font-size: 13px; font-weight: 400; }
+.topic { padding: 12px 0 16px; border-top: 1px solid var(--hairline); }
+.topic summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; color: var(--text); font-size: 17px; font-weight: 500; cursor: pointer; }
+.topic summary::-webkit-details-marker { display: none; }
+.topic summary svg { color: var(--text-muted); rotate: 180deg; }
+.topic p { margin: 10px 0 0; color: var(--text-2); font-size: 15px; line-height: 1.6; }
+.topic p kbd { font-size: 12.5px; }
+
+/* Settings: its own left column (crossing-settings.css) and the detail beside it. */
+.settings { display: grid; flex: 1; min-height: 0; grid-template-columns: 236px minmax(0, 1fr); }
+.snav { display: flex; flex-direction: column; gap: 2px; padding: 34px 18px 20px 26px; border-right: 1px solid var(--hairline); overflow-y: auto; }
+.window[data-shell='sidebar'] .snav { padding-top: 44px; }
+.snav h1 { margin: 0 0 22px 10px; font-size: 28px; font-weight: 600; letter-spacing: -.5px; }
+.snav a { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 9px; color: var(--text-2); font-size: 14.5px; font-weight: 500; }
+.snav a svg { color: var(--text-muted); }
+.snav a:hover { background: var(--hover); color: var(--text); }
+.snav a[aria-current='true'] { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow); }
+.snav a[aria-current='true'] .chev { margin-left: auto; }
+.snav hr { width: 100%; margin: 12px 0; border: 0; border-top: 1px solid var(--hairline); }
+.sdetail { min-height: 0; overflow-y: auto; padding: 44px 36px 28px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.sdetail > * { width: min(790px, 100%); margin-left: auto; margin-right: auto; }
+.sdetail h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.4px; }
+.sdetail .sub { margin: 6px 0 20px; color: var(--text-muted); font-size: 15px; }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; padding: 18px 0; border-top: 1px solid var(--hairline); }
+.srow:last-child { border-bottom: 1px solid var(--hairline); }
+.srow b { display: block; font-size: 14.5px; font-weight: 500; }
+.srow small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 13px; }
+.field { display: flex; align-items: center; width: 240px; height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--field); font-size: 14px; }
+.card { width: 240px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.card .wave { height: 16px; gap: 3px; margin: 0 0 12px; }
+.card .wave i { width: 3px; height: 5px; }
+.card small { display: block; margin-bottom: 12px; color: var(--text-2); font-size: 13px; }
+.card .secondary { width: 100%; justify-content: center; background: var(--text); border-color: var(--text); color: var(--canvas); }
+.limit { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 99px; }
+.limit span { padding: 6px 12px; border-radius: 99px; color: var(--text-2); font-size: 13.5px; }
+.limit span[data-on] { background: var(--accent); color: var(--accent-ink); }
+.toggle { position: relative; display: block; width: 38px; height: 22px; border-radius: 99px; background: var(--accent); }
+.toggle::after { content: ''; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-ink); }
+
+/* Chats: the frame's older shape beside the transcript. */
+.chats { display: grid; flex: 1; min-height: 0; grid-template-columns: 264px minmax(0, 1fr); }
+.cnav { display: flex; flex-direction: column; padding: 16px 10px 0; border-right: 1px solid var(--hairline); background: var(--sidebar); }
+.window[data-shell='sidebar'] .cnav { padding-top: 44px; }
+.cnav__head { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 12px 8px; }
+.cnav__head h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.35px; }
+.chat { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; align-items: center; padding: 10px 10px 10px 8px; border: 1px solid var(--row-selected-border); border-radius: 8px; background: var(--row-selected); color: var(--text); }
+.chat svg { color: var(--text-muted); }
+.chat b { font-size: 13px; font-weight: 500; }
+.chat small { grid-column: 2; color: var(--text-muted); font-size: 12px; }
+.tx { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.crumbs { display: flex; flex: none; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 18px; overflow: hidden; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.window[data-shell='sidebar'] .crumbs { padding-right: 116px; }
+.crumbs .chip { padding: 2px 8px; border: 1px solid var(--border); border-radius: 99px; font-size: 12px; }
+.crumbs .chip[data-warn] { border-color: var(--warning); color: var(--warning); }
+.crumbs b { color: var(--text); font-size: 14.5px; font-weight: 500; }
+.crumbs .spring { flex: 1; }
+.messages { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 24px; }
+.messages > * { width: min(760px, 100%); margin-left: auto; margin-right: auto; }
+.msg { margin: 8px 0 22px; }
+.msg header { display: flex; gap: 8px; margin-bottom: 8px; color: var(--text-2); font-size: 13px; }
+.msg header time { color: var(--text-muted); }
+.msg p { margin: 0; font-size: 15px; line-height: 1.5; }
+.msg--you { padding: 16px 18px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.composer { flex: none; padding: 0 24px 8px; }
+.window[data-shell='sidebar'] .composer { padding-bottom: 30px; }
+.composer > * { width: min(760px, 100%); margin-left: auto; margin-right: auto; }
+.box { display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.box .ph { min-height: 48px; color: var(--text-faint); font-size: 15px; }
+.box footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--text-muted); font-size: 12.5px; }
+.box footer b { color: var(--text-2); font-weight: 500; }
+.box .send { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; border-radius: 50%; background: var(--sunken); color: var(--text-muted); }
+.under { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--text-2); font-size: 13.5px; }
+.under .spring { flex: 1; }
+.under small { color: var(--text-muted); font-size: 12px; }
+.under small b { color: var(--text-2); }
 
 /* ---- The bar. Not part of the mock. ---- */
 .bar { position: fixed; bottom: 14px; left: 50%; z-index: 9; display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border: 1px solid #333; border-radius: 12px; background: rgb(24 24 24 / 92%); color: #ddd; font: 12.5px/1.3 system-ui, sans-serif; box-shadow: 0 8px 30px rgb(0 0 0 / 45%); translate: -50% 0; }
 .bar .grp { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #2a2a2a; }
+.bar .grp[hidden] { display: none; }
 .bar button { padding: 4px 9px; border-radius: 6px; color: #bbb; }
 .bar button:hover { color: #fff; }
 .bar button[aria-pressed='true'] { background: #444; color: #fff; }
-.bar .what { min-width: 0; max-width: 420px; margin-right: 6px; color: #aaa; }
+.bar .what { min-width: 0; max-width: 380px; margin-right: 6px; color: #aaa; }
 .bar .what b { color: #fff; font-weight: 600; }
 </style>
 </head>
@@ -255,6 +402,7 @@ svg.i.xs { width: 12px; height: 12px; }
   <symbol id="i-threads" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
   <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
@@ -264,12 +412,37 @@ svg.i.xs { width: 12px; height: 12px; }
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+  <symbol id="i-audio" viewBox="0 0 24 24"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-swirl" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a4.5 4.5 0 0 1 0 9 4.5 4.5 0 0 0 0 9"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
   <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-max" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="1.5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
 </svg>
 
-<div class="window" id="win" data-look="a">
+<div class="window" id="win" data-page="dictate" data-look="a" data-shell="sidebar">
+
+  <!-- The strip: what every page but Threads wears today. Shown only on Settings and Chats in the strip shell. -->
+  <header class="strip drag">
+    <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="mark" aria-label="Sotto application">
+      <svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="22" fill="var(--accent)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="var(--accent-ink)"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="var(--accent-ink)" stroke-width="7.5" stroke-linecap="round" fill="none"/></svg>
+      <b>Sotto</b>
+    </span>
+    <div class="switch" role="tablist" aria-label="Mode">
+      <button role="tab" aria-selected="false"><span class="mini" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Dictate</button>
+      <button role="tab" aria-selected="false" data-tab="threads"><svg class="i"><use href="#i-threads"/></svg>Threads</button>
+    </div>
+    <div class="winctl"><button title="Minimize"><svg class="i"><use href="#i-min"/></svg></button><button title="Maximize"><svg class="i sm"><use href="#i-max"/></svg></button><button title="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+  </header>
+
+  <div class="body">
   <aside class="nav" aria-label="Threads">
     <div class="nav__top drag">
       <span class="mark" aria-label="Sotto application">
@@ -286,7 +459,7 @@ svg.i.xs { width: 12px; height: 12px; }
 
     <label class="search"><svg class="i sm"><use href="#i-search"/></svg><input type="search" placeholder="Search threads" class="not-b"><input type="search" placeholder="Search transcripts" class="only-b"></label>
 
-    <!-- Looks a and c: the Threads body, as it is. No row is current: the thread stays open, but this is not its page. -->
+    <!-- The Threads body, as it is. No row is current: the thread stays open, but this is not its page. -->
     <div class="nav__scroll not-b">
       <div class="folder">
         <div class="folder__head">
@@ -330,14 +503,14 @@ svg.i.xs { width: 12px; height: 12px; }
 
     <div class="nav__foot">
       <div class="seg" role="tablist" aria-label="Page">
-        <button role="tab" aria-selected="true">Dictate</button>
-        <button role="tab" aria-selected="false">Threads</button>
+        <button role="tab" data-room="dictate" aria-selected="true">Dictate</button>
+        <button role="tab" data-room="threads" aria-selected="false">Threads</button>
       </div>
       <nav class="pages" aria-label="Pages">
-        <a class="page" href="#chats" title="Chats"><svg class="i"><use href="#i-chat"/></svg></a>
-        <a class="page" href="#history" title="History"><svg class="i"><use href="#i-clock"/></svg></a>
-        <a class="page" href="#settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></a>
-        <a class="page" href="#help" title="Help"><svg class="i"><use href="#i-help"/></svg></a>
+        <a class="page" href="#chats" data-go="chats" title="Chats"><svg class="i"><use href="#i-chat"/></svg><span class="vh">Chats</span></a>
+        <a class="page" href="#history" data-go="history" title="History"><svg class="i"><use href="#i-clock"/></svg><span class="vh">History</span></a>
+        <a class="page" href="#settings" data-go="settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg><span class="vh">Settings</span></a>
+        <a class="page" href="#help" data-go="help" title="Help"><svg class="i"><use href="#i-help"/></svg><span class="vh">Help</span></a>
       </nav>
       <button class="update" title="Check for updates"><svg class="i"><use href="#i-refresh"/></svg></button>
     </div>
@@ -346,34 +519,165 @@ svg.i.xs { width: 12px; height: 12px; }
   <main class="room">
     <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
     <div class="winctl"><button title="Minimize"><svg class="i"><use href="#i-min"/></svg></button><button title="Maximize"><svg class="i sm"><use href="#i-max"/></svg></button><button title="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <div class="room__drag drag not-c"></div>
-    <div class="pane-head drag only-c">
-      <svg class="i sm"><use href="#i-mic"/></svg><b>Shure MV7</b>
-      <span class="sep">&middot;</span><span>MAI-Transcribe-2 via OpenRouter</span>
+
+    <!-- Dictate -->
+    <div class="pg" data-pg="dictate">
+      <div class="room__drag drag not-c"></div>
+      <div class="pane-head drag only-c">
+        <svg class="i sm"><use href="#i-mic"/></svg><b>Shure MV7</b>
+        <span class="sep">&middot;</span><span>MAI-Transcribe-2 via OpenRouter</span>
+      </div>
+      <section class="dictate" aria-label="Dictation">
+        <div class="hero">
+          <div class="wave" aria-label="Microphone activity"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <h1 class="sentence">Ready when you are.</h1>
+          <div class="actions">
+            <button class="primary">Start dictation</button>
+            <span class="hint">or press <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd> in any app</span>
+          </div>
+        </div>
+        <div class="last">
+          <div class="when"><b>19:31</b>22 words</div>
+          <p class="text">Okay one change I would like to make is I want the side bar to also be present in the dictate page as well.</p>
+          <button class="secondary">Copy</button>
+        </div>
+      </section>
     </div>
 
-    <section class="dictate" aria-label="Dictation">
-      <div class="hero">
-        <div class="wave" aria-label="Microphone activity"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <h1 class="sentence">Ready when you are.</h1>
-        <div class="actions">
-          <button class="primary">Start dictation</button>
-          <span class="hint">or press <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd> in any app</span>
+    <!-- History -->
+    <div class="pg" data-pg="history" hidden>
+      <div class="room__drag drag"></div>
+      <div class="column"><div class="inner">
+        <div class="head">
+          <h1>History</h1><small>100 transcripts</small>
+          <span class="spring"></span>
+          <label class="find"><svg class="i sm"><use href="#i-search"/></svg><input type="search" placeholder="Search transcripts"></label>
+          <button class="ghost">Clear history</button>
+        </div>
+        <h2 class="hday">Today</h2>
+        <ol class="hlist">
+          <li class="entry"><div class="when"><b>4:32 pm</b>56 words</div><p>One thing I want to start developing is a standards document for the project itself. It would be like a `Claude.md` and an `agent.md` so that an agent picking up the work knows how Sotto thinks.</p></li>
+        </ol>
+        <h2 class="hday">Wednesday, September 16</h2>
+        <ol class="hlist">
+          <li class="entry"><div class="when"><b>3:19 pm</b>41 words</div><p>Go ahead and make the changes that you recommend. Sotto should adopt next using sub-agents. After you make those changes, push and open the pull request.</p></li>
+        </ol>
+        <h2 class="hday">Tuesday, September 15</h2>
+        <ol class="hlist">
+          <li class="entry"><div class="when"><b>7:10 pm</b>103 words</div><p>One thing I would like to do is that when the context compacts, I do like that it shows at the bottom that the context was compacted. However, the note stays on screen far too long.</p></li>
+          <li class="entry"><div class="when"><b>7:09 pm</b>12 words</div><p>Let's go ahead and start brainstorming some ideas to update the terminal.</p></li>
+          <li class="entry"><div class="when"><b>12:05 pm</b>88 words</div><p>Remove the Soto development thread that's not being used, as nothing is working on it. It's a bug right now, and it needs to be removed.</p></li>
+          <li class="entry"><div class="when"><b>11:36 am</b>34 words</div><p>It constantly displays "saving draft" and "draft saved." It doesn't need to display that at all.</p></li>
+          <li class="entry"><div class="when"><b>10:44 am</b>15 words</div><p>Commit, push, and then go ahead and create a new release for me to download.</p></li>
+          <li class="entry"><div class="when"><b>10:19 am</b>61 words</div><p>The next thing I want to do is give people the choice of whether they want to work in this thread style or prefer to work in the terminal.</p></li>
+        </ol>
+      </div></div>
+    </div>
+
+    <!-- Help -->
+    <div class="pg" data-pg="help" hidden>
+      <div class="room__drag drag"></div>
+      <div class="column help"><div class="inner">
+        <h1>Help</h1>
+        <h2 class="hgroup">Getting started</h2>
+        <details class="topic" open><summary>Start and stop <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>Press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p></details>
+        <details class="topic" open><summary>Shortcut conflicts <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p></details>
+        <details class="topic" open><summary>Transcription <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>Microsoft MAI-Transcribe-2 transcribes your speech through OpenRouter. Add your OpenRouter API key in Settings and use Verify key to check the connection.</p></details>
+        <h2 class="hgroup">Privacy</h2>
+        <details class="topic" open><summary>Privacy <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>Audio you dictate is sent to OpenRouter for transcription. AI cleanup sends transcript text to OpenRouter. Agent prompts go to the connected coding provider. History stays on this computer.</p></details>
+        <h2 class="hgroup">Troubleshooting</h2>
+        <details class="topic" open><summary>Microphone access <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>If recording cannot start, open Windows Settings, then Privacy or Privacy &amp; security, then Microphone, and allow desktop apps. Choose an available input in Sotto Settings.</p></details>
+        <details class="topic" open><summary>Paste fallback <svg class="i"><use href="#i-chevron-down"/></svg></summary><p>If the text cannot be pasted where you are typing, Sotto copies it to the clipboard instead and says so.</p></details>
+      </div></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="pg" data-pg="settings" hidden>
+      <div class="settings">
+        <nav class="snav" aria-label="Settings sections">
+          <h1>Settings</h1>
+          <a href="#" aria-current="true"><svg class="i"><use href="#i-mic"/></svg>Dictation<svg class="i sm chev"><use href="#i-chevron"/></svg></a>
+          <a href="#"><svg class="i"><use href="#i-audio"/></svg>Transcription</a>
+          <a href="#"><svg class="i"><use href="#i-sparkles"/></svg>Cleanup</a>
+          <hr>
+          <a href="#"><svg class="i"><use href="#i-command"/></svg>Providers</a>
+          <a href="#"><svg class="i"><use href="#i-bot"/></svg>Agents</a>
+          <a href="#"><svg class="i"><use href="#i-out"/></svg>Output</a>
+          <hr>
+          <a href="#"><svg class="i"><use href="#i-palette"/></svg>Appearance</a>
+          <a href="#"><svg class="i"><use href="#i-sliders"/></svg>Application</a>
+        </nav>
+        <div class="sdetail">
+          <h2>Dictation</h2>
+          <p class="sub">Microphone &amp; recording</p>
+          <div class="srow"><div><b>Microphone</b></div><div class="field">Windows default</div></div>
+          <div class="srow"><div><b>Microphone test</b><small>Check that Sotto can hear you. Access is asked for only while the test runs.</small></div>
+            <div class="card"><div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><small>Run a quick input-level test.</small><button class="secondary">Test microphone</button></div></div>
+          <div class="srow"><div><b>Global shortcut</b><small>Used anywhere in Windows to start and stop dictation.</small></div><div class="field">Ctrl+Shift+Space</div></div>
+          <div class="srow"><div><b>Recording limit</b></div><div class="limit"><span>30 s</span><span>1 min</span><span>2 min</span><span data-on>5 min</span></div></div>
+          <div class="srow"><div><b>Sound cues</b><small>A short sound when recording starts and stops.</small></div><span class="toggle"></span></div>
+          <div class="srow"><div><b>Streaming transcription</b><small>Transcribe as you speak for a faster finish.</small></div><span class="toggle"></span></div>
         </div>
       </div>
-      <div class="last">
-        <div class="when"><b>19:31</b>22 words</div>
-        <p class="text">Okay one change I would like to make is I want the side bar to also be present in the dictate page as well.</p>
-        <button class="secondary">Copy</button>
+    </div>
+
+    <!-- Chats -->
+    <div class="pg" data-pg="chats" hidden>
+      <div class="chats">
+        <nav class="cnav" aria-label="Chats">
+          <div class="cnav__head"><h1>Chats</h1><button class="icon-btn" title="New chat"><svg class="i"><use href="#i-pen"/></svg></button></div>
+          <a class="chat" href="#"><svg class="i"><use href="#i-swirl"/></svg><b>Hey how is it going?</b><small>4 d ago</small></a>
+        </nav>
+        <div class="tx">
+          <div class="crumbs drag">
+            <span>/</span><svg class="i sm"><use href="#i-swirl"/></svg><span>Codex &middot; gpt-6-astra</span>
+            <span class="chip">No project</span><span class="chip" data-warn>Codex disconnected</span>
+            <b>Hey how is it going?</b>
+            <span class="spring"></span>
+            <button class="ghost">Make prompt</button><button class="secondary">Connect Codex</button>
+          </div>
+          <div class="messages">
+            <article class="msg msg--you"><header><b>You</b><time>9:06 am</time></header><p>Hey how is it going?</p></article>
+            <article class="msg"><header><b>Codex</b><time>9:06 am</time></header><p>Hey Zach! Going well. What's on your mind today?</p></article>
+          </div>
+          <div class="composer">
+            <div class="box">
+              <div class="ph">Reply to Codex</div>
+              <footer><svg class="i sm"><use href="#i-swirl"/></svg><b>gpt-6-astra</b><span>Personal chat</span><span>Connect Codex to send. Your draft stays here.</span><span class="send"><svg class="i"><use href="#i-up"/></svg></span></footer>
+            </div>
+            <div class="under"><svg class="i sm"><use href="#i-mic"/></svg>Dictate<span class="spring"></span><small><b>9%</b> context &nbsp; $0.12</small></div>
+          </div>
+        </div>
       </div>
-    </section>
-    <span class="status not-c">MAI-Transcribe-2 via OpenRouter</span>
+    </div>
+
+    <span class="status" id="status">MAI-Transcribe-2 via OpenRouter</span>
   </main>
+  </div>
+
+  <!-- The footer: what every page but Threads wears today. Shown only on Settings and Chats in the strip shell. -->
+  <footer class="footer" data-footer="icons">
+    <nav class="words" aria-label="Pages">
+      <a href="#threads" data-go="threads">Threads</a><a href="#chats" data-go="chats">Chats</a><a href="#history" data-go="history">History</a><a href="#settings" data-go="settings">Settings</a><a href="#help" data-go="help">Help</a>
+    </nav>
+    <nav class="pages" aria-label="Pages">
+      <a class="page" href="#threads" data-go="threads" title="Threads"><svg class="i"><use href="#i-threads"/></svg><span class="vh">Threads</span></a>
+      <a class="page" href="#chats" data-go="chats" title="Chats"><svg class="i"><use href="#i-chat"/></svg><span class="vh">Chats</span></a>
+      <a class="page" href="#history" data-go="history" title="History"><svg class="i"><use href="#i-clock"/></svg><span class="vh">History</span></a>
+      <a class="page" href="#settings" data-go="settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg><span class="vh">Settings</span></a>
+      <a class="page" href="#help" data-go="help" title="Help"><svg class="i"><use href="#i-help"/></svg><span class="vh">Help</span></a>
+    </nav>
+    <span class="footer__status" id="fstatus"></span>
+    <button class="update" title="Check for updates"><svg class="i"><use href="#i-refresh"/></svg></button>
+  </footer>
 </div>
 
 <div class="bar" role="toolbar" aria-label="Prototype controls">
   <span class="what" id="what"></span>
+  <span class="grp" id="pages"><button data-page="dictate">Dictate</button><button data-page="history">History</button><button data-page="help">Help</button><button data-page="settings">Settings</button><button data-page="chats">Chats</button></span>
   <span class="grp" id="looks"><button data-look="a">A</button><button data-look="b">B</button><button data-look="c">C</button></span>
+  <span class="grp" id="shells"><button data-shell="strip">Strip</button><button data-shell="sidebar">Sidebar</button></span>
+  <span class="grp" id="footers"><button data-footer="icons">Icons</button><button data-footer="words">Words</button></span>
   <span class="grp"><button id="theme">Light</button><button id="mac">macOS</button></span>
   <span class="grp" id="sizes"><button data-size="">Fill</button><button data-size="1600">1600</button><button data-size="1280">1280</button><button data-size="820">820</button></span>
 </div>
@@ -384,28 +688,63 @@ const LOOKS = {
   b: ['Sidebar follows the room', 'Same frame; the body lists today’s transcripts, and search searches them.'],
   c: ['Dictate as a pane', 'The room takes a thread pane’s 44px header, carrying the microphone and the model.'],
 }
+const PAGES = {
+  dictate: ['Dictate', 'MAI-Transcribe-2 via OpenRouter'],
+  history: ['History', 'Kept on this computer only.'],
+  help: ['Help', 'Shortcuts, privacy, and troubleshooting.'],
+  settings: ['Settings', 'Changes save as you make them.'],
+  chats: ['Chats', 'Chats are saved on this computer.'],
+}
+const OWN_COLUMN = new Set(['settings', 'chats'])
 const win = document.getElementById('win')
 const params = new URLSearchParams(location.search)
 const state = {
+  page: params.get('page') in PAGES ? params.get('page') : 'dictate',
   look: params.get('look') in LOOKS ? params.get('look') : 'a',
+  shell: params.get('shell') === 'sidebar' ? 'sidebar' : 'strip',
+  footer: params.get('footer') === 'words' ? 'words' : 'icons',
   theme: params.get('theme') === 'light' ? 'light' : 'dark',
   mac: params.get('mac') === '1',
   size: ['1600', '1280', '820'].includes(params.get('size')) ? params.get('size') : '',
 }
+const press = (selector, key, value) => { for (const b of document.querySelectorAll(selector)) b.setAttribute('aria-pressed', b.dataset[key] === value) }
 function paint() {
-  win.dataset.look = state.look
+  const own = OWN_COLUMN.has(state.page)
+  const shell = own ? state.shell : 'sidebar'
+  const look = state.page === 'dictate' ? state.look : 'a'
+  win.dataset.page = state.page
+  win.dataset.look = look
+  win.dataset.shell = shell
   document.documentElement.dataset.theme = state.theme
   if (state.mac) win.dataset.mac = ''; else delete win.dataset.mac
   if (state.size) win.dataset.size = state.size; else delete win.dataset.size
+  for (const pg of document.querySelectorAll('.pg')) pg.hidden = pg.dataset.pg !== state.page
+  // The sidebar foot: Dictate lit on Dictate, Threads lit on Chats (a Threads-room page), neither elsewhere; the page icon lit on its page.
+  for (const tab of document.querySelectorAll('.nav__foot [role="tab"]')) tab.setAttribute('aria-selected', tab.dataset.room === (state.page === 'dictate' ? 'dictate' : state.page === 'chats' ? 'threads' : ''))
+  for (const tab of document.querySelectorAll('.switch [role="tab"]')) tab.setAttribute('aria-selected', tab.dataset.tab === 'threads' && state.page === 'chats')
+  for (const a of document.querySelectorAll('[data-go]')) { if (a.dataset.go === state.page) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current') }
+  document.getElementById('status').textContent = PAGES[state.page][1]
+  document.getElementById('fstatus').textContent = PAGES[state.page][1]
+  document.querySelector('.footer').dataset.footer = state.footer
   fit()
-  document.getElementById('what').innerHTML = `<b>${state.look.toUpperCase()} · ${LOOKS[state.look][0]}</b><br>${LOOKS[state.look][1]}`
-  for (const b of document.querySelectorAll('#looks button')) b.setAttribute('aria-pressed', b.dataset.look === state.look)
-  for (const b of document.querySelectorAll('#sizes button')) b.setAttribute('aria-pressed', b.dataset.size === state.size)
+  const what = state.page === 'dictate'
+    ? `<b>Dictate · ${look.toUpperCase()} · ${LOOKS[look][0]}</b><br>${LOOKS[look][1]}`
+    : own
+      ? `<b>${PAGES[state.page][0]} · ${shell === 'strip' ? 'strip and footer' : 'the sidebar too'}</b><br>${shell === 'strip' ? `The page as it is; the footer’s links as ${state.footer}.` : 'For comparison: the Threads sidebar beside the page’s own column.'}`
+      : `<b>${PAGES[state.page][0]} · with the sidebar</b><br>The strip and footer go; the status sentence rests at the bottom right.`
+  document.getElementById('what').innerHTML = what
+  press('#pages button', 'page', state.page); press('#looks button', 'look', state.look); press('#shells button', 'shell', state.shell)
+  press('#footers button', 'footer', state.footer); press('#sizes button', 'size', state.size)
+  document.getElementById('looks').hidden = state.page !== 'dictate'
+  document.getElementById('shells').hidden = !own
+  document.getElementById('footers').hidden = !(own && shell === 'strip')
   document.getElementById('theme').setAttribute('aria-pressed', state.theme === 'light')
   document.getElementById('theme').textContent = state.theme === 'light' ? 'Light' : 'Dark'
   document.getElementById('mac').setAttribute('aria-pressed', state.mac)
   const q = new URLSearchParams()
-  q.set('look', state.look)
+  q.set('page', state.page)
+  if (state.page === 'dictate') q.set('look', state.look)
+  if (own) { q.set('shell', state.shell); if (shell === 'strip') q.set('footer', state.footer) }
   if (state.theme === 'light') q.set('theme', 'light')
   if (state.mac) q.set('mac', '1')
   if (state.size) q.set('size', state.size)
@@ -413,14 +752,19 @@ function paint() {
 }
 function fit() {
   if (!state.size) { win.style.transform = ''; return }
-  const w = win.offsetWidth, h = win.offsetHeight
-  win.style.transform = `scale(${Math.min(1, (innerWidth - 24) / w, (innerHeight - 24) / h)})`
+  win.style.transform = `scale(${Math.min(1, (innerWidth - 24) / win.offsetWidth, (innerHeight - 24) / win.offsetHeight)})`
 }
 addEventListener('resize', fit)
-document.getElementById('looks').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.look = b.dataset.look; paint() } })
-document.getElementById('sizes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.size = b.dataset.size; paint() } })
+const wire = (id, key) => document.getElementById(id).addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state[key] = b.dataset[key]; paint() } })
+wire('pages', 'page'); wire('looks', 'look'); wire('shells', 'shell'); wire('footers', 'footer'); wire('sizes', 'size')
 document.getElementById('theme').addEventListener('click', () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; paint() })
 document.getElementById('mac').addEventListener('click', () => { state.mac = !state.mac; paint() })
+// The mock's own page links and room switch work, so the sidebar can be walked the way the app would be.
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]'); const room = e.target.closest('.nav__foot [data-room]')
+  if (go && go.dataset.go in PAGES) { e.preventDefault(); state.page = go.dataset.go; paint() }
+  else if (room && room.dataset.room === 'dictate') { state.page = 'dictate'; paint() }
+})
 addEventListener('keydown', e => {
   if (e.target.matches('input')) return
   const order = Object.keys(LOOKS), i = order.indexOf(state.look)
