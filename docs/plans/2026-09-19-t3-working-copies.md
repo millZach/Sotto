@@ -10,8 +10,8 @@ Issue: #146. Branch: `feat/t3-thread-working-copies`. Review base: `ac7d9b75b4cb
 - [x] Branch naming: short temporary branch, existing writing model, privacy gates, guarded best-effort rename.
 - [x] Compatibility: preserve existing sessions, folders, drafts, history, branch and uncommitted work.
 - [x] Documentation: amend ADR-0014, context, README, agent-control, verification evidence.
-- [ ] Verification: targeted test-first checks, repeated typechecks, one final full suite, CI gates, relevant Electron journeys and visual checks.
-- [ ] Delivery: standards/spec subagent reviews against the pinned base and #146, fix findings, commit, push, PR.
+- [x] Verification: targeted test-first checks, repeated typechecks, full suite, CI gates, relevant Electron journeys and visual checks.
+- [x] Delivery preparation: standards/spec subagent reviews against the pinned base and #146, findings fixed and committed; branch ready to push and open the PR.
 
 ## Interface acceptance
 
@@ -34,4 +34,6 @@ Use the existing ThreadWorktrees real-Git fixtures, WorkspaceHost provider fixtu
 
 ## Constraints and unresolved gaps
 
-No files in the user's real profile are migrated or removed during development. No new host, runtime dependency, or credential. The current research note remains in the original checkout and will be included with this implementation. Full verification and review results will be recorded before PR creation.
+No files in the user's real profile were migrated or removed. No new runtime dependency or credential was added. The research note is included as historical evidence, with the adopted decision in ADR-0014.
+
+Main advanced to `71d0cd73` during implementation and was merged before final verification. All gates passed: 3,828 tests passed, 28 skipped; six Electron journeys passed; ten design tests verified 144 capture tuples. Both independent reviews are clear after fixes. See `docs/verification/2026-09-19-t3-working-copies.md` for evidence, the earlier intermittent draft-recovery failure reproduced on the initial main baseline, and runtime limits. No remaining implementation gap is known within #146.

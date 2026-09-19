@@ -2,6 +2,8 @@
 
 Research date: 2026-09-19. Scope: the branch-change notice in Zach's screenshot, thread identity, working copies, and branch lifecycle. This is source research with focused Sotto tests, not an application change or a live desktop reproduction.
 
+Historical comparison, before #146. Zach subsequently chose to adopt T3's shared-checkout default as well as its optional worktree lifecycle; the current decision is recorded in [ADR-0014](../adr/0014-thread-follows-its-worktree-branch.md). The observations and initial recommendation below describe the earlier state.
+
 ## Finding
 
 The two applications apply the branch-change notice to opposite working-copy modes. T3 warns for a shared project checkout and explicitly excludes dedicated worktrees. Sotto warns only for independent worktrees and excludes shared project folders. Sotto therefore announces an ordinary branch switch made inside a thread's isolated folder, including the agent creating a task branch. Its send path already accepts that switch. The screenshot matches this intentional renderer behavior; it does not establish which process switched the branch or whether any work was lost.

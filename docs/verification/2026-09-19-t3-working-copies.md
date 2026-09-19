@@ -1,6 +1,6 @@
 # Thread working copies
 
-Issue #146. Tested on Windows in an isolated checkout of `feat/t3-thread-working-copies`, based on `ac7d9b75b4cbe7aeba52113e8f8bba19a092321a`. The installed Sotto profile and the user's project checkout were not migrated or changed. Test providers and temporary Git repositories exercise the desktop app; no live-provider result is claimed.
+Issue #146. Tested on Windows in an isolated checkout of `feat/t3-thread-working-copies`, initially based on `ac7d9b75b4cbe7aeba52113e8f8bba19a092321a`. Main advanced during the work; `71d0cd73` (PR #145) was merged without conflicts before final verification. The installed Sotto profile and the user's project checkout were not migrated or changed. Test providers and temporary Git repositories exercise the desktop app; no live-provider result is claimed.
 
 ## Behavior
 
@@ -12,7 +12,7 @@ Before first send, an unallocated independent thread previews the source project
 
 ## Evidence
 
-Local captures are under `artifacts/issue-146/` (ignored generated evidence). The New thread matrix covers 1600x1000, 1280x800 and 820x560, light and dark themes, and normal and reduced motion. Screenshots use Windows device scaling; names describe the Electron viewport in CSS pixels.
+Captures are under `artifacts/issue-146/`. Three representative images are committed; remaining generated evidence is ignored. The New thread matrix covers 1600x1000, 1280x800 and 820x560, light and dark themes, and normal and reduced motion. Screenshots use Windows device scaling; names describe the Electron viewport in CSS pixels.
 
 - `shared-default-dialog.png`: Project folder selected by default, with shared files/branch explained.
 - `new-worktree-<size>-<theme>-<motion>.png`: conditional base, origin and existing-worktree controls.
@@ -22,11 +22,15 @@ Local captures are under `artifacts/issue-146/` (ignored generated evidence). Th
 
 The parent agent inspected representative light/dark, reduced-motion and minimum-size captures. The first small-window editor capture exposed clipping behind the sidebar; the final capture was inspected after clamping the editor to its pane. The Electron test now asserts its bounds.
 
-## Validation in progress
+## Validation
 
-Focused host, settings, IPC, renderer and real-Git adapter tests have passed. The first complete run exposed outdated defaults in two tests, an exact preload-surface expectation, and performance fixtures still reading transcripts from JSON after the SQLite migration. The preview-access regression was also being implemented while that run started. Those failures are being resolved before the final gate run; this note does not count that run as passing.
+Typecheck, lint and third-party notices passed on the integrated code; 174 notice components verified. `npm test -- --maxWorkers=2` passed: 3,828 tests passed, 28 skipped (294 files passed, 14 skipped). These results include main's merged provider fixes. Local full-run evidence: `artifacts/issue-146/verified-suite.log`.
 
-Final gate counts, Electron results, design-baseline changes and independent standards/spec review results will replace this section before PR creation.
+`npm run build` succeeded. The complete relevant Electron run passed all six tests in `thread-worktrees.spec.ts`, `files-panel-split.spec.ts` and `daily-workspace.spec.ts`. Those cover shared unfinished files, lazy allocation, base selection, reuse, first-send retry, branch notices, dirty restore, file isolation, and a real commit/push to an owned local remote. Latest generated evidence is saved with `final-integrated-` names.
+
+`npm run design:verify` passed all ten tests and verified 144 deterministic capture tuples. Twenty-five baseline images changed: eleven intentional settings/working-copy/narrow-pane updates, six stale Help images showing the earlier version number, and eight stale thread images showing the earlier model-picker appearance. Representative before/after crops were inspected; unchanged-pixel PNG encoding churn was discarded.
+
+The test fixtures were updated where defaults changed, and performance fixtures now read the migrated SQLite history through a consistent read-only-source backup instead of assuming inline JSON messages. Two pane-layout assertions now allow the read-only branch inspection triggered by drafting in a legacy thread. No failing assertion was weakened to suppress prompt dispatch, data loss or a runtime error.
 
 ## Independent review
 
@@ -46,7 +50,9 @@ The review fixes are in `166a85c1`. Four backend regressions cover legacy/shared
 
 The broader `daily-workspace.spec.ts` journey named `mixed pane drafts, queued work, settlement and preferences recover without automatic replay` intermittently shows an empty Codex composer even while main still reports the exact newer draft. The test retains its assertion; nothing was skipped or weakened to hide this failure.
 
-It reproduces against unchanged production code at the pinned main commit in a separate checkout: the same strengthened test failed twice and passed once with `--repeat-each=3`. The original main test also passed once, confirming the timing sensitivity. Local evidence: `artifacts/issue-146/main-baseline-draft-race.log`. This branch does not change draft reconciliation. The five scoped working-copy/Files/commit-and-push journeys passed separately. This failure is reported explicitly in the PR rather than counting the whole daily-workspace spec as green.
+It reproduces against unchanged production code at the initial main commit in a separate checkout: the same strengthened test failed twice and passed once with `--repeat-each=3`. The original main test also passed once, confirming the timing sensitivity. Local evidence: `artifacts/issue-146/main-baseline-draft-race.log`. This branch does not change draft reconciliation.
+
+After integrating main's provider snapshot fixes from PR #145, all six relevant Electron tests passed, including this journey. That passing run is recorded as such; it does not establish that an intermittent race is permanently fixed. The earlier failure and its main-baseline reproduction remain disclosed for follow-up.
 
 ## Limits
 
