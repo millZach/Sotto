@@ -1,0 +1,441 @@
+<!doctype html>
+<!--
+  PROTOTYPE. Throwaway. Not shipped, not tested, not wired to anything. Open the file in a browser.
+
+  The question: the thread sidebar stays up on the Dictate page too, and the top row says "Sotto" beside the
+  mark. What does the Dictate page become once the sidebar is there?
+
+  Today, Dictate wears the strip (mark + wordmark, the room switch, window controls) and the footer (page links,
+  one status sentence, the update control). Threads owns the whole window instead: the sidebar carries the switch,
+  the page links and the update control in its foot, and the window controls sit once at the page's top right.
+  Giving Dictate the sidebar means giving it the Threads layout, so the strip and the footer go, and everything
+  they carried has to land somewhere. The three looks differ in where.
+
+  ?look=a|b|c, or the bar at the bottom (left and right arrow keys too). L flips light and dark, M shows the
+  macOS top row, 1 2 3 0 set the window to 1600x1000, 1280x800, the 820x560 minimum, or the browser.
+
+   a  Same sidebar.        The Threads sidebar exactly as it is, Dictate lit in the foot. The room is the
+                           Dictate room as it stands, and the footer's one sentence sits faint at the room's
+                           bottom right, where Threads puts its context line.
+   b  Sidebar follows      The frame is the same (top row, search, foot) but the body lists what Dictate makes:
+      the room.            today's and yesterday's transcripts, one line each, a copy on hover. Search searches
+                           them. The Threads | Terminal switch stays with Threads.
+   c  Dictate as a pane.   The Threads sidebar as it is, and the room takes the 44px header line a thread pane
+                           has, carrying Dictate's facts (microphone, model) where a thread's header carries
+                           its title and branch. The two rooms then look like siblings; the header is the drag
+                           region, as a pane's is.
+
+  Assumption stated: the target is the desktop app (Windows first, macOS second); no phone review.
+
+  Tastify checks for this task (scoped edit of two existing surfaces):
+   - Concept: "the same window, a different room": the sidebar does not move or change shape when the switch
+     flips. Verified by flipping Dictate | Threads in each look and watching the sidebar's top row, search and foot.
+   - Composition: the wave and the sentence stay the room's one dominant element; the sidebar reads as furniture.
+     Squint test at 1600x1000 and 820x560.
+   - Type: no new sizes. The wordmark is the strip's (600 weight, -0.1px tracking) set at the sidebar's 14px scale.
+     Nothing in the room shrinks at the minimum window.
+   - Colour: every colour is a theme role; light and dark both checked; text on the sidebar at 4.5:1 or better.
+   - Copy: no line repeats its neighbour. The word "Dictate" appears once (the lit tab), which is why look c's
+     header carries facts rather than a title. First-screen budget in the room: headline, action, the hotkey hint
+     (an operating instruction), the last transcript row, and in a/b one status line.
+   - Motion: none added. The wave rests still; the only motion is the folder chevron the sidebar already has.
+   - Keyboard: the sidebar's order is unchanged (top row, search, list, foot); the room's is button, then Copy.
+   - macOS: the top row is inset 78px for the traffic lights. With the wordmark the row no longer fits in 264px,
+     so this mock drops the wordmark on macOS and keeps the mark. That is the one open question the mock raises.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto: the Dictate page with the sidebar</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* Sotto, the default theme, as tokens.css first-paints it. Feature CSS reads only these. */
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280);
+  --sidebar: oklch(0.205 0.016 282);
+  --surface-raised: oklch(0.305 0.021 280);
+  --sunken: oklch(0.265 0.02 280);
+  --text: oklch(0.985 0.005 280);
+  --text-2: oklch(0.86 0.01 270);
+  --text-muted: oklch(0.72 0.014 265);
+  --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270);
+  --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220);
+  --accent-ink: oklch(0.2 0.02 280);
+  --accent-text: oklch(0.86 0.09 215);
+  --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent);
+  --row-selected: oklch(0.35 0.04 262);
+  --row-selected-border: color-mix(in srgb, var(--accent) 30%, var(--border));
+  --field: oklch(0.215 0.017 281);
+  --warning: oklch(0.829017 0.171221 81.038);
+  --success: oklch(0.79 0.13 165);
+  --error: oklch(0.702184 0.189226 22.228);
+  --shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85);
+  --sidebar: oklch(0.955 0.008 85);
+  --surface-raised: oklch(0.99 0.003 85);
+  --sunken: oklch(0.93 0.01 85);
+  --text: oklch(0.235 0.014 75);
+  --text-2: oklch(0.36 0.014 75);
+  --text-muted: oklch(0.5 0.014 75);
+  --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80);
+  --accent: oklch(0.52 0.13 235);
+  --accent-ink: oklch(0.99 0.003 85);
+  --accent-text: oklch(0.42 0.1 235);
+  --accent-surface: oklch(0.9 0.03 230);
+  --row-selected: oklch(0.885 0.03 235);
+  --field: oklch(0.99 0.003 85);
+  --warning: oklch(0.546927 0.155556 45.359);
+  --success: oklch(0.5 0.11 158);
+  --error: oklch(0.509494 0.208583 28.513);
+  --shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: grid; place-items: center; overflow: hidden; background: #111; color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+kbd { padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--surface-raised); color: var(--text-2); font: 12px var(--font-ui); }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 15px; height: 15px; }
+svg.i.xs { width: 12px; height: 12px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.drag { -webkit-app-region: drag; user-select: none; }
+
+/* The window. Sized by the bar; scaled down to fit the browser when it must. */
+.window { position: relative; display: grid; grid-template-columns: 264px minmax(0, 1fr); width: 100vw; height: 100vh; overflow: hidden; background: var(--canvas); transform-origin: center; }
+.window[data-size='1600'] { width: 1600px; height: 1000px; outline: 1px solid #333; }
+.window[data-size='1280'] { width: 1280px; height: 800px; outline: 1px solid #333; }
+.window[data-size='820'] { width: 820px; height: 560px; outline: 1px solid #333; }
+
+/* ---- Sidebar: threadSidebar.css and threadsChrome.css, at the sizes they set ---- */
+.nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--hairline); background: var(--sidebar); }
+.nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+[data-mac] .nav__top { padding-left: 78px; }
+/* The mark and, new, the wordmark: the strip's app-mark, brought to the sidebar's scale. */
+.mark { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-right: auto; color: var(--text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
+.mark svg { flex: none; width: 18px; height: 18px; }
+.mark b { overflow: hidden; font-weight: inherit; text-overflow: ellipsis; white-space: nowrap; }
+[data-mac] .mark b { display: none; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; color: var(--text-muted); -webkit-app-region: no-drag; }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--sunken); -webkit-app-region: no-drag; }
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 6px; color: var(--text-muted); font-size: 12.5px; }
+.seg button:hover { color: var(--text); }
+.seg button[aria-checked='true'], .seg button[aria-selected='true'] { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow); }
+.seg--icons button { padding: 0 7px; }
+
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--text-muted); }
+.search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
+.search input { width: 100%; height: 100%; padding: 0 28px 0 32px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--field); font-size: 13px; outline: none; }
+.search input::placeholder { color: var(--text-faint); }
+.search input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+
+.nav__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.folder { margin: 0 0 14px; }
+.folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.folder__head:hover { background: var(--hover); }
+.folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 26px; padding: 0 8px 0 6px; border-radius: 7px; color: var(--text-2); font-size: 12.5px; font-weight: 600; text-align: left; }
+.folder__toggle > svg { color: var(--text-muted); transition: transform .16s ease; }
+.folder__toggle[aria-expanded='true'] > svg { display: none; }
+.folder__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder__actions { position: absolute; top: 2px; right: 0; display: flex; gap: 2px; padding-right: 2px; border-radius: 7px; background: var(--hover); opacity: 0; }
+.folder__head:hover .folder__actions { opacity: 1; }
+.folder__actions .action { width: 22px; height: 22px; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--hover); }
+.row[data-current] { background: var(--row-selected); border-color: var(--row-selected-border); }
+.row__item { display: grid; flex: 1; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; min-width: 0; min-height: 30px; padding: 0 8px 0 10px; border-radius: 7px; color: var(--text-2); text-align: left; }
+.row[data-current] .row__item { color: var(--text); }
+.row__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--border); border-radius: 50%; }
+.row__ring[data-state='working'] { border: 0; background: conic-gradient(var(--accent-text) 0 32%, color-mix(in srgb, var(--accent-text) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.row__ring[data-state='needs'] { border: 2px solid var(--warning); }
+.row__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.row__time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row__needs { color: var(--warning); font-size: 12px; white-space: nowrap; }
+.row:hover :is(.row__time, .row__needs) { visibility: hidden; }
+.row__actions { position: absolute; top: 1px; right: 0; display: flex; gap: 2px; padding-right: 2px; opacity: 0; pointer-events: none; }
+.row:hover .row__actions, .row[data-current] .row__actions { position: static; flex: none; opacity: 1; pointer-events: auto; }
+.action { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: var(--text-muted); }
+.action:hover { background: var(--hover); color: var(--text); }
+.shelf { display: flex; align-items: center; gap: 6px; width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border-radius: 7px; color: var(--text-muted); font-size: 12.5px; font-weight: 500; letter-spacing: .02em; text-align: left; }
+.shelf:hover { background: var(--hover); color: var(--text); }
+.shelf > span { color: var(--text-2); }
+
+/* Look b: the transcript roll in the sidebar's body. */
+.day { margin: 0; padding: 10px 8px 6px; color: var(--text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+.tr { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.tr:hover { background: var(--hover); }
+.tr__item { display: grid; flex: 1; grid-template-columns: 38px minmax(0, 1fr); column-gap: 8px; align-items: center; min-width: 0; min-height: 30px; padding: 0 8px 0 10px; color: var(--text-2); text-align: left; }
+.tr__when { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tr__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.tr__actions { position: absolute; top: 1px; right: 0; display: flex; opacity: 0; pointer-events: none; }
+.tr:hover .tr__actions { position: static; flex: none; opacity: 1; pointer-events: auto; }
+
+.nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin-top: auto; padding: 8px 6px 10px; border-top: 1px solid var(--hairline); }
+.nav__foot .seg { display: flex; flex: 1 0 100%; }
+.nav__foot .seg button { flex: 1; padding: 0 9px; }
+.pages { display: flex; align-items: center; }
+.page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--text-muted); }
+.page:hover { background: var(--hover); color: var(--text); }
+.update { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border-radius: 50%; color: var(--text-faint); }
+.update:hover { background: var(--hover); color: var(--text); }
+
+/* ---- The room ---- */
+.room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; height: 44px; padding-right: 6px; -webkit-app-region: no-drag; }
+.winctl button { display: grid; place-items: center; width: 34px; height: 30px; border-radius: 6px; color: var(--text-muted); }
+.winctl button:hover { background: var(--hover); color: var(--text); }
+.winctl button:last-child:hover { background: var(--error); color: #fff; }
+[data-mac] .winctl { display: none; }
+.lights { position: absolute; top: 14px; left: 16px; display: none; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #fe5f57; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+[data-mac] .lights { display: flex; }
+/* Looks a and b: the room's top 44px is the drag region, drawn as nothing. Look c: the pane header is. */
+.room__drag { flex: none; height: 44px; }
+.pane-head { display: flex; flex: none; align-items: center; gap: 10px; height: 44px; padding: 0 116px 0 16px; border-bottom: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+[data-mac] .pane-head { padding-right: 16px; }
+.pane-head b { color: var(--text); font-weight: 500; }
+.pane-head .sep { color: var(--text-faint); }
+.pane-head svg { color: var(--text-muted); }
+
+.dictate { display: grid; flex: 1 0 auto; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; padding: 0 24px 8px; }
+.hero { display: grid; align-content: center; justify-items: center; gap: 22px; padding-bottom: 36px; text-align: center; }
+.wave { display: inline-flex; align-items: center; gap: 9px; height: 54px; margin-bottom: -10px; }
+.wave i { display: block; width: 9px; height: 15px; border-radius: 99px; background: var(--accent-text); }
+.sentence { margin: 0; font-size: 44px; font-weight: 500; letter-spacing: -1.2px; line-height: 1.05; }
+.actions { display: flex; align-items: center; gap: 18px; color: var(--text-faint); font-size: 14px; }
+.primary { display: inline-flex; align-items: center; min-height: 46px; padding: 0 24px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 600; }
+.primary:hover { filter: brightness(1.06); }
+.hint { display: inline-flex; align-items: center; gap: 6px; }
+.last { display: grid; width: min(720px, 100%); align-items: start; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 0 22px; justify-self: center; padding: 22px 0 18px; border-top: 1px solid var(--hairline); }
+.when { padding-top: 4px; color: var(--text-faint); font-size: 13px; line-height: 1.4; }
+.when b { display: block; color: var(--text-2); font-weight: 500; }
+.text { display: -webkit-box; margin: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 17px; letter-spacing: -0.1px; line-height: 1.5; }
+.secondary { display: inline-flex; align-items: center; align-self: start; min-height: 36px; padding: 0 16px; border: 1px solid var(--border); border-radius: 99px; color: var(--text); font-size: 13.5px; font-weight: 500; }
+.secondary:hover { background: var(--hover); }
+/* The footer's sentence, at rest where Threads keeps its context line. */
+.status { position: absolute; right: 16px; bottom: 8px; color: var(--text-faint); font-size: 12px; }
+/* At the minimum window the transcript row stacks its stamp above the text, as the app does at 820px. */
+.window[data-size='820'] .last { grid-template-columns: minmax(0, 1fr) auto; }
+.window[data-size='820'] .when { grid-column: 1 / -1; padding: 0 0 6px; }
+.window[data-size='820'] .when b { display: inline; margin-right: 8px; }
+
+/* Which pieces each look shows. */
+[data-look='b'] .not-b, [data-look='c'] .not-c, .window:not([data-look='b']) .only-b, .window:not([data-look='c']) .only-c { display: none !important; }
+
+/* ---- The bar. Not part of the mock. ---- */
+.bar { position: fixed; bottom: 14px; left: 50%; z-index: 9; display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border: 1px solid #333; border-radius: 12px; background: rgb(24 24 24 / 92%); color: #ddd; font: 12.5px/1.3 system-ui, sans-serif; box-shadow: 0 8px 30px rgb(0 0 0 / 45%); translate: -50% 0; }
+.bar .grp { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #2a2a2a; }
+.bar button { padding: 4px 9px; border-radius: 6px; color: #bbb; }
+.bar button:hover { color: #fff; }
+.bar button[aria-pressed='true'] { background: #444; color: #fff; }
+.bar .what { min-width: 0; max-width: 420px; margin-right: 6px; color: #aaa; }
+.bar .what b { color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+  <symbol id="i-threads" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="1.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+</svg>
+
+<div class="window" id="win" data-look="a">
+  <aside class="nav" aria-label="Threads">
+    <div class="nav__top drag">
+      <span class="mark" aria-label="Sotto application">
+        <svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="22" fill="var(--accent)"/><rect x="26" y="20" width="9" height="56" rx="4.5" fill="var(--accent-ink)"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke="var(--accent-ink)" stroke-width="7.5" stroke-linecap="round" fill="none"/></svg>
+        <b>Sotto</b>
+      </span>
+      <div class="seg seg--icons not-b" role="radiogroup" aria-label="Sidebar mode">
+        <button role="radio" aria-checked="true" title="Threads"><svg class="i sm"><use href="#i-threads"/></svg><span class="vh">Threads</span></button>
+        <button role="radio" aria-checked="false" title="Terminal"><svg class="i sm"><use href="#i-terminal"/></svg><span class="vh">Terminal</span></button>
+      </div>
+      <button class="icon-btn" title="Add project"><svg class="i"><use href="#i-folder-plus"/></svg></button>
+      <button class="icon-btn" title="New thread"><svg class="i"><use href="#i-pen"/></svg></button>
+    </div>
+
+    <label class="search"><svg class="i sm"><use href="#i-search"/></svg><input type="search" placeholder="Search threads" class="not-b"><input type="search" placeholder="Search transcripts" class="only-b"></label>
+
+    <!-- Looks a and c: the Threads body, as it is. No row is current: the thread stays open, but this is not its page. -->
+    <div class="nav__scroll not-b">
+      <div class="folder">
+        <div class="folder__head">
+          <button class="folder__toggle" aria-expanded="true"><svg class="i xs"><use href="#i-chevron"/></svg><span class="folder__title">Valmet DNA Coax Research</span></button>
+          <span class="folder__actions"><button class="action" title="New thread here"><svg class="i"><use href="#i-pen"/></svg></button><button class="action" title="Settle project"><svg class="i"><use href="#i-archive"/></svg></button></span>
+        </div>
+        <ul class="rows">
+          <li class="row"><button class="row__item"><span class="row__ring" data-state="idle"></span><span class="row__title">Fieldbus PIC bypass and commissioning notes</span></button>
+            <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
+        </ul>
+      </div>
+      <div class="folder">
+        <div class="folder__head">
+          <button class="folder__toggle" aria-expanded="true"><svg class="i xs"><use href="#i-chevron"/></svg><span class="folder__title">Talk to Text Application</span></button>
+          <span class="folder__actions"><button class="action" title="New thread here"><svg class="i"><use href="#i-pen"/></svg></button><button class="action" title="Settle project"><svg class="i"><use href="#i-archive"/></svg></button></span>
+        </div>
+        <ul class="rows">
+          <li class="row"><button class="row__item"><span class="row__ring" data-state="working"></span><span class="row__title">UI Improvements</span><span class="row__time">4m</span></button>
+            <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
+          <li class="row"><button class="row__item"><span class="row__ring" data-state="needs"></span><span class="row__title">Release 0.1.4 notes</span><span class="row__needs">needs you</span></button>
+            <span class="row__actions"><button class="action" title="Rename thread"><svg class="i"><use href="#i-pencil"/></svg></button><button class="action" title="Settle thread"><svg class="i"><use href="#i-archive"/></svg></button></span></li>
+        </ul>
+      </div>
+      <button class="shelf" aria-expanded="false"><svg class="i xs"><use href="#i-chevron"/></svg><span>Settled</span></button>
+    </div>
+
+    <!-- Look b: the transcript roll. What Dictate makes, newest first, one line each. -->
+    <div class="nav__scroll only-b">
+      <p class="day">Today</p>
+      <ul class="rows">
+        <li class="tr"><button class="tr__item" title="Copy transcript"><span class="tr__when">19:31</span><span class="tr__text">Okay one change I would like to make is I want the side bar to also be present in the dictate page as well.</span></button><span class="tr__actions"><button class="action" title="Copy transcript"><svg class="i"><use href="#i-copy"/></svg></button></span></li>
+        <li class="tr"><button class="tr__item" title="Copy transcript"><span class="tr__when">18:04</span><span class="tr__text">Move the retry into the adapter and keep the coordinator out of it.</span></button><span class="tr__actions"><button class="action" title="Copy transcript"><svg class="i"><use href="#i-copy"/></svg></button></span></li>
+        <li class="tr"><button class="tr__item" title="Copy transcript"><span class="tr__when">16:47</span><span class="tr__text">Pick up milk, the good bread, and call Dad about Sunday.</span></button><span class="tr__actions"><button class="action" title="Copy transcript"><svg class="i"><use href="#i-copy"/></svg></button></span></li>
+      </ul>
+      <p class="day">Yesterday</p>
+      <ul class="rows">
+        <li class="tr"><button class="tr__item" title="Copy transcript"><span class="tr__when">21:12</span><span class="tr__text">The pane controls need to be clickable at the minimum window size.</span></button><span class="tr__actions"><button class="action" title="Copy transcript"><svg class="i"><use href="#i-copy"/></svg></button></span></li>
+        <li class="tr"><button class="tr__item" title="Copy transcript"><span class="tr__when">09:58</span><span class="tr__text">Thanks for the notes, I will look at the fieldbus drawings this week.</span></button><span class="tr__actions"><button class="action" title="Copy transcript"><svg class="i"><use href="#i-copy"/></svg></button></span></li>
+      </ul>
+    </div>
+
+    <div class="nav__foot">
+      <div class="seg" role="tablist" aria-label="Page">
+        <button role="tab" aria-selected="true">Dictate</button>
+        <button role="tab" aria-selected="false">Threads</button>
+      </div>
+      <nav class="pages" aria-label="Pages">
+        <a class="page" href="#chats" title="Chats"><svg class="i"><use href="#i-chat"/></svg></a>
+        <a class="page" href="#history" title="History"><svg class="i"><use href="#i-clock"/></svg></a>
+        <a class="page" href="#settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></a>
+        <a class="page" href="#help" title="Help"><svg class="i"><use href="#i-help"/></svg></a>
+      </nav>
+      <button class="update" title="Check for updates"><svg class="i"><use href="#i-refresh"/></svg></button>
+    </div>
+  </aside>
+
+  <main class="room">
+    <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <div class="winctl"><button title="Minimize"><svg class="i"><use href="#i-min"/></svg></button><button title="Maximize"><svg class="i sm"><use href="#i-max"/></svg></button><button title="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="room__drag drag not-c"></div>
+    <div class="pane-head drag only-c">
+      <svg class="i sm"><use href="#i-mic"/></svg><b>Shure MV7</b>
+      <span class="sep">&middot;</span><span>MAI-Transcribe-2 via OpenRouter</span>
+    </div>
+
+    <section class="dictate" aria-label="Dictation">
+      <div class="hero">
+        <div class="wave" aria-label="Microphone activity"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h1 class="sentence">Ready when you are.</h1>
+        <div class="actions">
+          <button class="primary">Start dictation</button>
+          <span class="hint">or press <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd> in any app</span>
+        </div>
+      </div>
+      <div class="last">
+        <div class="when"><b>19:31</b>22 words</div>
+        <p class="text">Okay one change I would like to make is I want the side bar to also be present in the dictate page as well.</p>
+        <button class="secondary">Copy</button>
+      </div>
+    </section>
+    <span class="status not-c">MAI-Transcribe-2 via OpenRouter</span>
+  </main>
+</div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <span class="what" id="what"></span>
+  <span class="grp" id="looks"><button data-look="a">A</button><button data-look="b">B</button><button data-look="c">C</button></span>
+  <span class="grp"><button id="theme">Light</button><button id="mac">macOS</button></span>
+  <span class="grp" id="sizes"><button data-size="">Fill</button><button data-size="1600">1600</button><button data-size="1280">1280</button><button data-size="820">820</button></span>
+</div>
+
+<script>
+const LOOKS = {
+  a: ['Same sidebar', 'The Threads sidebar as it is, Dictate lit in the foot. The status sentence rests at the bottom right.'],
+  b: ['Sidebar follows the room', 'Same frame; the body lists today’s transcripts, and search searches them.'],
+  c: ['Dictate as a pane', 'The room takes a thread pane’s 44px header, carrying the microphone and the model.'],
+}
+const win = document.getElementById('win')
+const params = new URLSearchParams(location.search)
+const state = {
+  look: params.get('look') in LOOKS ? params.get('look') : 'a',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  mac: params.get('mac') === '1',
+  size: ['1600', '1280', '820'].includes(params.get('size')) ? params.get('size') : '',
+}
+function paint() {
+  win.dataset.look = state.look
+  document.documentElement.dataset.theme = state.theme
+  if (state.mac) win.dataset.mac = ''; else delete win.dataset.mac
+  if (state.size) win.dataset.size = state.size; else delete win.dataset.size
+  fit()
+  document.getElementById('what').innerHTML = `<b>${state.look.toUpperCase()} · ${LOOKS[state.look][0]}</b><br>${LOOKS[state.look][1]}`
+  for (const b of document.querySelectorAll('#looks button')) b.setAttribute('aria-pressed', b.dataset.look === state.look)
+  for (const b of document.querySelectorAll('#sizes button')) b.setAttribute('aria-pressed', b.dataset.size === state.size)
+  document.getElementById('theme').setAttribute('aria-pressed', state.theme === 'light')
+  document.getElementById('theme').textContent = state.theme === 'light' ? 'Light' : 'Dark'
+  document.getElementById('mac').setAttribute('aria-pressed', state.mac)
+  const q = new URLSearchParams()
+  q.set('look', state.look)
+  if (state.theme === 'light') q.set('theme', 'light')
+  if (state.mac) q.set('mac', '1')
+  if (state.size) q.set('size', state.size)
+  history.replaceState(null, '', '?' + q)
+}
+function fit() {
+  if (!state.size) { win.style.transform = ''; return }
+  const w = win.offsetWidth, h = win.offsetHeight
+  win.style.transform = `scale(${Math.min(1, (innerWidth - 24) / w, (innerHeight - 24) / h)})`
+}
+addEventListener('resize', fit)
+document.getElementById('looks').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.look = b.dataset.look; paint() } })
+document.getElementById('sizes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.size = b.dataset.size; paint() } })
+document.getElementById('theme').addEventListener('click', () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; paint() })
+document.getElementById('mac').addEventListener('click', () => { state.mac = !state.mac; paint() })
+addEventListener('keydown', e => {
+  if (e.target.matches('input')) return
+  const order = Object.keys(LOOKS), i = order.indexOf(state.look)
+  if (e.key === 'ArrowRight') state.look = order[(i + 1) % order.length]
+  else if (e.key === 'ArrowLeft') state.look = order[(i + order.length - 1) % order.length]
+  else if (e.key === 'l' || e.key === 'L') state.theme = state.theme === 'light' ? 'dark' : 'light'
+  else if (e.key === 'm' || e.key === 'M') state.mac = !state.mac
+  else if (e.key === '1') state.size = '1600'
+  else if (e.key === '2') state.size = '1280'
+  else if (e.key === '3') state.size = '820'
+  else if (e.key === '0') state.size = ''
+  else return
+  paint()
+})
+paint()
+</script>
+</body>
+</html>
