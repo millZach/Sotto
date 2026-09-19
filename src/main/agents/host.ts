@@ -40,6 +40,13 @@ export interface AgentHost {
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
+  /**
+   * One thread's whole history from Sotto's own store, for the few things that need more than the window
+   * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
+   */
+  threadMessages?(threadId: string): readonly AgentMessage[]
+  /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
+  loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>

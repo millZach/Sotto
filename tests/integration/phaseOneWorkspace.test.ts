@@ -20,6 +20,13 @@ afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice
 const image: AgentAttachment = { id: 'draft-image', name: 'reference.png', mimeType: 'image/png',
   dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZ0AAAAASUVORK5CYII=' }
 
+/** A store's file and any write-ahead log beside it, so a search for what was said covers both. */
+async function onDisk(directory: string, name: string): Promise<string> {
+  const names = (await readdir(directory)).filter(item => item.startsWith(name))
+  const parts = await Promise.all(names.map(item => readFile(join(directory, item), 'latin1').catch(() => '')))
+  return parts.join(' ')
+}
+
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-phase-one-'))
   let historyEnabled = true
@@ -52,6 +59,7 @@ async function fixture() {
     current.control.dispose()
     await current.control.privacyChanged()
     await current.host.privacyChanged()
+    current.host.dispose()
     await current.registry.flush()
   }
   cleanup.push(async () => {
@@ -98,6 +106,7 @@ describe('integrated Phase 1 workspace persistence', () => {
     await writeFile(join(f.directory, 'workspace.json.tmp-user-note'), 'Preserve unrelated files')
     const recovered = new WorkspaceHost(new FakeProviderHost(), f.directory, () => false)
     await recovered.initialize()
+    recovered.dispose()
     const names = (await readdir(f.directory)).filter(name => name.startsWith('workspace.json'))
     expect(names.sort()).toEqual(['workspace.json', 'workspace.json.tmp-user-note'])
     expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain(marker)
@@ -112,7 +121,9 @@ describe('integrated Phase 1 workspace persistence', () => {
     await f.command({ type: 'compose', text: 'PRIVATE SENT TRANSCRIPT', attachments: [image] })
     await f.command({ type: 'send' })
     // The message reaches the workspace on the provider's own publish, whose write is gathered rather than immediate.
-    await vi.waitFor(async () => expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT'))
+    // Messages are in the thread store; `workspace.json` keeps organization alone.
+    await vi.waitFor(async () => expect(await onDisk(f.directory, 'threads.sqlite')).toContain('PRIVATE SENT TRANSCRIPT'))
+    expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
     expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
     f.setHistory(false)
     const write = AtomicJsonStore.prototype.write
@@ -122,7 +133,7 @@ describe('integrated Phase 1 workspace persistence', () => {
       return write.call(this, value)
     })
     await expect(f.control.privacyChanged()).rejects.toThrow('Private storage unavailable')
-    if (failedStore === 'preview') expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
+    if (failedStore === 'preview') expect(await onDisk(f.directory, 'threads.sqlite')).not.toContain('PRIVATE SENT TRANSCRIPT')
     else expect(await readFile(join(f.directory, 'attachment-previews.json'), 'utf8')).not.toContain(image.dataUrl)
     expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
     failure.mockRestore()
@@ -131,7 +142,7 @@ describe('integrated Phase 1 workspace persistence', () => {
     if (typeof maintenance === 'function') maintenance()
     await vi.waitFor(async () => {
       expect(await readFile(join(f.directory, 'attachment-previews.json'), 'utf8')).not.toContain(image.dataUrl)
-      expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
+      expect(await onDisk(f.directory, 'threads.sqlite')).not.toContain('PRIVATE SENT TRANSCRIPT')
     })
   })
 
@@ -207,6 +218,8 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(sent.assignments).toEqual([])
     await f.command({ type: 'settle-project', projectId: project.id })
     await f.restart()
+    // The restarted coordinator says which thread is open, and the workspace loads that thread's window
+    // out of the thread store: the messages are no longer in `workspace.json` (issue #119).
     await f.command({ type: 'manual-send', ...draft })
     expect(f.adapters.claude.commands.filter(command => command.type === 'send')).toHaveLength(1)
     expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)

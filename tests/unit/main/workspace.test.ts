@@ -47,7 +47,12 @@ describe('durable project/thread organization', () => {
     const reopened = await workspaceFixture(f.root); cleanup.push(reopened.stop)
     snapshot = reopened.host.workspaceSnapshot()
     expect(snapshot.connected).toBe(false)
-    expect(snapshot.threads.find(thread => thread.id === 'local')).toMatchObject({ id: 'local', projectId: project.id, status: 'running', nativeSessionStarted: true, messages: [expect.objectContaining({ text: 'Implement the task' })] })
+    // Messages live in the thread store now; the restored snapshot carries the summary, and the window
+    // arrives when a pane says it is looking at the thread.
+    expect(snapshot.threads.find(thread => thread.id === 'local')).toMatchObject({ id: 'local', projectId: project.id, status: 'running', nativeSessionStarted: true, messages: [],
+      summary: expect.objectContaining({ messageCount: 1, lastUser: expect.objectContaining({ text: 'Implement the task' }) }) })
+    reopened.host.observeThreads(['local'])
+    expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.messages).toEqual([expect.objectContaining({ text: 'Implement the task' })])
     snapshot = await reopened.host.setWorkspaceSettled('project', project.id, false)
     expect(isWorkspaceThreadSettled(snapshot.threads.find(thread => thread.id === 'local')!, snapshot.projects.find(item => item.id === project.id))).toBe(false)
     expect(isWorkspaceThreadSettled(snapshot.threads.find(thread => thread.id === 'other')!)).toBe(true)
@@ -103,7 +108,10 @@ describe('durable project/thread organization', () => {
     const retained = await reopened.host.snapshot()
     expect(retained.projects.map(project => project.id)).toEqual(ids)
     expect(retained.threads.map(thread => thread.id)).toEqual(snapshot.threads.map(thread => thread.id))
-    expect(retained.threads.find(thread => thread.messages.some(message => message.id === 'history'))?.messages[0]?.text).toBe('Searchable retained result')
+    const carrying = retained.threads.find(thread => thread.summary?.lastAssistant?.id === 'history')!
+    expect(carrying.summary?.lastAssistant?.text).toBe('Searchable retained result')
+    reopened.host.observeThreads([carrying.id])
+    expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === carrying.id)?.messages.map(message => message.text)).toContain('Searchable retained result')
     expect(retained.models).toHaveLength(3)
     expect(retained.models.every(model => !model.ready)).toBe(true)
     expect(retained.threads.every(thread => thread.nativeSessionStarted)).toBe(true)
