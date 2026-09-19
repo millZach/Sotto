@@ -47,6 +47,12 @@ A read-only `initialize` against the installed Grok CLI 1.0.5 returned `promptCa
 
 The Electron checks exercise the real shared composer with the deterministic in-memory provider. Provider-specific protocol checks use the real Codex and Claude adapters against child-process fake providers, including a 20 MiB batch, later screenshot turns, steering, lost acknowledgements and restart. These checks do not establish live provider image interpretation or macOS behavior.
 
+## Merge preparation
+
+The branch was rebased onto `7b63b367`, which includes the separate saved-draft creation fix. Typecheck, lint, notices and build passed again. The combined Codex/Claude image, Grok rejection, thread navigation/delivery and personal chat suites passed 72 tests across five files.
+
+The first integrated run of the newly merged saved-draft Electron test observed the optimistic pane before main confirmed creation. The test now waits until the created thread is active and the global command lane has finished before reading its authoritative snapshot. Existing error, draft-preservation and send assertions remain intact; no runtime behavior changed. Independent review found no remaining issue. The final Electron run passed four journeys across `screenshot-paste`, `phase-one-integrated` and `thread-creation`: paste/send/queue, draft/navigation/restart, hidden-coordinator saved drafts, and new-thread file/pasted screenshots.
+
 ## Captures
 
 Generated under `artifacts/codex-images/` (ignored):

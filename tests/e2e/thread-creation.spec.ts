@@ -26,6 +26,11 @@ test('creates a project thread while the hidden coordinator retains another thre
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New project thread', exact: true })).toBeVisible()
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+    // The optimistic pane appears before main confirms creation and activation.
+    await expect.poll(async () => page.evaluate(async () => {
+      const state = await window.sotto!.agents!.get()
+      return !state.globalLaneBusy && state.host.threads.some(thread => thread.id === state.activeThreadId && thread.title === 'New project thread')
+    })).toBe(true)
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.error).toBeNull()
     expect(state.host.threads).toContainEqual(expect.objectContaining({ id: state.activeThreadId, title: 'New project thread' }))
