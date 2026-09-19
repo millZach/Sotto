@@ -46,5 +46,3 @@ export interface StoredThreadEvent {
   readonly event: ThreadEvent
 }
 
-/** The message kinds whose payload carries what the user or the agent said. */
-export const MESSAGE_TEXT_EVENT_KINDS: ReadonlySet<ThreadEventKind> = new Set(['message-added', 'message-replaced', 'message-text-appended', 'answer-given'])

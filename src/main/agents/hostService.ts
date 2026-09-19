@@ -21,7 +21,7 @@ export interface ClientIdentity {
  * Everything a client may use, and nothing else. The host owns the providers, the worktrees and the
  * event store (ADR-0016); a client reads the stream and sends commands, and holds no provider
  * identity of its own. Today the only client is the app's window over IPC, so the only implementation
- * is `LocalHostService`; the interface exists so a second transport is a new caller rather than a
+ * is `LocalHostService`; the interface exists so a second transport is a new client rather than a
  * rewrite. Threads are addressed by Sotto thread ID either way (ADR-0002).
  */
 export interface HostService {

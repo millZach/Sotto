@@ -1,6 +1,6 @@
 # A transcript cursor, usable only beside the history it accounts for
 
-Accepted September 19, 2026, to stop reconnect cost growing with a thread's history.
+Accepted September 19, 2026, to stop reconnect cost growing with a thread's history. Amended the same day by ADR-0016: the event store, not `WorkspaceHost`'s cache, is now the history of record, and an adapter that appends events is handed what the store holds through a history source instead of `restoreThreadHistory`. The cursor rule below stands: a cursor is trusted only beside the history it accounts for.
 
 ## Context
 
