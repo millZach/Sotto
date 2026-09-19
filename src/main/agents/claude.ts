@@ -106,6 +106,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
       this.ensureThread(id, alias)
       this.seedHistory(id, alias, held.get(id) ?? this.restoredHistory.get(id))
+      // Handed back for this connect only; a later one is seeded again or reads from the first byte.
+      this.restoredHistory.delete(id)
       if (alias.kind === 'personal' && alias.origins.length && !await this.log(id).exists()) {
         this.threads.get(id)!.historyStatus = 'error'; this.threads.get(id)!.historyError = 'Claude native history is unavailable. Cached messages are retained; restore its session before continuing.'
       }
