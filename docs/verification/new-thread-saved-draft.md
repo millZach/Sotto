@@ -45,6 +45,12 @@ opening a manual thread.
 
 ## Delivery boundary
 
+The first PR CI run (`35468748509`) passed the new-thread regressions but exposed a race in
+`personalChats.test.ts`: the permission assertion read the fake provider's log immediately after
+the stdin write completed, before the child process necessarily recorded the reply. The assertion
+now polls for the exact `decline` response, matching the adjacent structured-answer test. The
+14-test personal-chat integration file passed locally before and after this test-only correction.
+
 The local source and development build contain the fix. The installed app was inspected read-only;
 its profile, executable, and running session were not changed. Electron tests use fixture providers
 and do not establish live provider compatibility. This change does not alter provider protocols or layout.
