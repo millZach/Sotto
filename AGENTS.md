@@ -37,7 +37,7 @@ Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by defa
 - Desktop-native: a window with a drag strip, a tray and a floating widget, not a page in a frame. Verify at 1600x1000, 1280x800 and the 820x560 minimum; nothing overflows or clips at the minimum.
 - The whole app works from the keyboard, and the keyboard path is designed rather than inherited. Focus moves in the order the eye does, every control has an accessible name that says what a press does, anything that opens answers Escape, controls inside the drag strip opt out of dragging, and a new shortcut checks against the global dictation hotkey before it claims a chord.
 - Voice and memory are gated for the beta (ADR-0012, ADR-0013). Anything that speaks, listens, manages a thread or reads memory asks the gate before it exists: `useVoiceCoordinatorEnabled()` or `useMemoryEnabled()` in the renderer, the setting read once at start in main, the snapshot's `voiceCoordinator` field in the widget. Gate it and leave it whole; the setting turning back on restores all of it, tests included.
-- When the direction is not settled (a new surface, a restyle, anything with two good answers) build an HTML mock-up on a `prototype/` branch first, offer variants, and record the user's pick in the plan or ADR. An affordance added to a surface that already exists needs no mock-up. Load the `tastify` skill when it is available.
+- When the direction is not settled (a new surface, a restyle, anything with two good answers) build an HTML mock-up first, offer variants, and record the user's pick in the plan or ADR. An affordance added to a surface that already exists needs no mock-up. Load the `tastify` skill when it is available.
 
 ## Gotchas the code does not confess
 
@@ -48,6 +48,7 @@ Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by defa
 - `npm run design:verify` compares captures against committed baselines. Regenerate with `npm run design:capture` only when the look changed on purpose, and say so in the PR.
 - Worktrees go under `.worktrees/` or `.claude/worktrees/`, and a new generated `artifacts/` folder gets a line in `.gitignore` and `eslint.config.mjs`. Anywhere else, lint and the suite go red on the copies.
 - Never link `node_modules` into a throwaway worktree on Windows. `git worktree remove --force` and `rm -rf` both follow a junction and empty the real folder; it happened while reproducing a failure on `main` and cost a full reinstall. Run `npm ci` in the worktree, or use `git stash` in place.
+- A Sotto thread's worktree stays on the branch Sotto made for it (`sotto/thread-<id>`). Commit and push there; a `feat/` or `prototype/` branch is made from the main checkout, after the work leaves the thread. Sotto checks the worktree's branch against its record before every send and refuses the message until the recorded branch is checked out again (`threadWorktrees.ts`).
 - Files are UTF-8 without a byte order mark. A BOM has broken the build before.
 
 ## Before opening a pull request
