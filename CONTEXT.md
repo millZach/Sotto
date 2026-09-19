@@ -53,7 +53,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 | Verb | Meaning | In code (`AgentHost`) |
 |---|---|---|
 | create | open a new thread in a project with a model | `execute({ type: 'create-thread' })` |
-| resume | observe an existing thread's detail so events arrive for it | `observeThreads` (optional for adapters that always deliver detail) then `snapshot` |
+| resume | observe an existing thread's detail so its history and later events arrive for it | `observeThreads` (optional for adapters that always deliver detail) then `snapshot` |
 | prompt | send a user message to a thread | `execute({ type: 'send' })` |
 | cancel | interrupt the agent's current turn | `execute({ type: 'interrupt' })` |
 | status | read every project, model and thread the provider knows | `snapshot` |

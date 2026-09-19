@@ -13,6 +13,8 @@ async function fixture() {
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Identity', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Identity', modelId: f.modelId })
+  // History arrives when a thread is opened, so keep this thread open across reconnections.
+  f.host.observeThreads?.([threadId])
   const current = async () => (await f.host.snapshot()).threads.find(t => t.id === threadId)!
   const send = (type: 'send' | 'steer', text: string) => {
     const command = { type, threadId, commandId: randomUUID(), messageId: randomUUID(), text }
