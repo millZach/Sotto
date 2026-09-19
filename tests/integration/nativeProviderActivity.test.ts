@@ -51,7 +51,7 @@ it('Grok restores tool snapshots, failures and exact output once across replay/r
     await expect.poll(async () => tools((await f.host.snapshot()).threads[0])[0]?.status).toBe('failed')
     const before = tools((await f.host.snapshot()).threads[0])
     await f.action(id, { type: 'replay' }); await f.host.snapshot()
-    f = await f.driver.restart(); await f.host.connect()
+    f = await f.driver.restart(); f.host.observeThreads?.([id]); await f.host.connect()
     expect(tools((await f.host.snapshot()).threads[0])).toEqual(before)
     expect((await f.driver.requests()).filter(r => r.method === 'session/prompt')).toHaveLength(1)
   } finally { await f.cleanup() }
@@ -87,7 +87,7 @@ it.each(['Done.', 'Done. Another result.'])('Grok retains a distinct live stream
     await f.script({})
     await f.action(id, { type: 'replay' })
     expect(await read()).toEqual(expected)
-    f = await f.driver.restart(); await f.host.connect()
+    f = await f.driver.restart(); f.host.observeThreads?.([id]); await f.host.connect()
     expect(await read()).toEqual(expected)
     expect((await f.driver.requests()).filter(request => request.method === 'session/prompt')).toHaveLength(1)
   } finally { await f.cleanup() }

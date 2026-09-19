@@ -20,6 +20,7 @@ import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
+import { SessionReaper } from './sessionReaper'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type IdentityItem } from './codexMessageIdentity'
 
 const MAX_OUTPUT_BYTES = 1024 * 1024
@@ -83,6 +84,8 @@ type Waiter = { resolve: () => void; reject: (error: Error) => void; apply: (val
 
 export interface CodexAppServerHostOptions {
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
+  /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
+  reaperSweepMs?: number; sessionIdleMs?: number
 }
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
@@ -96,7 +99,9 @@ export class CodexAppServerHost implements AgentHost {
   private readonly live = new Set<string>()
   /** Threads whose turns have been read on this connection; history is read once per open. */
   private readonly histories = new Set<string>()
+  /** Watched set: the threads the coordinator asked for. Their sessions are resumed eagerly, never reaped. */
   private readonly observed = new Set<string>()
+  private readonly reaper: SessionReaper
   private readonly resuming = new Map<string, Promise<void>>()
   private readonly opening = new Map<string, Promise<void>>()
   private readonly threadReads = new Map<string, Promise<void>>()
@@ -131,6 +136,31 @@ export class CodexAppServerHost implements AgentHost {
     this.usage = new NativeUsage(options.userDataPath, 'codex')
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
+    this.reaper = new SessionReaper({
+      ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
+      ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
+      isWatched: id => this.observed.has(id),
+      isBusy: id => this.busy(id),
+      stop: id => this.stopSession(id),
+    })
+  }
+  /** A turn, an unanswered request, an unconfirmed write or a command mid-dispatch all hold a session open. */
+  private busy(id: string): boolean {
+    const thread = this.threads.get(id)
+    return this.dispatching.has(id) || this.runningTurns.has(id) || this.unconfirmedDispatchSessionIds.has(id)
+      || this.resuming.has(id) || this.opening.has(id) || this.threadReads.has(id)
+      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+      || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.pendingSettings || !!this.aliases[id]?.pendingRollback
+  }
+  /**
+   * Drop the resumed native thread. The app-server offers no close for one thread, so stopping means
+   * forgetting the runtime: the next action resumes it again. The rollout tail stays where it is, because
+   * reading it from the start again would report every past native message as a fresh takeover.
+   */
+  private stopSession(id: string): void {
+    this.live.delete(id)
+    this.resuming.delete(id)
+    this.opening.delete(id)
   }
   async connect(): Promise<AgentHostSnapshot> {
     this.shutdown(false); await this.closed()
@@ -211,6 +241,7 @@ export class CodexAppServerHost implements AgentHost {
       }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
+      this.reaper.start()
       // Connecting costs the same whatever Sotto has saved: a thread resumes, and its
       // history is read, when it is opened. Personal chats own their own native request
       // channel and have no other opening step, so they are opened here.
@@ -265,6 +296,8 @@ export class CodexAppServerHost implements AgentHost {
     return thread
   }
   private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
+  /** The threads whose native session this connection is holding. The app-server has no close to observe. */
+  resumedThreads(): readonly string[] { return [...this.live] }
   private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()].filter((thread): thread is AgentThread => 'projectId' in thread) }) }
   personalSnapshot(): CodexPersonalConversation[] {
     return structuredClone([...this.threads.values()].filter((thread): thread is CodexPersonalConversation => 'kind' in thread && thread.kind === 'personal'))
@@ -343,8 +376,15 @@ export class CodexAppServerHost implements AgentHost {
     finally { if (this.threadReads.get(id) === work) this.threadReads.delete(id) }
   }
   private touch(id: string): void { this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1) }
+  /**
+   * Take the watched set as given. A thread that has left it keeps its session until the reaper finds it
+   * idle; a thread that has entered it has its session resumed now. Personal chats own their own native
+   * request channel and stay watched for the life of the connection.
+   */
   observeThreads(sessionIds: readonly string[]): void {
-    for (const id of sessionIds) this.observed.add(id)
+    const watched = new Set(sessionIds)
+    for (const [id, alias] of Object.entries(this.aliases)) if (alias.kind === 'personal') watched.add(id)
+    this.observed.clear(); for (const id of watched) this.observed.add(id)
     if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
   }
   /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
@@ -367,7 +407,9 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   private resume(id: string): Promise<void> {
-    if (!this.aliases[id] || this.live.has(id)) return Promise.resolve()
+    if (!this.aliases[id]) return Promise.resolve()
+    this.reaper.touch(id)
+    if (this.live.has(id)) return Promise.resolve()
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
@@ -639,6 +681,7 @@ export class CodexAppServerHost implements AgentHost {
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
+          this.reaper.touch(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
         }, () => { this.creating.delete(command.threadId) })
       } else {
@@ -647,6 +690,9 @@ export class CodexAppServerHost implements AgentHost {
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer') return { accepted: false, uncertain: true }
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
+        // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
+        // resumes it here before the command proceeds.
+        this.reaper.touch(id); await this.resume(id)
         if (command.type === 'compact-thread') {
           const thread = this.ensureThread(id)
           if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('The thread is working or needs an answer before compaction.')
@@ -845,7 +891,7 @@ export class CodexAppServerHost implements AgentHost {
       if (owner) { this.touch(owner.id); this.emit() }
       return
     }
-    this.touch(id)
+    this.touch(id); this.reaper.touch(id)
     const compactAlias = this.aliases[id]!
     if (compactionPending(compactAlias.compaction)) {
       if (frame.method === 'item/completed' && params.item?.type === 'contextCompaction') {
@@ -929,6 +975,7 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   private reset(): void {
+    this.reaper.dispose()
     this.skillsRevision++; this.loadedSkillCwds.clear()
     this.child = undefined; this.state.connected = false; this.live.clear(); this.histories.clear(); this.resuming.clear(); this.opening.clear(); this.pendingLogMessages.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }

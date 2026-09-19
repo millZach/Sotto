@@ -105,7 +105,8 @@ it('rechecks takeover after persisting an origin and rolls back the undispatched
  expect(await readFile(join(f!.root,'grok-threads.json'),'utf8')).not.toContain('"messageId": "stale"')
 })
 it('reconnects the same host instance after a turn without stale running state',async()=>{
- const id=await setup();await send(id);f!.host.disconnect();await f!.adapter.closed();await f!.host.connect()
+ const id=await setup();await send(id);f!.host.disconnect();await f!.adapter.closed()
+ f!.host.observeThreads?.([id]);await f!.host.connect()
  await f!.driver.completeTurn(id,'Done')
  await expect.poll(async()=>(await f!.host.snapshot()).threads[0]!.status).toBe('idle')
  expect((await f!.host.snapshot()).threads[0]!.messages.filter(message=>message.role==='user')).toHaveLength(1)

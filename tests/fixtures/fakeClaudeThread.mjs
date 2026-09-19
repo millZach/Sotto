@@ -100,4 +100,5 @@ lines.on('line', line => {
     pending.delete(envelope?.request_id)
   } else violation('Unknown input frame')
 })
-lines.on('close', () => { clearInterval(timer); process.exit(0) })
+// Recorded so a test can see a session end, whether Sotto disconnected or the reaper stopped it.
+lines.on('close', () => { clearInterval(timer); record('exit', { session }); process.exit(0) })

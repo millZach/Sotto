@@ -6,6 +6,9 @@ import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 
+/** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
+export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }
+
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
   driver: {
@@ -26,11 +29,16 @@ export interface AdapterFixture {
   }
   /** A process-owned turn may stop when its adapter process exits. */
   restartStatus?: 'idle' | 'running'
-  skips?: Partial<Record<'uncertain' | 'restart', string>>
+  /** Lazy provider sessions: what this provider saw start, and whether one thread's session has stopped. */
+  sessions?: {
+    starts(threadId: string): Promise<number>
+    stopped(threadId: string): Promise<boolean>
+  }
+  skips?: Partial<Record<'uncertain' | 'restart' | 'lazy', string>>
 }
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
-export function describeAdapterContract(name: string, factory: () => Promise<AdapterFixture>): void {
+export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>): void {
   describe(`${name} thread interface contract`, () => {
     let f: AdapterFixture
     let sessionId: string
@@ -119,6 +127,91 @@ export function describeAdapterContract(name: string, factory: () => Promise<Ada
       const restored = await thread(); delete restored.lastTurn; watched(restored)
       expect(restored).toEqual({ ...beforeCore, status: f.restartStatus ?? before.status })
       expect((await f.driver.requests()).some(r => r.method === (f.protocol?.resumeMethod ?? 'thread/resume'))).toBe(true)
+    })
+  })
+
+  // Lazy provider sessions. Sotto is not managing threads in the beta (ADR-0012), so the watched set is
+  // mostly the thread on screen; everything else waits for an action.
+  describe(`${name} lazy provider sessions`, () => {
+    let f: AdapterFixture
+    let sessionId: string
+    // Short enough to watch a sweep happen, and asserted on the stop itself rather than on elapsed time.
+    // The window still has to outlast the setup between creating a thread and watching it.
+    const impatient = { reaperSweepMs: 20, sessionIdleMs: 150 }
+    const thread = async (id: string) => (await f.host.snapshot()).threads.find(t => t.id === id)!
+    const create = async (title: string): Promise<string> => {
+      const id = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
+      return id
+    }
+    const send = (id: string, messageId: string, text: string) =>
+      f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text })
+    const starts = (id: string) => f.sessions!.starts(id)
+    const stopped = (id: string) => f.sessions!.stopped(id)
+    /** Build the fixture and one saved thread. False when this fixture has no provider session to watch. */
+    const open = async (session?: AdapterSessionOptions): Promise<boolean> => {
+      f = await factory(session); await f.host.connect()
+      if (f.skips?.lazy || !f.sessions) return false
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      sessionId = await create('Lazy thread')
+      return true
+    }
+    /** A fresh run over the same saved threads, watching none of them. */
+    const reconnect = async (): Promise<void> => { f = await f.driver.restart(); await f.host.connect() }
+    afterEach(async () => { await f?.cleanup() })
+
+    it('connects without starting a session, and starts one when the thread enters the watched set', async context => {
+      if (!await open()) { context.skip(); return }
+      const before = await starts(sessionId)
+      await reconnect()
+      expect(await starts(sessionId)).toBe(before)
+      expect(await thread(sessionId)).toMatchObject({ title: 'Lazy thread', status: 'idle' })
+      f.host.observeThreads?.([sessionId])
+      await expect.poll(async () => starts(sessionId)).toBe(before + 1)
+    })
+
+    it('starts a session for an action on a thread nobody is watching', async context => {
+      if (!await open()) { context.skip(); return }
+      const before = await starts(sessionId)
+      await reconnect()
+      expect(await send(sessionId, 'unwatched-send', 'Synthetic prompt')).toEqual({ accepted: true })
+      expect(await starts(sessionId)).toBe(before + 1)
+    })
+
+    it('stops a session left idle and starts it again on the next send, with its messages', async context => {
+      if (!await open(impatient)) { context.skip(); return }
+      f.host.observeThreads?.([sessionId])
+      await send(sessionId, 'kept-message', 'Synthetic prompt')
+      await f.driver.completeTurn(sessionId, 'Completed reply')
+      await expect.poll(async () => (await thread(sessionId)).status).toBe('idle')
+      const before = await starts(sessionId)
+      f.host.observeThreads?.([])
+      await expect.poll(async () => stopped(sessionId)).toBe(true)
+      // Stopping is invisible: the thread keeps its place, its messages and its idle status.
+      expect(await thread(sessionId)).toMatchObject({ status: 'idle' })
+      expect((await thread(sessionId)).messages.map(m => m.id)).toContain('kept-message')
+      expect(await send(sessionId, 'after-stop', 'Second prompt')).toEqual({ accepted: true })
+      expect(await starts(sessionId)).toBe(before + 1)
+      await expect.poll(async () => (await thread(sessionId)).messages.map(m => m.id)).toEqual(expect.arrayContaining(['kept-message', 'after-stop']))
+    })
+
+    it('never stops a session with a running turn, while an idle one beside it is stopped', async context => {
+      if (!await open(impatient)) { context.skip(); return }
+      f.host.observeThreads?.([sessionId])
+      await send(sessionId, 'running-turn', 'Synthetic prompt')
+      await expect.poll(async () => (await thread(sessionId)).status).toBe('running')
+      const quiet = await create('Quiet thread')
+      f.host.observeThreads?.([])
+      await expect.poll(async () => stopped(quiet)).toBe(true)
+      expect(await stopped(sessionId)).toBe(false)
+    })
+
+    it('never stops a watched session, while an unwatched one beside it is stopped', async context => {
+      if (!await open(impatient)) { context.skip(); return }
+      f.host.observeThreads?.([sessionId])
+      const quiet = await create('Quiet thread')
+      await expect.poll(async () => stopped(quiet)).toBe(true)
+      expect(await stopped(sessionId)).toBe(false)
     })
   })
 }

@@ -20,6 +20,7 @@ import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from '
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -46,6 +47,8 @@ function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): stri
 }
 export interface ClaudeStreamJsonHostOptions {
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
+  /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
+  reaperSweepMs?: number; sessionIdleMs?: number
 }
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string> }
 
@@ -69,7 +72,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly staleContexts = new Set<string>()
   private readonly completedOrigins = new Set<string>()
   private readonly assistantBlocks = new Map<string, Map<string, string>>()
+  /** Watched set: the threads the coordinator asked for. Their CLIs are started eagerly and never reaped. */
   private readonly observed = new Set<string>()
+  private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
   private readonly restoredHistory = new Map<string, readonly AgentMessage[]>()
   private cursorTimer: ReturnType<typeof setTimeout> | undefined
@@ -84,6 +89,38 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'claude-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.client = new ClaudeSubscriptionClient(options.userDataPath, { ...(options.executable ? { executable: options.executable } : {}), ...(options.args ? { prefixArgs: options.args } : {}), ...(options.environment ? { environment: options.environment } : {}) })
+    this.reaper = new SessionReaper({
+      ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
+      ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
+      isWatched: id => this.observed.has(id),
+      isBusy: id => this.busy(id),
+      stop: id => this.stopSession(id),
+    })
+  }
+  /** A turn, an unanswered request, a compaction or a command mid-dispatch all hold a session open. */
+  private busy(id: string): boolean {
+    const thread = this.threads.get(id)
+    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+      || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.rollbackPending
+  }
+  /**
+   * End this thread's CLI and flush its transcript cursor, the way disconnecting does (ADR-0015). Nothing
+   * the user can see changes: the thread keeps its messages and its idle status, its transcript is still
+   * read, and the next action launches the CLI again from the stored session.
+   */
+  private async stopSession(id: string): Promise<void> {
+    const runtime = this.runtimes.get(id)
+    if (!runtime) return
+    this.runtimes.delete(id)
+    runtime.protocol.stop()
+    await runtime.protocol.closed
+    this.flushCursors()
+  }
+  /** Write the cursors a pending cadence still owes, rather than losing them with the session. */
+  private flushCursors(): void {
+    if (!this.cursorTimer) return
+    clearTimeout(this.cursorTimer); this.cursorTimer = undefined
+    this.closures.push(this.persist().catch(() => undefined))
   }
   async connect(): Promise<AgentHostSnapshot> {
     this.disconnect(); await this.closed()
@@ -118,6 +155,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.connected = true
+    this.reaper.start()
+    // Lazy sessions: connecting starts a CLI only for the watched set (and the personal chats added above).
+    // Every other known thread is in the snapshot from its alias, and starts on its first action.
     for (const id of this.observed) {
       if (!aliases[id] || aliases[id].rollbackPending) continue
       try { await this.start(id) } catch { this.threads.get(id)!.status = 'error'; this.state.error = 'A Claude thread could not resume. Check its native session before sending again.' }
@@ -147,6 +187,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       thread.historyStatus = 'error'; thread.historyError = 'Claude native history is unavailable. Cached messages are retained; restore its session before continuing.'
       this.emit(); throw new Error(thread.historyError)
     }
+    // Reading a thread is opening it, so a reaped or never-started session starts here. A start that
+    // cannot happen is reported by the action that needs it, not by a read.
+    await this.start(id).catch(() => undefined)
     await this.log(id).poll()
     if (alias.kind === 'personal') { thread.historyStatus = 'ready'; delete thread.historyError }
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
@@ -280,6 +323,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
+    this.reaper.touch(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
     if (command.type === 'compact-thread') {
@@ -364,8 +408,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
         return await acknowledged ? { accepted: true } : { accepted: false, uncertain: true }
       } finally { this.dispatching.delete(id) }
     }
-    const runtime = this.runtimes.get(id)
-    if (!runtime) throw new Error('Claude is not attached to this thread. Reconnect before continuing.')
+    // Answering and interrupting start the session too, so a reaped thread behaves like a live one.
+    let runtime: Runtime
+    try { runtime = await this.start(id) }
+    catch { throw new Error('Claude is not attached to this thread. Reconnect before continuing.') }
     if (command.type === 'answer') {
       const pending = runtime.requests.get(command.requestId)
       if (!pending) throw new Error('That request is no longer pending.')
@@ -400,7 +446,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   disconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.state.connected = false
-    if (this.cursorTimer) { clearTimeout(this.cursorTimer); this.cursorTimer = undefined; this.closures.push(this.persist().catch(() => undefined)) }
+    this.reaper.dispose()
+    this.flushCursors()
     for (const [id, runtime] of this.runtimes) {
       const closure = this.denyPending(id, runtime).catch(() => undefined).then(() => { runtime.protocol.stop(); return runtime.protocol.closed })
       this.closures.push(closure)
@@ -409,6 +456,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async closed(): Promise<void> { await Promise.all(this.closures); this.closures = []; await this.usage.flushed() }
   private async start(id: string): Promise<Runtime> {
+    this.reaper.touch(id)
     const pending = this.starting.get(id); if (pending) return pending
     const runtime = this.runtimes.get(id); if (runtime) return runtime
     const work = this.launch(id); this.starting.set(id, work)
@@ -443,6 +491,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return runtime
   }
   private frame(id: string, frame: ClaudeFrame): void {
+    this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
     if (frame.type === 'system' && frame.subtype === 'init' && typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
