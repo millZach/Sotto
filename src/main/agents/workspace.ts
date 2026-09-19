@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentHostSnapshot, type AgentThread, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from './host'
 import { validateThreadOptions } from './threadOptions'
@@ -18,6 +18,9 @@ const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', '
 function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
+
+/** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
+const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
 
 const workspaceSchema = z.object({
   snapshot: agentHostSnapshotSchema,
@@ -59,13 +62,10 @@ export class WorkspaceHost implements AgentHost {
   setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
   rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
-    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
       return this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
     })
-    this.lanes.set(threadId, pending)
-    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
-    return pending
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
@@ -209,7 +209,7 @@ export class WorkspaceHost implements AgentHost {
   /** Reads the folder on the thread's own lane and publishes only a record that actually changed.
    * A folder problem found here is left for the next send to report: a background read refuses nothing. */
   private refreshWorktreeRecord(threadId: string): Promise<void> {
-    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    return this.onLane(threadId, async () => {
       const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready') return
       let inspected: AgentWorktree
@@ -219,9 +219,13 @@ export class WorkspaceHost implements AgentHost {
       if (inspected.branch === current.worktree.branch && inspected.dirty === current.worktree.dirty) return
       current.worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
       this.dirty = true
-      try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
     })
+  }
+  /** Runs `work` after whatever this thread's lane already holds, so a folder read never races a command on it. */
+  private onLane<T>(threadId: string, work: () => Promise<T>): Promise<T> {
+    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(work)
     this.lanes.set(threadId, pending)
     void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
     return pending
@@ -345,23 +349,22 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true; await this.flush(); this.publish()
   }
   async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
-    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    return this.onLane(threadId, async () => {
       await this.initialize()
       const thread = this.thread(threadId)
       if (retry && thread.nativeSessionStarted === false) await this.prepareWorkingCopy(thread)
       else if (thread.worktree) {
         // Native events can replace the thread object while Git is pending.
         let metadata = thread.worktree
-        try { metadata = await this.worktrees.inspect(metadata) }
+        // A folder that was deleted is put back before it is read, so a refresh never turns a missing
+        // folder into an error that the next send would then refuse to repair (ADR-0014).
+        try { metadata = await this.worktrees.inspect(await this.worktrees.restore(metadata)) }
         catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
         this.thread(threadId).worktree = metadata
         this.dirty = true; await this.flush(); this.publish()
       }
       return this.workspaceSnapshot()
     })
-    this.lanes.set(threadId, pending)
-    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
-    return pending
   }
   /**
    * Switches this thread's worktree back to the branch of its last send, because the user pressed Restore
@@ -369,7 +372,7 @@ export class WorkspaceHost implements AgentHost {
    * uncommitted work is left exactly as it is.
    */
   async restoreThreadBranch(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot> {
-    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    return this.onLane(threadId, async () => {
       await this.initialize()
       const worktree = this.thread(threadId).worktree
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready') throw new Error('This thread has no working copy of its own to switch.')
@@ -379,17 +382,14 @@ export class WorkspaceHost implements AgentHost {
       if (inspected.dirty && !withUncommittedChanges && inspected.branch !== target) {
         this.thread(threadId).worktree = { ...inspected, sentBranch: target }
         this.dirty = true; await this.flush().catch(() => undefined); this.publish()
-        throw new Error(`This folder has uncommitted changes. They move with the switch to ${target}. Confirm to switch.`)
+        throw new Error(RESTORE_BRANCH_NEEDS_CONFIRMATION)
       }
       this.thread(threadId).worktree = { ...(await this.worktrees.switchBranch(inspected, target)), sentBranch: target }
       this.dirty = true
-      try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
       return this.workspaceSnapshot()
     })
-    this.lanes.set(threadId, pending)
-    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
-    return pending
   }
   /** The branch this thread's work went to, so the pane can say what changed under it afterwards. */
   private async recordSentBranch(threadId: string): Promise<void> {
@@ -399,21 +399,25 @@ export class WorkspaceHost implements AgentHost {
     worktree.sentBranch = worktree.branch
     this.dirty = true
     // The prompt is about to go out; a cache write that fails must not refuse the send.
-    try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+    try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
   }
   async threadWorkingDirectory(threadId: string): Promise<string> {
     await this.initialize()
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     const thread = this.thread(threadId)
-    if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') {
-      // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014).
-      const inspected = await this.worktrees.inspect(await this.worktrees.restore(thread.worktree))
+    if (thread.worktree?.mode === 'independent' && (thread.worktree.status === 'ready' || thread.worktree.status === 'error')) {
+      // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014). A record
+      // an earlier read marked as an error gets the same chance; when it cannot be put back, the error it
+      // already carries is the one reported below.
+      let inspected: AgentWorktree | undefined
+      try { inspected = await this.worktrees.inspect(await this.worktrees.restore(thread.worktree)) }
+      catch (error) { if (thread.worktree.status === 'ready') throw error }
       // A branch switched inside the worktree is adopted, so the pane's label follows it (ADR-0014).
-      if (inspected.branch !== thread.worktree.branch) {
+      if (inspected && (inspected.branch !== thread.worktree.branch || thread.worktree.status !== 'ready')) {
         this.thread(threadId).worktree = inspected; this.dirty = true
         // The folder was just verified; a cache write that fails must not refuse the send.
-        try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+        try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
         this.publish()
       }
     }

@@ -296,6 +296,37 @@ describe('durable project/thread organization', () => {
     await expect(f.host.restoreThreadBranch('other', false)).rejects.toThrow('not known to Sotto')
   })
 
+  it('puts a deleted folder back before a refresh reads it, and a send repairs a record an earlier read marked as an error', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let missing = false
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    const restore = vi.spyOn(ThreadWorktrees.prototype, 'restore').mockImplementation(async metadata => { missing = false; return { ...metadata, status: 'ready', error: undefined } })
+    const inspect = vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
+      if (missing) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
+      return { ...metadata, status: 'ready', branch: 'sotto/thread-fixture', dirty: false }
+    })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    // Typing in the pane asks for one refresh; with the folder gone it is put back rather than marked as an error.
+    missing = true; restore.mockClear(); inspect.mockClear()
+    await f.host.updateThreadWorktree('local', false)
+    expect(restore.mock.invocationCallOrder[0]).toBeLessThan(inspect.mock.invocationCallOrder[0]!)
+    expect(worktree()).toMatchObject({ status: 'ready', branch: 'sotto/thread-fixture' })
+    // A record an earlier read left as an error is given the same chance on the next send.
+    restore.mockImplementationOnce(async metadata => metadata)
+    missing = true
+    await f.host.updateThreadWorktree('local', false)
+    expect(worktree()?.status).toBe('error')
+    await expect(f.host.threadWorkingDirectory('local')).resolves.toBe(project.path)
+    expect(worktree()).toMatchObject({ status: 'ready', error: undefined })
+  })
+
   it('marks the working copy error when its preparation fails, without turning creation into a rejection', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
