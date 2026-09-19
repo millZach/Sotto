@@ -41,6 +41,18 @@ async function request(path: string) {
 }
 
 describe('thread-bound Files service', () => {
+  it('allows source previews for an unsent worktree but never exposes that preview to mutating tools', async () => {
+    binding = { ...binding!, previewOnly: true }
+    await writeFile(join(root, 'source.txt'), 'unfinished source')
+    const listing = value(await service.list({ threadId: 'thread', path: '' }))
+    const selected = { threadId: 'thread', workspaceId: listing.workspace.workspaceId, path: 'source.txt' }
+    expect(value(await service.preview(selected)).content).toMatchObject({ text: 'unfinished source' })
+    error(await service.resolveWorkspace('thread'), 'workspace-unavailable')
+    expect(listing.workspace).not.toHaveProperty('previewOnly')
+    binding = { ...binding!, previewOnly: false }
+    error(await service.resolveWorkspace('thread', selected.workspaceId), 'workspace-changed')
+    expect(value(await service.resolveWorkspace('thread')).workingDirectory).toBe(root)
+  })
   it('lazily lists a directory, previews UTF-8/Markdown/raster content and copies/reveals only canonical bound paths', async () => {
     await mkdir(join(root, 'nested'))
     await writeFile(join(root, 'z.md'), '# Hello\n[unsafe](javascript:alert(1))')

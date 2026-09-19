@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { AgentWorktree } from '../../shared/agents'
+import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentWorktree } from '../../shared/agents'
 import { nativeEnvironment } from './subscriptionCodex'
 
 export type RunGit = (cwd: string, args: string[]) => Promise<string>
@@ -36,14 +36,14 @@ export interface WorktreeHome {
   readonly folder: string
   readonly branchPrefix: string
 }
-const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/thread-' }
+const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/' }
 export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
 
 /** Never removes files or branches. Allocation is persisted by WorkspaceHost before ensure. */
 export class ThreadWorktrees {
   constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
 
-  async allocate(projectPath: string, mode: 'independent' | 'shared'): Promise<AgentWorktree> {
+  async allocate(projectPath: string, mode: 'independent' | 'shared', selection: Partial<AgentWorkingCopySelection> = {}): Promise<AgentWorktree> {
     const cwd = await existingWorkingDirectory(projectPath)
     if (mode === 'shared') return { mode, status: 'ready', path: cwd }
     let repositoryRoot: string
@@ -52,9 +52,25 @@ export class ThreadWorktrees {
       if (error instanceof Error && /not a git repository/u.test(error.message)) return { mode: 'shared', status: 'ready', path: cwd }
       throw error
     }
+    if (selection.existingWorktreePath) {
+      const path = await existingWorkingDirectory(selection.existingWorktreePath)
+      const entries = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
+      const entry = entries.find(item => pathKey(item.path) === pathKey(path))
+      if (!entry || entry.locked || entry.prunable) throw new Error('That folder is not an available worktree of this project. Refresh the worktree list and choose again.')
+      const projectRelativePath = relative(await realpath(repositoryRoot), cwd).split(sep).join('/')
+      return this.inspect({ mode, status: 'ready', path, repositoryRoot: await realpath(repositoryRoot), projectRelativePath, reused: true })
+    }
+    const baseBranch = selection.baseBranch ?? (selection.startFromOrigin ? (await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined : undefined)
+    if (baseBranch) await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${baseBranch}`])
+    if (selection.startFromOrigin && !baseBranch) throw new Error('Choose a base branch before starting from origin.')
+    const base = baseBranch ? `${selection.startFromOrigin ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
+    if (selection.startFromOrigin) {
+      try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
+      catch { throw new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or turn off Start from origin.`) }
+    }
     let baseCommit: string
-    try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() }
-    catch { throw new Error('This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.') }
+    try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`])).trim() }
+    catch { throw new Error(baseBranch ? `The base branch ${baseBranch} is unavailable. Choose an existing branch and retry.` : 'This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.') }
     const projectRelativePath = relative(await realpath(repositoryRoot), cwd).split(sep).join('/')
     if (projectRelativePath) {
       try {
@@ -62,7 +78,34 @@ export class ThreadWorktrees {
       } catch { throw new Error('The project subdirectory is not present in the committed source. Commit that folder or explicitly choose a shared working copy, then retry.') }
     }
     const token = randomUUID()
-    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${token}`, baseCommit, projectRelativePath }
+    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${this.home === THREAD_WORKTREE_HOME ? token.slice(0, 8) : token}`, baseCommit, projectRelativePath, baseBranch, startFromOrigin: selection.startFromOrigin, temporaryBranch: this.home === THREAD_WORKTREE_HOME }
+  }
+
+
+  async options(projectPath: string): Promise<AgentWorkingCopyOptions> {
+    const cwd = await existingWorkingDirectory(projectPath)
+    try { await this.git(cwd, ['rev-parse', '--show-toplevel']) }
+    catch (error) {
+      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return { isGit: false, currentBranch: null, branches: [], worktrees: [] }
+      throw error
+    }
+    const [branch, branches, entries] = await Promise.all([
+      this.git(cwd, ['branch', '--show-current']), this.git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']),
+      this.git(cwd, ['worktree', 'list', '--porcelain', '-z']),
+    ])
+    return { isGit: true, currentBranch: branch.trim() || null, branches: branches.split(/\r?\n/u).filter(Boolean),
+      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable).map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
+  }
+
+  async renameTemporaryBranch(metadata: AgentWorktree, name: string): Promise<AgentWorktree> {
+    if (!metadata.temporaryBranch || metadata.reused || !metadata.branch) return metadata
+    const inspected = await this.inspect(metadata)
+    if (inspected.branch !== metadata.branch) return { ...inspected, temporaryBranch: false }
+    const slug = name.replace(/^sotto\//u, '').toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '').slice(0, 60).replace(/-$/u, '')
+    if (!slug) return inspected
+    const branch = `sotto/${slug}`
+    await this.git(inspected.path!, ['branch', '-m', metadata.branch, branch])
+    return { ...inspected, branch, temporaryBranch: false }
   }
 
   async workingDirectory(metadata: AgentWorktree): Promise<string> {
@@ -79,7 +122,7 @@ export class ThreadWorktrees {
 
   async ensure(metadata: AgentWorktree): Promise<AgentWorktree> {
     if (!metadata.path) throw new Error('The working-copy allocation is missing.')
-    if (metadata.mode === 'shared') return { ...metadata, path: await existingWorkingDirectory(metadata.path), status: 'ready', error: undefined }
+    if (metadata.mode === 'shared' || metadata.reused) return this.inspect(metadata)
     const { repositoryRoot, branch, baseCommit } = metadata
     if (!repositoryRoot || !baseCommit) throw new Error('The independent working-copy allocation is incomplete.')
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
@@ -147,7 +190,6 @@ export class ThreadWorktrees {
    * and uncommitted work is left where it is for Git to carry across or refuse.
    */
   async switchBranch(metadata: AgentWorktree, branch: string): Promise<AgentWorktree> {
-    if (metadata.mode !== 'independent') throw new Error('A shared working copy keeps the branch its folder is on. Switch it where you opened it.')
     // The name came from Git itself; refuse anything that could read as an option or a path.
     if (!/^(?!-)(?!.*\.\.)[^\s:?*~^[\]\\]+$/u.test(branch)) throw new Error('That branch name cannot be restored. Switch it in the folder itself.')
     const inspected = await this.inspect(metadata)
@@ -162,7 +204,16 @@ export class ThreadWorktrees {
   async inspect(metadata: AgentWorktree): Promise<AgentWorktree> {
     if (!metadata.path) throw new Error('The working folder is not allocated. Retry setup.')
     const path = await existingWorkingDirectory(metadata.path)
-    if (metadata.mode === 'shared') return { ...metadata, status: 'ready', error: undefined }
+    if (metadata.mode === 'shared') {
+      let repositoryRoot: string
+      try { repositoryRoot = (await this.git(path, ['rev-parse', '--show-toplevel'])).trim() }
+      catch (error) {
+        if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return { ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined }
+        throw error
+      }
+      const branch = (await this.git(path, ['branch', '--show-current'])).trim() || undefined
+      return { ...metadata, repositoryRoot, branch, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0, status: 'ready', error: undefined }
+    }
     // Inspection never creates a replacement for a deleted checkout.
     if (!metadata.repositoryRoot) throw new Error('The worktree binding is incomplete.')
     const entries = registeredWorktrees(await this.git(metadata.repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
@@ -179,6 +230,6 @@ export class ThreadWorktrees {
     ])
     if (pathKey(root.trim()) !== pathKey(path) || pathKey(common.trim()) !== pathKey(expectedCommon.trim())) throw new Error('The working folder no longer belongs to the original repository.')
     await this.workingDirectory(metadata)
-    return { ...metadata, branch, status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
+    return { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}), status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
   }
 }

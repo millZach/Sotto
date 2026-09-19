@@ -52,6 +52,8 @@ const customSettings = {
   llmMinWords: 4,
   writingModel: 'anthropic/claude-haiku-4.5',
   threadTitles: false,
+  threadWorkingCopyDefault: 'independent',
+  projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   pullRequestText: false,
   commitMessages: false,
   streamingAsr: false,
@@ -61,6 +63,13 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('defaults older profiles to the shared checkout and retains explicit global and project choices', () => {
+    expect(parseSettings({})).toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
+    expect(parseSettings({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }))
+      .toMatchObject({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } })
+    expect(parseSettings({ threadWorkingCopyDefault: 'unknown', projectThreadWorkingCopyDefaults: { project: 'unknown' } }))
+      .toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
+  })
   it('drops retired transcription settings while preserving valid settings', () => {
     const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
     expect(parseSettings(legacy)).toEqual(customSettings)
@@ -179,6 +188,8 @@ describe('settings', () => {
       llmMinWords: 5,
       writingModel: 'google/gemini-3.1-flash-lite',
       threadTitles: true,
+      threadWorkingCopyDefault: 'shared',
+      projectThreadWorkingCopyDefaults: {},
       pullRequestText: true,
       commitMessages: true,
       streamingAsr: true,

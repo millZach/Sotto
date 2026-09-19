@@ -6,7 +6,7 @@ import type { AgentCommand, AgentState, AgentThread, AgentWorktree } from '../..
 import { defaultAgentConfiguration, RESTORE_BRANCH_NEEDS_CONFIRMATION } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { ThreadBranchNotice, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
+import { ThreadBranchNotice, resetBranchNoticeDismissals, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
 
@@ -14,13 +14,13 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 
 const project = { path: 'C:\\Users\\zache\\Projects\\sotto-app' }
 const worktreePath = 'C:\\Users\\zache\\AppData\\Roaming\\Sotto\\agents\\thread-worktrees\\7f1c'
-const moved: AgentWorktree = { mode: 'independent', status: 'ready', path: worktreePath, repositoryRoot: project.path,
+const moved: AgentWorktree = { mode: 'shared', status: 'ready', path: worktreePath, repositoryRoot: project.path,
   branch: 'feat/agent-chose', sentBranch: 'sotto/thread-7f1c', dirty: false }
 const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, workingDirectory: worktreePath, worktree: moved }
 function snapshot(): AgentState {
   return { configuration: defaultAgentConfiguration(), connection: 'connected', error: null } as unknown as AgentState
 }
-afterEach(cleanup)
+afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 
 describe('the branch-changed notice', () => {
   it('says nothing until the composer has something to send, and dismisses by button or Escape', async () => {
@@ -33,9 +33,12 @@ describe('the branch-changed notice', () => {
     expect(notice).toHaveTextContent('Sending will continue on feat/agent-chose.')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss the branch notice' }))
     expect(screen.queryByRole('status')).toBeNull()
+    view.unmount()
+    const remount = render(<ThreadBranchNotice thread={thread} project={project} command={command} composing />)
+    expect(screen.queryByRole('status')).toBeNull()
     // A later switch is a new thing to say, so the dismissal does not silence it.
     const again = { ...thread, worktree: { ...moved, branch: 'prototype/second' } }
-    view.rerender(<ThreadBranchNotice thread={again} project={project} command={command} composing />)
+    remount.rerender(<ThreadBranchNotice thread={again} project={project} command={command} composing />)
     expect(screen.getByRole('status')).toHaveTextContent('Sending will continue on prototype/second.')
     fireEvent.keyDown(screen.getByRole('button', { name: 'Restore branch sotto/thread-7f1c' }), { key: 'Escape' })
     expect(screen.queryByRole('status')).toBeNull()
@@ -50,6 +53,12 @@ describe('the branch-changed notice', () => {
     cleanup()
     const unsent = { ...thread, worktree: { ...moved, sentBranch: undefined } }
     render(<ThreadBranchNotice thread={unsent} project={project} command={command} composing />)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it.each(['independent', 'detached'] as const)('stays quiet for %s', kind => {
+    const worktree = kind === 'independent' ? { ...moved, mode: 'independent' as const } : { ...moved, branch: undefined }
+    render(<ThreadBranchNotice thread={{ ...thread, worktree }} project={project} command={vi.fn()} composing />)
     expect(screen.queryByRole('status')).toBeNull()
   })
 

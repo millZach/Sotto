@@ -65,6 +65,10 @@ export interface AppSettings {
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
+  /** Applies only to new threads; existing provider sessions keep their working folder. */
+  threadWorkingCopyDefault: 'shared' | 'independent'
+  /** Explicit project overrides; an absent key inherits the global default. */
+  projectThreadWorkingCopyDefaults: Record<string, 'shared' | 'independent'>
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -97,7 +101,7 @@ export interface AppSettings {
   llmMinWords: number
   /** The OpenRouter model that writes Sotto's short text, starting with thread titles. */
   writingModel: WritingModelId
-  /** Off stops every title request; a thread keeps the name it was created with. */
+  /** Off stops thread-title and temporary-worktree-branch naming requests. */
   threadTitles: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
@@ -172,6 +176,8 @@ const fieldSchemas = {
   llmMinWords: z.number().int().min(0).max(50),
   writingModel: z.enum(WRITING_MODEL_IDS),
   threadTitles: z.boolean(),
+  threadWorkingCopyDefault: z.enum(['shared', 'independent']),
+  projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
@@ -224,6 +230,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default, but nothing is ever requested without an OpenRouter key, so
   // an install that never configures one keeps its stand-in names offline.
   threadTitles: true,
+  threadWorkingCopyDefault: 'shared',
+  projectThreadWorkingCopyDefaults: {},
   pullRequestText: true,
   // On by default for the same reason: with no OpenRouter key nothing is ever
   // requested, and the commit form simply opens empty.
@@ -309,6 +317,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     writingModel: parseField(persisted, 'writingModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
+    projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),

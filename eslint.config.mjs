@@ -16,6 +16,7 @@ export default tseslint.config(
       'artifacts/voice-perf/**',
       'artifacts/new-thread-saved-draft/**',
       'artifacts/codex-images/**',
+      'artifacts/issue-146/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

@@ -1,12 +1,12 @@
 // @vitest-environment node
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../src/shared/threadActivity'
 import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
+import { runWorktreeGit as git, ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -202,7 +202,7 @@ describe('durable project/thread organization', () => {
     expect(f.adapters.codex.commands.filter(command => command.type === 'create-thread')).toHaveLength(1)
   })
 
-  it('publishes the new thread before its working copy is prepared, and waits for that one preparation on send', async () => {
+  it('allocates no checkout when an independent thread opens and prepares exactly once on send', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
     const project = snapshot.projects.find(project => project.providerId === 'codex')!
@@ -213,10 +213,11 @@ describe('durable project/thread organization', () => {
       .mockImplementation(async function (this: ThreadWorktrees, ...args: Parameters<typeof allocate>) { await gate.promise; return allocate.apply(this, args) })
     const published: AgentHostSnapshot[] = []
     f.host.subscribe(snapshot => published.push(snapshot))
-    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id, workingCopy: 'independent' })
     // The thread is durable and published while its checkout is still being prepared.
     expect(published.at(-1)?.threads.find(thread => thread.id === 'local')).toMatchObject({ title: 'New task', worktree: { status: 'pending' } })
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('pending')
+    expect(spy).not.toHaveBeenCalled()
     const sent = f.host.execute(send())
     await Promise.resolve()
     expect(f.adapters.codex.commands).toEqual([])
@@ -225,6 +226,61 @@ describe('durable project/thread organization', () => {
     expect(spy).toHaveBeenCalledTimes(1) // the send joined the preparation instead of starting a second one
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('ready')
     expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
+  })
+
+  it('leaves an agent branch alone when it changes while descriptive naming is pending', async () => {
+    const f = await fixture()
+    const repository = f.adapters.codex.state.projects[0]!.path
+    await git(repository, ['init'])
+    await writeFile(join(repository, 'tracked.txt'), 'baseline')
+    await git(repository, ['add', '.'])
+    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    let finish!: (name: string | null) => void
+    const writer = vi.fn(() => new Promise<string | null>(resolve => { finish = resolve }))
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    f.host.setBranchNameWriter(writer)
+    await local(f)
+    await f.host.execute(send())
+    await vi.waitFor(() => expect(writer).toHaveBeenCalledTimes(1))
+    const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
+    await git(thread.workingDirectory!, ['switch', '-c', 'feat/agent-choice'])
+    await f.host.updateThreadWorktree('local', false)
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'feat/agent-choice', temporaryBranch: false })
+    finish('sotto/generated-name')
+    // The rename joins the thread lane, so this read waits for it rather than sleeping.
+    await Promise.resolve(); await Promise.resolve()
+    await f.host.updateThreadWorktree('local', false)
+    expect((await git(thread.workingDirectory!, ['branch', '--show-current'])).trim()).toBe('feat/agent-choice')
+    await f.host.execute({ ...send(), commandId: 'next', messageId: 'next' })
+    expect(writer).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses a configured default only for new threads and keeps existing working-copy selections', async () => {
+    const f = await fixture(); await local(f)
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    await local(f, 'configured')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'configured')?.worktree).toMatchObject({ mode: 'independent', status: 'pending' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ mode: 'shared', status: 'ready' })
+    await f.stop()
+    const reopened = await workspaceFixture(f.root); cleanup.push(reopened.stop)
+    expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'configured')?.worktree).toMatchObject({ mode: 'independent', status: 'pending' })
+    expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ mode: 'shared', status: 'ready' })
+  })
+
+  it('changes an unsent working-copy choice without allocating or touching native identity', async () => {
+    const f = await fixture(); const { project } = await local(f)
+    const allocation = vi.spyOn(ThreadWorktrees.prototype, 'allocate')
+    await f.host.configureThreadWorkingCopy('local', { workingCopy: 'independent', baseBranch: 'main' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toEqual(expect.objectContaining({ mode: 'independent', status: 'pending', baseBranch: 'main' }))
+    expect(allocation).not.toHaveBeenCalled()
+    await f.host.updateThreadWorktree('local', false)
+    await f.host.updateThreadWorktree('local', true)
+    expect(allocation).not.toHaveBeenCalled()
+    await f.host.configureThreadWorkingCopy('local', { workingCopy: 'shared' })
+    expect(await f.host.threadWorkingDirectory('local')).toBe(project.path)
+    expect(f.registry.byThread('local')).toBeUndefined()
+    await f.host.execute(send())
+    await expect(f.host.configureThreadWorkingCopy('local', { workingCopy: 'independent' })).rejects.toThrow('already has a working folder')
   })
 
   it('adopts the branch the worktree has checked out on send and publishes it', async () => {
@@ -282,7 +338,7 @@ describe('durable project/thread organization', () => {
     const snapshot = await f.host.connect()
     const project = snapshot.projects.find(project => project.providerId === 'codex')!
     const model = snapshot.models.find(model => model.providerId === 'codex')!
-    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
     let checkedOut = 'sotto/thread-fixture'
     let dirty = true
     vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
@@ -341,8 +397,8 @@ describe('durable project/thread organization', () => {
     const project = snapshot.projects.find(project => project.providerId === 'codex')!
     const model = snapshot.models.find(model => model.providerId === 'codex')!
     vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockRejectedValue(new Error('Git is unavailable.'))
-    expect(await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })).toEqual({ accepted: true })
-    await expect(f.host.threadWorkingDirectory('local')).rejects.toThrow('Git is unavailable.')
+    expect(await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id, workingCopy: 'independent' })).toEqual({ accepted: true })
+    await expect(f.host.execute(send())).rejects.toThrow('Git is unavailable.')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ status: 'error', error: 'Git is unavailable.' })
     await expect(f.host.execute(send())).rejects.toThrow('Git is unavailable.')
     expect(f.adapters.codex.commands).toEqual([])

@@ -1,5 +1,21 @@
 # A thread follows its worktree's branch
 
+## Current decision: shared checkout by default (September 19, 2026, #146)
+
+This amendment supersedes the independent-by-default creation policy and the worktree composer notice described below. Zach chose T3 Code's working-copy behavior because a new conversation about the same project should see the project's current files, not create another isolated checkout automatically. Historical sections below explain the earlier safeguards and remain as decision history.
+
+New threads use the shared project folder unless explicitly overridden for the thread, project, or global default. New independent worktrees are allocated on first send from the chosen base. Start from origin explicitly fetches that branch through the project's configured origin, using existing Git authentication; a missing ref or fetch failure is reported rather than substituted. Existing registered worktrees can be reused. Sharing a folder shares files and HEAD; independent worktrees remain the choice for concurrent tasks that must not interfere.
+
+Existing sessions, worktrees, drafts, and history do not move. A working-copy choice can change before first-send setup, but a thread with an established provider directory is never silently rebound. Folder validation and missing-folder recovery remain; settling a thread removes nothing.
+
+The branch-changed notice belongs only to shared-project-folder threads and only to a mismatch between two named branches. It is informational, appears when drafting, and sending adopts the current branch. Restore remains an explicit user action, with dirty-work confirmation. Dismissal survives pane remounts during the client session. Worktree-backed threads follow their actual checkout without this banner, including when the agent creates its task branch.
+
+A new worktree starts on a short temporary branch. With Generated thread titles and Keep local history enabled and an OpenRouter key present, Sotto may send the first prompt alone (up to 2,000 characters) to the existing writing model to name that branch. This is an additional writing purpose on the already documented OpenRouter host and formatting credential slot, not a new provider or key. Naming is best effort and runs outside the send's critical path. It must verify that the branch is still temporary, checked out, and exclusively owned before renaming; an agent's or user's branch choice wins.
+
+The tradeoff is deliberate: current-checkout threads see unfinished work without setup or merging, but concurrent edits can collide. The UI keeps the independent option explicit and does not promise isolation for shared folders. We retain stricter registered-folder checks than T3; simplifying the workflow does not require directing work to an unrelated replacement directory.
+
+## Earlier decisions
+
 Accepted September 18, 2026, amended twice on September 19, 2026 (a missing folder is put back; a branch switch is said in the pane) after the second thread in one evening stopped accepting messages. Sotto no longer compares the branch checked out in a thread's worktree with the branch it recorded at creation. It records what it sees.
 
 ## Context

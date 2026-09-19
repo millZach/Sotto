@@ -1,12 +1,12 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
-import type { AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly workingDirectory?: string } & AgentThreadOptions)
+  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string } & AgentThreadOptions)
   | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: AgentAttachment[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
@@ -67,6 +67,8 @@ export interface AgentHost {
   recordAnswer?(threadId: string, event: AnswerGivenEvent): void
   /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
   loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
+  workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
+  configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>

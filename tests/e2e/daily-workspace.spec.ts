@@ -82,10 +82,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     }, repository)
     const [implementation, review] = threads
     expect(implementation!.providerId).toBe('codex'); expect(review!.providerId).toBe('claude')
-    expect(implementation!.worktree).toMatchObject({ status: 'ready', mode: 'independent' })
-    expect(review!.worktree).toMatchObject({ status: 'ready', mode: 'independent' })
-    const first = implementation!.id, second = review!.id, working = implementation!.worktree!.path!, other = review!.worktree!.path!
-    expect(working).not.toBe(other)
+    expect(implementation!.worktree).toMatchObject({ status: 'pending', mode: 'independent' })
+    expect(review!.worktree).toMatchObject({ status: 'pending', mode: 'independent' })
+    const first = implementation!.id, second = review!.id
     await size(launched)
     await openThreads(page)
     await page.getByRole('button', { name: 'Daily implementation', exact: true }).first().click()
@@ -95,6 +94,13 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await prompt(first).fill('Make the greeting friendlier.'); await prompt(first).press('Enter')
     await prompt(second).fill('Review the greeting independently.'); await prompt(second).press('Enter')
     await expect.poll(() => page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)).map(thread => thread.status), [first, second])).toEqual(['running', 'running'])
+    const readyThreads = await page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)), [first, second])
+    Object.assign(implementation!, readyThreads.find(thread => thread.id === first))
+    Object.assign(review!, readyThreads.find(thread => thread.id === second))
+    expect(implementation!.worktree).toMatchObject({ status: 'ready', mode: 'independent' })
+    expect(review!.worktree).toMatchObject({ status: 'ready', mode: 'independent' })
+    const working = implementation!.worktree!.path!, other = review!.worktree!.path!
+    expect(working).not.toBe(other)
     await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'Review prepared in my own working copy.' }), second)
     await prompt(second).fill('Keep this review draft private to this pane.')
     await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'The greeting is ready.\n\n```mermaid\nflowchart LR\n  Draft --> Review --> Commit\n```', activities: [{ id: 'daily-command', turnId: 'daily-turn', sequence: 0, kind: 'command', status: 'completed', title: 'Inspect greeting', command: 'Get-Content greeting.txt', output: 'Hello', exitCode: 0 }] }), first)
@@ -180,9 +186,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toEqual([])
     for (const [id, own, foreign] of [[first, 'Make the greeting friendlier.', 'Review the greeting independently.'], [second, 'Review the greeting independently.', 'Make the greeting friendlier.']]) {
-      const messages = state.host.threads.find(thread => thread.id === id)!.messages
-      expect(messages.filter(message => message.text === own)).toHaveLength(1)
-      expect(messages.some(message => message.text === foreign)).toBe(false)
+      const messages = await userMessageTexts(page, id!)
+      expect(messages.filter(message => message === own)).toHaveLength(1)
+      expect(messages.some(message => message === foreign)).toBe(false)
     }
     await writeFile(join(SHOTS, 'daily-proof.json'), JSON.stringify({ lane: 'provider fixtures; real Electron services; GitHub status IPC fixture', original, committed, pushed: committed, first, second, working, other, realGitHubWrites: 0, errors }, null, 2))
     expect(errors).toEqual([])

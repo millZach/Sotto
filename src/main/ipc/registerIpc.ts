@@ -103,6 +103,8 @@ const settingKeys = [
   'llmMinWords',
   'writingModel',
   'threadTitles',
+  'threadWorkingCopyDefault',
+  'projectThreadWorkingCopyDefaults',
   'commitMessages',
   'pullRequestText',
   'streamingAsr',

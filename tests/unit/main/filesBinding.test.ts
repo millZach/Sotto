@@ -7,6 +7,15 @@ const host = (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST,
   threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }],
 })
 describe('Files working-directory binding integration', () => {
+  it('previews source files for an unsent worktree choice without changing its eventual binding', () => {
+    const state = host(), thread = state.threads[0]!
+    thread.nativeSessionStarted = false
+    thread.worktree = { mode: 'independent', status: 'pending' }
+    expect(resolveFilesBinding(state, 'thread')?.workingDirectory).toBe('D:/project')
+    expect(thread.worktree).toEqual({ mode: 'independent', status: 'pending' })
+    thread.worktree = { mode: 'independent', status: 'ready', path: 'D:/worktrees/task' }
+    expect(resolveFilesBinding(state, 'thread')?.workingDirectory).toBe('D:/worktrees/task')
+  })
   it('uses the existing thread project fallback while keeping Sotto identity', () => {
     expect(resolveFilesBinding(host(), 'thread')).toEqual({ threadId: 'thread', projectId: 'project', workingDirectory: 'D:/project' })
     expect(resolveFilesBinding(host(), 'missing')).toBeNull()

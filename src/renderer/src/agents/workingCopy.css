@@ -4,7 +4,7 @@
 .working-copy__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .working-copy__trigger:hover, .working-copy__trigger[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .working-copy[data-status='error'] .working-copy__trigger { border-color: var(--tt-error-border); color: var(--tt-error); }
-.working-copy__panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; display: grid; gap: 14px; width: min(420px, calc(100vw - 64px)); padding: 14px 16px; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-lg); background: var(--tt-panel); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); text-align: left; }
+.working-copy__panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; display: grid; gap: 14px; width: min(420px, calc(100vw - 64px)); max-height: calc(100vh - 100px); overflow-y: auto; padding: 14px 16px; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-lg); background: var(--tt-panel); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); text-align: left; }
 .working-copy__panel[data-align='end'] { right: 0; left: auto; }
 .working-copy__panel dl { display: grid; gap: 10px; margin: 0; }
 .working-copy__panel dl > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: baseline; }

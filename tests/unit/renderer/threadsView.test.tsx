@@ -472,7 +472,7 @@ describe('a thread created without a round trip', () => {
     await screen.findByRole('dialog', { name: 'New thread' })
     expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft before creating another thread.')
     expect(screen.getByLabelText('Thread name')).toHaveValue('Refused thread')
-    expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
     expect(screen.queryByRole('heading', { name: 'Refused thread', exact: true })).not.toBeInTheDocument()
     expect(draftThreads.get()).toEqual([])
     // The selection returns to the thread that had it, and creation is never repeated on its own.

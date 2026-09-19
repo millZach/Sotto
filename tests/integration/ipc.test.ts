@@ -416,7 +416,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'onThreadDetail', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'threadDetail', 'voiceModel'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'grokVoices', 'onState', 'onThreadDetail', 'prepareWake', 'releaseWake', 'synthesizeSpeech', 'threadDetail', 'voiceModel', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -1169,6 +1169,15 @@ describe('IPC validation and lifecycle', () => {
       webLinkDestination: 'embedded',
     })
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ webLinkDestination: 'embedded' })
+  })
+
+  it('persists and clears working-copy defaults through the settings allow-list', async () => {
+    const { ipc, settings } = createIpcHarness()
+    const patch = { threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }
+    await expect(ipc.invoke(SETTINGS_UPDATE, patch)).resolves.toMatchObject(patch)
+    expect(settings.update).toHaveBeenLastCalledWith(patch)
+    await ipc.invoke(SETTINGS_UPDATE, { projectThreadWorkingCopyDefaults: {} })
+    expect(settings.update).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: {} })
   })
 
   it.each([

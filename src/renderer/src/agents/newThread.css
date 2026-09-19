@@ -41,3 +41,10 @@
 .new-thread-working-copy__choice:has(input:focus-visible) { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
 .new-thread-working-copy:disabled .new-thread-working-copy__choice { cursor: default; opacity: .6; }
 .new-thread-working-copy p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+
+.thread-working-copy-fields, .working-copy__selection { display: grid; gap: 12px; min-width: 0; }
+.thread-working-copy-fields > label { display: grid; gap: 7px; color: var(--tt-text-muted); font-size: 14px; }
+.thread-working-copy-fields select { width: 100%; min-width: 0; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; }
+.thread-working-copy-fields > .thread-working-copy-fields__check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.thread-working-copy-fields__check > input { width: 16px; min-height: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.thread-working-copy-fields p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
