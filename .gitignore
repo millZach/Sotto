@@ -41,6 +41,7 @@ scripts/memeval/results/*.json
 # Isolated voice measurement bundles, audio and temporary reports
 artifacts/voice-perf/
 artifacts/new-thread-saved-draft/
+artifacts/codex-stream-freeze/
 
 # Screenshot paste verification captures
 artifacts/codex-images/

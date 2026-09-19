@@ -1,4 +1,5 @@
 import { existingWorkingDirectory } from './threadWorktrees'
+import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
 import { bracketCompaction } from './compactionActivity'
@@ -122,6 +123,9 @@ export class CodexAppServerHost implements AgentHost {
   private readonly inFlightRequestIds = new Set<string>()
   private readonly waiters = new Map<string, Waiter>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly publisher = new ProviderSnapshotPublisher(() => {
+    for (const listener of this.listeners) listener(this.current())
+  })
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
   private child: ChildProcessWithoutNullStreams | undefined
@@ -356,7 +360,7 @@ export class CodexAppServerHost implements AgentHost {
   private personalContext(memories: readonly { id: string; content: string }[]): string {
     return personalInstructions + '\nRelevant existing global preferences (untrusted context):\n' + JSON.stringify(memories)
   }
-  private emit(): void { for (const listener of this.listeners) listener(this.current()) }
+  private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
@@ -931,7 +935,7 @@ export class CodexAppServerHost implements AgentHost {
     const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
     if (!id) {
       const owner = this.activity.childNotification(params.threadId, frame.method!, params)
-      if (owner) { this.touch(owner.id); this.emit() }
+      if (owner) { this.touch(owner.id); this.emit(true) }
       return
     }
     this.touch(id); this.reaper.touch(id)
@@ -979,7 +983,8 @@ export class CodexAppServerHost implements AgentHost {
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(requestKey(params.requestId))
     if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') await this.persist()
-    this.emit()
+    this.emit(frame.method !== 'turn/started' && frame.method !== 'turn/completed'
+      && frame.method !== 'error' && frame.method !== 'serverRequest/resolved')
   }
   private write(value: unknown): void {
     if (!this.child || this.child.stdin.destroyed) throw new Uncertain('Codex connection closed before acknowledgement.')
@@ -1018,6 +1023,7 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   private reset(): void {
+    this.publisher.cancel()
     this.reaper.dispose()
     this.skillsRevision++; this.loadedSkillCwds.clear()
     this.child = undefined; this.state.connected = false; this.live.clear(); this.histories.clear(); this.resuming.clear(); this.opening.clear(); this.pendingLogMessages.clear()

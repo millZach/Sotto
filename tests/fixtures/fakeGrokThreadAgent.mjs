@@ -114,6 +114,7 @@ const control = setInterval(() => {
  if (command.type === 'complete') complete(command.sessionId,command.text,command.reason)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)
  if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
+ if (command.type === 'raw-burst') process.stdout.write(command.frames.map(frame => JSON.stringify({jsonrpc:'2.0',...frame})+'\n').join(''))
  if (command.type === 'coalesce') {
   const entries = sessions[command.sessionId].updates.filter(entry => entry.params.update.sessionUpdate === 'agent_message_chunk' && entry.params._meta.streamStartMs === command.streamStartMs)
   const text = entries.map(entry => entry.params.update.content.text).join('')
