@@ -93,8 +93,9 @@ describe('workspace controller integration', () => {
     native.status = 'running'
     native.requests.push({ id: 'permission', kind: 'permission', text: 'Run the build?', options: [] })
     f.adapters.codex.emit()
+    // Provider publishes are coalesced in the workspace host, so wait for this one to arrive.
+    await expect.poll(() => f.control.get().queue.some(item => item.requestId === 'permission')).toBe(true)
     const before = f.control.get()
-    expect(before.queue.some(item => item.requestId === 'permission')).toBe(true)
     const callCount = f.adapters.codex.commands.length
     let state = await f.control.command({ type: 'settle-thread', threadId: original.id })
     expect(state.error).toBeNull()

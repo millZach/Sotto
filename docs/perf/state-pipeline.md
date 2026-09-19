@@ -126,3 +126,24 @@ replaces it. Only what a row draws is kept: no transcript, no activity, no attac
 no attention queue — attention is live state, and a restored queue would let the review speak and navigate
 before main has said anything. Nothing is written at all while Keep local history is off, and the cache is
 cleared when it is turned off.
+
+## A flood from one adapter
+
+The coalescing above lives in the coordinator. Below it, `WorkspaceHost` still copied the whole workspace
+and queued a `workspace.json` write for every publish any adapter made, so one chatty provider set the cost
+for everything. Measured with `npx vitest run tests/unit/main/workspacePublishCoalescing.test.ts`: a fake
+adapter emits 2,000 snapshots over about 100 ms, yielding to the event loop every 20, and the test counts
+the host's publishes (one copy of the workspace each) and the store's writes. Three runs, Windows 11.
+
+| | before | after |
+| --- | ---: | ---: |
+| workspace copies | 2,000 | 10-13 |
+| `workspace.json` writes | 48-53 | 1 |
+
+Provider publishes are now gathered into a 16 ms window and provider writes into a 250 ms one; the first
+publish of a burst still goes out at once, so a reply appearing is as immediate as it was. The fixture
+workspace is small, so each copy costs about 13 us here; on the folder measured above, where one copy is
+4.5 ms, the same burst is the difference between roughly 9 s of copying and 60 ms.
+
+A user command is unchanged: it writes through `flush()`, which takes over any waiting provider write, and
+publishes directly, so the command still returns after its own write.

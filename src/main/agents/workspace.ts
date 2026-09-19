@@ -17,6 +17,13 @@ const workspaceSchema = z.object({
 })
 type Workspace = z.infer<typeof workspaceSchema>
 
+/** How long a burst of provider snapshots is gathered into one publish. The coordinator's own
+ * broadcast window is the same 16 ms, so this costs a window rather than a visible delay. */
+const PUBLISH_WINDOW_MS = 16
+/** How long a provider-driven cache write waits for the state to settle. A user command never
+ * waits this out: it writes through `flush()` and returns after its own write. */
+const WRITE_WINDOW_MS = 250
+
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost {
@@ -29,6 +36,9 @@ export class WorkspaceHost implements AgentHost {
   private saving: Promise<void> | undefined
   private saveError: string | undefined
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private publishTimer: ReturnType<typeof setTimeout> | undefined
+  private publishPending = false
+  private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
   /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
   private readonly preparations = new Map<string, Promise<void>>()
@@ -54,8 +64,8 @@ export class WorkspaceHost implements AgentHost {
     inner.subscribe(snapshot => {
       if (!this.ready) return
       this.accept(snapshot)
-      void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
-      this.publish()
+      this.writeSoon()
+      this.publishSoon()
     })
   }
 
@@ -105,6 +115,30 @@ export class WorkspaceHost implements AgentHost {
     return snapshot
   }
   private publish(): void { for (const listener of this.listeners) listener(this.workspaceSnapshot()) }
+  /**
+   * A publish the providers asked for. The first of a burst goes out at once, so a reply appearing
+   * still feels immediate, and everything inside the window behind it becomes one publish at its
+   * end with the last state. No adapter can make the host copy the workspace per event.
+   */
+  private publishSoon(): void {
+    if (this.publishTimer) { this.publishPending = true; return }
+    this.publish()
+    this.publishTimer = setTimeout(() => {
+      this.publishTimer = undefined
+      if (this.publishPending) { this.publishPending = false; this.publishSoon() }
+    }, PUBLISH_WINDOW_MS)
+    this.publishTimer.unref?.()
+  }
+  /** A cache write the providers asked for: never more than one waiting, and the state it finds
+   * when it runs is the one that is written. */
+  private writeSoon(): void {
+    if (this.writeTimer) return
+    this.writeTimer = setTimeout(() => {
+      this.writeTimer = undefined
+      void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
+    }, WRITE_WINDOW_MS)
+    this.writeTimer.unref?.()
+  }
   private accept(snapshot: AgentHostSnapshot): void {
     const previous = this.state.snapshot
     const projects = new Map(previous.projects.map(project => [project.id, project]))
@@ -141,6 +175,8 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
   }
   private flush(): Promise<void> {
+    // This write covers whatever a waiting one would have written, so it takes its place.
+    if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = undefined }
     if (this.saving) return this.saving
     this.saving = Promise.resolve().then(async () => {
       try {
