@@ -610,7 +610,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await agentControl.start()
   // The host's own boundary: what a client may use, and nothing else (ADR-0016). Today the only client
   // is this app's window over IPC, so the only transport is the preload bridge.
-  const hostService: HostService = new LocalHostService({ control: agentControl })
+  const hostService: HostService = new LocalHostService({ control: agentControl, events: agentHost })
   const testPersonalChatHosts = e2eConfiguration ? {
     codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
   } : undefined

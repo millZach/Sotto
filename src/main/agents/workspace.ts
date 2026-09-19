@@ -3,7 +3,7 @@ import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
-import type { AnswerGivenEvent, ThreadEvent } from '../../shared/threadEvents'
+import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
@@ -355,6 +355,12 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) return
     try { this.threadStore.append(threadId, event) }
     catch { this.saveError = HISTORY_SAVE_ERROR }
+  }
+  /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */
+  eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
+    if (this.storeUnavailable) return []
+    this.writeEvents()
+    return this.threadStore.eventsAfter(seq, threadId)
   }
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void { this.writeEvents(); this.threadStore.close() }
