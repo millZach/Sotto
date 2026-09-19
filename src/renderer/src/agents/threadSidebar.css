@@ -74,9 +74,11 @@
 .thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
 .thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
-/* With a pointer, folder actions overlay the indicators instead of taking width from the name. */
+/* With a pointer, folder actions overlay the indicators instead of taking width from the name. They sit centred
+   on the height of the head and inset from its edge like the actions of a row, and paint no background of their
+   own: the hover of the head is enough, and a second translucent layer read as a tile set askew. */
 @media (hover: hover) {
-  .thread-folder__actions { position: absolute; top: 2px; right: 0; border-radius: 7px; background: var(--threads-hover); }
+  .thread-folder__actions { position: absolute; inset: 0 2px 0 auto; align-items: center; }
   /* Fade (not hide) the indicators under the actions: the counts stay in the toggle's accessible name. */
   .thread-folder__head:has(.thread-folder__actions):is(:hover, :focus-within) .thread-nav__indicators { opacity: 0; }
 }
