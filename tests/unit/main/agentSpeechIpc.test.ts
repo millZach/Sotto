@@ -27,7 +27,7 @@ function fixture() {
     voices: vi.fn(async () => [{ id: 'custom-voice', name: 'Custom' }]), cancel: vi.fn(),
   }
   const kokoro = { synthesize: vi.fn<(text: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'kokoro-fixture', mimeType: 'audio/wav' })), cancel: vi.fn() }
-  disposables.push(registerAgentIpc(ipc, control, () => [main, widget], 'win32', {
+  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', {
     status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
   }, grok, kokoro))

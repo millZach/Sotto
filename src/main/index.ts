@@ -150,6 +150,7 @@ import { GrokSubscriptionClient } from './agents/subscriptionGrok'
 import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { AgentMembershipClient } from './agents/membership'
 import { registerAgentIpc } from './agents/ipc'
+import { LocalHostService, type HostService } from './agents/hostService'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { resolveFilesBinding } from './files/binding'
@@ -607,6 +608,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     }) : e2eAgentReasoner,
   })
   await agentControl.start()
+  // The host's own boundary: what a client may use, and nothing else (ADR-0016). Today the only client
+  // is this app's window over IPC, so the only transport is the preload bridge.
+  const hostService: HostService = new LocalHostService({ control: agentControl })
   const testPersonalChatHosts = e2eConfiguration ? {
     codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
   } : undefined
@@ -993,7 +997,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
       }, () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
-      const cleanupAgents = registerAgentIpc(ipcMain, agentControl, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
+      const cleanupAgents = registerAgentIpc(ipcMain, agentControl, hostService, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
       }, grokSpeech, kokoroSpeech)
