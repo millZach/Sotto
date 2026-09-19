@@ -291,16 +291,17 @@ describe('ThreadsView workspace', () => {
     state.host.capabilities.configureThread = true
     state.host.models = [{ id: thread.modelId, provider: 'Grok', name: 'Current', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }, { id: 'alternate', name: 'Alternate', provider: 'Codex', ready: true }]
     const { command } = renderThreads(state)
-    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
     fireEvent.click(screen.getByRole('option', { name: 'Alternate' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Thread reasoning' }), { target: { value: 'high' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.click(screen.getByRole('option', { name: 'High' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, reasoningEffort: 'high' })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Thread permissions' }), { target: { value: 'full-access' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
     await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, runtimeMode: 'full-access' }))
   })
 

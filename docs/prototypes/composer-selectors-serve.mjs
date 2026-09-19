@@ -1,4 +1,5 @@
 // PROTOTYPE — throwaway. Serves the repo root on localhost so the prototype opens over http.
+/* global console, URL */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname } from 'node:path'

@@ -1,4 +1,5 @@
 // PROTOTYPE — throwaway. Captures composer-selectors-prototype.html into artifacts/composer-selectors-prototypes/.
+/* global process, console, document */
 const { chromium } = await import(process.env.PW_MODULE ?? 'playwright')
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'

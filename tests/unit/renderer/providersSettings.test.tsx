@@ -77,7 +77,6 @@ describe('independent provider settings', () => {
     const state = fixture()
     const command = vi.fn(async () => state)
     const view = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     expect(screen.getByRole('option', { name: 'codex model' })).toBeVisible()
     expect(screen.queryByRole('option', { name: 'claude model' })).toBeNull()
@@ -95,10 +94,10 @@ describe('independent provider settings', () => {
     state.host.threads = [thread]
     const command = vi.fn(async () => state)
     render(<ThreadOptions thread={thread} state={state} command={command} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeDisabled()
     expect(screen.getByLabelText('Thread reasoning')).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'grok-thread', runtimeMode: 'full-access' }))
   })
   it.each([undefined, 'grok'] as const)('does not queue a healthy send behind provider connection %s in the renderer', async provider => {

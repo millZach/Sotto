@@ -1,39 +1,56 @@
+/* The composer's chips: the model with its provider's mark, the reasoning effort and the permissions. Each is one
+   bordered pill that opens its own list above the composer, so the typed text and the send disc stay where they were. */
 .model-picker { min-width: 0; }
-.model-picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-field); color: var(--tt-text-2); font: inherit; font-size: 11.5px; cursor: pointer; }
-.model-picker__trigger > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.model-picker__trigger > svg { flex: none; }
-.model-picker__trigger:disabled { opacity: .55; cursor: default; }
+.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.thread-chip > svg { flex: none; }
+.thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.thread-chip:disabled { opacity: .55; cursor: default; }
+.model-picker__trigger { color: var(--tt-text-2); }
+.provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.thread-options--chips { gap: 6px; }
+
+/* The effort and permission lists. */
+.thread-chip-menu { position: relative; min-width: 0; }
+.thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.thread-chip-menu__list > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.thread-chip-menu__list > button:hover:not(:disabled), .thread-chip-menu__list > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.thread-chip-menu__list > button[aria-selected='true'] { color: var(--tt-activity); }
+.thread-chip-menu__list > button:disabled { opacity: .45; cursor: default; }
+
+/* Where the model control is a named field rather than a chip: the New thread and New terminal dialogs. */
 .thread-options__model { display: grid; gap: 5px; min-width: 0; }
 .thread-options__model > span { color: var(--tt-text-muted); font-size: 10.5px; }
-.thread-options-bar .thread-options__model > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.thread-options-bar .model-picker__trigger { max-width: 180px; padding: 4px 6px; border-color: transparent; background: transparent; }
-.thread-options-bar .model-picker__trigger:hover:not(:disabled) { background: var(--tt-hover-strong); border-color: var(--tt-field-border); }
-/* In the composer's pill popover the model reads like the two selects beside it: named, full width, in a field. */
-.thread-options__popover .thread-options__model > span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--tt-text-muted); font-size: 11px; }
-.thread-options__popover .model-picker__trigger { max-width: none; min-height: 30px; padding: 5px 8px; border-color: var(--tt-field-border); background: var(--tt-field); font-size: 12.5px; }
 .new-thread-dialog .thread-options__model { grid-column: 1 / -1; }
-.new-thread-dialog .model-picker__trigger { max-width: none; min-height: 39px; padding: 8px 11px; background: var(--tt-field); font-size: 13px; }
-.model-picker__dialog { position: fixed; width: min(540px, calc(100vw - 32px)); height: min(390px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-panel-border); border-radius: 14px; background: var(--tt-panel); color: var(--tt-text); box-shadow: 0 16px 60px var(--tt-shadow-color); }
-.model-picker__dialog::backdrop { background: var(--tt-backdrop); }
-.model-picker__search { display: flex; align-items: center; gap: 10px; height: 49px; padding: 0 14px; border-bottom: 1px solid var(--tt-panel-border); color: var(--tt-text-muted); }
-.model-picker__dialog .model-picker__search input { flex: 1; min-width: 0; width: auto; min-height: 0; padding: 4px 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 12px; }
-.model-picker__search > button { display: grid; place-items: center; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
-.model-picker__body { display: grid; grid-template-columns: 150px minmax(0, 1fr); height: calc(100% - 49px); }
-.model-picker__body nav { overflow-y: auto; padding: 9px 7px; background: var(--tt-surface); border-right: 1px solid var(--tt-panel-border); }
-.model-picker__body nav button { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 11px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-.model-picker__body nav button[aria-pressed="true"] { color: var(--tt-text); background: var(--tt-selected); }
-.model-picker__body nav small { font-size: 10px; color: var(--tt-text-muted); }
-.model-picker__body section { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.model-picker__body section > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 15px 9px; font-size: 12px; }
-.model-picker__body section > header strong { font-weight: 500; }
-.model-picker__body section > header span { color: var(--tt-text-muted); font-size: 10px; }
-.model-picker__models { flex: 1; overflow-y: auto; padding: 0 7px 9px; }
-.model-picker__models > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 39px; padding: 10px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-.model-picker__models > button:hover:not(:disabled), .model-picker__models > button:focus-visible { background: var(--tt-hover-strong); }
-.model-picker__models > button[aria-selected="true"] { color: var(--tt-activity); }
-.model-picker__models > button:disabled { opacity: .4; cursor: default; }
-.model-picker__models > button > span { display: grid; gap: 4px; }
-.model-picker__models small { font-size: 10px; }
-.model-picker__models, .model-picker__body nav { scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.model-picker__empty { padding: 15px 9px; color: var(--tt-text-muted); font-size: 12px; }
-@media (max-width: 500px) { .model-picker__body { grid-template-columns: 115px minmax(0, 1fr); } }
+.new-thread-dialog .model-picker__trigger { justify-content: space-between; width: 100%; max-width: none; height: auto; min-height: 39px; padding: 8px 11px; border-radius: 7px; background: var(--tt-field); font-size: 13px; }
+.new-thread-dialog .model-picker__trigger > span:not(.provider-mark) { flex: 1; text-align: left; }
+
+/* The model menu: provider tabs, a search line, the list, one note. Anchored over the chip; content-sized. */
+.model-picker__dialog { position: fixed; display: flex; flex-direction: column; width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.model-picker__dialog::backdrop { background: transparent; }
+.model-picker__tabs { display: flex; flex: none; gap: 2px; padding: 6px 6px 0; }
+.model-picker__tabs > button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.model-picker__tabs > button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.model-picker__tabs > button[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.model-picker__search { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; margin-top: 4px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.model-picker__dialog .model-picker__search input { flex: 1; min-width: 0; width: auto; min-height: 0; padding: 4px 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
+.model-picker__search input::placeholder { color: var(--tt-text-faint); }
+.model-picker__search > button { display: grid; place-items: center; padding: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.model-picker__search > button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.model-picker__models { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.model-picker__models > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.model-picker__models > button:hover:not(:disabled), .model-picker__models > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.model-picker__models > button[aria-selected='true'] { color: var(--tt-activity); }
+.model-picker__models > button:disabled { opacity: .45; cursor: default; }
+.model-picker__models > button > span { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.model-picker__models > button > span > small { color: var(--tt-text-muted); font-size: 11.5px; }
+.model-picker__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
+.model-picker__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+
+/* One motion: a list rises 6px as it opens, on the easing the follow-up ledger uses. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) :is(.model-picker__dialog, .thread-chip-menu__list) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
+}
+@keyframes thread-chip-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

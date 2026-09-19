@@ -149,13 +149,9 @@
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
-/* The thread's model, reasoning and permissions read as one pill, and open as the three controls themselves. */
-.threads-view .thread-options-bar { position: relative; flex: 0 1 auto; min-width: 0; }
-.thread-options__pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
-.thread-options__pill > svg { flex: none; }
-.thread-options__pill:hover, .thread-options__pill[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
-.thread-options__popover { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; display: grid; gap: 10px; width: max-content; min-width: 240px; max-width: min(320px, 90vw); padding: 12px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.thread-options__popover > small { color: var(--tt-text-muted); font-size: 12px; }
+/* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
+.threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.threads-view .thread-options-bar > small { margin-top: 0; font-size: 12px; }
 .threads-view .screenshot-previews figcaption, .threads-view .screenshot-input__tools small { font-size: 12px; }
 .threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 

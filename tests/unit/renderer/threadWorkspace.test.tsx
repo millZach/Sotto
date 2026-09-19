@@ -272,7 +272,6 @@ describe('Threads manual composer', () => {
     state.host.threads.find(item => item.id === 'grok-previews')!.status = 'running'
     state.host.capabilities = { ...state.host.capabilities, configureThread: true }
     mount(state)
-    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeInTheDocument()
     expect(screen.queryByText(/Enter to queue/u)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enter to send/)).not.toBeInTheDocument()
@@ -409,7 +408,6 @@ describe('Thread provider choice', () => {
 
   it('lets an unstarted thread choose any ready provider that can create threads', async () => {
     const { live } = mount(providerState(false))
-    fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     expect(screen.queryByRole('button', { name: 'Grok', exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
@@ -422,7 +420,6 @@ describe('Thread provider choice', () => {
       const state = providerState(started)
       state.host.providers![0] = { ...state.host.providers![0]!, connection: 'connected', capabilities: ALL }
       mount(state)
-      fireEvent.click(screen.getByRole('button', { name: 'Thread options' }))
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
       expect(screen.queryByRole('button', { name: 'Codex', exact: true })).not.toBeInTheDocument()
       expect(screen.queryByText('This conversation stays with Claude.')).not.toBeInTheDocument()
