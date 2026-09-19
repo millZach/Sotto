@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
@@ -140,13 +140,27 @@ export class WorkspaceHost implements AgentHost {
       return this.workspaceSnapshot()
     })
   }
+  /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
+  private async exclusivelyOwnsCheckout(threadId: string): Promise<boolean> {
+    const thread = this.thread(threadId)
+    const metadata = thread.worktree
+    if (!metadata?.temporaryBranch || metadata.reused || !metadata.path) return false
+    try {
+      const identity = await this.worktrees.checkoutIdentity(metadata.path)
+      const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
+      for (const other of others) {
+        if (other.nativeSessionStarted === false && other.worktree?.mode === 'independent' && !other.worktree.path && !other.worktree.existingWorktreePath) continue
+        const path = other.workingDirectory ?? other.worktree?.path ?? other.worktree?.existingWorktreePath
+          ?? this.state.snapshot.projects.find(project => project.id === other.projectId)?.path
+        if (!path || await this.worktrees.checkoutIdentity(path) === identity) return false
+      }
+      return true
+    } catch { return false } // An unavailable folder makes exclusive ownership unprovable.
+  }
   async renameTemporaryBranch(threadId: string, name: string): Promise<void> {
     return this.onLane(threadId, async () => {
-      const thread = this.thread(threadId)
-      const metadata = thread.worktree
-      if (!metadata?.temporaryBranch || metadata.reused || !metadata.path) return
-      const key = (path: string) => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
-      if (this.state.snapshot.threads.some(other => other.id !== threadId && (other.worktree?.path ?? other.worktree?.existingWorktreePath) && key((other.worktree?.path ?? other.worktree?.existingWorktreePath)!) === key(metadata.path!))) return
+      if (!await this.exclusivelyOwnsCheckout(threadId)) return
+      const metadata = this.thread(threadId).worktree!
       const renamed = await this.worktrees.renameTemporaryBranch(metadata, name)
       this.thread(threadId).worktree = renamed
       this.dirty = true
@@ -155,13 +169,25 @@ export class WorkspaceHost implements AgentHost {
     })
   }
   private nameBranch(threadId: string, prompt: string): void {
-    const metadata = this.thread(threadId).worktree
-    if (!this.branchNameWriter || !metadata?.temporaryBranch || metadata.reused || !metadata.path || this.namingBranches.has(threadId)) return
-    const key = (path: string) => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
-    if (this.state.snapshot.threads.some(other => other.id !== threadId && (other.worktree?.path ?? other.worktree?.existingWorktreePath) && key((other.worktree?.path ?? other.worktree?.existingWorktreePath)!) === key(metadata.path!))) return
+    if (!this.branchNameWriter || this.namingBranches.has(threadId)) return
     this.namingBranches.add(threadId)
     const writer = this.branchNameWriter
-    void Promise.resolve().then(() => writer(prompt)).then(name => name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
+    void this.exclusivelyOwnsCheckout(threadId).then(exclusive => exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(prompt) : null)
+      .then(name => name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
+  }
+  private async discoverWorkingCopy(threadId: string): Promise<void> {
+    const thread = this.thread(threadId)
+    if (thread.worktree || thread.nativeSessionStarted === false) return
+    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+    const directory = thread.workingDirectory ?? project?.path
+    if (!directory) throw new Error('This thread’s working folder is unavailable.')
+    const metadata = await this.worktrees.discover(directory, project?.path ?? directory)
+    const current = this.thread(threadId)
+    if (current.worktree) return
+    current.worktree = metadata
+    this.dirty = true
+    try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+    this.publish()
   }
 
   setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
@@ -535,8 +561,8 @@ export class WorkspaceHost implements AgentHost {
   }
   /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
   private scheduleWorktreeRefresh(threadId: string): void {
-    const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
-    if (!worktree || worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
+    const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    if (!thread || thread.nativeSessionStarted === false || thread.worktree && thread.worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
     const timer = setTimeout(() => { this.worktreeRefreshes.delete(threadId); void this.refreshWorktreeRecord(threadId) }, this.worktreeRefreshDelayMs)
     timer.unref?.()
     this.worktreeRefreshes.set(threadId, timer)
@@ -545,6 +571,7 @@ export class WorkspaceHost implements AgentHost {
    * A folder problem found here is left for the next send to report: a background read refuses nothing. */
   private refreshWorktreeRecord(threadId: string): Promise<void> {
     return this.onLane(threadId, async () => {
+      try { await this.discoverWorkingCopy(threadId) } catch { return }
       const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
       if (!worktree || worktree.status !== 'ready') return
       let inspected: AgentWorktree
@@ -715,6 +742,7 @@ export class WorkspaceHost implements AgentHost {
   async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
+      await this.discoverWorkingCopy(threadId)
       const thread = this.thread(threadId)
       if (retry && thread.nativeSessionStarted === false && thread.worktree?.status === 'error') await this.prepareWorkingCopy(thread)
       else if (thread.worktree?.path) {
@@ -768,6 +796,7 @@ export class WorkspaceHost implements AgentHost {
   async threadWorkingDirectory(threadId: string): Promise<string> {
     await this.initialize()
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
+    await this.discoverWorkingCopy(threadId)
     const thread = this.thread(threadId)
     if (thread.worktree?.path && (thread.worktree.status === 'ready' || thread.worktree.status === 'error')) {
       // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014). A record

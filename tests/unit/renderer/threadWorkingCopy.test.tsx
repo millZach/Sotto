@@ -14,7 +14,7 @@ const failed: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: false,
 function snapshot(error: string | null = null): AgentState {
   return { configuration: defaultAgentConfiguration(), connection: 'connected', error } as unknown as AgentState
 }
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('describeWorkingCopy', () => {
   it('names the actual branch or folder a ready thread works in', () => {
@@ -50,6 +50,22 @@ describe('describeWorkingCopy', () => {
 })
 
 describe('ThreadWorkingCopy', () => {
+  it('keeps the editor within its pane when the anchor is near the right edge and the pane narrows', () => {
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(820)
+    vi.stubGlobal('innerHeight', 560)
+    const view = render(<div className="thread-pane"><ThreadWorkingCopy thread={ready} project={project} command={vi.fn()} /></div>)
+    const pane = view.container.querySelector('.thread-pane')!
+    const root = view.container.querySelector('.working-copy')!
+    const paneBounds = vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue(new DOMRect(318, 0, 502, 560))
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(650, 15, 120, 20))
+    fireEvent.click(screen.getByRole('button', { name: `Working copy: ${branch}` }))
+    const panel = screen.getByRole('group', { name: 'Working copy details' })
+    expect(panel).toHaveStyle({ left: '-258px', width: '420px', maxHeight: '511px' })
+    paneBounds.mockReturnValue(new DOMRect(500, 0, 320, 560))
+    fireEvent(window, new Event('resize'))
+    expect(panel).toHaveStyle({ left: '-142px', width: '304px', maxHeight: '511px' })
+  })
+
   it('changes an unsent worktree choice without creating a checkout, including a selected base', async () => {
     vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main', 'develop'], worktrees: [{ path: 'C:/existing', branch: 'fix/work' }] })) } })
     const command = vi.fn(async () => snapshot())
@@ -74,6 +90,18 @@ describe('ThreadWorkingCopy', () => {
     render(<ThreadWorkingCopy thread={{ ...ready, projectId: 'project' }} project={project} command={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: `Working copy: ${branch}` }))
     expect(screen.queryByRole('radio', { name: 'Project folder' })).toBeNull()
+  })
+
+  it('keeps the apply button focused when changing an unsent working copy is refused', async () => {
+    const command = vi.fn(async () => snapshot('The thread has already started.'))
+    render(<ThreadWorkingCopy thread={{ id: 'empty', projectId: 'project', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: project.path } }} project={project} command={command} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Working copy: Project folder' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
+    const apply = screen.getByRole('button', { name: 'Apply working copy' })
+    apply.focus()
+    fireEvent.click(apply)
+    expect(await screen.findByRole('alert')).toHaveTextContent('The thread has already started.')
+    expect(screen.getByRole('button', { name: 'Apply working copy' })).toHaveFocus()
   })
 
   it('shows the branch, opens details by keyboard, and closes on Escape back to the chip', async () => {

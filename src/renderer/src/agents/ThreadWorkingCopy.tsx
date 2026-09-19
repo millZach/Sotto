@@ -79,7 +79,7 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
 export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCopyProps): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const [open, setOpen] = useState(false)
-  const [alignEnd, setAlignEnd] = useState(false)
+  const [position, setPosition] = useState<{ left: number; width: number; maxHeight: number } | null>(null)
   const root = useRef<HTMLSpanElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -92,10 +92,28 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     return () => document.removeEventListener('pointerdown', outside)
   }, [open])
   useEffect(() => { setOpen(false) }, [thread.id])
-  // A chip in a right-hand pane opens its details toward the pane instead of past the window edge.
+  // Panes clip their children. Keep the whole editor inside its pane, including when the chip is near either edge.
   useLayoutEffect(() => {
     if (!open || !root.current || !panel.current) return
-    setAlignEnd(root.current.getBoundingClientRect().left + panel.current.offsetWidth > document.documentElement.clientWidth - 16)
+    const element = root.current
+    const pane = element.closest('.thread-pane')
+    const update = (): void => {
+      const anchor = element.getBoundingClientRect()
+      const bounds = pane?.getBoundingClientRect()
+      const leftEdge = Math.max(0, bounds?.left ?? 0) + 8
+      const rightEdge = Math.min(document.documentElement.clientWidth, bounds?.right ?? document.documentElement.clientWidth) - 8
+      const width = Math.min(420, Math.max(0, rightEdge - leftEdge))
+      const left = Math.max(leftEdge, Math.min(anchor.left, rightEdge - width)) - anchor.left
+      const bottom = Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight)
+      const maxHeight = Math.max(0, bottom - anchor.bottom - 14)
+      setPosition(previous => previous?.left === left && previous.width === width && previous.maxHeight === maxHeight ? previous : { left, width, maxHeight })
+    }
+    update()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(element)
+    if (pane) observer?.observe(pane)
+    window.addEventListener('resize', update)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
   }, [open])
   const configurable = thread.projectId && thread.nativeSessionStarted === false && (!thread.worktree?.path || thread.worktree.mode === 'shared')
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
@@ -105,7 +123,7 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
       aria-label={`Working copy: ${facts.label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
     </button>
-    {open ? <div ref={panel} id={panelId} className="working-copy__panel" data-align={alignEnd ? 'end' : undefined} role="group" aria-label="Working copy details">
+    {open ? <div ref={panel} id={panelId} className="working-copy__panel" style={position ?? undefined} role="group" aria-label="Working copy details">
       {configurable ? <UnsentWorkingCopy key={thread.id} thread={thread} command={command} /> : null}
       <dl>
         {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
@@ -253,6 +253,68 @@ describe('durable project/thread organization', () => {
     expect((await git(thread.workingDirectory!, ['branch', '--show-current'])).trim()).toBe('feat/agent-choice')
     await f.host.execute({ ...send(), commandId: 'next', messageId: 'next' })
     expect(writer).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['legacy', 'shared-subdirectory'] as const)('never requests or applies branch naming when a %s thread uses the checkout', async kind => {
+    const f = await fixture()
+    const repository = f.adapters.codex.state.projects[0]!.path
+    await git(repository, ['init'])
+    await writeFile(join(repository, 'tracked.txt'), 'baseline')
+    await git(repository, ['add', '.'])
+    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    const writer = vi.fn(async () => 'sotto/do-not-rename')
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    f.host.setBranchNameWriter(writer)
+    await local(f)
+    const execute = f.adapters.codex.execute.bind(f.adapters.codex)
+    vi.spyOn(f.adapters.codex, 'execute').mockImplementation(async command => {
+      if (command.type === 'send') {
+        const owner = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
+        const directory = kind === 'legacy' ? owner.workingDirectory! : join(owner.workingDirectory!, 'packages')
+        if (kind === 'shared-subdirectory') await mkdir(directory)
+        const other = f.adapters.codex.state.threads[0]!
+        other.workingDirectory = directory
+        if (kind === 'shared-subdirectory') other.worktree = { mode: 'shared', status: 'ready', path: directory }
+      }
+      return execute(command)
+    })
+    await f.host.execute(send())
+    const owner = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
+    await f.host.renameTemporaryBranch('local', 'sotto/do-not-rename')
+    expect((await git(owner.workingDirectory!, ['branch', '--show-current'])).trim()).toBe(owner.worktree!.branch)
+    expect(writer).not.toHaveBeenCalled()
+  })
+
+  it.each(['shared', 'independent'] as const)('discovers a legacy %s checkout without moving its provider session or history', async mode => {
+    const f = await fixture()
+    const project = f.adapters.codex.state.projects[0]!
+    await git(project.path, ['init'])
+    await writeFile(join(project.path, 'tracked.txt'), 'baseline')
+    await git(project.path, ['add', '.'])
+    await git(project.path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    const directory = mode === 'shared' ? project.path : join(f.root, 'legacy-checkout')
+    if (mode === 'independent') await git(project.path, ['worktree', 'add', '-b', 'legacy-task', directory])
+    const native = f.adapters.codex.state.threads[0]!
+    native.workingDirectory = directory
+    native.messages = [{ id: 'old-message', role: 'assistant', text: 'Retained history', createdAt: '2026-09-01T00:00:00Z' }]
+    const snapshot = await f.host.connect()
+    const thread = snapshot.threads.find(item => item.providerId === 'codex' && item.title === native.title)!
+    const binding = structuredClone(f.registry.byThread(thread.id))
+    await writeFile(join(directory, 'tracked.txt'), 'unfinished user edits')
+    const discovered = (await f.host.updateThreadWorktree(thread.id, false)).threads.find(item => item.id === thread.id)!
+    expect(discovered).toMatchObject({ workingDirectory: directory, worktree: { mode, status: 'ready' } })
+    expect(discovered.messages).toEqual(native.messages)
+    expect(f.registry.byThread(thread.id)).toEqual(binding)
+    const original = discovered.worktree!.branch
+    await f.host.execute(send(thread.id))
+    await git(directory, ['switch', '-c', `next-${mode}`])
+    const changed = (await f.host.updateThreadWorktree(thread.id, false)).threads.find(item => item.id === thread.id)!
+    expect(changed.worktree).toMatchObject({ mode, branch: `next-${mode}`, sentBranch: original })
+    await f.host.execute({ ...send(thread.id), commandId: 'next-send', messageId: 'next-message' })
+    expect(f.host.workspaceSnapshot().threads.find(item => item.id === thread.id)?.worktree?.sentBranch).toBe(`next-${mode}`)
+    expect(f.registry.byThread(thread.id)).toEqual(binding)
+    expect(f.adapters.codex.commands.filter(command => command.type === 'create-thread')).toHaveLength(0)
+    expect(await readFile(join(directory, 'tracked.txt'), 'utf8')).toBe('unfinished user edits')
   })
 
   it('uses a configured default only for new threads and keeps existing working-copy selections', async () => {

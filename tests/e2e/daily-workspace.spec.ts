@@ -234,6 +234,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     const drafts = async () => page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts?.filter(draft => ['grok-previews', 'footer-links'].includes(draft.threadId)).map(draft => [draft.threadId, draft.text]).sort())
     const expected = [['footer-links', 'Newer unsent Codex draft.'], ['grok-previews', 'Unsent Claude draft for tomorrow.']]
     await expect.poll(drafts).toEqual(expected)
+    await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'footer-links', text: '' }))
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))

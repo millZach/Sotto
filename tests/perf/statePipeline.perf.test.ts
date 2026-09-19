@@ -10,6 +10,7 @@
 import { mkdtemp, readFile, copyFile, access, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { copyPerfHistory, hydratePerfHistory } from '../fixtures/perfWorkspace'
 import { deserialize, serialize } from 'node:v8'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { agentShell, agentStateSchema, defaultAgentConfiguration, type AgentHostSnapshot, type AgentState, type AgentThreadDetail } from '../../src/shared/agents'
@@ -58,14 +59,16 @@ describe('state pipeline cost', async () => {
     if (!present) return
     // The measurement never touches the live folder: the previews store may tidy or rewrite its file.
     directory = await mkdtemp(join(tmpdir(), 'sotto-perf-'))
+    await copyPerfHistory(dataDirectory, directory)
     for (const name of ['workspace.json', 'attachment-previews.json']) {
       await copyFile(join(dataDirectory, name), join(directory, name)).catch(() => undefined)
     }
   })
   afterAll(async () => { if (directory) await rm(directory, { recursive: true, force: true }) })
 
-  it.skipIf(!present)('reports the cost of one published state', async () => {
+  it.skipIf(!present)('reports the cost of one published state', async context => {
     const workspace = JSON.parse(await readFile(join(directory, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
+    await hydratePerfHistory(workspace.snapshot, directory)
     const previews = new AttachmentPreviews(directory)
     await previews.load()
     const state = stateAround(workspace.snapshot)
@@ -111,7 +114,8 @@ describe('state pipeline cost', async () => {
 
     // One viewed thread's history, which is what a streaming burst actually moves now.
     const weight = (thread: (typeof state.host.threads)[number]): number => thread.messages.length + (thread.activities?.length ?? 0)
-    const busiest = [...state.host.threads].sort((first, second) => weight(second) - weight(first))[0]!
+    const busiest = state.host.threads.filter(thread => thread.messages.length > 0).sort((first, second) => weight(second) - weight(first))[0]!
+    if (!busiest) context.skip('The profile has no retained messages to measure streaming.')
     const detail = { threadId: busiest.id, revision: 1, messages: structuredClone(busiest.messages), activities: structuredClone(busiest.activities ?? []) }
     previews.decorate({ ...state.host, threads: [{ ...busiest, messages: detail.messages }] })
     const detailClone = time(() => { structuredClone(detail) })

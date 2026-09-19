@@ -136,7 +136,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   })
   /** A branch switched in a terminal leaves no activity behind, so a draft that begins re-reads the folder once. */
   const branchRead = useRef<string | null>(null)
-  const worktreeReady = thread.worktree?.status === 'ready'
+  const worktreeReady = thread.worktree?.status === 'ready' || (!thread.worktree && thread.nativeSessionStarted !== false)
   useEffect(() => {
     if (!composing) { branchRead.current = null; return }
     if (!worktreeReady || branchRead.current === thread.id) return

@@ -10,6 +10,7 @@ import React, { Profiler, type ReactNode } from 'react'
 import { mkdtemp, readFile, copyFile, access, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { copyPerfHistory, hydratePerfHistory } from '../fixtures/perfWorkspace'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -96,12 +97,15 @@ describe('long transcript cost', async () => {
     // The measurement never touches the live folder.
     directory = await mkdtemp(join(tmpdir(), 'sotto-perf-'))
     await copyFile(join(dataDirectory, 'workspace.json'), join(directory, 'workspace.json'))
+    await copyPerfHistory(dataDirectory, directory)
   })
   afterAll(async () => { cleanup(); if (directory) await rm(directory, { recursive: true, force: true }) })
 
-  it.skipIf(!present)('reports the mount and update cost of a 400-message thread', async () => {
+  it.skipIf(!present)('reports the mount and update cost of a 400-message thread', async context => {
     const workspace = JSON.parse(await readFile(join(directory, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
     const host = workspace.snapshot
+    await hydratePerfHistory(host, directory)
+    if (!host.threads.some(thread => thread.messages.length > 0)) context.skip('The profile has no retained messages to measure a transcript.')
     const busiest = [...host.threads].sort((first, second) => second.messages.length - first.messages.length)[0]
     expect(busiest).toBeDefined()
     const short = { ...busiest!, status: 'running' } as AgentThread

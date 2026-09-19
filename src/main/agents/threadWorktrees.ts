@@ -97,6 +97,36 @@ export class ThreadWorktrees {
       worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable).map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
   }
 
+  /** Canonical checkout root, so a subdirectory and its root count as the same working copy. */
+  async checkoutIdentity(directory: string): Promise<string> {
+    const path = await existingWorkingDirectory(directory)
+    try { return pathKey(await existingWorkingDirectory((await this.git(path, ['rev-parse', '--show-toplevel'])).trim())) }
+    catch (error) {
+      if (error instanceof Error && /not a git repository/u.test(error.message)) return pathKey(path)
+      throw error
+    }
+  }
+
+  /** Discover an established session's folder without moving it or creating anything. */
+  async discover(directory: string, projectPath: string): Promise<AgentWorktree> {
+    const path = await existingWorkingDirectory(directory)
+    let root: string
+    try { root = await existingWorkingDirectory((await this.git(path, ['rev-parse', '--show-toplevel'])).trim()) }
+    catch (error) {
+      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return { mode: 'shared', status: 'ready', path }
+      throw error
+    }
+    let projectRoot: string | undefined
+    try { projectRoot = await this.checkoutIdentity(projectPath) } catch { /* The established folder still defines its session. */ }
+    const entries = registeredWorktrees(await this.git(root, ['worktree', 'list', '--porcelain', '-z']))
+    const registered = entries.find(entry => pathKey(entry.path) === pathKey(root))
+    if (pathKey(root) !== projectRoot && registered && pathKey(entries[0]?.path ?? root) !== pathKey(root)) {
+      return this.inspect({ mode: 'independent', status: 'ready', path: root, repositoryRoot: await existingWorkingDirectory(entries[0]!.path),
+        projectRelativePath: relative(root, path).split(sep).join('/'), reused: true })
+    }
+    return this.inspect({ mode: 'shared', status: 'ready', path })
+  }
+
   async renameTemporaryBranch(metadata: AgentWorktree, name: string): Promise<AgentWorktree> {
     if (!metadata.temporaryBranch || metadata.reused || !metadata.branch) return metadata
     const inspected = await this.inspect(metadata)
