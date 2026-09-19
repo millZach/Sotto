@@ -113,6 +113,24 @@ provider routing or renderer appearance changed.
   used to validate Claude or Grok. Nothing was installed, published or restarted. The owner
   plans to take the change in a future version.
 
+## Pull request verification
+
+Before delivery, integrated `main` at `ac7d9b75` (the screenshot-handling update). Only the two
+artifact ignore lists conflicted; both entries were retained. Type checking, lint and notices
+passed again. The three streaming regressions, publisher unit tests and Codex/Claude image
+tests passed together (15 tests) with the stopwatch budgets enabled. The full integrated
+revision is also checked by the PR's Windows CI gate before merge.
+
+Repeated both Playwright specs on the fix and in a separately installed, detached worktree at
+clean `main` commit `ac7d9b75`. Both runs produced three passing cases, two failures and three
+cases not run. The same font-size assertion and skill-bearing draft reload failed on both.
+The earlier immediate-message-count failure did not recur. These two remaining failures are
+verified pre-existing; they are not covered by a green end-to-end claim.
+
+The independent standards review found no violations or actionable smells. The independent
+spec review found no missing requirements, scope creep or incorrect implementation. Both
+reviews checked the shared publisher, all provider adapters and the regression coverage.
+
 ## Remaining limits
 
 The live profile identifies the copying bottleneck and the regression verifies the fix through
