@@ -145,5 +145,10 @@ publish of a burst still goes out at once, so a reply appearing is as immediate 
 workspace is small, so each copy costs about 13 us here; on the folder measured above, where one copy is
 4.5 ms, the same burst is the difference between roughly 9 s of copying and 60 ms.
 
+The counts in the table are the burst at its measured length. On a loaded CI runner the same burst has taken
+long enough for the 250 ms write window to fire forty times, so the test asserts the shape on every run (at
+most one publish per 16 ms window and one write per 250 ms window of the time the burst actually took) and
+the absolute counts only under `SOTTO_PERF_ASSERT=1`, as `docs/ci.md` describes for stopwatch budgets.
+
 A user command is unchanged: it writes through `flush()`, which takes over any waiting provider write, and
 publishes directly, so the command still returns after its own write.

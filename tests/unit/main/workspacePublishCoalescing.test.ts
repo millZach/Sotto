@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
-import { expectWithinBudget } from '../../fixtures/perfBudget'
+import { expectWithinBudget, PERF_ASSERT } from '../../fixtures/perfBudget'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -46,15 +46,22 @@ describe('workspace publish coalescing', () => {
     }
     const elapsed = performance.now() - started
 
-    // Every publish copies the whole workspace, so the count of publishes is the count of copies.
+    // Every publish copies the whole workspace, so the count of publishes is the count of copies. What holds
+    // on any machine is the shape: never more than one publish per 16 ms window and one write per 250 ms
+    // window, however long the burst took. The absolute counts (a handful, and one) describe the burst at
+    // its measured 100 ms and are only asserted with the stopwatch budgets switched on.
+    const windows = (ms: number) => Math.ceil(elapsed / ms) + 2
     expect(published).toBeGreaterThan(0)
-    expect(published).toBeLessThanOrEqual(24)
-    expect(write.mock.calls.length).toBeLessThanOrEqual(1)
+    expect(published).toBeLessThanOrEqual(windows(16))
+    expect(write.mock.calls.length).toBeLessThanOrEqual(windows(250))
     expectWithinBudget(elapsed, 1_500, '2,000 adapter snapshots through the workspace host')
+    if (PERF_ASSERT) { expect(published).toBeLessThanOrEqual(24); expect(write.mock.calls.length).toBeLessThanOrEqual(1) }
 
-    // The settled state is the last one, written once.
+    // The settled state is the last one, and the burst leaves no write waiting that the last one did not cover.
     await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title).toBe('Working 1999')
-    expect(write).toHaveBeenCalledTimes(1)
+    const writes = write.mock.calls.length
+    expect(writes).toBeLessThanOrEqual(windows(250))
+    if (PERF_ASSERT) expect(writes).toBe(1)
     expect(f.host.workspaceSnapshot().threads[0]?.title).toBe('Working 1999')
   })
 
