@@ -73,6 +73,30 @@ function turnOutcome(reason: string | undefined): 'completed' | 'interrupted' | 
   return reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'interrupted' : 'failed'
 }
 
+const HISTORY_PAGE_SIZE = 100
+// One poll reads at most this much of a session's durable history. A longer backlog keeps its place
+// and continues on the next poll, so the cost of a poll never grows with the length of the thread.
+const HISTORY_PAGES_PER_POLL = 4
+/** What Sotto has already read of one session's durable history, and where to read on from. */
+interface HistoryRead {
+  offset: number
+  total: number
+  messages: AgentMessage[]
+  activities: AgentActivity[]
+  events: Set<string>
+  statusEvents: Set<string>
+  status: AgentThread['status']
+  lastTurn?: AgentThread['lastTurn']
+  assistant?: AgentMessage
+}
+function freshHistory(history?: HistoryRead): HistoryRead {
+  const read = history ?? { offset: 0, total: 0, messages: [], activities: [], events: new Set<string>(), statusEvents: new Set<string>(), status: 'idle' as AgentThread['status'] }
+  read.offset = 0; read.total = 0; read.messages = []; read.activities = []
+  read.events.clear(); read.statusEvents.clear(); read.status = 'idle'
+  delete read.lastTurn; delete read.assistant
+  return read
+}
+
 export interface GrokAcpOptions { executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number }
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
@@ -98,6 +122,7 @@ export class GrokAcpHost implements AgentHost {
   private writing = Promise.resolve()
   private polling: Promise<void> | undefined
   private readonly historyReads = new Map<string, Promise<void>>()
+  private readonly histories = new Map<string, HistoryRead>()
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private generation = 0
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: false, skills: true } }
@@ -134,7 +159,7 @@ export class GrokAcpHost implements AgentHost {
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear()
+    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear(); this.histories.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
     const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', 'agent', '--leader', 'stdio'], this.userDataDirectory,
       grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame), () => {
@@ -183,16 +208,27 @@ export class GrokAcpHost implements AgentHost {
   }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session.')
+    // An explicit refresh reads to the end of the history: what it reports decides whether a prompt is sent.
+    await this.queueRead(id)
+    return this.current()
+  }
+  private async queueRead(id: string, maxPages = Number.POSITIVE_INFINITY): Promise<void> {
     const generation = this.generation
     const work = (this.historyReads.get(id) ?? Promise.resolve()).catch(() => undefined).then(() => {
       if (generation !== this.generation || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
-      return this.readHistory(id)
+      return this.readHistory(id, maxPages)
     })
     this.historyReads.set(id, work)
-    try { await work; return this.current() }
+    try { await work }
     finally { if (this.historyReads.get(id) === work) this.historyReads.delete(id) }
   }
-  /** Native history query includes CLI-authored input and filters rewound branches. */
+  /**
+   * Native history query includes CLI-authored input and filters rewound branches. ACP offers no push for
+   * durable history (its session/update notifications are live only, and a CLI takeover can be written
+   * without one), so Sotto polls; each poll reads on from a cursor rather than the whole session. The
+   * cursor is not persisted: native history is rewritten behind it by rewinds and coalesced chunks, and
+   * Sotto keeps no durable copy of the messages, so a fresh process reads the session once from its start.
+   */
   pollHistory(): Promise<void> {
     if (this.polling) return this.polling
     this.polling = this.readHistories().finally(() => { this.polling = undefined })
@@ -200,48 +236,52 @@ export class GrokAcpHost implements AgentHost {
   }
   private async readHistories(): Promise<void> {
     if (!this.state.connected || !this.rpc) return
-    for (const [id, alias] of Object.entries(this.aliases)) if (alias.grokSessionId) await this.refreshThread(id)
+    for (const [id, alias] of Object.entries(this.aliases)) if (alias.grokSessionId) await this.queueRead(id, HISTORY_PAGES_PER_POLL)
   }
-  private async readHistory(id: string): Promise<void> {
+  private async readHistory(id: string, maxPages = Number.POSITIVE_INFINITY): Promise<void> {
     const generation = this.generation; const rpc = this.rpc!; const alias = this.aliases[id]!
-    const messages: AgentMessage[] = []; let status: AgentThread['status'] = 'idle'; let offset = 0; let more = true; let changed = false; let lastTurn: AgentThread['lastTurn']
-    const persistedStatusEvents = new Set<string>()
-    const historyEvents = new Set<string>(); let activities: AgentActivity[] = []
-    let assistant: AgentMessage | undefined
-    while (more) {
-      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: 100 }, value => {
+    const history = this.histories.get(id) ?? freshHistory()
+    this.histories.set(id, history)
+    let more = true; let changed = false; let pages = 0; let restarted = false
+    while (more && pages < maxPages) {
+      pages++
+      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset: history.offset, limit: HISTORY_PAGE_SIZE }, value => {
         if (generation !== this.generation || rpc !== this.rpc) { more = false; return }
         const page = historySchema.parse(value)
         if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
+        // Grok rewrites history behind the cursor when a turn is rewound or streamed chunks are coalesced.
+        // A history shorter than the one already read is read again from its start, once per read.
+        if (page.totalCount < history.total && !restarted) { restarted = true; freshHistory(history); more = true; return }
+        history.total = page.totalCount
         more = page.hasMore
         for (const entry of page.updates) {
-          const ordinal = offset++
+          const ordinal = history.offset++
           const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
           const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
-          if (historyEvents.has(key)) continue
-          historyEvents.add(key)
+          if (history.events.has(key)) continue
+          history.events.add(key)
           const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
           const update = parsed.data.update; const content = object(update.content)
           this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
-          if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) assistant = undefined
-          activities = mergeAgentActivities(activities, grokActivities(update, { turnId: messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: messages.at(-1)?.id, cwd: alias.cwd }, activities))
+          if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
+          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
-              persistedStatusEvents.add(eventKey(parsed.data, 0))
-              assistant = undefined; status = 'running'
+              history.statusEvents.add(eventKey(parsed.data, 0))
+              delete history.assistant; history.status = 'running'
               const text = content.text
               const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
-              lastTurn = { id: origin?.messageId ?? key, status: 'running' }
+              history.lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-              messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
-              const assistantId = assistantKey(id, parsed.data, messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(activities))
-              if (!assistant || assistant.id !== assistantId) { assistant = { id: assistantId, role: 'assistant', text: '', createdAt }; messages.push(assistant) }
-              assistant.text += content.text
+              const assistantId = assistantKey(id, parsed.data, history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(history.activities))
+              if (history.assistant?.id !== assistantId) { history.assistant = { id: assistantId, role: 'assistant', text: '', createdAt }; history.messages.push(history.assistant) }
+              history.assistant.text += content.text
             }
           }
-          if (update.sessionUpdate === 'turn_completed') { persistedStatusEvents.add(eventKey(parsed.data, 0)); status = completedStatus(update.stop_reason ?? update.stopReason); lastTurn = { id: lastTurn?.id ?? key, status: turnOutcome(update.stop_reason ?? update.stopReason) }; assistant = undefined }
+          if (update.sessionUpdate === 'turn_completed') { history.statusEvents.add(eventKey(parsed.data, 0)); history.status = completedStatus(update.stop_reason ?? update.stopReason); history.lastTurn = { id: history.lastTurn?.id ?? key, status: turnOutcome(update.stop_reason ?? update.stopReason) }; delete history.assistant }
         }
       })
     }
@@ -249,12 +289,16 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (generation !== this.generation || rpc !== this.rpc || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    if (activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, activities)
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
+    // The durable rail stays as Sotto read it. The live tail below is merged into the copy the thread shows,
+    // so a stream that is ahead of native writes never edits the history the cursor has already accepted.
+    const messages = history.messages.map(message => ({ ...message }))
+    let status = history.status; let lastTurn = history.lastTurn
     // A live native turn may belong to the CLI, not activePrompts. Older durable
     // status cannot supersede it until its event has entered the persisted timeline.
     const liveStatus = this.liveStatus.get(id)
     if (liveStatus) {
-      if (persistedStatusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
+      if (history.statusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
       else { status = liveStatus.status; lastTurn = thread.lastTurn }
     }
     // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
