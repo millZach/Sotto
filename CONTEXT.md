@@ -159,7 +159,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## Main window
 
-**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Bricolage Grotesque. It is dark by default and can be light; see Appearance and Theme. The floating widget keeps its own look.
+**Crossing.** The main window's shell since redesign round 3: one room under a thin strip, set in Figtree. It is dark by default and can be light; see Appearance and Theme. The floating widget keeps its own look.
 
 **Appearance.** The main window's mode setting: System, Light or Dark. Dark is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is the floating widget's mode, not a Theme. Avoid: "theme" for the mode.
 

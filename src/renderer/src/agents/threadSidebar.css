@@ -6,7 +6,7 @@
 .thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
 .thread-nav[data-mode] { padding: 0; }
 .thread-nav__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 12px 8px; }
-.thread-nav__head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.45px; }
+.thread-nav__head h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.35px; }
 .thread-nav__head-actions { display: flex; gap: 2px; }
 .thread-nav__head .tt-button { width: 36px; min-height: 36px; padding: 0; }
 
@@ -85,7 +85,7 @@
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; }
 @media (hover: none) { .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; } }
 .thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
-.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 32px; padding: 0 8px 0 10px; border-radius: 7px; }
+.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 30px; padding: 0 8px 0 10px; border-radius: 7px; }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
 /* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
    fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
@@ -99,11 +99,11 @@
 :root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
 .thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
 .thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
-.thread-nav__rename { font-size: 14px; font-weight: 500; }
+.thread-nav__rename { font-size: 13px; font-weight: 500; }
 .thread-workspace__rename { font-size: inherit; font-weight: inherit; }
 :is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
 /* 14px is the floor for a row title: the 760px window recomposes around it and never shrinks the type. */
-.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
 .thread-nav__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* What a row that wants you says where the clock would be; the whole sentence is the row's accessible description. */

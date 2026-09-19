@@ -27,9 +27,9 @@
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
-.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.35px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The name keeps the row; the project crumb is what gives way as the pane narrows. */
-.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 12px; }
@@ -49,7 +49,7 @@
 .pane-menu { position: relative; display: flex; }
 .pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 .pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
-.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; text-align: left; white-space: nowrap; cursor: pointer; }
+.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
 .pane-menu__item:hover:not(:disabled), .pane-menu__item:focus-visible { background: var(--tt-hover); outline: none; }
 .pane-menu__item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
@@ -65,7 +65,7 @@
 .thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
-.thread-transcript__earlier .tt-button { font-size: 14px; }
+.thread-transcript__earlier .tt-button { font-size: 13px; }
 .thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
 /*
@@ -83,11 +83,11 @@
  */
 .thread-transcript__content > :nth-last-child(-n + 12) { content-visibility: visible; }
 .thread-message { margin: 0 0 28px; }
-.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
 .thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
-.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 14px; }
-.thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.65; font-size: 16px; }
+.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: 15px; }
 .thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
 .thread-message--pending[data-status='failed'], .thread-message--pending[data-status='uncertain'] { border-color: color-mix(in srgb, var(--threads-warning-text) 40%, var(--tt-hairline)); }
@@ -98,7 +98,7 @@
 .thread-message__status[data-status='failed'], .thread-message__status[data-status='uncertain'] { color: var(--threads-warning-text); }
 .thread-message__delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .thread-message__delivery-actions { display: flex; gap: 6px; }
-.thread-message__delivery .tt-button { min-height: 32px; font-size: 14px; }
+.thread-message__delivery .tt-button { min-height: 30px; font-size: 13px; }
 /* A delivery state with no prompt text to repeat: one line in the user's column, under their message. */
 .thread-delivery { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 28px max(24px, 12%); padding: 0 18px; }
 .thread-message[data-role='user'] + .thread-delivery { margin-top: -18px; }
@@ -123,33 +123,35 @@
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
 .thread-prompt:focus-within { border-color: var(--threads-field-focus); }
-.thread-prompt textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-prompt textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-prompt textarea::placeholder { color: var(--tt-text-muted); }
 .thread-prompt textarea:disabled { cursor: not-allowed; }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
-.thread-prompt__notice .tt-button { min-height: 32px; font-size: 14px; }
+.thread-prompt__notice .tt-button { min-height: 30px; font-size: 13px; }
 /* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
    need words of its own wraps below the pill rather than squeezing either end of the row. */
 .thread-prompt__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
 .thread-prompt__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
-.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px; color: var(--tt-text-muted); font-size: 13.5px; }
+.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 4px; color: var(--tt-text-muted); font-size: 13px; }
 .thread-prompt__model small { color: var(--tt-text-muted); font-size: 12px; }
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
-/* The send key names the action and shows which key does it, so Enter and the pointer read as the same thing. */
-.thread-prompt__actions > .thread-prompt__send { display: inline-flex; align-items: center; gap: 8px; flex: none; height: 30px; min-height: 30px; padding: 0 6px 0 12px; border: 0; border-radius: 8px; background: var(--tt-activity); color: var(--threads-on-accent); font-size: 13.5px; font-weight: 500; }
-.thread-prompt__actions > .thread-prompt__send:disabled { opacity: .5; }
-.thread-prompt__send kbd { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--threads-on-accent) 30%, transparent); border-bottom-width: 2px; border-radius: 4px; background: color-mix(in srgb, var(--threads-on-accent) 18%, transparent); color: inherit; font: inherit; font-size: 11px; line-height: 1.3; }
-.thread-prompt__actions > .tt-button--icon { flex: none; width: 30px; min-height: 30px; padding: 0; border-radius: 8px; border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-2); }
-/* With nothing to send, Stop holds the send key's place, and its look with it. */
-.thread-prompt__actions > .thread-prompt__stop:not([data-beside]) { border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); }
+/* One 28px disc at the end of the row: an arrow sends, a list-plus queues, a square stops. The full name lives in the
+   label and the title, so Queue prompt is never called Send. */
+.thread-prompt__actions > .thread-prompt__send, .thread-prompt__actions > .thread-prompt__stop { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: var(--tt-activity); color: var(--threads-on-accent); }
+.thread-prompt__actions > .thread-prompt__send:hover:not(:disabled), .thread-prompt__actions > .thread-prompt__stop:hover:not(:disabled) { border-color: transparent; background: var(--tt-activity); color: var(--threads-on-accent); filter: brightness(1.08); }
+.thread-prompt__actions > .thread-prompt__send:active:not(:disabled), .thread-prompt__actions > .thread-prompt__stop:active:not(:disabled) { background: var(--tt-activity); filter: brightness(.94); }
+.thread-prompt__actions > .thread-prompt__send:disabled, .thread-prompt__actions > .thread-prompt__stop:disabled { opacity: .45; }
+/* Beside typed text, Stop steps back to a hairline so the send disc is the one filled control. */
+.thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled), .thread-prompt__actions > .thread-prompt__stop[data-beside]:active:not(:disabled) { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-muted); filter: none; }
+.thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
 /* The thread's model, reasoning and permissions read as one pill, and open as the three controls themselves. */
 .threads-view .thread-options-bar { position: relative; flex: 0 1 auto; min-width: 0; }
-.thread-options__pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.thread-options__pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
 .thread-options__pill > svg { flex: none; }
 .thread-options__pill:hover, .thread-options__pill[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .thread-options__popover { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; display: grid; gap: 10px; width: max-content; min-width: 240px; max-width: min(320px, 90vw); padding: 12px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
@@ -165,20 +167,20 @@
 .thread-workspace__compose .agent-composer .screenshot-input__tools > .tt-button { grid-column: 1; align-self: end; margin: 0 2px 1px -8px; }
 .thread-workspace__compose .agent-composer .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-workspace__compose .agent-composer > .agent-composer__footer { grid-column: 2; }
-.thread-workspace__compose .agent-composer textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; }
+.thread-workspace__compose .agent-composer textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
 .thread-workspace__compose .agent-composer textarea::placeholder { color: var(--tt-text-muted); }
 /* The managed composer's label stays for assistive technology; the placeholder and field already say what it is. */
 .thread-workspace__compose .agent-section-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .thread-workspace__compose .agent-composer__footer { margin-top: 10px; }
-.thread-workspace__compose .agent-composer__footer .tt-button { min-height: 34px; font-size: 14px; }
+.thread-workspace__compose .agent-composer__footer .tt-button { min-height: 30px; font-size: 13px; }
 
 .thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
-.thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 22px; font-weight: 500; letter-spacing: -.5px; }
-.thread-workspace__empty p { margin: 0; font-size: 14px; }
+.thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
+.thread-workspace__empty p { margin: 0; font-size: 13px; }
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
-.thread-workspace__transcript .thread-workspace__empty h3 { font-size: 18px; }
+.thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }
 
-.thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; font-size: 14px; color: var(--tt-text-muted); }
+.thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; font-size: 13px; color: var(--tt-text-muted); }
 .thread-draft-notice p { margin: 0; }
 .thread-draft-notice strong { color: var(--tt-text); font-weight: 500; }
 

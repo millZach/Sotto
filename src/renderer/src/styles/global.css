@@ -7,7 +7,7 @@
    One room between a thin top strip and a footer line, dark or light as the
    user chose. A switch in the strip flips the room between Dictate and
    Agents; Threads, History, Settings and Help are plain links in the footer.
-   Type is Bricolage Grotesque, the only colour is the accent, and the one
+   Type is Figtree, the only colour is the accent, and the one
    action on a page is a neutral pill. Colours come from tokens.css only.
    The floating widget is deliberately excluded — it carries its own frozen
    tokens in widget/widget-tokens.css. */

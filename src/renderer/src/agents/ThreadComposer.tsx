@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Square } from 'lucide-react'
+import { ArrowUp, ListPlus, Square } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
@@ -290,11 +290,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {running && capabilities.steer === true
             ? <Button variant="secondary" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Add this to the running turn now' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
             : null}
-          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label="Stop agent" title="Stop agent" disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={13} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label="Stop agent" title="Stop agent" disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
-          {/* The key says which one Enter is; its full name stays on the button, so Queue prompt is never called Send. */}
-          {!working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
-            {queueing ? 'Queue' : 'Send'}<kbd aria-hidden="true">↵</kbd></Button> : null}
+          {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
+          {!working || content ? <Button iconOnly className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+            {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
         </div>
       </div>
     </form>

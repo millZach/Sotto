@@ -155,7 +155,7 @@ describe('Sotto design-system primitives', () => {
     expect(tokensCss).not.toMatch(/--tt-side:/u)
     expect(globalCss).not.toContain('data-theme')
     expect(globalCss).not.toContain('prefers-color-scheme')
-    expect(tokensCss).toMatch(/--tt-font-ui:\s*'Bricolage Grotesque'/u)
+    expect(tokensCss).toMatch(/--tt-font-ui:\s*'Figtree'/u)
     expect(globalCss).toContain('font-optical-sizing: auto')
     expect(globalCss).toContain('min-height: 44px')
     expect(globalCss).toContain(':focus-visible')
@@ -192,15 +192,15 @@ describe('Sotto design-system primitives', () => {
     }
   })
 
-  it('bundles Bricolage Grotesque as local latin and latin-ext subsets without touching the widget', () => {
+  it('bundles Figtree as local latin and latin-ext subsets without touching the widget', () => {
     const fontsCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/fonts.css'), 'utf8')
-    const faces = [...fontsCss.matchAll(/font-family:\s*'Bricolage Grotesque'/gu)]
+    const faces = [...fontsCss.matchAll(/font-family:\s*'Figtree'/gu)]
     expect(faces).toHaveLength(2)
-    expect(fontsCss).toContain("url('../assets/fonts/bricolage-grotesque-latin.woff2')")
-    expect(fontsCss).toContain("url('../assets/fonts/bricolage-grotesque-latin-ext.woff2')")
+    expect(fontsCss).toContain("url('../assets/fonts/figtree-latin.woff2')")
+    expect(fontsCss).toContain("url('../assets/fonts/figtree-latin-ext.woff2')")
     expect(fontsCss).toMatch(/font-weight:\s*200 800/u)
     const widgetCss = readFileSync(join(process.cwd(), 'src/renderer/src/widget/widget.css'), 'utf8')
-    expect(widgetCss).not.toContain('Bricolage')
+    expect(widgetCss).not.toContain('Figtree')
   })
 
   it('normalizes the production Electron shortcut for Windows display', () => {

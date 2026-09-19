@@ -59,7 +59,7 @@
    takes its own back. A docked tools panel takes the corner instead and reserves the room itself. */
 .threads-view:not(:has(.thread-workspace__tools > .tools-panel:not([data-mode='overlay']))) .thread-panes[data-narrow] .thread-panes__tabs { padding-right: calc(12px + var(--threads-winctl-inset, 0px)); }
 .threads-view .thread-panes[data-narrow] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
-.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
 .threads-view .thread-panes__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
