@@ -1,0 +1,501 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: the Threads composer folds model, reasoning effort and permissions into one pill
+  ("Fable · High · Auto ⌄"). Zach wants each as its own selector. What do the three selectors look like,
+  and what does the model pop-out look like when its selector opens?
+
+  Three variants on ?variant=a|b|c, and the bar at the top (← → keys too):
+   a  Chips.    Three bordered pills in the footer. The model pop-out is a compact menu anchored over the
+                model chip: provider tabs across the top, a search line, then the list.
+   b  Labelled. Three two-line text controls (small label over the value), no borders. The model pop-out is
+                a searched list: type first, results grouped under provider headings, ids shown for search.
+   c  Shelf.    Three glyph-led controls sitting on the field like the paperclip. Any pop-out is a shelf that
+                rests on the composer at its full width; the model shelf carries provider tabs at its left.
+
+  The effort control is drawn plainly in every variant. Zach has another idea for it, to follow once the
+  buttons and the model pop-out are chosen.
+
+  Extras in the bar: Light flips the palette; "Started" limits the model list to the thread's own
+  provider and shows the Stop disc, as a thread does once its first message has gone; the Model, Effort and
+  Permissions buttons open that pop-out directly (?open=model|effort|mode). Escape closes anything open and
+  returns focus. Open the file in a browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — composer selectors, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* The Sotto palette, dark half (src/shared/themes/palettes.ts, SOTTO_DARK_THEME_COLORS), through the same
+   roles tokens.css derives from. Names here follow the --tt-* tokens the real stylesheet would use. */
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280);
+  --surface: oklch(0.26 0.019 280);
+  --surface-raised: oklch(0.305 0.021 280);
+  --surface-overlay: oklch(0.33 0.022 280);
+  --sidebar: oklch(0.205 0.016 282);
+  --text: oklch(0.985 0.005 280);
+  --text-2: oklch(0.86 0.01 272);
+  --text-muted: oklch(0.72 0.014 265);
+  --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270);
+  --field-border: oklch(0.40 0.03 272);
+  --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220);
+  --accent-text: oklch(0.86 0.09 215);
+  --on-accent: oklch(0.2 0.02 280);
+  --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent);
+  --hover-strong: var(--accent-surface);
+  --selected: oklch(0.35 0.04 262);
+  --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
+  --warning: oklch(0.829017 0.171221 81.038);
+  --provider-claude: #e3b58e;
+  --provider-codex: #d7dbe1;
+  --provider-grok: #c9baff;
+  --shadow: 0 16px 48px rgb(0 0 0 / 73%);
+  --backdrop: rgb(0 0 0 / 38%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85);
+  --surface: oklch(0.99 0.003 85);
+  --surface-raised: oklch(0.955 0.006 85);
+  --surface-overlay: oklch(0.945 0.007 85);
+  --sidebar: oklch(0.955 0.008 85);
+  --text: oklch(0.235 0.014 75);
+  --text-2: oklch(0.36 0.014 75);
+  --text-muted: oklch(0.5 0.014 75);
+  --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80);
+  --field-border: oklch(0.82 0.016 80);
+  --accent: oklch(0.52 0.13 235);
+  --accent-text: oklch(0.42 0.1 235);
+  --on-accent: oklch(0.99 0.003 85);
+  --accent-surface: oklch(0.9 0.03 230);
+  --selected: oklch(0.885 0.03 235);
+  --warning: oklch(0.546927 0.155556 45.359);
+  --provider-claude: color-mix(in srgb, #e3b58e 55%, var(--text));
+  --provider-codex: color-mix(in srgb, #d7dbe1 30%, var(--text));
+  --provider-grok: color-mix(in srgb, #c9baff 55%, var(--text));
+  --shadow: 0 16px 48px rgb(20 24 22 / 18%);
+  --backdrop: rgb(20 24 22 / 22%);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--canvas); color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { padding: 0; border: 0; background: none; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.i.xs { width: 12px; height: 12px; }
+svg.mark { flex: none; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The Threads page around the composer: enough of it to judge density, no more. */
+.window { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.sidebar { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background: var(--sidebar); border-right: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; }
+.sidebar__top { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px; margin-bottom: 8px; color: var(--text); font-weight: 500; }
+.sidebar__top i { width: 14px; height: 14px; border-radius: 4px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--text))); }
+.sidebar__group { padding: 10px 8px 4px; font-size: 12px; color: var(--text-faint); }
+.row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+.row > span { overflow: hidden; text-overflow: ellipsis; }
+.row[aria-current] { background: var(--selected); color: var(--text); }
+.row i { flex: none; width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 50%; }
+.row i[data-on] { background: var(--accent); border-color: var(--accent); }
+
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 12px 0 18px; }
+.pane__head h2 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
+.pane__crumb { display: flex; align-items: center; gap: 7px; margin-right: auto; color: var(--text-muted); font-size: 12.5px; }
+.pane__crumb::before { content: '/'; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--text-muted); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 20px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.turn { max-width: 760px; margin: 0 auto 22px; font-size: 15px; line-height: 1.55; }
+.turn--user { width: fit-content; max-width: 78%; margin-right: 0; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--surface-raised); }
+.turn p { margin: 0 0 10px; }
+.turn p:last-child { margin: 0; }
+.turn ul { margin: 0 0 10px; padding-left: 20px; }
+.turn .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--text-muted); font-size: 12.5px; }
+.turn .who .mark { color: var(--provider-claude); }
+
+/* Compose area: the field, then the usage line, as the app draws them. */
+.compose { flex: none; padding: 6px max(24px, calc((100% - 760px) / 2)) 14px; }
+.composer { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--field-border); border-radius: 16px; background: var(--surface); }
+.composer:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--field-border)); }
+.composer[data-running] { border-color: color-mix(in srgb, var(--accent-text) 45%, var(--field-border)); }
+.composer textarea { grid-column: 1 / -1; display: block; width: 100%; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 15px; line-height: 1.5; }
+.composer textarea::placeholder { color: var(--text-muted); }
+.composer__clip { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; width: 26px; height: 26px; color: var(--text-muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+.composer__clip:hover { background: var(--hover); color: var(--text); }
+.composer__foot { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.composer__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.composer__actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.disc { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 50%; background: var(--accent-text); color: var(--on-accent); }
+.disc:hover:not(:disabled) { filter: brightness(1.08); }
+.disc:disabled { opacity: .45; }
+.disc--beside { border-color: var(--field-border); background: transparent; color: var(--text-muted); }
+.disc--beside:hover:not(:disabled) { border-color: var(--text-faint); color: var(--text); filter: none; }
+.usage { display: flex; justify-content: flex-end; gap: 14px; margin: 6px 4px 0; color: var(--text-muted); font-size: 12px; }
+.usage b { font-weight: 500; color: var(--text-2); }
+
+/* Every selector is one of these three, drawn per variant below. */
+.selectors { display: flex; align-items: center; min-width: 0; }
+.sel { display: inline-flex; align-items: center; gap: 6px; height: 28px; white-space: nowrap; color: var(--text-muted); font-size: 13px; }
+.sel > svg.i { flex: none; opacity: .8; }
+.sel[aria-expanded='true'], .sel:hover { color: var(--text); }
+.sel:disabled { opacity: .55; }
+.sel .mark { width: 13px; height: 13px; }
+.sel[data-kind='model'] .mark { color: var(--provider); }
+
+/* A · Chips: three bordered pills, each one thing. */
+[data-variant='a'] .selectors { gap: 6px; }
+[data-variant='a'] .sel { padding: 0 10px 0 9px; border: 1px solid var(--field-border); border-radius: 999px; background: transparent; }
+[data-variant='a'] .sel:hover, [data-variant='a'] .sel[aria-expanded='true'] { background: var(--hover); border-color: var(--border); }
+[data-variant='a'] .sel[data-kind='model'] { color: var(--text-2); }
+[data-variant='a'] .sel[data-kind='model']:hover, [data-variant='a'] .sel[data-kind='model'][aria-expanded='true'] { color: var(--text); }
+
+/* B · Labelled: a small label over each value, no border; the eye reads the three as a caption row. */
+[data-variant='b'] .composer__foot { margin-top: 8px; }
+[data-variant='b'] .selectors { gap: 4px; }
+[data-variant='b'] .sel { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 6px; row-gap: 0; align-items: center; height: auto; padding: 3px 8px 4px 6px; border-radius: 8px; text-align: left; line-height: 1.2; }
+[data-variant='b'] .sel:hover, [data-variant='b'] .sel[aria-expanded='true'] { background: var(--hover); }
+[data-variant='b'] .sel > small { grid-column: 1 / -1; color: var(--text-faint); font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+[data-variant='b'] .sel > span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; }
+[data-variant='b'] .sel:hover > span, [data-variant='b'] .sel[aria-expanded='true'] > span { color: var(--text); }
+[data-variant='b'] .sel > svg.i { grid-column: 2; grid-row: 2; }
+[data-variant='b'] .sel + .sel { margin-left: 6px; }
+
+/* C · Shelf: glyph-led text buttons resting on the field like the paperclip; the model reads darkest. */
+[data-variant='c'] .selectors { gap: 2px; }
+[data-variant='c'] .sel { padding: 0 8px 0 7px; border-radius: 8px; }
+[data-variant='c'] .sel:hover, [data-variant='c'] .sel[aria-expanded='true'] { background: var(--hover); }
+[data-variant='c'] .sel[data-kind='model'] { color: var(--text-2); font-weight: 500; }
+[data-variant='c'] .sel[data-kind='model']:hover, [data-variant='c'] .sel[data-kind='model'][aria-expanded='true'] { color: var(--text); }
+[data-variant='c'] .sel > svg.glyph { width: 14px; height: 14px; }
+[data-variant='c'] .sel + .sel::before { content: ''; width: 1px; height: 14px; margin: 0 4px 0 2px; background: var(--hairline); }
+
+/* Pop-outs. Every one opens above the composer so the typed text and the send disc stay where they were.
+   One motion: a pop-out rises 6px as it appears, on the easing the follow-up ledger uses. */
+.pop { position: absolute; bottom: calc(100% + 6px); z-index: 4; border: 1px solid var(--field-border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pop { animation: pop-rise 140ms cubic-bezier(.2, .8, .2, 1); } }
+@keyframes pop-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pop__list { margin: 0; padding: 6px; list-style: none; max-height: min(300px, calc(100vh - 290px)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.opt { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px; border-radius: 8px; color: var(--text-2); font-size: 13.5px; text-align: left; }
+.opt:hover:not(:disabled), .opt:focus-visible { background: var(--hover); color: var(--text); outline: 0; }
+.opt[aria-selected='true'] { color: var(--accent-text); }
+.opt:disabled { opacity: .45; }
+.opt > .name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; }
+.opt > .name > b { font-weight: 500; white-space: nowrap; }
+.opt > .name > code { color: var(--text-faint); font: 12px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt > .name > em { font-style: normal; color: var(--text-muted); font-size: 12.5px; }
+.opt .tag { flex: none; padding: 1px 7px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--text-muted); font-size: 11.5px; }
+.opt > svg.i { flex: none; color: var(--accent-text); }
+.opt .mark { width: 14px; height: 14px; color: var(--provider); }
+.pop__note { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--hairline); color: var(--text-muted); font-size: 12px; }
+.pop__empty { padding: 14px 12px; color: var(--text-muted); font-size: 13px; }
+.search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; color: var(--text-muted); border-bottom: 1px solid var(--hairline); }
+.search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13.5px; }
+.search input::placeholder { color: var(--text-faint); }
+.tabs { display: flex; gap: 2px; }
+.tab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; color: var(--text-muted); font-size: 13px; }
+.tab:hover { color: var(--text); background: var(--hover); }
+.tab[aria-selected='true'] { color: var(--text); background: var(--selected); }
+.tab .mark { width: 13px; height: 13px; color: var(--provider); }
+.tab small { color: var(--text-faint); font-size: 11.5px; }
+
+/* A's menu: 300px, anchored over its chip. Provider tabs, then search, then the list. */
+.pop--a { width: 300px; }
+.pop--a .tabs { padding: 6px 6px 0; }
+.pop--a .search { height: 38px; margin-top: 4px; }
+.pop--a .opt { min-height: 32px; }
+
+/* B's palette: search first, results under provider headings. Anchored over its control, 380px. */
+.pop--b { width: 380px; }
+.pop--b .search { height: 44px; }
+.pop--b .search input { font-size: 14px; }
+.pop--b .group { display: flex; align-items: center; gap: 6px; padding: 8px 10px 3px; color: var(--text-faint); font-size: 11.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.pop--b .group .mark { width: 12px; height: 12px; color: var(--provider); }
+.pop--b .group + .opt, .pop--b li:first-child .group { padding-top: 4px; }
+.pop--b .opt { padding-left: 12px; }
+
+/* C's shelf: rests on the composer, edge to edge. Provider rail at the left, the list to its right. */
+.pop--c { right: -1px; left: -1px; display: grid; grid-template-columns: 148px minmax(0, 1fr); border-radius: 14px; }
+.pop--c.pop--single { grid-template-columns: minmax(0, 1fr); }
+.pop--c .rail { display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; border-right: 1px solid var(--hairline); background: color-mix(in srgb, var(--sidebar) 60%, var(--surface)); border-radius: 13px 0 0 13px; }
+.pop--c .rail .tab { justify-content: flex-start; height: 34px; }
+.pop--c .rail .tab small { margin-left: auto; }
+.pop--c .rail .lock { margin-top: auto; padding: 8px 10px 4px; color: var(--text-faint); font-size: 12px; line-height: 1.4; }
+.pop--c .pop__list { max-height: min(240px, calc(100vh - 290px)); }
+.pop--c .opt { min-height: 36px; }
+.pop--c .pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 4px; font-size: 12.5px; color: var(--text-muted); }
+.pop--c .pop__head b { font-weight: 500; color: var(--text); }
+.pop--c .pop__head kbd { color: var(--text-faint); font: 11px var(--font-mono); }
+
+/* The prototype's own bar: not part of the design. */
+.switcher { position: fixed; top: 10px; left: 50%; z-index: 99; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); }
+.switcher button { height: 24px; padding: 0 9px; border-radius: 999px; color: #111; }
+.switcher button:hover { background: #ddd; }
+.switcher button[aria-pressed='true'] { background: #111; color: #fff; }
+.switcher .label { padding: 0 6px; }
+.switcher .label b { font-weight: 600; }
+.switcher .sep { width: 1px; height: 16px; background: #ccc; margin: 0 2px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><path d="M5 19v-5M12 19V9M19 19V4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-grok" viewBox="0 0 24 24"><path d="M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"/></symbol>
+</svg>
+
+<div class="window">
+  <aside class="sidebar" aria-hidden="true">
+    <div class="sidebar__top"><i></i>Sotto</div>
+    <div class="sidebar__group">plant-net</div>
+    <div class="row" aria-current="page"><i data-on></i><span>Fieldbus trunk isolators</span></div>
+    <div class="row"><i></i><span>Rack 4 loop check</span></div>
+    <div class="row"><i></i><span>Alarm shelving report</span></div>
+    <div class="sidebar__group">sotto</div>
+    <div class="row"><i></i><span>Composer selectors</span></div>
+    <div class="row"><i></i><span>New thread dialog</span></div>
+  </aside>
+  <section class="pane">
+    <header class="pane__head">
+      <svg class="mark" width="16" height="16" style="color:var(--provider-claude)"><use href="#m-claude"/></svg>
+      <h2>Fieldbus trunk isolators</h2>
+      <span class="pane__crumb">plant-net</span>
+      <button class="icon-btn" type="button" aria-label="Open Tools"><svg class="i"><use href="#i-columns"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
+    </header>
+    <div class="transcript">
+      <div class="turn turn--user"><p>Can the two PICs on segment 3 come out without dropping the trunk? Grok said no.</p></div>
+      <div class="turn">
+        <div class="who"><svg class="mark" width="13" height="13"><use href="#m-claude"/></svg>Claude Code</div>
+        <p>Yes, if they are power conditioners and not isolators. A PIC on that trunk is a pass-through: pulling one breaks the segment for the racks past it, but the trunk itself recovers once the bridge is fitted.</p>
+        <ul><li>Fit the bridge before pulling the second unit, not after.</li><li>Do it on an outage, or accept a short glitch on the downstream PIDs.</li></ul>
+        <p>One thing to confirm before cutting: that neither unit is an FBI isolator. Removing one of those is the case where Grok's "not allowed" applies.</p>
+      </div>
+    </div>
+    <div class="compose">
+      <form class="composer" data-variant="a" onsubmit="return false">
+        <label class="vh" for="prompt">Prompt</label>
+        <textarea id="prompt" rows="3" placeholder="What would you like to do next?"></textarea>
+        <button class="composer__clip" type="button" aria-label="Attach a screenshot"><svg class="i"><use href="#i-clip"/></svg></button>
+        <div class="composer__foot">
+          <div class="composer__meta"><div class="selectors" data-selectors></div></div>
+          <div class="composer__actions" data-actions></div>
+        </div>
+        <div data-pop></div>
+      </form>
+      <div class="usage"><span title="82,000 of 480,000 tokens in the context window"><b>17%</b> context</span><span title="Estimated at standard API text-token rates">$21.90</span></div>
+    </div>
+  </section>
+</div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button type="button" data-prev aria-label="Previous variant">←</button>
+  <span class="label"><b data-key></b> — <span data-name></span></span>
+  <button type="button" data-next aria-label="Next variant">→</button>
+  <span class="sep"></span>
+  <button type="button" data-open-kind="model">Model</button>
+  <button type="button" data-open-kind="effort">Effort</button>
+  <button type="button" data-open-kind="mode">Permissions</button>
+  <span class="sep"></span>
+  <button type="button" data-started>Started</button>
+  <button type="button" data-theme-toggle>Light</button>
+</div>
+
+<script>
+const VARIANTS = [['a', 'Chips'], ['b', 'Labelled'], ['c', 'Shelf']]
+const PROVIDERS = [
+  { id: 'claude', name: 'Claude Code', efforts: ['low', 'medium', 'high', 'max'], modes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'], models: [
+    { id: 'claude-fable-5-1', name: 'Fable 5.1' }, { id: 'claude-opus-5', name: 'Opus 5' }, { id: 'claude-sonnet-5', name: 'Sonnet 5' }, { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5' } ] },
+  { id: 'codex', name: 'Codex', efforts: ['low', 'medium', 'high', 'xhigh'], modes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'], models: [
+    { id: 'gpt-5.4-codex', name: 'GPT-5.4 Codex' }, { id: 'gpt-5.4', name: 'GPT-5.4' }, { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' } ] },
+  { id: 'grok', name: 'Grok', efforts: ['low', 'high'], modes: ['approval-required', 'auto', 'full-access'], models: [
+    { id: 'grok-build-4.2', name: 'Grok Build 4.2' }, { id: 'grok-code-fast-2', name: 'Grok Code Fast 2', ready: false } ] },
+]
+const MODE_LABELS = { 'approval-required': 'Ask for approval', 'auto-accept-edits': 'Allow edits', auto: 'Auto', 'full-access': 'Full access' }
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1)
+
+const url = new URL(location.href)
+const state = {
+  variant: VARIANTS.some(([k]) => k === url.searchParams.get('variant')) ? url.searchParams.get('variant') : 'a',
+  started: url.searchParams.get('started') === '1',
+  provider: 'claude', modelId: 'claude-fable-5-1', effort: 'high', mode: 'auto',
+  open: ['model', 'effort', 'mode'].includes(url.searchParams.get('open')) ? url.searchParams.get('open') : null,
+  tab: 'claude', query: '',
+}
+if (url.searchParams.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+
+const composer = document.querySelector('.composer')
+const selectorsEl = composer.querySelector('[data-selectors]')
+const actionsEl = composer.querySelector('[data-actions]')
+const popEl = composer.querySelector('[data-pop]')
+const textarea = composer.querySelector('textarea')
+const providerOf = () => PROVIDERS.find(p => p.id === state.provider)
+const modelOf = () => providerOf().models.find(m => m.id === state.modelId)
+const visibleProviders = () => state.started ? [providerOf()] : PROVIDERS
+const mark = id => `<svg class="mark" style="--provider:var(--provider-${id})"><use href="#m-${id}"/></svg>`
+
+function save() {
+  const u = new URL(location.href)
+  u.searchParams.set('variant', state.variant)
+  if (state.open) u.searchParams.set('open', state.open); else u.searchParams.delete('open')
+  if (state.started) u.searchParams.set('started', '1'); else u.searchParams.delete('started')
+  history.replaceState(null, '', u)
+}
+
+function renderSelectors() {
+  const p = providerOf(), m = modelOf()
+  const chev = '<svg class="i xs"><use href="#i-chev"/></svg>'
+  const btn = (kind, label, value, glyph) => {
+    const expanded = state.open === kind
+    if (state.variant === 'b') return `<button type="button" class="sel" data-kind="${kind}" aria-haspopup="dialog" aria-expanded="${expanded}" aria-label="Thread ${label.toLowerCase()}: ${value}"><small>${label}</small><span>${kind === 'model' ? mark(p.id) : ''}${value}</span>${chev}</button>`
+    if (state.variant === 'c') return `<button type="button" class="sel" data-kind="${kind}" aria-haspopup="dialog" aria-expanded="${expanded}" aria-label="Thread ${label.toLowerCase()}: ${value}">${kind === 'model' ? mark(p.id) : `<svg class="i glyph"><use href="#${glyph}"/></svg>`}${value}${chev}</button>`
+    return `<button type="button" class="sel" data-kind="${kind}" aria-haspopup="dialog" aria-expanded="${expanded}" aria-label="Thread ${label.toLowerCase()}: ${value}">${kind === 'model' ? mark(p.id) : ''}${value}${chev}</button>`
+  }
+  selectorsEl.innerHTML = btn('model', 'Model', m.name) + btn('effort', 'Effort', cap(state.effort), 'i-bars') + btn('mode', 'Permissions', MODE_LABELS[state.mode], 'i-shield')
+  for (const b of selectorsEl.querySelectorAll('.sel')) b.addEventListener('click', () => toggle(b.dataset.kind))
+  composer.dataset.variant = state.variant
+  composer.toggleAttribute('data-running', state.started)
+  textarea.placeholder = state.started ? `${p.name} is working. Write a follow-up to queue it.` : 'What would you like to do next?'
+  actionsEl.innerHTML = state.started
+    ? `<button type="button" class="disc disc--beside" aria-label="Stop agent" title="Stop agent"><svg class="i xs"><use href="#i-stop"/></svg></button><button type="submit" class="disc" aria-label="Queue prompt" disabled><svg class="i sm"><use href="#i-up"/></svg></button>`
+    : `<button type="submit" class="disc" aria-label="Send prompt" disabled><svg class="i sm"><use href="#i-up"/></svg></button>`
+}
+
+function optionRow(m, providerId, extra = '') {
+  const selected = m.id === state.modelId
+  const ready = m.ready !== false
+  return `<button type="button" role="option" class="opt" style="--provider:var(--provider-${providerId})" aria-selected="${selected}" ${ready ? '' : 'disabled'} data-model="${m.id}" data-provider="${providerId}">${extra}<span class="name"><b>${m.name}</b>${state.variant === 'b' ? `<code>${m.id}</code>` : ''}</span>${ready ? '' : '<span class="tag">Unavailable</span>'}${selected ? '<svg class="i sm"><use href="#i-check"/></svg>' : ''}</button>`
+}
+const lockNote = () => state.started ? `This thread stays with ${providerOf().name}.` : `Any provider until your first message.`
+
+function renderModelPop() {
+  const providers = visibleProviders()
+  const q = state.query.trim().toLowerCase()
+  const matches = m => !q || `${m.name} ${m.id}`.toLowerCase().includes(q)
+  if (state.variant === 'a') {
+    const tab = providers.find(p => p.id === state.tab) ?? providers[0]
+    const rows = tab.models.filter(matches).map(m => optionRow(m, tab.id)).join('')
+    return `<div class="pop pop--a" role="dialog" aria-label="Choose model">
+      ${providers.length > 1 ? `<div class="tabs" role="tablist">${providers.map(p => `<button type="button" role="tab" class="tab" style="--provider:var(--provider-${p.id})" aria-selected="${p.id === tab.id}" data-tab="${p.id}">${mark(p.id)}${p.name}</button>`).join('')}</div>` : ''}
+      <div class="search"><svg class="i sm"><use href="#i-search"/></svg><input type="search" aria-label="Search models" placeholder="Search ${tab.name} models"></div>
+      <ul class="pop__list" role="listbox" aria-label="${tab.name} models">${rows ? rows.split('</button>').filter(Boolean).map(r => `<li>${r}</button></li>`).join('') : '<li class="pop__empty">No matching models.</li>'}</ul>
+      <p class="pop__note">${lockNote()}</p></div>`
+  }
+  if (state.variant === 'b') {
+    const groups = providers.map(p => ({ p, models: p.models.filter(matches) })).filter(g => g.models.length)
+    const list = groups.map(g => `<li><div class="group" style="--provider:var(--provider-${g.p.id})">${mark(g.p.id)}${g.p.name}</div></li>` + g.models.map(m => `<li>${optionRow(m, g.p.id)}</li>`).join('')).join('')
+    return `<div class="pop pop--b" role="dialog" aria-label="Choose model">
+      <div class="search"><svg class="i"><use href="#i-search"/></svg><input type="search" aria-label="Search models" placeholder="Search models by name or id"><kbd class="vh">Esc</kbd></div>
+      <ul class="pop__list" role="listbox" aria-label="Models">${list || '<li class="pop__empty">No matching models.</li>'}</ul>
+      <p class="pop__note">${lockNote()}</p></div>`
+  }
+  const tab = providers.find(p => p.id === state.tab) ?? providers[0]
+  const rows = tab.models.filter(matches).map(m => `<li>${optionRow(m, tab.id)}</li>`).join('')
+  return `<div class="pop pop--c ${providers.length > 1 ? '' : 'pop--single'}" role="dialog" aria-label="Choose model">
+    ${providers.length > 1 ? `<div class="rail" role="tablist" aria-label="Providers">${providers.map(p => `<button type="button" role="tab" class="tab" style="--provider:var(--provider-${p.id})" aria-selected="${p.id === tab.id}" data-tab="${p.id}">${mark(p.id)}${p.name}<small>${p.models.length}</small></button>`).join('')}<p class="lock">${lockNote()}</p></div>` : ''}
+    <div><div class="pop__head"><b>${tab.name}</b><span>Newest first</span></div>
+      <ul class="pop__list" role="listbox" aria-label="${tab.name} models">${rows || '<li class="pop__empty">No matching models.</li>'}</ul>
+      ${providers.length > 1 ? '' : `<p class="pop__note">${lockNote()}</p>`}</div></div>`
+}
+
+function renderListPop(kind) {
+  const p = providerOf()
+  const items = kind === 'effort' ? p.efforts.map(e => ({ id: e, label: cap(e) })) : p.modes.map(m => ({ id: m, label: MODE_LABELS[m] }))
+  const current = kind === 'effort' ? state.effort : state.mode
+  const rows = items.map(i => `<li><button type="button" role="option" class="opt" aria-selected="${i.id === current}" data-choice="${i.id}"><span class="name"><b>${i.label}</b></span>${i.id === current ? '<svg class="i sm"><use href="#i-check"/></svg>' : ''}</button></li>`).join('')
+  const label = kind === 'effort' ? 'Choose reasoning effort' : 'Choose permissions'
+  if (state.variant === 'c') return `<div class="pop pop--c pop--single" role="dialog" aria-label="${label}"><div><div class="pop__head"><b>${kind === 'effort' ? 'Reasoning effort' : 'Permissions'}</b><span>${p.name}</span></div><ul class="pop__list" role="listbox">${rows}</ul></div></div>`
+  return `<div class="pop ${state.variant === 'a' ? 'pop--a' : 'pop--b'}" style="width:${state.variant === 'a' ? 200 : 240}px" role="dialog" aria-label="${label}"><ul class="pop__list" role="listbox">${rows}</ul></div>`
+}
+
+function renderPop() {
+  popEl.innerHTML = state.open === null ? '' : state.open === 'model' ? renderModelPop() : renderListPop(state.open)
+  const pop = popEl.firstElementChild
+  if (!pop) return
+  if (state.variant !== 'c') {
+    const trigger = selectorsEl.querySelector(`[data-kind='${state.open}']`)
+    const left = trigger.getBoundingClientRect().left - composer.getBoundingClientRect().left
+    pop.style.left = `${Math.max(8, Math.min(left, composer.clientWidth - pop.offsetWidth - 8))}px`
+  }
+  for (const t of pop.querySelectorAll('[data-tab]')) t.addEventListener('click', () => { state.tab = t.dataset.tab; state.query = ''; renderPop(); pop.querySelector('input')?.focus() })
+  for (const o of pop.querySelectorAll('[data-model]')) o.addEventListener('click', () => { state.provider = o.dataset.provider; state.modelId = o.dataset.model; state.tab = o.dataset.provider; const p = providerOf(); if (!p.efforts.includes(state.effort)) state.effort = p.efforts[p.efforts.length - 2]; if (!p.modes.includes(state.mode)) state.mode = p.modes[0]; close() })
+  for (const o of pop.querySelectorAll('[data-choice]')) o.addEventListener('click', () => { state[state.open === 'effort' ? 'effort' : 'mode'] = o.dataset.choice; close() })
+  const input = pop.querySelector('input')
+  if (input) {
+    input.value = state.query
+    input.addEventListener('input', () => { state.query = input.value; const at = input.selectionStart; renderPop(); const i = popEl.querySelector('input'); i.focus(); i.setSelectionRange(at, at) })
+    input.addEventListener('keydown', e => { if (e.key === 'ArrowDown') { e.preventDefault(); pop.querySelector('.opt:not(:disabled)')?.focus() } if (e.key === 'Enter') { e.preventDefault(); pop.querySelector('.opt:not(:disabled)')?.click() } })
+  }
+  pop.addEventListener('keydown', e => {
+    const opts = [...pop.querySelectorAll('.opt:not(:disabled)')]
+    const i = opts.indexOf(document.activeElement)
+    if (i < 0) return
+    const next = e.key === 'ArrowDown' ? (i + 1) % opts.length : e.key === 'ArrowUp' ? (i - 1 + opts.length) % opts.length : e.key === 'Home' ? 0 : e.key === 'End' ? opts.length - 1 : -1
+    if (next >= 0) { e.preventDefault(); opts[next].focus() }
+  })
+}
+
+function focusPop() { const pop = popEl.firstElementChild; if (!pop) return; (pop.querySelector('input') ?? pop.querySelector('.opt[aria-selected="true"]') ?? pop.querySelector('.opt')).focus() }
+function open(kind) { state.open = kind; state.query = ''; state.tab = state.provider; renderSelectors(); renderPop(); focusPop(); save() }
+function close(refocus = true) { const kind = state.open; state.open = null; state.query = ''; renderSelectors(); renderPop(); if (refocus && kind) selectorsEl.querySelector(`[data-kind='${kind}']`)?.focus(); save() }
+function toggle(kind) { state.open === kind ? close() : open(kind) }
+
+function setVariant(next) {
+  state.variant = next
+  document.querySelector('[data-key]').textContent = next.toUpperCase()
+  document.querySelector('[data-name]').textContent = VARIANTS.find(([k]) => k === next)[1]
+  renderSelectors(); renderPop(); save()
+}
+const step = d => { const i = VARIANTS.findIndex(([k]) => k === state.variant); setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]) }
+
+document.querySelector('[data-prev]').addEventListener('click', () => step(-1))
+document.querySelector('[data-next]').addEventListener('click', () => step(1))
+for (const b of document.querySelectorAll('[data-open-kind]')) b.addEventListener('click', () => open(b.dataset.openKind))
+document.querySelector('[data-started]').addEventListener('click', e => { state.started = !state.started; e.currentTarget.setAttribute('aria-pressed', state.started); if (state.started) { state.tab = state.provider } renderSelectors(); renderPop(); save() })
+document.querySelector('[data-theme-toggle]').addEventListener('click', e => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme
+  e.currentTarget.textContent = light ? 'Dark' : 'Light'
+  const u = new URL(location.href); if (light) u.searchParams.set('theme', 'light'); else u.searchParams.delete('theme'); history.replaceState(null, '', u)
+})
+document.addEventListener('pointerdown', e => { if (state.open && !popEl.contains(e.target) && !selectorsEl.contains(e.target) && !e.target.closest('.switcher')) close(false) }, true)
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.open) { e.preventDefault(); close(); return }
+  if (e.target.matches('input, textarea, select, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1)
+})
+if (document.documentElement.dataset.theme === 'light') document.querySelector('[data-theme-toggle]').textContent = 'Dark'
+document.querySelector('[data-started]').setAttribute('aria-pressed', state.started)
+setVariant(state.variant)
+if (state.open) focusPop()
+</script>
+</body>
+</html>

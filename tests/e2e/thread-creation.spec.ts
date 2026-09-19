@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction } from './support/sottoLaunch'
+import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, resizeWindow } from './support/sottoLaunch'
 
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 
@@ -46,16 +46,22 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('heading', { name: 'Screenshot review', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
-    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
     await page.getByRole('combobox', { name: 'Thread model' }).click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/composer-provider-models.png' })
+    // At the 820x560 minimum the chips and the open menu stay inside the window.
+    await resizeWindow(launched, 820, 560)
+    await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/composer-chips-820.png' })
+    await resizeWindow(launched, 1280, 800)
     await page.getByRole('option', { name: 'Claude Test', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Thread reasoning' }).selectOption('low')
-    await expect(page.getByRole('combobox', { name: 'Thread reasoning' })).toHaveValue('low')
-    await page.getByRole('combobox', { name: 'Thread permissions' }).selectOption('auto-accept-edits')
-    await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveValue('auto-accept-edits')
-    await page.keyboard.press('Escape')
+    await page.getByRole('combobox', { name: 'Thread reasoning' }).click()
+    await page.getByRole('option', { name: 'Low', exact: true }).click()
+    await expect(page.getByRole('combobox', { name: 'Thread reasoning' })).toHaveText('Low')
+    await page.getByRole('combobox', { name: 'Thread permissions' }).click()
+    await page.getByRole('option', { name: 'Allow edits', exact: true }).click()
+    await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveText('Allow edits')
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: screenshot })
     await expect(page.getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Review this screenshot.')

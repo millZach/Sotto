@@ -258,18 +258,15 @@ test('light provider controls remain readable and uncertain delivery can be chec
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await dialog.getByRole('button', { name: 'Close new thread dialog', exact: true }).click()
     await selectThread(page, 'Docs')
-    // The model, reasoning and permission controls sit behind the pane's Thread options pill now.
-    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
+    // The model, reasoning and permission controls are three chips in the composer footer.
     const model = page.getByRole('combobox', { name: 'Thread model', exact: true })
     await model.click()
     await expect(page.getByRole('listbox')).toBeVisible()
     await page.screenshot({ path: 'artifacts/crossing/phase-one-model-picker-light.png', animations: 'disabled' })
-    // Escape closes the picker alone and hands focus back to the model control; a second Escape closes the options.
+    // Escape closes the menu and hands focus back to the model chip.
     await page.keyboard.press('Escape')
     await expect(model).toBeFocused()
-    await page.keyboard.press('Escape')
-    await expect(model).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Thread options', exact: true })).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'Choose model' })).toHaveCount(0)
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId: 'docs', text: '' }))
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('A prompt with an uncertain acknowledgement.')

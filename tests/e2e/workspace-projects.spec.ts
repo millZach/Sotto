@@ -147,11 +147,8 @@ test('project folders hold several threads, settle and restore threads and proje
     await expect(page.getByRole('heading', { name: 'Plan the release', exact: true })).toBeVisible()
     const unstarted = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Plan the release')!)
     expect(unstarted.nativeSessionStarted).toBe(false)
-    // An unstarted thread can still change its model, behind the pane's Thread options pill.
-    await page.getByRole('button', { name: 'Thread options', exact: true }).click()
+    // An unstarted thread can still change its model from the composer's model chip.
     await expect(page.getByRole('combobox', { name: 'Thread model' })).toBeEnabled()
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('combobox', { name: 'Thread model' })).toHaveCount(0)
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Outline the release steps.')
     await page.keyboard.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Outline the release steps.')
