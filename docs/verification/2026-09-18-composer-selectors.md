@@ -11,7 +11,7 @@ The composer's one option pill ("Fable · High · Auto") is now three chips: the
 | --- | --- |
 | `npm run typecheck` | Clean. |
 | `npm run lint` | Clean. |
-| `npm test -- --maxWorkers=2` | 3648 passed, 22 skipped, 1 failed: `personalChatsView.test.tsx` "dictation stays in its captured claude draft", which touches no file on this branch and passes when its file runs alone. |
+| `npm test -- --maxWorkers=2` | 3651 passed, 22 skipped, 0 failed after the review fixes. An earlier run of the same command had one failure in `personalChatsView.test.tsx`, which touches no file on this branch and passed alone and on the rerun. |
 | `npm run notices:verify` | 174 components verified. |
 | `npm run build && npx playwright test tests/e2e/thread-creation.spec.ts tests/e2e/workspace-projects.spec.ts tests/e2e/phase-one-integrated.spec.ts --workers=1` | 11 passed, 1 failed, run before and again after the review fixes (the creation spec once hit its 30s budget while the build was still settling, and passes alone in 15s). The failure is `workspace-projects.spec.ts` line 228 expecting the prompt at 16px at the 760px minimum; `threads.css` sets the prompt at 15px since the quiet-scale commit on `main` (f98b5e7), which this branch did not touch. |
 | `npm run design:capture` | Did not reach the Threads room. `design-capture.spec.ts` fails in its first matrix with `ReferenceError: content is not defined`: `pageBoundProblems` declares `content` inside a loop and reads it after (spec lines 265 and 326), unchanged on this branch since 2ee9d97 on `main`. The Threads baselines therefore still show the pill and need regenerating once the spec is fixed. |
